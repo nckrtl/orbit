@@ -7,6 +7,7 @@ use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
@@ -39,6 +40,7 @@ use Illuminate\Support\Sleep;
 use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeInstanceDependencyCopier;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeRouterLanIngressReconciler;
@@ -73,6 +75,8 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
         app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
+        // A dependency copy runs `cp` over SSH on the Node; tests record copy requests instead.
+        app()->instance(InstanceDependencyCopier::class, new FakeInstanceDependencyCopier);
         // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
         app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
         // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.

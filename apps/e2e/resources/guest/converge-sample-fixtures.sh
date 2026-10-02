@@ -130,10 +130,13 @@ exit($status);"""
         print(name+': ready',flush=True)
 
     connections={x['slug']:x for x in orbit('database:list')['connections']}
+    # The sample MySQL Process has no Database server record, so its user is created here and registered below.
+    mysql_password=creds['mysql_app']
+    mysql_sql="CREATE DATABASE IF NOT EXISTS orbit_e2e;\nCREATE USER IF NOT EXISTS 'orbit_e2e'@'%' IDENTIFIED BY '"+mysql_password+"';\nALTER USER 'orbit_e2e'@'%' IDENTIFIED BY '"+mysql_password+"';\nGRANT ALL PRIVILEGES ON orbit_e2e.* TO 'orbit_e2e'@'%';\n"
     if 'e2e-mysql' not in connections:
         require(not verify, 'Missing MySQL connection')
-        mysql=orbit('database:user:create','e2e-mysql','--process='+str(processes['e2e-mysql']),'--database=orbit_e2e','--username=orbit_e2e','--password='+creds['mysql_app'])
-    print('e2e-mysql: database and user registered',flush=True)
+        docker('exec','-i',containers['e2e-mysql'],'sh','-ec','MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --protocol=socket --user=root --batch',data=mysql_sql)
+    print('e2e-mysql: database and user created',flush=True)
 
     pg=containers['e2e-postgres']
     password=creds['postgres_app']

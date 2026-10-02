@@ -65,7 +65,7 @@ The agent accepts only a normalized absolute path of at most 4,096 bytes that op
 
 The agent reads Git with libgit2 in its own process, which runs no hooks, filters, or `fsmonitor` programs. The checkouts belong to `orbit` and the agent runs as `root`, so the agent turns off libgit2's owner check.
 
-Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, `packed-refs`, the current branch ref, and the base ref. When one changed, it reads the checkout again. It also reads every checkout every 30 seconds, because an edit to a working file changes none of those files.
+Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, `packed-refs`, the current branch ref, the local base ref, and `origin/base`. When one changed, it reads the checkout again. It also reads every checkout every 30 seconds, because an edit to a working file changes none of those files.
 
 | Field | Meaning |
 | --- | --- |
@@ -74,7 +74,7 @@ Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, 
 | `head` | The full `HEAD` commit, or null in an empty repository. |
 | `dirty` | `true` when the index or working tree differs from `HEAD`, untracked files included. Null when the agent cannot read the working tree. |
 | `commits` | Commits reachable from `HEAD` but not from `start`, at most 1,000. Null without `start`. |
-| `diff` | `{ files, added, removed, truncated }` as `git diff --numstat base...HEAD` counts it. Null when `base` does not resolve. |
+| `diff` | `{ files, added, removed, truncated }` as `git diff --numstat origin/base...HEAD` counts it. Null when `origin/base` does not resolve. |
 
 | Limit | Value |
 | --- | --- |
@@ -356,7 +356,7 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 
 ## Releases
 
-A tag named `agent-v{version}` releases the agent. The version must equal the one in `apps/agent/Cargo.toml`. The release job builds static musl binaries and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a commit that is already on GitHub:
+A tag named `agent-v{version}` releases the agent. The version must equal the one in `apps/agent/Cargo.toml`. The release job runs on `ubuntu-26.04`, builds static musl binaries, and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a commit that is already on GitHub:
 
 ```bash
 gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}
@@ -368,7 +368,7 @@ gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={com
 | `orbit-agent-{version}-linux-aarch64` | Static binary for `aarch64` Nodes |
 | `SHA256SUMS` | The checksums of both binaries |
 
-The job refuses to replace the assets of an existing release. Pull requests and pushes to `main` build and test the agent without publishing.
+The job refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
 
 ## Limits
 

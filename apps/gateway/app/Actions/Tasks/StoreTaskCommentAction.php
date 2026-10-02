@@ -11,6 +11,8 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnFetcher;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Task;
@@ -21,13 +23,20 @@ use Illuminate\Support\Str;
 
 final readonly class StoreTaskCommentAction
 {
-    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $notifier) {}
+    public function __construct(
+        private AgentDriverRegistry $drivers,
+        private CoderSettleNotifier $notifier,
+        private TaskTurnFetcher $turnFetcher,
+        private TaskTurnFetchNotice $fetchNotice,
+        private RetryTaskBaselineAction $retryBaseline,
+    ) {}
 
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
     {
         $deliverResolution = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution): TaskComment {
+        $retryBaselineQueued = false;
+        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$retryBaselineQueued): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -40,11 +49,12 @@ final readonly class StoreTaskCommentAction
 
             if ($type === TaskCommentType::AssistanceRequested) {
                 $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                $task->parent()->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
+                $task->parent()->first()?->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
                 $deliverResolution = true;
+                $retryBaselineQueued = $this->retryBaseline->queue($task, $comment);
             }
 
             return $comment;
@@ -56,13 +66,17 @@ final readonly class StoreTaskCommentAction
             $reviewing = $task->status === TaskStatus::Reviewing;
             try {
                 $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
-                if ($reviewing && $thread === null) {
+                if ($retryBaselineQueued) {
+                    $this->log($task, $comment, 'resolution queued baseline retry');
+                    $this->retryBaseline->recover($task);
+                } elseif ($reviewing && $thread === null) {
                     $this->holdResolutionForFreshReviewer($task, $comment);
                 } else {
                     if ($thread === null) {
                         throw new AgentDriverException('Blocked AgentThread is unavailable.');
                     }
-                    $this->drivers->get($thread->driver)->send($thread, $comment->body);
+                    $this->turnFetcher->beforeTurn($task->parent()->with(['project', 'taskable'])->firstOrFail());
+                    $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($comment->body));
                     $this->recordResolutionDelivered($task, $comment, $reviewing);
                 }
             } catch (AgentDriverException) {

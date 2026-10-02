@@ -7,6 +7,7 @@ namespace App\Http\Requests\Instances;
 use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use UnexpectedValueException;
 
@@ -15,10 +16,16 @@ final class UpdateInstanceDeployStepRequest extends FormRequest
     /** @var array<string, mixed> */
     private array $payload = [];
 
-    /** @return array{} */
+    /** @return array<string, list<mixed>> */
     public function rules(): array
     {
-        return [];
+        return [
+            'command' => ['sometimes', 'string'],
+            'phase' => ['sometimes', Rule::enum(DeploymentPhase::class)],
+            'timeout_seconds' => ['sometimes', 'integer'],
+            'before' => ['sometimes', 'string'],
+            'after' => ['sometimes', 'string'],
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -63,7 +70,7 @@ final class UpdateInstanceDeployStepRequest extends FormRequest
 
         $this->payload = $payload;
 
-        return ['deploy_step' => true];
+        return $payload;
     }
 
     public function hasCommand(): bool

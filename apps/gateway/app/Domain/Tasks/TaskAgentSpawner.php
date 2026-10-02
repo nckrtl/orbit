@@ -8,6 +8,7 @@ use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -20,6 +21,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         private AgentDriverRegistry $drivers,
         private TaskReviewPacketBuilder $packets,
         private TaskWorkspaceMcp $mcp,
+        private TaskTurnFetchNotice $fetchNotice = new TaskTurnFetchNotice,
     ) {}
 
     public function spawnReviewer(Task $task): ?int
@@ -95,7 +97,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             throw new AgentDriverException('Reviewer conversation is unavailable.');
         }
         try {
-            $this->drivers->get($thread->driver)->send($thread, $this->reviewPacket($task, true, $thread->id));
+            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($this->reviewPacket($task, true, $thread->id)));
         } catch (AgentDriverException) {
             // ADR 0169: a continued thread that cannot take a turn is replaced by a fresh thread and a full packet.
             $replacement = $this->openReviewer($task);
@@ -192,7 +194,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             'external_id' => self::PendingPrefix.(string) Str::uuid(),
             'role' => $role->value,
             'model' => $reviewer ? $group->reviewer_model : $group->implementer_model,
-            'effort' => $reviewer ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort,
+            'effort' => config($reviewer ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'),
         ]);
     }
 
@@ -232,6 +234,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function startPending(AgentThread $thread, string $title, string $prompt): ?int
     {
+        $prompt = $this->fetchNotice->apply($prompt);
         $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);
         $instance = $group?->taskable;
         if (! $group instanceof Task || ! $instance instanceof Instance) {
@@ -250,7 +253,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             $driver = $this->drivers->get($thread->driver);
             $externalId = $driver->create(new AgentThreadStart(
                 $instance->node, $instance, $title, $prompt,
-                $thread->model ?? '', $thread->effort ?? '', $role,
+                $thread->model ?? '', $thread->effort ?? Config::string($role === TaskThreadRole::Reviewer ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'), $role,
             ));
         } catch (AgentDriverException) {
             Log::error('Agent conversation creation failed.', ['task_group_id' => $group->id, 'task_id' => $thread->task_id, 'role' => $thread->role]);

@@ -79,11 +79,11 @@ final readonly class ProblemLogParser
 
     public function signal(string $record): ?ProblemLogSignal
     {
-        if (preg_match('/\.(DEBUG|INFO|NOTICE|WARNING|ERROR|CRITICAL|ALERT|EMERGENCY): /', $record, $level) !== 1) {
+        if (preg_match(self::Header, $record, $header) !== 1) {
             return null;
         }
 
-        if (! in_array($level[1], self::CountedLevels, true)) {
+        if (! in_array($header[2], self::CountedLevels, true)) {
             return null;
         }
 
@@ -114,6 +114,7 @@ final readonly class ProblemLogParser
             $frame,
             $requestId,
             $this->excerpt($this->message($record), $requestId),
+            $header[1],
         );
     }
 

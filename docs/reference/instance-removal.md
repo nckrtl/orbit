@@ -2,7 +2,7 @@
 title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
-  - apps/gateway/app/Actions/Instances/RemoveInstanceAction.php
+  - apps/gateway/app/Actions/{Instances/RemoveInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
   - apps/gateway/app/Domain/Instances/Removal/**
   - apps/gateway/app/Infrastructure/*/RecordedProduction*ContentRetention.php
@@ -88,7 +88,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
 | `source_finalization` | Delete the development checkout, or keep the production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
-| `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. |
+| `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). |
 | `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
 
 ### Route cleanup
@@ -102,6 +102,10 @@ Between `route_target_clear` and Route deletion, a request to a development doma
 Removal cleans up every Process and Schedule the Instance owns, in any state, for systemd and Docker. Orbit checks that each unit, container, or timer belongs to that owner before it removes it. A missing artifact counts as done. An artifact with another owner stops the removal, and Orbit never adopts or deletes it.
 
 Orbit does not wait for a running Schedule command. The command may finish or fail while its source disappears. Its completion callback cannot bring the Schedule back. Node Schedules and the children of other Instances stay.
+
+### Owned databases
+
+`runtime_cleanup` drops each [database the Instance owns](/reference/database-connections#owned-databases): the database and its test databases on the [Database server](/reference/database-servers), or the SQLite file. When the Instance owns no database on a server any more, its user there goes too. Then it deletes the connection record and every attachment of it. A database the Instance only has attached stays, and only the attachment goes. A failed drop keeps the member in `runtime_cleanup`, and a retry drops again. A database that is already gone counts as done.
 
 ### Transfer history
 

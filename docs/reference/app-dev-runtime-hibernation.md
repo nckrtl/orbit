@@ -42,13 +42,15 @@ A wake still starts every desired-running Process, including a keep-alive Proces
 
 `orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker.
 
-| Setting | Default | Config key |
-| --- | --- | --- |
-| Idle window | 3,600 seconds | `orbit.hibernation.idle_seconds` |
-| Dependency idle window | 604,800 seconds | `orbit.hibernation.dependency_idle_seconds` |
-| Sweep interval | 600 seconds | `orbit.hibernation.sweep_seconds` |
-| Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` |
-| Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` |
+Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings.
+
+| Setting | Default | Config key | Environment key |
+| --- | --- | --- | --- |
+| Idle window | 3,600 seconds | `orbit.hibernation.idle_seconds` | `ORBIT_HIBERNATION_IDLE_SECONDS` |
+| Dependency idle window | 604,800 seconds | `orbit.hibernation.dependency_idle_seconds` | `ORBIT_HIBERNATION_DEPENDENCY_IDLE_SECONDS` |
+| Sweep interval | 600 seconds | `orbit.hibernation.sweep_seconds` | `ORBIT_HIBERNATION_SWEEP_SECONDS` |
+| Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` | `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` |
+| Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` | `ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS` |
 
 After the idle window, the sweep stops each desired-running Process that is not keep-alive. It keeps `desired_state` as it is and removes the awake marker. When the [Node agent view](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips it. When an Instance has no desired-running Process without keep-alive, the sweep skips it: it never sleeps and is never pruned. An Instance with no recorded HTTP activity counts as idle, so it sleeps at the first sweep.
 

@@ -37,7 +37,7 @@ On the install page, choose the account or organization and all or selected repo
 
 ## How Orbit reads a repository
 
-The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, and the published-commit check before a development checkout is removed.
+The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, the published-commit check before a development checkout is removed, and a task workspace before each agent turn.
 
 Each Project has a `source_access` setting. This section describes `github_app`, the default. [Read through the GitHub CLI](#read-through-the-github-cli) describes `gh_cli`.
 
@@ -116,9 +116,11 @@ The checks token is separate, because GitHub refuses a whole token request when 
 
 Git commands that you run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in on a Node.
 
-A task agent does not receive a GitHub token. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. The checkout cannot name a program that sees the token. The agent shares the Pi server's user, so it can read that server's token and provider sign-in. [Limits](/reference/pi-server#limits) records both bounds. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
+A task agent does not receive a GitHub token and never fetches or pushes. The agent runs as `orbit-worker`. The token exists only in the environment of one `git` command, and that command uses the private git directory above, running as the Node's managed user. The checkout cannot name a program that sees the token. The agent shares the Pi server's user, so it can read that server's token and provider sign-in. [Limits](/reference/pi-server#limits) records both bounds. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account boundary.
 
 `git checkout` and the approval commit do not carry the token. Once the workspace ACL exists, they run as `orbit-worker`, so a filter they start runs as `orbit-worker`. Fetch, `git clone --no-checkout`, and push do not check out file contents. Task teardown runs as `orbit-worker` and executes the root-owned helper, not a file from the checkout. Privileged removal deletes the tree as the managed user and runs no checkout program.
+
+Before each agent turn, the Gateway itself fetches the task workspace. That fetch uses the read token and `--no-tags`, not a token handed to the agent. [Tasks](/reference/tasks#fetch-before-a-turn) names the refs. When the fetch fails, the turn still starts, and its message says the fetch failed and warns that `origin/*` may be stale.
 
 ## Errors
 

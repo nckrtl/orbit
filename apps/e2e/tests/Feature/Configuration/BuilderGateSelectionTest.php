@@ -216,7 +216,7 @@ function orb277_run_gate(
 function orb277_full_suite_command(): array
 {
     return [
-        '../../bin/pest-plain', 'vendor/bin/pest', '--no-tia', '--fail-on-empty-test-suite',
+        '../../bin/pest-plain', 'vendor/bin/pest', '--parallel', '--processes=4', '--no-tia', '--fail-on-empty-test-suite',
         '--compact', '--colors=never',
     ];
 }
@@ -493,10 +493,9 @@ describe('Builder gate', function (): void {
         $fixture = orb277_gate_fixture('apps/gateway/app/SourceOnly.php');
         file_put_contents($fixture['root'].'/apps/gateway/vendor/bin/pest', <<<'SH'
 #!/usr/bin/env sh
-if [ "$1" = "--no-tia" ]; then
-    echo 'full suite failed'
-    exit 4
-fi
+case " $* " in
+    *" --no-tia "*) echo 'full suite failed'; exit 4 ;;
+esac
 exit 0
 SH);
         chmod($fixture['root'].'/apps/gateway/vendor/bin/pest', 0o700);

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api;
 
 use App\Actions\DatabaseConnections\AddDatabaseConnectionAction;
+use App\Actions\DatabaseConnections\CreateDatabaseUserAction;
+use App\Actions\DatabaseConnections\CreateServerDatabaseAction;
 use App\Actions\DatabaseConnections\DescribeDatabaseTableAction;
 use App\Actions\DatabaseConnections\ListDatabaseConnectionsAction;
 use App\Actions\DatabaseConnections\ListDatabaseTablesAction;
@@ -17,12 +19,14 @@ use App\Data\DatabaseConnections\DatabaseConnectionData;
 use App\Data\DatabaseConnections\DatabaseUserData;
 use App\Domain\DatabaseConnections\DatabaseSchemaTable;
 use App\Domain\DatabaseConnections\DatabaseTableColumn;
+use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DatabaseConnections\DescribeDatabaseTableRequest;
 use App\Http\Requests\DatabaseConnections\QueryDatabaseConnectionRequest;
 use App\Http\Requests\DatabaseConnections\StoreDatabaseConnectionRequest;
+use App\Http\Requests\DatabaseConnections\StoreDatabaseUserRequest;
 use App\Http\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseUser;
@@ -46,10 +50,15 @@ final class DatabaseConnectionsController extends Controller
 
     public function store(
         StoreDatabaseConnectionRequest $request,
-        AddDatabaseConnectionAction $action,
+        AddDatabaseConnectionAction $register,
+        CreateServerDatabaseAction $create,
     ): JsonResponse {
+        $connection = $request->createsOnServer()
+            ? $create->execute($request->serverPayload(), CallerName::fromRequest($request))
+            : $register->execute($request->payload());
+
         return response()->json([
-            'data' => DatabaseConnectionData::fromModel($action->execute($request->payload()))->toArray(),
+            'data' => DatabaseConnectionData::fromModel($connection)->toArray(),
             'meta' => $this->meta($request),
         ], 201);
     }
@@ -77,6 +86,19 @@ final class DatabaseConnectionsController extends Controller
                 ->all(),
             'meta' => $this->meta($request),
         ]);
+    }
+
+    public function storeUser(
+        StoreDatabaseUserRequest $request,
+        DatabaseConnection $databaseConnection,
+        CreateDatabaseUserAction $action,
+    ): JsonResponse {
+        $user = $action->execute($databaseConnection, $request->payload(), CallerName::fromRequest($request));
+
+        return response()->json([
+            'data' => DatabaseUserData::fromModel($user)->toArray(),
+            'meta' => $this->meta($request),
+        ], $user->wasRecentlyCreated ? 201 : 200);
     }
 
     public function update(

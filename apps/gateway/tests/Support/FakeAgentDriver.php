@@ -14,7 +14,7 @@ use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
-final class FakeAgentDriver implements AgentDriver
+class FakeAgentDriver implements AgentDriver
 {
     public ?AgentObservation $observation = null;
 

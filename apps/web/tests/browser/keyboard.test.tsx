@@ -127,8 +127,8 @@ it("opens a record with one click and keeps the row selected for the way back", 
 it("only selects a row that leads nowhere", async () => {
     const app = await openApp("/databases/1");
 
-    await row("Users", "app").click();
-    await expect.element(row("Users", "app")).toHaveAttribute("aria-selected", "true");
+    await row("Users", "reporting").click();
+    await expect.element(row("Users", "reporting")).toHaveAttribute("aria-selected", "true");
     expect(app.url()).toBe("/databases/1");
 });
 

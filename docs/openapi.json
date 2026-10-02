@@ -1011,7 +1011,7 @@
                 "properties": {
                   "version": {
                     "type": "string",
-                    "pattern": "^\\d+\\.\\d+\\.\\d+$",
+                    "pattern": "^\\d+\\.\\d+\\.\\d+$(?![\\s\\S])",
                     "description": "Plausible Community Edition version, for example 3.2.1"
                   }
                 },
@@ -1324,7 +1324,7 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Optional development TLD"
                   }
@@ -1626,7 +1626,7 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "New development TLD; empty unsets it"
                   },
@@ -1760,7 +1760,7 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip the destructive confirmation prompt"
                   }
                 },
@@ -1974,7 +1974,7 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip the destructive confirmation prompt"
                   }
                 },
@@ -2226,14 +2226,116 @@
         "tags": [
           "Database connections"
         ],
-        "description": "Create a Database connection through the Gateway.",
+        "description": "Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": false
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "slug": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                        "maxLength": 63
+                      },
+                      "driver": {
+                        "type": "string",
+                        "enum": [
+                          "mysql",
+                          "pgsql",
+                          "sqlite",
+                          "redis"
+                        ]
+                      },
+                      "node_id": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 1
+                      },
+                      "host": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
+                        "maxLength": 255
+                      },
+                      "port": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "maximum": 65535,
+                        "minimum": 1
+                      },
+                      "database": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
+                        "maxLength": 64
+                      },
+                      "path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
+                        "maxLength": 1024
+                      },
+                      "username": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
+                        "maxLength": 128
+                      },
+                      "password": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 1024
+                      }
+                    },
+                    "required": [
+                      "slug",
+                      "driver"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "slug": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                        "maxLength": 63
+                      },
+                      "server": {
+                        "type": "string",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
+                        "maxLength": 63
+                      },
+                      "instance_id": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "slug",
+                      "server"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
             }
           }
@@ -2318,12 +2420,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '\"example\"'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseConnectionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseConnectionRequest(slug: 'acme', driver: 'mysql'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseConnectionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseConnectionRequest(slug: 'acme'))->dto();\n"
           }
         ]
       }
@@ -2516,6 +2618,78 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "driver": {
+                    "type": "string",
+                    "enum": [
+                      "mysql",
+                      "pgsql",
+                      "sqlite",
+                      "redis"
+                    ],
+                    "description": "Driver: mysql, pgsql, sqlite, or redis"
+                  },
+                  "node_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "host": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
+                    "maxLength": 255,
+                    "description": "Hostname or IP for mysql and pgsql"
+                  },
+                  "port": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "maximum": 65535,
+                    "minimum": 1,
+                    "description": "TCP port for mysql and pgsql"
+                  },
+                  "database": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
+                    "maxLength": 64,
+                    "description": "Database name for mysql and pgsql"
+                  },
+                  "path": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
+                    "maxLength": 1024,
+                    "description": "Unix absolute sqlite path"
+                  },
+                  "username": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
+                    "maxLength": 128,
+                    "description": "Username"
+                  },
+                  "password": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 1024,
+                    "description": "Password"
+                  }
+                },
                 "additionalProperties": false
               }
             }
@@ -2589,7 +2763,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/database-connections/app\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/database-connections/app\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"driver\": \"mysql\"}'\n"
           },
           {
             "lang": "php",
@@ -3150,6 +3324,529 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\ListDatabaseUsersRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListDatabaseUsersRequest(slug: 'acme'))->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "database-user-create",
+        "summary": "Add a database user",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database connection slug."
+          }
+        ],
+        "description": "Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 32,
+                    "description": "Username, a 1-32 character identifier"
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Password for the new user"
+                  },
+                  "read_only": {
+                    "type": "boolean",
+                    "description": "Grant only SELECT on the database"
+                  }
+                },
+                "required": [
+                  "username",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseUser"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseUser"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections/app/users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"username\": \"app\", \"password\": \"secret\", \"read_only\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseUserRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseUserRequest(slug: 'acme', username: 'app', password: 'secret'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/database-servers": {
+      "get": {
+        "operationId": "database-server-list",
+        "summary": "List Database servers",
+        "tags": [
+          "Database connections"
+        ],
+        "description": "List the Database servers.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DatabaseServer"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/database-servers\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\ListDatabaseServersRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListDatabaseServersRequest())->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "database-server-create",
+        "summary": "Create a Database server",
+        "tags": [
+          "Database connections"
+        ],
+        "description": "Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slug": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 63,
+                    "description": "Database server slug"
+                  },
+                  "node_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "tag": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 128,
+                    "description": "MySQL image tag. Defaults to 8.4"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1,
+                    "description": "Port to publish on the Node WireGuard address. Defaults to 3306"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "node_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseServer"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseServer"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-servers\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"node_id\": 7, \"tag\": \"8.4\", \"port\": 3306}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\CreateDatabaseServerRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseServerRequest(slug: 'acme', nodeId: 7))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/database-servers/{database_server}": {
+      "delete": {
+        "operationId": "database-server-destroy",
+        "summary": "Remove a Database server",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_server",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database server slug."
+          }
+        ],
+        "description": "Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseServer"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/database-servers/beast-mysql\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\DestroyDatabaseServerRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyDatabaseServerRequest(slug: 'acme'))->dto();\n"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "database-server-show",
+        "summary": "Show a Database server",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_server",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database server slug."
+          }
+        ],
+        "description": "Shows one Database server with the connections of the databases on it.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/DatabaseServer"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "databases": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/DatabaseConnection"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/database-servers/beast-mysql\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\ShowDatabaseServerRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowDatabaseServerRequest(slug: 'acme'))->dto();\n"
           }
         ]
       }
@@ -3908,7 +4605,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?$",
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?$(?![\\s\\S])",
                     "description": "Proposed App name for a first registration"
                   },
                   "owner": {
@@ -3916,7 +4613,7 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+                    "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$(?![\\s\\S])",
                     "description": "GitHub organization that owns the App registration"
                   }
                 },
@@ -4123,7 +4820,7 @@
                   },
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Instance name; default is reserved for the default development source"
                   },
@@ -4260,7 +4957,7 @@
                 "properties": {
                   "source_path": {
                     "type": "string",
-                    "pattern": "^\\/[^\\x00-\\x1f]*$",
+                    "pattern": "^\\/[^\\x00-\\x1f]*$(?![\\s\\S])",
                     "maxLength": 4096
                   },
                   "include_worktrees": {
@@ -4530,7 +5227,7 @@
                   },
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Target production Instance name"
                   },
@@ -4546,7 +5243,7 @@
                   },
                   "sqlite_source_path": {
                     "type": "string",
-                    "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+                    "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$(?![\\s\\S])",
                     "maxLength": 4096,
                     "description": "Optional SQLite database path on the candidate"
                   }
@@ -4689,7 +5386,7 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Delete dirty or unpublished source after identity checks"
                   }
                 },
@@ -4871,11 +5568,20 @@
         ],
         "description": "Update a production Instance deployment branch.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "branch": {
+                    "type": "string",
+                    "description": "Deployment branch"
+                  }
+                },
+                "required": [
+                  "branch"
+                ],
                 "additionalProperties": false
               }
             }
@@ -4949,7 +5655,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\"}'\n"
           },
           {
             "lang": "php",
@@ -6659,7 +7365,7 @@
         ],
         "description": "Scan root dependency manifests and lockfiles for one instance or every authorized instance.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -6768,7 +7474,7 @@
         ],
         "description": "Update development root packages within declared constraints and refresh inventory.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -6878,7 +7584,7 @@
         "x-orbit-task-action": true,
         "description": "Deploy the configured branch of a production Instance.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -7175,11 +7881,46 @@
         ],
         "description": "Create a named deploy step on a production Instance.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Deploy step name"
+                  },
+                  "command": {
+                    "type": "string",
+                    "description": "Command the Gateway runs"
+                  },
+                  "phase": {
+                    "type": "string",
+                    "enum": [
+                      "before_activation",
+                      "after_activation"
+                    ],
+                    "description": "before_activation or after_activation"
+                  },
+                  "timeout_seconds": {
+                    "type": "integer",
+                    "maximum": 900,
+                    "minimum": 1
+                  },
+                  "before": {
+                    "type": "string",
+                    "description": "Place before this step in the same phase"
+                  },
+                  "after": {
+                    "type": "string",
+                    "description": "Place after this step in the same phase"
+                  }
+                },
+                "required": [
+                  "name",
+                  "command"
+                ],
                 "additionalProperties": false
               }
             }
@@ -7275,7 +8016,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/deploy-steps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/deploy-steps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"default\", \"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           },
           {
             "lang": "php",
@@ -7417,6 +8158,31 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "command": {
+                    "type": "string",
+                    "description": "Command the Gateway runs"
+                  },
+                  "phase": {
+                    "type": "string",
+                    "enum": [
+                      "before_activation",
+                      "after_activation"
+                    ],
+                    "description": "before_activation or after_activation"
+                  },
+                  "timeout_seconds": {
+                    "type": "integer"
+                  },
+                  "before": {
+                    "type": "string",
+                    "description": "Place before this step in the same phase"
+                  },
+                  "after": {
+                    "type": "string",
+                    "description": "Place after this step in the same phase"
+                  }
+                },
                 "additionalProperties": false
               }
             }
@@ -7490,7 +8256,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12/deploy-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/instances/12/deploy-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           },
           {
             "lang": "php",
@@ -7729,7 +8495,7 @@
         ],
         "description": "Synchronize stored Instance configuration to the workload environment file.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -9123,13 +9889,13 @@
                   },
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Optional destination Instance name"
                   },
                   "sqlite_source_path": {
                     "type": "string",
-                    "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+                    "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$(?![\\s\\S])",
                     "maxLength": 4096,
                     "description": "Optional SQLite database path on the source"
                   }
@@ -9258,11 +10024,11 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip confirmation"
                   },
                   "purge_data": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Delete Metrics data"
                   }
                 },
@@ -9962,7 +10728,7 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$(?![\\s\\S])",
                     "maxLength": 253,
                     "description": "Node TLD; required for production clone preview domains"
                   },
@@ -10037,7 +10803,7 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
+                    "pattern": "^SHA256:[A-Za-z0-9+/]{43}$(?![\\s\\S])",
                     "description": "Approved SSH SHA256 host key fingerprint"
                   }
                 },
@@ -10177,11 +10943,11 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip the destructive confirmation prompt"
                   },
                   "offline": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Shed roles and remove a node Orbit cannot reach"
                   }
                 },
@@ -10816,7 +11582,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Stable firewall rule name"
                   },
@@ -10976,7 +11742,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Stable firewall rule name"
                   },
@@ -12041,15 +12807,15 @@
                     "description": "Role name"
                   },
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Confirm destructive role removal and dependent cleanup"
                   },
                   "purge_data": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Request supported role-owned data cleanup"
                   },
                   "offline": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Remove the role from a node Orbit cannot reach"
                   }
                 },
@@ -12202,7 +12968,7 @@
                     "description": "Role name"
                   },
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Confirm the role transfer"
                   },
                   "from": {
@@ -12328,11 +13094,31 @@
         ],
         "description": "Update typed storage settings on a node.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "apps": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                      "path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      }
+                    }
+                  }
+                },
+                "required": [
+                  "apps"
+                ],
                 "additionalProperties": false
               }
             }
@@ -12406,7 +13192,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/nodes/7/settings\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/nodes/7/settings\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"apps\": {\"path\": \"/srv/orbit/apps\"}}'\n"
           },
           {
             "lang": "php",
@@ -12724,7 +13510,7 @@
                   },
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Process name"
                   },
@@ -12761,13 +13547,13 @@
                       "string",
                       "null"
                     ],
-                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
                     "maxLength": 255,
                     "description": "Conditionally required."
                   },
                   "working_directory": {
                     "type": "string",
-                    "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                    "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                     "maxLength": 4096,
                     "description": "Runtime working directory"
                   },
@@ -12785,7 +13571,7 @@
                     "maxItems": 100,
                     "items": {
                       "type": "string",
-                      "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                      "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
                     }
                   },
                   "volumes": {
@@ -12793,15 +13579,16 @@
                     "maxItems": 100,
                     "items": {
                       "type": "object",
+                      "additionalProperties": false,
                       "properties": {
                         "source": {
                           "type": "string",
-                          "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                          "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                           "maxLength": 4096
                         },
                         "target": {
                           "type": "string",
-                          "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                          "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                           "maxLength": 4096
                         },
                         "read_only": {
@@ -13018,168 +13805,6 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\DestroyProcessRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProcessRequest(processId: 41))->dto();\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/processes/{process}/database-users": {
-      "post": {
-        "operationId": "database-user-create",
-        "summary": "Create a managed MySQL user",
-        "tags": [
-          "Database connections"
-        ],
-        "parameters": [
-          {
-            "name": "process",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Process ID."
-          }
-        ],
-        "description": "Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "slug": {
-                    "type": "string",
-                    "pattern": "",
-                    "maxLength": 63,
-                    "description": "Database connection slug"
-                  },
-                  "database": {
-                    "type": "string",
-                    "pattern": "",
-                    "maxLength": 32,
-                    "description": "Database name to create"
-                  },
-                  "username": {
-                    "type": "string",
-                    "pattern": "",
-                    "maxLength": 32,
-                    "description": "Username to create"
-                  },
-                  "password": {
-                    "type": "string",
-                    "maxLength": 1024,
-                    "description": "Password for the created user"
-                  }
-                },
-                "required": [
-                  "slug",
-                  "database",
-                  "username",
-                  "password"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/DatabaseConnection"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "The request succeeded; an exact retry returned the existing record.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/DatabaseConnection"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/processes/41/database-users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"database\": \"app\", \"username\": \"app\", \"password\": \"secret\"}'\n"
-          },
-          {
-            "lang": "php",
-            "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseUserRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseUserRequest(\n    processId: 41,\n    slug: 'acme',\n    database: 'app',\n    username: 'app',\n    password: 'secret',\n))->dto();\n"
           }
         ]
       }
@@ -14013,7 +14638,7 @@
                   },
                   "code": {
                     "type": "string",
-                    "pattern": "^[A-Z]{3}$"
+                    "pattern": "^[A-Z]{3}$(?![\\s\\S])"
                   },
                   "slug": {
                     "type": "string",
@@ -14373,7 +14998,7 @@
                 "properties": {
                   "code": {
                     "type": "string",
-                    "pattern": "^[A-Z]{3}$"
+                    "pattern": "^[A-Z]{3}$(?![\\s\\S])"
                   },
                   "type": {
                     "type": "string",
@@ -14914,7 +15539,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63
                   },
                   "environments": {
@@ -14952,13 +15577,13 @@
                           "string",
                           "null"
                         ],
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
                         "maxLength": 255,
                         "description": "Conditionally required."
                       },
                       "working_directory": {
                         "type": "string",
-                        "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                        "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                         "maxLength": 4096
                       },
                       "environment": {
@@ -14974,7 +15599,7 @@
                         "maxItems": 100,
                         "items": {
                           "type": "string",
-                          "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                          "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
                         }
                       },
                       "volumes": {
@@ -14982,15 +15607,16 @@
                         "maxItems": 100,
                         "items": {
                           "type": "object",
+                          "additionalProperties": false,
                           "properties": {
                             "source": {
                               "type": "string",
-                              "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                              "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                               "maxLength": 4096
                             },
                             "target": {
                               "type": "string",
-                              "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                              "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                               "maxLength": 4096
                             },
                             "read_only": {
@@ -15350,7 +15976,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63
                   },
                   "environments": {
@@ -15388,13 +16014,13 @@
                           "string",
                           "null"
                         ],
-                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
                         "maxLength": 255,
                         "description": "Conditionally required."
                       },
                       "working_directory": {
                         "type": "string",
-                        "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                        "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                         "maxLength": 4096
                       },
                       "environment": {
@@ -15410,7 +16036,7 @@
                         "maxItems": 100,
                         "items": {
                           "type": "string",
-                          "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                          "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
                         }
                       },
                       "volumes": {
@@ -15418,15 +16044,16 @@
                         "maxItems": 100,
                         "items": {
                           "type": "object",
+                          "additionalProperties": false,
                           "properties": {
                             "source": {
                               "type": "string",
-                              "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                              "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                               "maxLength": 4096
                             },
                             "target": {
                               "type": "string",
-                              "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                              "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                               "maxLength": 4096
                             },
                             "read_only": {
@@ -15654,7 +16281,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63
                   },
                   "environments": {
@@ -15677,7 +16304,7 @@
                       },
                       "calendar": {
                         "type": "string",
-                        "pattern": "^[\\x20-\\x7E]+$",
+                        "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
                         "maxLength": 255
                       },
                       "timeout_seconds": {
@@ -15793,7 +16420,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/schedule-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"], \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/schedule-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": \"/usr/bin/php artisan queue:work\", \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
           },
           {
             "lang": "php",
@@ -16021,7 +16648,7 @@
                 "properties": {
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+                    "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
                     "maxLength": 63
                   },
                   "environments": {
@@ -16044,7 +16671,7 @@
                       },
                       "calendar": {
                         "type": "string",
-                        "pattern": "^[\\x20-\\x7E]+$",
+                        "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
                         "maxLength": 255
                       },
                       "timeout_seconds": {
@@ -16138,7 +16765,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/schedule-definitions/hourly-report\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"], \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/schedule-definitions/hourly-report\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"environments\": [\"production\"], \"spec\": {\"command\": \"/usr/bin/php artisan queue:work\", \"calendar\": \"daily\", \"timeout_seconds\": 3600}}'\n"
           },
           {
             "lang": "php",
@@ -16343,7 +16970,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/setup-steps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"default\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/setup-steps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"default\", \"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           }
         ]
       }
@@ -16565,7 +17192,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/setup-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"], \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/setup-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\", \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
           }
         ]
       }
@@ -16613,6 +17240,7 @@
                     "type": "array",
                     "items": {
                       "type": "object",
+                      "additionalProperties": false,
                       "properties": {
                         "name": {
                           "type": "string"
@@ -16649,6 +17277,7 @@
                       "object",
                       "null"
                     ],
+                    "additionalProperties": false,
                     "properties": {
                       "cron": {
                         "type": "string",
@@ -16664,6 +17293,7 @@
                     "type": "array",
                     "items": {
                       "type": "object",
+                      "additionalProperties": false,
                       "properties": {
                         "key": {
                           "type": "string"
@@ -16717,6 +17347,7 @@
                           "maxItems": 5,
                           "items": {
                             "type": "object",
+                            "additionalProperties": false,
                             "properties": {
                               "id": {
                                 "type": "string",
@@ -17211,6 +17842,7 @@
                     "type": "array",
                     "items": {
                       "type": "object",
+                      "additionalProperties": false,
                       "properties": {
                         "name": {
                           "type": "string"
@@ -17247,6 +17879,7 @@
                       "object",
                       "null"
                     ],
+                    "additionalProperties": false,
                     "properties": {
                       "cron": {
                         "type": "string",
@@ -17262,6 +17895,7 @@
                     "type": "array",
                     "items": {
                       "type": "object",
+                      "additionalProperties": false,
                       "properties": {
                         "key": {
                           "type": "string"
@@ -17315,6 +17949,7 @@
                           "maxItems": 5,
                           "items": {
                             "type": "object",
+                            "additionalProperties": false,
                             "properties": {
                               "id": {
                                 "type": "string",
@@ -17710,7 +18345,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/teardown-steps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"default\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/teardown-steps\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"default\", \"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           }
         ]
       }
@@ -17932,7 +18567,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/teardown-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"], \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/teardown-steps/migrate\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"command\": \"/usr/bin/php artisan queue:work\", \"timeout_seconds\": 3600, \"before\": \"example\", \"after\": \"example\"}'\n"
           }
         ]
       }
@@ -19544,13 +20179,13 @@
                   },
                   "name": {
                     "type": "string",
-                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                    "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                     "maxLength": 63,
                     "description": "Schedule name"
                   },
                   "calendar": {
                     "type": "string",
-                    "pattern": "^[\\x20-\\x7E]+$",
+                    "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
                     "maxLength": 255,
                     "description": "Native systemd calendar expression"
                   },
@@ -19660,7 +20295,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/schedules\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"target_type\": \"node\", \"target_id\": 12, \"name\": \"daily-report\", \"calendar\": \"daily\", \"command\": [\"/usr/bin/php\", \"artisan\", \"queue:work\"]}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/schedules\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"target_type\": \"node\", \"target_id\": 12, \"name\": \"daily-report\", \"calendar\": \"daily\", \"command\": \"/usr/bin/php artisan queue:work\"}'\n"
           },
           {
             "lang": "php",
@@ -20430,7 +21065,7 @@
           "Tasks"
         ],
         "x-orbit-extension": "tasks",
-        "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.",
+        "description": "Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": true,
           "content": {
@@ -20454,7 +21089,10 @@
                   },
                   "status": {
                     "type": "string",
-                    "enum": [],
+                    "enum": [
+                      "backlog",
+                      "todo"
+                    ],
                     "description": "backlog (default) or todo"
                   },
                   "notify_coder": {
@@ -20483,10 +21121,11 @@
                           "maxItems": 5,
                           "items": {
                             "type": "object",
+                            "additionalProperties": false,
                             "properties": {
                               "id": {
                                 "type": "string",
-                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                                 "maxLength": 64
                               },
                               "type": {
@@ -20758,7 +21397,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
+        "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": false,
           "content": {
@@ -20778,7 +21417,10 @@
                   },
                   "status": {
                     "type": "string",
-                    "enum": [],
+                    "enum": [
+                      "backlog",
+                      "todo"
+                    ],
                     "description": "backlog or todo"
                   }
                 },
@@ -21281,7 +21923,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
+        "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most five typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `command` adds `command`, an optional `directory` (default `.`), an optional boolean `fails_on_base`, and optional `paths` (workspace-relative file paths, not globs). Only `command` accepts `fails_on_base` and `paths`. With `fails_on_base: true`, `paths` must contain at least one file, and the command must fail on the start commit before it passes on the working tree; omitted `fails_on_base` is stored as false. `review` adds nothing. Orbit verifies file and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": true,
           "content": {
@@ -21304,10 +21946,11 @@
                     "maxItems": 5,
                     "items": {
                       "type": "object",
+                      "additionalProperties": false,
                       "properties": {
                         "id": {
                           "type": "string",
-                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                           "maxLength": 64
                         },
                         "type": {
@@ -21649,10 +22292,11 @@
                     "maxItems": 5,
                     "items": {
                       "type": "object",
+                      "additionalProperties": false,
                       "properties": {
                         "id": {
                           "type": "string",
-                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                           "maxLength": 64
                         },
                         "type": {
@@ -23358,6 +24002,24 @@
           },
           "has_password": {
             "type": "boolean"
+          },
+          "server": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_instance_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "test_database": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -23384,6 +24046,38 @@
           },
           "created_at": {
             "type": "string"
+          }
+        }
+      },
+      "DatabaseServer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "process_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "databases_count": {
+            "type": "integer"
           }
         }
       },
@@ -24952,6 +25646,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "type": "string"
@@ -24994,6 +25689,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "key": {
                   "type": "string"
@@ -25046,6 +25742,7 @@
                   "maxItems": 5,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "id": {
                         "type": "string",

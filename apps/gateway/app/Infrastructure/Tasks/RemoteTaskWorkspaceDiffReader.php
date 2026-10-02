@@ -45,7 +45,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
                     input: <<<'BASH'
                     checkout=$1
                     base=$2
-                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" diff --shortstat "$base"...HEAD
+                    git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" diff --shortstat "refs/remotes/origin/$base"...HEAD
                     BASH,
                 ),
                 'task-workspace-diff',
@@ -55,6 +55,7 @@ final readonly class RemoteTaskWorkspaceDiffReader implements TaskWorkspaceDiffR
             return null;
         }
 
+        // The diff counts against the fetched base, because a merge of origin/{base} leaves the local base branch behind.
         // `--shortstat` prints one summary line, so a diff of any size stays under the SSH output cap.
         // Binary files count as changed with no lines, as they do in `--numstat`.
         $summary = trim($result->stdout);

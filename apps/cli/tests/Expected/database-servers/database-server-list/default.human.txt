@@ -1,0 +1,14 @@
+Loading Database servers...
+
+┌  List Database servers
+│
+├  ● Loaded Database servers
+│
+└  Loaded Database servers.
+
+ ┌─────────────┬─────────┬─────┬──────┬────────┬───────────┐
+ │ SLUG        │ NODE ID │ TAG │ PORT │ STATUS │ DATABASES │
+ ├─────────────┼─────────┼─────┼──────┼────────┼───────────┤
+ │ beast-mysql │ 2       │ 8.4 │ 3306 │ active │ 1         │
+ └─────────────┴─────────┴─────┴──────┴────────┴───────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

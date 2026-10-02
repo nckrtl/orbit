@@ -29,7 +29,7 @@ Creating task group...
 │
 ├  Implementer model   gpt-5.6-luna
 │
-├  Reviewer model      claude-opus-5
+├  Reviewer model      gpt-5.6-luna
 │
 ├  Tokens              —
 │

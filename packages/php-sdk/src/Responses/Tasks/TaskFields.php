@@ -54,7 +54,7 @@ final class TaskFields
     }
 
     /**
-     * A subtask's typed deliverables. String fields pass through, and a test deliverable may carry boolean
+     * A subtask's typed deliverables. String fields pass through, and a command deliverable may carry boolean
      * fails_on_base. A record without the list has none.
      *
      * @param  array<string, mixed>  $data

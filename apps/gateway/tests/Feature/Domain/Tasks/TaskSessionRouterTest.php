@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentInputRequest;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullCoderSettleNotifier;
@@ -15,13 +16,11 @@ use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Infrastructure\Tasks\T3\T3Dispatcher;
-use App\Infrastructure\Tasks\T3\T3DispatchException;
-use App\Infrastructure\Tasks\T3\T3ModelSelection;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Tests\Support\AgentCommandDispatcher;
 
 function router_group(): Task
 {
@@ -47,6 +46,7 @@ function router_group(): Task
         'status' => 'source_resolved',
     ]);
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Execute Jev actions',
         'brief' => 'Drain, advance, escalate, or stay quiet.',
@@ -101,9 +101,9 @@ function router_observation(Task $group, ?string $pendingApprovalId = null): Tas
     );
 }
 
-function router_dispatcher(): T3Dispatcher
+function router_dispatcher(): AgentCommandDispatcher
 {
-    return new class implements T3Dispatcher
+    return new class implements AgentCommandDispatcher
     {
         /** @var list<array<string, mixed>> */
         public array $commands = [];
@@ -122,56 +122,51 @@ it('dispatches acceptForSession for a pending approval', function (): void {
     $dispatcher = router_dispatcher();
     $observation = router_observation($group, 'approval-3');
 
-    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor(test_snapshot_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         $observation,
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
     );
 
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.approval.respond')
+        ->and($dispatcher->commands[0]['type'])->toBe('respond')
         ->and($dispatcher->commands[0]['threadId'])->toBe('implementer-thread')
         ->and($dispatcher->commands[0]['requestId'])->toBe('approval-3')
-        ->and($dispatcher->commands[0]['decision'])->toBe('acceptForSession');
+        ->and($dispatcher->commands[0]['answers'])->toBe(['approve' => true]);
 });
 
 it('surfaces a refused drain instead of swallowing the dispatch', function (): void {
     $group = router_group();
-    $dispatcher = new class implements T3Dispatcher
+    $dispatcher = new class implements AgentCommandDispatcher
     {
         public function dispatch(Node $node, array $command): array
         {
-            throw new T3DispatchException('T3 approval respond failed.');
+            throw new AgentDriverException('Agent approval respond failed.');
         }
     };
 
-    expect(fn () => new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    expect(fn () => new TaskSessionActor(test_snapshot_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         router_observation($group, 'approval-3'),
         new TaskSessionDecision(TaskSessionNextAction::DrainApproval, 0.9, 'Jev selected drain_approval.'),
-    ))->toThrow(T3DispatchException::class, 'T3 approval respond failed.');
+    ))->toThrow(AgentDriverException::class, 'Agent approval respond failed.');
 });
 
-it('starts an implementer turn with the T3 0.0.42 message struct', function (): void {
+it('starts an implementer turn through the agent driver', function (): void {
     $group = router_group();
     $dispatcher = router_dispatcher();
 
-    new TaskSessionActor(test_t3_registry($dispatcher), new NullCoderSettleNotifier)->execute(
+    new TaskSessionActor(test_snapshot_registry($dispatcher), new NullCoderSettleNotifier)->execute(
         $group,
         router_observation($group),
         new TaskSessionDecision(TaskSessionNextAction::ContinueImplementer, 0.86, 'Jev selected continue_implementer.'),
     );
 
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
-        ->and($dispatcher->commands[0]['message'])->toMatchArray([
-            'role' => 'user',
-            'attachments' => [],
-        ])
+        ->and($dispatcher->commands[0]['type'])->toBe('send')
         ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not expand scope.')
-        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, TaskAgentDefaults::ImplementerEffort))
-        ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
-        ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');
+        ->and($dispatcher->commands[0]['model'])->toBe(TaskAgentDefaults::ImplementerModel)
+        ->and($dispatcher->commands[0]['effort'])->toBe(config('orbit.tasks.implementer_effort'));
 });
 
 it('notifies Coder only when Jev escalates', function (): void {
@@ -195,7 +190,7 @@ it('notifies Coder only when Jev escalates', function (): void {
     };
     $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
 
-    new TaskSessionActor(test_t3_registry($dispatcher), $notifier)->execute($group, router_observation($group), $decision);
+    new TaskSessionActor(test_snapshot_registry($dispatcher), $notifier)->execute($group, router_observation($group), $decision);
 
     expect($dispatcher->commands)->toBe([])
         ->and($notifier->escalated?->id)->toBe($group->id)
@@ -222,7 +217,7 @@ it('dispatches nothing for noop', function (): void {
         public function assistance(Task $group, string $reason): void {}
     };
 
-    new TaskSessionActor(test_t3_registry($dispatcher), $notifier)->execute(
+    new TaskSessionActor(test_snapshot_registry($dispatcher), $notifier)->execute(
         $group,
         router_observation($group),
         new TaskSessionDecision(TaskSessionNextAction::Noop, 0.95, 'Jev selected noop.'),
