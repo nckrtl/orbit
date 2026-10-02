@@ -1215,7 +1215,20 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
         }
 
         $this->interrupted = true;
-        $process = new SymfonyProcess($command->arguments);
+        // Pause after the real unlink so cleanup cannot finish before the observer sends SIGKILL.
+        $pauseAfterUnlink = <<<'PYTHON'
+            import os, signal
+            original_unlink = os.unlink
+            def unlink_and_pause(path, *args, **kwargs):
+                original_unlink(path, *args, **kwargs)
+                if path == %s:
+                    os.kill(os.getpid(), signal.SIGSTOP)
+            os.unlink = unlink_and_pause
+            PYTHON;
+        $arguments = $command->arguments;
+        $arguments[2] = sprintf($pauseAfterUnlink, json_encode($this->trigger, JSON_THROW_ON_ERROR))
+            ."\n".$arguments[2];
+        $process = new SymfonyProcess($arguments);
         $process->start();
         $deadline = microtime(true) + 30;
 
@@ -1238,7 +1251,7 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
         }
 
         return new CommandResult(
-            exitCode: $process->getExitCode() ?? 1,
+            exitCode: 1,
             stdout: $process->getOutput(),
             stderr: 'Cleanup interruption was not observed.',
             durationMs: 0,

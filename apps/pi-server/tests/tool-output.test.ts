@@ -1,6 +1,7 @@
 import { execFileSync } from "node:child_process";
 import {
     chmodSync,
+    copyFileSync,
     mkdtempSync,
     mkdirSync,
     readdirSync,
@@ -223,9 +224,19 @@ describe("stored file", () => {
             console.log(result.path);
         `;
 
-        const path = execFileSync("sudo", ["-n", "-u", "nobody", "--", "bun", "--eval", script], {
+        const runtime = execFileSync("bun", ["--print", "process.execPath"], {
             encoding: "utf-8",
         }).trim();
+        // The runtime may live in a private home that nobody cannot traverse.
+        const bun = join(cwd, "bun");
+        copyFileSync(runtime, bun);
+        chmodSync(bun, 0o755);
+        // Model sudo's restricted PATH on CI, where Bun is installed in the runner's home.
+        const path = execFileSync(
+            "sudo",
+            ["-n", "-u", "nobody", "--", "env", "PATH=/usr/bin:/bin", bun, "--eval", script],
+            { encoding: "utf-8" },
+        ).trim();
 
         expect(statSync(orbit).uid).toBe(userInfo().uid);
         expect(statSync(orbit).mode & 0o777).toBe(0o775);
