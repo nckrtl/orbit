@@ -53,6 +53,8 @@ The Project development deploy step operations publish typed step responses from
 
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.
 
+The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.
+
 ## Pinned environment
 
 `php artisan route:list` loads the Gateway `.env` and the installed Gateway dependencies, and it runs on the PHP binary on `PATH`. The same checkout produces the same `docs/openapi.json` only when these three match.

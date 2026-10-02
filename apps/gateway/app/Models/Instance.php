@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
  * @property string $name
  * @property string $source_layout
  * @property string $checkout_path
+ * @property string|null $source_prepare_id
  * @property string|null $production_user
  * @property string|null $production_home
  * @property string|null $production_php_service
@@ -112,6 +113,7 @@ final class Instance extends Model
         'name',
         'source_layout',
         'checkout_path',
+        'source_prepare_id',
         'production_user',
         'production_home',
         'production_php_service',

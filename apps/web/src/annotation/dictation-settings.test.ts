@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
-import { resolveDictationSettings } from "@nckrtl/annotate/dictation-settings";
+import { resolveDictationSettings } from "@nckrtl/annotator/dictation-settings";
 
 beforeEach(() => vi.stubGlobal("window", { location: { href: "https://app.example/page" } }));
 afterEach(() => vi.unstubAllGlobals());

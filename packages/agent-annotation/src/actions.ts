@@ -7,6 +7,7 @@ import { formatReactHoverPath } from "./react-inspect";
 import { annotationMode, annotations, draft, hover, shakeToken, dictationSettings } from "./state";
 import {
     clearStoredAnnotations,
+    dismissAnnotations,
     isDismissed,
     createAnnotationId,
     loadAnnotations,
@@ -18,7 +19,12 @@ import { resolveAnnotationContext } from "./context";
 import { annotationContextFields, annotationPayload } from "./payload";
 import { releaseMicrophone, warmMicrophone } from "./dictation";
 import { captureAnnotationScreenshot } from "./screenshot";
-import { deleteSyncedAnnotation, fetchAnnotationSync, pushAnnotation } from "./sync";
+import {
+    clearSyncedAnnotations,
+    deleteSyncedAnnotation,
+    fetchAnnotationSync,
+    pushAnnotation,
+} from "./sync";
 import type { Annotation, AnnotationDraft } from "./types";
 import { currentBreakpoint, currentScreenSize, currentScrollPosition } from "./viewport";
 
@@ -451,16 +457,35 @@ export function submitDraftAndMove(
     scheduleDraftScreenshot(next);
 }
 
-/** Clear local pins without cancelling already submitted agent tasks. */
-export function clearAllAnnotations(): void {
-    annotationGeneration += 1;
+function resetPagePins(): void {
     clearPendingPlacement();
     for (const timer of visualWaiters.values()) window.clearTimeout(timer);
     visualWaiters.clear();
     draft.value = null;
     hover.value = null;
     annotations.value = [];
-    clearStoredAnnotations();
+}
+
+/** Local server mode removes stored work; Orbit mode only dismisses browser pins. */
+export function clearAllAnnotations(): void {
+    annotationGeneration += 1;
+    void clearSyncedAnnotations().then((removed) => {
+        if (!removed) return;
+        resetPagePins();
+        clearStoredAnnotations();
+    });
+}
+
+/** Like clearAllAnnotations, but only for the annotations of the current page. */
+export function clearPageAnnotations(): void {
+    const pathname = currentPathname || window.location.pathname;
+    annotationGeneration += 1;
+    void clearSyncedAnnotations(pathname).then((removed) => {
+        if (!removed) return;
+        dismissAnnotations(loadAnnotations(pathname).map((annotation) => annotation.id));
+        saveAnnotations([], pathname);
+        if ((currentPathname || window.location.pathname) === pathname) resetPagePins();
+    });
 }
 
 export function deleteDraft(): void {
@@ -471,10 +496,12 @@ export function deleteDraft(): void {
         return;
     }
 
-    annotations.value = annotations.value.filter((annotation) => annotation.id !== id);
-    persist();
-    void deleteSyncedAnnotation(id);
-    draft.value = null;
+    void deleteSyncedAnnotation(id).then((removed) => {
+        if (!removed) return;
+        annotations.value = annotations.value.filter((annotation) => annotation.id !== id);
+        persist();
+        if (draft.value?.annotationId === id) draft.value = null;
+    });
 }
 
 export function cancelDraft(): void {

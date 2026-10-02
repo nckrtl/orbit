@@ -310,6 +310,7 @@
             "kind": "product",
             "components": [
                 "apps/cli",
+                "apps/gateway",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -322,7 +323,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -753,6 +755,7 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -760,7 +763,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Task"
+                "Task",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -823,6 +827,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Subtask",
@@ -1905,7 +1910,9 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
+                "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Tool"
             ],

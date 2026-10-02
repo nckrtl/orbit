@@ -90,6 +90,22 @@ try {
     await page.goto(origin);
     for (let run = 0; run < 2; run++) {
         const url = await start();
+        const discovery = await page.evaluate(async (url) => {
+            const prefix = `/__annotate/local/${new URL(url).port}/annotations`;
+            const list = await (await fetch(prefix)).json();
+            const skill = await fetch(list.meta.skillUrl);
+            return {
+                status: skill.status,
+                type: skill.headers.get("content-type"),
+                text: await skill.text(),
+                count: list.data.length,
+            };
+        }, url);
+        assert.equal(discovery.status, 200);
+        assert.match(discovery.type, /^text\/markdown/);
+        assert.ok(discovery.text.includes(`ANNOTATIONS_URL='${url}'`));
+        assert.equal(discovery.count, 0);
+
         await page.getByRole("button", { name: "Annotation settings", exact: true }).click();
         await page.getByLabel("Delivery mode").selectOption("server");
         await page.getByLabel("Annotation server URL", { exact: true }).fill(url);
@@ -178,16 +194,106 @@ try {
         await page.getByRole("button", { name: "Enter annotation mode", exact: true }).click();
         await page.getByRole("button", { name: "Edit annotation 2", exact: true }).waitFor();
         assert.equal(await page.locator("[data-annotation-count]").textContent(), "2");
-        await fetch(`${url}/claim`, { method: "POST" });
-        await fetch(`${url}/complete`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ id: next.id }),
-        });
+        await page.getByRole("button", { name: "Edit annotation 2", exact: true }).click();
+        await page.route("**/__annotate/local/**", (route) =>
+            route.request().method() === "DELETE"
+                ? route.abort("connectionrefused")
+                : route.continue(),
+        );
+        await page.getByRole("button", { name: "Delete annotation", exact: true }).click();
+        await page.getByRole("alert").filter({ hasText: "Could not delete annotation" }).waitFor();
+        assert.equal(await page.locator("[data-annotation-marker]").count(), 1);
+        await page.unroute("**/__annotate/local/**");
+        const deleted = page.waitForResponse((r) => r.request().method() === "DELETE");
+        await page.getByRole("button", { name: "Delete annotation", exact: true }).click();
+        assert.equal((await deleted).status(), 200);
         await page
             .locator("[data-annotation-marker]")
             .waitFor({ state: "detached", timeout: 5000 });
+        assert.equal(
+            (await (await fetch(url)).json()).data.some((a) => a.id === next.id),
+            false,
+        );
         assert.equal(await page.locator("[data-annotation-count]").textContent(), "2");
+        await page.locator("h1").click();
+        await page.locator("textarea").fill("Clear this from both browsers");
+        const thirdPosted = page.waitForResponse(
+            (r) => r.request().method() === "POST" && r.url().includes("/__annotate/local/"),
+        );
+        await page.locator("[data-annotation-submit]").click();
+        assert.equal((await (await thirdPosted).json()).data.number, 3);
+        const other = await browser.newPage({ ignoreHTTPSErrors: true });
+        await other.addInitScript(
+            (url) =>
+                sessionStorage.setItem(
+                    "annotate:service",
+                    JSON.stringify({ mode: "server", serviceUrl: url }),
+                ),
+            url,
+        );
+        await other.goto(origin);
+        await other.getByRole("button", { name: "Enter annotation mode", exact: true }).click();
+        await other.getByRole("button", { name: "Edit annotation 3", exact: true }).waitFor();
+        await page.route("**/__annotate/local/**", (route) =>
+            route.request().method() === "DELETE"
+                ? route.abort("connectionrefused")
+                : route.continue(),
+        );
+        await page.getByRole("button", { name: "Clear all annotations", exact: true }).click();
+        await page
+            .getByRole("alert")
+            .filter({ hasText: "Could not remove all annotations" })
+            .waitFor();
+        assert.equal(await page.locator("[data-annotation-marker]").count(), 1);
+        await page.unroute("**/__annotate/local/**");
+        const cleared = page.waitForResponse((r) => r.request().method() === "DELETE");
+        await page.getByRole("button", { name: "Clear all annotations", exact: true }).click();
+        assert.equal((await cleared).status(), 200);
+        await page
+            .locator("[data-annotation-marker]")
+            .waitFor({ state: "detached", timeout: 5000 });
+        await other
+            .locator("[data-annotation-marker]")
+            .waitFor({ state: "detached", timeout: 5000 });
+        assert.deepEqual(
+            (await (await fetch(url)).json()).data,
+            [],
+            "Bin removes completed and pending records from the server",
+        );
+        assert.equal(await page.locator("[data-annotation-count]").textContent(), "3");
+        await other.reload();
+        await other.getByRole("button", { name: "Enter annotation mode", exact: true }).click();
+        assert.equal(await other.locator("[data-annotation-marker]").count(), 0);
+        assert.equal(await other.locator("[data-annotation-count]").textContent(), "3");
+        await other.close();
+        // Clear waits for this tab's pending write so it cannot reappear afterward.
+        let releaseSave;
+        const heldSave = new Promise((resolve) => {
+            releaseSave = resolve;
+        });
+        let deleteRequests = 0;
+        await page.route("**/__annotate/local/**", async (route) => {
+            if (route.request().method() === "POST") await heldSave;
+            if (route.request().method() === "DELETE") deleteRequests++;
+            await route.continue();
+        });
+        await page.locator("h1").click();
+        await page.locator("textarea").fill("Clear while saving");
+        const writing = page.waitForRequest(
+            (r) => r.method() === "POST" && r.url().includes("/__annotate/local/"),
+        );
+        await page.locator("[data-annotation-submit]").click();
+        await writing;
+        const clearedPending = page.waitForResponse((r) => r.request().method() === "DELETE");
+        await page.getByRole("button", { name: "Clear all annotations", exact: true }).click();
+        assert.equal(deleteRequests, 0, "Deletion queues after the pending save");
+        releaseSave();
+        assert.equal((await clearedPending).status(), 200);
+        await page
+            .locator("[data-annotation-marker]")
+            .waitFor({ state: "detached", timeout: 5000 });
+        assert.deepEqual((await (await fetch(url)).json()).data, []);
+        await page.unroute("**/__annotate/local/**");
     }
     console.log(
         "HTTPS bridge: fresh annotations on two random ports, no direct browser loopback, no T3 metadata, live updates and refresh passed.",

@@ -149,7 +149,7 @@ A failure before `publishing` rolls back: Orbit restores origins, branches, and 
 
 When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git during preflight, origin changes, fetches, branch changes, and rollback. The Gateway does not run checkout hooks or a custom filesystem monitor for those operations. The overrides do not change the stored Git configuration.
 
-When a worker is configured, branch switch and rollback checkout commands run as that worker without a credential environment. Any clean, smudge, or process filter they start has the worker's identity, not the managed account's.
+Branch switch and rollback checkout commands run as the managed user without a credential environment, so the managed user owns the files they write. A filter can only come from `.git/config`, which the worker cannot write.
 
 Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 

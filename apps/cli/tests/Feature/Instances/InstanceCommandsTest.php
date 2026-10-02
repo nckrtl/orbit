@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceRequest;
 use Orbit\Sdk\Requests\Processes\ListProcessesRequest;
@@ -55,6 +56,52 @@ beforeEach(function (): void {
         }
     };
     app()->instance(GitRegistrationDiscovery::class, $this->registrationGit);
+});
+
+describe('instance:rename', function (): void {
+    it('sends the selected fields and renders the Instance in human and JSON modes', function (bool $json, array $fields): void {
+        $mock = MockClient::global([RenameInstanceRequest::class => instance_mock_response()]);
+        $arguments = ['instance' => 3, ...$fields];
+        if ($json) {
+            $arguments['--json'] = true;
+        }
+        expect(Artisan::call('instance:rename', $arguments))->toBe(0);
+        $body = [];
+        foreach ($fields as $key => $value) {
+            $body[substr($key, 2)] = $value;
+        }
+        expect($mock->getLastRequest())->toBeInstanceOf(RenameInstanceRequest::class)
+            ->and($mock->getLastRequest()?->body()->all())->toBe($body);
+        if ($json) {
+            expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toHaveKey('id', 5);
+        } else {
+            expect(instance_source_text(Artisan::output()))->toContain('Instance:', 'Selected branch');
+        }
+    })->with([false, true])->with([
+        'branch' => [['--branch' => 't3code/login']],
+        'domain' => [['--domain' => 'login.example.test']],
+        'both' => [['--branch' => 't3code/login', '--domain' => 'login.example.test']],
+    ]);
+
+    it('requires a positive Instance ID and at least one field before HTTP', function (array $arguments, string $code): void {
+        $mock = MockClient::global();
+        expect(Artisan::call('instance:rename', [...$arguments, '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toHaveKey('error.code', $code)
+            ->and($mock->getLastPendingRequest())->toBeNull();
+    })->with([
+        'invalid ID' => [['instance' => 'abc', '--branch' => 't3code/login'], 'instance.id_invalid'],
+        'no fields' => [['instance' => 3], 'validation.failed'],
+        'empty branch with domain' => [['instance' => 3, '--branch' => '', '--domain' => 'login.example.test'], 'validation.failed'],
+        'empty domain with branch' => [['instance' => 3, '--domain' => '', '--branch' => 't3code/login'], 'validation.failed'],
+    ]);
+
+    it('preserves HEAD refusal and correlation in JSON errors', function (): void {
+        MockClient::global([RenameInstanceRequest::class => MockResponse::make([
+            'error' => ['code' => 'instance.branch_not_checked_out', 'message' => 'HEAD is not on the requested branch.', 'details' => [], 'request_id' => 'a6cc838a-e4a2-42fb-b2e6-ffabbe9c0d07'],
+        ], 409)]);
+        expect(Artisan::call('instance:rename', ['instance' => 3, '--branch' => 't3code/login', '--json' => true]))->toBe(1);
+        expect(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toHaveKey('error.code', 'instance.branch_not_checked_out');
+    });
 });
 
 describe('instance:register', function (): void {

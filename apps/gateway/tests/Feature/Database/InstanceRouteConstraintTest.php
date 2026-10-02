@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 it('reports every invalid active Instance before changing the upgrade schema or rows', function (): void {
+    owned_interrupted_creation_removal_migration()->down();
     $failedCreationMigration = require database_path('migrations/2026_10_09_000000_allow_failed_creation_removal.php');
     $failedCreationMigration->down();
     $migration = require base_path(

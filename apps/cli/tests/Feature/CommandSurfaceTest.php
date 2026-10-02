@@ -118,6 +118,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'instance:logs',
         'instance:register',
         'instance:release:list',
+        'instance:rename',
         'instance:rollback',
         'instance:setup',
         'instance:setup-step:create',
@@ -672,6 +673,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
+        'instance:rename' => [['instance'], ['branch' => null, 'domain' => null, 'json' => false]],
         'instance:setup' => [['instance'], ['json' => false]],
         'instance:setup-step:create' => [
             ['name'],
@@ -1144,6 +1146,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             'code' => 'instance.source_invalid',
             'message' => 'The current path is not a supported Git checkout or worktree.',
         ],
+        'instance:rename' => [['instance' => '1', '--branch' => 't3code/login'], ...$profileMissing],
         'instance:setup' => [['instance' => '1'], ...$profileMissing],
         'instance:setup-step:create' => [['name' => 'install-php', '--project' => '1', '--command' => 'true'], ...$profileMissing],
         'instance:setup-step:destroy' => [['name' => 'install-php', '--project' => '1', '--yes' => true], ...$profileMissing],

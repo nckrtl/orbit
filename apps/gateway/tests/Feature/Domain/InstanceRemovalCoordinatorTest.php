@@ -12,6 +12,7 @@ use App\Data\Schedules\AddScheduleData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -867,7 +868,66 @@ it('recovers authenticated receipt cleanup without re-inspecting partial source 
         );
 });
 
-it('requires an identical force value when resuming accepted removal', function (): void {
+it('lets force take over a failed normal removal without repeating completed steps', function (): void {
+    $instance = orb181_coordinator_instance();
+    $this->orb181Projector->failRuntime = true;
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))
+        ->toThrow(InstanceRemovalException::class);
+    $operation = InstanceRemoval::query()->sole();
+    $member = $operation->members->sole();
+    $this->orb181Projector->failRuntime = false;
+    $calls = $this->orb181Finalizer->calls;
+
+    $completed = $this->orb181Coordinator->execute($instance->refresh(), true);
+
+    expect($completed->id)->toBe($operation->id)
+        ->and($completed->force)->toBeTrue()
+        ->and($completed->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($completed->members->sole()->source_finalized_at->equalTo($member->source_finalized_at))->toBeTrue()
+        ->and($this->orb181Finalizer->calls)->toBe([...$calls, "revalidate:{$instance->id}:completed"])
+        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
+});
+
+it('refuses force takeover while a normal removal is still running', function (): void {
+    $instance = orb181_coordinator_instance();
+    $this->orb181Projector->failRuntime = true;
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))
+        ->toThrow(InstanceRemovalException::class);
+    $operation = InstanceRemoval::query()->sole();
+    $operation->update([
+        'status' => InstanceRemovalStatus::Removing,
+        'failed_step' => null,
+        'error_code' => null,
+    ]);
+    expect(fn () => $operation->update(['force' => true]))->toThrow(QueryException::class);
+
+    expect(fn () => $this->orb181Coordinator->execute($instance->refresh(), true))
+        ->toThrow(ResourceOperationException::class, 'different removal request');
+    expect(InstanceRemoval::query()->sole()->force)->toBeFalse();
+});
+
+it('keeps identity guards when force takes over failed source preparation', function (): void {
+    $instance = orb181_coordinator_instance();
+    $this->orb181Finalizer->failPrepareFor = $instance->id;
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))
+        ->toThrow(InstanceRemovalException::class);
+    $operation = InstanceRemoval::query()->sole();
+    $this->orb181Finalizer->failPrepareFor = null;
+    $this->orb181Finalizer->replacementPaths = [$instance->checkout_path];
+
+    expect(fn () => $this->orb181Coordinator->execute($instance->refresh(), true))
+        ->toThrow(InstanceRemovalException::class);
+
+    expect($operation->refresh()->force)->toBeTrue()
+        ->and($operation->status)->toBe(InstanceRemovalStatus::Failed)
+        ->and($operation->error_code)->toBe('instance.removal_conflict')
+        ->and($operation->members->sole()->source_finalized_at)->toBeNull()
+        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue();
+    expect(fn () => $operation->update(['force' => false]))->toThrow(QueryException::class);
+});
+
+it('refuses to downgrade a forced removal on retry', function (): void {
     $instance = orb181_coordinator_instance();
     $this->orb181Projector->failRuntime = true;
 
@@ -943,12 +1003,13 @@ it('removes a source-resolved task workspace that never received a Route', funct
         ->toBeFalse();
 });
 
-it('refuses a source-resolved Instance that a Route targets', function (): void {
+it('removes a failed source-resolved development Instance and its partial routed runtime', function (): void {
     $instance = orb181_coordinator_instance();
-    $instance->update(['status' => InstanceState::SourceResolved]);
+    $instance->update(['status' => InstanceState::SourceResolved, 'failed_step' => 'provisioning', 'error_code' => 'instance.provisioning_failed']);
 
-    expect(fn () => $this->orb181Coordinator->execute($instance->refresh()->load(['project', 'node', 'routes.targets']), true))
-        ->toThrow(ResourceOperationException::class, 'is not active.');
+    $this->orb181Coordinator->execute($instance->refresh()->load(['project', 'node', 'routes.targets']), true);
+    expect(Instance::query()->whereKey($instance->id)->exists())->toBeFalse()
+        ->and($this->orb181Projector->calls)->toBe(["route:{$instance->id}", "runtime:{$instance->id}"]);
 });
 
 it('removes the Route an operator set on a monorepo Instance', function (): void {

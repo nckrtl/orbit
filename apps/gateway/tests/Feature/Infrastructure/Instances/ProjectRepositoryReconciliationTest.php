@@ -28,7 +28,7 @@ beforeEach(function (): void {
 });
 
 describe('TaskCheckWorkerUser', function (): void {
-    it('switches and restores Project branches with worker filters and no credential environment', function (): void {
+    it('switches and restores Project branches as the managed user with no credential environment', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = sys_get_temp_dir().'/orbit-project-worker-'.bin2hex(random_bytes(6));
         $git = static fn (array $args): string => (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$args]))->mustRun()->getOutput();
@@ -60,8 +60,9 @@ describe('TaskCheckWorkerUser', function (): void {
             $users = file($checkout.'/.git/filter-users', FILE_IGNORE_NEW_LINES) ?: [];
             expect($users)->not->toBeEmpty();
             foreach ($users as $user) {
-                expect($user)->toBe('65534:absent');
+                expect($user)->toBe(posix_geteuid().':absent');
             }
+            expect(fileowner($checkout.'/readme'))->toBe(posix_geteuid());
         } finally {
             new Filesystem()->deleteDirectory($checkout);
         }

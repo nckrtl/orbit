@@ -7,6 +7,7 @@ namespace App\Infrastructure\Instances;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -101,6 +102,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $this->failedCreation($instance)
             && $instance->status === InstanceState::Reserved
             && $inventory->sourceIdentity !== 'absent'
+            && ($instance->source_prepare_id === null || $instance->registration_request_id !== null)
             && ! $this->removableInPlaceRegistration($instance, $inventory)
         ) {
             throw new RuntimeConvergenceException(
@@ -149,6 +151,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     $unresolved ? '1' : '0',
                     $allowAbsent ? '1' : '0',
                     $instance->project->repository_url,
+                    $instance->source_prepare_id ?? '',
                 ],
                 input: self::inspectionScript(),
             ),
@@ -156,7 +159,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             force: $force,
         );
 
-        $values = preg_split('/\R/', trim($result->stdout));
+        $values = preg_split('/\R/', preg_replace('/\r?\n\z/', '', $result->stdout) ?? $result->stdout);
 
         if (! is_array($values) || count($values) !== 8) {
             $this->invalidEvidence($instance, $force);
@@ -175,7 +178,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         if (
             ! $checkout instanceof StoragePath
             || ! $commonPath instanceof StoragePath
-            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1
+            || ($commit !== '' || $instance->starting_commit !== null) && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1
             || ! in_array($dirty, ['', '0', '1'], true)
             || (preg_match('/\A[0-9]+:[0-9]+\z/D', $sourceIdentity) !== 1 && ! ($allowAbsent && $sourceIdentity === 'absent'))
         ) {
@@ -210,15 +213,15 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $this->mismatch($instance, InstanceSourceMismatch::Origin);
         }
 
-        if ($inspectContent && ! $force && $dirty !== '0') {
+        if ($inspectContent && ! $force && $instance->starting_commit !== null && $dirty !== '0') {
             $this->unsafeContent($instance);
         }
 
-        if ($inspectContent && ! $force && ! $this->isPublished($instance, $origin, $commit)) {
+        if ($inspectContent && ! $force && $instance->starting_commit !== null && ! $this->isPublished($instance, $origin, $commit)) {
             $this->unsafeContent($instance);
         }
 
-        $linkedWorktreePaths = $this->worktreePaths(
+        $linkedWorktreePaths = $sourceIdentity === 'absent' ? [$logicalCheckout] : $this->worktreePaths(
             $worktrees,
             $instance,
             $checkout->value,
@@ -432,9 +435,11 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
             [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
+            $instance = Instance::query()->findOrFail($member->instance_id);
             $failedCreation = ! $member->runtime_published
                 && ($inventory->sourceIdentity === 'absent'
-                    || Instance::query()->whereKey($member->instance_id)->whereNull('registration_request_id')->whereNotNull('failed_step')->whereNotNull('error_code')->exists());
+                    || $instance->registration_request_id === null
+                    && InstanceCreationRecovery::isPreActivation($instance, removing: true));
             $input = self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript();
             $script = $failedCreation ? null : GitReadScript::for(
                 $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
@@ -465,6 +470,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                         (string) $member->source_commit,
                         $groupingDirectory,
                         $member->starting_commit === null && ! $member->runtime_published ? '1' : '0',
+                        $this->independentForcedWorktree($member) ? '1' : '0',
                     ],
                     input: $failedCreation ? $input : $script?->input,
                     protectedInput: $script?->protectedInput,
@@ -528,7 +534,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             expectedBranch: $member->branch,
             expectedRepositoryIdentity: (string) $member->repository_identity,
             force: (bool) $removal->force,
-            inspectContent: $member->runtime_published || $instance->failed_step === null,
+            inspectContent: $member->runtime_published || $instance->registration_request_id !== null
+                || ! InstanceCreationRecovery::isPreActivation($instance, removing: true),
             quarantineMappings: $this->quarantineMappings($member, $context['root'], $expectation),
             unresolved: $member->starting_commit === null && ! $member->runtime_published,
             allowAbsent: $member->source_identity === 'absent',
@@ -546,7 +553,11 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             );
         }
 
-        $this->assertExpectedLinkedInventory($member, $inventory, $expectation);
+        // A linked Instance owns only its worktree. Repository-wide membership is
+        // a deletion dependency for a checkout, not for a forced linked removal.
+        if (! $this->independentForcedWorktree($member)) {
+            $this->assertExpectedLinkedInventory($member, $inventory, $expectation);
+        }
 
         if (
             ! $allowDependentWorktrees
@@ -560,6 +571,15 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         }
 
         return $inventory;
+    }
+
+    private function independentForcedWorktree(InstanceRemovalMember $member): bool
+    {
+        return $member->removal->force
+            && $member->source_layout === InstanceSourceLayout::Worktree->value
+            && ! $member->removal->members()
+                ->where('source_layout', InstanceSourceLayout::Checkout->value)
+                ->exists();
     }
 
     private function exactExpectation(
@@ -774,7 +794,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             || $member->source_layout !== $instance->source_layout
             || $member->checkout_path !== $instance->checkout_path
             || $member->root !== $instance->effectiveRoot()
-            || $member->branch !== $instance->branch
+            || $member->starting_commit !== null && $member->branch !== $instance->branch
             || $member->starting_commit !== $instance->starting_commit
             || $member->repository_identity !== $instance->project->repository_identity
         ) {
@@ -837,7 +857,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             || ! Str::isUuid($member->instance_removal_id)
             || $member->id < 1
             || preg_match('/\A[0-9a-f]{64}\z/D', $member->source_digest) !== 1
-            || preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $member->source_commit) !== 1
+            || ($member->source_commit !== '' || $member->starting_commit !== null) && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $member->source_commit) !== 1
         ) {
             $this->recordedConflict($member, 'The recorded Instance removal source evidence is incomplete.');
         }
@@ -923,10 +943,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private function failedCreation(Instance $instance): bool
     {
-        return $instance->placedOnAppDev()
-            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
-            && $instance->failed_step !== null
-            && $instance->error_code !== null;
+        return InstanceCreationRecovery::isPreActivation($instance);
     }
 
     /** @return array{root: StoragePath, user: string, group: string, branch: ?string, repositoryIdentity: string} */
@@ -953,8 +970,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $branch !== null && ! is_string($branch)
             || (! is_string($startingCommit)
                 && ! ($startingCommit === null
-                    && ($this->failedCreation($instance)
-                        || ($instance->status === InstanceState::Removing && $instance->failed_step !== null && $instance->error_code !== null))))
+                    && InstanceCreationRecovery::isPreActivation($instance, removing: true)))
         ) {
             $this->invalidEvidence($instance, false);
         }
@@ -1611,6 +1627,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             source_commit=$8
             grouping_directory=$9
             unresolved=${10}
+            independent_worktree=${11}
             export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
@@ -1721,8 +1738,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 *) exit 1 ;;
             esac
             test "$origin" = "$expected_origin"
-            worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
-            test "$worktrees" = "$expected_worktrees"
+            if [ "$layout" != worktree ] || [ "$force" != 1 ] || [ "$independent_worktree" != 1 ]; then
+                worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
+                test "$worktrees" = "$expected_worktrees"
+            fi
             if [ "$force" != 1 ]; then
                 status=$(workspace_git -C "$physical" status --porcelain --untracked-files=all) || exit 1
                 test -z "$status"
@@ -1835,13 +1854,14 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             unresolved=$8
             allow_absent=$9
             expected_origin=${10}
+            prepare_id=${11:-}
             encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
             export GIT_OPTIONAL_LOCKS=0
             failure=10
             trap 'exit "$failure"' ERR
             case "$checkout" in "$root"/*) ;; *) exit "$failure" ;; esac
-            current=$root
-            relative=${checkout#"$root"/}
+            current=
+            relative=${checkout#/}
             old_ifs=$IFS
             IFS=/
             for segment in $relative; do
@@ -1852,6 +1872,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             done
             IFS=$old_ifs
             if [ "$allow_absent" = 1 ] && [ ! -e "$checkout" ] && [ ! -L "$checkout" ]; then
+                test "$layout" = checkout
                 encode "$checkout"
                 encode "$checkout/.git"
                 encode "$expected_origin"
@@ -1868,6 +1889,14 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             failure=11
             test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             test "$(stat -c '%U:%G' "$(dirname "$checkout")")" = "$managed_user:$managed_group"
+            if [ -n "$prepare_id" ]; then
+                test -d "$checkout/.git"
+                test ! -L "$checkout/.git"
+                test -f "$checkout/.git/orbit-source-prepare"
+                test ! -L "$checkout/.git/orbit-source-prepare"
+                test "$(stat -c '%U:%G' "$checkout/.git/orbit-source-prepare")" = "$managed_user:$managed_group"
+                test "$(cat "$checkout/.git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
+            fi
             failure=12
             top=$(git -C "$checkout" rev-parse --show-toplevel)
             git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)

@@ -334,6 +334,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('instances', [InstancesController::class, 'index'])->name('instance:list');
         Route::get('instances/{instance}', [InstancesController::class, 'show'])->name('instance:show');
         Route::patch('instances/{instance}', [InstancesController::class, 'update'])->name('instance:update');
+        Route::post('instances/{instance}/rename', [InstancesController::class, 'rename'])->name('instance:rename');
         Route::post('instances', [InstancesController::class, 'store'])->name('instance:create');
         Route::post('instances/register', [InstancesController::class, 'register'])->name('instance:register');
         Route::post('instances/{candidate}/clone', [InstanceClonesController::class, 'store'])

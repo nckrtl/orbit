@@ -9,6 +9,7 @@ import {
     type DeliveryMode,
     deliveryMode,
     localSessionCount,
+    removalError,
 } from "../sync";
 import { useEffect, useRef, useState } from "react";
 import { selectThread, threadSelection } from "../thread";
@@ -24,6 +25,7 @@ import { cn } from "../lib/utils";
 /** Shared floating pill for annotation mode and clearing saved pins. */
 export function AnnotationFloatingControl() {
     const connection = useStore(serviceConnection);
+    const deleteError = useStore(removalError);
     const orbit = useStore(orbitAvailability);
     const [settingsOpen, setSettingsOpen] = useState(false);
     useEffect(() => {
@@ -87,6 +89,14 @@ export function AnnotationFloatingControl() {
                 isActive ? "bg-white text-black" : "bg-[#111111]/92 text-white",
             )}
         >
+            {deleteError && !settingsOpen && (
+                <p
+                    role="alert"
+                    className="absolute right-0 bottom-full mb-3 w-72 rounded-lg border border-red-400/30 bg-[#171717] p-3 text-sm text-red-300"
+                >
+                    {deleteError}
+                </p>
+            )}
             {settingsOpen ? (
                 <form
                     aria-label="Annotation settings"
@@ -168,7 +178,7 @@ export function AnnotationFloatingControl() {
                                     void checkServer();
                                 }}
                                 aria-describedby="annotate-server-status"
-                                placeholder="Paste the URL printed by annotate serve"
+                                placeholder="Paste the URL printed by annotator serve"
                                 className="mt-1 w-full rounded border border-white/25 bg-black/30 p-2 text-white"
                             />
                         </label>

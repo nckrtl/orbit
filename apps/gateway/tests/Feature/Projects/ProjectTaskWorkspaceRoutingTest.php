@@ -251,8 +251,10 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
 
     $migration = require database_path('migrations/2026_10_06_000000_add_task_workspace_routing.php');
     assert($migration instanceof Migration);
+    owned_interrupted_creation_removal_migration()->down();
     $migration->down();
     $migration->up();
+    owned_interrupted_creation_removal_migration()->up();
 
     expect(Project::query()->findOrFail($orbit->id)->task_workspace_routed)->toBeFalse()
         ->and(Project::query()->findOrFail($orbit->id)->task_check)->toBe('composer check')

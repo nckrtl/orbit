@@ -19,6 +19,7 @@ use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
+use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
@@ -46,6 +47,7 @@ use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeRouterLanIngressReconciler;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\FakeTaskWorkspaceTopology;
 use Tests\Support\FakeVitePortRuntime;
 use Tests\Support\TestToolchain;
 use Tests\TestCase;
@@ -77,6 +79,7 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
         // A dependency copy runs `cp` over SSH on the Node; tests record copy requests instead.
         app()->instance(InstanceDependencyCopier::class, new FakeInstanceDependencyCopier);
+        app()->instance(TaskWorkspaceTopology::class, new FakeTaskWorkspaceTopology);
         // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
         app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
         // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.

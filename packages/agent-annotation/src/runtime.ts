@@ -20,11 +20,12 @@ import { ensureAnnotationRoot, removeAnnotationHost } from "./host";
 import { resolveDictationSettings, type DictationInput } from "./dictation-settings";
 import { cacheInertiaPage, readInertiaPage, resetInertiaPage } from "./inertia-page";
 import { subscribeAnnotationEvents } from "./sync";
-import { dictationSettings, viewportTick } from "./state";
+import { dictationSettings, floatingControl, viewportTick } from "./state";
 
 export { annotationMode, annotations, draft, hover, shakeToken } from "./state";
 export {
     clearAllAnnotations,
+    clearPageAnnotations,
     cancelDraft,
     deleteDraft,
     reloadAnnotations,
@@ -104,8 +105,12 @@ function unbindListeners(): void {
     listenersBound = false;
 }
 
-export function ensureAnnotationRuntime(toolConfig?: { dictation?: DictationInput }): void {
+export function ensureAnnotationRuntime(toolConfig?: {
+    dictation?: DictationInput;
+    floatingControl?: boolean;
+}): void {
     dictationSettings.value = resolveDictationSettings(toolConfig);
+    floatingControl.value = toolConfig?.floatingControl !== false;
 
     if (overlayRoot) {
         return;

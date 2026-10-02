@@ -37,6 +37,7 @@ final readonly class CommandVocabulary
             'deploy',
             'logs',
             'register',
+            'rename',
             'rollback',
             'scan',
             'setup',

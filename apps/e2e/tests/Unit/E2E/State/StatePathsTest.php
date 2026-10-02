@@ -6,6 +6,7 @@ use App\E2E\State\StatePaths;
 use App\E2E\Value\AttemptId;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyTarget;
+use Symfony\Component\Process\Process;
 
 describe('StatePaths', function () {
     it('keeps host state in the primary checkout and issue state in the worktree', function () {
@@ -20,6 +21,53 @@ describe('StatePaths', function () {
             ->toBe($base.'/primary/.worktrees/tst-1-slug/.e2e')
             ->and(fileperms($primary->root()) & 0777)
             ->toBe(0700);
+    });
+
+    it('keeps the ACL mask of an existing state root', function (): void {
+        $base = temporaryPath('orbit-paths-acl-', 4);
+        mkdir($base.'/state', 0700, true);
+        (new Process(['setfacl', '--modify', 'user:'.(posix_geteuid() + 1).':rwx,mask::rwx', $base.'/state']))->mustRun();
+        $acl = new Process(['getfacl', '--omit-header', '--numeric', '--no-effective', $base.'/state']);
+        $acl->mustRun();
+        $before = $acl->getOutput();
+
+        $paths = new StatePaths($base.'/state');
+        $acl->mustRun();
+        expect($acl->getOutput())->toBe($before)->toContain('mask::rwx');
+
+        $paths->ensureParent('nested/state.json');
+        $acl->mustRun();
+        expect($acl->getOutput())->toBe($before);
+    });
+
+    it('removes owning-group and other access without changing named grants', function (): void {
+        $base = temporaryPath('orbit-paths-private-', 4);
+        mkdir($base.'/state/nested', 0777, true);
+        $grant = 'user:'.(posix_geteuid() + 1).':r-x,group::rwx,mask::r-x,other::rwx';
+
+        foreach ([$base.'/state', $base.'/state/nested'] as $directory) {
+            (new Process(['setfacl', '--no-mask', '--modify', $grant, $directory]))->mustRun();
+        }
+
+        $paths = new StatePaths($base.'/state');
+        $paths->ensureParent('nested/state.json');
+
+        foreach ([$base.'/state', $base.'/state/nested'] as $directory) {
+            $acl = new Process(['getfacl', '--omit-header', '--numeric', '--no-effective', $directory]);
+            $acl->mustRun();
+            expect($acl->getOutput())->toContain('group::---', 'other::---', 'mask::r-x', 'user:'.(posix_geteuid() + 1).':r-x');
+        }
+    });
+
+    it('makes an existing directory without named grants private', function (): void {
+        $base = temporaryPath('orbit-paths-mode-', 4);
+        mkdir($base.'/state', 0777, true);
+        chmod($base.'/state', 0777);
+
+        $paths = new StatePaths($base.'/state');
+
+        clearstatcache(true, $paths->root());
+        expect(fileperms($paths->root()) & 0777)->toBe(0700);
     });
 
     it('rejects absolute, dot, parent, NUL, backslash, and symbolic-link escapes', function () {

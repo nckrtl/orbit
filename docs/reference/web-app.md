@@ -16,6 +16,8 @@ The web app is Orbit's live view of the fleet. It is a static single-page app th
 
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
 
+The generated Instance rename request exposes optional `branch` and `domain` fields. The Gateway still requires at least one; optional TypeScript properties do not replace API validation. This API operation adds no web UI control.
+
 The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
 
 The generated Process schema includes nullable `user`, the explicitly selected account or null for the derived account. Process create accepts `user` only for a Node systemd Process without a preset. [Processes and schedules](/reference/processes-and-schedules#node-account) owns the account validation and working-directory defaults.

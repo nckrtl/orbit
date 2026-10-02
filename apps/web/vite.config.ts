@@ -130,7 +130,7 @@ export default defineConfig({
                 replacement: path.resolve(rootDir, "../../packages/agent-annotation/src/index.ts"),
             },
             {
-                find: "@nckrtl/annotate",
+                find: "@nckrtl/annotator",
                 replacement: path.resolve(rootDir, "../../packages/agent-annotation/src"),
             },
             { find: "@", replacement: path.join(rootDir, "src") },

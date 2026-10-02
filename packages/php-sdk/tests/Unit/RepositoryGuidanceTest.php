@@ -46,6 +46,7 @@ use Orbit\Sdk\Requests\Instances\DestroyProjectLifecycleStepRequest;
 use Orbit\Sdk\Requests\Instances\InstanceLogsRequest;
 use Orbit\Sdk\Requests\Instances\ListProjectLifecycleStepsRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Instances\SetupInstanceRequest;
 use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Instances\UpdateInstanceDependenciesRequest;
@@ -268,6 +269,7 @@ describe('repository guidance bootstrap', function (): void {
             DestroyTaskDefinitionRequest::class,
         ];
         $lifecycleRequests = [
+            RenameInstanceRequest::class,
             CreateProjectLifecycleStepRequest::class,
             DestroyProjectLifecycleStepRequest::class,
             ListProjectLifecycleStepsRequest::class,
@@ -473,12 +475,12 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 185-operation SDK surface including proxycli, questions, and task definition transport', function (): void {
+    it('documents the 186-operation SDK surface including proxycli, questions, and task definition transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 185 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 186 concrete public Gateway API operations:')
             ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
@@ -497,7 +499,7 @@ describe('repository guidance bootstrap', function (): void {
                 '- Project runtime definition: process and Schedule list, create, show, update, and destroy.',
             )
             ->toContain(
-                '- Instance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.',
+                '- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.',
             )
             ->toContain('- Route: list, show, create, update, target set, target clear, and remove.')
             ->not->toContain('- Workspace: list, show, create, remove, and update PHP.')
@@ -554,7 +556,7 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 185 public Gateway operations.',
+                'The SDK exposes exactly 186 public Gateway operations.',
                 'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',
