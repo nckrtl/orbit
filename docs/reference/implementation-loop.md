@@ -112,7 +112,7 @@ Run these commands in each changed project directory, such as `apps/gateway` or 
 
 | Command | Result |
 | --- | --- |
-| `composer test:affected` | Runs the affected tests with test-impact analysis (TIA) and two parallel workers |
+| `composer test:affected` | Runs the affected tests with test-impact analysis (TIA) and two parallel workers; the Gateway, with the largest suite, uses four |
 | `composer check` | Runs `guidance:check`, Rector, the Pint check, and PHPStan. It does not run the test suite. |
 | `composer test` | Runs the project suite with TIA in parallel |
 | `composer format` | Applies Pint's Laravel preset |
