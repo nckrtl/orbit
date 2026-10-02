@@ -373,6 +373,7 @@
               "GET /api/v1/instances/{instance}/logs",
               "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
+              "POST /api/v1/instances/{instance}/rename",
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/setup",
               "POST /api/v1/instances/{instance}/transfer",

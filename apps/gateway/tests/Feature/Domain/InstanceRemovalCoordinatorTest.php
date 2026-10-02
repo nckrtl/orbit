@@ -899,12 +899,12 @@ it('removes a source-resolved task workspace that never received a Route', funct
         ->toBeFalse();
 });
 
-it('refuses a source-resolved Instance that a Route targets', function (): void {
+it('removes a source-resolved development Instance that owns a Route', function (): void {
     $instance = orb181_coordinator_instance();
     $instance->update(['status' => InstanceState::SourceResolved]);
 
-    expect(fn () => $this->orb181Coordinator->execute($instance->refresh()->load(['project', 'node', 'routes.targets']), true))
-        ->toThrow(ResourceOperationException::class, 'is not active.');
+    $this->orb181Coordinator->execute($instance->refresh()->load(['project', 'node', 'routes.targets']), true);
+    expect(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
 });
 
 it('removes the Route an operator set on a monorepo Instance', function (): void {

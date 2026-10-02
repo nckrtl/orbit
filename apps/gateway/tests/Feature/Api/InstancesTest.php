@@ -16,6 +16,7 @@ use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\Environment\InstanceEnvironmentContext;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentReader;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
@@ -47,10 +48,19 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -101,6 +111,9 @@ beforeEach(function (): void {
 
         public int $configurations = 0;
 
+        /** @var list<string> */
+        public array $urls = [];
+
         public ?string $phpVersion = '8.5';
 
         public bool $laravel = false;
@@ -115,6 +128,7 @@ beforeEach(function (): void {
         public function configureLaravelUrl(Instance $instance, string $url): void
         {
             $this->configurations++;
+            $this->urls[] = $url;
         }
     };
     app()->instance(DevelopmentInstanceConfigurator::class, $this->configuration);
@@ -326,7 +340,7 @@ beforeEach(function (): void {
                 checkoutPath: $instance->checkout_path,
                 root: dirname(dirname($instance->checkout_path)),
                 branch: $instance->branch,
-                startingCommit: $instance->starting_commit,
+                startingCommit: $instance->starting_commit ?? '',
                 commonRepositoryPath: $payload['common_repository_path'],
                 sourceIdentity: "test:{$instance->id}",
                 linkedWorktreePaths: $paths,
@@ -514,6 +528,184 @@ beforeEach(function (): void {
         'default_branch' => 'main',
         'root' => 'public',
     ]);
+});
+
+describe('development Instance rename', function (): void {
+    beforeEach(function (): void {
+        $this->renameTransport = new class implements SshExecutor
+        {
+            public int $exitCode = 0;
+
+            public int $calls = 0;
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                $this->calls++;
+
+                $branch = $command->arguments[array_key_last($command->arguments)];
+                $output = base64_encode('https://github.com/acme/site.git')."\n".base64_encode($branch)."\n";
+
+                return new CommandResult($this->exitCode, $output, '', 1, false);
+            }
+        };
+        app()->instance(DevelopmentSshExecutor::class, new DevelopmentSshExecutor(
+            $this->renameTransport,
+            new class implements SshKeyProvider
+            {
+                public function privateKeyPath(): string
+                {
+                    return '/tmp/test-key';
+                }
+
+                public function publicKey(): string
+                {
+                    return 'ssh-ed25519 test';
+                }
+            },
+            new class implements KnownHostsStore
+            {
+                public function path(): string
+                {
+                    return '/tmp/test-hosts';
+                }
+
+                public function put(string $host, int $port, HostKey $key): void {}
+            },
+        ));
+        $this->routeProjection = Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing();
+        app()->instance(RouteDomainProjector::class, $this->routeProjection);
+        $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
+        $this->renameInstance = Instance::query()->sole();
+    });
+
+    it('records branch-only, domain-only and combined renames and makes retries no-ops', function (array $payload): void {
+        $id = $this->renameInstance->id;
+        $this->renameInstance->update(['source_is_laravel' => true]);
+        $this->configuration->urls = [];
+        $before = $this->renameInstance->only(['id', 'name', 'checkout_path', 'starting_commit']);
+        $response = $this->postJson("/api/v1/instances/{$id}/rename", $payload)->assertOk();
+        $this->renameInstance->refresh();
+        expect($this->renameInstance->only(array_keys($before)))->toBe($before)
+            ->and($this->renameInstance->branch)->toBe($payload['branch'] ?? 'dev')
+            ->and($this->renameInstance->branch_override)->toBe($payload['branch'] ?? null)
+            ->and(Route::query()->sole()->domain)->toBe($payload['domain'] ?? 'dev.acme.test')
+            ->and(Route::query()->sole()->provenance)->toBe(RouteProvenance::Generated);
+        if (isset($payload['domain'])) {
+            expect($this->configuration->urls)->toBe(['https://'.$payload['domain'], 'https://'.$payload['domain']])
+                ->and(InstanceEnvironmentValue::query()->where('instance_id', $id)->where('env_key', 'APP_URL')->sole()->env_value)->toBe('https://'.$payload['domain']);
+        }
+        $routeId = Route::query()->sole()->id;
+        $this->postJson("/api/v1/instances/{$id}/rename", $payload)->assertOk()->assertJsonPath('data.id', $response->json('data.id'));
+        expect(Route::query()->sole()->id)->toBe($routeId);
+        $this->deleteJson("/api/v1/instances/{$id}")->assertOk();
+    })->with([
+        'branch' => [['branch' => 't3code/login']],
+        'domain' => [['domain' => 'login.acme.test']],
+        'both' => [['branch' => 't3code/login', 'domain' => 'login.acme.test']],
+    ]);
+
+    it('refuses wrong or detached HEAD and remote lifecycle contention before changing either field', function (int $exit, string $code): void {
+        $this->renameTransport->exitCode = $exit;
+        $before = $this->renameInstance->getAttributes();
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login', 'domain' => 'login.acme.test'])
+            ->assertConflict()->assertJsonPath('error.code', $code);
+        expect($this->renameInstance->refresh()->getAttributes())->toBe($before)
+            ->and(Route::query()->sole()->domain)->toBe('dev.acme.test');
+    })->with([[42, 'instance.branch_not_checked_out'], [75, 'instance.lifecycle_busy']]);
+
+    it('refuses a domain conflict before recording the checked-out branch', function (): void {
+        Route::query()->create(['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'domain' => 'occupied.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login', 'domain' => 'occupied.test'])
+            ->assertConflict()->assertJsonPath('error.code', 'route.domain_conflict');
+        expect($this->renameInstance->refresh()->branch)->toBe('dev');
+    });
+
+    it('does not record the branch when Route convergence fails and records it on a successful retry', function (): void {
+        $payload = ['branch' => 't3code/login', 'domain' => 'login.acme.test'];
+        $this->routeProjection->shouldReceive('prepareWorkloadCertificate')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Injected projection failure.', 502));
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)->assertStatus(502);
+        expect($this->renameInstance->refresh()->branch)->toBe('dev');
+        app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)->assertOk();
+        expect($this->renameInstance->refresh()->branch)->toBe('t3code/login');
+    });
+
+    it('validates presence, types and branch names', function (array $payload): void {
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)
+            ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+        expect($this->renameTransport->calls)->toBe(0);
+    })->with([[[]], [['branch' => null]], [['domain' => '']], [['branch' => 7]], [['branch' => '-invalid']]]);
+
+    it('maps environment-owner contention to lifecycle busy', function (): void {
+        app()->instance(InstanceEnvironmentOperationLock::class, new class implements InstanceEnvironmentOperationLock
+        {
+            public function run(array $instanceIds, Closure $operation): mixed
+            {
+                throw new ResourceOperationException('env.operation_busy', 'Owner is busy.', 409);
+            }
+        });
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login'])
+            ->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy');
+    });
+
+    it('refuses reserved domains before recording the branch', function (): void {
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login', 'domain' => 'gateway.orbit'])
+            ->assertConflict()->assertJsonPath('error.code', 'route.domain_conflict');
+        expect($this->renameInstance->refresh()->branch)->toBe('dev');
+    });
+
+    it('keeps the existing override when recording the current branch again', function (): void {
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 'dev'])->assertOk();
+        expect($this->renameInstance->refresh()->branch_override)->toBeNull();
+    });
+
+    it('recovers forward after Route cutover without recording the branch early', function (): void {
+        $payload = ['branch' => 't3code/login', 'domain' => 'login.acme.test'];
+        $this->routeProjection->shouldReceive('cleanup')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Injected cleanup failure.', 502));
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)->assertStatus(502);
+        expect($this->renameInstance->refresh()->branch)->toBe('dev')->and(Route::query()->count())->toBe(2);
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['domain' => 'other.acme.test'])->assertConflict()->assertJsonPath('error.code', 'route.domain_change_conflict');
+        app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)->assertOk();
+        expect($this->renameInstance->refresh()->branch)->toBe('t3code/login')->and(Route::query()->sole()->domain)->toBe('login.acme.test');
+    });
+
+    it('refuses an Instance with an unfinished removal', function (): void {
+        $id = $this->renameInstance->id;
+        $this->removalSource->fail = 'prepare';
+        $this->deleteJson("/api/v1/instances/{$id}")->assertStatus(502);
+        $this->postJson("/api/v1/instances/{$id}/rename", ['branch' => 't3code/login'])->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy');
+    });
+
+    it('refuses an inactive checkout', function (): void {
+        $this->renameInstance->update(['status' => InstanceState::SourceResolved]);
+        $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login'])
+            ->assertConflict()->assertJsonPath('error.code', 'instance.rename_inactive');
+        expect($this->renameTransport->calls)->toBe(0);
+    });
+
+    it('refuses production and linked-worktree Instances', function (string $layout): void {
+        if ($layout === 'production') {
+            $node = create_app_prod_node('prod');
+            [$instance] = seed_active_production_app_instance($this->orbitApp, $node, 'prod');
+        } else {
+            $instance = $this->renameInstance;
+            $instance->update(['source_layout' => 'worktree']);
+        }
+        $this->postJson('/api/v1/instances/'.$instance->id.'/rename', ['branch' => 't3code/login'])
+            ->assertConflict()->assertJsonPath('error.code', 'instance.rename_unsupported');
+        expect($this->renameTransport->calls)->toBe(0);
+    })->with(['production', 'worktree']);
+
+    it('requires an own Route only for domain changes', function (): void {
+        $route = Route::query()->sole();
+        $this->renameInstance->project->update(['type' => ProjectType::Monorepo]);
+        $route->targets()->delete();
+        $route->delete();
+        $id = $this->renameInstance->id;
+        $this->postJson("/api/v1/instances/{$id}/rename", ['domain' => 'login.acme.test'])->assertConflict()->assertJsonPath('error.code', 'instance.route_required');
+        $this->postJson("/api/v1/instances/{$id}/rename", ['branch' => 't3code/login'])->assertOk();
+    });
 });
 
 /** @return array{Instance, Route} */
@@ -1208,8 +1400,8 @@ it('fails closed for legacy incomplete profile evidence on an ordinary API retry
         ->assertStatus(502)
         ->assertJsonPath('error.code', 'app-dev.source_evidence_changed');
 
-    expect($instance->refresh()->only(array_keys($before)))
-        ->toBe($before)
+    expect(Instance::query()->whereKey($instance->id)->exists())
+        ->toBeFalse()
         ->and($this->configuration->inspections)
         ->toBe(0)
         ->and($this->configuration->configurations)
@@ -1272,7 +1464,7 @@ it('rejects invalid branch input before persistence or source work', function ()
         ->toBe([]);
 });
 
-it('reports an absent explicit remote branch without fallback or publication', function (): void {
+it('cleans up a branch resolution failure before activation', function (): void {
     $this->source->fail = 'resolve';
     $this->source->failureCode = 'instance.branch_resolution_failed';
 
@@ -1286,13 +1478,43 @@ it('reports an absent explicit remote branch without fallback or publication', f
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'instance.branch_resolution_failed');
 
-    expect(Instance::query()->sole()->branch_override)
-        ->toBe('missing')
-        ->and(Instance::query()->sole()->status)
-        ->toBe(InstanceState::CheckoutPrepared)
-        ->and(Route::query()->sole()->status)
-        ->toBe(RouteStatus::Failed);
+    expect(Instance::query()->count())->toBe(0)
+        ->and(Route::query()->count())->toBe(0)
+        ->and($this->removalSource->calls)->toContain('finalize:1');
+    $this->source->fail = null;
+    $this->source->resolution = new DevelopmentSourceResolution('t3code/retry', str_repeat('b', 40));
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'default', 'branch' => 't3code/retry'])->assertCreated();
 });
+
+it('retains the original create failure and recovery command when cleanup is incomplete', function (): void {
+    $this->source->fail = 'resolve';
+    $this->source->failureCode = 'instance.branch_resolution_failed';
+    $this->removalSource->fail = 'prepare';
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'stuck', 'branch' => 't3code/12345678'])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'instance.branch_resolution_failed')->assertJsonPath('error.details.cleanup', 'incomplete');
+    $instance = Instance::query()->sole();
+    expect($instance->status)->toBe(InstanceState::Removing);
+    $this->removalSource->fail = null;
+    $this->deleteJson('/api/v1/instances/'.$instance->id, ['force' => true])->assertOk();
+    expect(Instance::query()->count())->toBe(0)->and(Route::query()->count())->toBe(0);
+});
+
+it('removes stuck pre-activation checkouts and their pending or failed Routes without teardown or force', function (string $state, string $routeStatus): void {
+    $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
+    $instance = Instance::query()->sole();
+    Route::query()->sole()->update([
+        'status' => $routeStatus,
+        'sites_published' => false,
+        'failed_step' => $routeStatus === 'failed' ? 'source-resolve' : null,
+        'error_code' => $routeStatus === 'failed' ? 'instance.branch_resolution_failed' : null,
+    ]);
+    $instance->update(['status' => $state, 'starting_commit' => $state === 'source_resolved' ? $instance->starting_commit : null, 'branch' => $state === 'source_resolved' ? $instance->branch : null]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
+    $transport = new LifecycleSshExecutor;
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    $this->deleteJson('/api/v1/instances/'.$instance->id)->assertOk();
+    expect(Instance::query()->count())->toBe(0)->and(Route::query()->count())->toBe(0)->and($transport->inputs)->toBe([]);
+})->with(['reserved', 'checkout_prepared', 'source_resolved'])->with(['pending', 'failed']);
 
 it('rejects added removed or changed branch override on creation retry before mutation', function (
     ?string $original,
@@ -1377,18 +1599,12 @@ it('refuses unavailable generated naming before source mutation and completes on
         ->assertConflict()
         ->assertJsonPath('error.code', 'route.tld_required');
 
-    $instance = Instance::query()->sole();
-    expect($instance->status)
-        ->toBe(InstanceState::Reserved)
-        ->and($instance->starting_commit)
-        ->toBeNull()
-        ->and($this->source->calls)
-        ->toBe([])
-        ->and(Route::query()->count())
-        ->toBe(0);
+    expect(Instance::query()->count())->toBe(0)
+        ->and($this->source->calls)->toBe([])
+        ->and(Route::query()->count())->toBe(0);
 
     $this->node->update(['tld' => 'test']);
-    $this->postJson('/api/v1/instances', $payload)->assertOk();
+    $this->postJson('/api/v1/instances', $payload)->assertCreated();
 
     expect(Route::query()->sole()->domain)->toBe('dev.acme.test');
 });
@@ -1536,6 +1752,7 @@ it('reconciles Cluster activation for an active Instance Route without moving pl
 });
 
 it('renames a Cluster and accepts unchanged placement input despite an unrelated failed checkout', function (): void {
+    $this->removalSource->fail = 'inspect';
     $this->source->fail = 'resolve';
     $this
         ->postJson('/api/v1/instances', [
@@ -1604,10 +1821,11 @@ it('fails before mutation when a legacy App has incomplete source defaults', fun
         ->toBeEmpty();
 });
 
-it('persists each durable state and resumes the next transition', function (
+it('persists each durable state when cleanup is blocked and resumes the next transition', function (
     string $failure,
     InstanceState $durableState,
 ): void {
+    $this->removalSource->fail = 'inspect';
     $payload = [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -1635,6 +1853,7 @@ it('persists each durable state and resumes the next transition', function (
 ]);
 
 it('keeps a failed attempt from overwriting a successful retry after lease release', function (): void {
+    $this->removalSource->fail = 'inspect';
     $data = new CreateInstanceData(
         projectId: $this->orbitApp->id,
         nodeId: $this->node->id,
@@ -1707,7 +1926,7 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
     app()->instance(AppDevSourceOperationLock::class, $lock);
 
     expect(fn () => app(CreateInstanceAction::class)->execute($data))
-        ->toThrow(ResourceOperationException::class, 'The first attempt failed.');
+        ->toThrow(ResourceOperationException::class, 'cleanup is incomplete');
 
     expect($lock->leases)
         ->toBe(2)
@@ -1727,7 +1946,8 @@ it('keeps a failed attempt from overwriting a successful retry after lease relea
         ]);
 });
 
-it('persists unexpected provisioning failures before releasing the lease', function (): void {
+it('persists unexpected provisioning failures when guarded cleanup cannot complete', function (): void {
+    $this->removalSource->fail = 'inspect';
     $native = app(DevelopmentInstanceProvisioner::class);
     app()->instance(DevelopmentInstanceProvisioner::class, new class($native) implements DevelopmentInstanceProvisioner
     {
@@ -1757,7 +1977,7 @@ it('persists unexpected provisioning failures before releasing the lease', funct
         domain: null,
         branch: null,
     )))
-        ->toThrow(LogicException::class, 'Unexpected provisioning failure.');
+        ->toThrow(ResourceOperationException::class, 'cleanup is incomplete');
 
     expect(Instance::query()->sole()->only(['status', 'failed_step', 'error_code']))
         ->toBe([
@@ -1773,7 +1993,7 @@ it('persists unexpected provisioning failures before releasing the lease', funct
         ]);
 });
 
-it('does not reserve or persist failure evidence when lease acquisition fails', function (): void {
+it('keeps reserved recovery state when both source acquisition and cleanup are unavailable', function (): void {
     $provisioner = new class implements DevelopmentInstanceProvisioner
     {
         public int $reservations = 0;
@@ -1808,7 +2028,7 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
         domain: null,
         branch: null,
     )))
-        ->toThrow(RuntimeException::class, 'Lease acquisition failed.');
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->details['cleanup'])->toBe('incomplete'));
 
     expect($provisioner->reservations)
         ->toBe(0)
@@ -1822,7 +2042,8 @@ it('does not reserve or persist failure evidence when lease acquisition fails', 
         ]);
 });
 
-it('persists reservation conflicts before releasing the lease', function (): void {
+it('persists reservation conflicts before releasing the lease when cleanup cannot complete', function (): void {
+    $this->removalSource->fail = 'inspect';
     $lock = new class implements AppDevSourceOperationLock
     {
         public bool $held = false;
@@ -1880,7 +2101,7 @@ it('persists reservation conflicts before releasing the lease', function (): voi
         domain: 'dev.example.test',
         branch: null,
     )))
-        ->toThrow(ResourceOperationException::class, 'The hostname is unavailable.');
+        ->toThrow(ResourceOperationException::class, 'cleanup is incomplete');
 
     expect($provisioner->reservedWhileHeld)
         ->toBeTrue()

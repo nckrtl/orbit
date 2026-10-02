@@ -160,6 +160,21 @@ it('creates independent clones from an existing remote branch and the exact fetc
         ->toBe(dirname($fallback->checkout_path));
 });
 
+it('creates an explicit missing branch independently of the Instance name and preserves an existing local branch', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 't3-1a2b3c4d');
+    $instance->update(['branch_override' => 't3code/1a2b3c4d']);
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    expect($resolution->branch)->toBe('t3code/1a2b3c4d')
+        ->and($resolution->startingCommit)->toBe(trim(orb76_run(['git', '--git-dir='.$this->repository, 'rev-parse', 'refs/heads/main'])->stdout));
+
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.email', 'test@example.test']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'user.name', 'Test']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'commit', '--allow-empty', '-m', 'Local commit']);
+    $local = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', 'HEAD'])->stdout);
+    expect($this->source->resolve($instance)->startingCommit)->toBe($local);
+});
+
 it('clones a gh_cli Project with the Gateway GitHub CLI token only on protected input', function (?string $token): void {
     app()->instance(GitHubCliToken::class, new readonly class($token) implements GitHubCliToken
     {
@@ -290,22 +305,47 @@ it('creates a task-named branch from the default branch when the remote task bra
         ->toBe('task-12');
 });
 
-it('refuses a missing explicit branch without falling back', function (): void {
-    $instance = orb76_source_instance(
-        $this->orbitApp,
-        $this->node,
-        $this->appsRoot,
-        'default',
-        'missing',
-    );
+it('creates a missing explicit branch for the default Instance from the default commit', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default', 'missing');
     $this->source->prepare($instance, false);
-
-    expect(fn () => $this->source->resolve($instance))
-        ->toThrow(
-            RuntimeConvergenceException::class,
-            'App development step [app-instance-source-resolve] failed',
-        );
+    expect($this->source->resolve($instance)->branch)->toBe('missing');
 });
+
+it('checks local HEAD before rename without contacting origin or changing Git source', function (): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    orb76_run(['git', '-C', $instance->checkout_path, 'branch', '-m', 't3code/login']);
+    $this->transport->commands = [];
+    $this->source->assertBranchCheckedOut($instance, 't3code/login');
+    orb76_run(['git', '-C', $instance->checkout_path, 'remote', 'set-url', 'origin', 'https://example.test/acme/site.git']);
+    $this->source->assertBranchCheckedOut($instance, 't3code/login');
+    expect(fn () => $this->source->assertBranchCheckedOut($instance, 'dev'))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('instance.branch_not_checked_out'));
+    orb76_run(['git', '-C', $instance->checkout_path, 'checkout', '--detach']);
+    expect(fn () => $this->source->assertBranchCheckedOut($instance, 't3code/login'))
+        ->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('instance.branch_not_checked_out'));
+    foreach ($this->transport->commands as $command) {
+        expect($command->input)->not->toContain('git_read', ' fetch ', ' checkout ', ' reset ');
+    }
+});
+
+it('inspects unresolved prepared repositories and absent reserved paths without force', function (bool $prepared): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'stuck');
+    if ($prepared) {
+        $this->source->prepare($instance, false);
+        $instance->update(['status' => InstanceState::CheckoutPrepared]);
+    }
+    $inventory = $this->removal->inspect($instance, false);
+    expect($inventory->startingCommit)->toBe('')
+        ->and($inventory->branch)->toBeNull()
+        ->and($inventory->linkedWorktreePaths)->toBe([$instance->checkout_path]);
+    $member = orb180_record_source($this->removal, $instance, false, activate: false);
+    $receipt = $this->removal->finalize($member);
+    orb182_clear_test_route($member);
+    $member->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted', 'source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
+    expect(is_dir($instance->checkout_path))->toBeFalse()
+        ->and($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Completed)
+        ->and($this->removal->finalize($member))->toBe($receipt);
+})->with([false, true]);
 
 it('makes preparation idempotent and uses only fixed source-control commands', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
@@ -1908,8 +1948,10 @@ it('fails closed before source resolution when the stored App default branch is 
     expect($this->transport->commands)->toBeEmpty();
 });
 
-it('fails closed before removal when stored source identity is incomplete', function (): void {
+it('fails closed before active removal when stored source identity is incomplete', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
+    $instance->project->update(['type' => 'monorepo']);
+    $instance->update(['status' => InstanceState::Active]);
 
     expect(fn () => orb178_remove_source($this->removal, $instance, true))
         ->toThrow(RuntimeConvergenceException::class);
@@ -1939,6 +1981,7 @@ function orb180_record_source(
     RemoteDevelopmentInstanceSourceRemoval $removal,
     Instance $instance,
     bool $force,
+    bool $activate = true,
 ): InstanceRemovalMember {
     $inventory = $removal->inspect($instance, $force);
     $route = Route::query()->create([
@@ -1951,8 +1994,10 @@ function orb180_record_source(
         'status' => RouteStatus::Pending,
     ]);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-    $route->update(['status' => RouteStatus::Active]);
-    $instance->update(['status' => InstanceState::Active]);
+    if ($activate) {
+        $route->update(['status' => RouteStatus::Active]);
+        $instance->update(['status' => InstanceState::Active]);
+    }
     $operation = InstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
         'requested_instance_id' => $instance->id,

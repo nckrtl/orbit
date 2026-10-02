@@ -73,6 +73,7 @@ use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\Deployment\ProductionDeployment;
+use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
@@ -400,6 +401,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         AppDevTldConverger::class => NativeAppDevTldConverger::class,
         AppDevTldRouteManager::class => RemoteAppDevTldRouteManager::class,
         DevelopmentInstanceSourceLifecycle::class => RemoteDevelopmentInstanceSourceLifecycle::class,
+        DevelopmentInstanceBranchInspector::class => RemoteDevelopmentInstanceSourceLifecycle::class,
         RegistrationSourceManager::class => RemoteRegistrationSourceManager::class,
         DevelopmentInstanceSourceRemoval::class => RemoteDevelopmentInstanceSourceRemoval::class,
         ProductionInstanceContentRetention::class => RecordedProductionInstanceContentRetention::class,

@@ -47,6 +47,8 @@ A successful call returns the API's JSON document as text, usually `{"data": ...
 
 For a disabled extension, a direct `tools/call` returns `isError: true` and content containing `status: 409` and `error.code: extension.disabled`; HTTP 409 is reserved for the underlying API request, not the MCP transport. The same tool error is returned by `execute_tools` when a stale call names a tool that was filtered from the catalogue, and execution stops at that call. The server checks the generated tool's extension metadata before catalogue filtering can turn a stale direct call into a generic not-found error.
 
+`instance-rename` records an externally renamed development branch and can move the Instance's own Route, including a generated Route. Send `instance` and at least one of `branch` or `domain`. The Gateway checks the local checkout before changing its records; the tool never runs `git branch -m`. See [Instance rename](/cli/instance#orbit-instancerename).
+
 `instance-deploy` and `instance-rollback` stream progress over HTTP. As tools they run to completion and return every progress event in order under `events`; the last event carries the result.
 
 Machine callbacks and browser pages have no tool: channel signatures, the Node agent endpoints, live log streams, the Grafana access check, the Instance wake page, the Schedule completion report, the annotation event stream, the task agent stream, and the two GitHub App registration pages. `bin/mcp-tools` lists them.

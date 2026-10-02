@@ -8,6 +8,7 @@ use App\Actions\Instances\CreateInstanceAction;
 use App\Actions\Instances\ListInstancesAction;
 use App\Actions\Instances\RegisterInstanceAction;
 use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Instances\RunInstanceSetupAction;
 use App\Actions\Instances\ShowInstanceAction;
 use App\Actions\Instances\UpdateInstanceAction;
@@ -19,6 +20,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Instances\RegisterInstanceRequest;
 use App\Http\Requests\Instances\RemoveInstanceRequest;
+use App\Http\Requests\Instances\RenameInstanceRequest;
 use App\Http\Requests\Instances\StoreInstanceRequest;
 use App\Http\Requests\Instances\UpdateInstanceRequest;
 use App\Models\Instance;
@@ -96,6 +98,15 @@ final class InstancesController extends Controller
     ): JsonResponse {
         return response()->json([
             'data' => InstanceData::fromModel($action->execute($instance, $request->branch()))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::InstanceOwning)]
+    public function rename(RenameInstanceRequest $request, Instance $instance, RenameInstanceAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => InstanceData::fromModel($action->execute($instance, $request->payload()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

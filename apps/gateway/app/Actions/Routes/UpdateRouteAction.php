@@ -32,7 +32,7 @@ final readonly class UpdateRouteAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    public function execute(Route $route, UpdateRouteData $data): Route
+    public function execute(Route $route, UpdateRouteData $data, bool $allowGenerated = false): Route
     {
         if (! $route->isApp()) {
             throw new ResourceOperationException(
@@ -52,7 +52,7 @@ final readonly class UpdateRouteAction
         $targetIds = array_values($targetIds);
         $result = $this->environmentOperations->run(
             $targetIds,
-            fn (): Route => $this->executeOwned($route, $data, $targetIds),
+            fn (): Route => $this->executeOwned($route, $data, $targetIds, $allowGenerated),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -67,7 +67,7 @@ final readonly class UpdateRouteAction
     }
 
     /** @param list<int> $expectedTargetIds */
-    private function executeOwned(Route $route, UpdateRouteData $data, array $expectedTargetIds): Route
+    private function executeOwned(Route $route, UpdateRouteData $data, array $expectedTargetIds, bool $allowGenerated): Route
     {
         $route->refresh()->load('targets');
         $currentTargetIds = $route
@@ -103,7 +103,7 @@ final readonly class UpdateRouteAction
                 RouteStatus::Failed,
             ], true)
         ) {
-            return $this->converge->execute($route, $domain, $requestedPublication);
+            return $this->converge->execute($route, $domain, $requestedPublication, allowGenerated: $allowGenerated);
         }
 
         if (
@@ -118,12 +118,12 @@ final readonly class UpdateRouteAction
             return $this->replacePending($route, $domain);
         }
 
-        $updated = DB::transaction(function () use ($route, $data): Route {
+        $updated = DB::transaction(function () use ($route, $data, $allowGenerated): Route {
             $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
             $attributes = [];
 
             if ($data->domainProvided) {
-                if ($locked->provenance !== RouteProvenance::Explicit || $data->domain === null) {
+                if ((! $allowGenerated && $locked->provenance !== RouteProvenance::Explicit) || $data->domain === null) {
                     throw new ResourceOperationException(
                         errorCode: 'route.domain_immutable',
                         message: 'Only an explicit Route domain can be updated.',

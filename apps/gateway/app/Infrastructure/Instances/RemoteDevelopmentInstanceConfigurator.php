@@ -125,11 +125,34 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                         if cache.exists():
                             original = cache.read_bytes()
                             escaped = url.replace('\\', '\\\\').replace("'", "\\'").encode()
-                            pattern = rb"(?m)(['\"]url['\"]\s*=>\s*)['\"][^'\"\r\n]*['\"]"
-                            matches = list(re.finditer(pattern, original))
-                            if len(matches) != 1: raise SystemExit(42)
+                            # Read literal-array structure without evaluating application PHP.
+                            pattern = rb"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|/\*.*?\*/|//[^\n]*|\#[^\n]*|=>|[()\[\],]|[A-Za-z_][A-Za-z0-9_]*|\S"
+                            tokens = [token for token in re.finditer(pattern, original, re.S)
+                                      if not token.group().startswith((b'/*', b'//', b'#'))]
+                            stack = []
+                            pending = None
+                            matches = []
+                            for index, token in enumerate(tokens):
+                                value = token.group()
+                                if value in (b'(', b'['):
+                                    stack.append((stack[-1] if stack else []) + ([pending] if pending is not None else []))
+                                    pending = None
+                                elif value in (b')', b']'):
+                                    if not stack: raise SystemExit(42)
+                                    stack.pop()
+                                    pending = None
+                                elif value == b',':
+                                    pending = None
+                                elif value[:1] in (b"'", b'\"') and index + 1 < len(tokens) and tokens[index + 1].group() == b'=>':
+                                    pending = value[1:-1]
+                                    if len(stack) == 2 and stack[-1] == [b'app'] and pending == b'url':
+                                        if index + 2 >= len(tokens): raise SystemExit(42)
+                                        candidate = tokens[index + 2]
+                                        if candidate.group()[:1] not in (b"'", b'\"'): raise SystemExit(42)
+                                        matches.append(candidate)
+                            if stack or len(matches) != 1: raise SystemExit(42)
                             match = matches[0]
-                            updated = original[:match.start()] + match.group(1) + b"'" + escaped + b"'" + original[match.end():]
+                            updated = original[:match.start()] + b"'" + escaped + b"'" + original[match.end():]
                             if updated != original: atomic(cache, updated, cache.stat().st_mode & 0o777)
                         PYTHON, $instance->checkout_path, $account->user],
                 protectedInput: ProtectedInput::fromString($url),

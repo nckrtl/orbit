@@ -3,13 +3,13 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
   - apps/gateway/app/Actions/{Instances/RemoveInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
-  - apps/gateway/app/Domain/Instances/Removal/**
+  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,Removal/**}
   - apps/gateway/app/Infrastructure/*/RecordedProduction*ContentRetention.php
   - apps/gateway/app/Infrastructure/Instances/{NativeInstanceRemovalProjector,RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
+  - apps/gateway/database/migrations/*_allow_pre_activation_instance_removal.php
 ---
 
 # Instance removal
@@ -71,7 +71,7 @@ After a caller renames a branch locally, [`instance:rename --branch=BRANCH`](/cl
 
 A failed create normally cleans up its new Instance before returning the original error. It removes only the attempt's owned checkout, Route and projections, runtime, dependency-copy staging paths, and database copies, with no teardown and no cascade into another Instance. Once cleanup completes, the name, path, and domain are free for a fresh create, including a different branch. See [creation recovery](/domains/applications#create-a-development-instance).
 
-If the process is interrupted or cleanup cannot finish, `instance:destroy` accepts development Instances in `reserved`, `checkout_prepared`, and `source_resolved`. It uses the same recorded removal steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal.
+If the process is interrupted or cleanup cannot finish, `instance:destroy` accepts development Instances in `reserved`, `checkout_prepared`, and `source_resolved`. It uses the same recorded removal steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal. An unrouted task workspace is different: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
 
 A reserved Instance may have no checkout directory. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
 

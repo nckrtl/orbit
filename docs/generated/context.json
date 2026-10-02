@@ -783,7 +783,9 @@
                 "Process",
                 "Project",
                 "Route",
-                "Subtask"
+                "Subtask",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0191",
@@ -1007,6 +1009,7 @@
                 "Deployment",
                 "Gateway",
                 "Instance",
+                "Node",
                 "Route",
                 "Subtask",
                 "Task",
@@ -1563,7 +1566,9 @@
                 "Process",
                 "Project",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -2002,7 +2007,9 @@
             "concepts": [
                 "Doctor",
                 "Gateway",
+                "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Tool"
             ],
