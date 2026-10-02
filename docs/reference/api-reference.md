@@ -31,7 +31,7 @@ One input still reads outside the checkout. `php artisan route:list` loads the G
 | --- | --- |
 | `php apps/gateway/artisan route:list --json --path=api` | Method, URI, route name, and controller action for each `api/` route. The command runs in `apps/gateway`. |
 | `apps/gateway/app/Http/Controllers/Api/*.php` | The form request, the data class, and whether the action returns HTTP 201. |
-| `apps/gateway/app/Http/Requests/**/*.php` | The `rules()` body of each form request. |
+| `apps/gateway/app/Http/Requests/**/*.php` | The `rules()` body of each form request, including shared database update rules and their regex constants. |
 | `apps/gateway/app/Data/**/*.php` | Constructor properties, snake-case mapping, `toArray()` keys, and property docblocks. |
 | `apps/gateway/app/**/*.php` | The quoted string cases of each enum under this tree. |
 | `packages/php-sdk/src/Requests/**/*.php` | Method, endpoint, constructor, JSON body, and query of each request class. |
@@ -46,6 +46,8 @@ The generator reads every command class, including commands the CLI hides at run
 The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, deliverable, and Coder notification requirements.
 
 The script marks `instance:deploy` and `instance:rollback` with `x-orbit-task-action: true`. A [task definition](/reference/tasks#subtask-definitions) action may name only a marked operation. A form-request rule `present` marks that property required, as `required` does. The task definition response lists the fields the Gateway always returns, and its parameters, phases, and subtasks use the same item schemas as the write.
+
+Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
 
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.
 

@@ -158,7 +158,7 @@
         "properties": {
           "version": {
             "type": "string",
-            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$(?![\\s\\S])",
             "description": "Plausible Community Edition version, for example 3.2.1"
           }
         },
@@ -465,7 +465,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Optional development TLD"
           }
@@ -715,7 +715,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "New development TLD; empty unsets it"
           },
@@ -749,7 +749,7 @@
         "properties": {
           "slug": {
             "type": "string",
-            "pattern": "",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
             "maxLength": 63
           },
           "driver": {
@@ -773,7 +773,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
             "maxLength": 255
           },
           "port": {
@@ -789,7 +789,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
             "maxLength": 64
           },
           "path": {
@@ -797,7 +797,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
             "maxLength": 1024
           },
           "username": {
@@ -805,7 +805,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
             "maxLength": 128
           },
           "password": {
@@ -817,7 +817,7 @@
           },
           "server": {
             "type": "string",
-            "pattern": "",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
             "maxLength": 63
           },
           "instance_id": {
@@ -832,7 +832,7 @@
             "properties": {
               "slug": {
                 "type": "string",
-                "pattern": "",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                 "maxLength": 63
               },
               "driver": {
@@ -856,7 +856,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
                 "maxLength": 255
               },
               "port": {
@@ -872,7 +872,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
                 "maxLength": 64
               },
               "path": {
@@ -880,7 +880,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
                 "maxLength": 1024
               },
               "username": {
@@ -888,7 +888,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
                 "maxLength": 128
               },
               "password": {
@@ -910,12 +910,12 @@
             "properties": {
               "slug": {
                 "type": "string",
-                "pattern": "",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                 "maxLength": 63
               },
               "server": {
                 "type": "string",
-                "pattern": "",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                 "maxLength": 63
               },
               "instance_id": {
@@ -1260,6 +1260,76 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "description": "Database connection slug."
+          },
+          "driver": {
+            "type": "string",
+            "enum": [
+              "mysql",
+              "pgsql",
+              "sqlite",
+              "redis"
+            ],
+            "description": "Driver: mysql, pgsql, sqlite, or redis"
+          },
+          "node_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
+            "maxLength": 255,
+            "description": "Hostname or IP for mysql and pgsql"
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 65535,
+            "minimum": 1,
+            "description": "TCP port for mysql and pgsql"
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
+            "maxLength": 64,
+            "description": "Database name for mysql and pgsql"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
+            "maxLength": 1024,
+            "description": "Unix absolute sqlite path"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
+            "maxLength": 128,
+            "description": "Username"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024,
+            "description": "Password"
           }
         },
         "additionalProperties": false,
@@ -1571,7 +1641,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Stable firewall rule name"
           },
@@ -1623,7 +1693,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Stable firewall rule name"
           },
@@ -1846,7 +1916,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?$",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?$(?![\\s\\S])",
             "description": "Proposed App name for a first registration"
           },
           "owner": {
@@ -1854,7 +1924,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$(?![\\s\\S])",
             "description": "GitHub organization that owns the App registration"
           }
         },
@@ -2018,7 +2088,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Target production Instance name"
           },
@@ -2034,7 +2104,7 @@
           },
           "sqlite_source_path": {
             "type": "string",
-            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$(?![\\s\\S])",
             "maxLength": 4096,
             "description": "Optional SQLite database path on the candidate"
           }
@@ -2069,7 +2139,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Instance name; default is reserved for the default development source"
           },
@@ -2300,11 +2370,42 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Instance ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Deploy step name"
+          },
+          "command": {
+            "type": "string",
+            "description": "Command the Gateway runs"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before_activation",
+              "after_activation"
+            ],
+            "description": "before_activation or after_activation"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 900,
+            "minimum": 1
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step in the same phase"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step in the same phase"
           }
         },
         "additionalProperties": false,
         "required": [
-          "instance"
+          "instance",
+          "name",
+          "command"
         ]
       }
     },
@@ -2394,6 +2495,29 @@
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
             "description": "Deploy step name."
+          },
+          "command": {
+            "type": "string",
+            "description": "Command the Gateway runs"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before_activation",
+              "after_activation"
+            ],
+            "description": "before_activation or after_activation"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step in the same phase"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step in the same phase"
           }
         },
         "additionalProperties": false,
@@ -2599,7 +2723,7 @@
         "properties": {
           "source_path": {
             "type": "string",
-            "pattern": "^\\/[^\\x00-\\x1f]*$",
+            "pattern": "^\\/[^\\x00-\\x1f]*$(?![\\s\\S])",
             "maxLength": 4096
           },
           "include_worktrees": {
@@ -3141,13 +3265,13 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Optional destination Instance name"
           },
           "sqlite_source_path": {
             "type": "string",
-            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$(?![\\s\\S])",
             "maxLength": 4096,
             "description": "Optional SQLite database path on the source"
           }
@@ -3178,11 +3302,16 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Instance ID."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Deployment branch"
           }
         },
         "additionalProperties": false,
         "required": [
-          "instance"
+          "instance",
+          "branch"
         ]
       }
     },
@@ -3449,7 +3578,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$(?![\\s\\S])",
             "maxLength": 253,
             "description": "Node TLD; required for production clone preview domains"
           },
@@ -3524,7 +3653,7 @@
               "string",
               "null"
             ],
-            "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
+            "pattern": "^SHA256:[A-Za-z0-9+/]{43}$(?![\\s\\S])",
             "description": "Approved SSH SHA256 host key fingerprint"
           }
         },
@@ -3955,11 +4084,27 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Node ID."
+          },
+          "apps": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
           }
         },
         "additionalProperties": false,
         "required": [
-          "node"
+          "node",
+          "apps"
         ]
       }
     },
@@ -4016,7 +4161,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Process name"
           },
@@ -4047,13 +4192,13 @@
               "string",
               "null"
             ],
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
             "maxLength": 255,
             "description": "Conditionally required."
           },
           "working_directory": {
             "type": "string",
-            "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+            "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
             "maxLength": 4096,
             "description": "Runtime working directory"
           },
@@ -4071,7 +4216,7 @@
             "maxItems": 100,
             "items": {
               "type": "string",
-              "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+              "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
             }
           },
           "volumes": {
@@ -4079,15 +4224,16 @@
             "maxItems": 100,
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "source": {
                   "type": "string",
-                  "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                  "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                   "maxLength": 4096
                 },
                 "target": {
                   "type": "string",
-                  "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                  "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                   "maxLength": 4096
                 },
                 "read_only": {
@@ -4332,7 +4478,7 @@
           },
           "code": {
             "type": "string",
-            "pattern": "^[A-Z]{3}$"
+            "pattern": "^[A-Z]{3}$(?![\\s\\S])"
           },
           "slug": {
             "type": "string",
@@ -4554,7 +4700,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -4592,13 +4738,13 @@
                   "string",
                   "null"
                 ],
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
                 "maxLength": 255,
                 "description": "Conditionally required."
               },
               "working_directory": {
                 "type": "string",
-                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                 "maxLength": 4096
               },
               "environment": {
@@ -4614,7 +4760,7 @@
                 "maxItems": 100,
                 "items": {
                   "type": "string",
-                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
                 }
               },
               "volumes": {
@@ -4622,15 +4768,16 @@
                 "maxItems": 100,
                 "items": {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "source": {
                       "type": "string",
-                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "target": {
                       "type": "string",
-                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "read_only": {
@@ -4791,7 +4938,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -4829,13 +4976,13 @@
                   "string",
                   "null"
                 ],
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
                 "maxLength": 255,
                 "description": "Conditionally required."
               },
               "working_directory": {
                 "type": "string",
-                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                 "maxLength": 4096
               },
               "environment": {
@@ -4851,7 +4998,7 @@
                 "maxItems": 100,
                 "items": {
                   "type": "string",
-                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
                 }
               },
               "volumes": {
@@ -4859,15 +5006,16 @@
                 "maxItems": 100,
                 "items": {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "source": {
                       "type": "string",
-                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "target": {
                       "type": "string",
-                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "read_only": {
@@ -4931,7 +5079,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -4954,7 +5102,7 @@
               },
               "calendar": {
                 "type": "string",
-                "pattern": "^[\\x20-\\x7E]+$",
+                "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
                 "maxLength": 255
               },
               "timeout_seconds": {
@@ -5099,7 +5247,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -5122,7 +5270,7 @@
               },
               "calendar": {
                 "type": "string",
-                "pattern": "^[\\x20-\\x7E]+$",
+                "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
                 "maxLength": 255
               },
               "timeout_seconds": {
@@ -5197,7 +5345,7 @@
           },
           "code": {
             "type": "string",
-            "pattern": "^[A-Z]{3}$"
+            "pattern": "^[A-Z]{3}$(?![\\s\\S])"
           },
           "type": {
             "type": "string",
@@ -5764,13 +5912,13 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Schedule name"
           },
           "calendar": {
             "type": "string",
-            "pattern": "^[\\x20-\\x7E]+$",
+            "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
             "maxLength": 255,
             "description": "Native systemd calendar expression"
           },
@@ -6221,10 +6369,11 @@
                   "maxItems": 5,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "id": {
                         "type": "string",
-                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                         "maxLength": 64
                       },
                       "type": {
@@ -6332,6 +6481,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "type": "string"
@@ -6368,6 +6518,7 @@
               "object",
               "null"
             ],
+            "additionalProperties": false,
             "properties": {
               "cron": {
                 "type": "string",
@@ -6383,6 +6534,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "key": {
                   "type": "string"
@@ -6436,6 +6588,7 @@
                   "maxItems": 5,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "id": {
                         "type": "string",
@@ -6689,6 +6842,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "type": "string"
@@ -6725,6 +6879,7 @@
               "object",
               "null"
             ],
+            "additionalProperties": false,
             "properties": {
               "cron": {
                 "type": "string",
@@ -6740,6 +6895,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "key": {
                   "type": "string"
@@ -6793,6 +6949,7 @@
                   "maxItems": 5,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "id": {
                         "type": "string",
@@ -7062,10 +7219,11 @@
             "maxItems": 5,
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "id": {
                   "type": "string",
-                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                   "maxLength": 64
                 },
                 "type": {
@@ -7208,10 +7366,11 @@
             "maxItems": 5,
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "id": {
                   "type": "string",
-                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                   "maxLength": 64
                 },
                 "type": {

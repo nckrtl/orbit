@@ -947,6 +947,9 @@ def schema_from_tokens(toks):
                 sometimes = True
             elif base == 'nullable':
                 nullable = True
+            elif base == 'array' and arg:
+                type_ = 'object'
+                sch['additionalProperties'] = False
             elif base == 'alpha_dash':
                 sch['pattern'] = '^[A-Za-z0-9_-]+$'
             elif base == 'max':
@@ -963,7 +966,8 @@ def schema_from_tokens(toks):
                 pat = arg
                 if pat and not pat[0].isalnum() and pat[0] not in '^(':
                     pat = pat[1:pat.rfind(pat[0])]
-                sch['pattern'] = pat.replace('\\A', '^').replace('\\z', '$')
+                # ECMAScript's $ also matches before a final newline. PCRE's \z must mean true end of input.
+                sch['pattern'] = pat.replace('\\A', '^').replace('\\z', r'$(?![\s\S])')
             elif base == 'required_without':
                 notes.append(f'Required when `{arg}` is absent.')
             elif base == 'prohibited':
@@ -1006,6 +1010,31 @@ def clean_schema(s):
     return s
 
 
+def database_field_rules():
+    """Resolve constant-backed regex rule strings from their shared PHP source."""
+    source = (GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php').read_text()
+    constants = dict(re.findall(r"\bconst\s+string\s+(\w+)\s*=\s*'((?:[^'\\]|\\.)*)';", source))
+
+    def resolve(match):
+        prefix, name = match.groups()
+        if name not in constants:
+            sys.exit(f'Unknown database rule constant self::{name}')
+        return "'" + prefix + constants[name] + "'"
+
+    return re.sub(r"'(regex:|not_regex:)'\s*\.\s*self::(\w+)", resolve, source)
+
+
+def database_update_rules(field_rules):
+    """Expand the shared store rules and the update method's removals and overrides."""
+    entries = parse_rule_entries(block(field_rules, field_rules.find('function store(')))
+    update = block(field_rules, field_rules.find('function update('))
+    for key in re.findall(r"unset\(\$rules\['([^']+)'\]\)", update):
+        entries.pop(key)
+    for key, value in re.findall(r"\$rules\['([^']+)'\]\s*=\s*(\[.*?\]);", update, re.S):
+        entries[key] = value
+    return 'return [' + ','.join(f"'{key}' => {value}" for key, value in entries.items()) + '];'
+
+
 def rules_to_schema(rules_text, route_name=None):
     root = {'type': 'object', 'properties': {}, 'required': []}
     body_required = False
@@ -1043,7 +1072,7 @@ def rules_to_schema(rules_text, route_name=None):
                     if parts[idx + 1] == '*':
                         child['type'] = 'array'
                     else:
-                        child['type'] = 'object'
+                        child['type'] = ['object', 'null'] if isinstance(child.get('type'), list) and 'null' in child['type'] else 'object'
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
@@ -1276,7 +1305,10 @@ def example_from_schema(sch, name, tag, depth=0, update=False):
     if name == 'name' and tag in NAME_BY_TAG:
         return NAME_BY_TAG[tag]
     if name in EXAMPLE_BY_NAME:
-        return EXAMPLE_BY_NAME[name]
+        example = EXAMPLE_BY_NAME[name]
+        if name == 'command' and t == 'string' and isinstance(example, list):
+            return ' '.join(example)
+        return example
     if sch.get('enum'):
         return sch['enum'][0]
     if t == 'object':
@@ -1520,6 +1552,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     query = []
     cmd = commands.get(route['name'])
     if rules_text:
+        if 'return DatabaseConnectionFieldRules::update();' in rules_text:
+            field_rules = database_field_rules()
+            rules_text = database_update_rules(field_rules)
         sch, body_required = rules_to_schema(rules_text, route['name'])
         if route['method'] == 'GET':
             for k, v in (sch.get('properties') or {}).items():
@@ -1541,7 +1576,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             if route['name'] == 'database:create':
                 # StoreDatabaseConnectionRequest picks one of two rule sets: register an existing
                 # database, or create one on a Database server with `server`.
-                field_rules = (GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php').read_text()
+                field_rules = database_field_rules()
                 register_schema, _ = rules_to_schema(block(field_rules, field_rules.find('function store(')), route['name'])
                 server_rules = block(field_rules, field_rules.find('function onServer(')).replace('$rules = [', 'return [', 1)
                 server_schema, _ = rules_to_schema(server_rules, route['name'])

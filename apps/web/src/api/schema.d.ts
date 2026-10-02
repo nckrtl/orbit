@@ -5238,7 +5238,26 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /**
+                     * @description Driver: mysql, pgsql, sqlite, or redis
+                     * @enum {string}
+                     */
+                    driver?: "mysql" | "pgsql" | "sqlite" | "redis";
+                    node_id?: number | null;
+                    /** @description Hostname or IP for mysql and pgsql */
+                    host?: string | null;
+                    /** @description TCP port for mysql and pgsql */
+                    port?: number | null;
+                    /** @description Database name for mysql and pgsql */
+                    database?: string | null;
+                    /** @description Unix absolute sqlite path */
+                    path?: string | null;
+                    /** @description Username */
+                    username?: string | null;
+                    /** @description Password */
+                    password?: string | null;
+                };
             };
         };
         responses: {
@@ -6820,9 +6839,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deployment branch */
+                    branch: string;
+                };
             };
         };
         responses: {
@@ -7984,9 +8006,24 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deploy step name */
+                    name: string;
+                    /** @description Command the Gateway runs */
+                    command: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -8121,7 +8158,20 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Command the Gateway runs */
+                    command?: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -10766,9 +10816,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    apps: {
+                        path?: string | null;
+                    } | null;
+                };
             };
         };
         responses: {

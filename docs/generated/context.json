@@ -976,6 +976,7 @@
                 "Deployment",
                 "Gateway",
                 "Instance",
+                "Node",
                 "Project",
                 "Route",
                 "Subtask",
