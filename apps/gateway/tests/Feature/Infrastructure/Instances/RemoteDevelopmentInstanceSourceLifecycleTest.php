@@ -679,6 +679,78 @@ it('removes a failed reserved create whose clone never made a checkout', functio
     $this->assertModelMissing($instance);
 })->with([false, true]);
 
+it('removes a failed in-place registration without deleting its branch or shared repository', function (bool $force): void {
+    $checkout = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'shared');
+    $path = $this->appsRoot.'/acme/stuck-registration';
+    orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'stuck-registration', $path, 'HEAD']);
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'stuck-registration');
+    $instance->update([
+        'source_layout' => 'worktree',
+        'branch' => 'stuck-registration',
+        'starting_commit' => $checkout->starting_commit,
+        'failed_step' => 'registration',
+        'error_code' => 'instance.registration_incomplete',
+        'registration_request_id' => (string) Str::uuid(),
+        'registration_original_path' => $path,
+        'registration_authoritative_path' => $path,
+        'registration_relocation_state' => 'relocating',
+        'registration_repository_identity' => $this->orbitApp->repository_identity,
+        'registration_common_repository_path' => $checkout->checkout_path.'/.git',
+        'registration_source_digest' => str_repeat('a', 64),
+        'registration_detached' => false,
+    ]);
+    file_put_contents($path.'/unfinished-agent-work', 'dirty adopted source');
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+    if (! $force) {
+        expect(fn () => $action->execute($instance, false))->toThrow(ResourceOperationException::class);
+        $this->assertModelExists($instance);
+        unlink($path.'/unfinished-agent-work');
+    }
+
+    $removal = $action->execute($instance, $force);
+
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and(is_dir($path))->toBeFalse()
+        ->and(is_dir($checkout->checkout_path.'/.git'))->toBeTrue()
+        ->and(trim(orb76_run(['git', '-C', $checkout->checkout_path, 'rev-parse', 'refs/heads/stuck-registration'])->stdout))->toBe($checkout->starting_commit);
+    $this->assertModelMissing($instance);
+    $this->assertModelExists($checkout);
+})->with([false, true]);
+
+it('does not authorize reserved checkout deletion from incomplete or mismatched registration evidence', function (string $mismatch): void {
+    $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'reserved-existing');
+    $instance->update([
+        'status' => InstanceState::Reserved,
+        'failed_step' => 'registration',
+        'error_code' => 'instance.registration_incomplete',
+        'registration_request_id' => (string) Str::uuid(),
+        'registration_original_path' => $instance->checkout_path,
+        'registration_authoritative_path' => $instance->checkout_path,
+        'registration_relocation_state' => 'reserved',
+        'registration_repository_identity' => $this->orbitApp->repository_identity,
+        'registration_common_repository_path' => $instance->checkout_path.'/.git',
+        'registration_source_digest' => str_repeat('a', 64),
+        'registration_detached' => false,
+    ]);
+    match ($mismatch) {
+        'request' => $instance->update(['registration_request_id' => null]),
+        'digest' => $instance->update(['registration_source_digest' => null]),
+        'move' => $instance->update(['registration_original_path' => $this->sandbox.'/external']),
+        'authority' => $instance->update(['registration_authoritative_path' => $this->sandbox.'/external']),
+        'commit' => $instance->update(['starting_commit' => str_repeat('a', 40)]),
+        'repository' => $instance->update(['registration_repository_identity' => 'example.test/other']),
+        'common' => $instance->update(['registration_common_repository_path' => $this->sandbox.'/other/.git']),
+        'detached' => $instance->update(['registration_detached' => true]),
+        'clone' => $instance->update(['failed_step' => 'checkout_prepared', 'registration_request_id' => null]),
+    };
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    expect(fn () => $action->execute($instance, true))->toThrow(ResourceOperationException::class)
+        ->and(is_dir($instance->checkout_path))->toBeTrue();
+    $this->assertModelExists($instance);
+    $this->assertDatabaseCount('instance_removals', 0);
+})->with(['request', 'digest', 'move', 'authority', 'commit', 'repository', 'common', 'detached', 'clone']);
+
 it('retries empty Project directory cleanup after absent-source finalization is interrupted', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-clone-retry');
     $this->files->deleteDirectory($this->repository);

@@ -76,6 +76,10 @@ The ownership check reads the owner of the checkout directory and its parent. It
 
 Removal deletes any owned partial checkout, deletes the reserved Route if one exists, releases the reserved Vite port, and deletes the Instance row. If creation stopped before it made the checkout, there is no source directory to delete. A `reserved` Instance has no completed source preparation to prove ownership of an existing checkout. Orbit refuses to delete that checkout in either mode, even when its origin and account match. Removal still checks that the path and resources belong to this Instance; it never deletes another Instance's source or Route.
 
+A failed in-place registration is different from a failed clone: registration records the existing source before reserving the Instance. A `reserved` registration can be removed when its recorded original and authoritative paths both equal its managed checkout path, and its recorded repository, branch, detached state, and commit still match. The normal path, ownership, layout, and worktree checks still apply. Unlike a partial clone, an adopted source still needs `--force` when it is dirty or unpublished. Removal keeps a worktree's local branch and common repository.
+
+A reservation for a move that has not verified its destination cannot authorize deleting an existing checkout; retry registration first.
+
 A non-active state alone does not prove that create failed. Orbit refuses removal while creation is still in progress. `--force` does not override that refusal. An Instance that already became `active` uses the normal or forced removal rules above, even if a later setup step failed.
 
 ### Worktree sets

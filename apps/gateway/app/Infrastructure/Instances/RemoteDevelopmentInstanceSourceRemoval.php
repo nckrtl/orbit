@@ -92,7 +92,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             expectedBranch: $context['branch'],
             expectedRepositoryIdentity: $context['repositoryIdentity'],
             force: $force,
-            inspectContent: $inspectContent && ! $this->failedCreation($instance),
+            inspectContent: $inspectContent && (! $this->failedCreation($instance) || $instance->registration_request_id !== null),
             unresolved: $this->failedCreation($instance) && $instance->starting_commit === null,
             allowAbsent: $this->failedCreation($instance),
         );
@@ -101,6 +101,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $this->failedCreation($instance)
             && $instance->status === InstanceState::Reserved
             && $inventory->sourceIdentity !== 'absent'
+            && ! $this->removableInPlaceRegistration($instance, $inventory)
         ) {
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-removal-inspect',
@@ -432,7 +433,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
             $failedCreation = ! $member->runtime_published
-                && Instance::query()->whereKey($member->instance_id)->whereNotNull('failed_step')->whereNotNull('error_code')->exists();
+                && ($inventory->sourceIdentity === 'absent'
+                    || Instance::query()->whereKey($member->instance_id)->whereNull('registration_request_id')->whereNotNull('failed_step')->whereNotNull('error_code')->exists());
             $input = self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript();
             $script = $failedCreation ? null : GitReadScript::for(
                 $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
@@ -902,6 +904,21 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $member->instance_removal_id,
             $member->id,
         );
+    }
+
+    private function removableInPlaceRegistration(Instance $instance, InstanceSourceInventory $inventory): bool
+    {
+        return $instance->failed_step === 'registration'
+            && $instance->registration_request_id !== null
+            && $instance->registration_source_digest !== null
+            && $instance->registration_original_path === $instance->checkout_path
+            && $instance->registration_authoritative_path === $instance->checkout_path
+            && in_array($instance->registration_relocation_state, ['reserved', 'relocating', 'destination_verified', 'original_cleanup', 'relocated'], true)
+            && $instance->registration_repository_identity === $inventory->repositoryIdentity
+            && $instance->registration_common_repository_path === $inventory->commonRepositoryPath.'/.git'
+            && $instance->starting_commit === $inventory->startingCommit
+            && $instance->branch === $inventory->branch
+            && $instance->registration_detached === ($inventory->branch === null);
     }
 
     private function failedCreation(Instance $instance): bool

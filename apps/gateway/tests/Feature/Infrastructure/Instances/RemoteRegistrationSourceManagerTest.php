@@ -398,6 +398,115 @@ it('resumes relocation from each durable cross-filesystem checkpoint', function 
     'verified destination after original removal before the database checkpoint' => 'destination-only',
 ]);
 
+describe('in-place registration with shared refs', function (): void {
+    it('adopts a managed worktree while unrelated refs change', function (): void {
+        $fixture = orb918_in_place_fixture();
+
+        try {
+            $facts = $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0];
+            $identity = stat($fixture['destination']);
+            $gitLink = file_get_contents($fixture['destination'].'/.git');
+            $transport = new Orb918ConcurrentRefsSshExecutor;
+            $manager = orb105_registration_manager($transport);
+
+            $manager->relocate($fixture['instance'], $facts);
+
+            expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated')
+                ->and(stat($fixture['destination'])['ino'])->toBe($identity['ino'])
+                ->and(file_get_contents($fixture['destination'].'/.git'))->toBe($gitLink)
+                ->and($fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0]->sourceDigest)->toBe($facts->sourceDigest)
+                ->and(trim(orb105_git($fixture['source'], ['rev-parse', 'refs/t3/test/918/1'])->stdout))->toBe($facts->commit)
+                ->and($transport->operations)->not->toContain('prepare', 'cleanup');
+        } finally {
+            orb105_remove_relocation_fixture($fixture);
+        }
+    });
+
+    it('resumes an interrupted adoption after unrelated refs change', function (string $checkpoint): void {
+        $fixture = orb918_in_place_fixture();
+        file_put_contents($fixture['destination'].'/.env', "APP_KEY=private\n");
+        chmod($fixture['destination'].'/.env', 0o644);
+        $transport = new Orb918InterruptAdoptionSshExecutor($checkpoint);
+        $manager = orb105_registration_manager($transport);
+
+        try {
+            $facts = $manager->inspect($fixture['node'], $fixture['destination'], false)[0];
+            expect(fn () => $manager->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class);
+            orb105_git($fixture['source'], ['update-ref', 'refs/t3/test/retry', $facts->commit]);
+
+            if ($checkpoint === 'adopt') {
+                $manager->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']);
+            } else {
+                $manager->validateRetained($fixture['node'], $facts, $fixture['destination']);
+            }
+            $manager->relocate($fixture['instance']->refresh(), $facts);
+
+            expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated')
+                ->and(fileperms($fixture['destination'].'/.env') & 0o007)->toBe(0)
+                ->and($transport->operations)->not->toContain('prepare', 'cleanup');
+        } finally {
+            orb105_remove_relocation_fixture($fixture);
+        }
+    })->with(['adopt', 'adopt-finalize']);
+
+    it('refuses changed source state before adoption', function (string $change): void {
+        $fixture = orb918_in_place_fixture();
+
+        try {
+            $facts = $fixture['manager']->inspect($fixture['node'], $fixture['destination'], false)[0];
+            if ($change === 'index') {
+                orb105_git($fixture['destination'], ['update-index', '--assume-unchanged', 'README.md']);
+            } elseif ($change === 'head') {
+                orb105_git($fixture['destination'], ['commit', '--allow-empty', '-m', 'Source changed']);
+            } else {
+                file_put_contents($fixture['destination'].'/README.md', 'changed');
+            }
+
+            expect(fn () => $fixture['manager']->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']))->toThrow(ResourceOperationException::class);
+            expect(fn () => $fixture['manager']->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class)
+                ->and(is_dir($fixture['destination']))->toBeTrue();
+        } finally {
+            orb105_remove_relocation_fixture($fixture);
+        }
+    })->with(['head', 'index', 'working-tree']);
+});
+
+it('resumes a relocated checkout after unrelated repository refs change', function (): void {
+    $fixture = orb105_relocation_fixture(false);
+    $manager = orb105_registration_manager(new Orb105InterruptAfterPrepareSshExecutor);
+
+    try {
+        $facts = $manager->inspect($fixture['node'], $fixture['source'], false)[0];
+        expect(fn () => $manager->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class);
+        orb105_git($fixture['destination'], ['update-ref', 'refs/t3/test/relocation-retry', $facts->commit]);
+
+        $manager->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']);
+        $manager->relocate($fixture['instance']->refresh(), $facts);
+
+        expect($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated')
+            ->and(is_dir($fixture['source']))->toBeFalse()
+            ->and(trim(orb105_git($fixture['destination'], ['rev-parse', 'HEAD'])->stdout))->toBe($facts->commit);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
+it('refuses a relocated checkout whose own HEAD changes during the move', function (): void {
+    $fixture = orb105_relocation_fixture(false);
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+        $manager = orb105_registration_manager(new Orb918ChangeHeadAfterRenameSshExecutor);
+
+        expect(fn () => $manager->relocate($fixture['instance'], $facts))->toThrow(RuntimeConvergenceException::class)
+            ->and(is_dir($fixture['destination']))->toBeTrue()
+            ->and($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocating');
+        expect(fn () => $manager->validateRelocationRecovery($fixture['node'], $facts, $fixture['destination']))->toThrow(ResourceOperationException::class);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+});
+
 it('reports the configured origin, not the insteadOf rewrite Git applies', function (): void {
     $fixture = orb105_relocation_fixture(false);
     orb105_run(['git', '-C', $fixture['source'], 'config', 'url.git@example.test:.insteadOf', 'https://example.test/']);
@@ -928,7 +1037,7 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         'tld' => 'test',
         'public_ssh_host' => '192.0.2.105',
         'wireguard_ip' => '127.0.0.1',
-        'user' => get_current_user(),
+        'user' => posix_getpwuid(posix_geteuid())['name'],
         'settings' => ['apps' => ['path' => $destinationRoot.'/managed']],
     ]);
     $project = Project::query()->create([
@@ -977,6 +1086,20 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
  *
  * Ubuntu gives each managed account a private group with the account's name, but macOS puts users in staff.
  */
+function orb918_in_place_fixture(): array
+{
+    $fixture = orb105_relocation_fixture(false);
+    orb105_git($fixture['source'], ['worktree', 'add', '-b', 'task-918', $fixture['destination']]);
+    $fixture['instance']->update([
+        'source_layout' => 'worktree',
+        'branch' => 'task-918',
+        'registration_original_path' => $fixture['destination'],
+        'registration_authoritative_path' => $fixture['destination'],
+    ]);
+
+    return $fixture;
+}
+
 function orb105_primary_group(): string
 {
     $group = posix_getgrgid(posix_getegid());
@@ -1124,6 +1247,83 @@ final readonly class Orb105LocalSshExecutor implements SshExecutor
             protectedInput: $command->protectedInput,
             environment: $this->environment,
         ));
+    }
+}
+
+final class Orb918ConcurrentRefsSshExecutor implements SshExecutor
+{
+    /** @var list<string> */
+    public array $operations = [];
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        $operation = $command->arguments[3] ?? '';
+        $this->operations[] = $operation;
+        if (in_array($operation, ['adopt', 'prepare'], true)) {
+            $arguments = $command->arguments;
+            $hook = <<<'PYTHON'
+                import json, subprocess, sys
+                concurrent_member = json.loads(sys.argv[2])[0]
+                original_check_output = subprocess.check_output
+                checkpoint = 0
+                def concurrent_refs(arguments, **kwargs):
+                    global checkpoint
+                    output = original_check_output(arguments, **kwargs)
+                    if arguments[0] == 'git':
+                        checkpoint += 1
+                        original_check_output(['git', '-C', concurrent_member['source'], 'update-ref', 'refs/t3/test/918/' + str(checkpoint), concurrent_member['commit']])
+                        original_check_output(['git', '-C', concurrent_member['source'], 'update-ref', 'refs/heads/another-agent', concurrent_member['commit']])
+                    return output
+                subprocess.check_output = concurrent_refs
+
+                PYTHON;
+            $arguments[2] = $hook.$arguments[2];
+            $command = new RemoteCommand(arguments: $arguments);
+        }
+
+        return new Orb105LocalSshExecutor()->execute($connection, $command);
+    }
+}
+
+final class Orb918InterruptAdoptionSshExecutor implements SshExecutor
+{
+    private bool $interrupted = false;
+
+    /** @var list<string> */
+    public array $operations = [];
+
+    public function __construct(private readonly string $checkpoint = 'adopt') {}
+
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        $operation = $command->arguments[3] ?? '';
+        $this->operations[] = $operation;
+        $result = new Orb105LocalSshExecutor()->execute($connection, $command);
+        if (! $this->interrupted && ($operation === $this->checkpoint || $operation === 'prepare') && $result->succeeded()) {
+            $this->interrupted = true;
+
+            return new CommandResult(137, $result->stdout, 'Interrupted adoption', $result->durationMs, false);
+        }
+
+        return $result;
+    }
+}
+
+final readonly class Orb918ChangeHeadAfterRenameSshExecutor implements SshExecutor
+{
+    public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+    {
+        if (($command->arguments[3] ?? null) === 'prepare') {
+            $arguments = $command->arguments;
+            $arguments[2] = str_replace(
+                'os.rename(source, destination)',
+                "os.rename(source, destination); subprocess.check_call(['git','-C',destination,'commit','--allow-empty','-m','Concurrent source change'], stdout=subprocess.DEVNULL)",
+                $arguments[2],
+            );
+            $command = new RemoteCommand(arguments: $arguments);
+        }
+
+        return new Orb105LocalSshExecutor()->execute($connection, $command);
     }
 }
 
