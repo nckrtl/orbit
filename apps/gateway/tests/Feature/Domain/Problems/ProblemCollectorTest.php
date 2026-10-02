@@ -2,12 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Actions\Doctor\RunDoctorAction;
+use App\Domain\Doctor\DoctorIssueKind;
+use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Problems\ProblemEvidence;
 use App\Domain\Problems\ProblemSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tools\ToolInventoryPackage;
+use App\Domain\Tools\ToolInventoryPackageKind;
+use App\Domain\Tools\ToolInventoryScan;
+use App\Domain\Tools\ToolInventoryScanState;
+use App\Domain\Tools\ToolManagerName;
 use App\Models\Activity;
 use App\Models\Node;
 use App\Models\ProblemCollectorState;
@@ -49,6 +57,55 @@ it('collects fingerprints for the same doctor issue across two runs', function (
         ->and($fingerprint->evidence['observation_times'])->toHaveCount(2)
         ->and(ProblemFingerprint::query()->where('fingerprint', 'like', 'doctor|node.lifecycle_not_active|node|%')->pluck('occurrences')->all())
         ->toBe([2, 2]);
+});
+
+it('collects no fingerprint for an informational doctor issue', function (): void {
+    problem_collector_sandbox();
+    $node = problem_collector_node('informational');
+    $node->update(['status' => LifecycleStatus::Active]);
+    app()->instance(NodeStateInspector::class, new class implements NodeStateInspector
+    {
+        public function inspect(Node $node): NodeInspectionData
+        {
+            return new NodeInspectionData(true, 'linux', 'amd64', true);
+        }
+    });
+    app()->instance(InstalledPackageInventory::class, new class implements InstalledPackageInventory
+    {
+        public function inspect(Node $node): array
+        {
+            return [
+                new ToolInventoryScan(ToolManagerName::Brew, ToolInventoryScanState::Complete, [
+                    new ToolInventoryPackage(
+                        manager: ToolManagerName::Brew,
+                        package: 'zebra',
+                        packageKind: ToolInventoryPackageKind::Formula,
+                        installedVersion: '2.0.0',
+                        dependency: false,
+                        registered: false,
+                        toolId: null,
+                        adoption: ToolInventoryPackage::SUPPORTED,
+                        adoptionBlock: null,
+                    ),
+                ]),
+                new ToolInventoryScan(ToolManagerName::BrewCask, ToolInventoryScanState::Unsupported, []),
+                new ToolInventoryScan(ToolManagerName::Vp, ToolInventoryScanState::Unsupported, []),
+            ];
+        }
+    });
+    $kinds = collect(app(RunDoctorAction::class)->executeForFleet()->nodes)
+        ->flatMap(static fn ($report): array => $report->families)
+        ->flatMap(static fn ($family): array => $family->issues)
+        ->filter(static fn ($issue): bool => $issue->code === 'tool.package_unregistered')
+        ->map(static fn ($issue): DoctorIssueKind => $issue->kind)
+        ->unique()
+        ->values()
+        ->all();
+
+    Artisan::call('problems:collect');
+
+    expect($kinds)->toBe([DoctorIssueKind::Informational])
+        ->and(ProblemFingerprint::query()->where('fingerprint', 'like', 'doctor|tool.package_unregistered|%')->exists())->toBeFalse();
 });
 
 it('collects fingerprints for neither a sub-500 refusal nor a log entry without an app frame', function (): void {

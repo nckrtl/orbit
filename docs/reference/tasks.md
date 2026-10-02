@@ -511,7 +511,7 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 | Log | 1 MiB, stopping at the end of a whole record |
 | Assistance | 200 open rows |
 
-Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, the byte offset, and the Doctor resume key. A Doctor pass that handles fewer than 200 issues clears the resume key.
+Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. The collector records only `drift` and `unverifiable` issues. It skips `informational` issues, such as unregistered packages, because Doctor health ignores them too. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, the byte offset, and the Doctor resume key. A Doctor pass that handles fewer than 200 issues clears the resume key.
 
 The first collector run sets the Activity cursor to the current maximum id, and the log offset to the end of the current file. It does not count those past rows. The log file is `storage/logs/laravel.log` when that path is a regular file. Otherwise it is the newest `storage/logs/laravel-*.log`. The collector finishes unread bytes in a rotated file before it switches.
 
