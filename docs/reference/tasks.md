@@ -740,7 +740,11 @@ The check runs only the Project's ordered [setup steps](/reference/instance-setu
 
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
-A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace. Fix the cause, then cancel and create the task again.
+A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace.
+
+When a baseline check fails and no implementer has started in the task, fix the cause and post an operator `resolution` on that subtask to retry the baseline. Before retrying, the engine moves the untouched workspace to the current `origin/<default branch>` and records the new start commit. The baseline then runs again before the first implementer starts. There is no need to cancel and recreate the task.
+
+Orbit records the retry request with the resolution before moving the workspace. If the reset reply is lost or the Gateway stops before recording the new start commit, a later tick finishes the reset and bookkeeping without another resolution. Assistance stays set until that preparation succeeds.
 
 ## Review a subtask
 
@@ -861,6 +865,10 @@ When the last fixup changed nothing, the task asks for assistance and adds `Fixu
 
 A `todo` subtask on a `settling` task, a fixup or an operator's subtask, returns the task to `running`. This works when the pull request is open, and when the task has no `pr_url`. Another assistance cause keeps the task `settling`.
 
+Before a conflict fixup starts an implementer, the engine reads the pull request's mergeability again. For example, a fixup whose `fixup_problem` is `conflict:main` may be stale because the maintainer merged main into the task branch. When the current mergeability shows no conflict, the engine cancels the fixup with a recorded reason, starts no implementer for it, and returns the task to `settling`.
+
+A merged or closed pull request also cancels an unstarted conflict fixup and returns the task to settling, where merge cleanup or closed-pull-request assistance applies. An approved commit that missed the merge still asks for assistance and keeps its workspace. An unavailable result or unknown mergeability waits without cancelling or starting an implementer.
+
 Before that subtask starts, the Gateway prepares the workspace. It reuses the [fetch before a turn](#fetch-before-a-turn) instead of fetching again. That fetch already updates `origin/task-{id}` and, when the pull request base is not the default branch, `origin/{base}`. The Gateway then fast-forwards the workspace to `origin/task-{id}` when the workspace is strictly behind that ref. It never forces. A workspace that is level, ahead, or diverged stays unchanged.
 
 When the task has no pull request and `task-{id}` is not on `origin`, there is nothing to fast-forward, and that absence is not a failure of this preparation. A failed fetch or fast-forward keeps the subtask `todo`, retries on the same backoff, and asks for assistance on the fifth failure. That blocking retry is only for this preparation. An ordinary agent turn still starts when its own fetch fails, and its message warns that `origin/*` may be stale.
@@ -868,6 +876,8 @@ When the task has no pull request and `task-{id}` is not on `origin`, there is n
 The fixup runs like any subtask, with a fresh implementer and a fresh reviewer. Its approval needs no pull request fields, and its push updates the open pull request. Orbit does not rebase, does not force-push, does not open a second pull request, and does not merge.
 
 Before each push to a stored pull request, the Gateway reads its state again. When it already merged or closed, Orbit does not push and asks for assistance with a reason that starts with `An approved commit is not on the pull request: `. When the task returns to `settling` and its pull request already merged without the latest approved commit, it asks for assistance with the same prefix, and its workspace stays. When the task returns to `settling`, it refreshes its metrics and does not post `task_group.settled` again.
+
+Before removing a merged task's workspace, every tick checks the latest approval against the pull request head again. If the Gateway stopped after recording `settling` but before recording the missed-approval hold, the next tick restores that hold and keeps the workspace.
 
 ### Jev decision records
 

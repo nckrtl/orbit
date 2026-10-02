@@ -576,6 +576,11 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             }
         }
 
+        public function resetToDefault(Task $group): string
+        {
+            return str_repeat('c', 40);
+        }
+
         public function fetchForTurn(Task $group): void
         {
             $this->turnFetches++;
@@ -985,6 +990,7 @@ it('appends one conflict fixup and reuses its turn fetch before fast-forwarding 
     $agents = tick_running_agents();
     tick_watch_pulls([
         tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty']),
+        tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty']),
     ], ['abc123' => [[
         'name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9',
     ]]]);
@@ -1355,6 +1361,184 @@ it('starts an interrupted operator subtask on the next tick without appending a 
         ->and($agents->spawned)->toBe([$todo->id]);
 })->with([TaskStatus::Todo, TaskStatus::Running]);
 
+it('cancels a stale conflict fixup before its implementer starts and returns to settling', function (): void {
+    $group = tick_settling_group();
+    $group->update(['settled_at' => now()]);
+    mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->once()->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
+    tick_running_agents(fetchFails: true);
+    tick_watch_pulls([
+        tick_open_pull(['mergeable' => false]),
+        tick_open_pull(['mergeable' => true, 'mergeable_state' => 'clean']),
+    ], ['abc123' => []]);
+    app(TaskScheduler::class)->tick();
+    $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
+    $this->travel(60)->seconds();
+    $agents = tick_running_agents();
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null,
+        'completion_summary' => 'Cancelled because the pull request is mergeable again; no conflict fixup is needed.',
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false]);
+    expect($fixup->fresh()?->settled_at)->not->toBeNull();
+    expect($agents->spawned)->toBe([]);
+    expect(AgentThread::query()->where('task_id', $fixup->id)->exists())->toBeFalse();
+});
+
+it('cancels an unstarted conflict fixup when its pull request closes and lets settling ask for assistance', function (): void {
+    $group = tick_settling_group();
+    $group->update(['settled_at' => now()]);
+    mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->once()->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
+    tick_running_agents(fetchFails: true);
+    $closed = tick_open_pull(['state' => 'closed', 'mergeable' => null]);
+    tick_watch_pulls([tick_open_pull(['mergeable' => false]), $closed, $closed], ['abc123' => []]);
+    app(TaskScheduler::class)->tick();
+    $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
+    $this->travel(60)->seconds();
+    $agents = tick_running_agents();
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null,
+        'completion_summary' => 'Cancelled because the pull request closed without merging; no conflict fixup can proceed.',
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling']);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true,
+        'assistance_reason' => 'The expected pull request closed without merging.', 'taskable_id' => $group->taskable_id]);
+    expect($agents->spawned)->toBe([]);
+});
+
+it('cancels an unstarted conflict fixup on merge and preserves orphaned approval safeguards', function (bool $orphaned): void {
+    $group = tick_settling_group();
+    $group->update(['settled_at' => now()]);
+    mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->once()->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
+    $commit = $orphaned ? str_repeat('d', 40) : 'abc123';
+    TaskComment::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $group->tasks()->sole()->id,
+        'type' => 'approved', 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $commit,
+    ]);
+    $remover = mock(InstanceRemover::class);
+    if ($orphaned) {
+        $remover->shouldNotReceive('execute');
+        tick_assistance_notifier();
+    } else {
+        $remover->shouldReceive('execute')->once()->andReturnUsing(function (Instance $instance): InstanceRemoval {
+            $instance->delete();
+
+            return new InstanceRemoval;
+        });
+    }
+    tick_running_agents(fetchFails: true);
+    $merged = tick_open_pull(['merged' => true, 'state' => 'closed', 'mergeable' => null]);
+    tick_watch_pulls([tick_open_pull(['mergeable' => false]), $merged, $merged], ['abc123' => []]);
+    app(TaskScheduler::class)->tick();
+    $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
+    $this->travel(60)->seconds();
+    $agents = tick_running_agents();
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null,
+        'completion_summary' => 'Cancelled because the pull request merged; no conflict fixup is needed.',
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling']);
+
+    app(TaskScheduler::class)->tick();
+
+    if ($orphaned) {
+        $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'taskable_id' => $group->taskable_id]);
+        expect($group->fresh()?->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix.'Commit '.$commit);
+    } else {
+        $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'completed', 'taskable_id' => null]);
+    }
+    expect($agents->spawned)->toBe([]);
+})->with(['merged approval' => false, 'approval missed merge' => true]);
+
+it('retains an orphaned approval after interruption between settling and recording its hold', function (bool $otherAssistance): void {
+    $group = tick_settling_group();
+    $group->update(['settled_at' => now()]);
+    $instanceId = $group->taskable_id;
+    $commit = str_repeat('d', 40);
+    TaskComment::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $group->tasks()->sole()->id,
+        'type' => 'approved', 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $commit,
+    ]);
+    $removals = 0;
+    mock(InstanceRemover::class)->shouldReceive('execute')->andReturnUsing(function (Instance $instance) use (&$removals): InstanceRemoval {
+        $removals++;
+        $instance->delete();
+
+        return new InstanceRemoval;
+    });
+    mock(TaskSettleMetricsCollector::class)->shouldNotReceive('collect');
+    $notifier = tick_assistance_notifier();
+    tick_running_agents(fetchFails: true);
+    $merged = tick_open_pull(['merged' => true, 'state' => 'closed', 'mergeable' => null]);
+    tick_watch_pulls([tick_open_pull(['mergeable' => false]), $merged, $merged, $merged], ['abc123' => []]);
+    app(TaskScheduler::class)->tick();
+    $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
+    $this->travel(60)->seconds();
+    $agents = tick_running_agents();
+    // Abort the first hold write, after the preceding settling transaction has committed.
+    DB::statement("CREATE TRIGGER interrupt_orphaned_approval_hold BEFORE UPDATE ON tasks WHEN NEW.id = {$group->id} AND NEW.assistance_reason LIKE 'An approved commit is not on the pull request:%' BEGIN SELECT RAISE(ABORT, 'Gateway interrupted before orphaned hold'); END");
+    try {
+        expect(fn () => app(TaskScheduler::class)->tick())->toThrow(QueryException::class, 'Gateway interrupted before orphaned hold');
+    } finally {
+        DB::statement('DROP TRIGGER interrupt_orphaned_approval_hold');
+    }
+    $this->assertDatabaseHas('tasks', ['id' => $fixup->id, 'status' => 'cancelled', 'implementer_agent_thread_id' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => false, 'taskable_id' => $instanceId]);
+    if ($otherAssistance) {
+        $group->refresh()->update(['assistance_requested' => true, 'assistance_reason' => 'Another assistance cause.']);
+    }
+
+    // A fresh Gateway tick must revalidate the approval, not trust the absent hold.
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling', 'assistance_requested' => true, 'taskable_id' => $instanceId]);
+    $this->assertDatabaseHas('instances', ['id' => $instanceId]);
+    expect($removals)->toBe(0);
+    expect($group->fresh()?->assistance_reason)->toStartWith(TaskScheduler::OrphanedCommitPrefix.'Commit '.$commit);
+    expect($notifier->reasons)->toBe([$group->fresh()?->assistance_reason]);
+    expect($agents->spawned)->toBe([]);
+})->with(['hold missing after interruption' => false, 'another assistance cause after interruption' => true]);
+
+it('waits without cancelling or spawning a conflict fixup when mergeability is unknown', function (): void {
+    $group = tick_settling_group();
+    $group->update(['settled_at' => now()]);
+    mock(TaskSettleMetricsCollector::class)->shouldReceive('collect')->once()->andReturn(new TaskSettleMetrics(tokens: 40, lineDiff: 12, durationMs: 1500));
+    tick_running_agents(fetchFails: true);
+    tick_watch_pulls([
+        tick_open_pull(['mergeable' => false]),
+        tick_open_pull(['mergeable' => null, 'mergeable_state' => 'unknown']),
+        tick_open_pull(),
+    ], ['abc123' => []]);
+    app(TaskScheduler::class)->tick();
+    $fixup = Task::query()->where('fixup_problem', 'conflict:main')->sole();
+    $this->travel(60)->seconds();
+    $agents = tick_running_agents();
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $fixup->id, 'status' => 'running', 'completion_summary' => null, 'implementer_agent_thread_id' => null]);
+    expect($agents->spawned)->toBe([]);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $fixup->id, 'status' => 'cancelled']);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'settling']);
+    expect($agents->spawned)->toBe([]);
+});
+
 it('leaves a conflict fixup todo when the base fetch fails', function (): void {
     $group = tick_settling_group();
     $agents = tick_running_agents(fetchFails: true);
@@ -1558,7 +1742,10 @@ it('reports a genuine failure while another check is pending and appends no chec
 it('appends a conflict fixup while a check is pending', function (): void {
     $group = tick_settling_group();
     $agents = tick_running_agents();
-    tick_watch_pulls([tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty'])], ['abc123' => [
+    tick_watch_pulls([
+        tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty']),
+        tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty']),
+    ], ['abc123' => [
         ['name' => 'Custom', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/9'],
         ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'started_at' => now()->subMinutes(5)->toIso8601String(), 'html_url' => 'https://github.com/acme/orbit/runs/11'],
     ]]);
@@ -4487,7 +4674,7 @@ it('project baseline setup only', function (): void {
 
     $failedTaskId = $failedSetup->tasks()->value('id');
     expect($failedSetup->fresh()?->assistance_requested)->toBeTrue()
-        ->and($failedSetup->fresh()?->assistance_reason)->toBe('The Project setup step "Install" failed with exit code 7 on a fresh checkout of task-'.$failedSetup->id.', before any agent started. Fix the setup or the branch, then cancel and create the group again. The task\'s check shows the output.')
+        ->and($failedSetup->fresh()?->assistance_reason)->toBe('The Project setup step "Install" failed with exit code 7 on a fresh checkout of task-'.$failedSetup->id.', before any agent started. Fix the setup or the branch, then post a resolution on this subtask to retry the baseline. The task\'s check shows the output.')
         ->and(TaskCheck::query()->where('task_id', $failedTaskId)->sole()->output)->toBe($setupOutput)
         ->and($failedSetup->tasks()->value('implementer_agent_thread_id'))->toBeNull()
         ->and($spawner->events)->toBe(['implementer:1']);
@@ -4504,12 +4691,180 @@ it('project baseline setup only', function (): void {
 
     $reason = $ordinary->fresh()?->assistance_reason;
     expect($ordinary->fresh()?->assistance_requested)->toBeTrue()
-        ->and($reason)->toBe('The Project baseline check failed with exit code 1 on a fresh checkout of task-'.$ordinary->id.', before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task\'s check shows the output.')
+        ->and($reason)->toBe('The Project baseline check failed with exit code 1 on a fresh checkout of task-'.$ordinary->id.', before any agent started. Fix the configured check or the branch, then post a resolution on this subtask to retry the baseline. The task\'s check shows the output.')
         ->and($reason)->not->toContain('Project dependencies appear to be missing')
         ->and($reason)->not->toContain('Composer dependency installation failed')
         ->and($reason)->not->toContain('JavaScript dependency installation failed')
         ->and(TaskCheck::query()->where('task_id', $ordinary->tasks()->value('id'))->sole()->output)->toBe($ordinaryOutput)
         ->and($spawner->events)->toBe(['implementer:1']);
+});
+
+it('retries a failed baseline on resolution at the current default branch tip without recreating the group', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('baseline-resolution', 'composer check', [], '10.51.0.6');
+    $agents = tick_running_agents();
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $failed = TaskCheck::query()->where('task_id', $task->id)->sole();
+    expect($task->assistance_requested)->toBeTrue();
+    $task->update(['subtask_start_commit' => str_repeat('a', 40)]);
+    // The remote default branch advanced after the first baseline failed.
+    $tip = str_repeat('c', 40);
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once()->ordered();
+    $fetcher->shouldReceive('resetToDefault')->once()->ordered()->andReturn($tip);
+
+    $resolution = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'The default branch check is fixed. Retry.', 'author' => 'operator',
+    ]);
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => $task->id, 'status' => 'running', 'subtask_start_commit' => $tip,
+        'assistance_requested' => false, 'assistance_reason' => null,
+        'resolution_delivered_comment_id' => $resolution->id, 'implementer_agent_thread_id' => null,
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'status' => 'running', 'assistance_requested' => false]);
+    expect($runner->starts)->toBe(1);
+    expect($failed->fresh()?->output)->toBe("baseline failed\n");
+    expect($failed->fresh()?->status)->toBe(TaskCheckStatus::Failed);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($runner->starts)->toBe(2);
+    expect(TaskCheck::query()->where('task_id', $task->id)->count())->toBe(2);
+    $this->assertDatabaseHas('task_checks', ['task_id' => $task->id, 'kind' => 'baseline', 'status' => 'running']);
+    expect($agents->spawned)->toBe([]);
+
+    app()->instance(TaskBaseBranchFetcher::class, $agents);
+    app(TaskScheduler::class)->tick();
+
+    expect($agents->spawned)->toBe([$task->id]);
+    expect($task->fresh()?->subtask_start_commit)->toBe($tip);
+});
+
+it('keeps baseline assistance and evidence when retry preparation fails', function (string $step): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('baseline-retry-failed', 'composer check', [], '10.51.0.7');
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $task->update(['subtask_start_commit' => str_repeat('a', 40)]);
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    if ($step === 'fetch') {
+        $fetcher->shouldReceive('fetchForTurn')->twice()->andThrow(new TaskPullRequestException('Fetch failed.'));
+        $fetcher->shouldNotReceive('resetToDefault');
+    } else {
+        $fetcher->shouldReceive('fetchForTurn')->twice();
+        $fetcher->shouldReceive('resetToDefault')->twice()->andThrow(new TaskPullRequestException('Reset failed.'));
+    }
+
+    $resolution = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', [
+        'id' => $task->id, 'assistance_requested' => true, 'subtask_start_commit' => str_repeat('a', 40),
+        'resolution_delivered_comment_id' => $resolution->id, 'implementer_agent_thread_id' => null,
+    ]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true]);
+    expect(TaskCheck::query()->where('task_id', $task->id)->sole()->output)->toBe("baseline failed\n");
+    expect($runner->starts)->toBe(1);
+})->with(['fetch', 'reset']);
+
+it('recovers a baseline retry after an interrupted reset transition without another resolution', function (string $failure): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('baseline-recovery', 'composer check', [], '10.51.0.9');
+    $agents = tick_running_agents();
+    $runner = new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]);
+    app()->instance(TaskCheckRunner::class, $runner);
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $head = str_repeat('a', 40);
+    $tip = str_repeat('c', 40);
+    $task->update(['subtask_start_commit' => $head]);
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->twice();
+    $resets = 0;
+    $fetcher->shouldReceive('resetToDefault')->twice()->andReturnUsing(function () use (&$head, $tip, &$resets, $failure): string {
+        $head = $tip;
+        $resets++;
+        if ($resets === 1 && $failure === 'lost response') {
+            throw new TaskPullRequestException('Reset succeeded but its reply was lost.');
+        }
+
+        return $head;
+    });
+    if ($failure === 'bookkeeping rollback') {
+        DB::statement("CREATE TRIGGER fail_baseline_retry_bookkeeping BEFORE UPDATE OF subtask_start_commit ON tasks WHEN NEW.subtask_start_commit = '$tip' BEGIN SELECT RAISE(ABORT, 'baseline retry bookkeeping failed'); END");
+        expect(fn () => app(StoreTaskCommentAction::class)->execute($task, [
+            'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+        ]))->toThrow(QueryException::class, 'baseline retry bookkeeping failed');
+        DB::statement('DROP TRIGGER fail_baseline_retry_bookkeeping');
+    } else {
+        app(StoreTaskCommentAction::class)->execute($task, [
+            'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+        ]);
+    }
+    $resolution = TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->sole();
+    expect($head)->toBe($tip);
+    $this->assertDatabaseHas('tasks', ['id' => $task->id, 'subtask_start_commit' => str_repeat('a', 40),
+        'assistance_requested' => true, 'resolution_delivered_comment_id' => $resolution->id]);
+    expect($runner->starts)->toBe(1);
+
+    // A new scheduler instance represents the next Gateway process. No new resolution is posted.
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $task->id, 'subtask_start_commit' => $head, 'assistance_requested' => false]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => false]);
+    expect($runner->starts)->toBe(2);
+    expect($agents->spawned)->toBe([]);
+    app()->instance(TaskBaseBranchFetcher::class, $agents);
+    app(TaskScheduler::class)->tick();
+
+    expect($resets)->toBe(2);
+    expect($runner->starts)->toBe(2);
+    expect(TaskCheck::query()->where('task_id', $task->id)->count())->toBe(2);
+    expect($agents->spawned)->toBe([$task->id]);
+    expect(TaskComment::query()->where('task_id', $task->id)->where('type', 'resolution')->count())->toBe(1);
+})->with(['lost response', 'bookkeeping rollback']);
+
+it('never resets a failed baseline workspace after an implementer has started elsewhere in the group', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = tick_baseline_group('baseline-touched', 'composer check', [], '10.51.0.8');
+    app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner([
+        TaskCheckReading::finished(1, str_repeat('a', 40), str_repeat('b', 40), [], "baseline failed\n"),
+    ]));
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+    $task = $group->tasks()->sole();
+    $other = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 2, 'title' => 'Earlier work', 'brief' => 'Done.', 'status' => TaskStatus::Completed,
+    ]);
+    test_agent_thread($group, 'earlier-implementer', $other);
+    $fetcher = mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldNotReceive('fetchForTurn');
+    $fetcher->shouldNotReceive('resetToDefault');
+
+    app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'Retry the baseline.', 'author' => 'operator',
+    ]);
+
+    $this->assertDatabaseHas('tasks', ['id' => $task->id, 'assistance_requested' => true, 'resolution_delivered_comment_id' => null]);
+    $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true]);
 });
 
 /**

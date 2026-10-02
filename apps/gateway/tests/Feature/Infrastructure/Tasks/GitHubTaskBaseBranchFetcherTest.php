@@ -355,6 +355,45 @@ it('does not run a fetch when the default branch name is invalid', function (): 
     expect($transport->commands)->toHaveCount(0);
 });
 
+it('resets an untouched baseline workspace to the fetched default branch tip without changing its branch', function (): void {
+    $root = TestOrbitHome::scratch('orbit-baseline-reset');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $checkout]))->mustRun();
+    $group = fetcher_group($checkout);
+    fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
+    file_put_contents($checkout.'/tracked.txt', 'Original baseline');
+    fetcher_git($checkout, ['add', 'tracked.txt']);
+    fetcher_git($checkout, ['commit', '--quiet', '-m', 'Original baseline']);
+    $original = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    file_put_contents($checkout.'/tracked.txt', 'Fixed baseline');
+    fetcher_git($checkout, ['commit', '--quiet', '-am', 'Fix baseline']);
+    $tip = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+    fetcher_git($checkout, ['reset', '--quiet', '--hard', $original]);
+    fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/main']);
+    $bases = fetcher(new LocalShellSshExecutor);
+    $bases->fetchForTurn($group);
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($original);
+
+    $head = $bases->resetToDefault($group);
+
+    expect($head)->toBe($tip);
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($tip);
+    expect(fetcher_git($checkout, ['rev-parse', '--abbrev-ref', 'HEAD']))->toBe('task-7');
+    expect(file_get_contents($checkout.'/tracked.txt'))->toBe('Fixed baseline');
+});
+
+it('does not reset a baseline when the default branch name is invalid', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
+    $group->project->update(['default_branch' => 'HEAD']);
+
+    expect(fn () => fetcher($transport)->resetToDefault($group->fresh() ?? $group))
+        ->toThrow(TaskPullRequestException::class, 'The baseline workspace could not be reset.');
+    expect($transport->commands)->toHaveCount(0);
+});
+
 it('leaves the workspace alone when the task branch is missing and that absence is allowed', function (): void {
     $root = TestOrbitHome::scratch('orbit-fast-forward-missing');
     $checkout = $root.'/checkout';
