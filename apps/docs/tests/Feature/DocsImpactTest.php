@@ -96,11 +96,11 @@ function docsImpactFixture(): string
 
 it('docs impact fixtures disable automatic Git maintenance before cleanup', function (): void {
     $root = docsImpactFixture();
-    $gcAuto = trim(shell_exec('git -C '.escapeshellarg($root).' config --local --get gc.auto') ?? '');
-    $maintenanceAuto = trim(shell_exec('git -C '.escapeshellarg($root).' config --local --get maintenance.auto') ?? '');
+    $settings = [];
+    exec('git -C '.escapeshellarg($root).' config --local --get-regexp '.escapeshellarg('^(gc|maintenance)\.auto$'), $settings, $status);
 
-    expect($gcAuto)->toBe('0')
-        ->and($maintenanceAuto)->toBe('false');
+    expect($status)->toBe(0)
+        ->and($settings)->toContain('gc.auto 0', 'maintenance.auto false');
 
     removeDocsImpactFixturePath($root);
 

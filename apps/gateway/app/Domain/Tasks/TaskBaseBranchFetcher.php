@@ -7,9 +7,7 @@ namespace App\Domain\Tasks;
 use App\Models\Task;
 
 /**
- * Fetches a settling pull request's base ref into the workspace before a conflict fixup starts, and
- * catches the workspace up with a task branch that moved on GitHub (ADR 0164). The base fetch updates
- * the remote-tracking ref and does not change the task branch.
+ * Fetches remote-tracking refs before a turn and prepares a resumed workspace (ADR 0164).
  */
 interface TaskBaseBranchFetcher
 {
@@ -19,11 +17,28 @@ interface TaskBaseBranchFetcher
     public function fetch(Task $group, string $base): void;
 
     /**
-     * Fetches `origin/task-{group id}` and fast-forwards the workspace when it is strictly behind that ref,
-     * before a resumed subtask starts. A workspace that is level, ahead, or diverged is left alone. Never forces.
-     * When `$missingRefOk` is true, a remote ref that does not exist is not a failure and the workspace stays.
+     * Uses the already-fetched `origin/task-{group id}` and fast-forwards a strictly behind workspace
+     * before a resumed subtask starts. A level, ahead, or diverged workspace is left alone. Never forces.
+     * This step does not fetch or use a token. When `$missingRefOk` is true, an absent ref is not a failure.
      *
      * @throws TaskPullRequestException
      */
     public function fastForward(Task $group, bool $missingRefOk = false): void;
+
+    /**
+     * Fetches the Project default branch, `task-{group id}`, and the pull request base when it differs,
+     * before an agent turn. Uses the read token and `--no-tags`. A missing task branch is not a failure.
+     * Updates remote-tracking refs only and does not move HEAD.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function fetchForTurn(Task $group): void;
+
+    /**
+     * Resets an untouched task workspace to the already-fetched default-branch tip and returns HEAD.
+     * The caller must ensure that no implementer has started in the group.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function resetToDefault(Task $group): string;
 }

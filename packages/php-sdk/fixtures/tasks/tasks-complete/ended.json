@@ -1,0 +1,70 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CompleteTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/complete",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "project_id": 1,
+            "project": "orbit",
+            "project_code": "ORB",
+            "taskable_type": null,
+            "taskable_id": null,
+            "title": "Finish ended pull request",
+            "brief": "Cancel the remaining work.",
+            "status": "completed",
+            "reviewer_agent_thread_id": null,
+            "pr_url": null,
+            "watched_pr_url": "https://github.com/nckrtl/orbit/pull/544",
+            "watched_pr_number": 544,
+            "watched_pr_state": "merged",
+            "notify_coder": false,
+            "assistance_requested": false,
+            "assistance_kind": null,
+            "assistance_question": null,
+            "assistance_reason": null,
+            "implementer_model": "gpt-5.6-luna",
+            "reviewer_model": "gpt-5.6-luna",
+            "tokens": null,
+            "line_diff": null,
+            "lines_added": null,
+            "lines_deleted": null,
+            "duration_ms": null,
+            "questions": 0,
+            "escalations": 0,
+            "tasks": [
+                {
+                    "id": 2,
+                    "task_group_id": 1,
+                    "position": 1,
+                    "title": "Remaining work",
+                    "brief": "No longer needed.",
+                    "deliverables": [],
+                    "status": "cancelled",
+                    "implementer_agent_thread_id": null,
+                    "tokens": null,
+                    "line_diff": null,
+                    "lines_added": null,
+                    "lines_deleted": null,
+                    "duration_ms": null,
+                    "questions": 0,
+                    "escalations": 0,
+                    "type": "implementation",
+                    "target_thread_id": null,
+                    "completion_summary": "Cancelled by operator.",
+                    "check": null,
+                    "assistance_requested": false,
+                    "assistance_kind": null,
+                    "assistance_question": null,
+                    "assistance_reason": null,
+                    "fixup_problem": null
+                }
+            ],
+            "execution_mode": "managed"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

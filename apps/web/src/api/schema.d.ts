@@ -2773,13 +2773,13 @@ export interface paths {
         };
         /**
          * List Task groups
-         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-list"];
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
+         * @description Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -2797,7 +2797,7 @@ export interface paths {
         };
         /**
          * Show a Task group
-         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-show"];
         put?: never;
@@ -2807,7 +2807,7 @@ export interface paths {
         head?: never;
         /**
          * Update a Task group
-         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-update"];
         trace?: never;
@@ -2880,7 +2880,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a Task group
-         * @description Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
+         * @description Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.
          */
         post: operations["tasks-complete"];
         delete?: never;
@@ -2900,7 +2900,7 @@ export interface paths {
         put?: never;
         /**
          * Create a subtask
-         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most five typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `command` adds `command`, an optional `directory` (default `.`), an optional boolean `fails_on_base`, and optional `paths` (workspace-relative file paths, not globs). Only `command` accepts `fails_on_base` and `paths`. With `fails_on_base: true`, `paths` must contain at least one file, and the command must fail on the start commit before it passes on the working tree; omitted `fails_on_base` is stored as false. `review` adds nothing. Orbit verifies file and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-subtask-create"];
         delete?: never;
@@ -2994,6 +2994,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List task questions
+         * @description Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.
+         */
+        get: operations["tasks-question-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/status": {
         parameters: {
             query?: never;
@@ -3003,7 +3023,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -3732,8 +3752,14 @@ export interface components {
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
+            watched_pr_url?: string | null;
+            watched_pr_number?: number | null;
+            watched_pr_state?: string | null;
             notify_coder?: boolean;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             implementer_model?: string;
             reviewer_model?: string;
@@ -3742,6 +3768,8 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             tasks?: components["schemas"]["Task"][];
             /** @enum {string} */
             execution_mode?: "managed" | "existing_thread";
@@ -3761,12 +3789,17 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             /** @enum {string} */
             type?: "implementation" | "annotation";
             target_thread_id?: string | null;
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             fixup_problem?: string | null;
         };
@@ -3825,6 +3858,25 @@ export interface components {
             changes?: string[];
             breaking?: string[];
         };
+        TaskQuestion: {
+            id?: number;
+            task_id?: number;
+            subtask_id?: number;
+            attempt?: number;
+            /** @enum {string} */
+            asked_by?: "implementer" | "reviewer" | "operator";
+            question?: string;
+            /** @enum {string} */
+            status?: "open" | "escalated" | "answered";
+            /** @enum {string|null} */
+            answered_by?: "implementer" | "reviewer" | "operator" | null;
+            answer?: string | null;
+            /** @enum {string|null} */
+            cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract" | null;
+            asked_at?: string;
+            escalated_at?: string | null;
+            answered_at?: string | null;
+        };
         TasksStatus: {
             enabled?: boolean;
             assistance?: components["schemas"]["TaskAssistance"][];
@@ -3837,6 +3889,9 @@ export interface components {
             title?: string;
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
         };
         ToolInventory: {
@@ -5238,7 +5293,26 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /**
+                     * @description Driver: mysql, pgsql, sqlite, or redis
+                     * @enum {string}
+                     */
+                    driver?: "mysql" | "pgsql" | "sqlite" | "redis";
+                    node_id?: number | null;
+                    /** @description Hostname or IP for mysql and pgsql */
+                    host?: string | null;
+                    /** @description TCP port for mysql and pgsql */
+                    port?: number | null;
+                    /** @description Database name for mysql and pgsql */
+                    database?: string | null;
+                    /** @description Unix absolute sqlite path */
+                    path?: string | null;
+                    /** @description Username */
+                    username?: string | null;
+                    /** @description Password */
+                    password?: string | null;
+                };
             };
         };
         responses: {
@@ -6820,9 +6894,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deployment branch */
+                    branch: string;
+                };
             };
         };
         responses: {
@@ -7724,7 +7801,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7790,7 +7867,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7856,7 +7933,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7984,9 +8061,24 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deploy step name */
+                    name: string;
+                    /** @description Command the Gateway runs */
+                    command: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -8121,7 +8213,20 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Command the Gateway runs */
+                    command?: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -8303,7 +8408,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -10766,9 +10871,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    apps: {
+                        path?: string | null;
+                    } | null;
+                };
             };
         };
         responses: {
@@ -15406,7 +15515,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`) or the Task group is not ready to complete (`tasks.not_settling`). Running or reviewing groups need an ended watched pull request or a stored completion receipt. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15417,6 +15526,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -15966,6 +16084,52 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-question-list": {
+        parameters: {
+            query?: {
+                project_id?: number;
+                cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract";
+                status?: "open" | "escalated" | "answered";
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskQuestion"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

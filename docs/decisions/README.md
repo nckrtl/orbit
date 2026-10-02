@@ -34,6 +34,15 @@ Older records can share a number. Record each retired slug separately under that
 
 Most decisions are built in one task, so their ADR is retired in the same pull request that adds it. An ADR stays on main only while its decision spans more than one pull request. A code comment can keep an ADR number, because the overview resolves every retired number.
 
+## Retired decisions
+
+The [overview](/decisions/overview#retired-decisions) lists all retired decisions. Both retired ADR 0192 paths redirect to their absorbing sections in the Tasks reference.
+
+| Record | Retired path | Now in |
+| --- | --- | --- |
+| 0192 | `/decisions/0192-run-task-agents-on-pi-only` | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
+| 0192 | `/decisions/0192-stop-a-group-whose-pull-request-ended` | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request) |
+
 ## Record format
 
 Use the next available four-digit number and a short kebab-case name. A number is never reused. Check for a collision before merging concurrent additions.

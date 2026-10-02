@@ -8,6 +8,7 @@ use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use InvalidArgumentException;
 use UnexpectedValueException;
@@ -20,10 +21,17 @@ final class StoreInstanceDeployStepRequest extends FormRequest
 
     private ?string $after = null;
 
-    /** @return array{} */
+    /** @return array<string, list<mixed>> */
     public function rules(): array
     {
-        return [];
+        return [
+            'name' => ['required', 'string'],
+            'command' => ['present', 'string'],
+            'phase' => ['sometimes', Rule::enum(DeploymentPhase::class)],
+            'timeout_seconds' => ['sometimes', 'integer', 'min:1', 'max:900'],
+            'before' => ['sometimes', 'string'],
+            'after' => ['sometimes', 'string'],
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -80,7 +88,7 @@ final class StoreInstanceDeployStepRequest extends FormRequest
         $this->before = is_string($payload['before'] ?? null) ? $payload['before'] : null;
         $this->after = is_string($payload['after'] ?? null) ? $payload['after'] : null;
 
-        return ['deploy_step' => true];
+        return $payload;
     }
 
     public function step(): DeploymentStep

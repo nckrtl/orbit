@@ -232,6 +232,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             $ranTeardown = false;
 
             foreach ($members as $member) {
+                if ($this->failedCreation($member)) {
+                    continue;
+                }
+
                 $ranTeardown = ($this->lifecycle ?? app(ProjectLifecycleRunner::class))->run($member, LifecyclePhase::Teardown) || $ranTeardown;
             }
 
@@ -313,7 +317,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
                     if (
                         ! $lockedRoute instanceof Route
-                        || $lockedRoute->status !== RouteStatus::Active
+                        || ! $this->removableRouteState($lockedRoute, $lockedMember)
                         || $lockedRoute->targets->count() !== 1
                         || $lockedRoute->targets->sole()->instance_id !== $lockedMember->id
                     ) {
@@ -532,7 +536,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                 );
             }
 
-            if ($registered->count() > 1 && ! $force) {
+            if ($registered->count() > 1 && (! $force || $this->failedCreation($requested))) {
                 throw new ResourceOperationException(
                     errorCode: 'instance.remove_refused',
                     message: 'The checkout has registered linked worktrees; retry with --force.',
@@ -664,7 +668,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $route = $instance->routes->sole();
 
         if (
-            $route->status !== RouteStatus::Active
+            ! $this->removableRouteState($route, $instance)
             || $route->targets->count() !== 1
             || $route->targets->sole()->instance_id !== $instance->id
         ) {
@@ -708,15 +712,29 @@ final readonly class RemoveInstanceAction implements InstanceRemover
     private function withoutRoute(Instance $instance): bool
     {
         return $instance->routes->isEmpty()
-            && (! $instance->requiresRoute() || $instance->status === InstanceState::SourceResolved);
+            && (! $instance->requiresRoute() || $instance->status === InstanceState::SourceResolved || $this->failedCreation($instance));
     }
 
-    /**
-     * An active Instance is removable. So is a source-resolved checkout that never received a route, such as a task workspace.
-     */
+    private function removableRouteState(Route $route, Instance $instance): bool
+    {
+        return $route->status === RouteStatus::Active
+            || ($this->failedCreation($instance)
+                && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
+                && $route->node_id === $instance->node_id
+                && $route->project_id === $instance->project_id);
+    }
+
+    private function failedCreation(Instance $instance): bool
+    {
+        return $instance->placedOnAppDev()
+            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
+            && $instance->failed_step !== null
+            && $instance->error_code !== null;
+    }
+
     private function removableState(Instance $instance): bool
     {
-        if ($instance->status === InstanceState::Active) {
+        if ($instance->status === InstanceState::Active || $this->failedCreation($instance)) {
             return true;
         }
 

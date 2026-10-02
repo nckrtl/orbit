@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CompleteTaskGroupRequest",
+    "route": "POST /api/v1/task-groups/{group}/complete",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.not_settling",
+            "message": "The task group is not ready to complete.",
+            "details": {}
+        }
+    }
+}

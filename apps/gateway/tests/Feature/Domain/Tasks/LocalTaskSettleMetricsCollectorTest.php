@@ -8,11 +8,11 @@ use App\Domain\Tasks\TaskGroupMetricsRefresher;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
-use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Tests\Support\NullAgentSnapshotReader;
 
 it('sums task tokens, reads the workspace line diff, and measures duration', function (): void {
     $this->travelTo('2026-09-20 12:00:02');
@@ -81,11 +81,14 @@ it('sums task tokens, reads the workspace line diff, and measures duration', fun
         }
     };
 
+    $group->update(['questions' => 4, 'escalations' => 2]);
     $metrics = new LocalTaskSettleMetricsCollector(
-        new TaskGroupMetricsRefresher(test_agent_observer(new NullT3ThreadReader), $reader),
+        new TaskGroupMetricsRefresher(test_agent_observer(new NullAgentSnapshotReader), $reader),
     )->collect($group->fresh(['project', 'tasks', 'taskable']) ?? $group);
 
     expect($metrics->tokens)->toBe(40)
         ->and($metrics->lineDiff)->toBe(18)
-        ->and($metrics->durationMs)->toBe(2000);
+        ->and($metrics->durationMs)->toBe(2000)
+        ->and($metrics->questions)->toBe(4)
+        ->and($metrics->escalations)->toBe(2);
 });

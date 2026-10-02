@@ -12,7 +12,7 @@ use App\Domain\Tasks\AgentDriverException;
  * uses it. Otherwise the name selects Pi's built-in subscription provider.
  *
  * Claude models are refused: Anthropic permits subscription credentials only in its own
- * applications, including when a proxy relays them, so they run on T3.
+ * applications, including when a proxy relays them. They are unavailable for task agents.
  */
 final readonly class PiModel
 {
@@ -22,7 +22,7 @@ final readonly class PiModel
         $named = $slash === false ? null : substr($model, 0, $slash);
         $name = $slash === false ? $model : substr($model, $slash + 1);
         if ($named === 'anthropic' || str_starts_with($name, 'claude')) {
-            throw new AgentDriverException('Claude models run on the T3 driver, not on Pi.');
+            throw new AgentDriverException('Claude models are unavailable for task agents.');
         }
         if ($named !== null) {
             return $model;

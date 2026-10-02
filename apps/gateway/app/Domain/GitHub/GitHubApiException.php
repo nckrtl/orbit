@@ -16,7 +16,12 @@ final class GitHubApiException extends RuntimeException
     /** GitHub answered the token request with a client error, such as permissions the installation has not accepted. */
     public static function tokenRefused(int $status, string $message): self
     {
-        return new self('GitHub refused the Project token request ('.$status.'): '.($message !== '' ? $message : 'no message').'.');
+        return new self('GitHub refused the Project token request ('.$status.'): '.($message !== '' ? $message : 'no message').'.', $status);
+    }
+
+    public function isTokenRefusal(): bool
+    {
+        return $this->getCode() >= 400 && $this->getCode() < 500;
     }
 
     public static function refused(): self

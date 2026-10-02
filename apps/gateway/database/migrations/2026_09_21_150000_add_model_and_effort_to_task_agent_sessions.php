@@ -27,7 +27,7 @@ return new class extends Migration
                 'model' => is_string($override) && $override !== ''
                     ? $override
                     : ($reviewer ? TaskAgentDefaults::ReviewerModel : TaskAgentDefaults::ImplementerModel),
-                'effort' => $reviewer ? TaskAgentDefaults::ReviewerEffort : TaskAgentDefaults::ImplementerEffort,
+                'effort' => config($reviewer ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'),
             ]);
         }
     }

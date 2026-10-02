@@ -9,9 +9,18 @@ use App\Models\Task;
 
 final readonly class TaskSessionActor
 {
-    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $coder) {}
+    public function __construct(
+        private AgentDriverRegistry $drivers,
+        private CoderSettleNotifier $coder,
+        private TaskTurnFetchNotice $fetchNotice = new TaskTurnFetchNotice,
+    ) {}
 
     public function execute(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+    {
+        TaskExecutionHold::run($group, fn () => $this->executeAdmitted($group, $observation, $decision));
+    }
+
+    private function executeAdmitted(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
     {
         if ($decision->action === TaskSessionNextAction::EscalateCoder) {
             $this->coder->escalate($group, $observation, $decision);
@@ -59,26 +68,36 @@ final readonly class TaskSessionActor
         $this->drivers->get($thread->driver)->send($thread, $message);
     }
 
+    public function relayAnswer(Task $group, TaskThreadObservation $observed, string $summary, ?string $key = null): void
+    {
+        $thread = $this->thread($group, $observed);
+        $this->drivers->get($thread->driver)->send($thread, $summary."\n\n".TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id), $key);
+    }
+
     public function relayReviewBody(Task $group, TaskThreadObservation $observed, string $body): void
     {
         $thread = $this->thread($group, $observed);
-        $this->drivers->get($thread->driver)->send($thread, 'Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body);
+        TaskExecutionHold::run($group, fn () => $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply('Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body)));
     }
 
     public function remindRubric(Task $group, TaskThreadObservation $observed, string $message): void
     {
-        $thread = $this->thread($group, $observed);
-        $this->drivers->get($thread->driver)->send($thread, $message);
+        TaskExecutionHold::run($group, function () use ($group, $observed, $message): void {
+            $thread = $this->thread($group, $observed);
+            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message));
+        });
     }
 
     /**
      * Continues one thread after a server restart. The key was reserved before this call. Pi posts it
-     * as the send key. T3 posts it as the command id and the message id (ADR 0167).
+     * as the send key (ADR 0167).
      */
     public function resumeInterruptedTurn(Task $group, TaskThreadObservation $observed, string $message, string $key): void
     {
-        $thread = $this->thread($group, $observed);
-        $this->drivers->get($thread->driver)->send($thread, $message, $key);
+        TaskExecutionHold::run($group, function () use ($group, $observed, $message, $key): void {
+            $thread = $this->thread($group, $observed);
+            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message), $key);
+        });
     }
 
     private function thread(Task $group, TaskThreadObservation $observed): AgentThread

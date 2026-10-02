@@ -52,6 +52,8 @@ The response returns `selected_branch` and `branch_override`. `branch_override` 
 
 Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`.
 
+If creation fails before `active`, the Instance stays in `reserved`, `checkout_prepared`, or `source_resolved` and records the failure in `failed_step` and `error_code`. You can retry creation or [remove the failed Instance](/reference/instance-removal#failed-creation) with `instance:destroy`. Removal deletes any partial checkout, deletes the reserved Route if one exists, releases the reserved Vite port, and deletes the Instance row. Orbit still refuses removal while creation is in progress; a non-active state without failure evidence is not enough.
+
 After activation, you can commit and move `HEAD`. The recorded branch and starting commit stay as they are. One exception: when the Project default branch changes, Orbit switches a `default` Instance without `branch_override` and records the new branch. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
 The Gateway refuses these requests before it changes anything:
@@ -81,7 +83,7 @@ Orbit skips a directory in these cases:
 - It is a symlink in the `default` Instance.
 - The new checkout already has it, for example because the repository commits `vendor`.
 
-Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. During the copy, Orbit holds the Process admission lock of the `default` Instance, so the dependency prune and its restore wait. The copy may take 120 seconds on the Node, and then `timeout` stops it.
+Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. During the copy, Orbit holds the Process admission lock of the `default` Instance. The dependency prune and its restore wait for that lock for up to 30 seconds. Then they report `process.operation_busy`: the hibernation sweep tries again on its next pass, and waking the `default` Instance succeeds once the copy ends. The copy may take 120 seconds on the Node, and then `timeout` stops it.
 
 A failed or stopped copy removes its staging path, and creation continues without the missing directories. The Gateway log gets a warning with the code `instance.dependency_copy_failed`, both Instance IDs, the exit code, and the end of the error output.
 
@@ -166,7 +168,7 @@ A failed setup step during `instance:create` runs the teardown steps and removes
 
 An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds, unless the [database clone](#database-clone) did not finish: then `instance:create` finishes it and runs setup.
 
-Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
+Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
 
 ## Laravel application URL
 

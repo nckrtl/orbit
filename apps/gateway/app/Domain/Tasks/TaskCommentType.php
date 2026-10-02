@@ -10,6 +10,7 @@ enum TaskCommentType: string
     case ChangesRequested = 'changes_requested';
     case Approved = 'approved';
     case Blocked = 'blocked';
+    case Answered = 'answered';
     case AssistanceRequested = 'assistance_requested';
     case Resolution = 'resolution';
 }

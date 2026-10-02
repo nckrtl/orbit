@@ -71,7 +71,7 @@ return new class extends Migration
             'task_group_id' => $groupId, 'task_id' => $taskId, 'node_id' => $nodeId,
             'driver' => 't3', 'runtime_key' => $nodeId === null ? 'legacy:'.$table.':'.$id : 'node:'.$nodeId,
             'external_id' => $externalId, 'role' => $role, 'model' => $model,
-            'effort' => $role === 'reviewer' ? 'high' : 'low',
+            'effort' => config($role === 'reviewer' ? 'orbit.tasks.reviewer_effort' : 'orbit.tasks.implementer_effort'),
             'created_at' => now(), 'updated_at' => now(),
         ]);
         DB::table($table)->where('id', $id)->update([$role.'_agent_thread_id' => $threadId]);

@@ -51,3 +51,8 @@ A task workspace clone reaches the Nodes through its bridge worktree, and every 
 - Record proof evidence with `--record=LABEL` on `exec` and `logs`, for example `exec TASK-58 gateway --argv='["orbit","node:list"]' --record="node list after crash"`. The harness appends the command, its UTC start and end times in milliseconds, the exit code, and the redacted output to `<worktree>/.e2e/evidence.log`. Cite entries by label in the evidence summary instead of copying output by hand.
 - Timing claims such as "within one second" need both ends. Use the recorded start and end times, or record `["date","-Ins"]` before and after an action that the harness does not run.
 - Record every limitation, manual patch, and skipped check in the evidence summary.
+
+## Keep proof scripts small
+
+- A proof script is disposable evidence, not product code. It needs three things: it fails closed, it audits for leftovers after cleanup, and its scenario reproduces on a fresh lease. Do not build crash recovery for the script itself beyond that.
+- A proof that needs a live GitHub pull request state or a live agent turn gets no GitHub App, repository, or model credentials on the topology. Run the scheduler tick in `php artisan tinker` on the topology Gateway, and bind the one external seam to a fake in that process: `TaskPullRequestWatcher`, or `AgentDriverRegistry` with a scripted driver like `tests/Support/FakeAgentDriver.php`. Keep everything else real, and record the substitution as a limitation.
