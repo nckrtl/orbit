@@ -29,6 +29,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -195,6 +196,23 @@ it('copies the dependencies of the default Instance on the same Node into a new 
 
     expect($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and(app(InstanceDependencyCopier::class)->copies)->toBe([['source' => 'default', 'target' => TaskWorkspaceName::for($group)]]);
+});
+
+it('acquires the group topology for a new and a reused workspace, and continues when acquiring fails', function (): void {
+    $project = provisioner_app('topology');
+    provisioner_node('topology-dev', '10.44.0.112');
+    $group = provisioner_group($project, 'Topology');
+    bind_task_workspace_fakes();
+    $topology = app(TaskWorkspaceTopology::class);
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+    $group->taskable()->associate($instance);
+    $group->save();
+    $topology->fails = true;
+    $reused = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(['taskable']) ?? $group, false));
+
+    expect($reused?->id)->toBe($instance?->id)
+        ->and($topology->calls)->toBe([['acquire', $instance?->id, $group->id], ['acquire', $instance?->id, $group->id]]);
 });
 
 it('leaves a group reserved when no app-dev Node can take the workspace', function (): void {
@@ -573,6 +591,30 @@ it('removes the orbit workspace clone on cancel and on complete', function (stri
         forget_checkout($checkout);
     }
 })->with(['cancel', 'complete', 'unattached']);
+
+it('releases the group topology before it removes the workspace, and keeps the workspace when that fails', function (bool $fails): void {
+    app(TaskExtensionState::class)->enable();
+    bind_task_node_reachability();
+    [$group, $instance, $checkout] = orbit_workspace_clone();
+    $group->taskable()->associate($instance);
+    $group->status = TaskGroupStatus::Running;
+    $group->save();
+    bind_checkout_remover();
+    $topology = app(TaskWorkspaceTopology::class);
+    $topology->fails = $fails;
+
+    try {
+        try {
+            app(CancelTaskGroupAction::class)->execute($group);
+        } catch (Throwable) {
+        }
+
+        expect(end($topology->calls))->toBe(['release', $instance->id, $group->id])
+            ->and(Instance::query()->whereKey($instance->id)->exists())->toBe($fails);
+    } finally {
+        forget_checkout($checkout);
+    }
+})->with(['released' => false, 'release fails' => true]);
 
 it('keeps the source-resolved orbit clone and asks for assistance when removal is refused', function (string $operation): void {
     app(TaskExtensionState::class)->enable();

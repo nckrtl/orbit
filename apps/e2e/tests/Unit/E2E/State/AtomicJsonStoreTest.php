@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
+use Symfony\Component\Process\Process;
 
 describe('AtomicJsonStore', function () {
     it('writes validated JSON with private permissions and reads it', function () {
@@ -17,6 +18,27 @@ describe('AtomicJsonStore', function () {
             ->toBe(0600)
             ->and(fileperms(dirname($paths->path('nested/state.json'))) & 0777)
             ->toBe(0700);
+    });
+
+    it('keeps a named user grant effective on state written below a default ACL', function () {
+        $base = temporaryPath('orbit-json-acl-', 4);
+        mkdir($base, 0700, true);
+        $worker = (string) (posix_geteuid() + 1);
+        (new Process(['setfacl', '--modify', 'user:'.$worker.':rwx,mask::rwx,default:user:'.$worker.':rwx,default:mask::rwx', $base]))->mustRun();
+        $paths = new StatePaths($base);
+        $store = new AtomicJsonStore($paths);
+        $store->write('nested/state.json', ['answer' => 42]);
+        $store->write('nested/state.json', ['answer' => 43]);
+
+        foreach ([$paths->path('nested/state.json'), dirname($paths->path('nested/state.json'))] as $path) {
+            $acl = (new Process(['getfacl', '--omit-header', '--numeric', $path]))->mustRun()->getOutput();
+            expect($acl)->toContain('user:'.$worker.':rw')
+                ->and($acl)->not->toContain('mask::---')
+                ->and($acl)->toContain('group::---')
+                ->and($acl)->toContain('other::---')
+                ->and($acl)->not->toContain('#effective:---');
+        }
+        expect($store->read('nested/state.json'))->toBe(['answer' => 43]);
     });
 
     it('preserves old bytes and removes temporary files for each injected pre-rename failure', function (string $phase) {
