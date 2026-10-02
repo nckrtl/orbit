@@ -1115,6 +1115,7 @@ it('checks local HEAD before rename without contacting origin or changing Git so
 
 it('inspects unresolved prepared repositories and absent reserved paths without force', function (bool $prepared): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'stuck');
+    $this->files->ensureDirectoryExists($this->appsRoot);
     $instance->update(['failed_step' => 'source-prepare', 'error_code' => 'instance.clone_failed']);
     if ($prepared) {
         $this->source->prepare($instance, false);
