@@ -185,8 +185,18 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
         $removal = $member->removal;
 
-        if ($removal->requested_instance_id !== $instance->id || $removal->force !== $force) {
+        if ($removal->requested_instance_id !== $instance->id) {
             $this->conflict($instance);
+        }
+
+        if ($removal->force !== $force) {
+            if (! $force || $removal->force || $removal->status !== InstanceRemovalStatus::Failed) {
+                $this->conflict($instance);
+            }
+
+            // Take over the accepted operation, not a newly inspected deletion set.
+            // Keep its source digests and journals so quarantine remains authenticated.
+            $removal->update(['force' => true]);
         }
 
         try {
