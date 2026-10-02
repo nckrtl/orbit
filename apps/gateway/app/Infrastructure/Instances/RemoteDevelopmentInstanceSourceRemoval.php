@@ -7,6 +7,7 @@ namespace App\Infrastructure\Instances;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -101,7 +102,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $this->failedCreation($instance)
             && $instance->status === InstanceState::Reserved
             && $inventory->sourceIdentity !== 'absent'
-            && $instance->source_prepare_id === null
+            && ($instance->source_prepare_id === null || $instance->registration_request_id !== null)
             && ! $this->removableInPlaceRegistration($instance, $inventory)
         ) {
             throw new RuntimeConvergenceException(
@@ -434,9 +435,11 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
             [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
+            $instance = Instance::query()->findOrFail($member->instance_id);
             $failedCreation = ! $member->runtime_published
                 && ($inventory->sourceIdentity === 'absent'
-                    || Instance::query()->whereKey($member->instance_id)->whereNull('registration_request_id')->whereNotNull('failed_step')->whereNotNull('error_code')->exists());
+                    || $instance->registration_request_id === null
+                    && InstanceCreationRecovery::isPreActivation($instance, removing: true));
             $input = self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript();
             $script = $failedCreation ? null : GitReadScript::for(
                 $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
@@ -530,7 +533,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             expectedBranch: $member->branch,
             expectedRepositoryIdentity: (string) $member->repository_identity,
             force: (bool) $removal->force,
-            inspectContent: $member->runtime_published || $instance->failed_step === null,
+            inspectContent: $member->runtime_published || $instance->registration_request_id !== null
+                || ! InstanceCreationRecovery::isPreActivation($instance, removing: true),
             quarantineMappings: $this->quarantineMappings($member, $context['root'], $expectation),
             unresolved: $member->starting_commit === null && ! $member->runtime_published,
             allowAbsent: $member->source_identity === 'absent',
@@ -925,10 +929,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private function failedCreation(Instance $instance): bool
     {
-        return $instance->placedOnAppDev()
-            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
-            && $instance->failed_step !== null
-            && $instance->error_code !== null;
+        return InstanceCreationRecovery::isPreActivation($instance);
     }
 
     /** @return array{root: StoragePath, user: string, group: string, branch: ?string, repositoryIdentity: string} */
@@ -955,8 +956,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $branch !== null && ! is_string($branch)
             || (! is_string($startingCommit)
                 && ! ($startingCommit === null
-                    && ($this->failedCreation($instance)
-                        || ($instance->status === InstanceState::Removing && $instance->failed_step !== null && $instance->error_code !== null))))
+                    && InstanceCreationRecovery::isPreActivation($instance, removing: true)))
         ) {
             $this->invalidEvidence($instance, false);
         }

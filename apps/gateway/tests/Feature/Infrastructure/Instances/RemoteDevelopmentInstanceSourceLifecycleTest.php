@@ -217,9 +217,9 @@ it('retains an interrupted prepare without a receipt and cleans a lost response 
     }
 })->with(['interrupted before receipt' => 'before receipt', 'lost completed response' => 'lost response']);
 
-it('does not transfer an attempt receipt to a replacement directory even with force', function (): void {
+it('does not transfer an attempt receipt to a replacement directory even with force', function (bool $failureRecord): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'owned');
-    $instance->update(['source_prepare_id' => (string) Str::uuid(), 'failed_step' => 'source-prepare', 'error_code' => 'instance.clone_failed']);
+    $instance->update(['source_prepare_id' => (string) Str::uuid(), 'failed_step' => $failureRecord ? 'source-prepare' : null, 'error_code' => $failureRecord ? 'instance.clone_failed' : null]);
     $this->source->prepare($instance, false);
     rename($instance->checkout_path, $this->sandbox.'/owned-backup');
     orb76_run(['git', 'clone', '--no-checkout', $this->repository, $instance->checkout_path]);
@@ -227,7 +227,7 @@ it('does not transfer an attempt receipt to a replacement directory even with fo
     expect(fn () => $this->source->inspectPrepared($instance))->toThrow(RuntimeConvergenceException::class);
     expect(fn () => $this->removal->inspect($instance, true))->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('instance.source_ownership_mismatch'));
     expect(is_dir($instance->checkout_path))->toBeTrue();
-});
+})->with([false, true]);
 
 describe('TaskCheckWorkerUser', function (): void {
     it('restores copied dependency access before exposing a task workspace and refuses a failed ACL repair', function (bool $visitable, string $copyResult): void {
@@ -693,6 +693,84 @@ describe('TaskWorkspaceAcl', function (): void {
     });
 });
 
+it('removes receipt-owned crash states without failure fields teardown or unrelated cleanup', function (string $state, bool $force): void {
+    $sibling = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'unrelated');
+    $before = orb866_source_bytes($sibling->checkout_path);
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'crashed');
+    $instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $this->source->prepare($instance, false);
+    if ($state === 'source_resolved') {
+        $resolution = $this->source->resolve($instance);
+        $instance->update(['branch' => $resolution->branch, 'starting_commit' => $resolution->startingCommit]);
+        file_put_contents($instance->checkout_path.'/partial-runtime', 'unpublished partial work');
+    }
+    $instance->update(['status' => $state, 'vite_port' => 5200]);
+    expect($instance->failed_step)->toBeNull()->and($instance->error_code)->toBeNull();
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id,
+        'generation_basis_node_id' => $instance->node_id,
+        'domain' => 'crashed.acme.test',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    DB::table('vite_port_assignments')->insert(['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'port' => 5200]);
+    ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
+    $teardown = new LifecycleSshExecutor;
+    app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
+    // Removal must not need the origin to clean an interrupted create.
+    $this->files->deleteDirectory($this->repository);
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+    $removal = $action->execute($instance, $force);
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($removal->members)->toHaveCount(1)
+        ->and(is_dir($instance->checkout_path))->toBeFalse()
+        ->and($teardown->inputs)->toBe([])
+        ->and(orb866_source_bytes($sibling->checkout_path))->toBe($before);
+    $this->assertModelMissing($instance);
+    $this->assertModelMissing($route);
+    $this->assertModelExists($sibling);
+    $this->assertDatabaseMissing('vite_port_assignments', ['instance_id' => $instance->id]);
+})->with(['reserved', 'checkout_prepared', 'source_resolved'])->with([false, true]);
+
+it('keeps normal teardown for a healthy receipt-owned unrouted task workspace', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'healthy-workspace');
+    $instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update(['status' => InstanceState::SourceResolved, 'task_workspace_routed' => false, 'branch' => $resolution->branch, 'starting_commit' => $resolution->startingCommit]);
+    ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'normal-teardown', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $teardown = new LifecycleSshExecutor;
+    app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+    $removal = $action->execute($instance, true);
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($teardown->inputs)->toHaveCount(1);
+    $this->assertModelMissing($instance);
+});
+
+it('refuses to cascade an interrupted create into a registered worktree even with force', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'crash-parent');
+    $instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update(['status' => InstanceState::SourceResolved, 'branch' => $resolution->branch, 'starting_commit' => $resolution->startingCommit]);
+    $path = $this->appsRoot.'/acme/keep-worktree';
+    orb76_run(['git', '-C', $instance->checkout_path, 'worktree', 'add', '-b', 'keep-worktree', $path, 'HEAD']);
+    $worktree = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'keep-worktree');
+    $worktree->update(['source_layout' => 'worktree', 'status' => InstanceState::SourceResolved, 'branch' => 'keep-worktree', 'starting_commit' => $resolution->startingCommit]);
+    $before = orb866_source_bytes($instance->checkout_path);
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+    expect(fn () => $action->execute($instance, true))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused')->and($exception->getMessage())->toContain('linked worktrees'))
+        ->and(orb866_source_bytes($instance->checkout_path))->toBe($before)
+        ->and(is_dir($path))->toBeTrue();
+    $this->assertModelExists($instance);
+    $this->assertModelExists($worktree);
+    $this->assertDatabaseCount('instance_removals', 0);
+});
+
 it('removes a checkout_prepared failed create with its partial checkout Route and Vite reservation', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-create', 'missing');
     $this->source->prepare($instance, false);
@@ -890,10 +968,11 @@ it('does not waive source origin ownership for a failed create', function (bool 
     $this->assertDatabaseCount('instance_removals', 0);
 })->with([false, true]);
 
-it('refuses a failed create while its create lifecycle lock is still held', function (bool $force): void {
+it('refuses removal while a receipt-owned create lifecycle lock is still held', function (bool $force, bool $failureRecord): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'running-create', 'missing');
+    $instance->update(['source_prepare_id' => (string) Str::uuid()]);
     $this->source->prepare($instance, false);
-    $instance->update(['status' => InstanceState::CheckoutPrepared, 'failed_step' => 'source_resolved', 'error_code' => 'instance.branch_resolution_failed']);
+    $instance->update(['status' => InstanceState::CheckoutPrepared, 'failed_step' => $failureRecord ? 'source_resolved' : null, 'error_code' => $failureRecord ? 'instance.branch_resolution_failed' : null]);
     $directory = $this->sandbox.'/environment-locks';
     orb895_native_removal_action($this->removal, $this->sourceLock, $directory);
     $clock = 0.0;
@@ -918,7 +997,7 @@ it('refuses a failed create while its create lifecycle lock is still held', func
     $this->assertModelExists($instance);
     expect(is_dir($instance->checkout_path))->toBeTrue();
     $this->assertDatabaseCount('instance_removals', 0);
-})->with([false, true]);
+})->with([false, true])->with([false, true]);
 
 it('creates independent clones from an existing remote branch and the exact fetched default branch', function (): void {
     $existing = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');

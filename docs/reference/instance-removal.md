@@ -3,11 +3,11 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
   - apps/gateway/app/Actions/{Instances/RemoveInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,Removal/**}
+  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,Removal/**}
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id}.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -40,7 +40,7 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or a [failed development create](#failed-creation) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
@@ -72,13 +72,13 @@ After a caller renames a branch locally, [`instance:rename --branch=BRANCH`](/cl
 
 A failed create normally cleans up its new Instance before returning the original error. It removes only the attempt's owned checkout, Route and projections, runtime, dependency-copy staging paths, and database copies, with no teardown and no cascade into another Instance. Once cleanup completes, the name, path, and domain are free for a fresh create, including a different branch. See [creation recovery](/domains/applications#create-a-development-instance).
 
-If the process is interrupted or cleanup cannot finish, `instance:destroy` accepts development Instances in `reserved`, `checkout_prepared`, and `source_resolved` with recorded failure evidence in `failed_step` and `error_code`. It uses the same recorded removal steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal. An unrouted task workspace is different: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
+If the process is interrupted or cleanup cannot finish, `instance:destroy` accepts development Instances in `reserved`, `checkout_prepared`, and `source_resolved` when failure is recorded or the create attempt has a recorded source preparation ID. A process can die after committing a creation state but before recording a failure, so null `failed_step` and `error_code` do not block removal of that attempt's owned checkout. Registration still requires its own recorded evidence. It uses the same recorded removal steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal. An unrouted task workspace is different: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
 
 A reserved Instance may have no checkout directory. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
 
 For new reservations, preparation writes a receipt in Git metadata with the recorded preparation ID and the directory's device and inode. Removal requires that receipt whenever the directory exists, even with `--force`. A matching origin and account owner do not prove that the create attempt owns a pre-existing checkout. A lost prepare response with a valid receipt can be cleaned up. If preparation stops before recording ownership, cleanup retains the unconfirmed directory for inspection rather than deleting it. Do not bypass an ownership refusal to finish cleanup.
 
-Orbit checks the recorded path, managed ownership, repository layout, and Project origin for every artifact that exists. It refuses an unsafe path, foreign repository, or foreign worktree instead of deleting it. When no source was resolved, removal does not require a nonexistent recorded branch or `HEAD` to pass the branch or publication checks. Once source has been resolved, the recorded-branch check still applies before activation. Failed creation can leave dirty or unpublished partial source; removing that owned partial checkout needs no `--force`. Adopted source from registration still follows the normal dirty and unpublished-source checks.
+Orbit checks the recorded path, managed ownership, repository layout, and Project origin for every artifact that exists. It refuses an unsafe path, foreign repository, or foreign worktree instead of deleting it. When no source was resolved, removal does not require a nonexistent recorded branch or `HEAD` to pass the branch or publication checks. Once source has been resolved, the recorded-branch check still applies before activation. Interrupted or failed creation can leave dirty or unpublished partial source; removing that owned partial checkout needs no `--force`. Adopted source from registration still follows the normal dirty and unpublished-source checks.
 
 Cleanup that cannot finish retains the Instance and removal progress. A failed create reports its original error with `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. Follow that command to finish removal; `--yes` supplies consent and `--force` waives only the normal dirty, unpublished-source, and linked-worktree refusals. Cleanup never deletes the Instance row before its owned resources have been handled.
 
@@ -94,7 +94,7 @@ A failed in-place registration is different from a failed clone: registration re
 
 A reservation for a move that has not verified its destination cannot authorize deleting an existing checkout; retry registration first.
 
-A non-active state alone does not prove that create failed. Orbit refuses removal while creation is still in progress. `--force` does not override that refusal. An Instance that already became `active` uses the normal or forced removal rules above, even if a later setup step failed.
+A non-active state alone does not prove source ownership. Removal holds the same lifecycle and source locks as creation, so it cannot delete a checkout while create is running. It rechecks the state after acquiring those locks. `--force` does not bypass the locks or ownership checks. An Instance that already became `active` uses the normal or forced removal rules above, even if a later setup step failed.
 
 ### Worktree sets
 

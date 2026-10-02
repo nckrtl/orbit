@@ -1542,7 +1542,7 @@ it('retains the original create failure and recovery command when cleanup is inc
     expect(Instance::query()->count())->toBe(0)->and(Route::query()->count())->toBe(0);
 });
 
-it('removes stuck pre-activation checkouts and their pending or failed Routes without teardown or force', function (string $state, string $routeStatus): void {
+it('removes interrupted pre-activation checkouts with no failure record without teardown', function (string $state, string $routeStatus, bool $force): void {
     $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'dev'])->assertCreated();
     $instance = Instance::query()->sole();
     Route::query()->sole()->update([
@@ -1551,13 +1551,14 @@ it('removes stuck pre-activation checkouts and their pending or failed Routes wi
         'failed_step' => $routeStatus === 'failed' ? 'source-resolve' : null,
         'error_code' => $routeStatus === 'failed' ? 'instance.branch_resolution_failed' : null,
     ]);
-    $instance->update(['status' => $state, 'failed_step' => 'provisioning', 'error_code' => 'instance.provisioning_failed', 'starting_commit' => $state === 'source_resolved' ? $instance->starting_commit : null, 'branch' => $state === 'source_resolved' ? $instance->branch : null]);
+    $instance->update(['status' => $state, 'failed_step' => null, 'error_code' => null, 'starting_commit' => $state === 'source_resolved' ? $instance->starting_commit : null, 'branch' => $state === 'source_resolved' ? $instance->branch : null]);
+    expect($instance->source_prepare_id)->not->toBeNull();
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-    $this->deleteJson('/api/v1/instances/'.$instance->id)->assertOk();
+    $this->deleteJson('/api/v1/instances/'.$instance->id, ['force' => $force])->assertOk();
     expect(Instance::query()->count())->toBe(0)->and(Route::query()->count())->toBe(0)->and($transport->inputs)->toBe([]);
-})->with(['reserved', 'checkout_prepared', 'source_resolved'])->with(['pending', 'failed']);
+})->with(['reserved', 'checkout_prepared', 'source_resolved'])->with(['pending', 'failed'])->with([false, true]);
 
 it('rejects added removed or changed branch override on creation retry before mutation', function (
     ?string $original,

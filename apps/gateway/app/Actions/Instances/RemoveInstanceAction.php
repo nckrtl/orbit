@@ -14,6 +14,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRemover;
@@ -730,10 +731,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function failedCreation(Instance $instance): bool
     {
-        return $instance->placedOnAppDev()
-            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
-            && $instance->failed_step !== null
-            && $instance->error_code !== null;
+        return InstanceCreationRecovery::isPreActivation($instance);
     }
 
     private function removableState(Instance $instance): bool
