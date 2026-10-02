@@ -116,6 +116,139 @@ it('refuses invalid sources and insufficient capacity before target replacement'
     'insufficient target capacity',
 ]);
 
+it('refuses development SQLite targets without same-Instance cross-Node ownership or a safe destination', function (string $case): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = $sandbox.'/source/database.sqlite';
+    sqlite_seed_create_database($sourcePath);
+    $source = sqlite_seed_source_placement($sandbox);
+    $source->node->forceFill(['id' => 11]);
+    $targetNode = sqlite_seed_node();
+    $targetNode->forceFill(['id' => $case === 'same Node' ? 11 : 22]);
+    $target = new SqliteSeedPlacement(
+        instanceId: $case === 'different Instance' ? 22 : $source->instanceId,
+        environment: 'development',
+        basePath: $sandbox.'/target',
+        executionUser: sqlite_seed_user(),
+        node: $targetNode,
+    );
+    if ($case === 'symlink target') {
+        rename($sandbox.'/target', $sandbox.'/real-target');
+        symlink($sandbox.'/real-target', $sandbox.'/target');
+    }
+    $ssh = new SqliteSeedLocalSshExecutor(new NativeProcessRunner, $sandbox);
+    $transfer = new SqliteSeedLocalTransfer($ssh);
+
+    try {
+        expect(fn () => sqlite_seed_seeder($ssh, $transfer)->seed($source, $target, $sourcePath))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('sqlite.seed_preflight_failed'));
+        expect($transfer->transfers)->toBe([])
+            ->and(file_exists($sandbox.'/target/database.sqlite'))->toBeFalse()
+            ->and(file_get_contents($sandbox.'/target/unrelated.txt'))->toBe('target-unrelated');
+    } finally {
+        sqlite_seed_remove_directory($sandbox);
+    }
+})->with(['same Node', 'different Instance', 'symlink target']);
+
+it('retains recovery ownership when an unfinished seed payload has been replaced by another file', function (string $side): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = $sandbox.'/source/database.sqlite';
+    sqlite_seed_create_database($sourcePath);
+    $source = sqlite_seed_source_placement($sandbox);
+    $target = sqlite_seed_target_placement();
+    $ssh = new SqliteSeedLocalSshExecutor(new NativeProcessRunner, $sandbox);
+    $transfer = new SqliteSeedLocalTransfer($ssh, failures: 1);
+    $seeder = sqlite_seed_seeder($ssh, $transfer);
+    $owned = null;
+
+    try {
+        expect(fn () => $seeder->seed($source, $target, $sourcePath))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('sqlite.seed_transfer_failed'));
+        $payload = $side === 'source'
+            ? $ssh->actualSnapshotPath($transfer->transfers[0]['source'])
+            : $transfer->incomingPaths[0];
+        $owned = $payload.'.owned';
+        rename($payload, $owned);
+        file_put_contents($payload, 'FOREIGN_PAYLOAD_SENTINEL');
+
+        expect($seeder->abandon($source, $target, $sourcePath))->toBeFalse()
+            ->and(file_get_contents($payload))->toBe('FOREIGN_PAYLOAD_SENTINEL')
+            ->and(glob($sandbox.'/state/*/state.json') ?: [])->toHaveCount(1);
+
+        unlink($payload);
+        rename($owned, $payload);
+        expect($seeder->abandon($source, $target, $sourcePath))->toBeTrue()
+            ->and($seeder->abandon($source, $target, $sourcePath))->toBeTrue()
+            ->and(file_exists($payload))->toBeFalse()
+            ->and(glob($sandbox.'/snapshots/*') ?: [])->toBe([])
+            ->and(glob($sandbox.'/state/*') ?: [])->toBe([])
+            ->and(sqlite_seed_row_count($sourcePath))->toBe(5);
+    } finally {
+        foreach ([...$transfer->incomingPaths, $owned] as $path) {
+            if (is_string($path) && is_file($path)) {
+                unlink($path);
+            }
+        }
+        sqlite_seed_remove_directory($sandbox);
+    }
+})->with(['source', 'target']);
+
+it('abandons the recorded candidate and incoming files after an interrupted SQLite install', function (): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = $sandbox.'/source/database.sqlite';
+    sqlite_seed_create_database($sourcePath);
+    $source = sqlite_seed_source_placement($sandbox);
+    $target = sqlite_seed_target_placement();
+    $ssh = new SqliteSeedLocalSshExecutor(new NativeProcessRunner, $sandbox, failurePoint: 'install');
+    $transfer = new SqliteSeedLocalTransfer($ssh);
+    $seeder = sqlite_seed_seeder($ssh, $transfer);
+
+    try {
+        expect(fn () => $seeder->seed($source, $target, $sourcePath))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('sqlite.seed_failed'));
+        $candidates = glob($sandbox.'/target/.database.sqlite.orbit-*') ?: [];
+        expect($candidates)->toHaveCount(1)
+            ->and(file_exists($transfer->incomingPaths[0]))->toBeTrue()
+            ->and(glob($sandbox.'/snapshots/*') ?: [])->toHaveCount(1);
+
+        expect($seeder->abandon($source, $target, $sourcePath))->toBeTrue()
+            ->and(file_exists($candidates[0]))->toBeFalse()
+            ->and(file_exists($transfer->incomingPaths[0]))->toBeFalse()
+            ->and(glob($sandbox.'/snapshots/*') ?: [])->toBe([])
+            ->and(glob($sandbox.'/state/*') ?: [])->toBe([]);
+    } finally {
+        foreach ($transfer->incomingPaths as $incoming) {
+            if (file_exists($incoming)) {
+                unlink($incoming);
+            }
+        }
+        sqlite_seed_remove_directory($sandbox);
+    }
+});
+
+it('abandons seed receipts without deleting the installed database', function (): void {
+    $sandbox = sqlite_seed_sandbox();
+    $sourcePath = $sandbox.'/source/database.sqlite';
+    sqlite_seed_create_database($sourcePath);
+    $source = sqlite_seed_source_placement($sandbox);
+    $target = sqlite_seed_target_placement();
+    $ssh = new SqliteSeedLocalSshExecutor(new NativeProcessRunner, $sandbox);
+    $seeder = sqlite_seed_seeder($ssh, new SqliteSeedLocalTransfer($ssh));
+
+    try {
+        expect($seeder->seed($source, $target, $sourcePath)->confirmed)->toBeTrue();
+        $databasePath = $sandbox.'/target/database.sqlite';
+        $inode = fileinode($databasePath);
+
+        expect($seeder->abandon($source, $target, $sourcePath))->toBeTrue()
+            ->and(fileinode($databasePath))->toBe($inode)
+            ->and(sqlite_seed_row_count($databasePath))->toBe(5)
+            ->and(glob($sandbox.'/snapshots/*') ?: [])->toBe([])
+            ->and(glob($sandbox.'/state/*') ?: [])->toBe([]);
+    } finally {
+        sqlite_seed_remove_directory($sandbox);
+    }
+});
+
 it('creates one valid snapshot while WAL writes continue without source workload commands', function (): void {
     $sandbox = sqlite_seed_sandbox();
     $sourcePath = "{$sandbox}/source/database.sqlite";
@@ -1146,7 +1279,7 @@ final class SqliteSeedLocalSshExecutor implements SshExecutor
             $arguments[4] = "{$this->sandbox}/target";
             $arguments[8] = "{$this->sandbox}/state/".basename($arguments[8]);
             $arguments[2] = str_replace(
-                ['if home != target_account.pw_dir:', ...array_keys($this->targetProgramReplacements)],
+                ['if environment == "production" and (base != target_account.pw_dir or relative_path != "database.sqlite"):', ...array_keys($this->targetProgramReplacements)],
                 ['if False:', ...array_values($this->targetProgramReplacements)],
                 $arguments[2],
             );

@@ -25,7 +25,6 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
-use Tests\Support\TaskWorkerSshExecutor;
 
 function check_runner_checkout(string $check): string
 {
@@ -114,8 +113,14 @@ function check_runner_status(bool $alive, string $meanwhile = ''): array
     return json_decode($status->mustRun()->getOutput(), true, flags: JSON_THROW_ON_ERROR);
 }
 
+/** Run a shell command as the test worker `nobody` and return its exit code. */
+function check_runner_as_worker(string $directory, string $command): int
+{
+    return (new Process(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-c', $command], $directory))->run();
+}
+
 describe('TaskCheckWorkerUser', function (): void {
-    it('runs setup, the Project check, working-tree and start-commit deliverables as the configured worker', function (): void {
+    it('runs setup, the Project check, working-tree and start-commit deliverables as the managed user', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
         File::ensureDirectoryExists($checkout.'/tests');
@@ -125,67 +130,124 @@ describe('TaskCheckWorkerUser', function (): void {
         $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
         file_put_contents($checkout.'/fixed', 'fixed');
         (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
-        $runner = check_runner(TaskWorkerSshExecutor::forCheckout($checkout));
+        $runner = check_runner(new LocalShellSshExecutor);
         $instance = check_runner_instance($checkout);
+        $managed = trim((new Process(['id', '-un']))->mustRun()->getOutput());
 
-        $process = $runner->start($instance, 'id -un > check-user', [
-            ['name' => 'worker setup', 'command' => 'id -un > setup-user', 'timeout_seconds' => 10],
+        $process = $runner->start($instance, 'id -un > check-user && test -z "${ORBIT_TASK_WORKER_USER+set}"', [
+            ['name' => 'managed setup', 'command' => 'id -un > setup-user', 'timeout_seconds' => 10],
         ], ['start' => $start, 'commands' => [
-            ['id' => 'worker', 'command' => 'bash tests/repro.sh deliverable-user', 'directory' => '.', 'fails_on_base' => true, 'paths' => ['tests/repro.sh']],
+            ['id' => 'managed', 'command' => 'bash tests/repro.sh deliverable-user', 'directory' => '.', 'fails_on_base' => true, 'paths' => ['tests/repro.sh']],
         ]]);
         $reading = check_runner_wait($runner, $instance, $process);
 
         expect($reading->state)->toBe('finished')
             ->and($reading->exitCode)->toBe(0);
         foreach (['setup-user', 'check-user', 'deliverable-user'] as $file) {
-            expect(trim((string) file_get_contents($checkout.'/'.$file)))->toBe('nobody');
+            expect(trim((string) file_get_contents($checkout.'/'.$file)))->toBe($managed);
         }
-        expect($reading->deliverables['commands']['worker']['base_output'] ?? null)->toContain('nobody')
-            ->and($reading->deliverables['commands']['worker']['base_exit_code'] ?? null)->toBe(1);
+        expect($reading->deliverables['commands']['managed']['base_output'] ?? null)->toContain($managed)
+            ->and($reading->deliverables['commands']['managed']['base_exit_code'] ?? null)->toBe(1);
         expect($runner->snapshot($instance)->head)->toBe($process->head);
-
-        // Even a replaced installed script must not execute as the managed account on status or cancel.
-        file_put_contents($checkout.'/.git/orbit/check', <<<'PYTHON'
-            import json, os, sys
-            with open(os.path.join(os.path.dirname(__file__), sys.argv[1] + '-user'), 'w') as output:
-                output.write(str(os.geteuid()))
-            print(json.dumps({'state': 'running'}))
-            PYTHON);
-        expect($runner->read($instance, $process)->state)->toBe('running');
-        $runner->cancel($instance, $process);
-        foreach (['status', 'cancel'] as $operation) {
-            expect(file_get_contents($checkout.'/.git/orbit/'.$operation.'-user'))->toBe('65534');
-        }
     });
 
-    it('refuses a configured missing user instead of falling back to the Node user', function (): void {
-        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
-        $checkout = check_runner_checkout('true');
-
-        expect(fn () => check_runner(new LocalShellSshExecutor)->start(check_runner_instance($checkout), 'touch ran-as-node'))
-            ->toThrow(TaskCheckException::class, 'The Node has no orbit-absent-task-worker user.');
-        expect(file_exists($checkout.'/.git/orbit/check'))->toBeFalse()
-            ->and(file_exists($checkout.'/ran-as-node'))->toBeFalse();
-    });
-
-    it('refuses a sudo failure before installing or running the check', function (): void {
+    it('shares what the check creates with the worker before it reports the result', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
-        $transport = new class implements SshExecutor
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        (new Process(['setfacl', '-m', 'u:nobody:r--', $checkout.'/.git/config']))->mustRun();
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($checkout);
+
+        // A private report directory, like the mkdtemp directories review-check writes under .git/orbit-checks.
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance,
+            'install -d -m 0700 .git/orbit-checks/report && install -m 0600 /dev/null .git/orbit-checks/report/check.log'
+            .' && printf "managed\n" > .git/orbit-checks/report/check.log && install -d -m 0700 ignored/cache'));
+
+        expect($reading->exitCode)->toBe(0)
+            ->and(check_runner_as_worker($checkout, 'grep -qx managed .git/orbit-checks/report/check.log'))->toBe(0)
+            ->and(check_runner_as_worker($checkout, 'printf worker >> .git/orbit-checks/report/check.log'))->toBe(0)
+            ->and(check_runner_as_worker($checkout, 'touch ignored/cache/worker && rm -r ignored/cache'))->toBe(0)
+            ->and(check_runner_as_worker($checkout, 'cat .git/orbit/check.log .git/orbit/check.json >/dev/null'))->toBe(0);
+        // The worker keeps read-only Git configuration.
+        expect(check_runner_as_worker($checkout, 'printf x >> .git/config'))->not->toBe(0);
+    });
+
+    it('skips worker directories the managed user cannot enter and still shares the rest', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        // An earlier worker-run gate left private report directories, like this mkdtemp directory, that the managed user cannot enter.
+        $private = $checkout.'/.git/orbit-checks/earlier/review-worker';
+        expect(check_runner_as_worker($checkout, 'install -d -m 0700 .git/orbit-checks/earlier/review-worker && printf worker > .git/orbit-checks/earlier/review-worker/check.log'))->toBe(0)
+            ->and(is_readable($private))->toBeFalse();
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($checkout);
+
+        try {
+            $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'install -d -m 0700 ignored/private'));
+
+            expect($reading->exitCode)->toBe(0)
+                ->and($reading->failedStep)->toBeNull()
+                ->and(check_runner_as_worker($checkout, 'touch ignored/private/worker && grep -qx worker .git/orbit-checks/earlier/review-worker/check.log'))->toBe(0);
+        } finally {
+            check_runner_as_worker($checkout, 'rm -rf .git/orbit-checks/earlier');
+        }
+    });
+
+    it('shares what a cancelled check created with the worker', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($checkout);
+
+        $process = $runner->start($instance, 'install -d -m 0700 ignored/private && touch ignored/started && sleep 30');
+        for ($attempt = 0; $attempt < 100 && ! file_exists($checkout.'/ignored/started'); $attempt++) {
+            usleep(50_000);
+        }
+        $runner->cancel($instance, $process);
+        $reading = check_runner_wait($runner, $instance, $process);
+
+        expect($reading->state)->toBe('lost')
+            ->and(check_runner_as_worker($checkout, 'touch ignored/private/worker'))->toBe(0);
+    });
+
+    it('runs the check without sharing when the configured worker is absent', function (): void {
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+        $checkout = check_runner_checkout('true');
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($checkout);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'install -d -m 0700 ignored/private'));
+
+        expect($reading->exitCode)->toBe(0)
+            ->and((new Process(['getfacl', '-c', '-p', $checkout.'/ignored/private']))->mustRun()->getOutput())->not->toContain('user:orbit-absent-task-worker');
+    });
+
+    it('fails the check when it cannot share its files with the worker', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        $runner = check_runner(new class implements SshExecutor
         {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
+                // A Node without the acl package has no setfacl.
                 return new LocalShellSshExecutor()->execute($connection, new RemoteCommand(
                     arguments: $command->arguments,
-                    input: "sudo() { return 1; }\n".$command->input,
+                    input: "mkdir -p \"\$1/.git/no-acl\" && printf '#!/bin/sh\\nexit 1\\n' > \"\$1/.git/no-acl/setfacl\"\n"
+                        ."chmod +x \"\$1/.git/no-acl/setfacl\" && export PATH=\"\$1/.git/no-acl:\$PATH\"\n".$command->input,
+                    maxOutputBytes: $command->maxOutputBytes,
                 ));
             }
-        };
+        });
+        $instance = check_runner_instance($checkout);
 
-        expect(fn () => check_runner($transport)->start(check_runner_instance($checkout), 'touch ran-as-node'))
-            ->toThrow(TaskCheckException::class, 'The managed user cannot run commands as nobody.');
-        expect(file_exists($checkout.'/.git/orbit/check'))->toBeFalse()
-            ->and(file_exists($checkout.'/ran-as-node'))->toBeFalse();
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'true'));
+
+        expect($reading->exitCode)->toBe(1)
+            ->and($reading->failedStep)->toBe('check_error')
+            ->and($reading->output)->toContain('setfacl');
     });
 
     it('rejects invalid and privileged worker names', function (string $worker): void {

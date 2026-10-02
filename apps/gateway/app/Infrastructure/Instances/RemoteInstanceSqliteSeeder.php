@@ -338,10 +338,11 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
     private const string TargetProgram = <<<'PYTHON'
         import contextlib, hashlib, json, os, pwd, sqlite3, stat, sys, tempfile, urllib.parse
 
-        mode, home, target_user, transport_user, operation, state_dir, expected_size, expected_digest = sys.argv[1:]
+        mode, base, target_user, transport_user, operation, state_dir, expected_size, expected_digest, environment, relative_path = sys.argv[1:]
         expected_size = int(expected_size)
         state_path = os.path.join(state_dir, "state.json")
-        destination_path = os.path.join(home, "database.sqlite")
+        destination_path = os.path.join(base, relative_path)
+        home = os.path.dirname(destination_path)
         manager_uid = os.geteuid()
         replacement_installed = False
         unrecorded_candidate = None
@@ -403,7 +404,9 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
                 raise BoundaryError
             return metadata
 
-        def ensure_state_directory():
+        def ensure_state_directory(create=True):
+            if not os.path.exists(state_dir) and not create:
+                return False
             parent = os.path.dirname(state_dir)
             os.makedirs(parent, mode=0o700, exist_ok=True)
             parent_metadata = os.lstat(parent)
@@ -424,6 +427,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
                 or stat.S_IMODE(metadata.st_mode) != 0o700
             ):
                 raise BoundaryError
+            return True
 
         def load_state():
             try:
@@ -597,15 +601,32 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
                 pass
 
         try:
-            if expected_size <= 0 or len(expected_digest) != 64 or any(character not in "0123456789abcdef" for character in expected_digest):
-                raise BoundaryError
-            if not safe_absolute(home) or not safe_absolute(state_dir):
+            if (
+                not safe_absolute(base) or not safe_absolute(destination_path) or not safe_absolute(state_dir)
+                or not destination_path.startswith(base + "/")
+                or environment not in ("production", "development")
+            ):
                 raise BoundaryError
             target_account = pwd.getpwnam(target_user)
             transport_account = pwd.getpwnam(transport_user)
-            if home != target_account.pw_dir:
+            if environment == "production" and (base != target_account.pw_dir or relative_path != "database.sqlite"):
+                raise BoundaryError
+            if mode == "cleanup":
+                if not ensure_state_directory(create=False):
+                    print("CLEANED")
+                    raise SystemExit(0)
+                state = load_state()
+                if state is None:
+                    os.rmdir(state_dir)
+                else:
+                    operation_state(state)
+                    abandon_state(state)
+                print("CLEANED")
+                raise SystemExit(0)
+            if expected_size <= 0 or len(expected_digest) != 64 or any(character not in "0123456789abcdef" for character in expected_digest):
                 raise BoundaryError
             with identity(target_account):
+                safe_directory(base, target_account.pw_uid)
                 safe_directory(home, target_account.pw_uid)
                 if not os.access(home, os.W_OK | os.X_OK, effective_ids=True):
                     raise BoundaryError
@@ -834,20 +855,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         string $sourcePath,
     ): SqliteSeedResult {
         $this->assertRequest($source, $target, $sourcePath);
-        $operation = hash('sha256', implode("\0", [
-            'sqlite-seed-v1',
-            (string) $source->instanceId,
-            $source->environment,
-            $source->basePath,
-            $source->executionUser,
-            (string) $target->instanceId,
-            $target->basePath,
-            $target->executionUser,
-            $sourcePath,
-        ]));
-        $sourceState = self::StateRoot."/source-{$source->instanceId}-target-{$target->instanceId}";
-        $targetState = self::StateRoot."/target-{$target->instanceId}";
-        $snapshotPath = "/tmp/orbit-sqlite-{$operation}.sqlite";
+        [$operation, $sourceState, $targetState, $snapshotPath, $relativePath] = $this->seedIdentity($source, $target, $sourcePath);
         [$snapshotBytes, $snapshotDigest, $preparedSnapshotPath] = $this->prepareSource(
             $source,
             $sourcePath,
@@ -861,6 +869,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
             $targetState,
             $snapshotBytes,
             $snapshotDigest,
+            $relativePath,
         );
 
         if ($targetPreparation === 'REFUSED') {
@@ -899,6 +908,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
                 $targetState,
                 $snapshotBytes,
                 $snapshotDigest,
+                $relativePath,
             );
         } catch (Throwable) {
             return SqliteSeedResult::unconfirmed();
@@ -922,6 +932,59 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         }
 
         return SqliteSeedResult::unconfirmed();
+    }
+
+    public function abandon(
+        SqliteSeedPlacement $source,
+        SqliteSeedPlacement $target,
+        #[SensitiveParameter]
+        string $sourcePath,
+    ): bool {
+        try {
+            $this->assertRequest($source, $target, $sourcePath);
+        } catch (Throwable) {
+            return false;
+        }
+
+        [$operation, $sourceState, $targetState, $snapshotPath, $relativePath] = $this->seedIdentity($source, $target, $sourcePath);
+        $sourceCleaned = $this->cleanupSource($source, $sourcePath, $operation, $sourceState, $snapshotPath);
+
+        try {
+            $result = $this->targetCommand($target, 'cleanup', $operation, $targetState, 0, '', $relativePath);
+        } catch (Throwable) {
+            return false;
+        }
+
+        return $sourceCleaned && $result->succeeded() && ! $result->truncated
+            && $result->stdout === "CLEANED\n" && $result->stderr === '';
+    }
+
+    /** @return array{string, string, string, string, string} */
+    private function seedIdentity(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): array
+    {
+        $operation = hash('sha256', implode("\0", [
+            'sqlite-seed-v1',
+            (string) $source->instanceId,
+            $source->environment,
+            $source->basePath,
+            $source->executionUser,
+            (string) $target->instanceId,
+            $target->basePath,
+            $target->executionUser,
+            $sourcePath,
+            ...($target->environment === 'development' ? [(string) $source->node->id, (string) $target->node->id, $target->operationId ?? ''] : []),
+        ]));
+        $sourceState = self::StateRoot."/source-{$source->instanceId}-target-{$target->instanceId}";
+        $targetState = self::StateRoot."/target-{$target->instanceId}";
+        $relativePath = 'database.sqlite';
+
+        if ($target->environment === 'development') {
+            $relativePath = substr($sourcePath, strlen($source->basePath) + 1);
+            $sourceState .= "-{$operation}";
+            $targetState .= "-{$operation}";
+        }
+
+        return [$operation, $sourceState, $targetState, "/tmp/orbit-sqlite-{$operation}.sqlite", $relativePath];
     }
 
     /** @return array{int, string, string} */
@@ -970,6 +1033,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         string $stateDirectory,
         int $snapshotBytes,
         string $snapshotDigest,
+        string $relativePath,
     ): string {
         try {
             $result = $this->targetCommand(
@@ -979,6 +1043,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
                 $stateDirectory,
                 $snapshotBytes,
                 $snapshotDigest,
+                $relativePath,
             );
         } catch (Throwable) {
             $this->failPreflight();
@@ -1088,6 +1153,7 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         string $stateDirectory,
         int $snapshotBytes,
         string $snapshotDigest,
+        string $relativePath,
     ): CommandResult {
         return $this->ssh->execute(
             $this->connection($target),
@@ -1106,6 +1172,8 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
                 $stateDirectory,
                 (string) $snapshotBytes,
                 $snapshotDigest,
+                $target->environment,
+                $relativePath,
             ], maxOutputBytes: 512),
         );
     }
@@ -1126,19 +1194,24 @@ final readonly class RemoteInstanceSqliteSeeder implements InstanceSqliteSeeder
         SqliteSeedPlacement $target,
         string $sourcePath,
     ): void {
+        $isTransfer = $source->instanceId === $target->instanceId
+            && $source->environment === 'development'
+            && $target->environment === 'development'
+            && $source->node->id !== $target->node->id;
+
         if (
             $source->instanceId <= 0
             || $target->instanceId <= 0
-            || $source->instanceId === $target->instanceId
+            || ($source->instanceId === $target->instanceId && ! $isTransfer)
             || ! in_array($source->environment, ['development', 'production'], true)
-            || $target->environment !== 'production'
+            || ($target->environment !== 'production' && ! $isTransfer)
             || ! $this->safeAbsolutePath($source->basePath)
             || ! $this->safeAbsolutePath($target->basePath)
             || ! $this->safeAbsolutePath($sourcePath)
             || ! str_starts_with($sourcePath, $source->basePath.'/')
             || ! $this->safeUser($source->executionUser)
             || ! $this->safeUser($target->executionUser)
-            || $target->basePath !== "/home/{$target->executionUser}"
+            || ($target->environment === 'production' && $target->basePath !== "/home/{$target->executionUser}")
             || ! $this->availableNode($source)
             || ! $this->availableNode($target)
         ) {

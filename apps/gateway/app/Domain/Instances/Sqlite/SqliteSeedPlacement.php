@@ -14,5 +14,6 @@ final readonly class SqliteSeedPlacement
         public string $basePath,
         public string $executionUser,
         public Node $node,
+        public ?string $operationId = null,
     ) {}
 }

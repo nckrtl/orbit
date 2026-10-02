@@ -546,6 +546,64 @@ describe('TaskWorkspaceAcl', function (): void {
             ->and(file_exists($instance->checkout_path))->toBeFalse();
     });
 
+    it('removes a worker-created mkdir-p tree with sticky and setgid directories under a default ACL', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-sticky-removal');
+        $tree = $instance->checkout_path.'/worker-directory';
+        expect(orb76_run(['getfacl', '-cp', $instance->checkout_path])->stdout)
+            ->toContain('default:user:nobody:rwx', 'default:user:'.$this->node->user.':rwx');
+        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-seu', '--', $tree], <<<'BASH'
+            mkdir -p "$1/nested/deep"
+            printf 'worker\n' > "$1/nested/deep/file"
+            # Reproduce uutils mkdir 0.8.0 on hosts whose mkdir does not inherit these bits.
+            chmod g+s,+t -- "$1" "$1/nested" "$1/nested/deep"
+            # An explicit 0755 mode, as Pest uses for its TIA graph, narrows the ACL mask to r-x.
+            python3 -c 'import os, sys; os.mkdir(sys.argv[1], 0o755)' "$1/graph"
+            printf 'worker\n' > "$1/graph/graph.json"
+            BASH);
+        expect(fileperms($tree.'/graph') & 0o777)->toBe(0o755);
+        expect(trim(orb76_run(['stat', '-c', '%U', $tree.'/nested/deep'])->stdout))->toBe('nobody');
+        expect(fileperms($tree.'/nested/deep') & 0o3000)->toBe(0o3000);
+        $member = orb180_record_source($this->removal, $instance, true);
+        $state = dirname(orb180_receipt_path($member));
+        $workerStateAccess = ['sudo', '-n', '-u', 'nobody', '--', 'test', '-x', $state];
+        expect(orb178_run_allow_failure($workerStateAccess)->succeeded())->toBeFalse();
+
+        $receipt = $this->removal->finalize($member);
+
+        expect($receipt)->toBe(trim(file_get_contents(orb180_receipt_path($member))));
+        expect(file_exists($instance->checkout_path))->toBeFalse();
+        expect(file_exists(orb180_quarantine_path($member)))->toBeFalse();
+        expect(orb178_run_allow_failure($workerStateAccess)->succeeded())->toBeFalse();
+    });
+
+    it('finishes a worker-owned workspace removal after partial deletion leaves a damaged quarantined Git directory', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-partial-removal');
+        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-seu', '--', $instance->checkout_path], <<<'BASH'
+            mkdir -p "$1/worker-directory/nested"
+            printf 'worker\n' > "$1/worker-directory/nested/file"
+            chmod g+s,+t -- "$1/worker-directory" "$1/worker-directory/nested"
+            BASH);
+        $member = orb180_record_source($this->removal, $instance, true);
+        $this->transport->interruptDuringSourceDeletion = true;
+        expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
+        $quarantine = orb180_quarantine_path($member);
+        expect(is_dir($quarantine.'/.git'))->toBeTrue();
+        expect(file_exists($quarantine.'/.git/HEAD'))->toBeFalse();
+        expect(is_file($quarantine.'/worker-directory/nested/file'))->toBeTrue();
+        expect(is_file(orb180_receipt_path($member)))->toBeTrue();
+        expect($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::ReceiptPendingCleanup);
+
+        $receipt = $this->removal->finalize($member);
+
+        expect($receipt)->toBe(trim(file_get_contents(orb180_receipt_path($member))));
+        expect(file_exists($quarantine))->toBeFalse();
+        expect(file_exists($instance->checkout_path))->toBeFalse();
+        expect(is_dir(dirname($instance->checkout_path)))->toBeFalse();
+        expect($this->removal->finalize($member))->toBe($receipt);
+    });
+
     it('keeps existing behavior when the worker is unset or absent', function (?string $worker): void {
         config()->set('orbit.tasks.worker_user', $worker);
         $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-no-acl');
@@ -3094,6 +3152,8 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public bool $interruptBeforeTrustCleanup = false;
 
+    public bool $interruptDuringSourceDeletion = false;
+
     /** @var array<string, string> */
     public array $environment = [];
 
@@ -3110,7 +3170,17 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
     ): CommandResult {
         $this->commands[] = $command;
         $input = $command->input;
-        if (is_string($input) && $this->interruptBeforeTrustCleanup && str_contains($input, 'rm -rf -- "$quarantine"')) {
+        if (is_string($input) && $this->interruptDuringSourceDeletion && str_contains($input, 'expected_origin=$6')) {
+            $this->interruptDuringSourceDeletion = false;
+            $input = str_replace(
+                ['checkout) rm -rf -- "$quarantine" ;;', 'checkout) remove_source_tree "$quarantine" ;;'],
+                'checkout) find -P "$quarantine/.git" -mindepth 1 -delete; exit 74 ;;',
+                $input,
+            );
+        }
+        if (is_string($input) && $this->interruptBeforeTrustCleanup && (
+            str_contains($input, 'rm -rf -- "$quarantine"') || str_contains($input, 'remove_source_tree "$quarantine"')
+        )) {
             $this->interruptBeforeTrustCleanup = false;
             $input = str_replace('release_empty_grouping_directory "$grouping_directory"', 'exit 73', $input);
         }

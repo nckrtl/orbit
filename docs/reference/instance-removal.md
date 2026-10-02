@@ -47,10 +47,12 @@ The Gateway also refuses these Instances:
 
 | Code | Cause |
 | --- | --- |
-| `instance.transfer_incomplete` | A [transfer](/reference/instance-transfer) of the Instance is not complete. Recover it first. |
+| `instance.transfer_incomplete` | A [transfer](/reference/instance-transfer) is still open: it is unfinished, failed before cutover with incomplete rollback, or failed after cutover. Retry the identical transfer request first. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete [clone](/reference/instance-cloning). |
 | `analytics.tracking_hosts_exist` | The Instance still has [tracking hosts](/cli/instance#orbit-instanceanalyticsdisable). |
 | `instance.remove_refused` | The Instance is in another state, its Route is not removable, or normal mode found dirty or unpublished source. The message names the rule. |
+
+The Gateway permits removal after a transfer fails before cutover and finishes rollback, including cleanup of its owned SQLite seed files. Failed or unconfirmed seed cleanup keeps the transfer open. Normal and forced removal follow this rule. `--force` cannot bypass an open transfer, and the other removal checks still apply.
 
 For a completed development checkout, the Gateway compares the checkout with its record. Each origin check reads the `remote.origin.url` stored in the checkout and ignores `insteadOf` rewrites. A [failed create](#failed-creation) can leave no checkout or an incomplete one.
 
@@ -120,7 +122,7 @@ Orbit does not wait for a running Schedule command. The command may finish or fa
 
 ### Transfer history
 
-A completed transfer record stays after removal, with its Instance reference cleared.
+Closed transfer records stay after removal, with their Instance references cleared. This includes completed transfers and transfers that failed before cutover and finished rollback. A failed record keeps its status and failure details.
 
 ### Production content
 
@@ -140,6 +142,12 @@ The API, SDK, CLI, and Activity report removal progress in one shape. `DELETE` r
 | `failed_step`, `error_code` | The step and code of a failure, or null. |
 
 Repeat the same command to resume at the first unfinished step. A changed `--force` value returns `instance.removal_conflict`. Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
+
+Before deleting source, the Gateway runs `find -P` as the task worker on directories that worker owns. It clears setgid and sticky bits and gives the group `rwx`, which also sets the ACL mask. This lets the managed user remove the worker's entries without changing ownership or following symlinks. The managed user enters the validated tree before switching to the worker, so the quarantine's parent stays private.
+
+Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 can set setgid and sticky bits on directories created under a default ACL; GNU `mkdir` and `os.mkdir` do not. The ACL alone does not override the sticky bit. A directory created with an explicit mode such as `0755`, as Pest does for its graph, narrows the mask to `r-x` and hides the managed user's ACL entry.
+
+Source finalization moves the validated tree into quarantine and writes an authenticated receipt before deletion. After that receipt exists, a checkout retry checks the journal, receipt, quarantine path, owner, and recorded device and inode, then deletes the remaining tree. It does not require the quarantined checkout to remain a valid Git repository: a partial deletion may leave `.git` missing or damaged. Worktree recovery also checks the recorded common repository and worktree administration before cleanup. A replaced quarantine or mismatched receipt still stops removal.
 
 ## Why it works this way
 
