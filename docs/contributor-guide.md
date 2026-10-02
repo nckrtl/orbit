@@ -42,7 +42,7 @@ Update the documentation when the feature changes behavior, terms, architecture,
 
 When an ADR, a page, the code, or a test disagree, stop and report the conflict. Do not resolve it by quietly changing one of them.
 
-Run the deterministic impact check from [ADR 0175](/decisions/0175-docs-impact-check-in-orbit-repo) for the group's start commit and every planned path, including paths that do not exist yet:
+Run the deterministic impact check for the group's start commit and every planned path, including paths that do not exist yet. [Docs impact stays in the repository](#docs-impact-stays-in-the-repository) explains why Orbit owns this check:
 
 ```bash
 bin/docs-impact --base <start-commit> --paths <planned-path>
@@ -158,6 +158,16 @@ A separate proof run for each candidate is a rejected alternative. That flow kep
 ### One documentation corpus
 
 All maintained documentation lives under the root `docs/` directory, for humans and agents alike. `apps/docs` holds only the tooling: the lint rules, the context index builder, and their tests. A second content tree would drift from the first.
+
+### Docs impact stays in the repository
+
+The Gateway Tasks engine stores work, deliverables, and lifecycle state. Each Project supplies its own task check and repository policy. Orbit keeps `bin/docs-impact` and its extraction logic in the repository, and enforces the result through `composer check` and `bin/review-check`. Putting docs-first rules in the Gateway is rejected, because it would couple a generic engine to Orbit's documentation, ADRs, and tooling.
+
+A deterministic report makes the docs-first decision repeatable. It combines changed paths with planned paths, maps public and operational surfaces to owning pages or existing generators, and reports impacted pages, reasons, generator status, and errors as stable JSON. Unknown or unowned changed surfaces are errors, not guesses. Relying only on agent or reviewer judgment is rejected, because it makes the no-change path slow and inconsistent. Reviewers still confirm the report and any page-specific waiver; the task check repeats the analysis at every handoff so later work cannot silently leave a page unchanged.
+
+Page ownership belongs beside the documentation, in `covers:` frontmatter and the extractor's surface mappings. Listing owners in every task brief is rejected, because duplicate lists go stale and miss new surfaces. Running only existing generators is also rejected: generated API, CLI, and MCP contracts do not find every hand-written page affected by configuration, errors, migrations, or schedules. Current generator output needs no duplicate prose, but stale or missing output still requires an update.
+
+Coverage declarations are optional, but docs-lint checks that their globs are safe and match tracked paths. A committed ratchet prevents already-covered pages from dropping their declarations. Requiring coverage on every page at once is rejected, because a monotonic ratchet lets documentation consolidation add ownership incrementally without weakening existing coverage.
 
 ### Checks that need no network
 

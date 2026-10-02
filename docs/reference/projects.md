@@ -208,6 +208,16 @@ Instances of one repository share one serving contract. Per-Instance route or PH
 
 A new task workspace is visitable only when the Project's `task_workspace_routed` setting says so. Choosing that from the slug `orbit` was rejected, because the engine would then know one repository. [Task workspace routing](#task-workspace-routing) records the one-time migration of that old result, and that a later change does not reroute a workspace that already exists.
 
+### One public name without compatibility
+
+Project is the only public name for the repository record. Orbit has one operator, who does not value legacy support, so compatibility paths, aliases, inert endpoints, and conversion windows are removed by default without waiting for fleet migration or another confirmation. A second name adds code, tests, documentation, and ambiguity without protecting a supported user population.
+
+The supported surface is `/api/v1/projects`, `project:*`, the Project MCP tools, and Instance fields `project_id` and `project`. The former `/api/v1/apps` routes, their nested Process and Schedule definition routes, and generated `app-*` MCP tools are removed. Project creation requires an explicit `type`; there is no path-specific default for an old endpoint. CLI Project selection uses `--project`, not `--app`. [Dependency scan and update](/reference/instance-dependencies) select one Instance by its Route domain with `--project`.
+
+The same rule applies beyond the repository record: `--wireguard-ip` has no `--wireguard-address` alias, and the [task driver settings](/reference/tasks#drivers) use separate implementer and reviewer environment variables, with no `ORBIT_TASKS_AGENT_DRIVER` fallback. Older clients that depend on removed names must be updated; Orbit provides no compatibility period.
+
+Retaining `/apps` until clients migrate is rejected, because there is no other user's migration to protect. Keeping aliases because they seem cheap or harmless is rejected, because they obscure the supported interface and still need maintenance. A conversion window or an inert endpoint is rejected, because neither provides value to this operator. Public compatibility cleanup and [stored record naming](#project-and-instance) are separate decisions; coupling them would mix interface removal with database and class renaming. Unrelated names such as the GitHub App and Node roles are not compatibility aliases for Project.
+
 ### Project and Instance
 
 Project is the repository record. Instance is one running copy of a Project on a Node. Those are the only names for this domain: the model, the table, the foreign key, the class, the API, the CLI, and these docs. Nothing keeps a second name as an alias, a route, a JSON field, a class, a table, or a column.

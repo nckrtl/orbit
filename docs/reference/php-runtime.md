@@ -28,7 +28,7 @@ The Gateway reads the source's `composer.json` once, before it publishes the run
 
 The Instance records the selected version in its [source profile](/domains/applications#provision-the-application-endpoint). There is no input or output field to choose a version. The Node role installs, configures, and removes every selected version.
 
-Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
+Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
 
 ## Development runtime
 
