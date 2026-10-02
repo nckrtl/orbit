@@ -2,13 +2,19 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\RemoveInstanceAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
+use App\Domain\Instances\Removal\InstanceRemovalException;
+use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationExpectation;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
@@ -16,6 +22,7 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
+use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
@@ -24,8 +31,10 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
+use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -40,9 +49,12 @@ use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Tests\Support\LifecycleSshExecutor;
 
 beforeEach(function (): void {
     $this->files = new Filesystem;
@@ -134,6 +146,158 @@ beforeEach(function (): void {
 afterEach(function (): void {
     $this->files->deleteDirectory($this->sandbox);
 });
+
+it('removes a checkout_prepared failed create with its partial checkout Route and Vite reservation', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-create', 'missing');
+    $this->source->prepare($instance, false);
+    expect(fn () => $this->source->resolve($instance))->toThrow(RuntimeConvergenceException::class);
+    $instance->update([
+        'status' => InstanceState::CheckoutPrepared,
+        'failed_step' => 'source_resolved',
+        'error_code' => 'instance.branch_resolution_failed',
+        'vite_port' => 5200,
+    ]);
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id,
+        'domain' => 'failed-create.acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => RouteStatus::Failed, 'failed_step' => 'source_resolved', 'error_code' => 'instance.branch_resolution_failed']);
+    DB::table('vite_port_assignments')->insert(['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'port' => 5200]);
+    ProjectLifecycleStep::query()->create(['project_id' => $instance->project_id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    $teardown = new LifecycleSshExecutor;
+    app()->instance(ProjectLifecycleRunner::class, $teardown->runner());
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    $removal = $action->execute($instance, $force);
+
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($removal->members->sole()->runtime_published)->toBeFalse()
+        ->and(is_dir($instance->checkout_path))->toBeFalse()
+        ->and($teardown->inputs)->toBe([]);
+    $this->assertModelMissing($instance);
+    $this->assertModelMissing($route);
+    $this->assertDatabaseMissing('vite_port_assignments', ['instance_id' => $instance->id]);
+})->with([false, true]);
+
+it('removes a failed reserved create whose clone never made a checkout', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-clone');
+    $this->files->deleteDirectory($this->repository);
+    expect(fn () => $this->source->prepare($instance, false))->toThrow(RuntimeConvergenceException::class);
+    $instance->update(['failed_step' => 'checkout_prepared', 'error_code' => 'instance.clone_failed']);
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    $removal = $action->execute($instance, $force);
+
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($removal->members->sole()->source_identity)->toBe('absent')
+        ->and($removal->members->sole()->route_outcome)->toBe('none');
+    $this->assertModelMissing($instance);
+})->with([false, true]);
+
+it('retries empty Project directory cleanup after absent-source finalization is interrupted', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-clone-retry');
+    $this->files->deleteDirectory($this->repository);
+    expect(fn () => $this->source->prepare($instance, false))->toThrow(RuntimeConvergenceException::class);
+    $instance->update(['failed_step' => 'checkout_prepared', 'error_code' => 'instance.clone_failed']);
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+    $this->transport->failGroupingDirectoryCleanupOnce = true;
+
+    expect(fn () => $action->execute($instance, false))
+        ->toThrow(fn (InstanceRemovalException $exception) => expect($exception->errorCode)->toBe('instance.removal_incomplete'));
+
+    $failedRemoval = InstanceRemoval::query()->sole();
+    expect($failedRemoval->failed_step)->toBe(InstanceRemovalStep::SourceFinalization)
+        ->and(is_dir(dirname($instance->checkout_path)))->toBeTrue()
+        ->and(file_exists(orb180_receipt_path($failedRemoval->members->sole())))->toBeFalse();
+    $this->assertModelExists($instance);
+
+    $completed = $action->execute($instance->refresh(), false);
+
+    expect($completed->id)->toBe($failedRemoval->id)
+        ->and($completed->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and(is_dir(dirname($instance->checkout_path)))->toBeFalse()
+        ->and(file_exists(orb180_receipt_path($completed->members->sole())))->toBeTrue();
+    $this->assertModelMissing($instance);
+});
+
+it('removes a failed source_resolved create without treating its partial checkout as active source', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-runtime');
+    $this->source->prepare($instance, false);
+    $resolution = $this->source->resolve($instance);
+    $instance->update(['status' => InstanceState::SourceResolved, 'branch' => $resolution->branch, 'starting_commit' => $resolution->startingCommit, 'failed_step' => 'active', 'error_code' => 'instance.runtime_failed']);
+    file_put_contents($instance->checkout_path.'/partial-runtime', 'unfinished');
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    $removal = $action->execute($instance, false);
+
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and(is_dir($instance->checkout_path))->toBeFalse();
+    $this->assertModelMissing($instance);
+});
+
+it('refuses non-active creation without complete failure evidence', function (?string $step, ?string $code): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'not-failed');
+    $this->source->prepare($instance, false);
+    $instance->update(['status' => InstanceState::CheckoutPrepared, 'failed_step' => $step, 'error_code' => $code]);
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    expect(fn () => $action->execute($instance, true))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused'));
+
+    $this->assertModelExists($instance);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+    $this->assertDatabaseCount('instance_removals', 0);
+})->with([[null, null], ['source_resolved', null], [null, 'instance.branch_resolution_failed']]);
+
+it('does not waive source origin ownership for a failed create', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'foreign-source');
+    $this->source->prepare($instance, false);
+    $instance->update(['status' => InstanceState::CheckoutPrepared, 'failed_step' => 'source_resolved', 'error_code' => 'instance.branch_resolution_failed']);
+    orb76_run(['git', '-C', $instance->checkout_path, 'config', 'remote.origin.url', 'https://example.test/other.git']);
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    expect(fn () => $action->execute($instance, $force))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.source_origin_mismatch'));
+
+    $this->assertModelExists($instance);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+    $this->assertDatabaseCount('instance_removals', 0);
+})->with([false, true]);
+
+it('refuses a failed create while its create lifecycle lock is still held', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'running-create', 'missing');
+    $this->source->prepare($instance, false);
+    $instance->update(['status' => InstanceState::CheckoutPrepared, 'failed_step' => 'source_resolved', 'error_code' => 'instance.branch_resolution_failed']);
+    $directory = $this->sandbox.'/environment-locks';
+    orb895_native_removal_action($this->removal, $this->sourceLock, $directory);
+    $clock = 0.0;
+    app()->instance(InstanceEnvironmentOperationLock::class, new NativeInstanceEnvironmentOperationLock(
+        $directory,
+        new CommandDeadline,
+        clock: static function () use (&$clock): float {
+            return $clock;
+        },
+        wait: static function () use (&$clock): void {
+            $clock += 31.0;
+        },
+    ));
+    $action = app(RemoveInstanceAction::class);
+    $createOwner = new NativeInstanceEnvironmentOperationLock($directory, new CommandDeadline);
+
+    $createOwner->run([$instance->id], function () use ($instance, $action, $force): void {
+        expect(fn () => $action->execute($instance, $force))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('env.operation_busy'));
+    });
+
+    $this->assertModelExists($instance);
+    expect(is_dir($instance->checkout_path))->toBeTrue();
+    $this->assertDatabaseCount('instance_removals', 0);
+})->with([false, true]);
 
 it('creates independent clones from an existing remote branch and the exact fetched default branch', function (): void {
     $existing = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
@@ -348,6 +512,27 @@ it('inspects prepared source by its configured origin despite an insteadOf rule'
     expect(fn () => $this->source->inspectPrepared($instance))
         ->toThrow(RuntimeConvergenceException::class);
 });
+
+it('preserves pre-existing source when fresh creation fails in reserved in either removal mode', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'pre-existing');
+    $this->files->makeDirectory(dirname($instance->checkout_path), 0o755, true);
+    orb76_run(['git', 'clone', '--no-checkout', '--origin', 'origin', '--', $this->repository, $instance->checkout_path]);
+    $sentinel = $instance->checkout_path.'/untracked-source';
+    file_put_contents($sentinel, 'pre-existing work');
+    expect(fn () => $this->source->prepare($instance, false))->toThrow(RuntimeConvergenceException::class);
+    $instance->update(['failed_step' => 'checkout_prepared', 'error_code' => 'instance.clone_failed']);
+    $before = $instance->fresh()->getAttributes();
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    expect(fn () => $action->execute($instance, $force))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused'));
+
+    $this->assertModelExists($instance);
+    expect($instance->fresh()->getAttributes())->toBe($before)
+        ->and(is_dir($instance->checkout_path.'/.git'))->toBeTrue()
+        ->and(file_get_contents($sentinel))->toBe('pre-existing work');
+    $this->assertDatabaseCount('instance_removals', 0);
+})->with([false, true]);
 
 it('refuses matching pre-existing source for a fresh reservation and resumes it only after an interruption', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
@@ -2299,6 +2484,33 @@ function orb178_remove_source(
     return $inventory;
 }
 
+function orb895_native_removal_action(
+    RemoteDevelopmentInstanceSourceRemoval $source,
+    AppDevSourceOperationLock $sourceLock,
+    string $lockDirectory,
+): RemoveInstanceAction {
+    app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
+    app()->instance(DevelopmentInstanceSourceFinalizer::class, $source);
+    app()->instance(AppDevSourceOperationLock::class, $sourceLock);
+    app()->instance(InstanceEnvironmentOperationLock::class, new NativeInstanceEnvironmentOperationLock($lockDirectory, new CommandDeadline));
+    app()->instance(InstanceRemovalProjector::class, new class implements InstanceRemovalProjector
+    {
+        public function clearRouteTarget(InstanceRemovalMember $member): string
+        {
+            Route::query()->findOrFail($member->route_id)->delete();
+
+            return 'deleted';
+        }
+
+        public function cleanupRuntime(InstanceRemovalMember $member): void
+        {
+            throw new LogicException('A failed create has no published runtime.');
+        }
+    });
+
+    return app(RemoveInstanceAction::class);
+}
+
 function orb76_source_instance(
     Project $project,
     Node $node,
@@ -2384,6 +2596,8 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public ?Closure $beforeFinalization = null;
 
+    public bool $failGroupingDirectoryCleanupOnce = false;
+
     public function __construct(
         public string $remoteOrigin,
         private readonly string $localOrigin,
@@ -2400,6 +2614,11 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
             $callback = $this->beforeFinalization;
             $this->beforeFinalization = null;
             $callback?->__invoke();
+
+            if ($this->failGroupingDirectoryCleanupOnce) {
+                $this->failGroupingDirectoryCleanupOnce = false;
+                $input = str_replace('rmdir -- "$grouping_directory"', 'exit 97', $input);
+            }
         }
 
         if (is_string($input) && str_contains($input, 'expected_repository_identity=$1')) {

@@ -5,10 +5,10 @@ covers:
   - apps/gateway/app/Actions/{Instances/RemoveInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
   - apps/gateway/app/Domain/Instances/Removal/**
-  - apps/gateway/app/Infrastructure/*/RecordedProduction*ContentRetention.php
-  - apps/gateway/app/Infrastructure/Instances/{NativeInstanceRemovalProjector,RemoteDevelopmentInstanceSourceRemoval}.php
+  - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
+  - apps/gateway/database/migrations/2026_10_09_000000_allow_failed_creation_removal.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -69,7 +69,7 @@ For a completed development checkout, the Gateway compares the checkout with its
 
 `instance:destroy` removes a development Instance whose create failed before it reached `active`. The Instance must be in `reserved`, `checkout_prepared`, or `source_resolved`, with recorded failure evidence in `failed_step` and `error_code`. These are [creation states](/domains/applications#create-a-development-instance), not a separate failed status.
 
-Removal deletes any partial checkout, deletes the reserved Route if one exists, releases the reserved Vite port, and deletes the Instance row. If creation stopped before it made the checkout, there is no source directory to delete. Removal still checks that the path and resources belong to this Instance; it never deletes another Instance's source or Route.
+Removal deletes any owned partial checkout, deletes the reserved Route if one exists, releases the reserved Vite port, and deletes the Instance row. If creation stopped before it made the checkout, there is no source directory to delete. A `reserved` Instance has no completed source preparation to prove ownership of an existing checkout. Orbit refuses to delete that checkout in either mode, even when its origin and account match. Removal still checks that the path and resources belong to this Instance; it never deletes another Instance's source or Route.
 
 A non-active state alone does not prove that create failed. Orbit refuses removal while creation is still in progress. `--force` does not override that refusal. An Instance that already became `active` uses the normal or forced removal rules above, even if a later setup step failed.
 
@@ -132,7 +132,7 @@ The API, SDK, CLI, and Activity report removal progress in one shape. `DELETE` r
 | `total`, `completed`, `remaining` | Member counts. |
 | `failed_step`, `error_code` | The step and code of a failure, or null. |
 
-Repeat the same command to resume at the first unfinished step. A changed `--force` value returns `instance.removal_conflict`. Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry.
+Repeat the same command to resume at the first unfinished step. A changed `--force` value returns `instance.removal_conflict`. Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
 
 ## Why it works this way
 
