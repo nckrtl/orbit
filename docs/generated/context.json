@@ -766,33 +766,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0193-record-development-branch-renames.md",
-            "title": "ADR 0193: Record development branch renames",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Route",
-                "Subtask",
-                "Task",
-                "Task workspace"
-            ],
-            "governing_adrs": [
-                "0191",
-                "0193"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -838,8 +811,7 @@
                 "0175",
                 "0182",
                 "0190",
-                "0191",
-                "0193"
+                "0191"
             ]
         },
         {
@@ -874,9 +846,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0193"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/index.mdx",
@@ -1915,9 +1885,7 @@
                 "Role",
                 "Route"
             ],
-            "governing_adrs": [
-                "0193"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/schedules.md",

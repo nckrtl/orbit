@@ -575,8 +575,7 @@
               "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
-              "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
-              "decisions/0193-record-development-branch-renames"
+              "decisions/0191-clone-the-default-instance-database-for-each-new-instance"
             ]
           }
         ]
@@ -1346,6 +1345,10 @@
     {
       "source": "/decisions/0192-run-task-agents-on-pi-only",
       "destination": "/reference/tasks#task-agents-run-on-pi"
+    },
+    {
+      "source": "/decisions/0193-record-development-branch-renames",
+      "destination": "/domains/applications#development-branch-reconciliation"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",

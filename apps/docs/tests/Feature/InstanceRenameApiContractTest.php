@@ -35,10 +35,11 @@ describe('generated Instance rename contract', function (): void {
             ->and($schema['additionalProperties'])->toBeFalse();
 
         $selector = $tool['path_inputs'][0];
-        $adr = (string) file_get_contents($root.'/docs/decisions/0193-record-development-branch-renames.md');
+        $applications = (string) file_get_contents($root.'/docs/domains/applications.md');
         $reference = (string) file_get_contents($root.'/docs/reference/mcp.mdx');
 
-        expect($adr)->toContain("- MCP: `instance-rename`, with `{$selector}` and optional `branch` and `domain`.")
+        expect($applications)->toContain('The MCP tool is `instance-rename`.')
+            ->and($applications)->toContain("Send `{$selector}` and at least one of `branch` or `domain`.")
             ->and($reference)->toContain("Send `{$selector}` and at least one of `branch` or `domain`.");
     });
 });

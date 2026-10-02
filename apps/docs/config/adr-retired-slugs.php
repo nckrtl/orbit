@@ -188,4 +188,5 @@ return [
     '0188' => ['0188-read-private-github-repositories-through-the-gateway-github-cli'],
     '0189' => ['0189-register-instances-only-for-existing-projects'],
     '0192' => ['0192-run-task-agents-on-pi-only'],
+    '0193' => ['0193-record-development-branch-renames'],
 ];
