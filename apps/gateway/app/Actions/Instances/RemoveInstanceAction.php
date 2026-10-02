@@ -443,7 +443,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
     {
         if (InstanceTransfer::query()
             ->where('instance_id', $instance->id)
-            ->where('status', '!=', 'completed')
+            ->open()
             ->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'instance.transfer_incomplete',
@@ -913,7 +913,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             $lockedMember = $lockedOperation->members()->lockForUpdate()->findOrFail($member->id);
             InstanceTransfer::query()
                 ->where('instance_id', $member->instance_id)
-                ->where('status', 'completed')
+                ->closed()
                 ->update(['instance_id' => null]);
             app(CancelInstanceAnnotationTasksAction::class)->execute($member->instance_id);
             Instance::query()->lockForUpdate()->findOrFail($member->instance_id)->delete();

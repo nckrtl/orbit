@@ -14,4 +14,12 @@ interface InstanceSqliteSeeder
         #[SensitiveParameter]
         string $sourcePath,
     ): SqliteSeedResult;
+
+    /** Abandon the recorded seed and its owned temporary files without removing the installed database. */
+    public function abandon(
+        SqliteSeedPlacement $source,
+        SqliteSeedPlacement $target,
+        #[SensitiveParameter]
+        string $sourcePath,
+    ): bool;
 }

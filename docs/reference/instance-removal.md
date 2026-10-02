@@ -47,10 +47,12 @@ The Gateway also refuses these Instances:
 
 | Code | Cause |
 | --- | --- |
-| `instance.transfer_incomplete` | A [transfer](/reference/instance-transfer) of the Instance is not complete. Recover it first. |
+| `instance.transfer_incomplete` | A [transfer](/reference/instance-transfer) is still open: it is unfinished, failed before cutover with incomplete rollback, or failed after cutover. Retry the identical transfer request first. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete [clone](/reference/instance-cloning). |
 | `analytics.tracking_hosts_exist` | The Instance still has [tracking hosts](/cli/instance#orbit-instanceanalyticsdisable). |
 | `instance.remove_refused` | The Instance is in another state, its Route is not removable, or normal mode found dirty or unpublished source. The message names the rule. |
+
+The Gateway permits removal after a transfer fails before cutover and finishes rollback, including cleanup of its owned SQLite seed files. Failed or unconfirmed seed cleanup keeps the transfer open. Normal and forced removal follow this rule. `--force` cannot bypass an open transfer, and the other removal checks still apply.
 
 For a development Instance, the Gateway compares the checkout with its record. Each origin check reads the `remote.origin.url` stored in the checkout and ignores `insteadOf` rewrites.
 
@@ -105,7 +107,7 @@ Orbit does not wait for a running Schedule command. The command may finish or fa
 
 ### Transfer history
 
-A completed transfer record stays after removal, with its Instance reference cleared.
+Closed transfer records stay after removal, with their Instance references cleared. This includes completed transfers and transfers that failed before cutover and finished rollback. A failed record keeps its status and failure details.
 
 ### Production content
 

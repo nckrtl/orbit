@@ -46,6 +46,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
+use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
@@ -125,6 +126,49 @@ it('keeps the route and checkout after a teardown command fails', function (): v
         ->and($instance->routes()->count())->toBe(1)
         ->and(InstanceRemoval::query()->count())->toBe(0);
 });
+
+it('allows removal only after a failed pre-cutover transfer has finished rollback', function (bool $cutover, ?array $evidence, string $status, bool $closed, array $imports = [], string $step = 'reserved'): void {
+    $instance = orb181_coordinator_instance();
+    $transfer = InstanceTransfer::query()->create([
+        'instance_id' => $instance->id,
+        'source_node_id' => $instance->node_id,
+        'destination_node_id' => $instance->node_id,
+        'destination_name' => 'preview',
+        'destination_path' => '/srv/orbit/apps/shop/preview',
+        'destination_domain' => 'preview.shop.dev.orbit',
+        'source_layout' => 'checkout',
+        'source_path' => $instance->checkout_path,
+        'source_route_id' => $instance->routes()->sole()->id,
+        'status' => $status,
+        'current_step' => $step,
+        'imported_environment_keys' => $imports,
+        'cutover_at' => $cutover ? now() : null,
+        'recovery_evidence' => $evidence,
+    ]);
+
+    if (! $closed) {
+        expect(fn () => $this->orb181Coordinator->execute($instance, false))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_incomplete'));
+        $this->assertModelExists($instance);
+        expect(InstanceRemoval::query()->count())->toBe(0);
+
+        return;
+    }
+
+    $removal = $this->orb181Coordinator->execute($instance, false);
+
+    expect($removal->status->value)->toBe('completed')
+        ->and($transfer->refresh()->instance_id)->toBeNull()
+        ->and($transfer->status->value)->toBe('failed');
+    $this->assertModelMissing($instance);
+})->with([
+    'finished rollback' => [false, null, 'failed', true],
+    'unfinished rollback' => [false, ['incomplete' => ['source-runtime']], 'failed', false],
+    'post-cutover failure' => [true, null, 'failed', false],
+    'unfinished transfer' => [false, null, 'in_progress', false],
+    'retained imported environment' => [false, null, 'failed', false, ['OWNED_IMPORT']],
+    'rollback has not reset the checkpoint' => [false, null, 'failed', false, [], 'source-captured'],
+]);
 
 it('accepts exactly one independent checkout and completes every durable step', function (bool $force): void {
     $instance = orb181_coordinator_instance();

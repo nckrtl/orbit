@@ -850,6 +850,11 @@ final class Orb198DomainCloneEnvironmentWriter implements InstanceEnvironmentWri
 
 final class Orb198SqliteSeeder implements InstanceSqliteSeeder
 {
+    public function abandon(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): bool
+    {
+        throw new LogicException('Cloning retains its seed for identical retries.');
+    }
+
     /** @var list<array{source: SqliteSeedPlacement, target: SqliteSeedPlacement, path: string}> */
     public array $calls = [];
 

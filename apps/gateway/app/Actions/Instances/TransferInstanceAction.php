@@ -139,22 +139,24 @@ final readonly class TransferInstanceAction
             $created = true;
         }
 
-        try {
-            $result = $this->environmentOperations->run(
-                [$instance->id],
+        $result = $this->environmentOperations->run(
+            [$instance->id],
+            fn (): Instance => $this->sourceLock->synchronized(
+                $transfer->destination_node_id,
                 fn (): Instance => $this->sourceLock->synchronized(
-                    $transfer->destination_node_id,
-                    fn (): Instance => $this->sourceLock->synchronized(
-                        $transfer->source_node_id,
-                        fn (): Instance => $this->resume($instance->id, $transfer->id, $sourceClusterId),
-                    ),
-                ),
-            );
-        } catch (Throwable $exception) {
-            $this->recordFailure($transfer->id, $exception);
+                    $transfer->source_node_id,
+                    function () use ($instance, $transfer, $sourceClusterId): Instance {
+                        try {
+                            return $this->resume($instance->id, $transfer->id, $sourceClusterId);
+                        } catch (Throwable $exception) {
+                            $this->recordFailure($transfer->id, $exception);
 
-            throw $exception;
-        }
+                            throw $exception;
+                        }
+                    },
+                ),
+            ),
+        );
 
         return [
             'instance' => $result,
@@ -167,7 +169,7 @@ final readonly class TransferInstanceAction
     {
         $existing = InstanceTransfer::query()
             ->where('instance_id', $instance->id)
-            ->whereNull('completed_at')
+            ->open()
             ->orderByDesc('created_at')
             ->first();
 
@@ -419,18 +421,29 @@ final readonly class TransferInstanceAction
         $destination = Node::query()->findOrFail($transfer->destination_node_id);
         $path = StoragePath::parse($transfer->destination_path);
 
+        if ($transfer->cutover_at === null && ($transfer->recovery_evidence['rollback_pending'] ?? false) === true) {
+            $this->restoreBeforeCutover($transfer, resuming: true);
+            $transfer->refresh();
+
+            if (($transfer->recovery_evidence['rollback_pending'] ?? false) === true) {
+                throw $this->conflict('instance.transfer_failed', 'Transfer rollback is incomplete. Retry the identical request.');
+            }
+        } elseif ($transfer->status === InstanceTransferStatus::Failed && $transfer->cutover_at === null && $this->needsSqliteSeedCleanup($transfer)) {
+            $this->abandonSqliteSeed($instance, $destination, $transfer);
+        }
+
         if ($transfer->current_step === InstanceTransferStep::Reserved) {
             app(VitePortAllocator::class)->assign($instance);
             app(VitePortAllocator::class)->assign($instance, $destination);
             $this->runtime->pause($instance);
-            $capture = $this->sources->capture($instance);
+            $capture = $this->sources->capture($instance, $transfer->sqlite_source_path);
             $this->checkpoint($transfer, InstanceTransferStep::SourceCaptured, [
                 'common_repository_path' => $capture->commonRepositoryPath ?? $transfer->common_repository_path,
             ]);
             $this->materializeDestination($capture, $destination, $path, $transfer);
         } elseif ($transfer->current_step === InstanceTransferStep::SourceCaptured) {
             $this->runtime->pause($instance);
-            $this->materializeDestination($this->sources->capture($instance), $destination, $path, $transfer);
+            $this->materializeDestination($this->sources->capture($instance, $transfer->sqlite_source_path), $destination, $path, $transfer);
         }
 
         if ($transfer->current_step === InstanceTransferStep::DestinationCheckoutCreated) {
@@ -508,12 +521,27 @@ final readonly class TransferInstanceAction
             return;
         }
 
+        [$sourcePlacement, $targetPlacement] = $this->sqlitePlacements($instance, $destination, $transfer);
+        $result = $this->sqlite->seed($sourcePlacement, $targetPlacement, $transfer->sqlite_source_path);
+
+        if (! $result->confirmed || ! is_bool($result->changed)) {
+            throw $this->conflict(
+                'instance.clone_sqlite_unconfirmed',
+                'The destination SQLite snapshot result is unconfirmed. Retry the request.',
+            );
+        }
+    }
+
+    /** @return array{SqliteSeedPlacement, SqliteSeedPlacement} */
+    private function sqlitePlacements(Instance $instance, Node $destination, InstanceTransfer $transfer): array
+    {
         $instance->loadMissing('node');
-        $result = $this->sqlite->seed(
+
+        return [
             new SqliteSeedPlacement(
                 instanceId: $instance->id,
                 environment: 'development',
-                basePath: $instance->checkout_path,
+                basePath: $transfer->source_path,
                 executionUser: $instance->node->user,
                 node: $instance->node,
             ),
@@ -523,15 +551,31 @@ final readonly class TransferInstanceAction
                 basePath: $transfer->destination_path,
                 executionUser: $destination->user,
                 node: $destination,
+                operationId: $transfer->id,
             ),
-            $transfer->sqlite_source_path,
-        );
+        ];
+    }
 
-        if (! $result->confirmed || ! is_bool($result->changed)) {
-            throw $this->conflict(
-                'instance.clone_sqlite_unconfirmed',
-                'The destination SQLite snapshot result is unconfirmed. Retry the request.',
-            );
+    private function needsSqliteSeedCleanup(InstanceTransfer $transfer): bool
+    {
+        $incomplete = $transfer->recovery_evidence['incomplete'] ?? [];
+
+        return $transfer->sqlite_source_path !== null && (
+            $transfer->current_step->rank() >= InstanceTransferStep::SourcePaused->rank()
+            || ($transfer->failed_step?->rank() ?? -1) >= InstanceTransferStep::SourcePaused->rank()
+            || (is_array($incomplete) && in_array('sqlite-seed', $incomplete, true))
+        );
+    }
+
+    private function abandonSqliteSeed(Instance $instance, Node $destination, InstanceTransfer $transfer): void
+    {
+        if ($transfer->sqlite_source_path === null) {
+            return;
+        }
+
+        [$sourcePlacement, $targetPlacement] = $this->sqlitePlacements($instance, $destination, $transfer);
+        if (! $this->sqlite->abandon($sourcePlacement, $targetPlacement, $transfer->sqlite_source_path)) {
+            throw $this->conflict('instance.transfer_failed', 'The unfinished SQLite seed could not be cleaned safely. Retry the identical request.');
         }
     }
 
@@ -862,13 +906,14 @@ final readonly class TransferInstanceAction
         $failedStep = $transfer->current_step;
 
         if ($transfer->cutover_at === null) {
-            $this->restoreBeforeCutover($transfer);
+            $rollbackPending = ($transfer->recovery_evidence['rollback_pending'] ?? false) === true;
             $transfer->update([
                 'status' => InstanceTransferStatus::Failed,
-                'current_step' => InstanceTransferStep::Reserved,
-                'failed_step' => $failedStep,
-                'error_code' => $errorCode,
+                'failed_step' => $rollbackPending ? ($transfer->failed_step ?? $failedStep) : $failedStep,
+                'error_code' => $rollbackPending ? ($transfer->error_code ?? $errorCode) : $errorCode,
+                'recovery_evidence' => [...($transfer->recovery_evidence ?? []), 'rollback_pending' => true],
             ]);
+            $this->restoreBeforeCutover($transfer);
 
             return;
         }
@@ -880,7 +925,7 @@ final readonly class TransferInstanceAction
         ]);
     }
 
-    private function restoreBeforeCutover(InstanceTransfer $transfer): void
+    private function restoreBeforeCutover(InstanceTransfer $transfer, bool $resuming = false): void
     {
         $instance = Instance::query()->with('node')->find($transfer->instance_id);
 
@@ -889,14 +934,24 @@ final readonly class TransferInstanceAction
         }
 
         $incomplete = [];
+        $destination = Node::query()->find($transfer->destination_node_id);
+
+        if ($this->needsSqliteSeedCleanup($transfer)) {
+            try {
+                if (! $destination instanceof Node) {
+                    throw $this->conflict('instance.transfer_failed', 'The SQLite seed destination is unavailable for cleanup.');
+                }
+                $this->abandonSqliteSeed($instance, $destination, $transfer);
+            } catch (Throwable) {
+                $incomplete[] = 'sqlite-seed';
+            }
+        }
 
         try {
             $this->runtime->restore($instance);
         } catch (Throwable) {
             $incomplete[] = 'source-runtime';
         }
-
-        $destination = Node::query()->find($transfer->destination_node_id);
 
         if ($destination instanceof Node) {
             try {
@@ -913,11 +968,16 @@ final readonly class TransferInstanceAction
         ) {
             $replacement = Route::query()->find($transfer->destination_route_id);
 
-            if ($replacement instanceof Route && $replacement->status !== RouteStatus::Active) {
+            if (! $replacement instanceof Route || $replacement->status !== RouteStatus::Active) {
                 try {
-                    $replacement->targets()->delete();
-                    $replacement->delete();
-                    Route::query()->whereKey($transfer->source_route_id)->update(['replaced_by_route_id' => null]);
+                    if ($replacement instanceof Route) {
+                        $replacement->targets()->delete();
+                        $replacement->delete();
+                    }
+                    Route::query()
+                        ->whereKey($transfer->source_route_id)
+                        ->where('replaced_by_route_id', $transfer->destination_route_id)
+                        ->update(['replaced_by_route_id' => null]);
                     $transfer->update(['destination_route_id' => null]);
                 } catch (Throwable) {
                     $incomplete[] = 'destination-route';
@@ -939,15 +999,16 @@ final readonly class TransferInstanceAction
             }
         }
 
-        if ($incomplete !== []) {
-            $transfer->update([
-                'recovery_evidence' => [
-                    'incomplete' => $incomplete,
-                    'destination_path' => $transfer->destination_path,
-                    'source_path' => $transfer->source_path,
-                ],
-            ]);
-        }
+        $transfer->update([
+            'status' => $resuming && $incomplete === [] ? InstanceTransferStatus::InProgress : InstanceTransferStatus::Failed,
+            'current_step' => InstanceTransferStep::Reserved,
+            'recovery_evidence' => $incomplete === [] ? null : [
+                'rollback_pending' => true,
+                'incomplete' => $incomplete,
+                'destination_path' => $transfer->destination_path,
+                'source_path' => $transfer->source_path,
+            ],
+        ]);
     }
 
     private function conflict(string $errorCode, string $message): ResourceOperationException
