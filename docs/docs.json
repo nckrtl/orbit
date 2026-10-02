@@ -373,6 +373,7 @@
               "GET /api/v1/instances/{instance}/logs",
               "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
+              "POST /api/v1/instances/{instance}/rename",
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/setup",
               "POST /api/v1/instances/{instance}/transfer",
@@ -1359,6 +1360,10 @@
     {
       "source": "/decisions/0192-run-task-agents-on-pi-only",
       "destination": "/reference/tasks#task-agents-run-on-pi"
+    },
+    {
+      "source": "/decisions/0193-record-development-branch-renames",
+      "destination": "/domains/applications#development-branch-reconciliation"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",

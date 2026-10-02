@@ -14,6 +14,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRemover;
@@ -71,11 +72,11 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         private ?DropOwnedDatabasesAction $databases = null,
     ) {}
 
-    public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true): InstanceRemoval
+    public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true, bool $requirePreActivation = false): InstanceRemoval
     {
         $instanceId = $instance->id;
         $instanceName = $instance->name;
-        $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade);
+        $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
         $broadcaster = $this->broadcaster ?? app(RecordEventBroadcaster::class);
 
         if (Instance::query()->whereKey($instanceId)->exists()) {
@@ -95,12 +96,12 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         return $removal;
     }
 
-    private function performRemoval(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade): InstanceRemoval
+    private function performRemoval(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
     {
         if ($instance->placedOnAppProd()) {
             return $this->environmentOperations->run(
                 [$instance->id],
-                fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade),
+                fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade, $requirePreActivation),
             );
         }
 
@@ -110,7 +111,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             $ownerIds,
             fn (): InstanceRemoval => $this->sourceLock->synchronized(
                 $instance->node_id,
-                function () use ($instance, $force, $ownerIds, $runTeardown, $allowCascade): InstanceRemoval {
+                function () use ($instance, $force, $ownerIds, $runTeardown, $allowCascade, $requirePreActivation): InstanceRemoval {
                     $currentOwnerIds = $allowCascade ? $this->removalEnvironmentOwnerIds($instance->refresh(), $force) : [$instance->id];
 
                     if ($currentOwnerIds !== $ownerIds) {
@@ -121,15 +122,18 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         );
                     }
 
-                    return $this->executeOwned($instance, $force, $runTeardown, $allowCascade);
+                    return $this->executeOwned($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
                 },
             ),
         );
     }
 
-    private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade): InstanceRemoval
+    private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
     {
         $snapshot = $instance->refresh()->load($this->removalRelations());
+        if ($requirePreActivation && $snapshot->status === InstanceState::Active) {
+            throw new ResourceOperationException('instance.remove_refused', 'Failed-create cleanup cannot remove an activated Instance.', 409);
+        }
 
         if ($snapshot->status === InstanceState::Removing) {
             return $this->resume($snapshot, $force);
@@ -679,6 +683,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
         if (
             ! $this->removableRouteState($route, $instance)
+            || $route->project_id !== $instance->project_id
             || $route->targets->count() !== 1
             || $route->targets->sole()->instance_id !== $instance->id
         ) {
@@ -736,10 +741,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function failedCreation(Instance $instance): bool
     {
-        return $instance->placedOnAppDev()
-            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
-            && $instance->failed_step !== null
-            && $instance->error_code !== null;
+        return InstanceCreationRecovery::isPreActivation($instance);
     }
 
     private function removableState(Instance $instance): bool
@@ -927,8 +929,9 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $this->processes->execute($member->instance_id);
         ($this->databases ?? app(DropOwnedDatabasesAction::class))->execute($member->instance_id);
 
-        // A checkout that never became active, such as a task workspace, has no pool, site, or certificate to withdraw.
-        if ($member->runtime_published) {
+        // A routed create can publish part of its runtime before activation.
+        // An unrouted task workspace has no pool, site, or certificate to withdraw.
+        if ($member->runtime_published || $member->route_id !== null) {
             $this->routes->cleanupRuntime($member);
         }
         $member->update(['runtime_cleaned_at' => now()]);

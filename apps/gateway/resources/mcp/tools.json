@@ -2786,6 +2786,43 @@
       }
     },
     {
+      "name": "instance-rename",
+      "extension": null,
+      "title": "instance:rename",
+      "description": "Record a development branch rename and move its Route.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/rename",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Branch already checked out on the Node"
+          },
+          "domain": {
+            "type": "string",
+            "minLength": 1,
+            "description": "New domain for the Instance Route"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-resolve",
       "extension": null,
       "title": "instance:resolve",

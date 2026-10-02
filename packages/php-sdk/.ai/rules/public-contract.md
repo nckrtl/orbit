@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 177 concrete public Gateway API operations:
+The SDK models exactly 178 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -9,7 +9,7 @@ The SDK models exactly 177 concrete public Gateway API operations:
 - Project: list, show, create, update, and remove.
 - Development node exclusion: add, list, and remove from either the Project or the Node.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
-- Instance: list, show, create, register, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.
+- Instance: list, show, create, register, rename, clone, transfer, remove, update, deploy-step create, list, update, and destroy, deploy, rollback, retained-release list, deployment-history list and show, environment import, environment update, environment synchronization, dependency inventory read, dependency scan, dependency update, and full-domain and directory instance resolution through the concise Instance routes.
 - Route: list, show, create, update, target set, target clear, and remove.
 - Process: list, add, start, stop, restart, logs, and remove.
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
@@ -35,6 +35,7 @@ operations. Keep the public API typed and small.
 - Keep Instance lifecycle transport limited to Project, Node, name, optional
   root, optional Route domain, optional creation branch, explicit
   source-profile recovery, and explicit force intent.
+  Rename transports a numeric Instance ID and optional branch and domain strings.
   The Gateway owns placement, source, and Route policy.
 - Keep candidate clone transport limited to the numeric candidate Instance
   ID, destination Node ID, target name, preview name, optional branch, and

@@ -1085,6 +1085,8 @@ def rules_to_schema(rules_text, route_name=None):
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
+    if route_name == 'instance:rename':
+        root['minProperties'] = 1
     return clean_schema(root), body_required
 
 
@@ -1268,6 +1270,8 @@ def php_sample(sdkreq, stream, tag):
             continue
         t, name, has_default = m.group(1), m.group(2), m.group(3)
         if has_default:
+            if sdkreq['class'] == 'RenameInstanceRequest' and name == 'branch':
+                args.append("branch: 't3code/login-redirect'")
             continue
         if 'Target' in t:
             first = t.split('|')[0]
