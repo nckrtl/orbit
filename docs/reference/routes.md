@@ -358,6 +358,20 @@ Until cleanup, the new domain uses staging certificates, so the Instance's live 
 
 A `pending` replacement renders a site only after its certificate step completes. A `failed` replacement renders no site. Cleanup issues the live certificates, stores its `cleanup` step, rebuilds the workload and Router Caddy, and only then removes the staging certificates. So a failed cleanup never leaves a site that names a missing certificate.
 
+### Change an Instance Route domain
+
+[`instance:rename INSTANCE --domain=DOMAIN`](/cli/instance#orbit-instancerename) changes the domain of an active development checkout's own single-target Project Route. The API is `POST /api/v1/instances/{instance}/rename` with `{"domain":"login-redirect.orbit-website.test"}`. It can also record a branch already checked out by supplying `branch` in the same request. This operation does not rename the Instance, move its checkout, or change its placement.
+
+Unlike an ordinary operator-requested `route:update`, Instance rename permits a domain change when the Route has `provenance=generated`. It uses the same replacement and convergence path as an [explicit domain change](#change-an-explicit-domain): reserve the new domain, prepare certificates and Caddy, synchronize the Laravel URL, publish DNS, cut over, and clean up the old projections. A successful rename returns the Instance with the new Route and URL; the old domain stops serving it. The replacement has a new Route ID.
+
+The replacement keeps the Project, scope, publication, target, provenance, and generation basis. A generated Route stays generated; a later Project slug or effective-TLD change can recompute its domain from the unchanged Instance name. A supplied readable domain is not a permanent explicit override. Explicit Routes keep their existing explicit-domain behavior.
+
+For Laravel, convergence writes the new `APP_URL` into the stored Instance environment and `.env` and refreshes cached configuration through the existing URL synchronization step. It does not just edit a Route row. A target without a recorded source profile returns `instance.source_profile_missing`.
+
+Before changing anything, the Gateway validates the Instance, any supplied branch, and the normalized domain's availability. A branch mismatch or `route.domain_conflict` in a combined request changes neither branch record nor Route. A domain request without the Instance's own single-target Project Route returns `instance.route_required`; custom proxy and analytics Routes are not candidates. The changed branch record is committed only after the requested domain converges successfully.
+
+An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response and when provenance is generated. Incomplete replacements follow the recovery rules below. If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement. A changed branch is recorded only after domain convergence succeeds. Another lifecycle owner returns `instance.lifecycle_busy`, and a different requested domain while a replacement is incomplete returns `route.domain_change_conflict`. Branch-only rename leaves the Route alone. [Development branch reconciliation](/domains/applications#development-branch-reconciliation) explains the reasons for this Instance-owned path.
+
 ### Resume or refuse a change
 
 During a change, Route inspection shows both records, `replacement_step`, `failed_step`, and `error_code`. Repeat the same request to resume. A different domain returns `route.domain_change_conflict` and changes neither record.
@@ -366,7 +380,7 @@ A failure before cutover leaves the old Route authoritative. The Gateway marks t
 
 A failure after cutover keeps the replacement authoritative. A retry continues until the replacement is `active` and the retiring Route is deleted.
 
-`route.reconciliation_required` refuses these changes to an active Route: a generated domain change that an operator requests, and a single-target change. A Router clear gets the same refusal.
+`route.reconciliation_required` refuses these changes to an active Route: a generated domain change that an operator requests through ordinary `route:update`, and a single-target change. The Instance-owned [`instance:rename`](#change-an-instance-route-domain) path permits its generated Route's domain change, but not an incompatible reconciliation already in progress. A Router clear gets the same refusal.
 
 Deployment, rollback, clone finalization, Instance removal, environment changes, and domain changes of the same Instance share one operation owner. A competitor waits or returns `env.operation_busy`.
 

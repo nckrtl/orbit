@@ -110,6 +110,8 @@ A [deployment](/reference/deployments) synchronizes the stored configuration bef
 
 ## Synchronize during a domain change
 
+A development [Instance rename](/cli/instance#orbit-instancerename) updates Laravel `.env` and cached `app.url` through Route convergence, and records the stored APP_URL only after that operation succeeds. If a failed replacement remains, requesting the original domain is not a rollback or a no-op: it returns `route.domain_change_conflict` without another branch or environment mutation. Retry the pending destination to finish the replacement.
+
 A domain change of a production Route rewrites the production `.env` inside the Route operation. It uses the same checks and writer as synchronization. It resolves `{{instance.domain}}` against the new Route, although the public operations refuse an Instance while its Route changes. Stored values stay the same, so a placeholder `APP_URL` changes and a literal `APP_KEY` does not.
 
 When the change fails before the cutover, recovery renders the stored configuration against the old Route and restores `.env` before it removes the new Route. After the cutover, a retry checks the new file and does not revert it. See [Routes](/reference/routes).

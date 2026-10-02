@@ -6,13 +6,16 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\StoragePath;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
+use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
@@ -20,8 +23,9 @@ use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
+use InvalidArgumentException;
 
-final readonly class RemoteDevelopmentInstanceSourceLifecycle implements DevelopmentInstanceSourceLifecycle
+final readonly class RemoteDevelopmentInstanceSourceLifecycle implements DevelopmentInstanceBranchInspector, DevelopmentInstanceSourceLifecycle
 {
     public function __construct(
         private DevelopmentSshExecutor $ssh,
@@ -33,7 +37,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     public function prepare(Instance $instance, bool $allowExisting): void
     {
         $context = $this->context($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -54,7 +58,11 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         exit 0
                     fi
 
+                    mkdir -m 0755 -- "$checkout"
                     git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
+                    if [ -n "$prepare_id" ]; then
+                        (umask 077; set -C; printf '%s:%s\n' "$prepare_id" "$(stat -c '%d:%i' "$checkout")" > "$checkout/.git/orbit-source-prepare")
+                    fi
                     inspect_prepared_repository
                     share_checkout
                     BASH);
@@ -77,7 +85,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->node,
             new RemoteCommand(
                 arguments: [...$this->arguments($instance, $context), $this->workerUser()],
-                input: self::preparedRepositoryGuard().<<<'BASH'
+                input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -100,7 +108,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -115,26 +123,16 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     inspect_prepared_repository
                     git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --prune -- origin
 
-                    if [ -n "$branch_override" ]; then
-                        branch=$branch_override
-                        if git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-                            source_ref="refs/remotes/origin/$branch"
-                        elif [ "$instance_name" != default ] && [ "$branch_override" = "$instance_name" ]; then
-                            source_ref="refs/remotes/origin/$default_branch"
-                            git -C "$checkout" show-ref --verify --quiet "$source_ref"
-                        else
-                            source_ref="refs/remotes/origin/$branch"
-                            git -C "$checkout" show-ref --verify --quiet "$source_ref"
-                        fi
-                    elif [ "$instance_name" = default ]; then
+                    branch=${branch_override:-$instance_name}
+                    if [ "$instance_name" = default ] && [ -z "$branch_override" ]; then
                         branch=$default_branch
                         source_ref="refs/remotes/origin/$branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
-                    elif git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$instance_name"; then
-                        branch=$instance_name
+                    elif git -C "$checkout" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
                         source_ref="refs/remotes/origin/$branch"
+                    elif git -C "$checkout" show-ref --verify --quiet "refs/heads/$branch"; then
+                        source_ref="refs/heads/$branch"
                     else
-                        branch=$instance_name
                         source_ref="refs/remotes/origin/$default_branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
@@ -162,6 +160,73 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         return $this->resolution($result->stdout, $instance);
     }
 
+    public function assertBranchCheckedOut(Instance $instance, ?string $branch): void
+    {
+        $context = $this->context($instance);
+        try {
+            $result = $this->ssh->execute(
+                $instance->node,
+                new RemoteCommand(
+                    arguments: [...$this->arguments($instance, $context), $branch ?? ''],
+                    input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
+                        repository=$1
+                        checkout=$2
+                        allowed_root=$3
+                        managed_user=$4
+                        managed_group=$5
+                        expected_branch=$6
+                        checkout_parent=$(dirname "$checkout")
+                        export GIT_OPTIONAL_LOCKS=0
+                        guard_parent_chain "$checkout_parent" "$allowed_root"
+                        inspect_prepared_repository identity
+                        lock_key=$(printf '%s' "$checkout" | sha256sum | cut -d ' ' -f 1)
+                        python3 -c 'import fcntl, os, sys; p=sys.argv[1]; fd=os.open(p, os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW, 0o600)
+                        try: fcntl.flock(fd, fcntl.LOCK_EX|fcntl.LOCK_NB)
+                        except BlockingIOError: sys.exit(75)' "/tmp/orbit-lifecycle-$(id -u)-$lock_key.lock"
+                        current=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
+                        origin=$(git -C "$checkout" config --get remote.origin.url)
+                        printf '%s' "$origin" | base64 --wrap=0
+                        printf '\n'
+                        printf '%s' "$current" | base64 --wrap=0
+                        printf '\n'
+                        BASH,
+                ),
+                step: 'app-instance-rename-inspect',
+                errorCode: 'instance.source_identity_invalid',
+            );
+        } catch (RuntimeConvergenceException $exception) {
+            $code = match ($exception->result?->exitCode) {
+                42 => 'instance.branch_not_checked_out',
+                75 => 'instance.lifecycle_busy',
+                default => null,
+            };
+            if ($code !== null) {
+                throw new ResourceOperationException(
+                    $code,
+                    $code === 'instance.lifecycle_busy' ? 'The Instance is busy with another lifecycle operation.' : 'HEAD is not on the requested branch.',
+                    409,
+                    previous: $exception,
+                );
+            }
+            throw $exception;
+        }
+        $lines = explode("\n", preg_replace('/\n\z/', '', $result->stdout) ?? $result->stdout);
+        $origin = count($lines) === 2 ? base64_decode($lines[0], true) : false;
+        $current = count($lines) === 2 ? base64_decode($lines[1], true) : false;
+        try {
+            $valid = is_string($origin) && is_string($current)
+                && GitRepositoryIdentity::derive($origin) === $instance->project->repository_identity;
+        } catch (InvalidArgumentException) {
+            $valid = false;
+        }
+        if (! $valid) {
+            throw new RuntimeConvergenceException('app-instance-rename-inspect', 'instance.source_identity_invalid', 'The checkout origin does not match the Project repository.');
+        }
+        if ($branch !== null && $current !== $branch) {
+            throw new ResourceOperationException('instance.branch_not_checked_out', 'HEAD is not on the requested branch.', 409);
+        }
+    }
+
     public function inspectResolved(Instance $instance): DevelopmentSourceResolution
     {
         $context = $this->context($instance);
@@ -169,7 +234,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->node,
             new RemoteCommand(
                 arguments: $this->arguments($instance, $context),
-                input: self::preparedRepositoryGuard().<<<'BASH'
+                input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -303,9 +368,9 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         return $branch;
     }
 
-    private static function preparedRepositoryGuard(): string
+    private static function preparedRepositoryGuard(?string $prepareId = null): string
     {
-        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
+        return 'prepare_id='.escapeshellarg($prepareId ?? '')."\n".WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             guard_parent_chain() {
                 parent=$1
                 root=$2
@@ -393,7 +458,15 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
                 test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
                 test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
-                test "$(git -C "$checkout" config --get remote.origin.url)" = "$repository"
+                if [ "${1:-verify}" = verify ]; then
+                    test "$(git -C "$checkout" config --get remote.origin.url)" = "$repository"
+                fi
+                if [ -n "$prepare_id" ]; then
+                    test -f "$checkout/.git/orbit-source-prepare"
+                    test ! -L "$checkout/.git/orbit-source-prepare"
+                    test "$(stat -c '%U:%G' "$checkout/.git/orbit-source-prepare")" = "$managed_user:$managed_group"
+                    test "$(cat "$checkout/.git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
+                fi
             }
 
             BASH;

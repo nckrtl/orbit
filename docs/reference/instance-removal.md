@@ -3,12 +3,11 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
   - apps/gateway/app/Actions/{Instances/RemoveInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
-  - apps/gateway/app/Domain/Instances/Removal/**
+  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,InstanceCreationRecovery.php,Removal/**}
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/2026_10_09_000000_allow_failed_creation_removal.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -41,7 +40,7 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or a [failed development create](#failed-creation) that never became active. An active `laravel-app` Instance must have exactly one Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
@@ -62,25 +61,44 @@ For a completed development checkout, the Gateway compares the checkout with its
 | `instance.source_ownership_mismatch` | The managed Node user does not own the directory or its parent. |
 | `instance.source_layout_mismatch` | The Git directory does not match the recorded checkout or worktree layout. |
 | `instance.source_origin_mismatch` | The origin is not the Project repository. |
-| `instance.source_branch_mismatch` | The branch differs from the recorded branch. |
+| `instance.source_branch_mismatch` | Resolved source differs from the recorded branch, including detached `HEAD` when a branch was recorded. This check also applies with `--force`. |
 | `instance.source_worktrees_mismatch` | Git's worktree list does not include the recorded checkout. |
 | `instance.checkout_path_unsafe` | The path overlaps another managed Instance. |
 | `instance.force_failed` | A forced check failed for another reason. |
 
+After a caller renames a branch locally, [`instance:rename --branch=BRANCH`](/cli/instance#orbit-instancerename) records the current branch before removal. Force does not bypass this reconciliation. Recording the branch does not waive normal removal's dirty or unpublished-source checks.
+
+### Pre-activation removal
+
+A failed create normally cleans up its new Instance before returning the original error. It removes only the attempt's owned checkout, Route and projections, runtime, dependency-copy staging paths, and database copies, with no teardown and no cascade into another Instance. Once cleanup completes, the name, path, and domain are free for a fresh create, including a different branch. See [creation recovery](/domains/applications#create-a-development-instance).
+
+If the process is interrupted or cleanup cannot finish, `instance:destroy` accepts development Instances in `reserved`, `checkout_prepared`, and `source_resolved` when failure is recorded or the create attempt has a recorded source preparation ID. A process can die after committing a creation state but before recording a failure, so null `failed_step` and `error_code` do not block removal of that attempt's owned checkout. Registration still requires its own recorded evidence.
+
+Removal uses the same recorded steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal.
+
+An unrouted task workspace is different: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
+
+A reserved Instance may have no checkout directory. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
+
+For new reservations, preparation writes a receipt in Git metadata with the recorded preparation ID and the directory's device and inode. Removal requires that receipt whenever the directory exists, even with `--force`. A matching origin and account owner do not prove that the create attempt owns a pre-existing checkout. A lost prepare response with a valid receipt can be cleaned up. If preparation stops before recording ownership, cleanup retains the unconfirmed directory for inspection rather than deleting it. Do not bypass an ownership refusal to finish cleanup.
+
+Orbit checks the recorded path, managed ownership, repository layout, and Project origin for every artifact that exists. It refuses an unsafe path, foreign repository, or foreign worktree instead of deleting it. When no source was resolved, removal does not require a nonexistent recorded branch or `HEAD` to pass the branch or publication checks. Once source has been resolved, the recorded-branch check still applies before activation. Interrupted or failed creation can leave dirty or unpublished partial source; removing that owned partial checkout needs no `--force`. Adopted source from registration still follows the normal dirty and unpublished-source checks.
+
+Cleanup that cannot finish retains the Instance and removal progress. A failed create reports its original error with `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. Follow that command to finish removal; `--yes` supplies consent and `--force` waives only the normal dirty, unpublished-source, and linked-worktree refusals. Cleanup never deletes the Instance row before its owned resources have been handled.
+
 When a worker is configured, Git checks that inspect file contents run as that worker without a credential environment. A clean filter triggered by the dirty-source check cannot run as the managed account. Privileged ownership checks and deletion still run as the managed account.
 
 The ownership check reads the owner of the checkout directory and its parent. It does not read the owner of every file inside. A development checkout can hold an ACL for `orbit-worker` and files that user created. [Checkout access](/reference/instance-setup#checkout-access) grants that ACL. Removal still refuses a directory the managed user does not own.
+
 ### Failed creation
 
-`instance:destroy` removes a development Instance whose create failed before it reached `active`. The Instance must be in `reserved`, `checkout_prepared`, or `source_resolved`, with recorded failure evidence in `failed_step` and `error_code`. These are [creation states](/domains/applications#create-a-development-instance), not a separate failed status.
-
-Removal deletes any owned partial checkout, deletes the reserved Route if one exists, releases the reserved Vite port, and deletes the Instance row. If creation stopped before it made the checkout, there is no source directory to delete. A `reserved` Instance has no completed source preparation to prove ownership of an existing checkout. Orbit refuses to delete that checkout in either mode, even when its origin and account match. Removal still checks that the path and resources belong to this Instance; it never deletes another Instance's source or Route.
+Failed creation uses the [pre-activation removal](#pre-activation-removal) rules above. Removal releases the reserved Vite port along with the owned checkout and Route.
 
 A failed in-place registration is different from a failed clone: registration records the existing source before reserving the Instance. A `reserved` registration can be removed when its recorded original and authoritative paths both equal its managed checkout path, and its recorded repository, branch, detached state, and commit still match. The normal path, ownership, layout, and worktree checks still apply. Unlike a partial clone, an adopted source still needs `--force` when it is dirty or unpublished. Removal keeps a worktree's local branch and common repository.
 
 A reservation for a move that has not verified its destination cannot authorize deleting an existing checkout; retry registration first.
 
-A non-active state alone does not prove that create failed. Orbit refuses removal while creation is still in progress. `--force` does not override that refusal. An Instance that already became `active` uses the normal or forced removal rules above, even if a later setup step failed.
+A non-active state alone does not prove source ownership. Removal holds the same lifecycle and source locks as creation, so it cannot delete a checkout while create is running. It rechecks the state after acquiring those locks. `--force` does not bypass the locks or ownership checks. An Instance that already became `active` uses the normal or forced removal rules above, even if a later setup step failed.
 
 ### Worktree sets
 
