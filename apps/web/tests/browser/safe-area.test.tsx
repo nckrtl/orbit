@@ -3,6 +3,8 @@ import { page } from "vite-plus/test/browser";
 import { ANNOTATION_HOST_ID } from "@nckrtl/annotate/host";
 import indexHtml from "../../index.html?raw";
 import { displayMode } from "../../src/ui/viewportReadout";
+import { setLiveness } from "../../src/realtime/liveness";
+import { ui } from "../../src/ui/store";
 import { openApp } from "./app";
 
 const EDGES = ["top", "right", "bottom", "left"] as const;
@@ -180,6 +182,99 @@ it("sets an opaque black status bar and keeps the viewport cover fit", () => {
     expect(indexHtml).not.toContain("black-translucent");
 });
 
+it("covers the top edge with a fixed opaque shell in both themes", async () => {
+    try {
+        await openApp("/");
+        await expect.element(page.getByRole("region", { name: "Nav" })).toBeVisible();
+        for (const theme of ["dark", "light"]) {
+            document.documentElement.dataset.theme = theme;
+            const style = getComputedStyle(shell());
+            expect(style.position).toBe("fixed");
+            expect(style.backgroundColor).toBe(
+                theme === "dark" ? "rgb(13, 15, 18)" : "rgb(251, 251, 250)",
+            );
+            expect(shell().getBoundingClientRect().top).toBe(0);
+            expect(shell().getBoundingClientRect().left).toBe(0);
+            expect(shell().getBoundingClientRect().right).toBe(window.innerWidth);
+            expectWebViewFilled();
+        }
+    } finally {
+        delete document.documentElement.dataset.theme;
+    }
+});
+
+it("runs the phone scroller to the bottom edge and pads its content only once", async () => {
+    try {
+        await page.viewport(390, 844);
+        await openApp("/");
+        setInsets({ top: "47px", bottom: "34px" });
+        setLiveness("live");
+        await expect.element(page.getByRole("contentinfo")).not.toBeInTheDocument();
+        const main = document.querySelector("main")!;
+        expect(padding(shell()).bottom).toBe("0px");
+        expect(padding(layout()).bottom).toBe("0px");
+        expect(padding(main).bottom).toBe("34px");
+        expect(Math.abs(main.getBoundingClientRect().bottom - 844)).toBeLessThan(1);
+        expect(getComputedStyle(main).overflowY).toBe("auto");
+        // A long page still leaves the final content above the home indicator when fully scrolled.
+        const content = document.createElement("div");
+        content.style.height = "2000px";
+        main.append(content);
+        main.scrollTop = main.scrollHeight;
+        expect(Math.abs(content.getBoundingClientRect().bottom - (844 - 34))).toBeLessThan(1.5);
+        expectWebViewFilled();
+        content.remove();
+    } finally {
+        clearInsets();
+        setLiveness("polling");
+        await page.viewport(1280, 800);
+    }
+});
+
+it("shows only messages and paused updates in the phone footer, above the home indicator", async () => {
+    try {
+        await page.viewport(390, 844);
+        await openApp("/");
+        setInsets({ bottom: "34px" });
+        setLiveness("live");
+        await expect.element(page.getByRole("contentinfo")).not.toBeInTheDocument();
+        ui.set({ message: "Saved changes" });
+        await expect.element(page.getByRole("contentinfo")).toHaveTextContent("Saved changes");
+        const footer = document.querySelector("footer")!;
+        expect(footer.innerText.trim()).toBe("Saved changes");
+        expect(padding(footer).bottom).toBe("38px");
+        expect(Math.abs(footer.getBoundingClientRect().bottom - 844)).toBeLessThan(1);
+        expect(footer.querySelector('[role="status"]')?.getClientRects().length).toBe(0);
+
+        ui.set({ message: "" });
+        for (const liveness of ["polling", "reconnecting"] as const) {
+            setLiveness(liveness);
+            await expect.element(page.getByRole("contentinfo")).toBeVisible();
+            await expect
+                .element(page.getByRole("button", { name: "live updates paused" }))
+                .toBeVisible();
+            expect(document.querySelector("footer")!.innerText.trim()).toBe("live updates paused");
+        }
+        setLiveness("live");
+        await expect.element(page.getByRole("contentinfo")).not.toBeInTheDocument();
+
+        // md and wider retain the footer, hints, Gateway status, and the shell's bottom inset.
+        await page.viewport(768, 844);
+        await expect.element(page.getByRole("contentinfo")).toBeVisible();
+        expect(padding(shell()).bottom).toBe("34px");
+        expect(padding(layout()).bottom).toBe("4px");
+        expect(padding(document.querySelector("main")!).bottom).toBe("0px");
+        expect(document.querySelector("footer")!.innerText).toContain("demo fleet");
+        expect(document.querySelector("footer")!.innerText).toContain("↑↓");
+        expectSingleBottomPad();
+    } finally {
+        ui.set({ message: "" });
+        clearInsets();
+        setLiveness("polling");
+        await page.viewport(1280, 800);
+    }
+});
+
 it("leaves a zero-inset browser tab on the existing shell padding", async () => {
     await openApp("/");
     await expect.element(page.getByRole("region", { name: "Nav" })).toBeVisible();
@@ -193,10 +288,6 @@ it("leaves a zero-inset browser tab on the existing shell padding", async () => 
     expect(
         getComputedStyle(document.documentElement).getPropertyValue("--shell-safe-top").trim(),
     ).toBe("0px");
-    expect(shell().style.paddingTop).toContain("env(safe-area-inset-top");
-    expect(shell().style.paddingRight).toContain("env(safe-area-inset-right");
-    expect(shell().style.paddingBottom).toContain("env(safe-area-inset-bottom");
-    expect(shell().style.paddingLeft).toContain("env(safe-area-inset-left");
 
     setInsets({ top: "0px", right: "0px", bottom: "0px", left: "0px" });
     expect(padding(shell())).toEqual({ top: "0px", right: "0px", bottom: "0px", left: "0px" });
@@ -266,15 +357,16 @@ it("pads the shell from the safe-area overrides and keeps the page inside them",
         expect(padding(shell())).toEqual({
             top: "47px",
             right: "0px",
-            bottom: "34px",
+            bottom: "0px",
             left: "0px",
         });
         expect(padding(layout()).top).toBe("10px");
         expectInside(header, portrait);
         expectInside(portraitFooter, portrait);
-        expect(portraitFooter.getBoundingClientRect().bottom).toBeLessThanOrEqual(844 - 34 + 0.5);
+        expect(padding(layout()).bottom).toBe("0px");
+        expect(padding(portraitFooter).bottom).toBe("38px");
+        expect(Math.abs(portraitFooter.getBoundingClientRect().bottom - 844)).toBeLessThan(1);
         expectWebViewFilled();
-        expectSingleBottomPad();
 
         await page.getByRole("button", { name: "Toggle navigation menu" }).click();
         const menu = [...document.querySelectorAll("[aria-label='Nav']")].find(

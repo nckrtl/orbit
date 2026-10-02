@@ -10,5 +10,7 @@ final readonly class TaskSettleMetrics
         public int $tokens,
         public int $lineDiff,
         public int $durationMs,
+        public int $questions = 0,
+        public int $escalations = 0,
     ) {}
 }

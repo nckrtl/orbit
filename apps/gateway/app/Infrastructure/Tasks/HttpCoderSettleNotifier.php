@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks;
 
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionObservation;
@@ -28,6 +29,8 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
             'tokens' => max(0, (int) ($group->tokens ?? 0)),
             'line_diff' => max(0, (int) ($group->line_diff ?? 0)),
             'duration_ms' => max(0, (int) ($group->duration_ms ?? 0)),
+            'questions' => max(0, (int) ($group->questions ?? 0)),
+            'escalations' => max(0, (int) ($group->escalations ?? 0)),
             'pull_request_url' => $group->pr_url,
         ]);
     }
@@ -47,10 +50,14 @@ final readonly class HttpCoderSettleNotifier implements CoderSettleNotifier
 
     public function assistance(Task $group, string $reason): void
     {
+        $kind = $group->assistance_kind;
+
         $this->post([
             'event' => 'task_group.assistance_requested',
             'task_group_id' => $group->id,
             'title' => $group->title,
+            'kind' => $kind instanceof AssistanceKind ? $kind->value : null,
+            'question' => $group->assistance_question,
             'reason' => $reason,
         ]);
     }

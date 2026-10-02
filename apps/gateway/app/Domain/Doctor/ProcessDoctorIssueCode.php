@@ -8,6 +8,7 @@ enum ProcessDoctorIssueCode: string implements DoctorIssueCode
 {
     case RuntimeMissing = 'process.runtime_missing';
     case StateMismatch = 'process.state_mismatch';
+    case CrashLoop = 'process.crash_loop';
     case InspectionFailed = 'process.inspection_failed';
     case NodeUnreachable = 'process.node_unreachable';
 

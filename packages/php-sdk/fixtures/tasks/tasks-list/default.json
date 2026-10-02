@@ -19,6 +19,8 @@
                 "pr_url": "https://github.com/nckrtl/orbit/pull/450",
                 "notify_coder": false,
                 "assistance_requested": false,
+                "assistance_kind": null,
+                "assistance_question": null,
                 "assistance_reason": null,
                 "implementer_model": "gpt-5.6-luna",
                 "reviewer_model": "gpt-5.6-luna",
@@ -27,6 +29,8 @@
                 "lines_added": 1010,
                 "lines_deleted": 230,
                 "duration_ms": 5400000,
+                "questions": 0,
+                "escalations": 0,
                 "tasks": [
                     {
                         "id": 5,
@@ -42,11 +46,15 @@
                         "lines_added": null,
                         "lines_deleted": null,
                         "duration_ms": null,
+                        "questions": 0,
+                        "escalations": 0,
                         "type": "implementation",
                         "target_thread_id": null,
                         "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
+                        "assistance_kind": null,
+                        "assistance_question": null,
                         "assistance_reason": null,
                         "fixup_problem": null
                     }
@@ -67,6 +75,8 @@
                 "pr_url": null,
                 "notify_coder": false,
                 "assistance_requested": false,
+                "assistance_kind": null,
+                "assistance_question": null,
                 "assistance_reason": null,
                 "implementer_model": "gpt-5.6-luna",
                 "reviewer_model": "gpt-5.6-luna",
@@ -75,6 +85,8 @@
                 "lines_added": null,
                 "lines_deleted": null,
                 "duration_ms": null,
+                "questions": 0,
+                "escalations": 0,
                 "tasks": [
                     {
                         "id": 2,
@@ -105,11 +117,15 @@
                         "lines_added": null,
                         "lines_deleted": null,
                         "duration_ms": null,
+                        "questions": 0,
+                        "escalations": 0,
                         "type": "implementation",
                         "target_thread_id": null,
                         "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
+                        "assistance_kind": null,
+                        "assistance_question": null,
                         "assistance_reason": null,
                         "fixup_problem": null
                     },
@@ -140,11 +156,15 @@
                         "lines_added": null,
                         "lines_deleted": null,
                         "duration_ms": null,
+                        "questions": 0,
+                        "escalations": 0,
                         "type": "implementation",
                         "target_thread_id": null,
                         "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
+                        "assistance_kind": null,
+                        "assistance_question": null,
                         "assistance_reason": null,
                         "fixup_problem": null
                     }

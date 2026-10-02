@@ -16,6 +16,7 @@ final readonly class TaskReviewContext
     /**
      * @param  list<TaskDeliverable>  $deliverables
      * @param  list<array{title: string, body: string}>  $approvals  earlier approved subtasks, oldest first
+     * @param  list<array{question: string, answer: string}>  $consults  answered consults, oldest first
      */
     public function __construct(
         private string $taskBrief,
@@ -23,6 +24,7 @@ final readonly class TaskReviewContext
         private array $deliverables,
         private array $approvals,
         private string $resolution,
+        private array $consults = [],
     ) {}
 
     public function render(): string
@@ -34,6 +36,7 @@ final readonly class TaskReviewContext
             $this->section('Deliverables', $this->deliverablesText()),
             $this->section('Earlier approvals', $this->approvalsText()),
             $this->section('Held resolution', $this->resolution === '' ? 'None.' : $this->resolution),
+            $this->section('Answered consults', $this->consultsText()),
         ])."\n";
     }
 
@@ -81,6 +84,18 @@ final readonly class TaskReviewContext
         }
 
         return "- {$name}:\n```\n{$value}\n```";
+    }
+
+    private function consultsText(): string
+    {
+        if ($this->consults === []) {
+            return 'None.';
+        }
+
+        return implode("\n\n", array_map(
+            static fn (array $consult): string => "### Question\n\n".$consult['question']."\n\n### Answer\n\n".$consult['answer'],
+            $this->consults,
+        ));
     }
 
     private function approvalsText(): string

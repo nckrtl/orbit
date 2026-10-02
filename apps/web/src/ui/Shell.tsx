@@ -68,18 +68,6 @@ function mappedNavTestId(key: Section, active: boolean): string | undefined {
     return active ? NAV_TEST_ID[key] : undefined;
 }
 
-/**
- * One pad around the whole shell. Custom properties override the inset; env() is the fallback
- * when those properties are unset. A browser tab sets the properties to zero in CSS, so a tab
- * inset never reaches this fallback.
- */
-const SHELL_SAFE_PADDING = {
-    paddingTop: "var(--shell-safe-top, env(safe-area-inset-top, 0px))",
-    paddingRight: "var(--shell-safe-right, env(safe-area-inset-right, 0px))",
-    paddingBottom: "var(--shell-safe-bottom, env(safe-area-inset-bottom, 0px))",
-    paddingLeft: "var(--shell-safe-left, env(safe-area-inset-left, 0px))",
-} as const;
-
 function homeScreenLaunch(): boolean {
     const standalone = (navigator as Navigator & { standalone?: boolean }).standalone;
 
@@ -275,14 +263,10 @@ export function Shell() {
 
     return (
         <PageHeaderSlot.Provider value={{ header: headerSlot, actions: actionsSlot }}>
-            <div
-                data-app-shell=""
-                className="app-shell box-border h-full min-w-0 max-w-full"
-                style={SHELL_SAFE_PADDING}
-            >
+            <div data-app-shell="" className="app-shell box-border min-w-0 max-w-full">
                 <div
                     data-shell-layout=""
-                    className="relative grid h-full min-w-0 max-w-full overflow-x-hidden grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] md:grid-rows-[minmax(0,1fr)_auto] gap-y-[10px] px-[1ch] pt-[10px] md:pt-[14px] pb-[4px]"
+                    className="relative grid h-full min-w-0 max-w-full overflow-x-hidden grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] md:grid-rows-[minmax(0,1fr)_auto] gap-y-[10px] px-[1ch] pt-[10px] md:pt-[14px] md:pb-[4px]"
                 >
                     {/* Mobile Header Bar */}
                     <header className="flex items-center justify-between gap-2 px-[0.5ch] py-[2px] md:hidden">
@@ -425,51 +409,57 @@ export function Shell() {
                                 mapped={onDesktop}
                             />
                         </div>
-                        <main className="page-content min-h-0 min-w-0 flex-1 overflow-y-auto">
+                        <main className="page-content min-h-0 min-w-0 flex-1 overflow-y-auto pb-[var(--shell-safe-bottom)] md:pb-0">
                             <Outlet />
                         </main>
                     </div>
-                    <footer className="flex gap-[2ch] whitespace-nowrap px-[1ch] text-dim">
-                        <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">
-                            {footerHint(
-                                section,
-                                second === undefined,
-                                pathname === "/nodes/create",
-                                nav.length,
-                            )}
-                            {message !== "" && (
-                                <span className="selectable text-fg"> │ {message}</span>
-                            )}
-                        </span>
-                        <span className="flex items-center gap-[1ch]">
-                            {liveness !== "live" && (
-                                <button
-                                    type="button"
-                                    className="cursor-pointer text-yellow hover:text-fg"
-                                    title="Refresh now"
-                                    onClick={() => {
-                                        resetPollBackoff();
-                                        void queryClient.invalidateQueries();
-                                    }}
-                                >
-                                    live updates paused
-                                </button>
-                            )}{" "}
-                            {gateway}
-                            <span
-                                role="status"
-                                aria-label={status}
-                                title={status}
-                                className={`inline-block size-[8px] rounded-full ${
-                                    liveness === "live"
-                                        ? "bg-green"
-                                        : liveness === "reconnecting"
-                                          ? "animate-pulse bg-yellow"
-                                          : "border border-dim"
-                                }`}
-                            />
-                        </span>
-                    </footer>
+                    {(onDesktop || message !== "" || liveness !== "live") && (
+                        <footer className="flex gap-[2ch] whitespace-nowrap px-[1ch] pb-[calc(var(--shell-safe-bottom)+4px)] text-dim md:pb-0">
+                            <span className="min-w-0 flex-1 overflow-hidden text-ellipsis">
+                                <span className="hidden md:inline">
+                                    {footerHint(
+                                        section,
+                                        second === undefined,
+                                        pathname === "/nodes/create",
+                                        nav.length,
+                                    )}
+                                    {message !== "" && " │ "}
+                                </span>
+                                {message !== "" && (
+                                    <span className="selectable text-fg">{message}</span>
+                                )}
+                            </span>
+                            <span className="flex items-center gap-[1ch]">
+                                {liveness !== "live" && (
+                                    <button
+                                        type="button"
+                                        className="cursor-pointer text-yellow hover:text-fg"
+                                        title="Refresh now"
+                                        onClick={() => {
+                                            resetPollBackoff();
+                                            void queryClient.invalidateQueries();
+                                        }}
+                                    >
+                                        live updates paused
+                                    </button>
+                                )}{" "}
+                                {/* The phone header already shows the Gateway and its status. */}
+                                <span className="hidden md:inline">{gateway}</span>
+                                <span
+                                    role="status"
+                                    aria-label={status}
+                                    title={status}
+                                    className={`hidden size-[8px] rounded-full md:inline-block ${
+                                        liveness === "live"
+                                            ? "bg-green"
+                                            : liveness === "reconnecting"
+                                              ? "animate-pulse bg-yellow"
+                                              : "border border-dim"
+                                    }`}
+                                />
+                            </span>
+                        </footer>
+                    )}
                     <MenuPopup />
                     <Modal />
                 </div>

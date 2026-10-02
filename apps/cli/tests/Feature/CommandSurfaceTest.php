@@ -870,6 +870,13 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'tool:list' => [[], ['node' => null, 'json' => false]],
         'tool:manager:list' => [[], ['node' => null, 'json' => false]],
+        'tasks:question:list' => [[], [
+            'project' => null,
+            'cause' => null,
+            'status' => null,
+            'since' => null,
+            'json' => false,
+        ]],
         'tasks:definition:create' => [[], [
             'project' => null,
             'definition' => null,

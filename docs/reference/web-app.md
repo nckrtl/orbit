@@ -12,7 +12,7 @@ covers:
 
 # Web app
 
-The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app.
+The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app.
 
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) use the existing subtask `fixup_problem` and `brief` fields. Regenerating the API types confirms that feedback consumption adds no response field or web merge control. Source provenance is task data, not a rendered GitHub instruction or permission to merge.
 
@@ -83,6 +83,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 ## Live tasks
 
 When the Gateway reports Tasks enabled, the app keeps the task board, each task, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
+
+A card for a task that asks for direction says `Needs your direction`, and the task page shows that question first. A card for a failure says `Needs attention`. The board does not answer either request. The operator answers through the CLI, MCP, or the API. [Direction requests](/reference/tasks#direction-requests) define the two kinds.
 
 | Event | The app refetches |
 | --- | --- |
@@ -167,7 +169,19 @@ A pane polls the one-shot read every 10 seconds instead when the Gateway refuses
 
 Added to the home screen, the app opens full screen below an opaque black status bar. [index.html](https://github.com/nckrtl/orbit/blob/main/apps/web/index.html) sets `apple-mobile-web-app-status-bar-style` to `black` and the viewport to `viewport-fit=cover`. iOS reads these tags only when the icon is added, so add the app again after a release changes them.
 
-In standalone display mode, the app shell pads each edge by its `env(safe-area-inset-*)` value. The top value is 0, because the web view starts below the status bar. The bottom value keeps the footer above the home indicator. A browser tab gets no safe-area padding, and pages never add their own. The Menu drawer shows one support line with the display mode, the window and screen sizes, and the four insets. [Web verification](/reference/web-verification) checks a phone-sized viewport.
+The app shell is a `position: fixed` box with an opaque page background that fills the web view. iOS 26 blurs the top edge of an installed web app with its glass edge effect unless a fixed, opaque box covers that edge. The shell keeps the header sharp.
+
+In standalone display mode, the shell pads the top, left, and right edges by their `env(safe-area-inset-*)` values. The top value is 0, because the web view starts below the status bar. Bottom padding depends on the window width. Pages never add their own safe-area padding.
+
+| Window | Top, left, and right | Bottom |
+| --- | --- | --- |
+| Installed, phone (below `md`) | The shell pads by the inset | The page scrolls to the screen edge; its content ends one inset higher, above the home indicator |
+| Installed, `md` and wider | The shell pads by the inset | The shell pads by the inset, keeping the footer above the home indicator |
+| Browser tab, any width | No safe-area padding | No safe-area padding |
+
+On a phone, the footer is hidden because the header already shows the Gateway's live status and the footer's keyboard hints are not useful there. It appears only for a message or paused live updates, and then sits above the home indicator. From the `md` breakpoint up, the footer is always shown.
+
+The Menu drawer shows one support line with the display mode, the window and screen sizes, and the four insets. [Web verification](/reference/web-verification) checks a phone-sized viewport.
 
 ## Web directory
 
@@ -251,3 +265,5 @@ Each notice carries every list column. A refetch per notice would reload the pag
 ### An opaque status bar on iOS 26
 
 With a translucent status bar and `viewport-fit=cover`, iOS 26 starts the web view under the status bar and makes it shorter by the top inset. Every CSS height and `innerHeight` then leaves a dead band at the bottom, and the edge blur covers the header. [WebKit bug 301108](https://bugs.webkit.org/show_bug.cgi?id=301108) records the fault. The opaque `black` style starts the web view below the bar and lets it reach the bottom edge.
+
+The opaque status bar alone does not stop the glass edge effect. iOS 26 still blurs about 38 points below the top of the web view unless WebKit can take a flat colour from a fixed, opaque box covering that edge. No CSS property or meta tag turns the effect off. Padding the header down would leave an empty band, so the shell itself is that fixed box.

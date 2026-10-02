@@ -1,5 +1,6 @@
 docs/solutions/migrate-unmanaged-executor-hostname.md: This runtime compatibility change does not alter the manual hostname migration procedure.
 docs/solutions/remote-file-writes-on-uutils-coreutils.md: This runtime compatibility change does not alter the remote file-write procedure.
+docs/solutions/remote-file-writes-on-uutils-coreutils.md: Crash-loop inspection reads systemd runtime state; it does not change candidate file writes, verification, or atomic publication.
 docs/cli/doctor.mdx: Doctor CLI workflows remain covered by this command reference and do not need a compatibility footer.
 docs/cli/instance.mdx: Instance CLI workflows remain covered by this command reference and do not need a compatibility footer.
 docs/cli/project.mdx: Project CLI workflows remain covered by this command reference and do not need a compatibility footer.
@@ -73,6 +74,10 @@ docs/reference/gateway-response-fixtures.md: Task definition fixtures follow the
 docs/reference/web-verification.md: The feature map adds the task definition route and its controls. Web verification commands, the map schema, and the demo server are unchanged.
 docs/solutions/doctor-incus-proof.md: Guest convergence reuses the evidence-log redactor. The Doctor proof procedure on this page is unchanged.
 docs/cli/doctor.mdx: The caller-facing Doctor report is unchanged. The fleet inspection used by the outer loop is documented in /reference/tasks.
+docs/reference/api-reference.md: The generator contract is unchanged, and bin/docs-openapi leaves no diff after the task data classes added assistance_kind and assistance_question.
+docs/reference/gateway-response-fixtures.md: The fixture process is unchanged. The task fixtures gained assistance_kind, assistance_question, and the question and escalation counts.
+docs/reference/cli-command-vocabulary.md: tasks:question:list uses the list verb. The naming rules on this page are unchanged.
+docs/reference/cli-ux.md: Task snapshots now show assistance kind, the question or reason, and direction requests before failures. Input, consent, and presentation rules on this page are unchanged.
 docs/reference/deployments.md: Production deployments read the repository through the shared read access; the page names no credential source and stays correct for gh_cli Projects.
 docs/reference/development-node-exclusions.md: Registration still refuses an excluded Node with instance.node_excluded; requiring an existing Project does not change exclusions.
 docs/reference/instance-setup.md: Registration setup behavior is unchanged; only Project creation leaves registration.

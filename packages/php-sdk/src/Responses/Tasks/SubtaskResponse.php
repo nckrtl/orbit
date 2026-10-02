@@ -21,12 +21,16 @@ final readonly class SubtaskResponse
         public ?string $targetThreadId,
         public ?string $completionSummary,
         public bool $assistanceRequested,
+        public ?string $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
         public ?int $tokens,
         public ?int $lineDiff,
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public int $questions,
+        public int $escalations,
         public string $requestId,
     ) {}
 
@@ -46,12 +50,16 @@ final readonly class SubtaskResponse
             targetThreadId: TaskFields::nullableText($data, 'target_thread_id'),
             completionSummary: TaskFields::nullableText($data, 'completion_summary'),
             assistanceRequested: ($data['assistance_requested'] ?? false) === true,
+            assistanceKind: TaskFields::nullableText($data, 'assistance_kind'),
+            assistanceQuestion: TaskFields::nullableText($data, 'assistance_question'),
             assistanceReason: TaskFields::nullableText($data, 'assistance_reason'),
             tokens: TaskFields::nullableInt($data, 'tokens'),
             lineDiff: TaskFields::nullableInt($data, 'line_diff'),
             linesAdded: TaskFields::nullableInt($data, 'lines_added'),
             linesDeleted: TaskFields::nullableInt($data, 'lines_deleted'),
             durationMs: TaskFields::nullableInt($data, 'duration_ms'),
+            questions: TaskFields::count($data, 'questions', 'subtask', $requestId),
+            escalations: TaskFields::count($data, 'escalations', 'subtask', $requestId),
             requestId: $requestId,
         );
     }
@@ -70,12 +78,16 @@ final readonly class SubtaskResponse
      *     target_thread_id: string|null,
      *     completion_summary: string|null,
      *     assistance_requested: bool,
+     *     assistance_kind: string|null,
+     *     assistance_question: string|null,
      *     assistance_reason: string|null,
      *     tokens: int|null,
      *     line_diff: int|null,
      *     lines_added: int|null,
      *     lines_deleted: int|null,
      *     duration_ms: int|null,
+     *     questions: int,
+     *     escalations: int,
      *     request_id: string
      * }
      */
@@ -94,12 +106,16 @@ final readonly class SubtaskResponse
             'target_thread_id' => $this->targetThreadId,
             'completion_summary' => $this->completionSummary,
             'assistance_requested' => $this->assistanceRequested,
+            'assistance_kind' => $this->assistanceKind,
+            'assistance_question' => $this->assistanceQuestion,
             'assistance_reason' => $this->assistanceReason,
             'tokens' => $this->tokens,
             'line_diff' => $this->lineDiff,
             'lines_added' => $this->linesAdded,
             'lines_deleted' => $this->linesDeleted,
             'duration_ms' => $this->durationMs,
+            'questions' => $this->questions,
+            'escalations' => $this->escalations,
             'request_id' => $this->requestId,
         ];
     }
