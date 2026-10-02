@@ -3,11 +3,16 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\TaskPullRequestCheck;
+use App\Domain\Tasks\TaskPullRequestReviewWatcher;
+use App\Domain\Tasks\TaskReviewReadStatus;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\Feature\GitHub\GitHubTestSupport;
 
 function watcher_group(string $url = 'https://github.com/acme/orbit/pull/42'): Task
@@ -44,8 +49,256 @@ function watcher_fake_health(array $pullRequest, array $checkRuns = [], int $che
     ]);
 }
 
+/** @return array<string, mixed> */
+function watcher_review(array $changes = []): array
+{
+    return array_replace(GitHubTestSupport::review(), [
+        'state' => 'CHANGES_REQUESTED',
+        'html_url' => 'https://github.com/acme/orbit/pull/42#pullrequestreview-101',
+    ], $changes);
+}
+
+/**
+ * @param  list<array<string, mixed>>  $reviews
+ * @param  array<string, mixed>|null  $detail
+ * @param  list<array<string, mixed>>  $comments
+ */
+function watcher_fake_reviews(array $reviews, ?array $detail = null, array $comments = [], ?string $head = null, string $state = 'open', int $status = 200): stdClass
+{
+    $source = (object) [...compact('reviews', 'detail', 'comments', 'head', 'state', 'status'), 'detailStatus' => 200, 'commentsStatus' => 200];
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_reviews'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42' => static fn () => Http::response([
+            'merged' => false, 'state' => $source->state, 'head' => ['sha' => $source->head ?? GitHubTestSupport::review()['commit_id']],
+        ]),
+        'https://api.github.com/repos/acme/orbit/pulls/42/reviews?*' => static fn () => Http::response($source->reviews, $source->status),
+        'https://api.github.com/repos/acme/orbit/pulls/42/reviews/101' => static fn () => Http::response($source->detail ?? ($source->reviews[0] ?? []), $source->detailStatus),
+        'https://api.github.com/repos/acme/orbit/pulls/42/reviews/101/comments?*' => static fn () => Http::response($source->comments, $source->commentsStatus),
+    ]);
+
+    return $source;
+}
+
 beforeEach(function (): void {
     Http::preventStrayRequests();
+});
+
+describe('trusted review observations', function (): void {
+    it('distinguishes absent trust from invalid trust without reading GitHub', function (mixed $trust, TaskReviewReadStatus $expected): void {
+        config(['orbit.tasks.github_reviewers' => $trust]);
+        $group = watcher_group();
+
+        $observation = app(TaskPullRequestReviewWatcher::class)->reviews($group);
+
+        expect($observation->status)->toBe($expected);
+        Http::assertNothingSent();
+    })->with([
+        'default empty' => [[], TaskReviewReadStatus::Disabled],
+        'unrelated repository' => [['other/orbit' => [42]], TaskReviewReadStatus::Disabled],
+        'revoked' => [['acme/orbit' => []], TaskReviewReadStatus::Disabled],
+        'invalid entry' => [['acme/orbit' => [42, 'admin']], TaskReviewReadStatus::InvalidTrust],
+        'unreadable config' => [null, TaskReviewReadStatus::InvalidTrust],
+    ]);
+
+    it('distinguishes complete empty reads from remote or malformed failures and never caches errors', function (array $rows, int $status, TaskReviewReadStatus $expected): void {
+        GitHubTestSupport::storeApp();
+        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        $source = watcher_fake_reviews($rows, status: $status);
+        $watcher = app(TaskPullRequestReviewWatcher::class);
+        $group = watcher_group();
+
+        expect($watcher->reviews($group)->status)->toBe($expected);
+        $source->reviews = [];
+        $source->status = 200;
+        expect($watcher->reviews($group)->status)->toBe(TaskReviewReadStatus::Complete);
+        Http::assertSent(static fn (Request $request): bool => str_contains($request->url(), '/reviews?'));
+    })->with([
+        'healthy empty' => [[], 200, TaskReviewReadStatus::Complete],
+        'HTTP failure' => [[], 503, TaskReviewReadStatus::Unreadable],
+        'unknown state' => [[watcher_review(['state' => 'UNKNOWN'])], 200, TaskReviewReadStatus::Unreadable],
+        'missing submitted time' => [[watcher_review(['submitted_at' => null])], 200, TaskReviewReadStatus::Unreadable],
+        'missing decisive head' => [[watcher_review(['commit_id' => null])], 200, TaskReviewReadStatus::Unreadable],
+    ]);
+
+    it('keeps an approval informational after comments and a pending review with null head and time', function (): void {
+        GitHubTestSupport::storeApp();
+        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        watcher_fake_reviews([
+            watcher_review(['state' => 'APPROVED']),
+            watcher_review(['id' => 102, 'state' => 'COMMENTED', 'submitted_at' => '2026-09-03T22:13:41Z']),
+            watcher_review(['id' => 103, 'state' => 'PENDING', 'submitted_at' => null, 'commit_id' => null]),
+        ]);
+        $group = watcher_group();
+
+        $result = app(TaskPullRequestReviewWatcher::class)->reviews($group);
+
+        expect($result->status)->toBe(TaskReviewReadStatus::Complete);
+        expect(array_column($result->selection?->approvals ?? [], 'id'))->toBe([101]);
+        expect($result->selection?->requests)->toBe([]);
+        expect($group->fresh()?->status->value)->toBe('settling');
+        expect(Task::query()->where('parent_id', $group->id)->count())->toBe(0);
+    });
+
+    it('caches bounded lists for no more than sixty seconds but not PR state', function (): void {
+        $this->freezeTime();
+        GitHubTestSupport::storeApp();
+        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        $source = watcher_fake_reviews([watcher_review()]);
+        $group = watcher_group();
+        $watcher = app(TaskPullRequestReviewWatcher::class);
+        expect($watcher->reviews($group)->selection?->requests)->toHaveCount(1);
+        $source->reviews = [];
+        $this->travel(59)->seconds();
+        expect($watcher->reviews($group)->selection?->requests)->toHaveCount(1);
+        $this->travel(1)->seconds();
+        expect($watcher->reviews($group)->selection?->requests)->toBe([]);
+        expect(Http::recorded(static fn (Request $r): bool => str_contains($r->url(), '/reviews?')))->toHaveCount(2);
+        expect(Http::recorded(static fn (Request $r): bool => $r->url() === 'https://api.github.com/repos/acme/orbit/pulls/42'))->toHaveCount(3);
+    });
+
+    it('round-trips nonempty review lists through the production file store with classes disabled until expiry', function (): void {
+        $this->freezeTime();
+        $directory = sys_get_temp_dir().'/orbit-review-cache-'.Str::uuid();
+        config(['cache.default' => 'file', 'cache.stores.file.path' => $directory, 'cache.serializable_classes' => false]);
+        Cache::purge('file');
+        try {
+            GitHubTestSupport::storeApp();
+            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+            $source = watcher_fake_reviews([watcher_review()]);
+            $group = watcher_group();
+            $watcher = app(TaskPullRequestReviewWatcher::class);
+            $first = $watcher->reviews($group);
+            expect($first->selection?->requests)->toHaveCount(1);
+            $source->reviews = [];
+            $this->travel(59)->seconds();
+            // Recreate the driver as well: the hit must come from serialized storage, not memory.
+            Cache::purge('file');
+            $cached = $watcher->reviews($group);
+            expect($cached->status)->toBe(TaskReviewReadStatus::Complete);
+            expect($cached->reviews)->toEqual($first->reviews);
+            expect($cached->selection?->requests)->toHaveCount(1);
+            expect(Http::recorded(static fn (Request $r): bool => str_contains($r->url(), '/reviews?')))->toHaveCount(1);
+            $this->travel(1)->seconds();
+            expect($watcher->reviews($group)->selection?->requests)->toBe([]);
+            expect(Http::recorded(static fn (Request $r): bool => str_contains($r->url(), '/reviews?')))->toHaveCount(2);
+        } finally {
+            Cache::purge('file');
+            File::deleteDirectory($directory);
+        }
+    });
+
+    it('invalidates cached selection on head or trust changes and makes closed PR requests ineligible', function (string $change): void {
+        GitHubTestSupport::storeApp();
+        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        $source = watcher_fake_reviews([watcher_review()]);
+        $group = watcher_group();
+        $watcher = app(TaskPullRequestReviewWatcher::class);
+        expect($watcher->reviews($group)->selection?->requests)->toHaveCount(1);
+        if ($change === 'trust') {
+            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [7]]]);
+        }
+        $source->reviews = [];
+        $source->head = $change === 'head' ? str_repeat('a', 40) : null;
+        $source->state = $change === 'closed' ? 'closed' : 'open';
+
+        expect($watcher->reviews($group)->selection?->requests)->toBe([]);
+    })->with(['head', 'trust', 'closed']);
+
+    it('isolates cached observations by repository and PR number', function (): void {
+        GitHubTestSupport::storeApp();
+        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42], 'other/orbit' => [42]]]);
+        watcher_fake_reviews([watcher_review()]);
+        Http::fake([
+            'https://api.github.com/repos/acme/orbit/pulls/43' => Http::response(['merged' => false, 'state' => 'open', 'head' => ['sha' => GitHubTestSupport::review()['commit_id']]]),
+            'https://api.github.com/repos/acme/orbit/pulls/43/reviews?*' => Http::response([]),
+            'https://api.github.com/repos/other/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/repos/other/orbit/pulls/42' => Http::response(['merged' => false, 'state' => 'open', 'head' => ['sha' => GitHubTestSupport::review()['commit_id']]]),
+            'https://api.github.com/repos/other/orbit/pulls/42/reviews?*' => Http::response([]),
+        ]);
+        $group = watcher_group();
+        $watcher = app(TaskPullRequestReviewWatcher::class);
+        expect($watcher->reviews($group)->selection?->requests)->toHaveCount(1);
+        $group->pr_url = 'https://github.com/acme/orbit/pull/43';
+        expect($watcher->reviews($group)->selection?->requests)->toBe([]);
+        $group->pr_url = 'https://github.com/other/orbit/pull/42';
+        expect($watcher->reviews($group)->status)->toBe(TaskReviewReadStatus::Unreadable);
+        $group->project->repository_url = 'https://github.com/other/orbit.git';
+        expect($watcher->reviews($group)->selection?->requests)->toBe([]);
+        expect(Http::recorded(static fn (Request $r): bool => str_contains($r->url(), '/reviews?')))->toHaveCount(3);
+    });
+
+    it('revalidates unchanged sources with uncached PR list review and comment reads', function (): void {
+        GitHubTestSupport::storeApp();
+        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        $comment = GitHubTestSupport::comment();
+        watcher_fake_reviews([watcher_review()], comments: [$comment, array_replace($comment, ['id' => 1])]);
+        $group = watcher_group();
+        $watcher = app(TaskPullRequestReviewWatcher::class);
+        $candidate = $watcher->reviewCandidate($group, 101)->candidate;
+        expect($candidate)->not->toBeNull();
+        expect(array_column($candidate->comments, 'id'))->toBe([1, $comment['id']]);
+
+        $result = $watcher->revalidateReviewCandidate($group, $candidate);
+
+        expect($result->status)->toBe(TaskReviewReadStatus::Complete);
+        foreach (['/pulls/42', '/pulls/42/reviews?per_page=100&page=1', '/pulls/42/reviews/101', '/pulls/42/reviews/101/comments?per_page=100&page=1'] as $path) {
+            expect(Http::recorded(static fn (Request $r): bool => $r->url() === 'https://api.github.com/repos/acme/orbit'.$path))->toHaveCount(2);
+        }
+        Http::assertSent(static fn (Request $r): bool => $r->url() === 'https://api.github.com/app/installations/9/access_tokens'
+            && $r->data()['permissions'] === ['pull_requests' => 'read']);
+    });
+
+    it('rejects changed candidates and distinguishes read failures during final revalidation', function (string $change, TaskReviewReadStatus $expected): void {
+        GitHubTestSupport::storeApp();
+        config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42]]]);
+        $review = watcher_review();
+        $comment = GitHubTestSupport::comment();
+        $source = watcher_fake_reviews([$review], comments: [$comment]);
+        $group = watcher_group();
+        $watcher = app(TaskPullRequestReviewWatcher::class);
+        $candidate = $watcher->reviewCandidate($group, 101)->candidate;
+        expect($candidate)->not->toBeNull();
+        $rows = [$review];
+        $detail = $review;
+        $comments = [$comment];
+        if ($change === 'body') {
+            $rows = [$detail = array_replace($review, ['body' => 'Edited finding'])];
+        } elseif ($change === 'detail') {
+            $detail['body'] = 'Changed between list and detail';
+        } elseif ($change === 'comments') {
+            $comments[0]['body'] = 'Edited inline finding';
+        } elseif ($change === 'new decision') {
+            $rows[] = watcher_review(['id' => 102, 'state' => 'DISMISSED']);
+        } elseif ($change === 'trust') {
+            config(['orbit.tasks.github_reviewers' => ['acme/orbit' => []]]);
+        } elseif ($change === 'removed') {
+            $rows = [];
+        }
+        $source->reviews = $rows;
+        $source->detail = $detail;
+        $source->comments = $comments;
+        $source->head = $change === 'head' ? str_repeat('a', 40) : null;
+        $source->state = $change === 'closed' ? 'closed' : 'open';
+        $source->status = $change === 'failure' ? 503 : 200;
+        $source->detailStatus = $change === 'detail failure' ? 503 : 200;
+        $source->commentsStatus = $change === 'comments failure' ? 503 : 200;
+
+        expect($watcher->revalidateReviewCandidate($group, $candidate)->status)->toBe($expected);
+        expect(Task::query()->where('parent_id', $group->id)->count())->toBe(0);
+    })->with([
+        'body' => ['body', TaskReviewReadStatus::Changed],
+        'detail race' => ['detail', TaskReviewReadStatus::Changed],
+        'inline comments' => ['comments', TaskReviewReadStatus::Changed],
+        'new decisive record' => ['new decision', TaskReviewReadStatus::Changed],
+        'new head' => ['head', TaskReviewReadStatus::Changed],
+        'closed PR' => ['closed', TaskReviewReadStatus::Changed],
+        'removed review' => ['removed', TaskReviewReadStatus::Changed],
+        'trust removed' => ['trust', TaskReviewReadStatus::Disabled],
+        'read failure' => ['failure', TaskReviewReadStatus::Unreadable],
+        'selected review failure' => ['detail failure', TaskReviewReadStatus::Unreadable],
+        'comment failure' => ['comments failure', TaskReviewReadStatus::Unreadable],
+    ]);
 });
 
 it('reads merged, closed, and open pull request status through the Gateway GitHub App', function (): void {

@@ -58,6 +58,9 @@ return [
         'provider' => env('ORBIT_PI_PROVIDER'),
     ],
     'tasks' => [
+        // Operator-owned repair trust: lower-case github.com owner/repository => list of positive integer account IDs.
+        // Empty disables review feedback. No logins, wildcards, roles, or branch-provided settings.
+        'github_reviewers' => [],
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
         // Models for new groups. Unset keeps TaskAgentDefaults.

@@ -208,7 +208,8 @@ final readonly class HttpGitHubReviewReader
             reviewerId: $this->positiveId($user['id'] ?? null),
             reviewerLogin: $this->requiredText($user['login'] ?? null),
             state: $state,
-            commitId: $this->sha($row['commit_id'] ?? null),
+            commitId: $state === GitHubReviewState::Pending && ($row['commit_id'] ?? null) === null
+                ? '' : $this->sha($row['commit_id'] ?? null),
             submittedAt: $this->time($row['submitted_at'] ?? null, $state === GitHubReviewState::Pending),
             url: $this->sourceUrl($row['html_url'] ?? null),
             body: $row['body'],

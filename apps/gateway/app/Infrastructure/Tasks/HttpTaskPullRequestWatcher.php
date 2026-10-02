@@ -9,11 +9,22 @@ use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\GitHubReview;
+use App\Domain\GitHub\GitHubReviewComment;
+use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestHealth;
+use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
+use App\Domain\Tasks\TaskReviewCandidate;
+use App\Domain\Tasks\TaskReviewCandidateResult;
+use App\Domain\Tasks\TaskReviewObservation;
+use App\Domain\Tasks\TaskReviewReadStatus;
+use App\Domain\Tasks\TaskReviewSelection;
+use App\Domain\Tasks\TaskReviewTrust;
 use App\Models\Task;
+use DateTimeImmutable;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
@@ -21,7 +32,7 @@ use Throwable;
 /**
  * Reads the state of the pull request Orbit opened, through the Gateway GitHub App.
  */
-final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatcher
+final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReviewWatcher, TaskPullRequestWatcher
 {
     private const int CHECKS_CACHE_SECONDS = 60;
 
@@ -113,6 +124,153 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
             checksYoungPending: $young,
             mergeable: $pullRequest->mergeable,
         );
+    }
+
+    /**
+     * Complete bounded selection. PR state/head and operator trust are always fresh. Only successful
+     * review lists are cached, for at most 60 seconds; errors are not healthy empty observations.
+     */
+    public function reviews(Task $group, bool $fresh = false): TaskReviewObservation
+    {
+        $target = $this->target($group);
+        if ($target === null) {
+            return new TaskReviewObservation(TaskReviewReadStatus::Unreadable);
+        }
+        [$repository, $number] = $target;
+        $trust = TaskReviewTrust::fromConfig($repository, config('orbit.tasks.github_reviewers', []));
+        if (! $trust->valid || $trust->accountIds === []) {
+            return new TaskReviewObservation(
+                $trust->valid ? TaskReviewReadStatus::Disabled : TaskReviewReadStatus::InvalidTrust,
+                $repository, $number, $trust,
+            );
+        }
+        try {
+            $token = $this->access->reviewsToken($repository);
+            $pr = $this->github->pullRequest($token, $repository, $number);
+            if ($pr->state === GitHubPullRequestState::Open && ($pr->headSha === null || $pr->headSha === '')) {
+                return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust, $pr);
+            }
+            $key = 'tasks:pull-request-reviews:v1:'.strtolower($repository->owner.'/'.$repository->name)
+                .'#'.$number.'@'.$pr->headSha.':'.$trust->revision;
+            $reviews = $fresh ? null : self::cachedReviews(Cache::get($key));
+            if ($reviews === null) {
+                $reviews = $this->github->reviews($token, $repository, $number);
+                $selection = TaskReviewSelection::select($reviews, $trust, $pr->headSha, $pr->state === GitHubPullRequestState::Open);
+                Cache::put($key, self::reviewCachePayload($reviews), 60);
+            } else {
+                $selection = TaskReviewSelection::select($reviews, $trust, $pr->headSha, $pr->state === GitHubPullRequestState::Open);
+            }
+
+            return new TaskReviewObservation(TaskReviewReadStatus::Complete, $repository, $number, $trust, $pr, $reviews, $selection);
+        } catch (Throwable) {
+            return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust);
+        }
+    }
+
+    /**
+     * FileStore disables class deserialization. Store only scalars, not domain objects or dates.
+     *
+     * @param  list<GitHubReview>  $reviews
+     * @return list<array<string, int|string|null>>
+     */
+    private static function reviewCachePayload(array $reviews): array
+    {
+        return array_map(static fn (GitHubReview $review): array => [
+            'id' => $review->id,
+            'reviewer_id' => $review->reviewerId,
+            'reviewer_login' => $review->reviewerLogin,
+            'state' => $review->state->value,
+            'commit_id' => $review->commitId,
+            'submitted_at' => $review->submittedAt?->format('Y-m-d\\TH:i:s.uP'),
+            'url' => $review->url,
+            'body' => $review->body,
+        ], $reviews);
+    }
+
+    /** @return list<GitHubReview>|null */
+    private static function cachedReviews(mixed $cached): ?array
+    {
+        if (! is_array($cached) || ! array_is_list($cached) || count($cached) > 1000) {
+            return null;
+        }
+        $reviews = [];
+        foreach ($cached as $row) {
+            if (! is_array($row) || array_keys($row) !== ['id', 'reviewer_id', 'reviewer_login', 'state', 'commit_id', 'submitted_at', 'url', 'body']
+                || ! is_int($row['id']) || $row['id'] < 1
+                || ! is_int($row['reviewer_id']) || $row['reviewer_id'] < 1
+                || ! is_string($row['reviewer_login']) || $row['reviewer_login'] === ''
+                || ! is_string($row['state']) || ! is_string($row['commit_id'])
+                || ! is_string($row['url']) || ! is_string($row['body'])) {
+                return null;
+            }
+            $state = GitHubReviewState::tryFrom($row['state']);
+            if ($state === null) {
+                return null;
+            }
+            $submittedAt = null;
+            if ($row['submitted_at'] !== null) {
+                if (! is_string($row['submitted_at'])) {
+                    return null;
+                }
+                $submittedAt = DateTimeImmutable::createFromFormat('!Y-m-d\\TH:i:s.uP', $row['submitted_at']);
+                if ($submittedAt === false || $submittedAt->format('Y-m-d\\TH:i:s.uP') !== $row['submitted_at']) {
+                    return null;
+                }
+            }
+            $reviews[] = new GitHubReview($row['id'], $row['reviewer_id'], $row['reviewer_login'], $state,
+                $row['commit_id'], $submittedAt, $row['url'], $row['body']);
+        }
+
+        return $reviews;
+    }
+
+    /** Retrieve a caller-selected eligible request; cap/consumption policy belongs to the scheduler. */
+    public function reviewCandidate(Task $group, int $reviewId, bool $fresh = false): TaskReviewCandidateResult
+    {
+        $observation = $this->reviews($group, $fresh);
+        if ($observation->status !== TaskReviewReadStatus::Complete) {
+            return new TaskReviewCandidateResult($observation->status);
+        }
+        $repository = $observation->repository;
+        $number = $observation->number;
+        $head = $observation->pullRequest?->headSha;
+        $trust = $observation->trust;
+        $selection = $observation->selection;
+        if ($repository === null || $number === null || $head === null || $trust === null || $selection === null) {
+            return new TaskReviewCandidateResult(TaskReviewReadStatus::Changed);
+        }
+        $selected = array_find($selection->requests, static fn (GitHubReview $request): bool => $request->id === $reviewId);
+        if (! $selected instanceof GitHubReview) {
+            return new TaskReviewCandidateResult(TaskReviewReadStatus::Changed);
+        }
+        try {
+            $token = $this->access->reviewsToken($repository);
+            $review = $this->github->review($token, $repository, $number, $reviewId);
+            $comments = $this->github->reviewComments($token, $repository, $number, $reviewId);
+            if ($review != $selected) {
+                return new TaskReviewCandidateResult(TaskReviewReadStatus::Changed);
+            }
+            usort($comments, static fn (GitHubReviewComment $a, GitHubReviewComment $b): int => $a->id <=> $b->id);
+
+            return new TaskReviewCandidateResult(TaskReviewReadStatus::Complete,
+                new TaskReviewCandidate($repository, $number, $head, $trust->revision, $review, $comments));
+        } catch (Throwable) {
+            return new TaskReviewCandidateResult(TaskReviewReadStatus::Unreadable);
+        }
+    }
+
+    /** Final PR/list/selected-review/comments reads all bypass the observation cache. */
+    public function revalidateReviewCandidate(Task $group, TaskReviewCandidate $candidate): TaskReviewCandidateResult
+    {
+        $result = $this->reviewCandidate($group, $candidate->review->id, fresh: true);
+        if ($result->status !== TaskReviewReadStatus::Complete) {
+            return $result;
+        }
+        if ($result->candidate?->digest() !== $candidate->digest()) {
+            return new TaskReviewCandidateResult(TaskReviewReadStatus::Changed);
+        }
+
+        return $result;
     }
 
     /**
