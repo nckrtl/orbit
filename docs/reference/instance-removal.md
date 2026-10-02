@@ -65,6 +65,8 @@ For a development Instance, the Gateway compares the checkout with its record. E
 | `instance.checkout_path_unsafe` | The path overlaps another managed Instance. |
 | `instance.force_failed` | A forced check failed for another reason. |
 
+When a worker is configured, Git checks that inspect file contents run as that worker without a credential environment. A clean filter triggered by the dirty-source check cannot run as the managed account. Privileged ownership checks and deletion still run as the managed account.
+
 The ownership check reads the owner of the checkout directory and its parent. It does not read the owner of every file inside. A development checkout can hold an ACL for `orbit-worker` and files that user created. [Checkout access](/reference/instance-setup#checkout-access) grants that ACL. Removal still refuses a directory the managed user does not own.
 
 ### Worktree sets

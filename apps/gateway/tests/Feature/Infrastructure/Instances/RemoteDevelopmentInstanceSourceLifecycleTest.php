@@ -43,6 +43,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 beforeEach(function (): void {
     $this->files = new Filesystem;
@@ -133,6 +134,48 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     $this->files->deleteDirectory($this->sandbox);
+});
+
+describe('TaskCheckWorkerUser', function (): void {
+    it('keeps removal content filters on the worker while the managed account validates and deletes the tree', function (): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-removal');
+        $checkout = $instance->checkout_path;
+        file_put_contents($checkout.'/.gitattributes', "README.md filter=uid\n");
+        orb76_run(['git', '-C', $checkout, 'add', '.gitattributes']);
+        orb76_run(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'filter attributes']);
+        orb76_run(['git', '-C', $checkout, 'push', '-q', $this->repository, 'HEAD:refs/heads/'.$instance->branch]);
+        $users = $this->sandbox.'/worker-users';
+        file_put_contents($users, '');
+        (new Process(['setfacl', '-m', 'u:nobody:rw', $users]))->mustRun();
+        orb76_run(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> '.escapeshellarg($users).'; cat']);
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $this->source->inspectPrepared($instance);
+        touch($checkout.'/README.md', time() - 10);
+
+        $member = orb180_record_source($this->removal, $instance, false);
+        expect(trim((string) file_get_contents($users)))->toContain('65534:absent');
+        file_put_contents($users, '');
+        $this->removal->prepare($member);
+        touch($checkout.'/README.md', time() - 20);
+        $this->removal->finalize($member);
+
+        expect(file_exists($checkout))->toBeFalse();
+        $records = file($users, FILE_IGNORE_NEW_LINES) ?: [];
+        expect($records)->not->toBeEmpty();
+        foreach ($records as $record) {
+            expect($record)->toBe('65534:absent');
+        }
+    });
+
+    it('refuses removal content inspection when the configured worker cannot run', function (): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-missing-worker');
+        config()->set('orbit.tasks.worker_user', 'orbit-absent-task-worker');
+
+        expect(fn () => $this->removal->inspect($instance, false))->toThrow(RuntimeConvergenceException::class)
+            ->and(is_dir($instance->checkout_path))->toBeTrue();
+    });
 });
 
 describe('TaskWorkspaceAcl', function (): void {
@@ -418,7 +461,7 @@ it('clones a gh_cli Project with the Gateway GitHub CLI token only on protected 
     expect($recorder->commands)->toHaveCount(1)
         ->and($recorder->commands[0]->input)->toBeNull()
         ->and(implode(' ', $recorder->commands[0]->arguments))->not->toContain($token)
-        ->and($recorder->protectedInput)->toContain(base64_encode("x-access-token:{$token}"), 'git_read git clone');
+        ->and($recorder->protectedInput)->toContain(base64_encode("x-access-token:{$token}"), 'git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone');
 })->with([
     'logged in' => ['gho_sentinel000000000000000000'],
     'not logged in' => [null],
@@ -509,7 +552,7 @@ it('makes preparation idempotent and uses only fixed source-control commands', f
 
     expect($resolution->branch)
         ->toBe('dev')
-        ->and(substr_count($inputs, 'git clone --no-checkout --origin origin --'))
+        ->and(substr_count($inputs, 'git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin --'))
         ->toBe(2)
         ->and($inputs)
         ->not->toContain('caddy', 'certificate', 'dns', 'php-fpm', 'systemctl', 'hostname');

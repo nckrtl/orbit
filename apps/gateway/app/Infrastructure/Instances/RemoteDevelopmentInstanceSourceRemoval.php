@@ -22,7 +22,9 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
@@ -1103,7 +1105,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function preparationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             root=$1
             operation=$2
             member=$3
@@ -1507,7 +1509,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function finalizationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             common_repository=$3
@@ -1616,7 +1618,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
             test "$worktrees" = "$expected_worktrees"
             if [ "$force" != 1 ]; then
-                test -z "$(git -C "$physical" status --porcelain --untracked-files=all)"
+                status=$(workspace_git -C "$physical" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status"
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT
                 git init --bare --quiet "$scratch/repository.git"
@@ -1715,7 +1718,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function inspectionScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             managed_user=$3
@@ -1779,7 +1782,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             dirty=
             if [ "$inspect_content" = 1 ]; then
                 dirty=0
-                test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)" || dirty=1
+                status=$(workspace_git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status" || dirty=1
             fi
             encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
             encode "$top"
@@ -1796,7 +1800,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function publicationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             origin=$1
             commit=$2
             scratch=$(mktemp -d)
@@ -1822,7 +1826,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function removalScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             grouping_directory=$3
@@ -1963,7 +1967,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test "$linked_count" = 1
             if [ "$force" != 1 ]; then
                 failure=20
-                test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
+                status=$(workspace_git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status"
                 failure=1
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT

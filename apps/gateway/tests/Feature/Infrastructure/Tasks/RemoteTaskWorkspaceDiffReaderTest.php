@@ -87,7 +87,7 @@ it('reads insertions and deletions from git shortstat', function (): void {
             '/srv/orbit/apps/orbit/task-12',
             'main',
         ])
-        ->and((string) $transport->commands[0]->input)->toContain('git -C "$checkout" diff --shortstat');
+        ->and((string) $transport->commands[0]->input)->toContain('git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$checkout" -C "$checkout" diff --shortstat');
 });
 
 it('reports commits after a revision or date', function (): void {

@@ -142,7 +142,7 @@ it('sends the token only on the standard input of the push', function (): void {
     expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'task-'.Task::topLevel()->sole()->id, $commit])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_publish'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"')
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"')
         ->and(stream_get_contents($command->protectedInput?->stream()))->not->toContain('HEAD:refs/heads');
 });
 

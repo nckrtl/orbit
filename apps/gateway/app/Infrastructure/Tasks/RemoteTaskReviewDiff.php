@@ -9,6 +9,7 @@ use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
@@ -33,8 +34,8 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
 
         try {
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $startCommit],
-                input: <<<'BASH'
+                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path, $startCommit]),
+                input: WorkspaceGit::bashPreamble(TaskWorkerUser::name() === null ? null : $instance->checkout_path).<<<'BASH'
                     set -o pipefail
                     cd -- "$1"
                     start=$2

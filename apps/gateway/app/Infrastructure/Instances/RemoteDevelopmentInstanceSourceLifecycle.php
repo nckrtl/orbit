@@ -16,7 +16,9 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 
 final readonly class RemoteDevelopmentInstanceSourceLifecycle implements DevelopmentInstanceSourceLifecycle
@@ -52,7 +54,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         exit 0
                     fi
 
-                    git_read git clone --no-checkout --origin origin -- "$repository" "$checkout"
+                    git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
                     inspect_prepared_repository
                     share_checkout
                     BASH);
@@ -111,7 +113,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
                     inspect_prepared_repository
-                    git_read git -C "$checkout" fetch --prune -- origin
+                    git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --prune -- origin
 
                     if [ -n "$branch_override" ]; then
                         branch=$branch_override
@@ -136,7 +138,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         source_ref="refs/remotes/origin/$default_branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
-                    git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
+                    workspace_git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"
@@ -303,7 +305,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     private static function preparedRepositoryGuard(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             guard_parent_chain() {
                 parent=$1
                 root=$2

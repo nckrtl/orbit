@@ -63,6 +63,24 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
+describe('TaskGitHardening', function (): void {
+    it('does not corrupt a private file through MCP temporary or exclude links', function (string $name): void {
+        $checkout = workspace_mcp_checkout();
+        $target = TestOrbitHome::scratch('private-mcp-target');
+        file_put_contents($target, 'private Node file');
+        chmod($target, 0600);
+        if ($name === '.git/info/exclude') {
+            unlink($checkout.'/'.$name);
+        }
+        symlink($target, $checkout.'/'.$name);
+
+        $installed = workspace_mcp()->installWhenMissing(workspace_mcp_instance($checkout));
+
+        expect(file_get_contents($target))->toBe('private Node file')
+            ->and($installed)->toBe($name === '.mcp.json.orbit-new');
+    })->with(['.mcp.json.orbit-new', '.git/info/exclude']);
+});
+
 it('writes an untracked .mcp.json that points at the Gateway search endpoint and that Git ignores', function (): void {
     config()->set('app.url', 'https://gateway.orbit/');
     $checkout = workspace_mcp_checkout();

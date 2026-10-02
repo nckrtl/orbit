@@ -33,27 +33,13 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
         $steps = json_encode($setup, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
-        $verify = $deliverables === null ? '' : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $checkCommand = base64_encode($command ?? '');
-        $data = $this->run($instance, [], "script='".base64_encode($script)."'\nsetup='".base64_encode($steps)."'\ndeliverables='".base64_encode($verify)."'\ncheck_command='{$checkCommand}'\n".<<<'BASH'
-            install -d -m 0775 -- "$dir"
-            printf '%s' "$script" | base64 -d > "$dir/check.new"
-            chmod 0755 "$dir/check.new"
-            mv -f -- "$dir/check.new" "$dir/check"
-            printf '%s' "$setup" | base64 -d > "$dir/setup.json"
-            printf '%s' "$check_command" | base64 -d > "$dir/check-command"
-            steps="$dir/setup.json"
-            if [ "$(cat "$dir/setup.json")" = '[]' ]; then
-                steps=-
-            fi
-            if [ -n "$deliverables" ]; then
-                printf '%s' "$deliverables" | base64 -d > "$dir/deliverables.json"
-                python3 "$dir/check" start "$checkout" "$steps" "$dir/deliverables.json" "$dir/check-command"
-            else
-                rm -f -- "$dir/deliverables.json"
-                python3 "$dir/check" start "$checkout" "$steps" - "$dir/check-command"
-            fi
-            BASH);
+        $verify = $deliverables === null ? null : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        $install = TaskWorkspaceMetadata::operation('check', [
+            'script' => base64_encode($script), 'setup' => $steps, 'command' => $command ?? '', 'deliverables' => $verify,
+        ]);
+        $stepsArgument = $setup === [] ? '-' : '"$dir/setup.json"';
+        $deliverablesArgument = $deliverables === null ? '-' : '"$dir/deliverables.json"';
+        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"');
         $pid = $data['pid'] ?? null;
         $started = $data['started'] ?? null;
         $head = $data['head'] ?? null;
@@ -67,7 +53,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
-        $data = $this->run($instance, [(string) $process->pid, $process->started], 'python3 "$dir/check" status "$2" "$3"');
+        $data = $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" status "$2" "$3"');
         $output = is_string($data['output'] ?? null) ? $data['output'] : '';
 
         return match ($data['state'] ?? null) {
@@ -80,7 +66,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function cancel(Instance $instance, TaskCheckProcess $process): void
     {
-        $this->run($instance, [(string) $process->pid, $process->started], 'python3 "$dir/check" cancel "$2" "$3"');
+        $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" cancel "$2" "$3"');
     }
 
     public function snapshot(Instance $instance): TaskWorkspaceSnapshot
@@ -89,13 +75,8 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         if ($script === false) {
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
-        $data = $this->run($instance, [], "script='".base64_encode($script)."'\n".<<<'BASH'
-            install -d -m 0775 -- "$dir"
-            printf '%s' "$script" | base64 -d > "$dir/check.new"
-            chmod 0755 "$dir/check.new"
-            mv -f -- "$dir/check.new" "$dir/check"
-            python3 "$dir/check" snapshot "$checkout"
-            BASH, 'The task workspace could not be reached for the workspace tree.', 'The workspace tree could not be read.');
+        $data = $this->run($instance, [], TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
+            'check_python "$dir/check" snapshot "$checkout"', 'The task workspace could not be reached for the workspace tree.', 'The workspace tree could not be read.');
         $head = $data['head'] ?? null;
         $tree = $data['tree'] ?? null;
         if (! is_string($head) || $head === '' || ! is_string($tree) || $tree === '') {
@@ -153,13 +134,43 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         if ($instance->checkout_path === '') {
             throw new TaskCheckException('The task workspace has no checkout.');
         }
+        $worker = '';
         try {
+            $worker = TaskWorkerUser::name() ?? '';
+            $prefix = "checkout=\$1\nworker=".escapeshellarg($worker)."\n".<<<'BASH'
+                if [ -n "$worker" ]; then
+                    if ! id "$worker" >/dev/null 2>&1; then
+                        printf 'The Node has no %s user.\n' "$worker" >&2
+                        exit 1
+                    fi
+                    if [ "$(id -u "$worker")" = 0 ] || [ "$(id -u "$worker")" = "$(id -u)" ] || ! sudo -n -u "$worker" -H -- true; then
+                        printf 'The managed user cannot run commands as %s.\n' "$worker" >&2
+                        exit 1
+                    fi
+                fi
+                # Paths below are used only by worker processes. Managed writes use descriptor-based IO.
+                dir="$checkout/.git/orbit"
+                check_python() {
+                    if [ -n "$worker" ]; then
+                        sudo -n -u "$worker" -H -- python3 "$@"
+                    else
+                        python3 "$@"
+                    fi
+                }
+
+                BASH;
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
-                input: "checkout=\$1\ndir=\$(git -C \"\$checkout\" rev-parse --absolute-git-dir)/orbit\n{$command}\n",
+                input: $prefix.TaskWorkspaceMetadata::bashPreamble().$command."\n",
                 maxOutputBytes: self::OutputLimitBytes,
             ), 'task-check', 'tasks.check_failed');
         } catch (RuntimeConvergenceException $exception) {
+            $stderr = $exception->result->stderr ?? '';
+            foreach (["The Node has no {$worker} user.", "The managed user cannot run commands as {$worker}."] as $reason) {
+                if ($worker !== '' && str_contains($stderr, $reason)) {
+                    throw new TaskCheckException($reason, previous: $exception);
+                }
+            }
             throw new TaskCheckException($unreachable, previous: $exception);
         }
         try {

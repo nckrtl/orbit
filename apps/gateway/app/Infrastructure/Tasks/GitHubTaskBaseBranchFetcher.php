@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Task;
@@ -68,12 +69,12 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $instance->loadMissing('node');
         // The remote-tracking ref may be replaced; the workspace only moves by a fast-forward merge.
         // A missing task branch is left alone when the caller allows it, and is still a failure otherwise.
-        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
+        $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             branch=$2
             if [ "${3:-}" = "missing-ok" ]; then
                 status=0
-                git_read git -C "$checkout" ls-remote --exit-code --heads origin "$branch" >/dev/null || status=$?
+                git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" ls-remote --exit-code --heads origin "$branch" >/dev/null || status=$?
                 if [ "$status" -eq 2 ]; then
                     exit 0
                 fi
@@ -81,11 +82,11 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
                     exit "$status"
                 fi
             fi
-            git_read git -C "$checkout" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"
-            head=$(git -C "$checkout" rev-parse HEAD)
-            remote=$(git -C "$checkout" rev-parse "refs/remotes/origin/$branch")
-            if [ "$head" != "$remote" ] && git -C "$checkout" merge-base --is-ancestor "$head" "$remote"; then
-                git -C "$checkout" merge --ff-only --quiet "$remote"
+            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "+refs/heads/$branch:refs/remotes/origin/$branch"
+            head=$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse HEAD)
+            remote=$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse "refs/remotes/origin/$branch")
+            if [ "$head" != "$remote" ] && git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" merge-base --is-ancestor "$head" "$remote"; then
+                workspace_git -C "$checkout" merge --ff-only --quiet "$remote"
             fi
             BASH);
         $arguments = ['bash', '-seu', '--', $instance->checkout_path, 'task-'.$group->id];
@@ -109,7 +110,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
             checkout=$1
             base=$2
-            git_read git -C "$checkout" fetch --quiet origin "$base"
+            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"
             BASH);
         try {
             $this->ssh->execute($instance->node, new RemoteCommand(
