@@ -15,7 +15,10 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LinuxHost;
 
 it('prepares the recorded user and home and resolves only the Project default branch', function (): void {
     [$source, $ssh, $instance] = production_source_lifecycle([
@@ -315,6 +318,88 @@ it('inspects the recorded production checkout when classifying the source', func
     'staged initial release' => '/home/orbit-app-1/releases/initial',
     'selected release' => '/home/orbit-app-1/releases/20260913120000',
 ]);
+
+it('classifies production source when its runtime user cannot enter the SSH working directory', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    [$root, $program] = production_source_shell_fixture();
+
+    try {
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'test', '-x', "$root/ssh-home"])->run())->toBe(1);
+
+        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source"], "$root/ssh-home", input: $program);
+        $process->mustRun();
+
+        expect($process->getOutput())->toBe("COMPOSER\tregular\teyJyZXF1aXJlIjp7InBocCI6Il44LjUiLCJsYXJhdmVsL2ZyYW1ld29yayI6Il4xMy4wIn19\n");
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'test', '-x', "$root/ssh-home"])->run())->toBe(1);
+    } finally {
+        new Process(['sudo', 'rm', '-r', '--', $root])->mustRun();
+    }
+});
+
+it('rejects foreign source ownership from a private SSH working directory', function (string $owner): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    [$root, $program] = production_source_shell_fixture();
+
+    try {
+        new Process(['sudo', 'chown', '--', $owner, "$root/source/artisan"])->mustRun();
+
+        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source"], "$root/ssh-home", input: $program);
+        $process->mustRun();
+
+        expect($process->getOutput())->toBe("UNSAFE\n");
+    } finally {
+        new Process(['sudo', 'rm', '-r', '--', $root])->mustRun();
+    }
+})->with([
+    'foreign user' => 'root:caddy',
+    'foreign group' => 'caddy:root',
+]);
+
+it('propagates an unreadable source directory instead of classifying it as clean', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    [$root, $program] = production_source_shell_fixture();
+
+    try {
+        new Process(['sudo', '-u', 'caddy', 'mkdir', '-m', '000', '--', "$root/source/unreadable"])->mustRun();
+
+        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source"], "$root/ssh-home", input: $program);
+        $process->run();
+
+        expect($process->getExitCode())->not->toBe(0);
+        expect($process->getOutput())->toBe('');
+        expect($process->getErrorOutput())->toContain('unreadable', 'Permission denied');
+    } finally {
+        new Process(['sudo', 'rm', '-r', '--', $root])->mustRun();
+    }
+});
+
+/** @return array{string, string} */
+function production_source_shell_fixture(): array
+{
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, "NONE\n", '', 1, false),
+    ]);
+    $source->inspectProfile($instance);
+    $root = sys_get_temp_dir().'/orbit-production-source-'.Str::uuid();
+    mkdir($root, 0o755);
+    chmod($root, 0o755);
+    mkdir("$root/ssh-home", 0o700);
+    mkdir("$root/source/public", 0o700, true);
+    file_put_contents("$root/source/composer.json", '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}');
+    file_put_contents("$root/source/artisan", '');
+    new Process(['sudo', 'chown', '-R', '--', 'caddy:caddy', "$root/source"])->mustRun();
+
+    return [$root, $ssh->commands[0]->input];
+}
 
 it('refuses to inspect a recorded production checkout outside the home or its releases', function (
     string $checkoutPath,
