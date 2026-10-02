@@ -557,7 +557,11 @@ describe('TaskWorkspaceAcl', function (): void {
             printf 'worker\n' > "$1/nested/deep/file"
             # Reproduce uutils mkdir 0.8.0 on hosts whose mkdir does not inherit these bits.
             chmod g+s,+t -- "$1" "$1/nested" "$1/nested/deep"
+            # An explicit 0755 mode, as Pest uses for its TIA graph, narrows the ACL mask to r-x.
+            python3 -c 'import os, sys; os.mkdir(sys.argv[1], 0o755)' "$1/graph"
+            printf 'worker\n' > "$1/graph/graph.json"
             BASH);
+        expect(fileperms($tree.'/graph') & 0o777)->toBe(0o755);
         expect(trim(orb76_run(['stat', '-c', '%U', $tree.'/nested/deep'])->stdout))->toBe('nobody');
         expect(fileperms($tree.'/nested/deep') & 0o3000)->toBe(0o3000);
         $member = orb180_record_source($this->removal, $instance, true);
