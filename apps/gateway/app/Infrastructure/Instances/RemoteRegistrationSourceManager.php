@@ -224,6 +224,54 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             );
         }
 
+        if (array_all($members, static fn (array $member): bool => $member['facts']->path === $member['instance']->checkout_path)) {
+            if ($cleanupReady === 0) {
+                DB::transaction(static function () use ($members): void {
+                    foreach ($members as $member) {
+                        Instance::query()->whereKey($member['instance']->id)->update([
+                            'registration_relocation_state' => 'relocating',
+                            'registration_authoritative_path' => $member['facts']->path,
+                        ]);
+                    }
+                });
+
+                // An in-place source needs verification, not relocation or Git-link repair.
+                $this->runRelocation($node, 'adopt', $payload);
+
+                DB::transaction(static function () use ($members): void {
+                    foreach ($members as $member) {
+                        Instance::query()->whereKey($member['instance']->id)->update([
+                            'registration_relocation_state' => 'destination_verified',
+                            'registration_authoritative_path' => $member['instance']->checkout_path,
+                            'registration_source_device' => null,
+                            'registration_source_inode' => null,
+                        ]);
+                    }
+                });
+            }
+
+            foreach ($members as $member) {
+                $this->validateRetained($node, $member['facts'], $member['instance']->checkout_path);
+            }
+
+            // Persist adoption before changing environment permissions, so an interrupted
+            // finalization never compares those changes with the pre-adoption digest.
+            $this->runRelocation($node, 'adopt-finalize', $payload);
+
+            DB::transaction(static function () use ($members): void {
+                foreach ($members as $member) {
+                    Instance::query()->whereKey($member['instance']->id)->update([
+                        'registration_relocation_state' => 'relocated',
+                        'registration_authoritative_path' => $member['instance']->checkout_path,
+                        'registration_source_device' => null,
+                        'registration_source_inode' => null,
+                    ]);
+                }
+            });
+
+            return;
+        }
+
         if ($cleanupReady === 0) {
             DB::transaction(static function () use ($members): void {
                 foreach ($members as $member) {
@@ -669,7 +717,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     ('symbolic-ref', '-q', 'HEAD'),
                     ('status', '--porcelain=v2', '--untracked-files=all'),
                     ('config', '--local', '--null', '--list'),
-                    ('show-ref', '--head'),
+                    ('ls-files', '--stage', '-v'),
                 ]:
                     if args[0] == 'status': value = content_status(path)
                     else:
@@ -758,7 +806,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             def git(path, *args): return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
             def digest(path):
                 root = pathlib.Path(path); h = hashlib.sha256()
-                for args in [('rev-parse','HEAD'),('symbolic-ref','-q','HEAD'),('status','--porcelain=v2','--untracked-files=all'),('config','--local','--null','--list'),('show-ref','--head')]:
+                for args in [('rev-parse','HEAD'),('symbolic-ref','-q','HEAD'),('status','--porcelain=v2','--untracked-files=all'),('config','--local','--null','--list'),('ls-files','--stage','-v')]:
                     if args[0] == 'status': value = content_status(path)
                     else:
                         try: value = subprocess.check_output(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',path,*args], stderr=subprocess.DEVNULL, env=git_env)
@@ -858,7 +906,21 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         else: os.rmdir(path)
                 os.rmdir(source)
             ordered = sorted(members, key=lambda m: 1 if m['layout'] == 'checkout' else 0)
-            if operation == 'prepare':
+            def close_environment():
+                # Other local users, the Node agent included, never read an Instance's environment.
+                for member in members:
+                    env=os.path.join(member['destination'],'.env')
+                    if os.path.isfile(env) and not os.path.islink(env) and os.lstat(env).st_mode & 0o007:
+                        os.chmod(env, stat.S_IMODE(os.lstat(env).st_mode) & 0o770)
+            if operation == 'adopt':
+                if any(member['source'] != member['destination'] for member in members): raise SystemExit(42)
+                for member in members: verify(member['destination'], member)
+            elif operation == 'adopt-finalize':
+                for member in members:
+                    if member['source'] != member['destination']: raise SystemExit(42)
+                    source_identity(member['destination'])
+                close_environment()
+            elif operation == 'prepare':
                 identities=[prepare(member) for member in ordered]
                 repair()
                 for member in members: verify(member['destination'], member)
@@ -867,11 +929,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 for member in members: cleanup(member)
                 for member in ordered: remove_original(member)
                 for member in members: verify(member['destination'], member)
-                # After the last verification: other local users, the Node agent included, never read an Instance's environment.
-                for member in members:
-                    env=os.path.join(member['destination'],'.env')
-                    if os.path.isfile(env) and not os.path.islink(env) and os.lstat(env).st_mode & 0o007:
-                        os.chmod(env, stat.S_IMODE(os.lstat(env).st_mode) & 0o770)
+                close_environment()
             else: raise SystemExit(42)
             PYTHON;
     }
