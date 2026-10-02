@@ -658,7 +658,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         InstanceRemovalMember $member,
     ): InstanceSourceRevalidationState {
         $this->assertDevelopmentMember($member);
-        [$node, $user, $group, $root] = $this->memberContext($member);
+        [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
         $result = $this->ssh->execute(
             $node,
             new RemoteCommand(
@@ -675,8 +675,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     (string) $member->source_identity,
                     $user,
                     $group,
+                    $groupingDirectory,
                 ],
-                input: self::revalidationScript(),
+                input: self::releaseEmptyGroupingDirectoryFunction().self::revalidationScript(),
             ),
             step: 'app-instance-removal-revalidation',
             errorCode: 'instance.removal_conflict',
@@ -1221,6 +1222,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test -f "$receipt_path"
             test ! -L "$receipt_path"
             printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
+            test "$(stat -c '%U:%G' "$receipt_path")" = "$managed_user:$managed_group"
+            # Deletion and config publication are not atomic. Authenticate the
+            # completed removal, then retry exact-path trust cleanup before success.
+            release_empty_grouping_directory "${10}"
             printf 'completed\n'
             BASH;
     }
@@ -2001,8 +2006,22 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function releaseEmptyGroupingDirectoryFunction(): string
     {
-        return <<<'BASH'
+        $worker = TaskWorkerUser::name() ?? '';
+
+        return 'trust_worker='.escapeshellarg($worker)."\n".<<<'BASH'
             release_empty_grouping_directory() {
+                test ! -e "$checkout"
+                test ! -L "$checkout"
+                if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then
+                    test "$(id -u "$trust_worker")" != 0
+                    test "$trust_worker" != "$managed_user"
+                    if sudo -n -u "$trust_worker" -H -- git config --global --fixed-value --unset-all safe.directory "$checkout"; then
+                        :
+                    else
+                        status=$?
+                        test "$status" = 5
+                    fi
+                fi
                 grouping_directory=$1
                 test "$grouping_directory" != "$root"
                 test "$grouping_directory" = "$(dirname "$checkout")"

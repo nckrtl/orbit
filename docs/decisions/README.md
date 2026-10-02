@@ -34,6 +34,8 @@ Older records can share a number. Record each retired slug separately under that
 
 Most decisions are built in one task, so their ADR is retired in the same pull request that adds it. An ADR stays on main only while its decision spans more than one pull request. A code comment can keep an ADR number, because the overview resolves every retired number.
 
+ADR 0191, `0191-run-task-agents-as-a-dedicated-user`, is retired. Its redirect points to [Pi server: One user for every task agent](/reference/pi-server#one-user-for-every-task-agent); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) holds the credential boundary. The [Retired decisions table](/decisions/overview#retired-decisions) lists both owning sections.
+
 ## Record format
 
 Use the next available four-digit number and a short kebab-case name. A number is never reused. Check for a collision before merging concurrent additions.

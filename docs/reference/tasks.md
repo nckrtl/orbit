@@ -542,7 +542,7 @@ The checkout directory stays owned by the Node's managed user and group. `ORBIT_
 
 Default ACLs are installed before worker write access, so a partial grant cannot expose a directory without inheritance. Files the worker creates inherit the managed user's access, so removal can delete them without changing the checkout owner. Inspection repairs ACLs on entries the managed user owns. Entries the worker owns keep the ACLs they inherited. The grant does not cover either user's home.
 
-`.git/orbit` is mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker, but the writable checkout root means that protection is not a trust boundary. Git creates `index.lock` in `.git`. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+`.git/orbit` is mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker, but the writable checkout root means that protection is not a trust boundary. Git creates `index.lock` in `.git`. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account and ACL choices.
 
 | Project setting | New workspace |
 | --- | --- |
@@ -991,7 +991,7 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 
 ### Agents and checks run as orbit-worker
 
-The task check, the baseline setup, and task teardown run programs that the workspace can name. Running them as the managed user would let those programs read that user's home, so they run as `orbit-worker`. Teardown's command is the root-owned helper `/usr/local/lib/orbit/e2e-task-cleanup`, which `orbit-worker` can execute and cannot write. Privileged removal is separate: the managed user deletes the tree and does not run a checkout program. The Pi server runs as `orbit-worker`, and an agent can read the server token and the provider sign-in. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) records the `incus-admin` limit.
+The task check, the baseline setup, and task teardown run programs that the workspace can name. Running them as the managed user would let those programs read that user's home, so they run as `orbit-worker`. Teardown's command is the root-owned helper `/usr/local/lib/orbit/e2e-task-cleanup`, which `orbit-worker` can execute and cannot write. Privileged removal is separate: the managed user deletes the tree and does not run a checkout program. The Pi server runs as `orbit-worker`, and an agent can read the server token and the provider sign-in. [Pi server limits](/reference/pi-server#limits) records the root-equivalent `incus-admin` access.
 
 ### Backlog before Todo
 

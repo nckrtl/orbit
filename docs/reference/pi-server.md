@@ -3,6 +3,8 @@ title: "Pi server"
 description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, the orbit-worker install, agent tools, API, thread states, and restart behavior."
 covers:
   - apps/pi-server/**
+  - apps/e2e/resources/proofs/orbit-worker{.sh,.php,-provider.ts}
+  - apps/e2e/tests/Unit/E2E/OrbitWorkerProofRecoveryTest.php
   - apps/gateway/app/Infrastructure/Tasks/Pi/{PiConnection,PiModel,PiNodeEligibility}.php
 ---
 
@@ -59,7 +61,7 @@ By default the server accepts only subscription sign-ins, such as ChatGPT for Co
 
 ## Host setup
 
-Create `orbit-worker` on every Node that runs task agents, before [Install on a Node](#install-on-a-node). The Gateway does not create the account during `node:add`. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) is the contract.
+Create `orbit-worker` on every Node that runs task agents, before [Install on a Node](#install-on-a-node). The Gateway does not create the account during `node:add`. The account separates agent programs from the managed user's SSH login and token-bearing Git commands. [One user for every task agent](#one-user-for-every-task-agent) explains the choice.
 
 1. Create the user and group `orbit-worker`, with home `/home/orbit-worker` and shell `/bin/bash`. Give the user no password and no sudo. Do not add the user to the managed user's group.
 2. Set `/home/orbit-worker` to mode `0700`.
@@ -105,6 +107,26 @@ Two limits bound what `orbit-worker` separates.
 `incus-admin` is root-equivalent. A member can start a privileged container, read any home, and observe another user's process. Homes at mode `0700` are the policy for a worker who is not in that group. They are not a hard wall on a host where the worker is in the group. beast adds `orbit-worker` to `incus-admin` so task agents can run `incus`.
 
 An agent is a process of the Pi server and shares its user. It can read `/home/orbit-worker/.pi/agent/orbit-token` and the provider sign-in in that home. The design does not give each agent a separate user. The GitHub token is a different secret: the agent does not receive it. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states that enforcement.
+
+## Prove the account on Incus
+
+Run the [orbit-worker proof script](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/proofs/orbit-worker.sh) from the task workspace on a fresh [allocated Incus lease](/reference/incus-topologies#task-workspace-clones). Replace `TASK-820` with the issue named by your branch:
+
+```bash
+bin/e2e-topology acquire TASK-820 .
+bash apps/e2e/resources/proofs/orbit-worker.sh TASK-820
+bin/e2e-topology release TASK-820
+```
+
+The script creates the account by the host setup above and registers a real `pi-server` Process with `--user=orbit-worker`. A deterministic local model response makes Pi run one bash tool call. That call refuses readable managed homes, sudo access, or SSH access as the managed user; writes a workspace file; tests its contents; and runs `incus list` against a daemon inside app-dev.
+
+The Gateway's real task components provision the checkout, run the baseline and handoff checks as the worker, read its turn receipt, commit its file, and remove the workspace. The proof also reads the committed blob and checks that the checkout remains managed-owned while the file belongs to the worker.
+
+The proof driver calls the task components directly. It does not exercise scheduler review policy, a live model, or GitHub publication. Its disposable monorepo Project declares the repository root as `.` and uses no Route. It installs Incus only inside the disposable guest and never exposes the harness host's socket. Membership of `incus-admin` still has the [root-equivalent limit](#limits); the denied home, sudo, and SSH checks do not prove isolation against that power.
+
+Every proof step uses `--record` labels. `worker-agent-and-gateway-commit` contains the actual Pi tool result, its five `WORKER_*` markers, the handoff check, and the new commit SHA. `worker-commit-readback` verifies the blob and author. `worker-gateway-removal`, `worker-checkout-removal-audit`, `worker-account-cleanup`, and `worker-final-audit` check the database, checkout, scoped Git trust, account, processes, and fixture files after cleanup.
+
+An unexpected result exits nonzero. A cleanup failure keeps the recorded state for diagnosis rather than claiming success. The final Process-list audit runs before state deletion, so a failed read or assertion preserves the recovery file. Repeat the proof on a fresh lease, not by adopting leftover fixtures.
 
 ## Roll out orbit-worker on beast
 
@@ -322,4 +344,10 @@ A large tool result fills the model context, and each later call sends that text
 
 ### One user for every task agent
 
-The managed user holds the SSH login and runs Gateway `git` with the GitHub token. `orbit-worker` has neither. One Pi server Process on the Node serves every session, so every agent shares that user and can read the server token. A user per task would copy the provider sign-in into every account. Running the server as root and dropping privileges inside a session was rejected, because a fault in that path is root. [ADR 0191](/decisions/0191-run-task-agents-as-a-dedicated-user) records the other rejected alternatives.
+The managed user holds the SSH login and runs Gateway `git` with the GitHub token. `orbit-worker` has neither. Keeping the agent as the managed user and relying on a prompt was rejected: the agent could read that home and install a program that inherits the token. This separation serves [security fits the real threat model](/mission#principles), subject to the [incus-admin and shared-credential limits](#limits).
+
+One Pi server Process on the Node serves every session, including sessions in development Instances. Every agent therefore shares that user and can read the server token and provider sign-in. A user per task would need a separate Pi server and provider sign-in for every account. Running the server as root and dropping privileges inside a session was rejected, because a fault in that path is root. The systemd Process's `User=` sets the account before the server starts.
+
+The Gateway still connects as the managed user. Workspace ACLs let both accounts edit and remove the same checkout without changing its owner. A user namespace was rejected because every checkout would need a second mount. Making `.git` unwritable would stop Git from creating `index.lock`; excluding only config and hooks would not create a trust boundary because the worker can rename `.git` from the writable checkout root. The boundary is which user runs the program, not whether the agent can change Git metadata.
+
+An ACL does not satisfy Git's ownership check. Prepare and inspect add the exact checkout path to the worker's global `safe.directory`, not `*`; removal deletes that entry. Primary checkouts and bridge worktrees need the same scoped trust and access for teardown. [Checkout access](/reference/instance-setup#checkout-access) and [Primary registration](/reference/instance-setup#primary-registration) own those procedures. Checks, baseline setup, and teardown run as the worker; privileged removal deletes the tree without running checkout programs. [The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) explains the separate Git boundary.

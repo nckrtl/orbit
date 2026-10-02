@@ -724,32 +724,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0191-run-task-agents-as-a-dedicated-user.md",
-            "title": "ADR 0191: Run task agents as a dedicated user",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Process",
-                "Project",
-                "Task",
-                "Task check",
-                "Tool",
-                "Turn receipt"
-            ],
-            "governing_adrs": [
-                "0191"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -793,8 +767,7 @@
             "governing_adrs": [
                 "0097",
                 "0175",
-                "0182",
-                "0191"
+                "0182"
             ]
         },
         {
@@ -1312,15 +1285,14 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Schedule",
                 "Subtask",
                 "Task"
             ],
-            "governing_adrs": [
-                "0191"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/implementation-loop.md",
@@ -1724,6 +1696,7 @@
             "title": "Pi server",
             "kind": "reference",
             "components": [
+                "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
@@ -1737,11 +1710,10 @@
                 "Subtask",
                 "Task",
                 "Task workspace",
-                "Tool"
+                "Tool",
+                "Turn receipt"
             ],
-            "governing_adrs": [
-                "0191"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/private-dns.md",
@@ -1926,8 +1898,7 @@
                 "Turn receipt"
             ],
             "governing_adrs": [
-                "0182",
-                "0191"
+                "0182"
             ]
         },
         {

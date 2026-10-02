@@ -375,6 +375,13 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     find -P "$checkout/.git/hooks" -user "$managed_user" ! -type d ! -type l -exec setfacl -m "u:$worker_user:r-X" -- {} +
                 fi
                 chmod 0775 -- "$orbit"
+                if sudo -n -u "$worker_user" -H -- git config --global --fixed-value --get-all safe.directory "$checkout" >/dev/null; then
+                    :
+                else
+                    status=$?
+                    test "$status" = 1
+                    sudo -n -u "$worker_user" -H -- git config --global --add safe.directory "$checkout"
+                fi
             }
             inspect_prepared_repository() {
                 test -d "$checkout"

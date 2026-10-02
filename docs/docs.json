@@ -567,8 +567,7 @@
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0182-start-tasks-from-project-task-definitions",
-              "decisions/0191-run-task-agents-as-a-dedicated-user"
+              "decisions/0182-start-tasks-from-project-task-definitions"
             ]
           }
         ]
@@ -603,6 +602,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0191-run-task-agents-as-a-dedicated-user",
+      "destination": "/reference/pi-server#one-user-for-every-task-agent"
+    },
     {
       "source": "/reference/installation",
       "destination": "/quickstart"

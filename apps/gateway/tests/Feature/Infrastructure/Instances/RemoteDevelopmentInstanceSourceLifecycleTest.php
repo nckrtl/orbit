@@ -74,6 +74,11 @@ beforeEach(function (): void {
     };
     $this->accounts = $accounts;
     $this->transport = new Orb76LocalSourceSshExecutor($this->remoteOrigin, $this->repository);
+    // Give nobody an isolated global config instead of writing its host home.
+    $this->workerHome = $this->sandbox.'/worker-home';
+    $this->files->makeDirectory($this->workerHome);
+    chmod($this->workerHome, 0777);
+    $this->transport->workerGlobalConfig = $this->workerHome.'/.gitconfig';
     $this->sourceLock = new NativeAppDevSourceOperationLock($this->sandbox.'/locks');
     $ssh = new DevelopmentSshExecutor(
         $this->transport,
@@ -179,6 +184,61 @@ describe('TaskCheckWorkerUser', function (): void {
 });
 
 describe('TaskWorkspaceAcl', function (): void {
+    it('trusts only the managed checkout for worker Git and removes that trust on teardown', function (string $operation): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-trust');
+        $worker = ['sudo', '-n', '-u', 'nobody', '-H', '--', 'env', 'GIT_CONFIG_GLOBAL='.$this->transport->workerGlobalConfig, 'git'];
+        orb76_run([...$worker, 'config', '--global', '--add', 'safe.directory', $this->sandbox.'/another-checkout']);
+        config()->set('orbit.tasks.worker_user', 'nobody');
+
+        if ($operation === 'prepare') {
+            $this->source->prepare($instance, true);
+        } else {
+            $this->source->inspectPrepared($instance);
+        }
+        $this->source->inspectPrepared($instance);
+
+        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))
+            ->toBe($this->sandbox.'/another-checkout'."\n".$instance->checkout_path);
+        expect(trim(orb76_run([...$worker, '-C', $instance->checkout_path, 'status', '--porcelain'])->stdout))->toBe('');
+        $member = orb180_record_source($this->removal, $instance, true);
+        $this->removal->finalize($member);
+        $this->removal->finalize($member);
+
+        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))->toBe($this->sandbox.'/another-checkout');
+        expect(file_exists($instance->checkout_path))->toBeFalse();
+    })->with(['prepare', 'inspect']);
+
+    it('retries scoped trust cleanup after interruption between quarantine deletion and unset', function (string $retry): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-interrupted-trust');
+        $worker = ['sudo', '-n', '-u', 'nobody', '-H', '--', 'env', 'GIT_CONFIG_GLOBAL='.$this->transport->workerGlobalConfig, 'git'];
+        orb76_run([...$worker, 'config', '--global', '--add', 'safe.directory', $this->sandbox.'/another-checkout']);
+        $member = orb180_record_source($this->removal, $instance, true);
+        $this->transport->interruptBeforeTrustCleanup = true;
+
+        expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
+
+        expect(file_exists($instance->checkout_path))->toBeFalse();
+        expect(is_file(orb180_receipt_path($member)))->toBeTrue();
+        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))
+            ->toBe($instance->checkout_path."\n".$this->sandbox.'/another-checkout');
+        $configLock = $this->transport->workerGlobalConfig.'.lock';
+        file_put_contents($configLock, 'another writer');
+        expect(fn () => $this->removal->{$retry}($member))->toThrow(RuntimeConvergenceException::class);
+        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))
+            ->toBe($instance->checkout_path."\n".$this->sandbox.'/another-checkout');
+        unlink($configLock);
+        if ($retry === 'revalidate') {
+            expect($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Completed);
+        } else {
+            expect($this->removal->finalize($member))->toBe(trim(file_get_contents(orb180_receipt_path($member))));
+        }
+
+        expect(trim(orb76_run([...$worker, 'config', '--global', '--get-all', 'safe.directory'])->stdout))->toBe($this->sandbox.'/another-checkout');
+        expect(is_dir(dirname($instance->checkout_path)))->toBeFalse();
+    })->with(['revalidate', 'finalize']);
+
     it('keeps worker-created entries writable and removable after an interrupted access grant and retry', function (string $operation): void {
         config()->set('orbit.tasks.worker_user', null);
         $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-partial-acl');
@@ -2613,6 +2673,10 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public ?Closure $beforeFinalization = null;
 
+    public ?string $workerGlobalConfig = null;
+
+    public bool $interruptBeforeTrustCleanup = false;
+
     /** @var array<string, string> */
     public array $environment = [];
 
@@ -2627,6 +2691,13 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
     ): CommandResult {
         $this->commands[] = $command;
         $input = $command->input;
+        if (is_string($input) && $this->interruptBeforeTrustCleanup && str_contains($input, 'rm -rf -- "$quarantine"')) {
+            $this->interruptBeforeTrustCleanup = false;
+            $input = str_replace('release_empty_grouping_directory "$grouping_directory"', 'exit 73', $input);
+        }
+        if (is_string($input) && $this->workerGlobalConfig !== null) {
+            $input = str_replace('-- git config --global', '-- env '.escapeshellarg('GIT_CONFIG_GLOBAL='.$this->workerGlobalConfig).' git config --global', $input);
+        }
 
         if (is_string($input) && str_contains($input, 'expected_origin=$6')) {
             $callback = $this->beforeFinalization;
