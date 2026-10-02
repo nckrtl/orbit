@@ -21,10 +21,6 @@ use App\Models\Instance;
  */
 final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 {
-    private const string Directory = <<<'BASH'
-        dir=$(git -C "$checkout" rev-parse --absolute-git-dir)/orbit
-        BASH;
-
     public function __construct(private DevelopmentSshExecutor $ssh) {}
 
     public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void
@@ -63,40 +59,14 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
             }
         }
         $turn = json_encode($turnFields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-        $prefix = "script='".base64_encode($script)."'\nturn='".base64_encode($turn)."'\n";
-        if ($context !== null) {
-            $prefix .= "context='".base64_encode($context)."'\nwrite_context=1\n";
-        }
-        $this->run($instance, [], $prefix.<<<'BASH'
-            install -d -m 0755 -- "$dir"
-            rm -f -- "$dir/receipt.json"
-            printf '%s' "$script" | base64 -d > "$dir/turn.new"
-            chmod 0755 "$dir/turn.new"
-            mv -f -- "$dir/turn.new" "$dir/turn"
-            printf '%s' "$turn" | base64 -d > "$dir/turn.json.new"
-            printf '\n' >> "$dir/turn.json.new"
-            mv -f -- "$dir/turn.json.new" "$dir/turn.json"
-            if [ "${write_context:-}" = 1 ]; then
-                printf '%s' "$context" | base64 -d > "$dir/context.md.new"
-                mv -fT -- "$dir/context.md.new" "$dir/context.md"
-            fi
-            rm -f -- "$dir/run" "$dir/run.json"
-            BASH);
+        $this->run($instance, [], TaskWorkspaceMetadata::operation('turn', [
+            'script' => base64_encode($script), 'turn' => $turn, 'context' => $context,
+        ]));
     }
 
     public function read(Instance $instance, ?int $actingThreadId = null): ?TaskTurnReceipt
     {
-        $output = $this->run($instance, [], <<<'BASH'
-            if [ -f "$dir/receipt.json" ]; then
-                printf 'receipt\n'
-                if [ -f "$dir/turn.json" ]; then
-                    cat -- "$dir/turn.json"
-                fi
-                cat -- "$dir/receipt.json"
-            else
-                printf 'none\n'
-            fi
-            BASH);
+        $output = $this->run($instance, [], TaskWorkspaceMetadata::operation('read'));
         if ($output === "none\n") {
             return null;
         }
@@ -117,14 +87,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 
     public function hasLegacyTurn(Instance $instance): bool
     {
-        $output = $this->run($instance, [], <<<'BASH'
-            if [ -f "$dir/turn.json" ]; then
-                printf 'turn\n'
-                cat -- "$dir/turn.json"
-            else
-                printf 'missing\n'
-            fi
-            BASH);
+        $output = $this->run($instance, [], TaskWorkspaceMetadata::operation('legacy'));
         if (! str_starts_with($output, "turn\n")) {
             return false;
         }
@@ -159,11 +122,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
 
     public function clear(Instance $instance, TaskTurnReceipt $receipt): void
     {
-        $this->run($instance, [$receipt->hash], <<<'BASH'
-            if [ -f "$dir/receipt.json" ] && [ "$(sha256sum -- "$dir/receipt.json" | cut -d ' ' -f 1)" = "$2" ]; then
-                rm -f -- "$dir/receipt.json"
-            fi
-            BASH);
+        $this->run($instance, [], TaskWorkspaceMetadata::operation('clear', ['hash' => $receipt->hash]));
     }
 
     /** @param list<string> $arguments */
@@ -176,7 +135,7 @@ final readonly class RemoteTaskTurnReceipts implements TaskTurnReceipts
         try {
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
-                input: "checkout=\$1\n".self::Directory."\n{$command}\n",
+                input: "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().$command,
             ), 'task-turn-receipt', 'tasks.turn_receipt_failed');
         } catch (RuntimeConvergenceException $exception) {
             throw new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.', previous: $exception);

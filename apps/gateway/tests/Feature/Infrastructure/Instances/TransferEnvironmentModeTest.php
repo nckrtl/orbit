@@ -11,6 +11,54 @@ use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalInstanceTransferTransport;
 
+describe('TaskCheckWorkerUser', function (): void {
+    it('reconstructs a transferred worktree with worker Git without replacing dirty files or restoring selected SQLite', function (bool $detached): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $root = sys_get_temp_dir().'/orbit-worker-transfer-'.bin2hex(random_bytes(6));
+        $checkout = $root.'/source';
+        $primary = $root.'/primary';
+        $files = new Filesystem;
+        (new Process(['git', 'init', '-q', '-b', 'main', $primary]))->mustRun();
+        file_put_contents($primary.'/README.md', "Committed readme\n");
+        file_put_contents($primary.'/database.sqlite', 'committed database placeholder');
+        (new Process(['git', '-C', $primary, 'add', '.']))->mustRun();
+        (new Process(['git', '-C', $primary, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'start']))->mustRun();
+        (new Process(['git', '-C', $primary, 'worktree', 'add', '-q', '-b', 'transfer', $checkout]))->mustRun();
+        if ($detached) {
+            (new Process(['git', '-C', $checkout, 'checkout', '-q', '--detach']))->mustRun();
+        }
+        file_put_contents($checkout.'/README.md', "Dirty readme\n");
+        file_put_contents($checkout.'/database.sqlite-wal', 'selected WAL');
+        file_put_contents($checkout.'/database.sqlite-shm', 'selected SHM');
+        $node = Node::query()->create(['name' => 'worker-transfer', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.44.0.53', 'wireguard_ip' => '10.44.0.53']);
+        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'checkout_path' => $checkout, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
+        $source = new LocalInstanceTransferTransport($root)->source();
+        $capture = null;
+
+        try {
+            $capture = $source->capture($instance, $checkout.'/database.sqlite');
+            $source->materialize($capture, $node, StoragePath::parse($root.'/destination'));
+            clearstatcache();
+
+            expect(fileowner($root.'/destination'))->toBe(posix_geteuid())
+                ->and(fileowner($root.'/destination/.git'))->toBe(posix_geteuid())
+                ->and(fileowner($root.'/destination/.git/index'))->toBe(65534)
+                ->and(file_get_contents($root.'/destination/README.md'))->toBe("Dirty readme\n")
+                ->and(file_exists($root.'/destination/database.sqlite'))->toBeFalse()
+                ->and(file_exists($root.'/destination/database.sqlite-wal'))->toBeFalse()
+                ->and(file_exists($root.'/destination/database.sqlite-shm'))->toBeFalse();
+            expect(trim(new Process(['git', '-C', $root.'/destination', 'rev-parse', 'HEAD'])->mustRun()->getOutput()))->toBe($capture->head)
+                ->and(trim(new Process(['git', '-C', $root.'/destination', 'rev-parse', '--abbrev-ref', 'HEAD'])->mustRun()->getOutput()))->toBe($detached ? 'HEAD' : 'transfer');
+        } finally {
+            $files->deleteDirectory($root);
+            if ($capture !== null && is_file($capture->archiveIdentity)) {
+                unlink($capture->archiveIdentity);
+            }
+        }
+    })->with(['branch' => false, 'detached' => true]);
+});
+
 it('materializes a transferred checkout with an environment that other local users cannot read', function (): void {
     $root = sys_get_temp_dir().'/orbit-transfer-env-'.bin2hex(random_bytes(4));
     $name = 'source-'.bin2hex(random_bytes(4));

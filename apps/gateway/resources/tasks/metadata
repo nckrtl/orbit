@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+"""Gateway-owned task metadata IO. Transport this program from the Gateway, never load it from a checkout."""
+
+import base64
+import contextlib
+import hashlib
+import json
+import os
+import secrets
+import stat
+import sys
+
+DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+FILE_FLAGS = os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
+MAX_READ = 8 * 1024 * 1024
+
+
+class Metadata:
+    def __init__(self, checkout):
+        if not checkout.startswith('/') or '..' in checkout.split('/'):
+            raise ValueError('The checkout must be an absolute path without parent traversal.')
+        self.stack = contextlib.ExitStack()
+        self.anchors = []
+        parent = self.keep(os.open('/', DIRECTORY_FLAGS))
+        for component in filter(None, checkout.split('/')):
+            parent = self.directory(parent, component, owned=False)
+        self.checkout = parent
+        self.require_owner(parent)
+        self.git = self.directory(parent, '.git')
+
+    def keep(self, descriptor):
+        self.stack.callback(os.close, descriptor)
+        return descriptor
+
+    @staticmethod
+    def require_owner(descriptor):
+        if os.fstat(descriptor).st_uid != os.geteuid():
+            raise PermissionError('The managed user does not own the metadata directory.')
+
+    def directory(self, parent, name, owned=True, create=False):
+        if create:
+            try:
+                os.mkdir(name, 0o775, dir_fd=parent)
+            except FileExistsError:
+                pass
+        descriptor = self.keep(os.open(name, DIRECTORY_FLAGS, dir_fd=parent))
+        if owned:
+            self.require_owner(descriptor)
+        self.anchors.append((parent, name, descriptor))
+        return descriptor
+
+    def verify(self):
+        for parent, name, descriptor in self.anchors:
+            current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+            pinned = os.fstat(descriptor)
+            if not stat.S_ISDIR(current.st_mode) or (current.st_dev, current.st_ino) != (pinned.st_dev, pinned.st_ino):
+                raise PermissionError('A metadata directory was replaced.')
+
+    def orbit(self, create=False):
+        descriptor = self.directory(self.git, 'orbit', create=create)
+        if create:
+            os.fchmod(descriptor, 0o775)
+        return descriptor
+
+    @staticmethod
+    def exists(directory, name):
+        try:
+            os.stat(name, dir_fd=directory, follow_symlinks=False)
+            return True
+        except FileNotFoundError:
+            return False
+
+    def read(self, directory, name):
+        try:
+            descriptor = os.open(name, os.O_RDONLY | FILE_FLAGS, dir_fd=directory)
+        except FileNotFoundError:
+            return None
+        with os.fdopen(descriptor, 'rb') as source:
+            details = os.fstat(source.fileno())
+            if not stat.S_ISREG(details.st_mode) or details.st_nlink != 1 or details.st_size > MAX_READ:
+                raise PermissionError('An unsafe metadata file cannot be read.')
+            data = source.read(MAX_READ + 1)
+            if len(data) > MAX_READ:
+                raise ValueError('The metadata file is too large.')
+            self.verify()
+            return data
+
+    def unlink(self, directory, name):
+        self.verify()
+        try:
+            os.unlink(name, dir_fd=directory)
+        except FileNotFoundError:
+            pass
+
+    def publish(self, directory, name, data, mode=0o644, missing=False):
+        self.verify()
+        candidate = '.orbit-publish-' + secrets.token_hex(16)
+        descriptor = os.open(candidate, os.O_WRONLY | os.O_CREAT | os.O_EXCL | FILE_FLAGS, 0o600, dir_fd=directory)
+        try:
+            # The only write target is this exclusive open descriptor. Never reopen a pathname.
+            remaining = memoryview(data)
+            while remaining:
+                remaining = remaining[os.write(descriptor, remaining):]
+            os.fsync(descriptor)
+            pinned = os.fstat(descriptor)
+            current = os.stat(candidate, dir_fd=directory, follow_symlinks=False)
+            if pinned.st_nlink != 1 or not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (pinned.st_dev, pinned.st_ino):
+                raise PermissionError('A metadata candidate was replaced.')
+            self.verify()
+            os.fchmod(descriptor, mode)
+            if missing:
+                try:
+                    os.link(candidate, name, src_dir_fd=directory, dst_dir_fd=directory, follow_symlinks=False)
+                except FileExistsError:
+                    return False
+            else:
+                os.replace(candidate, name, src_dir_fd=directory, dst_dir_fd=directory)
+            published = os.stat(name, dir_fd=directory, follow_symlinks=False)
+            if not stat.S_ISREG(published.st_mode) or (published.st_dev, published.st_ino) != (pinned.st_dev, pinned.st_ino):
+                raise PermissionError('The published metadata file was replaced.')
+            self.verify()
+            return True
+        finally:
+            os.close(descriptor)
+            try:
+                os.unlink(candidate, dir_fd=directory)
+            except (FileNotFoundError, IsADirectoryError):
+                pass
+
+
+def perform(checkout, operation, payload):
+    metadata = Metadata(checkout)
+    with metadata.stack:
+        if operation == 'mcp':
+            if metadata.exists(metadata.checkout, '.mcp.json'):
+                return 'present\n'
+            info = metadata.directory(metadata.git, 'info', create=True)
+            exclude = metadata.read(info, 'exclude') or b''
+            if b'/.mcp.json' not in exclude.splitlines():
+                exclude += (b'\n' if exclude and not exclude.endswith(b'\n') else b'') + b'/.mcp.json\n'
+                metadata.publish(info, 'exclude', exclude)
+            installed = metadata.publish(metadata.checkout, '.mcp.json', payload['config'].encode() + b'\n', missing=True)
+            return 'installed\n' if installed else 'present\n'
+        if operation in {'check', 'snapshot', 'turn'}:
+            orbit = metadata.orbit(create=True)
+            if operation in {'check', 'snapshot'}:
+                metadata.publish(orbit, 'check', base64.b64decode(payload['script'], validate=True), 0o755)
+                if operation == 'check':
+                    metadata.publish(orbit, 'setup.json', payload['setup'].encode())
+                    metadata.publish(orbit, 'check-command', payload['command'].encode())
+                    if payload['deliverables'] is None:
+                        metadata.unlink(orbit, 'deliverables.json')
+                    else:
+                        metadata.publish(orbit, 'deliverables.json', payload['deliverables'].encode())
+            else:
+                metadata.publish(orbit, 'turn', base64.b64decode(payload['script'], validate=True), 0o755)
+                metadata.publish(orbit, 'turn.json', payload['turn'].encode() + b'\n')
+                if payload['context'] is not None:
+                    metadata.publish(orbit, 'context.md', payload['context'].encode())
+                for name in ('receipt.json', 'run', 'run.json'):
+                    metadata.unlink(orbit, name)
+            return ''
+        try:
+            orbit = metadata.orbit()
+        except FileNotFoundError:
+            return 'missing\n' if operation == 'legacy' else 'none\n' if operation == 'read' else ''
+        if operation == 'read':
+            receipt = metadata.read(orbit, 'receipt.json')
+            if receipt is None:
+                return 'none\n'
+            return 'receipt\n' + (metadata.read(orbit, 'turn.json') or b'').decode() + receipt.decode()
+        if operation == 'legacy':
+            turn = metadata.read(orbit, 'turn.json')
+            return 'missing\n' if turn is None else 'turn\n' + turn.decode()
+        if operation == 'clear':
+            receipt = metadata.read(orbit, 'receipt.json')
+            if receipt is not None and hashlib.sha256(receipt).hexdigest() == payload['hash']:
+                metadata.unlink(orbit, 'receipt.json')
+            return ''
+        raise ValueError('Unknown metadata operation.')
+
+
+if __name__ == '__main__':
+    sys.stdout.write(perform(sys.argv[1], sys.argv[2], json.load(sys.stdin)))

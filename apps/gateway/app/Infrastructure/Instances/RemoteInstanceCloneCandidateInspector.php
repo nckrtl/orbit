@@ -12,11 +12,13 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\Node;
 use Throwable;
@@ -44,7 +46,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
         [$basePath, $executionUser, $configuredBranch, $expectedSource] = $this->identity($candidate, $node);
         $sshUser = $node->user;
 
-        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), <<<'BASH'
+        $script = GitReadScript::for($this->access->for($candidate->project->repository_url, $candidate->project->source_access), WorkspaceGit::workerPreamble(TaskWorkerUser::name()).'source_worker='.escapeshellarg(TaskWorkerUser::name() ?? '')."\n".<<<'BASH'
                         environment=$1
                         base=$2
                         runtime_user=$3
@@ -59,7 +61,19 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
                         }
 
                         run_as_runtime() {
-                            sudo -n -u "$runtime_user" -H -- "$@"
+                            if [ "${1:-}" = git ]; then
+                                shift
+                                sudo -n -u "$runtime_user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false "$@"
+                            else
+                                sudo -n -u "$runtime_user" -H -- "$@"
+                            fi
+                        }
+                        run_source_git() {
+                            if [ "$environment" = development ] && [ -n "$source_worker" ]; then
+                                workspace_git -C "$source" "$@"
+                            else
+                                run_as_runtime git -C "$source" "$@"
+                            fi
                         }
 
                         case "$environment" in
@@ -101,15 +115,16 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
                             [0-9a-f][0-9a-f][0-9a-f][0-9a-f]*) ;;
                             *) refuse instance.clone_candidate_source_invalid ;;
                         esac
-                        test -z "$(run_as_runtime git -C "$source" status --porcelain=v1 --untracked-files=all --ignore-submodules=none)" \
+                        content_status=$(run_source_git status --porcelain=v1 --untracked-files=all --ignore-submodules=none) \
                             || refuse instance.clone_candidate_dirty
-                        submodules=$(run_as_runtime git -C "$source" submodule status --recursive 2>/dev/null) \
+                        test -z "$content_status" || refuse instance.clone_candidate_dirty
+                        submodules=$(run_source_git submodule status --recursive 2>/dev/null) \
                             || refuse instance.clone_candidate_dirty
                         if printf '%s\n' "$submodules" | grep -Eq '^[+-U]'; then
                             refuse instance.clone_candidate_dirty
                         fi
-                        run_as_runtime git -C "$source" submodule foreach --recursive --quiet \
-                            'test -z "$(git status --porcelain=v1 --untracked-files=all --ignore-submodules=none)"' \
+                        run_source_git submodule foreach --recursive --quiet \
+                            'status=$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -c safe.directory="$PWD" status --porcelain=v1 --untracked-files=all --ignore-submodules=none) && test -z "$status"' \
                             >/dev/null 2>&1 || refuse instance.clone_candidate_dirty
 
                         scratch=$(run_as_runtime mktemp -d) || refuse instance.clone_candidate_repository_unavailable
@@ -117,7 +132,7 @@ final readonly class RemoteInstanceCloneCandidateInspector implements InstanceCl
                         trap cleanup EXIT
                         run_as_runtime git init --quiet --bare "$scratch/repository.git" \
                             || refuse instance.clone_candidate_repository_unavailable
-                        git_read sudo -n $git_read_sudo -u "$runtime_user" -H -- git --git-dir="$scratch/repository.git" fetch --quiet --no-tags --prune \
+                        git_read sudo -n $git_read_sudo -u "$runtime_user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false --git-dir="$scratch/repository.git" fetch --quiet --no-tags --prune \
                             "$repository" '+refs/heads/*:refs/remotes/origin/*' \
                             || refuse instance.clone_candidate_repository_unavailable
                         run_as_runtime git --git-dir="$scratch/repository.git" cat-file -e "$commit^{commit}" 2>/dev/null \

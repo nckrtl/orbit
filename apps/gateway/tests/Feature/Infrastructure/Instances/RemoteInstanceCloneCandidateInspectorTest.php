@@ -18,6 +18,81 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
+use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TaskWorkerSshExecutor;
+
+describe('TaskGitHardening', function (): void {
+    it('suppresses fsmonitor through sudo and inside candidate submodules', function (): void {
+        $root = sys_get_temp_dir().'/orbit-clone-monitor-'.bin2hex(random_bytes(6));
+        $checkout = $root.'/checkout';
+        $child = $root.'/child';
+        $git = static fn (string $path, array $args): string => (new Process(['git', '-C', $path, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$args]))->mustRun()->getOutput();
+        (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
+        (new Process(['git', 'init', '-q', '-b', 'main', $child]))->mustRun();
+        file_put_contents($child.'/readme', 'child');
+        $git($child, ['add', '.']);
+        $git($child, ['commit', '-qm', 'child']);
+        $git($checkout, ['-c', 'protocol.file.allow=always', 'submodule', 'add', '-q', $child, 'nested']);
+        $git($checkout, ['commit', '-qm', 'parent']);
+        (new Process(['git', 'clone', '-q', '--bare', $checkout, $root.'/origin.git']))->mustRun();
+        $candidate = orb198_clone_candidate();
+        $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
+        $candidate->update(['checkout_path' => $checkout]);
+        $candidate->project->update(['repository_url' => $root.'/origin.git']);
+
+        try {
+            foreach ([$checkout, $checkout.'/nested'] as $index => $path) {
+                $monitor = $checkout.'/.git/monitor-'.$index;
+                $marker = $checkout.'/.git/monitor-ran-'.$index;
+                file_put_contents($monitor, "#!/bin/sh\nprintf ran >> '$marker'\n");
+                chmod($monitor, 0755);
+                $git($path, ['config', 'core.fsmonitor', $monitor]);
+                $git($path, ['status', '--porcelain']);
+                expect(file_exists($marker))->toBeTrue();
+                unlink($marker);
+            }
+            // The parent control can also trigger the child. Clear every control marker before inspection.
+            foreach (glob($checkout.'/.git/monitor-ran-*') ?: [] as $marker) {
+                unlink($marker);
+            }
+            $source = orb198_clone_candidate_inspector(new LocalShellSshExecutor)->inspect($candidate, 'main');
+
+            expect($source->basePath)->toBe($checkout)
+                ->and(glob($checkout.'/.git/monitor-ran-*'))->toBe([]);
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+});
+
+describe('TaskCheckWorkerUser', function (): void {
+    it('inspects candidate content and its clean filter as the worker', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $root = sys_get_temp_dir().'/orbit-clone-worker-'.bin2hex(random_bytes(6));
+        $checkout = $root.'/checkout';
+        (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
+        file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
+        file_put_contents($checkout.'/readme', 'clean');
+        (new Process(['git', '-C', $checkout, 'add', '.']))->mustRun();
+        (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'parent']))->mustRun();
+        (new Process(['git', '-C', $checkout, 'config', 'filter.uid.clean', 'id -u > .git/filter-user; cat']))->mustRun();
+        file_put_contents($checkout.'/readme', 'dirty');
+        $candidate = orb198_clone_candidate();
+        $candidate->node->update(['user' => posix_getpwuid(posix_geteuid())['name']]);
+        $candidate->update(['checkout_path' => $checkout]);
+        $transport = TaskWorkerSshExecutor::forCheckout($checkout);
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $root]))->mustRun();
+
+        try {
+            expect(fn () => orb198_clone_candidate_inspector($transport)->inspect($candidate, 'main'))->toThrow(ResourceOperationException::class)
+                ->and(trim((string) file_get_contents($checkout.'/.git/filter-user')))->toBe('65534');
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+});
 
 it('returns bound development source evidence from a valid inspection receipt', function (): void {
     $candidate = orb198_clone_candidate();
@@ -318,7 +393,7 @@ function orb198_clone_candidate(string $environment = 'development'): Instance
 }
 
 function orb198_clone_candidate_inspector(
-    Orb198CloneCandidateSshExecutor $ssh,
+    SshExecutor $ssh,
 ): RemoteInstanceCloneCandidateInspector {
     return new RemoteInstanceCloneCandidateInspector(
         $ssh,

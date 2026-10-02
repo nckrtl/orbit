@@ -67,6 +67,9 @@ For a completed development checkout, the Gateway compares the checkout with its
 | `instance.checkout_path_unsafe` | The path overlaps another managed Instance. |
 | `instance.force_failed` | A forced check failed for another reason. |
 
+When a worker is configured, Git checks that inspect file contents run as that worker without a credential environment. A clean filter triggered by the dirty-source check cannot run as the managed account. Privileged ownership checks and deletion still run as the managed account.
+
+The ownership check reads the owner of the checkout directory and its parent. It does not read the owner of every file inside. A development checkout can hold an ACL for `orbit-worker` and files that user created. [Checkout access](/reference/instance-setup#checkout-access) grants that ACL. Removal still refuses a directory the managed user does not own.
 ### Failed creation
 
 `instance:destroy` removes a development Instance whose create failed before it reached `active`. The Instance must be in `reserved`, `checkout_prepared`, or `source_resolved`, with recorded failure evidence in `failed_step` and `error_code`. These are [creation states](/domains/applications#create-a-development-instance), not a separate failed status.
@@ -159,3 +162,7 @@ A completed transfer is history, so it survives removal. An unfinished or failed
 ### Production keeps its content
 
 Production data and releases are hard to rebuild. Removal stops serving the Instance but leaves its home for recovery.
+
+### The owner check is the directory
+
+The managed user must own the checkout directory and its parent. Files inside can belong to `orbit-worker` when that user has an ACL on the tree. Checking every file was rejected, because the agent creates files and the managed user can still delete them while the directory stays writable. An ACL does not change the owner the check reads.

@@ -50,7 +50,11 @@ The result names the new Instance, its branch, its preview domain, and its selec
 
 ## Candidate rules
 
-The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node, as the candidate's user.
+The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node using its recorded source identity.
+
+Every Git invocation in the candidate inspection, including calls through `sudo` and checks inside submodules, passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. When a worker is configured, development candidate checks that inspect file contents run as that worker without a credential environment.
+
+A checkout's hooks and custom filesystem monitor do not run during that check. These overrides leave the candidate's stored Git configuration unchanged; they do not relax the clean-source rules.
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 

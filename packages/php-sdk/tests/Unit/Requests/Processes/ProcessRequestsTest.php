@@ -19,6 +19,36 @@ use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
+describe('ProcessUser', function (): void {
+    it('sends the named account in a typed Node Process request', function (): void {
+        $mock = new MockClient([CreateProcessRequest::class => MockResponse::make(process_envelope(), 201)]);
+        $request = new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', runtime: 'systemd', command: ['/usr/bin/sleep', '60'], user: 'orbit-worker');
+        process_connector($mock)->send($request);
+        expect($mock->getLastPendingRequest()?->getUrl())->toBe('https://10.44.0.1/api/v1/processes')
+            ->and($request->getMethod())->toBe(Method::POST)
+            ->and($mock->getLastRequest()?->body()->all())->toMatchArray(['target_type' => 'node', 'target_id' => 4, 'user' => 'orbit-worker']);
+    });
+
+    it('exposes the Process user in its typed response and JSON', function (): void {
+        $envelope = process_envelope();
+        $envelope['data']['user'] = 'orbit-worker';
+        $mock = new MockClient([CreateProcessRequest::class => MockResponse::make($envelope, 201)]);
+        $response = process_connector($mock)->send(new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', user: 'orbit-worker'))->dto();
+        expect($response)->toBeInstanceOf(ProcessResponse::class)
+            ->and($response->user)->toBe('orbit-worker')->and($response->toArray()['user'])->toBe('orbit-worker');
+    });
+
+    it('preserves explicit user input without SDK policy', function (string $user): void {
+        $request = new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker', user: $user);
+        expect($request->body()->all()['user'])->toBe($user);
+    })->with(['', 'root', 'orbit-worker']);
+
+    it('omits an absent user', function (): void {
+        $request = new CreateProcessRequest(target: new NodeProcessTarget(4), name: 'worker');
+        expect($request->body()->all())->not->toHaveKey('user');
+    });
+});
+
 it('adds a process with the explicit minimal runtime contract', function (): void {
     $mock = new MockClient([
         CreateProcessRequest::class => MockResponse::make(process_envelope(), 201),

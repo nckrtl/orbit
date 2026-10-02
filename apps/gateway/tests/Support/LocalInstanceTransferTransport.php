@@ -130,7 +130,7 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $arguments = $command->arguments;
-        if (str_starts_with($command->input ?? '', 'archive=$1'."\n")) {
+        if (str_contains($command->input ?? '', 'archive=$1'."\n")) {
             $arguments[3] = $this->localPath($arguments[3]);
         }
         $snapshot = null;

@@ -68,6 +68,10 @@ bin/e2e-topology exec ISSUE app-prod --argv='["systemctl","list-units","--type=s
 
 Record the same service list on `gateway` and `app-dev`, each with its own label.
 
+For a repository-probe proof, use only a disposable development checkout owned by the lease. Save its Git configuration before planting a hook or custom filesystem monitor that writes a marker. Install the fixture before the mutation scan, then run Doctor's `project` and `instance` families and verify that the marker is absent. Restore the saved configuration and remove the planted files before releasing the topology.
+
+Doctor's repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. They must ignore those planted callbacks without changing the stored configuration. A read-only Git verb alone is not evidence that a checkout-selected program cannot write files.
+
 ### Drift
 
 Doctor checks the PHP-FPM projection only for production Instances. It compares each generated file byte for byte with the expected content. So edit the pool file `/etc/orbit/php-fpm/<user>/generated/pool.conf` of the production Instance on `app-prod`. Change the line `listen.mode = 0660` to `listen.mode = 0666`.
