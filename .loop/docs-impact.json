@@ -1,16 +1,875 @@
 {
- "base": "0f493f3f505815da3b1d800ab2afeb26d4f5e32f",
- "paths": [
- ".agents/skills/merging-pull-requests/SKILL.md",
- ".agents/skills/reviewing-pull-requests/SKILL.md",
- "docs/contributor-guide.md",
- "docs/generated/context.json",
- "docs/reference/implementation-loop.md",
- "docs/reference/tasks.md"
- ],
- "impacted_pages": [],
- "surfaces": [],
- "surfaces_handled_by_generator": [],
- "errors": [],
- "verdict": "no_docs_change"
+    "base": "7fbf9ca2876d4598664559ab94cbe3c8c727d9b5",
+    "paths": [
+        ".loop/docs-impact.json",
+        ".loop/planned-paths.json",
+        ".loop/task-breakdown.json",
+        ".loop/task-breakdown.md",
+        "apps/docs/config/adr-retired-slugs.php",
+        "apps/e2e/resources/proofs/task-github-review-fixtures.php",
+        "apps/e2e/resources/proofs/task-github-review-fixup.sh",
+        "apps/e2e/resources/proofs/task-github-review-recovery.sh",
+        "apps/gateway/app/Actions/Tasks/DestroyTaskAction.php",
+        "apps/gateway/app/Console/Commands/TaskGitHubReviewsCommand.php",
+        "apps/gateway/app/Data/Tasks/TaskData.php",
+        "apps/gateway/app/Domain/GitHub/GitHubApi.php",
+        "apps/gateway/app/Domain/GitHub/GitHubPullRequestReview.php",
+        "apps/gateway/app/Domain/GitHub/GitHubReviewComment.php",
+        "apps/gateway/app/Domain/GitHub/GitHubReviewState.php",
+        "apps/gateway/app/Domain/GitHub/RepositoryPullRequestAccess.php",
+        "apps/gateway/app/Domain/Tasks/NullTaskPullRequestWatcher.php",
+        "apps/gateway/app/Domain/Tasks/TaskGitHubReviewConsumer.php",
+        "apps/gateway/app/Domain/Tasks/TaskGitHubReviewFindings.php",
+        "apps/gateway/app/Domain/Tasks/TaskGitHubReviewObservations.php",
+        "apps/gateway/app/Domain/Tasks/TaskGitHubReviewPolicy.php",
+        "apps/gateway/app/Domain/Tasks/TaskGitHubReviewSelection.php",
+        "apps/gateway/app/Domain/Tasks/TaskPullRequestHealth.php",
+        "apps/gateway/app/Domain/Tasks/TaskPullRequestWatcher.php",
+        "apps/gateway/app/Domain/Tasks/TaskScheduler.php",
+        "apps/gateway/app/Domain/Tasks/TaskSettlingFixup.php",
+        "apps/gateway/app/Infrastructure/GitHub/HttpGitHubApi.php",
+        "apps/gateway/app/Infrastructure/Tasks/HttpTaskPullRequestWatcher.php",
+        "apps/gateway/app/Models/Task.php",
+        "apps/gateway/app/Models/TaskGitHubReviewConsumption.php",
+        "apps/gateway/app/Models/TaskGitHubReviewObservation.php",
+        "apps/gateway/config/orbit.php",
+        "apps/gateway/database/migrations/2026_10_09_000000_create_task_github_review_consumptions_table.php",
+        "apps/gateway/database/migrations/2026_10_09_010000_create_task_github_review_observations_table.php",
+        "apps/gateway/resources/mcp/tools.json",
+        "apps/gateway/resources/tasks/actions.json",
+        "apps/gateway/tests/Feature/Api/TaskGroupBacklogTest.php",
+        "apps/gateway/tests/Feature/Api/TaskResponseFixturesTest.php",
+        "apps/gateway/tests/Feature/Console/TaskGitHubReviewsCommandTest.php",
+        "apps/gateway/tests/Feature/Domain/Tasks/TaskGitHubReviewConsumptionTest.php",
+        "apps/gateway/tests/Feature/Domain/Tasks/TaskGitHubReviewObservationsTest.php",
+        "apps/gateway/tests/Feature/Domain/Tasks/TaskReviewPacketBuilderTest.php",
+        "apps/gateway/tests/Feature/Domain/Tasks/TaskSchedulerTest.php",
+        "apps/gateway/tests/Feature/Domain/Tasks/TaskSchedulerTickTest.php",
+        "apps/gateway/tests/Feature/GitHub/GitHubAppApiTest.php",
+        "apps/gateway/tests/Feature/Infrastructure/Tasks/HttpTaskPullRequestWatcherTest.php",
+        "apps/gateway/tests/Unit/Domain/Tasks/TaskGitHubReviewFindingsTest.php",
+        "apps/gateway/tests/Unit/Domain/Tasks/TaskGitHubReviewPolicyTest.php",
+        "apps/gateway/tests/Unit/Domain/Tasks/TaskGitHubReviewSelectionTest.php",
+        "apps/gateway/tests/Unit/Domain/Tasks/TaskReviewPacketTest.php",
+        "apps/gateway/tests/Unit/Domain/Tasks/TaskSettlingFixupTest.php",
+        "apps/web/src/api/schema.d.ts",
+        "bin/docs-openapi",
+        "docs/api/php-sdk.mdx",
+        "docs/cli/tasks.mdx",
+        "docs/decisions/0193-respond-to-github-review-feedback.md",
+        "docs/decisions/overview.mdx",
+        "docs/docs.json",
+        "docs/generated/context.json",
+        "docs/openapi.json",
+        "docs/reference/api-reference.md",
+        "docs/reference/app-dev-runtime-hibernation.md",
+        "docs/reference/environment-variables.md",
+        "docs/reference/gateway-response-fixtures.md",
+        "docs/reference/github-app.md",
+        "docs/reference/implementation-loop.md",
+        "docs/reference/mcp.mdx",
+        "docs/reference/tasks.md",
+        "docs/reference/web-app.md",
+        "packages/php-sdk/fixtures/tasks/tasks-show/review-fixup.json",
+        "packages/php-sdk/tests/Unit/Requests/Tasks/TaskRequestsTest.php"
+    ],
+    "impacted_pages": [
+        {
+            "page": "docs/reference/api-reference.md",
+            "reasons": [
+                "covers: bin/docs-openapi matches bin/docs-openapi"
+            ]
+        },
+        {
+            "page": "docs/reference/app-dev-runtime-hibernation.md",
+            "reasons": [
+                "covers: apps/gateway/config/orbit.php matches apps/gateway/config/orbit.php"
+            ]
+        },
+        {
+            "page": "docs/reference/environment-variables.md",
+            "reasons": [
+                "HOME in apps/gateway/config/orbit.php:8",
+                "ORBIT_CODER_WEBHOOK_SECRET in apps/gateway/config/orbit.php:73",
+                "ORBIT_CODER_WEBHOOK_URL in apps/gateway/config/orbit.php:72",
+                "ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS in apps/gateway/config/orbit.php:87",
+                "ORBIT_HIBERNATION_DEPENDENCY_IDLE_SECONDS in apps/gateway/config/orbit.php:86",
+                "ORBIT_HIBERNATION_IDLE_SECONDS in apps/gateway/config/orbit.php:83",
+                "ORBIT_HIBERNATION_SWEEP_SECONDS in apps/gateway/config/orbit.php:84",
+                "ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS in apps/gateway/config/orbit.php:85",
+                "ORBIT_HOME in apps/gateway/config/orbit.php:7",
+                "ORBIT_PI_PORT in apps/gateway/config/orbit.php:55",
+                "ORBIT_PI_PROVIDER in apps/gateway/config/orbit.php:58",
+                "ORBIT_PI_TOKEN in apps/gateway/config/orbit.php:56",
+                "ORBIT_T3_PORT in apps/gateway/config/orbit.php:51",
+                "ORBIT_T3_TOKEN in apps/gateway/config/orbit.php:52",
+                "ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER in apps/gateway/config/orbit.php:61",
+                "ORBIT_TASKS_IMPLEMENTER_EFFORT in apps/gateway/config/orbit.php:5",
+                "ORBIT_TASKS_IMPLEMENTER_MODEL in apps/gateway/config/orbit.php:64",
+                "ORBIT_TASKS_OBSERVATION_GRACE_SECONDS in apps/gateway/config/orbit.php:69",
+                "ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS in apps/gateway/config/orbit.php:71",
+                "ORBIT_TASKS_REVIEWER_AGENT_DRIVER in apps/gateway/config/orbit.php:62",
+                "ORBIT_TASKS_REVIEWER_EFFORT in apps/gateway/config/orbit.php:6",
+                "ORBIT_TASKS_REVIEWER_MODEL in apps/gateway/config/orbit.php:65",
+                "ORBIT_WEBSOCKET_PORT in apps/gateway/config/orbit.php:44",
+                "activity_interrupted_after in apps/gateway/config/orbit.php:39",
+                "analytics in apps/gateway/config/orbit.php:46",
+                "app_dev_domain in apps/gateway/config/orbit.php:29",
+                "command_timeout in apps/gateway/config/orbit.php:35",
+                "gateway_checkout in apps/gateway/config/orbit.php:21",
+                "gateway_web in apps/gateway/config/orbit.php:25",
+                "hibernation in apps/gateway/config/orbit.php:82",
+                "home in apps/gateway/config/orbit.php:20",
+                "pi in apps/gateway/config/orbit.php:54",
+                "problems in apps/gateway/config/orbit.php:76",
+                "t3 in apps/gateway/config/orbit.php:50",
+                "tasks in apps/gateway/config/orbit.php:60",
+                "websocket in apps/gateway/config/orbit.php:40"
+            ]
+        },
+        {
+            "page": "docs/reference/gateway-response-fixtures.md",
+            "reasons": [
+                "covers: packages/php-sdk/fixtures/** matches packages/php-sdk/fixtures/tasks/tasks-show/review-fixup.json"
+            ]
+        },
+        {
+            "page": "docs/reference/github-app.md",
+            "reasons": [
+                "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubApi.php",
+                "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubPullRequestReview.php",
+                "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubReviewComment.php",
+                "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubReviewState.php",
+                "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/RepositoryPullRequestAccess.php",
+                "covers: apps/gateway/app/Infrastructure/GitHub/** matches apps/gateway/app/Infrastructure/GitHub/HttpGitHubApi.php"
+            ]
+        },
+        {
+            "page": "docs/reference/tasks.md",
+            "reasons": [
+                "covers: apps/gateway/app/Actions/Tasks/** matches apps/gateway/app/Actions/Tasks/DestroyTaskAction.php",
+                "covers: apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php matches apps/gateway/app/Console/Commands/TaskGitHubReviewsCommand.php",
+                "covers: apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php matches apps/gateway/app/Models/Task.php",
+                "covers: apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php matches apps/gateway/app/Models/TaskGitHubReviewConsumption.php",
+                "covers: apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php matches apps/gateway/app/Models/TaskGitHubReviewObservation.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/NullTaskPullRequestWatcher.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewConsumer.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewFindings.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewObservations.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewPolicy.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewSelection.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskPullRequestHealth.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskPullRequestWatcher.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskScheduler.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskSettlingFixup.php",
+                "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Infrastructure/Tasks/HttpTaskPullRequestWatcher.php",
+                "covers: apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_model_and_effort_to_task_agent_sessions}.php matches apps/gateway/database/migrations/2026_10_09_000000_create_task_github_review_consumptions_table.php",
+                "covers: apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_model_and_effort_to_task_agent_sessions}.php matches apps/gateway/database/migrations/2026_10_09_010000_create_task_github_review_observations_table.php",
+                "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/e2e/resources/proofs/task-github-review-fixtures.php",
+                "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/e2e/resources/proofs/task-github-review-fixup.sh",
+                "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/e2e/resources/proofs/task-github-review-recovery.sh",
+                "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/gateway/resources/tasks/actions.json",
+                "error identifier check_error at apps/gateway/app/Domain/Tasks/TaskScheduler.php:89",
+                "error identifier invalid_deliverable at apps/gateway/app/Domain/Tasks/TaskScheduler.php:86",
+                "error identifier tasks.subtask_not_running at apps/gateway/app/Domain/Tasks/TaskScheduler.php:2125"
+            ]
+        },
+        {
+            "page": "docs/reference/web-app.md",
+            "reasons": [
+                "covers: apps/web/** matches apps/web/src/api/schema.d.ts"
+            ]
+        }
+    ],
+    "surfaces": [
+        {
+            "path": "apps/e2e/resources/proofs/task-github-review-fixtures.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/e2e/resources/proofs/task-github-review-fixtures.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/e2e/resources/proofs/task-github-review-fixup.sh",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/e2e/resources/proofs/task-github-review-fixup.sh",
+            "generator_status": null
+        },
+        {
+            "path": "apps/e2e/resources/proofs/task-github-review-recovery.sh",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/e2e/resources/proofs/task-github-review-recovery.sh",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Actions/Tasks/DestroyTaskAction.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/Actions/Tasks/** matches apps/gateway/app/Actions/Tasks/DestroyTaskAction.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Console/Commands/TaskGitHubReviewsCommand.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php matches apps/gateway/app/Console/Commands/TaskGitHubReviewsCommand.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "DELETE /api/v1/task-groups/{group}/tasks/{task}",
+            "reason": "OpenAPI operation DELETE /api/v1/task-groups/{group}/tasks/{task} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "GET /api/v1/task-groups",
+            "reason": "OpenAPI operation GET /api/v1/task-groups may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "GET /api/v1/task-groups/{group}",
+            "reason": "OpenAPI operation GET /api/v1/task-groups/{group} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "PATCH /api/v1/task-groups/{group}",
+            "reason": "OpenAPI operation PATCH /api/v1/task-groups/{group} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "PATCH /api/v1/task-groups/{group}/tasks/{task}",
+            "reason": "OpenAPI operation PATCH /api/v1/task-groups/{group}/tasks/{task} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "POST /api/v1/task-groups",
+            "reason": "OpenAPI operation POST /api/v1/task-groups may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "POST /api/v1/task-groups/{group}/cancel",
+            "reason": "OpenAPI operation POST /api/v1/task-groups/{group}/cancel may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "POST /api/v1/task-groups/{group}/complete",
+            "reason": "OpenAPI operation POST /api/v1/task-groups/{group}/complete may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "POST /api/v1/task-groups/{group}/tasks",
+            "reason": "OpenAPI operation POST /api/v1/task-groups/{group}/tasks may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "api_operation",
+            "owner": "POST /api/v1/task-groups/{group}/tasks/{task}/cancel",
+            "reason": "OpenAPI operation POST /api/v1/task-groups/{group}/tasks/{task}/cancel may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for DELETE /api/v1/task-groups/{group}/tasks/{task} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for GET /api/v1/task-groups may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for GET /api/v1/task-groups/{group} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for PATCH /api/v1/task-groups/{group} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for PATCH /api/v1/task-groups/{group}/tasks/{task} may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for POST /api/v1/task-groups may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for POST /api/v1/task-groups/{group}/cancel may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for POST /api/v1/task-groups/{group}/complete may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for POST /api/v1/task-groups/{group}/tasks may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Data/Tasks/TaskData.php",
+            "kind": "mcp_tool",
+            "owner": "docs/reference/mcp.mdx",
+            "reason": "MCP tool for POST /api/v1/task-groups/{group}/tasks/{task}/cancel may change via apps/gateway/app/Data/Tasks/TaskData.php",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/app/Domain/GitHub/GitHubApi.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/github-app.md",
+            "reason": "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubApi.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/GitHub/GitHubPullRequestReview.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/github-app.md",
+            "reason": "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubPullRequestReview.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/GitHub/GitHubReviewComment.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/github-app.md",
+            "reason": "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubReviewComment.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/GitHub/GitHubReviewState.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/github-app.md",
+            "reason": "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/GitHubReviewState.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/GitHub/RepositoryPullRequestAccess.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/github-app.md",
+            "reason": "covers: apps/gateway/app/Domain/GitHub/** matches apps/gateway/app/Domain/GitHub/RepositoryPullRequestAccess.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/NullTaskPullRequestWatcher.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/NullTaskPullRequestWatcher.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskGitHubReviewConsumer.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewConsumer.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskGitHubReviewFindings.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewFindings.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskGitHubReviewObservations.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewObservations.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskGitHubReviewPolicy.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewPolicy.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskGitHubReviewSelection.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskGitHubReviewSelection.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskPullRequestHealth.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskPullRequestHealth.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskPullRequestWatcher.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskPullRequestWatcher.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskScheduler.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskScheduler.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskScheduler.php",
+            "kind": "error_code",
+            "owner": "docs/reference/tasks.md",
+            "reason": "error identifier check_error at apps/gateway/app/Domain/Tasks/TaskScheduler.php:89",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskScheduler.php",
+            "kind": "error_code",
+            "owner": "docs/reference/tasks.md",
+            "reason": "error identifier invalid_deliverable at apps/gateway/app/Domain/Tasks/TaskScheduler.php:86",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskScheduler.php",
+            "kind": "error_code",
+            "owner": "docs/reference/tasks.md",
+            "reason": "error identifier tasks.subtask_not_running at apps/gateway/app/Domain/Tasks/TaskScheduler.php:2125",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Domain/Tasks/TaskSettlingFixup.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Domain/Tasks/TaskSettlingFixup.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Infrastructure/GitHub/HttpGitHubApi.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/github-app.md",
+            "reason": "covers: apps/gateway/app/Infrastructure/GitHub/** matches apps/gateway/app/Infrastructure/GitHub/HttpGitHubApi.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Infrastructure/Tasks/HttpTaskPullRequestWatcher.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/{Domain/{Tasks,Problems},Infrastructure/Tasks}/** matches apps/gateway/app/Infrastructure/Tasks/HttpTaskPullRequestWatcher.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Models/Task.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php matches apps/gateway/app/Models/Task.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Models/TaskGitHubReviewConsumption.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php matches apps/gateway/app/Models/TaskGitHubReviewConsumption.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/app/Models/TaskGitHubReviewObservation.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php matches apps/gateway/app/Models/TaskGitHubReviewObservation.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/app-dev-runtime-hibernation.md",
+            "reason": "covers: apps/gateway/config/orbit.php matches apps/gateway/config/orbit.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "HOME in apps/gateway/config/orbit.php:8",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_CODER_WEBHOOK_SECRET in apps/gateway/config/orbit.php:73",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_CODER_WEBHOOK_URL in apps/gateway/config/orbit.php:72",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS in apps/gateway/config/orbit.php:87",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_HIBERNATION_DEPENDENCY_IDLE_SECONDS in apps/gateway/config/orbit.php:86",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_HIBERNATION_IDLE_SECONDS in apps/gateway/config/orbit.php:83",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_HIBERNATION_SWEEP_SECONDS in apps/gateway/config/orbit.php:84",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS in apps/gateway/config/orbit.php:85",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_HOME in apps/gateway/config/orbit.php:7",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_PI_PORT in apps/gateway/config/orbit.php:55",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_PI_PROVIDER in apps/gateway/config/orbit.php:58",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_PI_TOKEN in apps/gateway/config/orbit.php:56",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_T3_PORT in apps/gateway/config/orbit.php:51",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_T3_TOKEN in apps/gateway/config/orbit.php:52",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER in apps/gateway/config/orbit.php:61",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_IMPLEMENTER_EFFORT in apps/gateway/config/orbit.php:5",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_IMPLEMENTER_MODEL in apps/gateway/config/orbit.php:64",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_OBSERVATION_GRACE_SECONDS in apps/gateway/config/orbit.php:69",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS in apps/gateway/config/orbit.php:71",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_REVIEWER_AGENT_DRIVER in apps/gateway/config/orbit.php:62",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_REVIEWER_EFFORT in apps/gateway/config/orbit.php:6",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_TASKS_REVIEWER_MODEL in apps/gateway/config/orbit.php:65",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "ORBIT_WEBSOCKET_PORT in apps/gateway/config/orbit.php:44",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "activity_interrupted_after in apps/gateway/config/orbit.php:39",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "analytics in apps/gateway/config/orbit.php:46",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "app_dev_domain in apps/gateway/config/orbit.php:29",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "command_timeout in apps/gateway/config/orbit.php:35",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "gateway_checkout in apps/gateway/config/orbit.php:21",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "gateway_web in apps/gateway/config/orbit.php:25",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "hibernation in apps/gateway/config/orbit.php:82",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "home in apps/gateway/config/orbit.php:20",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "pi in apps/gateway/config/orbit.php:54",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "problems in apps/gateway/config/orbit.php:76",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "t3 in apps/gateway/config/orbit.php:50",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "tasks in apps/gateway/config/orbit.php:60",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/config/orbit.php",
+            "kind": "environment_key",
+            "owner": "docs/reference/environment-variables.md",
+            "reason": "websocket in apps/gateway/config/orbit.php:40",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/database/migrations/2026_10_09_000000_create_task_github_review_consumptions_table.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_model_and_effort_to_task_agent_sessions}.php matches apps/gateway/database/migrations/2026_10_09_000000_create_task_github_review_consumptions_table.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/database/migrations/2026_10_09_010000_create_task_github_review_observations_table.php",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_model_and_effort_to_task_agent_sessions}.php matches apps/gateway/database/migrations/2026_10_09_010000_create_task_github_review_observations_table.php",
+            "generator_status": null
+        },
+        {
+            "path": "apps/gateway/resources/mcp/tools.json",
+            "kind": "generated_artifact",
+            "owner": "apps/gateway/resources/mcp/tools.json",
+            "reason": "Generated output apps/gateway/resources/mcp/tools.json changed; run bin/mcp-tools.",
+            "generator_status": "passed"
+        },
+        {
+            "path": "apps/gateway/resources/tasks/actions.json",
+            "kind": "covered_path",
+            "owner": "docs/reference/tasks.md",
+            "reason": "covers: apps/{gateway/resources/tasks/**,e2e/resources/proofs/*} matches apps/gateway/resources/tasks/actions.json",
+            "generator_status": null
+        },
+        {
+            "path": "apps/web/src/api/schema.d.ts",
+            "kind": "covered_path",
+            "owner": "docs/reference/web-app.md",
+            "reason": "covers: apps/web/** matches apps/web/src/api/schema.d.ts",
+            "generator_status": null
+        },
+        {
+            "path": "bin/docs-openapi",
+            "kind": "covered_path",
+            "owner": "docs/reference/api-reference.md",
+            "reason": "covers: bin/docs-openapi matches bin/docs-openapi",
+            "generator_status": null
+        },
+        {
+            "path": "docs/docs.json",
+            "kind": "generated_artifact",
+            "owner": "docs/docs.json",
+            "reason": "Generated output docs/docs.json changed; run bin/docs-openapi.",
+            "generator_status": "passed"
+        },
+        {
+            "path": "docs/openapi.json",
+            "kind": "generated_artifact",
+            "owner": "docs/openapi.json",
+            "reason": "Generated output docs/openapi.json changed; run bin/docs-openapi.",
+            "generator_status": "passed"
+        },
+        {
+            "path": "packages/php-sdk/fixtures/tasks/tasks-show/review-fixup.json",
+            "kind": "covered_path",
+            "owner": "docs/reference/gateway-response-fixtures.md",
+            "reason": "covers: packages/php-sdk/fixtures/** matches packages/php-sdk/fixtures/tasks/tasks-show/review-fixup.json",
+            "generator_status": null
+        }
+    ],
+    "surfaces_handled_by_generator": [
+        {
+            "generator": "bin/api-fixtures",
+            "paths": [
+                "apps/gateway/app/Data/Tasks/TaskData.php"
+            ],
+            "status": "passed",
+            "current": true
+        },
+        {
+            "generator": "bin/docs-openapi",
+            "paths": [
+                "apps/gateway/app/Data/Tasks/TaskData.php",
+                "docs/docs.json",
+                "docs/openapi.json"
+            ],
+            "status": "passed",
+            "current": true
+        },
+        {
+            "generator": "bin/mcp-tools",
+            "paths": [
+                "apps/gateway/app/Data/Tasks/TaskData.php",
+                "apps/gateway/resources/mcp/tools.json"
+            ],
+            "status": "passed",
+            "current": true
+        }
+    ],
+    "errors": [],
+    "verdict": "docs_required"
 }
