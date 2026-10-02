@@ -2779,7 +2779,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
+         * @description Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -2807,7 +2807,7 @@ export interface paths {
         head?: never;
         /**
          * Update a Task group
-         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-update"];
         trace?: never;
@@ -2900,7 +2900,7 @@ export interface paths {
         put?: never;
         /**
          * Create a subtask
-         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most five typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `command` adds `command`, an optional `directory` (default `.`), an optional boolean `fails_on_base`, and optional `paths` (workspace-relative file paths, not globs). Only `command` accepts `fails_on_base` and `paths`. With `fails_on_base: true`, `paths` must contain at least one file, and the command must fail on the start commit before it passes on the working tree; omitted `fails_on_base` is stored as false. `review` adds nothing. Orbit verifies file and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-subtask-create"];
         delete?: never;
@@ -5290,7 +5290,26 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /**
+                     * @description Driver: mysql, pgsql, sqlite, or redis
+                     * @enum {string}
+                     */
+                    driver?: "mysql" | "pgsql" | "sqlite" | "redis";
+                    node_id?: number | null;
+                    /** @description Hostname or IP for mysql and pgsql */
+                    host?: string | null;
+                    /** @description TCP port for mysql and pgsql */
+                    port?: number | null;
+                    /** @description Database name for mysql and pgsql */
+                    database?: string | null;
+                    /** @description Unix absolute sqlite path */
+                    path?: string | null;
+                    /** @description Username */
+                    username?: string | null;
+                    /** @description Password */
+                    password?: string | null;
+                };
             };
         };
         responses: {
@@ -6872,9 +6891,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deployment branch */
+                    branch: string;
+                };
             };
         };
         responses: {
@@ -7776,7 +7798,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7842,7 +7864,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7908,7 +7930,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -8036,9 +8058,24 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deploy step name */
+                    name: string;
+                    /** @description Command the Gateway runs */
+                    command: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -8173,7 +8210,20 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Command the Gateway runs */
+                    command?: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -8355,7 +8405,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -10818,9 +10868,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    apps: {
+                        path?: string | null;
+                    } | null;
+                };
             };
         };
         responses: {

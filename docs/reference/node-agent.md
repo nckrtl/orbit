@@ -368,7 +368,7 @@ gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={com
 | `orbit-agent-{version}-linux-aarch64` | Static binary for `aarch64` Nodes |
 | `SHA256SUMS` | The checksums of both binaries |
 
-The job refuses to replace the assets of an existing release. Pull requests and pushes to `main` build and test the agent without publishing.
+The job refuses to replace the assets of an existing release. Pushes to `main`, and pull requests that change `apps/agent` or the CI workflow, build and test the agent without publishing.
 
 ## Limits
 

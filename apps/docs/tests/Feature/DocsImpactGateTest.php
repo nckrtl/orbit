@@ -39,6 +39,9 @@ function docsImpactGateFixture(?string $baseException = null): array
         file_put_contents($root.'/docs/.docs-unaffected', $baseException."\n");
     }
     exec('git -C '.escapeshellarg($root).' init -q');
+    // Detached maintenance can create object files while teardown removes the repository.
+    exec('git -C '.escapeshellarg($root).' config gc.auto 0');
+    exec('git -C '.escapeshellarg($root).' config maintenance.auto false');
     exec('git -C '.escapeshellarg($root).' add .');
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm fixture');
     $base = trim((string) shell_exec('git -C '.escapeshellarg($root).' rev-parse HEAD'));
@@ -66,6 +69,15 @@ function unownedMigrationContents(): string
 Schema::create('orphaned', function (Blueprint $table): void { $table->string('name'); });
 PHP;
 }
+
+it('docs impact gate fixtures disable automatic Git maintenance before cleanup', function (): void {
+    [$root] = docsImpactGateFixture();
+    $settings = [];
+    exec('git -C '.escapeshellarg($root).' config --local --get-regexp '.escapeshellarg('^(gc|maintenance)\.auto$'), $settings, $status);
+
+    expect($status)->toBe(0)
+        ->and($settings)->toContain('gc.auto 0', 'maintenance.auto false');
+});
 
 it('docs impact gate fails and names an impacted page that was not changed', function (): void {
     [$root, $base] = docsImpactGateFixture();

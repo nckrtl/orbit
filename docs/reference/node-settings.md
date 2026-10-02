@@ -26,13 +26,19 @@ orbit node:settings app-dev --setting=apps.path:/mnt/apps
 
 The CLI splits each option at its first colon, so a value can contain more colons. An empty value unsets the path: `--setting=apps.path:` sends null. The CLI does not trim a value. `node:settings` needs at least one `--setting` option.
 
-The API uses the same shape:
+`POST /api/v1/nodes` accepts an optional `settings` member:
 
 ```json
 { "settings": { "apps": { "path": "/srv/orbit/apps" } } }
 ```
 
-`POST /api/v1/nodes` accepts an optional `settings` member. `PATCH /api/v1/nodes/{node}/settings` needs the `apps` member. `"path": null` or `"apps": null` removes the path. Node responses return the stored value only. They return `settings: null` when no path is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
+`PATCH /api/v1/nodes/{node}/settings` takes the settings object directly, without a `settings` wrapper:
+
+```json
+{ "apps": { "path": "/mnt/apps" } }
+```
+
+The [API reference](/api/overview), [MCP](/reference/mcp), and generated web types publish `apps` as an object or null, with `path` as a string or null. Both the settings object and the nested `apps` object reject unknown fields. A patch needs the `apps` member; its `path` member is optional. `"path": null`, `"apps": null`, or `"apps": {}` removes the path. Node responses return the stored value only. They return `settings: null` when no path is set, never the default. `orbit node:show` shows the path, or an em dash when none is set.
 
 ## Derive the effective root
 

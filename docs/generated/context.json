@@ -973,9 +973,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deliverable",
                 "Deployment",
                 "Gateway",
                 "Instance",
+                "Node",
+                "Project",
                 "Route",
                 "Subtask",
                 "Task",
@@ -1000,7 +1003,8 @@
                 "Node",
                 "Node agent",
                 "Process",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1614,6 +1618,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Deliverable",
                 "Extension",
                 "Gateway",
                 "Instance",

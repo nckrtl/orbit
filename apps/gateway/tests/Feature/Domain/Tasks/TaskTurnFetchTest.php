@@ -80,6 +80,11 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
 
         public function fastForward(Task $group, bool $missingRefOk = false): void {}
 
+        public function resetToDefault(Task $group): string
+        {
+            return str_repeat('c', 40);
+        }
+
         public function fetchForTurn(Task $group): void
         {
             $this->order[] = 'fetch';

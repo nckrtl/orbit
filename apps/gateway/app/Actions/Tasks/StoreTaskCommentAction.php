@@ -39,6 +39,7 @@ final readonly class StoreTaskCommentAction
         private TaskTurnFetcher $turnFetcher,
         private TaskTurnFetchNotice $fetchNotice,
         private TaskReviewPacketBuilder $reviewPackets,
+        private RetryTaskBaselineAction $retryBaseline,
     ) {}
 
     /** @param array<string, mixed> $payload */
@@ -46,7 +47,8 @@ final readonly class StoreTaskCommentAction
     {
         $deliverResolution = false;
         $deliverDirection = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection): TaskComment {
+        $retryBaselineQueued = false;
+        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -69,6 +71,7 @@ final readonly class StoreTaskCommentAction
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
                 $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
                 $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
+                $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
             }
 
             return $comment;
@@ -84,7 +87,10 @@ final readonly class StoreTaskCommentAction
             $reviewing = $task->status === TaskStatus::Reviewing;
             try {
                 $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
-                if ($reviewing && $thread === null) {
+                if ($retryBaselineQueued) {
+                    $this->log($task, $comment, 'resolution queued baseline retry');
+                    $this->retryBaseline->recover($task);
+                } elseif ($reviewing && $thread === null) {
                     $this->holdResolutionForFreshReviewer($task, $comment);
                 } else {
                     if ($thread === null) {

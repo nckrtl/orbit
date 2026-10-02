@@ -83,7 +83,7 @@ Show one task as a detail tree, followed by its brief and a table of its subtask
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every command deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
 
 ## orbit tasks:create
 
@@ -188,7 +188,7 @@ orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] 
 | --- | --- | --- |
 | `title` | prompt | Short name of the step. |
 | `--brief=TEXT` | prompt | Goal and acceptance of the step. |
-| `--deliverables=FILE` | none | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables). A test deliverable may set `fails_on_base` to `true` or `false`. The CLI refuses that field on any other type. |
+| `--deliverables=FILE` | none | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables), of type `file`, `command`, or `review`. Only a command deliverable may set `fails_on_base` to `true` or `false` and supply `paths`. When `fails_on_base` is `true`, `paths` must list at least one workspace-relative file for the base run. The CLI refuses these fields on any other type. |
 
 ```bash
 orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json

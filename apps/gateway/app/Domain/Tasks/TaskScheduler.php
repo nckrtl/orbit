@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
@@ -114,6 +115,7 @@ final readonly class TaskScheduler
         private PrunePendingTaskThreads $pendingThreads,
         private TaskReviewPacketBuilder $reviewPackets,
         private TaskTurnFetcher $turnFetcher,
+        private RetryTaskBaselineAction $retryBaseline,
     ) {}
 
     /**
@@ -161,7 +163,9 @@ final readonly class TaskScheduler
                     } catch (Throwable) {
                     }
                 }
-                if (! $this->orphanedCommit($group)) {
+                // Revalidate even when a prior tick committed settling but stopped before its hold write.
+                $missedApproval = $this->checkReturningPullRequest($group, $health);
+                if (! $missedApproval && ! $this->orphanedCommit($group)) {
                     $this->completeMergedGroup($group);
                 }
             } elseif ($status === 'closed') {
@@ -186,6 +190,18 @@ final readonly class TaskScheduler
 
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
+                }
+                if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
+                    try {
+                        if ($this->retryBaseline->recover($task)) {
+                            $task->refresh();
+                            $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                        }
+                    } catch (AgentDriverException $exception) {
+                        $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                        continue;
+                    }
                 }
                 if ($task->status === TaskStatus::Running) {
                     $this->recordSubtaskStart($task);
@@ -783,15 +799,15 @@ final readonly class TaskScheduler
     }
 
     /**
-     * ADR 0164: a group that returns to settling re-reads its pull request. When it already merged and its
+     * ADR 0164: returning to settling and every merged cleanup tick revalidate the pull request. When its
      * head is not the latest approved commit, that commit missed the merge. The group asks for assistance
      * naming the commit and is not completed, so its workspace stays.
      */
-    private function checkReturningPullRequest(Task $group): void
+    private function checkReturningPullRequest(Task $group, ?TaskPullRequestHealth $health = null): bool
     {
-        $health = $this->pullRequestWatcher->health($group);
+        $health ??= $this->pullRequestWatcher->health($group);
         if (! $health instanceof TaskPullRequestHealth || $health->state !== 'merged' || $health->headSha === null) {
-            return;
+            return false;
         }
         $commit = TaskComment::query()
             ->where('task_group_id', $group->id)
@@ -799,14 +815,17 @@ final readonly class TaskScheduler
             ->whereNotNull('commit_sha')
             ->latest('id')
             ->value('commit_sha');
-        if (! is_string($commit) || $commit === '' || $commit === $health->headSha || $group->assistance_requested) {
-            return;
+        if (! is_string($commit) || $commit === '' || $commit === $health->headSha || $this->orphanedCommit($group)) {
+            return $this->orphanedCommit($group);
         }
 
         $reason = self::OrphanedCommitPrefix.'Commit '.$commit.' reached task-'.$group->id.' after '.$group->pr_url.' merged at '.$health->headSha.'. Open a pull request for task-'.$group->id.', or complete the group.';
-        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
+        if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true)) {
             $this->coder->assistance($group, $reason);
         }
+
+        // A direction request keeps its question, but the missed approval still protects the workspace.
+        return true;
     }
 
     /** A failed push or open waits out the backoff and asks for assistance on the fifth failure. */
@@ -3473,8 +3492,8 @@ final readonly class TaskScheduler
             : 0;
         $branch = 'task-'.$group->id;
         $reason = match (true) {
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
             $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => 'The workspace changed while the baseline check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
             $status === TaskCheckStatus::Lost && $repeats >= 2 => 'The baseline check stopped twice without a result.',
@@ -3562,6 +3581,7 @@ final readonly class TaskScheduler
             return TaskCheck::query()->create([
                 'task_id' => $locked->id,
                 'kind' => TaskCheckKind::Baseline,
+                'task_comment_id' => $locked->resolution_delivered_comment_id,
                 'status' => TaskCheckStatus::Running,
                 'pid' => self::BASELINE_UNSTARTED_PID,
                 'process_started' => '',
@@ -3599,13 +3619,65 @@ final readonly class TaskScheduler
         return TaskCheck::query()
             ->where('task_id', $task->id)
             ->where('kind', TaskCheckKind::Baseline->value)
+            ->when($task->resolution_delivered_comment_id !== null, static fn ($query) => $query->where('task_comment_id', $task->resolution_delivered_comment_id))
             ->latest('id')
             ->first();
     }
 
+    /** Recheck immediately before spawning, including retries of an already running fixup. */
+    private function skipStaleConflictFixup(Task $task): bool
+    {
+        if ($this->conflictBase($task) === null) {
+            return false;
+        }
+        $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
+        $health = $this->pullRequestWatcher->health($group);
+        if (! $health instanceof TaskPullRequestHealth) {
+            return true;
+        }
+        if ($health->state === 'open' && $health->conflicts) {
+            return false;
+        }
+        $reason = match ($health->state) {
+            'merged' => 'Cancelled because the pull request merged; no conflict fixup is needed.',
+            'closed' => 'Cancelled because the pull request closed without merging; no conflict fixup can proceed.',
+            default => $health->mergeable === true
+                ? 'Cancelled because the pull request is mergeable again; no conflict fixup is needed.'
+                : null,
+        };
+        if ($reason === null) {
+            return true;
+        }
+
+        $settled = DB::transaction(function () use ($task, $group, $reason): ?Task {
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($lockedGroup->status !== TaskGroupStatus::Running
+                || $locked->status !== TaskStatus::Running || $this->implementerTurnStarted($locked)) {
+                return null;
+            }
+            $locked->update([
+                'status' => TaskStatus::Cancelled,
+                'settled_at' => now(),
+                'completion_summary' => $reason,
+                ...TaskAssistance::cleared(),
+            ]);
+            $lockedGroup->update(['status' => TaskGroupStatus::Settling]);
+
+            return $lockedGroup;
+        });
+        if ($settled instanceof Task) {
+            // Reuse the observed terminal state so a missed approval is held before merge cleanup.
+            $this->checkReturningPullRequest($settled, $health);
+            $this->settle($settled, checkReturningPullRequest: false);
+        }
+
+        return true;
+    }
+
     private function assignImplementer(Task $task, bool $alreadyFetched = false): void
     {
-        if ($task->status !== TaskStatus::Running) {
+        if ($task->status !== TaskStatus::Running || $this->skipStaleConflictFixup($task)) {
             return;
         }
 

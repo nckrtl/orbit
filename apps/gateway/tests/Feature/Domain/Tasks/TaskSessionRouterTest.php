@@ -166,7 +166,7 @@ it('starts an implementer turn through the agent driver', function (): void {
         ->and($dispatcher->commands[0]['type'])->toBe('send')
         ->and($dispatcher->commands[0]['message']['text'])->toContain('Do not expand scope.')
         ->and($dispatcher->commands[0]['model'])->toBe(TaskAgentDefaults::ImplementerModel)
-        ->and($dispatcher->commands[0]['effort'])->toBe(TaskAgentDefaults::ImplementerEffort);
+        ->and($dispatcher->commands[0]['effort'])->toBe(config('orbit.tasks.implementer_effort'));
 });
 
 it('notifies Coder only when Jev escalates', function (): void {
