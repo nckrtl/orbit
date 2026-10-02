@@ -134,28 +134,14 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         if ($instance->checkout_path === '') {
             throw new TaskCheckException('The task workspace has no checkout.');
         }
-        $worker = '';
         try {
+            // The check runs as the managed user, so host-dependent tests keep its sudo, ACL and caddy access.
+            // It shares what it creates with the task worker before it reports a result.
             $worker = TaskWorkerUser::name() ?? '';
             $prefix = "checkout=\$1\nworker=".escapeshellarg($worker)."\n".<<<'BASH'
-                if [ -n "$worker" ]; then
-                    if ! id "$worker" >/dev/null 2>&1; then
-                        printf 'The Node has no %s user.\n' "$worker" >&2
-                        exit 1
-                    fi
-                    if [ "$(id -u "$worker")" = 0 ] || [ "$(id -u "$worker")" = "$(id -u)" ] || ! sudo -n -u "$worker" -H -- true; then
-                        printf 'The managed user cannot run commands as %s.\n' "$worker" >&2
-                        exit 1
-                    fi
-                fi
-                # Paths below are used only by worker processes. Managed writes use descriptor-based IO.
                 dir="$checkout/.git/orbit"
                 check_python() {
-                    if [ -n "$worker" ]; then
-                        sudo -n -u "$worker" -H -- python3 "$@"
-                    else
-                        python3 "$@"
-                    fi
+                    ORBIT_TASK_WORKER_USER="$worker" python3 "$@"
                 }
 
                 BASH;
@@ -165,12 +151,6 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 maxOutputBytes: self::OutputLimitBytes,
             ), 'task-check', 'tasks.check_failed');
         } catch (RuntimeConvergenceException $exception) {
-            $stderr = $exception->result->stderr ?? '';
-            foreach (["The Node has no {$worker} user.", "The managed user cannot run commands as {$worker}."] as $reason) {
-                if ($worker !== '' && str_contains($stderr, $reason)) {
-                    throw new TaskCheckException($reason, previous: $exception);
-                }
-            }
             throw new TaskCheckException($unreachable, previous: $exception);
         }
         try {
