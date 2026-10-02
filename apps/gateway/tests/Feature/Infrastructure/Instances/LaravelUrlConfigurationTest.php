@@ -87,6 +87,32 @@ it('emits a source preflight that rejects foreign-owned Composer metadata', func
     }
 });
 
+it('accepts Composer metadata that the task worker checked out', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-source-worker-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    file_put_contents($directory.'/composer.json', '{"require":{"php":"^8.4"}}');
+    $owner = posix_getpwuid(posix_geteuid());
+    config()->set('orbit.tasks.worker_user', is_array($owner) ? $owner['name'] : 'orbit');
+
+    try {
+        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
+
+        try {
+            $configurator->inspect($instance);
+        } catch (Throwable) {
+        }
+
+        $result = orb127_run_laravel_command($ssh->commands[0]);
+        expect($result->isSuccessful())
+            ->toBeTrue($result->getErrorOutput())
+            ->and(trim($result->getOutput()))
+            ->toStartWith("COMPOSER\tabsent\t");
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
 it('refuses malformed Composer metadata and conflicting Laravel declarations', function (): void {
     $classifier = new ComposerSourceClassifier(new InstancePhpVersionCatalog);
 
