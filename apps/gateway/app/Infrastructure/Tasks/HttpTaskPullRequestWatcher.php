@@ -111,6 +111,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestWatche
             infrastructureChecks: $infrastructure,
             checksPending: $pending !== [],
             checksYoungPending: $young,
+            mergeable: $pullRequest->mergeable,
         );
     }
 

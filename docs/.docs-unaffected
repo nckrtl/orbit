@@ -85,6 +85,10 @@ docs/reference/instance-removal.md: The published-commit check reads through the
 docs/reference/mcp.mdx: The instance-register tool follows its regenerated contract; the MCP page lists no per-tool fields.
 docs/reference/php-runtime.md: Production source reads pass the Project's source access through the shared read access; the PHP runtime does not change.
 docs/reference/tools.md: The service provider only binds the GitHub CLI token source; Tool behavior does not change.
+docs/reference/environment-variables.md: Instance .env behavior is unchanged. Gateway task-agent settings stay in /reference/tasks, including Pi-only drivers and the T3 settings annotations use.
+docs/reference/app-dev-runtime-hibernation.md: Hibernation timing is unchanged. Task agents run on Pi; that contract is in /reference/tasks.
+docs/reference/cli-ux.md: Task command snapshots now show gpt-5.6-luna as the reviewer model. Input, consent, and presentation rules on this page are unchanged.
+docs/reference/gateway-response-fixtures.md: Recorded task fixtures now store gpt-5.6-luna as the reviewer model. Fixture recording and replay on this page are unchanged.
 docs/reference/app-dev-runtime-hibernation.md: The config/orbit.php change adds only outer-loop suppression lists, documented in /reference/tasks#suppression. Hibernation settings, idle detection, and wake behavior are unchanged.
 docs/reference/environment-variables.md: The problems key in config/orbit.php holds Gateway suppression lists, not an environment variable. The change adds no env() keys and does not alter Instance environment import, storage, or synchronization; /reference/tasks#suppression owns these settings.
 docs/reference/api-reference.md: bin/docs-openapi only gains the new database server operations and the database:create body variants; the API reference workflow does not change.
@@ -95,7 +99,7 @@ docs/reference/mcp.mdx: The new database server tools follow their generated con
 docs/reference/tools.md: The service provider only binds the database server admin and clone services; Tool behavior does not change.
 docs/reference/topology-snapshot.md: The prepared-state manifest only lists the new source files; the snapshot workflow does not change.
 docs/reference/web-app.md: The web API types are regenerated for the new database endpoints; no web screen changes. Boolean request fields stay on /reference/api-reference and /reference/mcp.
-docs/cli/extension.mdx: Served tool schema types stay on /reference/mcp. The extension-switch migration only moves Gateway extension keys. Neither tool schema types nor ended-task assistance change the extension commands.
+docs/cli/extension.mdx: Serving tool input schemas exactly as generated is documented in /reference/mcp; it does not change extension switches, tool visibility, or disabled-tool errors.
 docs/reference/agent-annotation.md: The existing annotations migration that also touches tasks stores annotation delivery. Ended-task assistance does not change annotations.
 docs/reference/assigned-vite-ports.md: The existing vite port assignment migration allocates ports. Ended-task assistance does not change port assignment.
 docs/reference/database-connections.md: The existing database connection migrations store connections, targets, and users. Ended-task assistance does not change database connections.

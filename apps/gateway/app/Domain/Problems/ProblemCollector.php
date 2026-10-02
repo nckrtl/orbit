@@ -6,6 +6,7 @@ namespace App\Domain\Problems;
 
 use App\Actions\Doctor\RunDoctorAction;
 use App\Data\Doctor\DoctorReportData;
+use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Logs\LogRedactor;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Activity;
@@ -303,6 +304,11 @@ final readonly class ProblemCollector
         foreach ($report->nodes as $node) {
             foreach ($node->families as $family) {
                 foreach ($family->issues as $issue) {
+                    // Doctor health ignores informational findings, so they are not problems either.
+                    if ($issue->kind === DoctorIssueKind::Informational) {
+                        continue;
+                    }
+
                     $resource = $issue->resourceId;
                     $segment = $resource === null || $resource === '' ? 'none' : (string) $resource;
                     $issues[] = [

@@ -308,7 +308,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertJsonPath('data.status', 'backlog')
         ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
-        ->assertJsonPath('data.reviewer_model', 'claude-opus-5')
+        ->assertJsonPath('data.reviewer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.taskable_type', null)
         ->assertJsonPath('data.tasks.0.position', 1)
         ->assertJsonPath('data.tasks.0.title', 'ADR')
@@ -523,17 +523,17 @@ it('stores the configured models on a new group and keeps the defaults when unse
     $this->assertDatabaseHas('tasks', ['title' => 'Models', 'parent_id' => null, 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
 });
 
-it('stores the configured implementer and reviewer drivers on a new group', function (): void {
+it('stores pi for both roles when that driver is configured', function (): void {
     tasks_gateway();
     enable_tasks();
     $project = tasks_app();
     config()->set('orbit.tasks.implementer_agent_driver', 'pi');
-    config()->set('orbit.tasks.reviewer_agent_driver', 't3');
+    config()->set('orbit.tasks.reviewer_agent_driver', 'pi');
 
-    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Pi', 'brief' => 'Both roles run on Pi'])
         ->assertCreated();
 
-    $this->assertDatabaseHas('tasks', ['title' => 'Mixed', 'parent_id' => null, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+    $this->assertDatabaseHas('tasks', ['title' => 'Pi', 'parent_id' => null, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
 });
 
 it('refuses a task for a Project that reads through the GitHub CLI before storing it', function (): void {

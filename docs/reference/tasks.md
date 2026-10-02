@@ -9,7 +9,7 @@ covers:
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/{gateway/resources/tasks/**,e2e/resources/proofs/*}"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks}.php"
+  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_model_and_effort_to_task_agent_sessions}.php"
 ---
 
 # Tasks
@@ -123,7 +123,7 @@ The kind adds fields and declares the outcomes a route may name.
 
 An `action` `operation` is an OpenAPI operation marked `x-orbit-task-action: true`. Orbit marks `instance:deploy` and `instance:rollback`. The Gateway reads those names from the list `bin/mcp-tools` generates, and `bin/mcp-tools --check` keeps that list current. Marking another operation needs its own decision. A `decide` subtask's `evidence` names earlier subtasks by `key`. `min_probability` is from 0 to 1 and defaults to 0.8.
 
-A write refuses an empty `implementer_model` or `reviewer_model`. It does not check either name against the [ProxyCli model list](/reference/proxycli#models), because that list changes over time. When that list is available, the definition view reports a model that no driver can run. A model is known when ProxyCli offers it, or when it is a Claude model. T3 runs a Claude model on its own Claude subscription. A listed model whose provider no driver runs, such as `google`, is that finding. When the model list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
+A write refuses an empty `implementer_model` or `reviewer_model`. It does not check either name against the [ProxyCli model list](/reference/proxycli#models), because that list changes over time. When that list is available, the definition view reports a model that no driver can run. A model is known when ProxyCli offers it through a provider Pi runs. A Claude model is not known, and neither is a listed model whose provider Pi does not run, such as `claude` or `google`. When the model list is missing, empty, or refused, the view says that the model list is unavailable and reports no driver findings.
 
 ### Routes
 
@@ -258,6 +258,7 @@ The task and subtask operations return these errors.
 | `tasks.subtask_not_running` | 409 | A subtask cancel that the rules above do not permit |
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
 | `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
+| `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
 | `tasks.external_execution` | 409 | A lifecycle operation on an annotation task |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
@@ -510,7 +511,7 @@ The second subtask reproduces the failure and then fixes it. Its deliverable id 
 | Log | 1 MiB, stopping at the end of a whole record |
 | Assistance | 200 open rows |
 
-Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, the byte offset, and the Doctor resume key. A Doctor pass that handles fewer than 200 issues clears the resume key.
+Doctor runs through `RunDoctorAction` for every Node and every family. A peer access grant does not drop Nodes from that fleet. The collector records only `drift` and `unverifiable` issues. It skips `informational` issues, such as unregistered packages, because Doctor health ignores them too. One `problem_collector_state` row stores the Activity cursor, the log path, the file inode, the byte offset, and the Doctor resume key. A Doctor pass that handles fewer than 200 issues clears the resume key.
 
 The first collector run sets the Activity cursor to the current maximum id, and the log offset to the end of the current file. It does not count those past rows. The log file is `storage/logs/laravel.log` when that path is a regular file. Otherwise it is the newest `storage/logs/laravel-*.log`. The collector finishes unread bytes in a rotated file before it switches.
 
@@ -520,7 +521,7 @@ A failure in one source does not skip the others. The same exception class for o
 
 ## Scheduler
 
-The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it and `tasks:collect-t3-metrics` every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
+The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
 Each tick runs these steps in order:
 
@@ -536,7 +537,7 @@ A claim takes the oldest `todo` task that fits and moves it to `reserved`. The p
 
 - an active Linux Node with an active `app-dev` role and a WireGuard address;
 - not excluded from the Project by a [development node exclusion](/reference/development-node-exclusions);
-- allowed by both of the task's agent drivers: T3 needs an active `t3-code` Process, and Pi an active `pi-server` Process, each with desired state `running`;
+- an active `pi-server` Process with desired state `running`;
 - with fewer than 10 active tasks. Active tasks are `reserved`, `running`, `reviewing`, and `settling`.
 
 Among the Nodes that fit, the one with the fewest active tasks wins. There is no per-Project limit, and the scheduler never polls Nodes for capacity.
@@ -601,20 +602,26 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 ### Drivers
 
-A driver translates Orbit's thread operations for one agent runtime. A task records an implementer driver and a reviewer driver when it is created. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select them, and each defaults to `t3`. The Gateway registers the `t3` and `pi` drivers. A caller never supplies a runtime URL. An unsupported operation fails explicitly.
+A driver translates Orbit's thread operations for one agent runtime. Task agents, the implementer and the reviewer, run on the `pi` driver only. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the two roles, and both default to `pi`. A new task stores those values. The Gateway registers `pi` and no other task-agent driver. Any other value returns `tasks.agent_driver_unavailable` and stores no task.
+
+A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why. Annotations are not task agents: they stay on the operator's T3 threads, and [Agent annotation](/reference/agent-annotation) owns that behavior.
 
 | Role | Default model | Effort |
 | --- | --- | --- |
-| Implementer | `gpt-5.6-luna`, or `ORBIT_TASKS_IMPLEMENTER_MODEL` | `high` |
-| Reviewer | `claude-opus-5`, or `ORBIT_TASKS_REVIEWER_MODEL` | `high` |
+| Implementer | `gpt-5.6-luna`, or `ORBIT_TASKS_IMPLEMENTER_MODEL` | `high`, or `ORBIT_TASKS_IMPLEMENTER_EFFORT` |
+| Reviewer | `gpt-5.6-luna`, or `ORBIT_TASKS_REVIEWER_MODEL` | `high`, or `ORBIT_TASKS_REVIEWER_EFFORT` |
 
-**T3.** The `t3` driver runs threads on the T3 server of the workspace's Node. It sends commands to `http://{wireguard_ip}:{ORBIT_T3_PORT}/api/orchestration/dispatch` with the bearer `ORBIT_T3_TOKEN`. A Node whose settings hold a `t3` object uses its own `t3.token`, and its `t3.url` as the base URL when set. Such a Node never falls back to `ORBIT_T3_TOKEN`, and a missing token fails closed. A Claude model runs on T3's `claudeAgent` provider instance, and any other model on `codex`. After a thread is created, a refused opening turn is retried once.
+Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env` to choose each role's reasoning effort. Unset or empty keeps `high`. For example, `ORBIT_TASKS_IMPLEMENTER_EFFORT=medium` sets new implementer threads to `medium`.
 
-**Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the workspace's Node. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn. The driver maps a model name to Pi's `provider/model` form. With `ORBIT_PI_PROVIDER` set, every plain name uses that provider. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. Claude models are refused. Pi threads never ask for input, and they report no per-thread line counts.
+The Gateway reads effort when it creates a thread, not when it creates the group. A change applies to the next thread of every open group. An existing thread keeps its stored `effort`. The Gateway passes the value to the driver unchanged; the agent runtime validates it.
+
+**Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the workspace's Node. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
+
+The driver maps a model name to Pi's `provider/model` form. With `ORBIT_PI_PROVIDER` set, every plain name uses that provider. Otherwise `gpt-` and `o`-series names use `openai-codex`, and `grok-` names use `xai`. The driver refuses a Claude model, including a name that starts with `claude` and a `provider/model` whose provider is `anthropic`, and the turn does not start on another runtime. Pi threads never ask for input, and they report no per-thread line counts.
 
 ### Archive finished threads
 
-Orbit archives a T3 thread after its work ends: a reviewer thread when its subtask is completed or cancelled, and every thread when its task is completed or cancelled. It archives a thread only after one successful final metrics read. Each tick, and each run of `php artisan tasks:archive-threads`, archives at most 10 threads, oldest first. A failed archive retries after 1, 5, 30, and then every 120 minutes, and it never blocks a subtask or task from ending. Archiving keeps the Orbit thread row and its metrics. Pi sessions stay as files on the Node.
+Task-agent threads are Pi sessions. Those sessions stay as files on the Node. Orbit keeps the thread row and its metrics after the work ends, and it does not archive the session. The Gateway has no `tasks:archive-threads` command, and the tick does not archive threads.
 
 ## Session routing
 
@@ -693,15 +700,14 @@ A turn that failed only because its agent server restarted is not a failed subta
 | Driver | Restart errors |
 | --- | --- |
 | `pi` | `The Pi server restarted during the turn.` |
-| `t3` | `Provider session did not survive a server restart. Send a new message to continue.` and `Could not continue this thread after the server restart. Send a new message to continue.` |
 
 One subtask gets at most two resumes, shared by its implementer and reviewer. A resolution does not reset that count. The third restart asks for assistance with `The implementer thread failed.` or `The reviewer thread failed.` Any other error, and a restart error without a turn id, asks for assistance at once.
 
-The tick reserves each resume before it sends. The reservation stores a new send key, the acting thread, the interrupted turn id, and the thread's `session.updatedAt`, and it counts the resume. The Pi driver sends that key. On T3, the key is the command id and the message id.
+The tick reserves each resume before it sends. The reservation stores a new send key, the acting thread, and the interrupted turn id, and it counts the resume. The Pi driver sends that key.
 
 The tick repeats the same key only while the reservation is pending and the thread still shows the interrupted turn. A repeated key starts no second turn.
 
-A Pi thread whose turn id is the key has accepted the reservation. On T3, a message with that id means T3 accepted the command, and the tick sends nothing more. When T3's `session.updatedAt` then differs from the stored value, T3 reported a new error, and the tick counts a new interruption. A thread that shows another turn supersedes the reservation. A reservation made for one role is never sent to the other.
+A Pi thread whose turn id is the key has accepted the reservation. A thread that shows another turn supersedes the reservation. A reservation made for one role is never sent to the other.
 
 ## Project check
 
@@ -734,11 +740,15 @@ The check runs only the Project's ordered [setup steps](/reference/instance-setu
 
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
-A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace. Fix the cause, then cancel and create the task again.
+A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace.
+
+When a baseline check fails and no implementer has started in the task, fix the cause and post an operator `resolution` on that subtask to retry the baseline. Before retrying, the engine moves the untouched workspace to the current `origin/<default branch>` and records the new start commit. The baseline then runs again before the first implementer starts. There is no need to cancel and recreate the task.
+
+Orbit records the retry request with the resolution before moving the workspace. If the reset reply is lost or the Gateway stops before recording the new start commit, a later tick finishes the reset and bookkeeping without another resolution. Assistance stays set until that preparation succeeds.
 
 ## Review a subtask
 
-When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread on the task's reviewer driver, model, and effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with a full packet. The next subtask starts another fresh reviewer.
+When the handoff check and the deliverables pass, the subtask moves to `reviewing`. Its first review starts a fresh reviewer thread with the task's reviewer driver and model and the current configured effort. The task's `reviewer_agent_thread_id` then points at it. A `changes_requested` re-review continues that thread. When the continued thread cannot take a turn, Orbit starts a fresh one with a full packet. The next subtask starts another fresh reviewer.
 
 A failure while requesting a review is a communication failure. After five, the task asks for assistance with `The review could not be requested (ExceptionClass).` Orbit sends no review when it cannot read the diff.
 
@@ -855,6 +865,10 @@ When the last fixup changed nothing, the task asks for assistance and adds `Fixu
 
 A `todo` subtask on a `settling` task, a fixup or an operator's subtask, returns the task to `running`. This works when the pull request is open, and when the task has no `pr_url`. Another assistance cause keeps the task `settling`.
 
+Before a conflict fixup starts an implementer, the engine reads the pull request's mergeability again. For example, a fixup whose `fixup_problem` is `conflict:main` may be stale because the maintainer merged main into the task branch. When the current mergeability shows no conflict, the engine cancels the fixup with a recorded reason, starts no implementer for it, and returns the task to `settling`.
+
+A merged or closed pull request also cancels an unstarted conflict fixup and returns the task to settling, where merge cleanup or closed-pull-request assistance applies. An approved commit that missed the merge still asks for assistance and keeps its workspace. An unavailable result or unknown mergeability waits without cancelling or starting an implementer.
+
 Before that subtask starts, the Gateway prepares the workspace. It reuses the [fetch before a turn](#fetch-before-a-turn) instead of fetching again. That fetch already updates `origin/task-{id}` and, when the pull request base is not the default branch, `origin/{base}`. The Gateway then fast-forwards the workspace to `origin/task-{id}` when the workspace is strictly behind that ref. It never forces. A workspace that is level, ahead, or diverged stays unchanged.
 
 When the task has no pull request and `task-{id}` is not on `origin`, there is nothing to fast-forward, and that absence is not a failure of this preparation. A failed fetch or fast-forward keeps the subtask `todo`, retries on the same backoff, and asks for assistance on the fifth failure. That blocking retry is only for this preparation. An ordinary agent turn still starts when its own fetch fails, and its message warns that `origin/*` may be stale.
@@ -862,6 +876,8 @@ When the task has no pull request and `task-{id}` is not on `origin`, there is n
 The fixup runs like any subtask, with a fresh implementer and a fresh reviewer. Its approval needs no pull request fields, and its push updates the open pull request. Orbit does not rebase, does not force-push, does not open a second pull request, and does not merge.
 
 Before each push to a stored pull request, the Gateway reads its state again. When it already merged or closed, Orbit does not push and asks for assistance with a reason that starts with `An approved commit is not on the pull request: `. When the task returns to `settling` and its pull request already merged without the latest approved commit, it asks for assistance with the same prefix, and its workspace stays. When the task returns to `settling`, it refreshes its metrics and does not post `task_group.settled` again.
+
+Before removing a merged task's workspace, every tick checks the latest approval against the pull request head again. If the Gateway stopped after recording `settling` but before recording the missed-approval hold, the next tick restores that hold and keeps the workspace.
 
 ### Jev decision records
 
@@ -888,7 +904,7 @@ A failed read keeps the stored value. While a task is active, a missing value st
 
 The task's line counts come from the Node agent's [task workspace](/reference/node-agent#task-workspaces) state while the Gateway's view of that Node is fresh. Otherwise, and when the agent's diff is truncated, they come from `git diff --shortstat origin/{default branch}...HEAD` over SSH. Both count against the fetched `origin/{default branch}`, so a merge of the default branch into the task branch adds no lines. When the agent reports a new commit or new counts, the Gateway stores the counts and broadcasts `task_group.updated`.
 
-For T3, a thread's `tokens` is its largest `totalProcessedTokens`, or else `usedTokens`, and its line counts come from T3 checkpoints. For Pi, `tokens` is the session usage `total`.
+A thread's `tokens` is the Pi session usage `total`. Pi reports no per-thread line counts.
 
 ### Thread token metrics
 
@@ -904,13 +920,7 @@ Each agent thread also records five split fields. `tasks:agents` and the agents 
 
 Null means the driver did not report the field, or the split is partial. A reported zero is zero. The average context per call is `(input_tokens + cached_input_tokens) / model_calls`, and the cached share of input is `cached_input_tokens / (input_tokens + cached_input_tokens)`.
 
-**Pi.** The server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite`, `total`, `calls`, and `peakContext`. `input_tokens` is `input + cacheWrite`, `cached_input_tokens` is `cacheRead`, `output_tokens` is `output`, `model_calls` is `calls`, and `peak_context_tokens` is `peakContext`.
-
-**T3.** The Gateway counts each `context-window.updated` payload from the thread's event stream once. It keeps running sums, the event sequence, and the highest counted `totalProcessedTokens` in a durable checkpoint, so replays and restarts never count a call twice. A payload counts only when its `totalProcessedTokens` advances.
-
-`input_tokens` adds `inputTokens - cachedInputTokens`, `cached_input_tokens` adds `cachedInputTokens`, `output_tokens` adds `outputTokens`, and `peak_context_tokens` is the largest `inputTokens`. The fields stay null until the first call is counted. When the Gateway misses events, cannot resume the stream, or reads an invalid payload, the split is partial, and all five fields read null. `tokens` still follows the cumulative total. A Claude thread reports no cached input, so its split stays null.
-
-`tasks:collect-t3-metrics` reads at most 20 due T3 threads per run, least recently collected first. A failed or incomplete read waits longer before each retry. A new turn makes a thread due again. A thread whose work has ended gets one successful final read.
+The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite`, `total`, `calls`, and `peakContext`. `input_tokens` is `input + cacheWrite`, `cached_input_tokens` is `cacheRead`, `output_tokens` is `output`, `model_calls` is `calls`, and `peak_context_tokens` is `peakContext`. The Gateway does not run `tasks:collect-t3-metrics`.
 
 ## Web task board
 
@@ -926,7 +936,9 @@ The same Tasks page lists task definitions. Opening one draws it, and that drawi
 
 The Agents section lists every started thread of the task. `GET /api/v1/task-groups/{group}/agents` returns each thread with its driver, external id, state, observation time, errors, and metrics. `GET /api/v1/task-groups/{group}/agents/{session}/stream` streams the thread's normalized conversation to the browser. Both need Gateway access and an enabled extension. Runtime credentials stay in the Gateway.
 
-A snapshot replaces the browser transcript. Entries merge by id and kind, so an updated entry replaces the earlier one. On reconnect, the browser sends its last cursor. A T3 stream starts every connection with a full snapshot. A Pi stream resumes after the cursor and sends only what the viewer missed. When one Pi event becomes several entries, only the last carries the cursor. The viewer writes no thread state. When a remote runtime deletes a conversation, Orbit cannot restore it.
+Stored T3 task-thread rows stay in that list, with their metrics. The `t3_*` columns on `agent_threads` stay. A transcript request for a `t3` thread returns HTTP 409 `tasks.agent_transcript_unavailable` and does not open a stream.
+
+A snapshot replaces the browser transcript. Entries merge by id and kind, so an updated entry replaces the earlier one. On reconnect, the browser sends its last cursor. The stream resumes after the cursor and sends only what the viewer missed. When one event becomes several entries, only the last carries the cursor. The viewer writes no thread state. When the Pi server deletes a conversation, Orbit cannot restore it.
 
 ## Coder settle webhook
 
@@ -939,6 +951,8 @@ The Gateway posts signed events to Coder when `ORBIT_CODER_WEBHOOK_URL` and `ORB
 | `task_group.escalated` | A thread stays unobservable past the grace period | `reason`, `confidence`, `thread_id`, `observation` |
 
 Every body holds `event`, `task_group_id`, and `title`. The Gateway signs `{unix timestamp}.{raw body}` with HMAC-SHA256 and sends the headers `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={hex}`, and `Content-Type: application/json`.
+
+Annotations, not task agents, use a Node's T3 connection. A Node whose settings hold a `t3` object uses its own `t3.token`, and its `t3.url` as the base URL when set. Such a Node never falls back to `ORBIT_T3_TOKEN`, and a missing token fails closed. Without that object, the Gateway calls `http://{wireguard_ip}:{ORBIT_T3_PORT}` with the bearer `ORBIT_T3_TOKEN`. The port default is `3773`.
 
 ## Cancel a stuck task
 
@@ -982,11 +996,12 @@ These Gateway environment keys configure the extension.
 
 | Environment key | Meaning |
 | --- | --- |
-| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Default `t3` |
-| `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Defaults `gpt-5.6-luna` and `claude-opus-5` |
+| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
+| `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
+| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
-| `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 server port, default `3773`, and its bearer token |
+| `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
 | `ORBIT_PI_PORT`, `ORBIT_PI_TOKEN`, `ORBIT_PI_PROVIDER` | The Pi server port, default `3774`, its bearer token, and the provider for plain model names |
 | `ORBIT_CODER_WEBHOOK_URL`, `ORBIT_CODER_WEBHOOK_SECRET` | The Coder webhook endpoint and its HMAC secret. The Gateway never returns the secret |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
@@ -1138,7 +1153,19 @@ The checkout still holds the work after an agent server restarts, and the same t
 
 ### Metrics stay on the thread
 
-The thread spent the tokens, so the split lives there. A total alone does not show whether the prompt grew, the cache missed, or the output grew. T3 counts calls from the event stream, because the snapshot keeps only a bounded list of recent calls. A split with a gap reads null, because a partial sum would look complete.
+The thread spent the tokens, so the split lives there. A total alone does not show whether the prompt grew, the cache missed, or the output grew. Pi reports the split on the session usage object. A missing field stays null, because a partial sum would look complete.
+
+### Task agents run on Pi
+
+T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool. Annotations still use the operator's T3 threads.
+
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
+
+Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. The scheduler has no T3 metric collector or thread archive. Annotation delivery is a separate operation on the operator's existing T3 thread, not a task-agent runtime.
+
+Both roles default to `gpt-5.6-luna` at `high` effort. Keeping `claude-opus-5` as the reviewer default would make each new review fail on Pi. Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
+
+Finishing an open T3 task turn would preserve the second runtime, so a managed task that records a driver other than `pi` never starts or resumes an agent turn. The operator cancels or replaces it. Deleting its thread row, metrics, or `t3_*` columns would erase the record of work that already ran, so that history stays. A transcript request returns HTTP 409 `tasks.agent_transcript_unavailable` rather than contacting T3. Pi session files stay on the Node; Orbit keeps their thread rows and metrics too.
 
 ### Jev only checks coverage
 

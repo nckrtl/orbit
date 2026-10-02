@@ -28,13 +28,15 @@ final readonly class StoreTaskCommentAction
         private CoderSettleNotifier $notifier,
         private TaskTurnFetcher $turnFetcher,
         private TaskTurnFetchNotice $fetchNotice,
+        private RetryTaskBaselineAction $retryBaseline,
     ) {}
 
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
     {
         $deliverResolution = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution): TaskComment {
+        $retryBaselineQueued = false;
+        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$retryBaselineQueued): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -52,6 +54,7 @@ final readonly class StoreTaskCommentAction
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
                 $deliverResolution = true;
+                $retryBaselineQueued = $this->retryBaseline->queue($task, $comment);
             }
 
             return $comment;
@@ -63,7 +66,10 @@ final readonly class StoreTaskCommentAction
             $reviewing = $task->status === TaskStatus::Reviewing;
             try {
                 $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
-                if ($reviewing && $thread === null) {
+                if ($retryBaselineQueued) {
+                    $this->log($task, $comment, 'resolution queued baseline retry');
+                    $this->retryBaseline->recover($task);
+                } elseif ($reviewing && $thread === null) {
                     $this->holdResolutionForFreshReviewer($task, $comment);
                 } else {
                     if ($thread === null) {

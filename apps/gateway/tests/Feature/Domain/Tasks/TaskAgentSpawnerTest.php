@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\TaskAgentDefaults;
@@ -22,30 +23,22 @@ use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
-use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
-use App\Infrastructure\Tasks\T3\T3Dispatcher;
-use App\Infrastructure\Tasks\T3\T3DispatchException;
-use App\Infrastructure\Tasks\T3\T3ModelSelection;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
+use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\FakeAgentDriver;
 
 beforeEach(function (): void {
+    test_bind_snapshot_driver();
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 });
 
-function t3_spawner_group(): Task
+function task_spawner_group(): Task
 {
     $project = Project::query()->create([
         'name' => 'orbit',
@@ -54,7 +47,7 @@ function t3_spawner_group(): Task
         'default_branch' => 'main',
     ]);
     $node = Node::query()->create([
-        'name' => 't3-node',
+        'name' => 'agent-node',
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => '10.44.0.110',
@@ -70,8 +63,9 @@ function t3_spawner_group(): Task
         'starting_commit' => str_repeat('b', 40),
     ]);
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
-        'title' => 'Wire T3',
+        'title' => 'Wire an agent',
         'brief' => 'Spawn reviewer and implementer.',
         'status' => TaskGroupStatus::Running,
     ]);
@@ -88,154 +82,58 @@ function t3_spawner_group(): Task
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
-/**
- * @return array{TaskAgentSpawner, object, object}
- */
-function t3_spawner_stack(?TaskWorkspaceMcp $mcp = null): array
+/** @return array{TaskAgentSpawner, AgentCommandDispatcher} */
+function task_spawner_stack(?TaskWorkspaceMcp $mcp = null): array
 {
-    $dispatcher = new class implements T3Dispatcher
+    $dispatcher = new class implements AgentCommandDispatcher
     {
         /** @var list<array<string, mixed>> */
         public array $commands = [];
 
         public bool $fail = false;
 
-        public ?string $adoptProjectId = null;
-
-        public int $failTurnStartRemaining = 0;
-
         public function dispatch(Node $node, array $command): array
         {
-            expect($command)->not->toHaveKey('command')
-                ->and($node->wireguard_ip)->toBe('10.44.0.110');
-
+            expect($node->wireguard_ip)->toBe('10.44.0.110');
             if ($this->fail) {
-                throw new T3DispatchException;
+                throw new AgentDriverException('Agent refused the turn.');
             }
-
-            if (is_string($this->adoptProjectId) && ($command['type'] ?? null) === 'project.create') {
-                $this->commands[] = $command;
-
-                throw new T3DispatchException(existingProjectId: $this->adoptProjectId);
-            }
-
-            if (($command['type'] ?? null) === 'thread.turn.start' && $this->failTurnStartRemaining > 0) {
-                $this->failTurnStartRemaining--;
-                $this->commands[] = $command;
-
-                throw new T3DispatchException('T3 turn start failed.');
-            }
-
             $this->commands[] = $command;
-            $threadId = is_string($command['threadId'] ?? null) ? $command['threadId'] : 'generated-thread';
 
-            return ['sequence' => count($this->commands), 'thread_id' => $threadId];
+            return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
         }
     };
 
-    return [new TaskAgentSpawner(test_t3_registry($dispatcher), app(TaskReviewPacketBuilder::class), $mcp ?? app(TaskWorkspaceMcp::class)), $dispatcher];
+    return [new TaskAgentSpawner(test_snapshot_registry($dispatcher), app(TaskReviewPacketBuilder::class), $mcp ?? app(TaskWorkspaceMcp::class)), $dispatcher];
 }
 
-it('spawns the group reviewer with its first review and a fresh implementer on the instance Node', function (): void {
-    $group = t3_spawner_group();
-    [$spawner, $dispatcher] = t3_spawner_stack();
+it('spawns fresh role threads on the workspace Node with the configured model and opening prompt', function (): void {
+    $group = task_spawner_group();
+    [$spawner, $dispatcher] = task_spawner_stack();
+    $task = $group->tasks->sole();
+    $reviewerId = $spawner->spawnReviewer($task);
+    $implementerId = $spawner->spawnImplementer($task);
 
-    $reviewerId = $spawner->spawnReviewer($group->tasks->first());
-    $implementerId = $spawner->spawnImplementer($group->tasks->first());
-
-    expect($reviewerId)->not->toBeNull()
-        ->and($implementerId)->not->toBeNull()
-        ->and($reviewerId)->not->toBe($implementerId)
-        ->and(array_column($dispatcher->commands, 'type'))->toBe([
-            'project.create',
-            'thread.create',
-            'thread.turn.start',
-            'project.create',
-            'thread.create',
-            'thread.turn.start',
-        ]);
-
-    $reviewerProject = $dispatcher->commands[0];
-    $reviewerCreate = $dispatcher->commands[1];
-    $implementerProject = $dispatcher->commands[3];
-    $implementerCreate = $dispatcher->commands[4];
-    $reviewerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort);
-    $implementerSelection = T3ModelSelection::forModel(TaskAgentDefaults::ImplementerModel, TaskAgentDefaults::ImplementerEffort);
-
-    $task = $group->tasks->first();
-    expect($reviewerCreate['title'])->toBe('Orbit task #'.$group->id.' · Review: '.$task->title)
-        ->and($reviewerProject['defaultModelSelection'])->toBe($reviewerSelection)
-        ->and($reviewerCreate['modelSelection'])->toBe($reviewerSelection)
-        ->and($implementerProject['defaultModelSelection'])->toBe($implementerSelection)
-        ->and($implementerCreate['modelSelection'])->toBe($implementerSelection)
-        ->and($reviewerCreate['worktreePath'])->toBe('/srv/orbit/apps/orbit/task-1')
-        ->and($reviewerCreate['branch'])->toBe('task-1')
-        ->and($dispatcher->commands[2]['message'])->toMatchArray([
-            'role' => 'user',
-            'attachments' => [],
-        ])
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('Do not re-run the Project task check or deliverable commands the handoff already passed.')
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('use your web and documentation tools to confirm that framework and library usage matches current documentation')
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('Review subtask #'.$task->id.': '.$task->title)
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('Group brief')
-        ->and($dispatcher->commands[2]['message']['text'])->toContain($group->brief)
-        ->and($dispatcher->commands[2]['modelSelection'])->toBe($reviewerSelection)
-        ->and($dispatcher->commands[2]['runtimeMode'])->toBe('full-access')
-        ->and($dispatcher->commands[2]['interactionMode'])->toBe('default')
-        ->and($dispatcher->commands[2]['message']['text'])->toContain('The group started at '.str_repeat('b', 40).".\ngit diff --stat ".str_repeat('b', 40).'..HEAD')
-        ->and($dispatcher->commands[5]['message']['text'])->toContain('Implement this subtask')
-        ->and($dispatcher->commands[5]['message']['text'])->toContain('The group started at '.str_repeat('b', 40).".\ngit diff --stat ".str_repeat('b', 40).'..HEAD')
-        ->and($dispatcher->commands[5]['message']['text'])->toContain('Follow this repository\'s task instructions.')
-        ->and($dispatcher->commands[5]['modelSelection'])->toBe($implementerSelection)
-        ->and($dispatcher->commands[5]['runtimeMode'])->toBe('full-access')
-        ->and($dispatcher->commands[5]['interactionMode'])->toBe('default')
-        ->and($implementerSelection['instanceId'])->toBe('codex')
-        ->and($implementerSelection['options'])->toBe([['id' => 'reasoningEffort', 'value' => 'high']]);
-});
-
-it('posts T3 model options as id and value JSON objects', function (): void {
-    Http::preventStrayRequests();
-    Http::fake([
-        'http://10.44.0.110:3773/api/orchestration/dispatch' => Http::response(['sequence' => 1]),
-    ]);
-    $group = t3_spawner_group();
-    $threadId = (new TaskAgentSpawner(test_t3_registry(app(HttpT3Dispatcher::class)), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class)))->spawnReviewer($group->tasks->first());
-
-    expect($threadId)->not->toBeNull();
-
-    Http::assertSent(function (Request $request): bool {
-        $payload = json_decode($request->body(), true);
-
-        return is_array($payload)
-            && ($payload['type'] ?? null) === 'project.create'
-            && ($payload['defaultModelSelection']['options'] ?? null) === [
-                ['id' => 'effort', 'value' => 'high'],
-            ];
-    });
-    Http::assertSent(function (Request $request): bool {
-        $payload = json_decode($request->body(), true);
-
-        return is_array($payload)
-            && ($payload['type'] ?? null) === 'thread.create'
-            && ($payload['modelSelection']['options'] ?? null) === [
-                ['id' => 'effort', 'value' => 'high'],
-            ];
-    });
-    Http::assertSent(function (Request $request): bool {
-        $payload = json_decode($request->body(), true);
-
-        return is_array($payload)
-            && ($payload['type'] ?? null) === 'thread.turn.start'
-            && ($payload['runtimeMode'] ?? null) === 'full-access'
-            && ($payload['interactionMode'] ?? null) === 'default'
-            && ($payload['modelSelection']['options'] ?? null) === [
-                ['id' => 'effort', 'value' => 'high'],
-            ];
-    });
+    expect($reviewerId)->toBeInt()->and($implementerId)->toBeInt()->not->toBe($reviewerId)
+        ->and(array_column($dispatcher->commands, 'type'))->toBe(['create', 'create']);
+    $reviewer = AgentThread::query()->findOrFail($reviewerId);
+    $implementer = AgentThread::query()->findOrFail($implementerId);
+    expect($reviewer->driver)->toBe('pi')->and($implementer->driver)->toBe('pi')
+        ->and($reviewer->node_id)->toBe($group->taskable->node_id)
+        ->and($implementer->node_id)->toBe($reviewer->node_id)
+        ->and($reviewer->role)->toBe('reviewer')->and($implementer->role)->toBe('implementer');
+    expect($dispatcher->commands[0])->toMatchArray([
+        'title' => 'Orbit task #'.$group->id.' · Review: '.$task->title,
+        'model' => TaskAgentDefaults::ReviewerModel, 'effort' => config('orbit.tasks.reviewer_effort'),
+        'worktreePath' => '/srv/orbit/apps/orbit/task-1', 'branch' => 'task-1',
+    ])->and($dispatcher->commands[0]['message']['text'])->toContain('Review subtask #'.$task->id, $group->brief, 'Do not re-run the Project task check')
+        ->and($dispatcher->commands[1]['model'])->toBe(TaskAgentDefaults::ImplementerModel)
+        ->and($dispatcher->commands[1]['effort'])->toBe(config('orbit.tasks.implementer_effort'))
+        ->and($dispatcher->commands[1]['message']['text'])->toContain('Implement this subtask', 'The group started at '.str_repeat('b', 40), 'Follow this repository\'s task instructions.');
 });
 
 it('shows the base failure kind and message to the reviewer', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks->first();
     $task->update(['deliverables' => [[
         'id' => 'layout-repro',
@@ -272,7 +170,7 @@ it('shows the base failure kind and message to the reviewer', function (): void 
     $reviewer->update(['task_id' => $task->id]);
     $group->reviewer_agent_thread_id = $reviewer->id;
     $group->save();
-    [$spawner, $dispatcher] = t3_spawner_stack();
+    [$spawner, $dispatcher] = task_spawner_stack();
 
     $spawner->requestReview($task->fresh());
 
@@ -282,7 +180,7 @@ it('shows the base failure kind and message to the reviewer', function (): void 
 });
 
 it('does not ask for pull request fields when reviewing a fixup on an open pull request', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks()->firstOrFail();
     $reviewer = test_agent_thread($group, 'reviewer-existing');
     $reviewer->update(['task_id' => $task->id]);
@@ -290,7 +188,7 @@ it('does not ask for pull request fields when reviewing a fixup on an open pull 
         'pr_url' => 'https://github.com/acme/orbit/pull/42',
         'reviewer_agent_thread_id' => $reviewer->id,
     ]);
-    [$spawner, $dispatcher] = t3_spawner_stack();
+    [$spawner, $dispatcher] = task_spawner_stack();
 
     $spawner->requestReview($task);
 
@@ -301,37 +199,35 @@ it('does not ask for pull request fields when reviewing a fixup on an open pull 
 });
 
 it('sends the review request to the stored reviewer thread', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks->firstOrFail();
     $reviewer = test_agent_thread($group, 'reviewer-existing');
     $reviewer->update(['task_id' => $task->id]);
     $group->reviewer_agent_thread_id = $reviewer->id;
     $group->save();
-    [$spawner, $dispatcher] = t3_spawner_stack();
+    [$spawner, $dispatcher] = task_spawner_stack();
 
     $spawner->requestReview($task);
 
     expect($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['type'])->toBe('thread.turn.start')
+        ->and($dispatcher->commands[0]['type'])->toBe('send')
         ->and($dispatcher->commands[0]['threadId'])->toBe('reviewer-existing')
         ->and($dispatcher->commands[0]['message']['text'])->toStartWith('Review subtask #'.$group->tasks->first()->id)
         ->and($dispatcher->commands[0]['message']['text'])->toEndWith(TaskTurnInstructions::reviewer(final: true, threadId: $reviewer->id))
         ->and($dispatcher->commands[0]['message']['text'])->toContain('The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.')
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('are the feature\'s contract.')
-        ->and($dispatcher->commands[0]['message']['role'])->toBe('user')
-        ->and($dispatcher->commands[0]['modelSelection'])->toBe(T3ModelSelection::forModel(TaskAgentDefaults::ReviewerModel, TaskAgentDefaults::ReviewerEffort))
-        ->and($dispatcher->commands[0]['runtimeMode'])->toBe('full-access')
-        ->and($dispatcher->commands[0]['interactionMode'])->toBe('default');
+        ->and($dispatcher->commands[0]['model'])->toBe(TaskAgentDefaults::ReviewerModel)
+        ->and($dispatcher->commands[0]['effort'])->toBe(config('orbit.tasks.reviewer_effort'));
 });
 
 it('names a non-main project default branch in the opening review packet', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $group->project->update(['default_branch' => 'develop']);
-    [$spawner, $dispatcher] = t3_spawner_stack();
+    [$spawner, $dispatcher] = task_spawner_stack();
 
     $spawner->spawnReviewer($group->tasks->first());
 
-    expect($dispatcher->commands[2]['message']['text'])->not->toContain('feature\'s contract');
+    expect($dispatcher->commands[0]['message']['text'])->not->toContain('feature\'s contract');
 });
 
 it('resolves the reviewer spawner through the container with the production diff reader', function (): void {
@@ -362,12 +258,12 @@ it('uses the container diff reader when the reviewer spawner is resolved', funct
             ];
         }
     };
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(TaskReviewDiff::class, $diff);
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
 
     $id = app(AgentSpawner::class)->spawnReviewer($group->tasks->first());
 
@@ -387,8 +283,8 @@ it('does not open a review when the bound diff reader fails', function (): void 
     });
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
-    $group = t3_spawner_group();
-    $dispatcher = new class implements T3Dispatcher
+    $group = task_spawner_group();
+    $dispatcher = new class implements AgentCommandDispatcher
     {
         /** @var list<array<string, mixed>> */
         public array $commands = [];
@@ -400,7 +296,7 @@ it('does not open a review when the bound diff reader fails', function (): void 
             return ['sequence' => count($this->commands), 'thread_id' => 'should-not-start'];
         }
     };
-    app()->instance(AgentDriverRegistry::class, test_t3_registry($dispatcher));
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry($dispatcher));
 
     expect(fn () => app(AgentSpawner::class)->spawnReviewer($group->tasks->first()))
         ->toThrow(TaskReviewDiffException::class)
@@ -421,12 +317,12 @@ it('deletes a reserved reviewer when creating the conversation throws', function
             ];
         }
     });
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     $driver->failNextCreate = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks->firstOrFail();
 
     expect(fn () => app(AgentSpawner::class)->spawnReviewer($task))
@@ -442,12 +338,12 @@ it('deletes a reserved reviewer when creating the conversation throws', function
 });
 
 it('does not start a replacement reviewer when the turn file cannot be written', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks->firstOrFail();
     $reviewer = test_agent_thread($group, 'reviewer-existing');
     $reviewer->update(['task_id' => $task->id]);
     $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     $driver->failNextSend = true;
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
@@ -481,9 +377,9 @@ it('does not start a replacement reviewer when the turn file cannot be written',
 });
 
 it('deletes a reserved reviewer when preparing the turn throws', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks->firstOrFail();
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
@@ -530,11 +426,11 @@ it('leaves run commands in the diff unchanged and keeps the driver prompt within
             ];
         }
     });
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
 
     $id = app(AgentSpawner::class)->spawnReviewer($group->tasks->first());
     $prompt = (string) ($driver->calls[0]['prompt'] ?? '');
@@ -545,62 +441,8 @@ it('leaves run commands in the diff unchanged and keeps the driver prompt within
         ->and($prompt)->toContain('.git/orbit/turn --thread='.$id.' --outcome=approved');
 });
 
-it('adopts the existing T3 project when workspace root already has one', function (): void {
-    $group = t3_spawner_group();
-    [$spawner, $dispatcher] = t3_spawner_stack();
-    $dispatcher->adoptProjectId = '550e8400-e29b-41d4-a716-446655440000';
-
-    $reviewerId = $spawner->spawnReviewer($group->tasks->first());
-
-    expect($reviewerId)->not->toBeNull()
-        ->and(array_column($dispatcher->commands, 'type'))->toBe([
-            'project.create',
-            'thread.create',
-            'thread.turn.start',
-        ])
-        ->and($dispatcher->commands[1]['projectId'])->toBe('550e8400-e29b-41d4-a716-446655440000')
-        ->and($dispatcher->commands[1]['projectId'])->not->toBe($dispatcher->commands[0]['projectId']);
-});
-
-it('stores no thread id when turn start fails after thread create', function (?string $adoptProjectId): void {
-    $group = t3_spawner_group();
-    [$spawner, $dispatcher] = t3_spawner_stack();
-    $dispatcher->adoptProjectId = $adoptProjectId;
-    $dispatcher->failTurnStartRemaining = 2;
-
-    Log::shouldReceive('error')->with('Agent conversation creation failed.', Mockery::any())->once();
-    Log::shouldReceive('error')
-        ->once()
-        ->with('T3 thread.turn.start failed after the thread was created.', Mockery::on(function (array $context): bool {
-            expect($context['thread_id'])->toBeString()->not->toBe('')
-                ->and($context['exception'])->toBe('T3 turn start failed.');
-
-            return true;
-        }));
-
-    $reviewerId = $spawner->spawnReviewer($group->tasks->first());
-
-    expect($reviewerId)->toBeNull()
-        ->and($group->fresh()?->reviewer_agent_thread_id)->toBeNull()
-        ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0)
-        ->and(array_column($dispatcher->commands, 'type'))->toBe([
-            'project.create',
-            'thread.create',
-            'thread.turn.start',
-            'thread.turn.start',
-        ]);
-
-    if (is_string($adoptProjectId)) {
-        expect($dispatcher->commands[1]['projectId'])->toBe($adoptProjectId)
-            ->and($dispatcher->commands[1]['projectId'])->not->toBe($dispatcher->commands[0]['projectId']);
-    }
-})->with([
-    'fresh project' => [null],
-    'adopted project' => ['550e8400-e29b-41d4-a716-446655440000'],
-]);
-
 it('writes the search endpoint file before it starts a reviewer', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $mcp = new class implements TaskWorkspaceMcp
     {
         public int $missing = 0;
@@ -612,7 +454,7 @@ it('writes the search endpoint file before it starts a reviewer', function (): v
             return true;
         }
     };
-    [$spawner, $dispatcher] = t3_spawner_stack($mcp);
+    [$spawner, $dispatcher] = task_spawner_stack($mcp);
 
     expect($spawner->spawnReviewer($group->tasks->first()))->not->toBeNull()
         ->and($mcp->missing)->toBe(1)
@@ -620,7 +462,7 @@ it('writes the search endpoint file before it starts a reviewer', function (): v
 });
 
 it('does not start a reviewer when the search endpoint file cannot be written', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $mcp = new class implements TaskWorkspaceMcp
     {
         public function installWhenMissing(Instance $instance): bool
@@ -628,16 +470,16 @@ it('does not start a reviewer when the search endpoint file cannot be written', 
             return false;
         }
     };
-    [$spawner, $dispatcher] = t3_spawner_stack($mcp);
+    [$spawner, $dispatcher] = task_spawner_stack($mcp);
 
     expect($spawner->spawnReviewer($group->tasks->first()))->toBeNull()
         ->and($dispatcher->commands)->toBe([])
         ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(0);
 });
 
-it('returns null when T3 refuses the spawn', function (): void {
-    $group = t3_spawner_group();
-    [$spawner, $dispatcher] = t3_spawner_stack();
+it('returns null when the driver refuses the spawn', function (): void {
+    $group = task_spawner_group();
+    [$spawner, $dispatcher] = task_spawner_stack();
     $dispatcher->fail = true;
 
     expect($spawner->spawnReviewer($group->tasks->first()))->toBeNull()
@@ -645,12 +487,12 @@ it('returns null when T3 refuses the spawn', function (): void {
 });
 
 it('reuses a subtask reviewer instead of spawning again', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks->firstOrFail();
     $kept = test_agent_thread($group, 'kept-reviewer');
     $kept->update(['task_id' => $task->id]);
     $task->update(['implementer_agent_thread_id' => test_agent_thread($group, 'kept-implementer', $task)->id]);
-    [$spawner, $dispatcher] = t3_spawner_stack();
+    [$spawner, $dispatcher] = task_spawner_stack();
 
     expect($spawner->spawnReviewer($task->fresh()))->toBe($kept->id)
         ->and($spawner->spawnImplementer($task->fresh(['parent.taskable'])))
@@ -659,8 +501,8 @@ it('reuses a subtask reviewer instead of spawning again', function (): void {
 });
 
 it('keeps persisted role links after workspace removal', function (): void {
-    $group = t3_spawner_group();
-    [$spawner] = t3_spawner_stack();
+    $group = task_spawner_group();
+    [$spawner] = task_spawner_stack();
     $reviewer = $spawner->spawnReviewer($group->tasks->first());
     $implementer = $spawner->spawnImplementer($group->tasks->firstOrFail());
     $group->taskable->delete();
@@ -671,91 +513,16 @@ it('keeps persisted role links after workspace removal', function (): void {
         ->and($links[0]->id)->toBe($reviewer)
         ->and($links[0]->task_id)->toBe($group->tasks->firstOrFail()->id)
         ->and($links[0]->model)->toBe(TaskAgentDefaults::ReviewerModel)
-        ->and($links[0]->effort)->toBe(TaskAgentDefaults::ReviewerEffort)
+        ->and($links[0]->effort)->toBe(config('orbit.tasks.reviewer_effort'))
         ->and($links[1]->id)->toBe($implementer)
         ->and($links[1]->task_id)->toBe($group->tasks->firstOrFail()->id)
         ->and($links[1]->model)->toBe(TaskAgentDefaults::ImplementerModel)
-        ->and($links[1]->effort)->toBe(TaskAgentDefaults::ImplementerEffort)
+        ->and($links[1]->effort)->toBe(config('orbit.tasks.implementer_effort'))
         ->and($links[1]->node_id)->not->toBeNull();
 });
 
-it('imports legacy thread links using the instance morph alias', function (string $scenario): void {
-    $default = DB::getDefaultConnection();
-    config()->set('database.connections.agent_migration', ['driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true]);
-    DB::setDefaultConnection('agent_migration');
-    try {
-        $paths = array_values(array_filter(glob(database_path('migrations/*.php')), static fn (string $path): bool => ! str_contains($path, 'create_agent_threads_from_task_agent_sessions')
-            // The per-role split depends on the column this legacy import creates.
-            && ! str_contains($path, 'split_task_group_agent_driver_by_role')
-            // The token split alters agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_token_metrics_to_agent_threads')
-            // The Pi resume points at agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_pi_restart_resume_to_tasks')
-            // Thread archiving alters agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_thread_archiving_to_agent_threads')
-            // Archive backoff alters agent_threads, which this legacy import creates.
-            && ! str_contains($path, 'add_archive_backoff_to_agent_threads')
-            && ! str_contains($path, 'merge_task_groups_into_tasks')));
-        Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
-        $projectId = DB::table('projects')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
-        $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);
-        $instanceId = DB::table('instances')->insertGetId(['project_id' => $projectId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
-        $groupId = DB::table('task_groups')->insertGetId([
-            'project_id' => $projectId, 'title' => 'Legacy', 'brief' => 'Legacy links',
-            'taskable_type' => 'instance', 'taskable_id' => $instanceId,
-            'reviewer_thread_id' => 'legacy-review', 'reviewer_model' => 'claude-opus-5', 'implementer_model' => 'gpt-5.6-luna',
-        ]);
-        $taskId = DB::table('tasks')->insertGetId(['task_group_id' => $groupId, 'position' => 1, 'title' => 'Legacy task', 'brief' => 'Legacy', 'implementer_thread_id' => 'legacy-implement']);
-        if ($scenario !== 'pointers') {
-            DB::table('task_agent_sessions')->insert([
-                'id' => 42, 'task_group_id' => $groupId, 'node_id' => $nodeId, 'task_id' => null,
-                'role' => $scenario === 'conflict' ? 'implementer' : 'reviewer', 'thread_id' => 'legacy-review',
-                'model' => 'claude-opus-5', 'effort' => 'high',
-            ]);
-        }
-        $migration = require glob(database_path('migrations/*create_agent_threads_from_task_agent_sessions.php'))[0];
-        if ($scenario === 'conflict') {
-            expect(fn () => run_legacy_schema_migration($migration, 'up'))->toThrow(RuntimeException::class, 'ownership is ambiguous');
-            expect(Schema::hasTable('task_agent_sessions'))->toBeTrue()
-                ->and(Schema::hasTable('agent_threads'))->toBeFalse();
-            DB::table('task_agent_sessions')->where('id', 42)->update(['role' => 'reviewer']);
-        }
-        run_legacy_schema_migration($migration, 'up');
-        $links = AgentThread::query()->orderBy('id')->get();
-        expect($links)->toHaveCount(2)
-            ->and($links[0]->node_id)->toBe($nodeId)
-            ->and($links[0]->id)->toBe($scenario === 'pointers' ? 1 : 42)
-            ->and($links[0]->effort)->toBe('high')
-            ->and($links[1]->effort)->toBe('low')
-            ->and($links[0]->model)->toBe('claude-opus-5')
-            ->and($links[0]->driver)->toBe('t3')
-            ->and($links[0]->runtime_key)->toBe('node:'.$nodeId)
-            ->and($links[1]->task_id)->toBe($taskId)
-            ->and($links[1]->external_id)->toBe('legacy-implement')
-            ->and(DB::table('task_groups')->where('id', $groupId)->value('reviewer_agent_thread_id'))->toBe($links[0]->id)
-            ->and(DB::table('tasks')->where('id', $taskId)->value('implementer_agent_thread_id'))->toBe($links[1]->id);
-    } finally {
-        DB::setDefaultConnection($default);
-        DB::purge('agent_migration');
-    }
-})->with(['persisted', 'pointers', 'conflict']);
-
-it('uses high effort for a reviewer follow-up when a legacy effort is absent', function (): void {
-    $group = t3_spawner_group();
-    [$spawner, $dispatcher] = t3_spawner_stack();
-    $id = $spawner->spawnReviewer($group->tasks->first());
-    $thread = AgentThread::query()->findOrFail($id);
-    $thread->update(['effort' => null]);
-
-    test_t3_registry(dispatcher: $dispatcher)->get('t3')->send($thread, 'Please review.');
-
-    $command = $dispatcher->commands[array_key_last($dispatcher->commands)];
-    expect($command['type'])->toBe('thread.turn.start')
-        ->and($command['modelSelection']['options'])->toBe([['id' => 'effort', 'value' => 'high']]);
-});
-
 it('lists the deliverables for the implementer and names the review deliverables the approval must confirm', function (): void {
-    $group = t3_spawner_group();
+    $group = task_spawner_group();
     $task = $group->tasks->first();
     $task->update(['deliverables' => [
         ['id' => 'reference-page', 'type' => 'file', 'description' => 'Document the export', 'path' => 'docs/reference/tasks.md', 'change' => 'modified'],
@@ -763,12 +530,12 @@ it('lists the deliverables for the implementer and names the review deliverables
         ['id' => 'web-tests', 'type' => 'command', 'description' => 'The web tests pass', 'command' => 'bun test', 'directory' => 'apps/web'],
         ['id' => 'error-copy', 'type' => 'review', 'description' => 'Errors name the subtask'],
     ]]);
-    [$spawner, $dispatcher] = t3_spawner_stack();
+    [$spawner, $dispatcher] = task_spawner_stack();
 
     $spawner->spawnReviewer($task->refresh());
     $spawner->spawnImplementer($task);
-    $review = $dispatcher->commands[2]['message']['text'];
-    $implement = $dispatcher->commands[5]['message']['text'];
+    $review = $dispatcher->commands[0]['message']['text'];
+    $implement = $dispatcher->commands[1]['message']['text'];
     $list = "Deliverables. Orbit checks each one before the review:\n"
         ."- reference-page (file: docs/reference/tasks.md, modified): Document the export\n"
         ."- export-test (command: `vendor/bin/pest tests/Feature/ExportTest.php` in apps/gateway): Test the export\n"

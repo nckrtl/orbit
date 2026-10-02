@@ -133,7 +133,6 @@ function taskProperties(
         ...(group.execution_mode === "existing_thread"
             ? [
                   { name: "Type", value: "Annotation" },
-                  { name: "Execution", value: "Existing T3 thread" },
                   {
                       name: "Thread",
                       value:

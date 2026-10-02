@@ -106,6 +106,28 @@ it("groups every status, opens details, and keeps unsuccessful outcomes visible"
     await expect.element(pane("Todo")).toBeVisible();
 });
 
+it("keeps annotation task properties without the retired T3 execution label", async () => {
+    const task = group(1, "running");
+    task.execution_mode = "existing_thread";
+    task.tasks[0]!.type = "annotation";
+    task.tasks[0]!.target_thread_id = "operator-thread";
+    const app = await openTasks(async (_, path) => ({
+        status: 200,
+        payload: { data: path === "/api/v1/task-groups" ? [task] : task },
+    }));
+    await app.router.navigate({ to: "/tasks/$id", params: { id: "1" } });
+    await expect.element(pane("Task")).toHaveTextContent("Annotation");
+    await expect.element(pane("Task")).toHaveTextContent("operator-thread");
+    await expect.element(pane("Task")).not.toHaveTextContent("Existing T3 thread");
+    await expect.element(pane("Task")).not.toHaveTextContent("Execution");
+    await pane("Todo").getByRole("link", { name: "Open subtask: First step" }).click();
+    await expect.element(pane("Task")).toHaveTextContent("First step");
+    await expect.element(pane("Task")).toHaveTextContent("Annotation");
+    await expect.element(pane("Task")).toHaveTextContent("operator-thread");
+    await expect.element(pane("Task")).not.toHaveTextContent("Existing T3 thread");
+    await expect.element(pane("Task")).not.toHaveTextContent("Execution");
+});
+
 it("shows an empty task board without lanes only after a successful response", async () => {
     await openTasks(async () => ({ status: 200, payload: { data: [] } }));
     await expect.element(page.getByText("No tasks yet.", { exact: true })).toBeVisible();

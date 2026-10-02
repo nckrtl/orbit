@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -53,12 +54,6 @@ final readonly class TaskScheduler
 
     /** The Pi server reports this when it restarted while a turn was still active (ADR 0116, ADR 0167). */
     public const string PiServerRestartError = 'The Pi server restarted during the turn.';
-
-    /** T3 0.0.42 reports this when a provider session does not survive a server restart and continuation is off. */
-    public const string T3ServerRestartError = 'Provider session did not survive a server restart. Send a new message to continue.';
-
-    /** T3 0.0.42 reports this when restart continuation was on and the continue itself failed. */
-    public const string T3ServerRestartContinuationError = 'Could not continue this thread after the server restart. Send a new message to continue.';
 
     /** One continue, on the same thread, after that restart. It does not ask for assistance. */
     public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.';
@@ -115,9 +110,10 @@ final readonly class TaskScheduler
         private TaskBroadcasts $broadcasts,
         private RemoveTaskWorkspaceAction $workspaces,
         private TaskBaseBranchFetcher $bases,
-        private ArchiveFinishedTaskThreads $archives,
+        private PrunePendingTaskThreads $pendingThreads,
         private TaskReviewPacketBuilder $reviewPackets,
         private TaskTurnFetcher $turnFetcher,
+        private RetryTaskBaselineAction $retryBaseline,
     ) {}
 
     /**
@@ -165,6 +161,8 @@ final readonly class TaskScheduler
                     } catch (Throwable) {
                     }
                 }
+                // Revalidate even when a prior tick committed settling but stopped before its hold write.
+                $this->checkReturningPullRequest($group, $health);
                 if (! $this->orphanedCommit($group)) {
                     $this->completeMergedGroup($group);
                 }
@@ -190,6 +188,18 @@ final readonly class TaskScheduler
 
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
+                }
+                if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
+                    try {
+                        if ($this->retryBaseline->recover($task)) {
+                            $task->refresh();
+                            $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+                        }
+                    } catch (AgentDriverException $exception) {
+                        $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                        continue;
+                    }
                 }
                 if ($task->status === TaskStatus::Running) {
                     $this->recordSubtaskStart($task);
@@ -271,7 +281,7 @@ final readonly class TaskScheduler
             }
         }
 
-        $this->archives->run();
+        $this->pendingThreads->run();
 
         return $decisions;
     }
@@ -759,13 +769,13 @@ final readonly class TaskScheduler
     }
 
     /**
-     * ADR 0164: a group that returns to settling re-reads its pull request. When it already merged and its
+     * ADR 0164: returning to settling and every merged cleanup tick revalidate the pull request. When its
      * head is not the latest approved commit, that commit missed the merge. The group asks for assistance
      * naming the commit and is not completed, so its workspace stays.
      */
-    private function checkReturningPullRequest(Task $group): void
+    private function checkReturningPullRequest(Task $group, ?TaskPullRequestHealth $health = null): void
     {
-        $health = $this->pullRequestWatcher->health($group);
+        $health ??= $this->pullRequestWatcher->health($group);
         if (! $health instanceof TaskPullRequestHealth || $health->state !== 'merged' || $health->headSha === null) {
             return;
         }
@@ -775,7 +785,7 @@ final readonly class TaskScheduler
             ->whereNotNull('commit_sha')
             ->latest('id')
             ->value('commit_sha');
-        if (! is_string($commit) || $commit === '' || $commit === $health->headSha || $group->assistance_requested) {
+        if (! is_string($commit) || $commit === '' || $commit === $health->headSha || $this->orphanedCommit($group)) {
             return;
         }
 
@@ -1142,7 +1152,7 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Resumes a Pi or T3 turn that failed only because the server restarted (ADR 0167).
+     * Resumes a Pi turn that failed only because the server restarted (ADR 0167).
      *
      * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
      */
@@ -1160,20 +1170,9 @@ final readonly class TaskScheduler
             && $acting->turnId === $task->pi_restart_source_turn_id
             && is_string($task->pi_restart_key)
             && $task->pi_restart_key !== '') {
-            if ($this->t3AcceptedResume($record, $acting, $task->pi_restart_key)) {
-                if (! $this->t3SessionRevisionChanged($task, $acting)) {
-                    // The stored session.updatedAt is unchanged. This is the error from before the
-                    // command. The message clock and the node clock are not compared (ADR 0167).
-                    return 'handled';
-                }
-                // session.updatedAt differs from the revision stored with this reservation. T3 wrote
-                // a new session error before latestTurn changed. Repeating the command id starts no turn.
-                $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
-            } else {
-                $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
+            $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
 
-                return 'handled';
-            }
+            return 'handled';
         }
         if ((int) $task->pi_restart_resumes >= self::PiServerRestartResumeLimit) {
             return 'assist';
@@ -1185,45 +1184,16 @@ final readonly class TaskScheduler
             'pi_restart_thread_id' => $acting->threadId,
             'pi_restart_source_turn_id' => $acting->turnId,
             'pi_restart_reservation' => self::PiRestartPending,
-            'pi_restart_session_revision' => $acting->sessionUpdatedAt === '' ? null : $acting->sessionUpdatedAt,
         ]);
         $this->sendPiRestartResume($task, $group, $acting, $key);
 
         return 'handled';
     }
 
-    /** T3 persisted the reserved message. That write happens before the session leaves its previous error. */
-    private function t3AcceptedResume(AgentThread $record, TaskThreadObservation $acting, string $key): bool
-    {
-        return $record->driver === 't3' && array_any(
-            $acting->recentMessages,
-            fn (array $message): bool => $message['id'] === $key,
-        );
-    }
-
-    /**
-     * The reservation stores the exact session.updatedAt seen when it was reserved.
-     * A different non-empty value is a new session write. Ordering it against the message time is
-     * not evidence: that time is the Gateway clock, and session.updatedAt is the node clock.
-     */
-    private function t3SessionRevisionChanged(Task $task, TaskThreadObservation $acting): bool
-    {
-        $stored = $task->pi_restart_session_revision;
-        $current = $acting->sessionUpdatedAt;
-
-        return is_string($stored) && $stored !== ''
-            && is_string($current) && $current !== ''
-            && $stored !== $current;
-    }
-
-    /** Pi uses its restart error. T3 0.0.42 uses the orphaned-session error, or the continuation failure. */
+    /** Only Pi restart failures can resume a task-agent turn. */
     private function isServerRestartError(string $driver, ?string $error): bool
     {
-        return match ($driver) {
-            'pi' => $error === self::PiServerRestartError,
-            't3' => in_array($error, [self::T3ServerRestartError, self::T3ServerRestartContinuationError], true),
-            default => false,
-        };
+        return $driver === 'pi' && $error === self::PiServerRestartError;
     }
 
     private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
@@ -2918,8 +2888,8 @@ final readonly class TaskScheduler
             : 0;
         $branch = 'task-'.$group->id;
         $reason = match (true) {
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",
+            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then post a resolution on this subtask to retry the baseline. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
             $check instanceof TaskCheck && $status === TaskCheckStatus::Changed && $repeats >= 2 => 'The workspace changed while the baseline check ran, twice. Changed paths: '.implode(', ', $check->changed_paths ?? []).'.',
             $status === TaskCheckStatus::Lost && $repeats >= 2 => 'The baseline check stopped twice without a result.',
@@ -3007,6 +2977,7 @@ final readonly class TaskScheduler
             return TaskCheck::query()->create([
                 'task_id' => $locked->id,
                 'kind' => TaskCheckKind::Baseline,
+                'task_comment_id' => $locked->resolution_delivered_comment_id,
                 'status' => TaskCheckStatus::Running,
                 'pid' => self::BASELINE_UNSTARTED_PID,
                 'process_started' => '',
@@ -3044,13 +3015,66 @@ final readonly class TaskScheduler
         return TaskCheck::query()
             ->where('task_id', $task->id)
             ->where('kind', TaskCheckKind::Baseline->value)
+            ->when($task->resolution_delivered_comment_id !== null, static fn ($query) => $query->where('task_comment_id', $task->resolution_delivered_comment_id))
             ->latest('id')
             ->first();
     }
 
+    /** Recheck immediately before spawning, including retries of an already running fixup. */
+    private function skipStaleConflictFixup(Task $task): bool
+    {
+        if ($this->conflictBase($task) === null) {
+            return false;
+        }
+        $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
+        $health = $this->pullRequestWatcher->health($group);
+        if (! $health instanceof TaskPullRequestHealth) {
+            return true;
+        }
+        if ($health->state === 'open' && $health->conflicts) {
+            return false;
+        }
+        $reason = match ($health->state) {
+            'merged' => 'Cancelled because the pull request merged; no conflict fixup is needed.',
+            'closed' => 'Cancelled because the pull request closed without merging; no conflict fixup can proceed.',
+            default => $health->mergeable === true
+                ? 'Cancelled because the pull request is mergeable again; no conflict fixup is needed.'
+                : null,
+        };
+        if ($reason === null) {
+            return true;
+        }
+
+        $settled = DB::transaction(function () use ($task, $group, $reason): ?Task {
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($lockedGroup->status !== TaskGroupStatus::Running
+                || $locked->status !== TaskStatus::Running || $this->implementerTurnStarted($locked)) {
+                return null;
+            }
+            $locked->update([
+                'status' => TaskStatus::Cancelled,
+                'settled_at' => now(),
+                'completion_summary' => $reason,
+                'assistance_requested' => false,
+                'assistance_reason' => null,
+            ]);
+            $lockedGroup->update(['status' => TaskGroupStatus::Settling]);
+
+            return $lockedGroup;
+        });
+        if ($settled instanceof Task) {
+            // Reuse the observed terminal state so a missed approval is held before merge cleanup.
+            $this->checkReturningPullRequest($settled, $health);
+            $this->settle($settled, checkReturningPullRequest: false);
+        }
+
+        return true;
+    }
+
     private function assignImplementer(Task $task, bool $alreadyFetched = false): void
     {
-        if ($task->status !== TaskStatus::Running) {
+        if ($task->status !== TaskStatus::Running || $this->skipStaleConflictFixup($task)) {
             return;
         }
 
