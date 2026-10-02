@@ -5,10 +5,10 @@ covers:
   - apps/gateway/app/Actions/{Instances/RemoveInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
   - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
   - apps/gateway/app/Domain/Instances/Removal/**
-  - apps/gateway/app/Infrastructure/*/RecordedProduction*ContentRetention.php
-  - apps/gateway/app/Infrastructure/Instances/{NativeInstanceRemovalProjector,RemoteDevelopmentInstanceSourceRemoval}.php
+  - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
+  - apps/gateway/database/migrations/2026_10_09_000000_allow_failed_creation_removal.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -31,7 +31,7 @@ The two modes differ only for development source.
 | Normal | Refuses dirty source, a `HEAD` that no current origin branch or tag contains, and a checkout with registered linked worktrees. |
 | Forced | Deletes dirty or unpublished source, and removes a checkout together with its registered worktrees. |
 
-`--force` waives only those three refusals. The identity checks below apply in both modes. Neither mode needs `HEAD` to descend from the starting commit.
+`--force` waives only those three refusals. The identity checks below apply in both modes. Neither mode needs `HEAD` to descend from the starting commit. An active Instance keeps these rules; [removing a failed create](#failed-creation) does not weaken them.
 
 Normal removal reads the current origin refs into a temporary store outside the checkout. It does not fetch into, prune, or change the checkout. Forced removal checks the origin locally and needs no network.
 
@@ -41,7 +41,7 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, or `source_resolved` with no Route, such as a task workspace. A `laravel-app` Instance must have exactly one Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or a [failed development create](#failed-creation) that never became active. An active `laravel-app` Instance must have exactly one Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
@@ -52,7 +52,7 @@ The Gateway also refuses these Instances:
 | `analytics.tracking_hosts_exist` | The Instance still has [tracking hosts](/cli/instance#orbit-instanceanalyticsdisable). |
 | `instance.remove_refused` | The Instance is in another state, its Route is not removable, or normal mode found dirty or unpublished source. The message names the rule. |
 
-For a development Instance, the Gateway compares the checkout with its record. Each origin check reads the `remote.origin.url` stored in the checkout and ignores `insteadOf` rewrites.
+For a completed development checkout, the Gateway compares the checkout with its record. Each origin check reads the `remote.origin.url` stored in the checkout and ignores `insteadOf` rewrites. A [failed create](#failed-creation) can leave no checkout or an incomplete one.
 
 | Code | Refused check |
 | --- | --- |
@@ -65,6 +65,14 @@ For a development Instance, the Gateway compares the checkout with its record. E
 | `instance.checkout_path_unsafe` | The path overlaps another managed Instance. |
 | `instance.force_failed` | A forced check failed for another reason. |
 
+### Failed creation
+
+`instance:destroy` removes a development Instance whose create failed before it reached `active`. The Instance must be in `reserved`, `checkout_prepared`, or `source_resolved`, with recorded failure evidence in `failed_step` and `error_code`. These are [creation states](/domains/applications#create-a-development-instance), not a separate failed status.
+
+Removal deletes any owned partial checkout, deletes the reserved Route if one exists, releases the reserved Vite port, and deletes the Instance row. If creation stopped before it made the checkout, there is no source directory to delete. A `reserved` Instance has no completed source preparation to prove ownership of an existing checkout. Orbit refuses to delete that checkout in either mode, even when its origin and account match. Removal still checks that the path and resources belong to this Instance; it never deletes another Instance's source or Route.
+
+A non-active state alone does not prove that create failed. Orbit refuses removal while creation is still in progress. `--force` does not override that refusal. An Instance that already became `active` uses the normal or forced removal rules above, even if a later setup step failed.
+
 ### Worktree sets
 
 A worktree Instance is removed alone. A linked worktree whose directory is gone, which Git calls prunable, does not count.
@@ -73,7 +81,7 @@ A checkout with registered worktrees needs `--force`. Then Orbit removes every w
 
 ### Teardown
 
-Before it accepts a development removal, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
+Before it accepts removal of an active development Instance, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
 
 ## Removal steps
 
@@ -124,7 +132,7 @@ The API, SDK, CLI, and Activity report removal progress in one shape. `DELETE` r
 | `total`, `completed`, `remaining` | Member counts. |
 | `failed_step`, `error_code` | The step and code of a failure, or null. |
 
-Repeat the same command to resume at the first unfinished step. A changed `--force` value returns `instance.removal_conflict`. Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry.
+Repeat the same command to resume at the first unfinished step. A changed `--force` value returns `instance.removal_conflict`. Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
 
 ## Why it works this way
 
