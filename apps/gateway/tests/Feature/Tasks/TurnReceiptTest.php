@@ -604,3 +604,63 @@ it('names the turn command in the prompts and the reminder', function (): void {
         ->and($reminder)->toContain('.git/orbit/turn --thread=17 --outcome=ready_for_review')
         ->and($reminder)->not->toContain('.git/orbit/run');
 });
+
+it('writes the review context with the turn file and leaves no partial file', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $context = "# Task context\n\n## Task brief\n\nit's \"quoted\" and café GROUP-END\n";
+
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, context: $context);
+
+    $orbit = $checkout.'/.git/orbit';
+    expect(is_file($orbit.'/context.md'))->toBeTrue()
+        ->and(is_file($orbit.'/context.md.new'))->toBeFalse()
+        ->and(is_file($orbit.'/turn.json.new'))->toBeFalse()
+        ->and((string) file_get_contents($orbit.'/context.md'))->toBe($context)
+        ->and(is_file($orbit.'/turn.json'))->toBeTrue();
+
+    $receipts->prepare($instance, TaskThreadRole::Implementer);
+
+    expect((string) file_get_contents($orbit.'/context.md'))->toBe($context);
+
+    $replacement = "# Task context\n\nreplaced\n";
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, context: $replacement);
+
+    expect((string) file_get_contents($orbit.'/context.md'))->toBe($replacement)
+        ->and(is_file($orbit.'/context.md.new'))->toBeFalse();
+});
+
+it('reports an unreachable workspace when the review context cannot be written', function (): void {
+    $transport = new AppDevFakeSshExecutor([new CommandResult(255, '', 'ssh: connect to host 10.44.0.143 port 22: Connection refused', 1, false)]);
+    $receipts = turn_receipts($transport);
+
+    expect(fn () => $receipts->prepare(
+        turn_receipt_instance('/srv/orbit/apps/orbit/task-13'),
+        TaskThreadRole::Reviewer,
+        context: "# Task context\n",
+    ))->toThrow(TaskTurnReceiptException::class, 'The task workspace could not be reached for the turn receipt.');
+
+    expect($transport->commands[0]->input)->toContain('turn.json.new')
+        ->and($transport->commands[0]->input)->toContain('context.md.new')
+        ->and($transport->commands[0]->input)->toContain('mv -fT -- "$dir/context.md.new" "$dir/context.md"');
+});
+
+it('replaces a context path that is a symlink to a directory instead of writing inside it', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $orbit = $checkout.'/.git/orbit';
+    mkdir($orbit.'/nested', 0755, true);
+    file_put_contents($orbit.'/nested/keep', 'keep');
+    symlink('nested', $orbit.'/context.md');
+    $context = "# Task context\n\nsymlink\n";
+
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, context: $context);
+
+    expect(is_file($orbit.'/context.md'))->toBeTrue()
+        ->and(is_link($orbit.'/context.md'))->toBeFalse()
+        ->and((string) file_get_contents($orbit.'/context.md'))->toBe($context)
+        ->and((string) file_get_contents($orbit.'/nested/keep'))->toBe('keep')
+        ->and(glob($orbit.'/nested/*'))->toBe([$orbit.'/nested/keep']);
+});

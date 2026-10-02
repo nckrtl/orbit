@@ -41,10 +41,11 @@ use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\DatabaseConnections\DatabaseInspectionExecutor;
-use App\Domain\DatabaseConnections\ManagedMysqlUserProvisioner;
+use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
+use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
@@ -62,12 +63,15 @@ use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
 use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
+use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -79,6 +83,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
+use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Instances\InstanceCloneCandidateInspector;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceRemover;
@@ -208,7 +213,7 @@ use App\Infrastructure\Certificates\OpenSslGatewayCertificateValidator;
 use App\Infrastructure\Certificates\OpenSslLeafCertificateSigner;
 use App\Infrastructure\Clusters\NativeClusterRouterOperationLock;
 use App\Infrastructure\DatabaseConnections\RegisteredDatabaseInspectionExecutor;
-use App\Infrastructure\DatabaseConnections\RemoteManagedMysqlUserProvisioner;
+use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
@@ -219,6 +224,7 @@ use App\Infrastructure\Doctor\NativeProjectStateInspector;
 use App\Infrastructure\Doctor\NativePublicRouteEdgeInspector;
 use App\Infrastructure\Doctor\NativeRoleStateInspector;
 use App\Infrastructure\Doctor\NativeScheduleStateInspector;
+use App\Infrastructure\Doctor\SharedInstalledPackageInventory;
 use App\Infrastructure\Doctor\SshNodeStateInspector;
 use App\Infrastructure\Files\NativeAtomicSymlinkPublisher;
 use App\Infrastructure\Files\ProtectedFileWriter;
@@ -235,6 +241,7 @@ use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\GitHub\HttpGitHubApi;
+use App\Infrastructure\GitHub\ProcessGitHubCliToken;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
 use App\Infrastructure\Hibernation\RemoteHibernationMarkerStore;
@@ -253,10 +260,12 @@ use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteInstanceCloneCandidateInspector;
+use App\Infrastructure\Instances\RemoteInstanceDependencyCopier;
 use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
 use App\Infrastructure\Instances\RemoteInstanceQueueReader;
+use App\Infrastructure\Instances\RemoteInstanceSqliteCloner;
 use App\Infrastructure\Instances\RemoteInstanceSqliteSeeder;
 use App\Infrastructure\Instances\RemoteInstanceTransferSource;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
@@ -337,11 +346,13 @@ use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
+use App\Infrastructure\Tools\HomebrewCaskToolManager;
 use App\Infrastructure\Tools\HomebrewToolManager;
 use App\Infrastructure\Tools\NativeToolInspector;
 use App\Infrastructure\Tools\NativeToolManagerMaterializer;
 use App\Infrastructure\Tools\NativeToolManagerScopeLock;
 use App\Infrastructure\Tools\NativeToolOperationLock;
+use App\Infrastructure\Tools\ToolCommandBudget;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Infrastructure\WebSocket\NativeWebSocketCredentialManager;
 use App\Infrastructure\WebSocket\NativeWebSocketPublicationManager;
@@ -374,6 +385,9 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceCloneCandidateInspector::class => RemoteInstanceCloneCandidateInspector::class,
         InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
+        InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
+        InstanceSqliteCloner::class => RemoteInstanceSqliteCloner::class,
+        InstanceDependencyCopier::class => RemoteInstanceDependencyCopier::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
         InstanceSqliteSeeder::class => RemoteInstanceSqliteSeeder::class,
         InstanceTransferSource::class => RemoteInstanceTransferSource::class,
@@ -442,6 +456,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         NodeConverger::class => NativeNodeConverger::class,
         NodeStorageRootPreparer::class => RemoteNodeStorageRootPreparer::class,
         NodeReachabilityProbe::class => SshNodeReachabilityProbe::class,
+        InstalledPackageInventory::class => SharedInstalledPackageInventory::class,
         NodeStateInspector::class => SshNodeStateInspector::class,
         NodeMetricsReader::class => GrafanaPrometheusNodeMetricsReader::class,
         ProcessStateInspector::class => NativeProcessStateInspector::class,
@@ -454,7 +469,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         RoleBaselineConverger::class => NativeRoleBaselineConverger::class,
         GatewayPrivateDnsRoute::class => GatewayRoleBaseline::class,
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
-        ManagedMysqlUserProvisioner::class => RemoteManagedMysqlUserProvisioner::class,
+        DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
         AgentStateView::class => CacheAgentStateView::class,
@@ -469,6 +484,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
         GitHubApi::class => HttpGitHubApi::class,
+        GitHubCliToken::class => ProcessGitHubCliToken::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
@@ -711,6 +727,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         );
         $this->app->singleton(PrivateDnsManager::class, static fn (): PrivateDnsManager => app(DnsmasqPrivateDnsManager::class));
         $this->app->singleton(CommandDeadline::class);
+        $this->app->singleton(ToolCommandBudget::class);
         $this->app->scoped(MetricsReconcileDeferral::class);
         $this->app->singleton(
             ToolManagerRegistry::class,
@@ -719,6 +736,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 app(VpToolManager::class),
                 app(ComposerToolManager::class),
                 app(HomebrewToolManager::class),
+                app(HomebrewCaskToolManager::class),
             ]),
         );
         $this->app->singleton(

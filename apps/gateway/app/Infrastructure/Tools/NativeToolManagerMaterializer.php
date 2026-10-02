@@ -48,7 +48,7 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
         $managers = array_values($managers);
         $managers = $this->uniqueManagers($managers);
         $scopeNames = array_map(
-            static fn (ToolManager $manager): ToolManagerName => $manager->name(),
+            static fn (ToolManager $manager): ToolManagerName => $manager->name()->scope(),
             $managers,
         );
 
@@ -59,7 +59,7 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
         }
 
         $scopeNames = array_values($uniqueScopeNames);
-        $canonicalOrder = ['apt' => 0, 'vp' => 1, 'composer' => 2, 'brew' => 3];
+        $canonicalOrder = ['apt' => 0, 'vp' => 1, 'composer' => 2, 'brew' => 3, 'brew-cask' => 3];
         usort(
             $scopeNames,
             static fn (ToolManagerName $left, ToolManagerName $right): int => (
@@ -166,17 +166,12 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
             $manager->materialize($node);
             $version = $manager->managerVersion($node);
         } catch (ToolManagerException $exception) {
+            $errorCode = $this->materializationErrorCode($exception);
             $record->update([
                 'status' => LifecycleStatus::Failed,
                 'failed_step' => $exception->step,
-                'error_code' => $exception->step === 'manager-version'
-                    ? 'node.tool_manager_probe_failed'
-                    : 'node.tool_manager_materialization_failed',
+                'error_code' => $errorCode,
             ]);
-
-            $errorCode = $exception->step === 'manager-version'
-                ? 'node.tool_manager_probe_failed'
-                : 'node.tool_manager_materialization_failed';
 
             throw new NodeProvisioningException(
                 step: "tool-manager-{$name->value}",
@@ -193,5 +188,15 @@ final readonly class NativeToolManagerMaterializer implements ToolManagerMateria
             'failed_step' => null,
             'error_code' => null,
         ]);
+    }
+
+    private function materializationErrorCode(ToolManagerException $exception): string
+    {
+        return match ($exception->step) {
+            'manager-version' => 'node.tool_manager_probe_failed',
+            'manager-absent' => 'node.tool_manager_absent',
+            'manager-conflict' => 'node.tool_manager_conflict',
+            default => 'node.tool_manager_materialization_failed',
+        };
     }
 }

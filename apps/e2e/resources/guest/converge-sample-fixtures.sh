@@ -97,7 +97,8 @@ exit($status);"""
     existing_processes=orbit('process:list','--node=app-dev')['processes']
     for name,image,port,volume,environment,command in specs:
         args=['process:create',name,'--node=app-dev','--runtime=docker','--image='+image,'--working-directory=/','--restart=unless-stopped','--start','--port=10.44.0.2:'+str(port)+':'+str(port),'--volume='+volume]
-        args += ['--environment='+k+'='+v for k,v in environment.items()]
+        # process:create takes one --environment word whose value is NAME=VALUE.
+        args += [('--environment'+'=')+k+'='+v for k,v in environment.items()]
         args += ['--command='+x for x in command]
         process=unique(existing_processes, 'name', name)
         expected={'image':image,'command':command,'ports':['10.44.0.2:'+str(port)+':'+str(port)],'volumes':[{'source':volume.split(':')[0],'target':volume.split(':')[1],'read_only':False}]}
@@ -106,7 +107,7 @@ exit($status);"""
         else:
             require(not verify, 'Missing database Process '+name)
             result=orbit(*args)
-            process=result.get('process',result)
+            process=result
         require(isinstance(process.get('id'),int) and process['id'] > 0, 'Missing Process identity')
         pid=process['id']
         processes[name]=pid
@@ -129,10 +130,13 @@ exit($status);"""
         print(name+': ready',flush=True)
 
     connections={x['slug']:x for x in orbit('database:list')['connections']}
+    # The sample MySQL Process has no Database server record, so its user is created here and registered below.
+    mysql_password=creds['mysql_app']
+    mysql_sql="CREATE DATABASE IF NOT EXISTS orbit_e2e;\nCREATE USER IF NOT EXISTS 'orbit_e2e'@'%' IDENTIFIED BY '"+mysql_password+"';\nALTER USER 'orbit_e2e'@'%' IDENTIFIED BY '"+mysql_password+"';\nGRANT ALL PRIVILEGES ON orbit_e2e.* TO 'orbit_e2e'@'%';\n"
     if 'e2e-mysql' not in connections:
         require(not verify, 'Missing MySQL connection')
-        mysql=orbit('database:user:create','e2e-mysql','--process='+str(processes['e2e-mysql']),'--database=orbit_e2e','--username=orbit_e2e','--password='+creds['mysql_app'])
-    print('e2e-mysql: database and user registered',flush=True)
+        docker('exec','-i',containers['e2e-mysql'],'sh','-ec','MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql --protocol=socket --user=root --batch',data=mysql_sql)
+    print('e2e-mysql: database and user created',flush=True)
 
     pg=containers['e2e-postgres']
     password=creds['postgres_app']
@@ -166,9 +170,6 @@ exit($status);"""
     for instance, sql_slug in [(dev,'e2e-mysql'),(prod,'e2e-postgres')]:
         selector='--instance='+str(instance['id'])
         if not verify:
-            # Recover only the known, existing identity through the product.
-            args=['instance:create',str(instance['project_id']),str(instance['node_id']),instance['name'],'--domain='+instance['domain'],'--recover-source-profile']
-            if instance.get('branch_override'): args += ['--branch='+instance['branch_override']]
             try:
                 orbit('env:import',selector)
             except RuntimeError as error:

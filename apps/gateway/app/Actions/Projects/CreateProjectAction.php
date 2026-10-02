@@ -44,9 +44,9 @@ final readonly class CreateProjectAction
         $requestedDefaultBranch = $defaultBranch;
 
         if ($defaultBranch === null) {
-            $defaultBranch = GitBranchName::validate($this->branches->resolve($repositoryUrl));
+            $defaultBranch = GitBranchName::validate($this->branches->resolve($repositoryUrl, $data->sourceAccess));
         } else {
-            $this->branches->verify($repositoryUrl, $defaultBranch);
+            $this->branches->verify($repositoryUrl, $defaultBranch, $data->sourceAccess);
         }
 
         for ($attempt = 0; ; $attempt++) {
@@ -56,9 +56,11 @@ final readonly class CreateProjectAction
                 'name' => $data->name,
                 'type' => $data->type,
                 'repository_url' => $repositoryUrl,
+                'source_access' => $data->sourceAccess,
                 'default_branch' => $defaultBranch,
                 'root' => $root,
                 'task_check' => $data->resolvedTaskCheck(),
+                'task_workspace_routed' => $data->resolvedTaskWorkspaceRouted(),
             ]);
             try {
                 $candidate->save();
@@ -135,10 +137,12 @@ final readonly class CreateProjectAction
             && $project->name === $data->name
             && $project->type === $data->type
             && $project->repository_url === $repositoryUrl
+            && $project->source_access === $data->sourceAccess
             && ($defaultBranch === null
             || $project->default_branch === $defaultBranch)
             && $project->root === $root
             && (! $data->taskCheckProvided || $project->task_check === $data->taskCheck)
+            && (! $data->taskWorkspaceRoutedProvided || $project->task_workspace_routed === $data->taskWorkspaceRouted)
         ) {
             return;
         }

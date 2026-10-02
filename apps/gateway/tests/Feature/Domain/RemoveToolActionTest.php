@@ -8,6 +8,7 @@ use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
+use App\Domain\Tools\ToolObjectStatus;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOutcome;
@@ -66,7 +67,9 @@ describe(RemoveToolAction::class, function (): void {
         $exception = removal_tool_exception(fn () => $action->execute($tool));
 
         expect($exception->errorCode)
-            ->toBe('tool.manager_unavailable')
+            ->toBe('tool.manager_unsupported')
+            ->and($exception->status)
+            ->toBe(422)
             ->and($manager->calls)
             ->toBeEmpty()
             ->and($lock->runs)
@@ -100,6 +103,10 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Failed)
             ->and($result->tool->id)
             ->toBe($tool->id)
             ->and($manager->calls)
@@ -124,6 +131,10 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Failed)
             ->and($result->tool->id)
             ->toBe($tool->id)
             ->and($manager->calls)
@@ -183,6 +194,10 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Installed)
             ->and($result->tool->id)
             ->toBe($tool->id)
             ->and($manager->calls)
@@ -246,6 +261,12 @@ describe(RemoveToolAction::class, function (): void {
 
         expect($result->outcome)
             ->toBe(ToolOutcome::Applied)
+            ->and($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($result->tool->failed_operation)
+            ->toBeNull()
             ->and($manager->calls)
             ->toBe(['installedVersion', 'planRemoval', 'remove', 'installedVersion'])
             ->and(Tool::query()->find($tool->id))
@@ -253,6 +274,55 @@ describe(RemoveToolAction::class, function (): void {
             ->and(Tool::query()->find($sibling->id))
             ->not->toBeNull()->and(ToolManagerRecord::query()->find($record->id))
             ->not->toBeNull();
+    });
+
+    it('reports an absent or conflicting macOS scope as unavailable and retries removal', function (string $step): void {
+        [$tool] = removal_tool_fixture();
+        [$action, $manager] = removal_tool_action();
+        $manager->installedVersions = [new ToolManagerException($step, 'secret prefix')];
+
+        $failure = removal_tool_exception(fn () => $action->execute($tool));
+        $stored = $tool->refresh();
+
+        expect($failure->errorCode)->toBe('tool.manager_unavailable')
+            ->and($failure->status)->toBe(409)
+            ->and($failure->getMessage())->not->toContain('secret')
+            ->and($stored->status)->toBe(ToolStatus::Failed)
+            ->and($stored->failed_operation)->toBe(ToolOperation::Remove)
+            ->and($stored->error_code)->toBe('tool.manager_unavailable')
+            ->and($stored->installed_version)->toBe('2.4.1');
+
+        $manager->installedVersions = ['2.4.1', null];
+        $manager->removalPlan = new ToolRemovalPlan(['jq']);
+        $result = $action->execute($stored);
+
+        expect($result->outcome)->toBe(ToolOutcome::Applied)
+            ->and($result->status)->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)->toBe(ToolStatus::Failed)
+            ->and($result->tool->error_code)->toBe('tool.manager_unavailable')
+            ->and(Tool::query()->find($tool->id))->toBeNull();
+    })->with([
+        'absent scope' => ['manager-absent'],
+        'conflicting scope' => ['manager-conflict'],
+    ]);
+
+    it('reports a scope that disappears during removal as unavailable', function (): void {
+        [$tool] = removal_tool_fixture();
+        [$action, $manager] = removal_tool_action();
+        $manager->installedVersions = ['2.4.0'];
+        $manager->removalPlan = new ToolRemovalPlan(['jq']);
+        $manager->failures['remove'] = [new ToolManagerException('manager-conflict', 'secret chown')];
+
+        $failure = removal_tool_exception(fn () => $action->execute($tool));
+        $stored = $tool->refresh();
+
+        expect($failure->errorCode)->toBe('tool.manager_unavailable')
+            ->and($failure->status)->toBe(409)
+            ->and($failure->getMessage())->not->toContain('secret')
+            ->and($stored->status)->toBe(ToolStatus::Failed)
+            ->and($stored->failed_operation)->toBe(ToolOperation::Remove)
+            ->and($stored->error_code)->toBe('tool.manager_unavailable')
+            ->and($stored->installed_version)->toBe('2.4.1');
     });
 
     it('retains manager removal failures', function (): void {
@@ -323,15 +393,19 @@ describe(RemoveToolAction::class, function (): void {
         [$action, $manager, $lock] = removal_tool_action();
         $manager->installedVersions = [null];
 
-        $action->execute($tool);
+        $result = $action->execute($tool);
 
-        expect($lock->arguments)->toBe([[
-            'nodeId' => $tool->node_id,
-            'manager' => ToolManagerName::Apt,
-            'package' => 'jq',
-            'operation' => ToolOperation::Remove,
-            'versionConstraint' => '^2.4',
-        ]]);
+        expect($result->status)
+            ->toBe(ToolObjectStatus::Removed)
+            ->and($result->tool->status)
+            ->toBe(ToolStatus::Installed)
+            ->and($lock->arguments)->toBe([[
+                'nodeId' => $tool->node_id,
+                'manager' => ToolManagerName::Apt,
+                'package' => 'jq',
+                'operation' => ToolOperation::Remove,
+                'versionConstraint' => '^2.4',
+            ]]);
     });
 });
 

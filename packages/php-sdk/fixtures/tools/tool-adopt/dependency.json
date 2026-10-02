@@ -1,0 +1,17 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tool.adoption_unsupported",
+            "message": "The package cannot be adopted.",
+            "details": {
+                "step": "adopt",
+                "outcome": "manager_failed",
+                "adoption_block": "dependency"
+            }
+        }
+    }
+}

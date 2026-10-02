@@ -35,7 +35,7 @@ it('keeps the full diff counts when the path list was cut and does not show a pa
 
     expect(packet_section($packet, 'Diff stat'))->toBe(implode("\n", [
         '40 files changed, 90 insertions(+), 3 deletions(-)',
-        'The path list was cut. The stat command prints the rest.',
+        'The path list was cut. The stat command prints the rest. .git/orbit/context.md holds the full task context.',
     ]))
         ->and($packet)->not->toContain('only-the-tail.php')
         ->and(packet_section($packet, 'Diff'))->toBe('The diff could not be read. The diff command prints it.')
@@ -55,7 +55,7 @@ it('includes answered consults in the opening packet and leaves them out of a co
     $section = packet_section(review_packet(['consults' => $consults]), 'Consults');
     expect(mb_strlen($section))->toBeLessThanOrEqual(TaskReviewPacket::ConsultsLimit)
         ->and($section)->toContain('answered consults were omitted')
-        ->and($section)->toContain('tasks-question-list returns each question and answer.')
+        ->and($section)->toContain('.git/orbit/context.md holds each question and answer.')
         ->and($section)->toContain('Question 20')
         ->and($section)->not->toContain('Question 1 ');
 
@@ -72,7 +72,7 @@ it('includes answered consults in the opening packet and leaves them out of a co
         ->and($longLine)->toContain(str_repeat('a', 40))
         ->and($longLine)->not->toContain($longQuestion)
         ->and($longLine)->not->toContain($longAnswer)
-        ->and($long)->toContain('tasks-question-list returns each question and answer.');
+        ->and($long)->toContain('.git/orbit/context.md holds each question and answer.');
 
     expect(review_packet(['continued' => true, 'consults' => $consults]))->not->toContain('Question 20');
 });
@@ -87,7 +87,7 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
             '- layout-repro (command: must fail on the start commit and pass on the working tree; paths apps/gateway/tests/Feature/HomeScreenTest.php; `vendor/bin/pest tests/Feature/HomeScreenTest.php --filter=\'home screen layout\'` in apps/gateway): The',
             '- web-tests (command: `bun test` in apps/web): The web app tests pass',
             '- error-copy (review: confirmed by the reviewer): Error messages name the failing subtask',
-            'tasks-show returns every field.',
+            '.git/orbit/context.md holds every field.',
         ]))
         ->and(packet_section($packet, 'Earlier approved subtasks'))->toBe('- Decide the packet: ADR 0169 records the caps.')
         ->and(packet_section($packet, 'Diff stat'))->toBe(implode("\n", [
@@ -107,14 +107,14 @@ it('renders a review packet with the group brief, subtask brief, deliverables, a
         ->and($packet)->not->toContain('--pr-summary');
 });
 
-it('cuts the packet group brief and subtask brief from the end and names tasks-show', function (): void {
+it('cuts the packet group brief and subtask brief from the end and names the context file', function (): void {
     $packet = review_packet([
         'groupBrief' => str_repeat('é', 2_100).'GROUP-END',
         'subtaskBrief' => str_repeat('b', 2_500).'SUBTASK-END',
     ]);
     $group = packet_section($packet, 'Group brief');
     $subtask = packet_section($packet, 'Subtask brief');
-    $note = 'The end is cut. tasks-show returns the full brief.';
+    $note = 'The end is cut. .git/orbit/context.md holds the full brief.';
 
     expect(mb_strlen($group))->toBe(TaskReviewPacket::BriefLimit)
         ->and($group)->toStartWith(str_repeat('é', 1_500))
@@ -145,7 +145,7 @@ it('keeps each packet deliverable line within 240 characters and drops lines tha
         ->and(mb_strlen($kept[0]))->toBeLessThanOrEqual(TaskReviewPacket::DeliverableLineLimit)
         ->and(mb_strlen(substr($kept[0], strrpos($kept[0], '): ') + 3)))->toBeLessThanOrEqual(TaskReviewPacket::DescriptionLimit)
         ->and($body)->not->toContain('item-20')
-        ->and($body)->toEndWith((20 - count($kept)).' deliverables were omitted. tasks-show returns every field.');
+        ->and($body)->toEndWith((20 - count($kept)).' deliverables were omitted. .git/orbit/context.md holds every field.');
 });
 
 it('drops the oldest packet approval lines first and keeps each line within 200 characters', function (): void {
@@ -161,7 +161,7 @@ it('drops the oldest packet approval lines first and keeps each line within 200 
     $kept = array_values(array_filter($lines, static fn (string $line): bool => str_starts_with($line, '- ')));
 
     expect(mb_strlen($body))->toBeLessThanOrEqual(TaskReviewPacket::ApprovalsLimit)
-        ->and($lines[0])->toBe((12 - count($kept)).' earlier approvals were omitted. tasks-comment-list returns each approval summary.')
+        ->and($lines[0])->toBe((12 - count($kept)).' earlier approvals were omitted. .git/orbit/context.md holds each approval body.')
         ->and($kept)->not->toBeEmpty()
         ->and($body)->not->toContain('summary-01')
         ->and($kept[array_key_last($kept)])->toContain('summary-12')
@@ -188,7 +188,7 @@ it('summarizes the packet diff stat, including untracked files, and omits paths 
         ->and($paths[0])->toBe('kept.php')
         ->and($body)->toContain('notes/untracked.txt')
         ->and($body)->not->toContain('file-40-')
-        ->and($lines[array_key_last($lines)])->toBe((42 - count($paths)).' paths were omitted. The stat command prints the rest.')
+        ->and($lines[array_key_last($lines)])->toBe((42 - count($paths)).' paths were omitted. The stat command prints the rest. .git/orbit/context.md holds the full task context.')
         ->and(packet_section(review_packet(['diffFiles' => $files]), 'Retrieval'))->toContain('git diff --stat '.str_repeat('a', 40));
 });
 
@@ -230,7 +230,7 @@ it('cuts a packet handoff command to 160 characters and drops lines that do not 
         ->and($kept[0])->toStartWith('`'.mb_substr('run-1 '.str_repeat('c', 180), 0, TaskReviewPacket::CommandLimit).'` in apps/web exited 1')
         ->and($kept[0])->not->toContain(str_repeat('c', TaskReviewPacket::CommandLimit))
         ->and($body)->not->toContain('run-16')
-        ->and($lines[array_key_last($lines)])->toBe((16 - count($kept)).' commands were omitted. .git/orbit/check.log holds the command text and any cut tail. .git/orbit/check.json stores the exit codes.');
+        ->and($lines[array_key_last($lines)])->toBe((16 - count($kept)).' commands were omitted. .git/orbit/check.log holds the command text and any cut tail. .git/orbit/check.json stores the exit codes. .git/orbit/context.md holds the full task context.');
 });
 
 it('includes a packet base-run message tail only while it fits in the handoff cap', function (): void {
@@ -259,7 +259,7 @@ it('caps the packet diff and names the follow-up command that prints the rest', 
 
     expect($diff)->toStartWith(str_repeat('D', 100))
         ->and($diff)->not->toContain('DIFF-END')
-        ->and($diff)->toEndWith('The end of the diff is cut. The diff command prints the rest, including the content of untracked files.')
+        ->and($diff)->toEndWith('The end of the diff is cut. The diff command prints the rest, including the content of untracked files. .git/orbit/context.md holds the full task context.')
         ->and(strlen(strtok($diff, "\n")))->toBeLessThanOrEqual(TaskReviewPacket::DiffBytes)
         ->and(packet_section($packet, 'Retrieval'))->toContain($command)
         ->and($packet)->not->toContain('git add')
@@ -432,7 +432,7 @@ it('keeps a review packet within 16000 characters when the task check and every 
 
     expect(mb_strlen($packet))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
         ->and($packet)->not->toContain($taskCheck)
-        ->and($packet)->toContain('The Project task check is `'.$shown.'`. .git/orbit/check.log holds the rest.')
+        ->and($packet)->toContain('The Project task check is `'.$shown.'`. .git/orbit/check.log holds the rest. .git/orbit/context.md holds the full task context.')
         ->and($packet)->not->toContain(mb_substr($taskCheck, 0, TaskReviewPacket::CommandLimit + 1))
         ->and($packet)->toContain($retrieval)
         ->and($packet)->toContain(TaskTurnInstructions::reviewer(final: true))
@@ -509,7 +509,7 @@ it('turns invalid UTF-8 in a diff and its stat into a packet the driver can enco
             ['path' => "bad\xFF.txt", 'insertions' => 1, 'deletions' => 0],
         ],
     ]);
-    $note = 'The end of the diff is cut. The diff command prints the rest, including the content of untracked files.';
+    $note = 'The end of the diff is cut. The diff command prints the rest, including the content of untracked files. .git/orbit/context.md holds the full task context.';
     $cutDiff = packet_section($cut, 'Diff');
 
     expect(fn () => json_encode($packet, JSON_THROW_ON_ERROR))->not->toThrow(JsonException::class)
@@ -525,6 +525,93 @@ it('turns invalid UTF-8 in a diff and its stat into a packet the driver can enco
         ->and(strlen(substr($cutDiff, 0, -strlen("\n".$note))))->toBeLessThanOrEqual(TaskReviewPacket::DiffBytes)
         ->and($cut)->toContain('bad?.txt')
         ->and($cut)->not->toContain("\xFF");
+});
+
+it('names .git/orbit/context.md in every cut note and keeps the packet caps', function (): void {
+    $file = '.git/orbit/context.md';
+    $deliverables = [];
+    $commands = [];
+    for ($index = 1; $index <= 16; $index++) {
+        $deliverables[] = TaskDeliverable::fromArray([
+            'id' => 'command-'.$index,
+            'type' => 'command',
+            'description' => 'Run check '.$index.' '.str_repeat('d', 200),
+            'command' => 'run-'.$index.' '.str_repeat('c', 180),
+            'directory' => 'apps/web',
+        ]);
+        $commands['command-'.$index] = ['exit_code' => $index, 'output' => ''];
+    }
+    $approvals = [];
+    for ($index = 1; $index <= 12; $index++) {
+        $approvals[] = ['title' => 'Task '.$index, 'summary' => 'summary-'.$index.' '.str_repeat('s', 180)];
+    }
+    $files = [];
+    for ($index = 1; $index <= 40; $index++) {
+        $files[] = ['path' => sprintf('dropped/file-%02d-%s.php', $index, str_repeat('p', 70)), 'insertions' => 1, 'deletions' => 0];
+    }
+    $ordinary = review_packet();
+    $packets = [
+        review_packet([
+            'groupBrief' => str_repeat('é', 2_100).'GROUP-END',
+            'subtaskBrief' => str_repeat('b', 2_500).'SUBTASK-END',
+            'resolution' => str_repeat('r', 2_500).'RESOLUTION-END',
+            'taskCheck' => str_repeat('c', 300),
+        ]),
+        review_packet([
+            'deliverables' => $deliverables,
+            'approvals' => $approvals,
+            'diffFiles' => $files,
+            'diff' => str_repeat('D', 20_000).'DIFF-END',
+            'evidence' => TaskDeliverableEvidence::fromArray(['diff' => [], 'commands' => $commands]),
+            'taskCheck' => null,
+            'handoffExitCode' => null,
+        ]),
+        review_packet([
+            'diffFilesComplete' => false,
+            'diffAvailable' => false,
+            'diffCounts' => ['files' => 40, 'insertions' => 90, 'deletions' => 3],
+            'approvals' => [['title' => 'Decide', 'summary' => str_repeat('s', 500).'APPROVAL-END']],
+        ]),
+    ];
+
+    expect(TaskReviewPacket::Limit)->toBe(16_000)
+        ->and(TaskReviewPacket::DiffBytes)->toBe(16_384)
+        ->and(TaskReviewPacket::BriefLimit)->toBe(2_000)
+        ->and(TaskReviewPacket::ResolutionLimit)->toBe(2_000)
+        ->and(TaskReviewPacket::DeliverablesLimit)->toBe(2_000)
+        ->and(TaskReviewPacket::DeliverableLineLimit)->toBe(240)
+        ->and(TaskReviewPacket::DescriptionLimit)->toBe(160)
+        ->and(TaskReviewPacket::ApprovalsLimit)->toBe(1_500)
+        ->and(TaskReviewPacket::ApprovalLineLimit)->toBe(200)
+        ->and(TaskReviewPacket::DiffStatLimit)->toBe(1_500)
+        ->and(TaskReviewPacket::HandoffLimit)->toBe(2_000)
+        ->and(TaskReviewPacket::CommandLimit)->toBe(160)
+        ->and(TaskReviewPacket::RetrievalLimit)->toBe(1_000);
+
+    foreach ($packets as $packet) {
+        expect($packet)->not->toContain('tasks-show')
+            ->and($packet)->not->toContain('tasks-comment-list')
+            ->and(mb_strlen($packet))->toBeLessThanOrEqual(TaskReviewPacket::Limit);
+        $notes = array_values(array_filter(
+            explode("\n", $packet),
+            static fn (string $line): bool => preg_match('/\b(cut|omitted)\b/u', $line) === 1 || str_contains($line, 'holds the rest'),
+        ));
+        expect($notes)->not->toBeEmpty();
+        foreach ($notes as $note) {
+            expect($note)->toContain($file);
+        }
+    }
+
+    $resolution = packet_section($packets[0], 'Resolution');
+
+    expect($resolution)->toEndWith('The end is cut. '.$file.' holds the full resolution.')
+        ->and(mb_strlen($resolution))->toBe(TaskReviewPacket::ResolutionLimit)
+        ->and($packets[0])->not->toContain('RESOLUTION-END')
+        ->and($packets[2])->not->toContain('APPROVAL-END')
+        ->and(packet_section($packets[2], 'Earlier approved subtasks'))->toContain($file.' holds each approval body.')
+        ->and($ordinary)->not->toContain('tasks-show')
+        ->and($ordinary)->not->toContain('tasks-comment-list')
+        ->and(packet_section($ordinary, 'Deliverables'))->toContain($file.' holds every field.');
 });
 
 /**
@@ -563,6 +650,7 @@ function review_packet(array $overrides = []): string
         'diffAvailable' => true,
         'diffCounts' => null,
         'consults' => [],
+        'resolution' => '',
     ];
     foreach ($overrides as $key => $value) {
         $values[$key] = $value;
@@ -589,6 +677,7 @@ function review_packet(array $overrides = []): string
         diffAvailable: $values['diffAvailable'],
         diffCounts: $values['diffCounts'],
         consults: $values['consults'],
+        resolution: $values['resolution'],
     )->render();
 }
 
@@ -615,6 +704,7 @@ function handoff_evidence(string $baseMessage = 'Class "HomeScreen" not found'):
 function packet_section(string $packet, string $heading): string
 {
     $headings = [
+        'Resolution',
         'Group brief',
         'Subtask brief',
         'Deliverables',

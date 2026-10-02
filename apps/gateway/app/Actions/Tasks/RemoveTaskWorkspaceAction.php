@@ -7,7 +7,6 @@ namespace App\Actions\Tasks;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
@@ -23,10 +22,9 @@ use Throwable;
  * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
  * when the group holds no Instance.
  *
- * The forced remover deletes the checkout and only then the Instance row. Before that, the group's
- * bridge worktree is removed from the registered primary checkout. A refusal leaves both the checkout
- * and the bridge in place. The caller records assistance and returns the error, so the checkout stays
- * named by a record.
+ * Removal is the generic forced Instance remover. It runs the Project's teardown steps, then deletes the
+ * checkout and only then the Instance row. A refused teardown or source check leaves both in place. The
+ * caller records assistance and returns the error, so the checkout stays named by a record.
  */
 final readonly class RemoveTaskWorkspaceAction
 {
@@ -36,7 +34,6 @@ final readonly class RemoveTaskWorkspaceAction
 
     public function __construct(
         private InstanceRemover $remover,
-        private TaskBridgeWorktreeRemover $bridges,
     ) {}
 
     /** The attached Instance, or the group's unattached `task-{group id}` workspace. */
@@ -86,10 +83,9 @@ final readonly class RemoveTaskWorkspaceAction
         return $instance;
     }
 
-    /** Removes the group's bridge worktree, then the checkout. The Instance row stays when removal refuses. */
+    /** Runs Project teardown through the generic Instance remover. The source and row stay when removal refuses. */
     public function remove(Instance $instance): void
     {
-        $this->bridges->remove($instance);
         $this->remover->execute($instance, true);
     }
 

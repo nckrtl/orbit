@@ -1,0 +1,33 @@
+Adopting Tool...
+
+┌  Adopt Tool
+│
+├  ● Adopt Tool
+│
+└  Ownership unchanged.
+
+
+┌  Tool [jq] already has this ownership with [apt].
+│
+├  ID                  1
+│
+├  Node ID             2
+│
+├  Manager             apt
+│
+├  Package             jq
+│
+├  Constraint          ^1.0
+│
+├  Status              installed
+│
+├  Installed version   1.0.0
+│
+├  Failed operation    —
+│
+├  Error code          —
+│
+├  Outcome             unchanged
+│
+└  Request ID          0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

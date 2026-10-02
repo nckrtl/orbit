@@ -2,7 +2,7 @@
 title: "Incus topology registry"
 description: "How the harness leases, prepares, and releases disposable Incus topologies, and how it runs on-demand scenarios."
 covers:
-  - bin/{e2e-topology,e2e-clone-bridge,e2e-scenarios}
+  - bin/{e2e-topology,e2e-clone-bridge,e2e-task-cleanup,e2e-scenarios}
   - apps/e2e/config/e2e.php
   - apps/e2e/app/Console/Commands/{Topology,Scenario}/**
   - apps/e2e/app/E2E/{TopologyAcquirer,TopologyReleaser,IssueTopologyConstructor,AcquisitionRollback,DiscoveryGuestPreparer,WorktreeSynchronizer,WorktreeLocator,HostCapacity,OrphanNetworkSweep,IncusNetworkLifecycle,EvidenceLog}.php
@@ -48,6 +48,8 @@ Convergence builds the sample workloads through the Orbit CLI, never by editing 
 Credentials stay in the guest's protected configuration and in the Gateway. Repeated convergence keeps credentials, volumes, environment keys, and database contents. It refuses a resource whose identity conflicts with the expected one.
 
 Guest convergence reads only the current CLI names: `projects`, `instances`, `project_id`, and `target.instance_id`. It creates the `e2e-dev.orbit` Route with `route:create <instance> e2e-dev.orbit --publication=private`. The first argument is the Instance id. Sample `APP_URL` values store `https://{{instance.domain}}`. [Project and Instance](/reference/projects#project-and-instance) defines those names, and [Guest script inputs](/reference/topology-snapshot#guest-script-inputs) lists the commands.
+
+CI checks those calls and the JSON fields the scripts read against the current CLI signatures and the OpenAPI schemas. A failed script reports the script, the VM, the exit code, and the redacted stderr tail. [Failed guest scripts](/reference/topology-snapshot#failed-guest-scripts) states that error.
 
 ## Discovery topology
 
@@ -174,7 +176,11 @@ The origin key is the SHA-256 of the origin URL's lowercase host and its path, s
 
 The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-snapshot` never bridges, because snapshot operations belong to the primary checkout.
 
-In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, it removes the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the task ends, because bridge removal does not release it.
+In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the task ends, because bridge removal does not release it.
+
+The helper checks the checkout identity and origin, the current user's registered primary checkout, its promoted snapshot marker, and its repository identity. It targets `task-{id}-e2e` under that primary's worktree root. It removes a registered worktree only when both its path and branch match. A bridge checked out on another branch stays. It deletes the task bridge branch only when no worktree has it checked out, and deletes only `refs/orbit/e2e-bridge/task-{id}`. It never removes another task's bridge or releases a topology.
+
+An absent bridge or registration is success. A cleanup command failure exits nonzero and makes teardown retain the task checkout and Instance for retry. Removal of a matching bridge, its unused branch, and its staging ref is idempotent. The helper does not alter the checkout that runs it or that checkout's worktrees.
 
 ## Release
 
@@ -286,6 +292,10 @@ The harness records an `exec` only when you give it a label. Most commands are e
 ### A bridge for task workspace clones
 
 The harness expects every topology to belong to a linked worktree of the primary checkout. The bridge gives a clone that shape. Teaching the harness to accept clones is a rejected alternative, because it changes about ten identity checks and the guest mount evidence. Mirroring with `rsync --delete` is also rejected, because it deletes the files that the harness and the guests keep in the mount. Finding the primary through the main cache store is rejected, because topologies would then depend on published test caches.
+
+### Cleanup stays with the Project
+
+The bridge layout belongs to this repository, so the Orbit Project's teardown runs the installed helper. Putting that removal in the Gateway was rejected, because the engine would then know one repository's worktrees. A failed cleanup exits nonzero and teardown keeps the checkout for retry. The helper does not release the topology.
 
 ### Scenarios stay outside delivery
 

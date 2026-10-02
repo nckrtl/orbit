@@ -21,12 +21,16 @@
     },
     {
         "path": "/tasks",
-        "purpose": "The task board, with one column for each status.",
+        "purpose": "The task board, with one column for each status, and the task definitions.",
         "reach": "Open Tasks in the main nav.",
         "controls": [
             {
                 "testid": "nav-tasks",
                 "purpose": "Tasks in the main nav, after the phone menu is opened when the nav is collapsed."
+            },
+            {
+                "testid": "task-definitions",
+                "purpose": "The task definitions. Choosing a row opens that definition."
             },
             { "testid": "tasks-board", "purpose": "The status columns." },
             { "testid": "task-group-card", "purpose": "Opens one task group." }
@@ -50,6 +54,32 @@
             { "testid": "subtask-title", "purpose": "The subtask title." },
             { "testid": "agent-sessions", "purpose": "The subtask's agent thread." },
             { "testid": "task-comments", "purpose": "Comments on this subtask." }
+        ]
+    },
+    {
+        "path": "/projects/$project/task-definitions/$name",
+        "purpose": "One task definition, drawn from the live API, with the selected subtask and any findings.",
+        "reach": "Open Tasks and choose a definition, or open a Project and choose one of its definitions.",
+        "controls": [
+            { "testid": "definition-title", "purpose": "The definition title." },
+            { "testid": "definition-canvas", "purpose": "The drawing of the definition." },
+            {
+                "testid": "definition-card",
+                "purpose": "One subtask on the canvas. Choosing it opens that subtask."
+            },
+            {
+                "testid": "definition-phase",
+                "purpose": "A collapsed phase. Choosing it opens the phase."
+            },
+            {
+                "testid": "definition-phase-frame",
+                "purpose": "The frame around an open phase. Choosing its title collapses the phase."
+            },
+            {
+                "testid": "definition-subtask",
+                "purpose": "The selected subtask, or an engine stage."
+            },
+            { "testid": "definition-findings", "purpose": "Findings about routes and models." }
         ]
     },
     {
@@ -186,8 +216,142 @@
         ]
     },
     {
+        "path": "/nodes/$id",
+        "purpose": "One Node's overview: identity, supported metrics, instances, and node processes.",
+        "reach": "Open Nodes, then choose a row. Overview is the Node URL without a section.",
+        "controls": [
+            { "testid": "record-title", "purpose": "The Node name in the breadcrumb." },
+            { "testid": "record-actions", "purpose": "Opens the Node actions menu." },
+            { "testid": "record-properties", "purpose": "The Node's identity." },
+            { "testid": "node-overview", "purpose": "The Overview section." },
+            { "testid": "node-tools", "purpose": "The Tools section." },
+            {
+                "testid": "node-firewall",
+                "purpose": "The Firewall section on a Linux Node. A Mac does not show it."
+            }
+        ]
+    },
+    {
+        "path": "/nodes/$id/tools",
+        "purpose": "Registered Tools and detected packages for one Node, including adoption, update, and removal.",
+        "reach": "Open a Node, then choose Tools. The address is /nodes/<id>/tools.",
+        "controls": [
+            { "testid": "node-overview", "purpose": "Back to the Node overview." },
+            { "testid": "node-tools", "purpose": "The Tools section, selected on this route." },
+            {
+                "testid": "node-firewall",
+                "purpose": "The Firewall section on a Linux Node. A Mac does not show it."
+            },
+            {
+                "testid": "node-tools-list",
+                "purpose": "The stored tools, one row per registered Tool."
+            },
+            {
+                "testid": "node-tools-offline",
+                "purpose": "Shown when the Node is not active. The rows are still the stored tools."
+            },
+            {
+                "testid": "node-tools-error",
+                "purpose": "Shown when the tool list cannot be loaded, instead of an empty list."
+            },
+            {
+                "testid": "node-tools-inspection",
+                "purpose": "When the inventory was read, or that the inspection is unavailable."
+            },
+            {
+                "testid": "node-tools-refresh",
+                "purpose": "Reads the inventory again. It does not adopt or update a package."
+            },
+            {
+                "testid": "node-tools-scan-stale",
+                "purpose": "Shown when a refresh fails and the previous observation is still on screen."
+            },
+            {
+                "testid": "node-tools-scan-unavailable",
+                "purpose": "Shown when there is no observation. This is not an empty inventory."
+            },
+            {
+                "testid": "node-tools-scan-states",
+                "purpose": "Managers whose package lists are not an inventory."
+            },
+            {
+                "testid": "node-tools-unmanaged",
+                "purpose": "Detected packages Orbit does not own. Dependencies and unsupported packages stay informational."
+            },
+            {
+                "testid": "node-tools-adopt-brew-delta",
+                "purpose": "Opens the ownership form for the demo formula delta."
+            },
+            {
+                "testid": "node-tools-adopt-brew-ghost",
+                "purpose": "Opens the ownership form for a package the demo then refuses."
+            },
+            {
+                "testid": "node-tools-adopt-form",
+                "purpose": "The ownership question, the optional constraint, and any revalidation error."
+            },
+            {
+                "testid": "node-tools-adopt-prompt",
+                "purpose": "Names the package, manager, and Node before adoption."
+            },
+            {
+                "testid": "node-tools-adopt-constraint",
+                "purpose": "Optional SemVer constraint. Empty sends no constraint."
+            },
+            {
+                "testid": "node-tools-adopt-submit",
+                "purpose": "Sends tool:adopt. Disabled while that request is in flight."
+            },
+            {
+                "testid": "node-tools-adopt-cancel",
+                "purpose": "Closes the ownership form without a request."
+            },
+            {
+                "testid": "node-tools-adopt-error",
+                "purpose": "The Gateway's revalidation error. It stays until the form closes."
+            },
+            {
+                "testid": "node-tools-remove-form",
+                "purpose": "Asks before uninstalling one Tool and deleting its record."
+            },
+            {
+                "testid": "node-tools-remove-prompt",
+                "purpose": "Names the package, manager, Node, and the effect of removal."
+            },
+            {
+                "testid": "node-tools-remove-confirm",
+                "purpose": "Sends tool:remove for the named Tool."
+            },
+            {
+                "testid": "node-tools-remove-cancel",
+                "purpose": "Closes the removal question without a request."
+            },
+            {
+                "testid": "node-tools-remove-error",
+                "purpose": "A failed removal. The Tool row stays."
+            },
+            {
+                "testid": "node-tools-result",
+                "purpose": "The outcome of the last adopt, update, or removal."
+            }
+        ]
+    },
+    {
+        "path": "/nodes/$id/firewall",
+        "purpose": "The Linux Node's operator, Orbit, and live firewall rules, with the existing actions.",
+        "reach": "Open a Linux Node, then choose Firewall. The address is /nodes/<id>/firewall.",
+        "controls": [
+            { "testid": "node-overview", "purpose": "Back to the Node overview." },
+            { "testid": "node-tools", "purpose": "The Tools section." },
+            {
+                "testid": "node-firewall",
+                "purpose": "The Firewall section, selected on this route."
+            }
+        ]
+    },
+    {
         "path": "/$section/$id",
-        "purpose": "One node, project, instance, process, schedule, database, firewall rule, or quota provider.",
+        "purpose": "One project, instance, process, schedule, database, firewall rule, or quota provider.",
         "reach": "Open a section from the main nav, then choose a row.",
         "controls": [
             { "testid": "record-title", "purpose": "The record name in the breadcrumb." },
@@ -204,6 +368,10 @@
             {
                 "testid": "quota-account-toggle",
                 "purpose": "Enables or disables one quota account."
+            },
+            {
+                "testid": "task-definitions",
+                "purpose": "The task definitions for this Project, on a Project page. Choosing a row opens that definition."
             },
             {
                 "testid": "quota-unavailable",

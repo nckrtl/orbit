@@ -355,7 +355,7 @@ it('rejects non-Linux platform input before making an API request', function (st
             'host' => '94.237.40.75',
             '--platform' => $platform,
         ])
-        ->expectsOutputToContain('Platform must be linux.')
+        ->expectsOutputToContain('Platform must be linux or macos.')
         ->assertExitCode(1);
 
     expect($mockClient->getLastPendingRequest())->toBeNull();

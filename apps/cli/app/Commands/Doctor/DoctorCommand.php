@@ -79,7 +79,13 @@ final class DoctorCommand extends GatewayCommand
                         $family->family,
                         $family->status,
                         $family->checked,
-                        $this->doctorResourceLabel($issue->resourceType, $issue->resourceId, $issue->resourceName),
+                        $this->doctorResourceLabel(
+                            $issue->code,
+                            $issue->resourceType,
+                            $issue->resourceId,
+                            $issue->resourceName,
+                            $issue->expected,
+                        ),
                         "{$issue->code}: {$issue->summary}".$this->doctorExpectedObserved($issue->expected, $issue->observed),
                     ];
                 }
@@ -90,9 +96,9 @@ final class DoctorCommand extends GatewayCommand
             $rows,
         ));
         $this->writeHumanMessage(sprintf(
-            'Nodes: %d, families: %d, checks: %d, drift: %d, unverifiable: %d',
+            'Nodes: %d, families: %d, checks: %d, drift: %d, unverifiable: %d, informational: %d',
             $report->summary['nodes'], $report->summary['families'], $report->summary['checks'],
-            $report->summary['drift'], $report->summary['unverifiable'],
+            $report->summary['drift'], $report->summary['unverifiable'], $report->summary['informational'],
         ));
         $this->writeHumanMessage('Healthy: '.($report->healthy ? 'yes' : 'no'));
         $this->writeHumanMessage("Request ID: {$report->requestId}");
@@ -136,8 +142,21 @@ final class DoctorCommand extends GatewayCommand
         return $names;
     }
 
-    private function doctorResourceLabel(string $resourceType, int|string|null $resourceId, ?string $resourceName): string
-    {
+    private function doctorResourceLabel(
+        string $code,
+        string $resourceType,
+        int|string|null $resourceId,
+        ?string $resourceName,
+        bool|string|null $expected,
+    ): string {
+        if ($code === 'tool.package_unregistered' && is_string($expected) && is_string($resourceName) && $resourceName !== '') {
+            return "tool {$expected} {$resourceName}";
+        }
+
+        if ($code === 'tool.inventory_scan' && is_string($resourceName) && $resourceName !== '') {
+            return "tool {$resourceName}";
+        }
+
         $identity = $resourceName ?? ($resourceId !== null ? "#{$resourceId}" : null);
 
         return $identity === null ? $resourceType : "{$resourceType} {$identity}";

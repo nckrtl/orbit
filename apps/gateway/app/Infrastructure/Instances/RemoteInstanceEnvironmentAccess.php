@@ -10,6 +10,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentValidator;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriter;
 use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
+use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -21,7 +22,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use SensitiveParameter;
 use Throwable;
 
-final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight
+final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironmentReader, InstanceEnvironmentWriter, InstanceOperationPreflight, InstanceTestEnvironmentWriter
 {
     private const string AccessProgram = <<<'PYTHON'
         import base64, os, pwd, stat, sys
@@ -32,6 +33,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
         maximum = int(sys.argv[4])
         require_home = sys.argv[5] == "1"
         required_capacity = int(sys.argv[6])
+        target_name = sys.argv[7] if len(sys.argv) > 7 else ".env"
         descriptors = []
         candidate_name = None
         candidate_identity = None
@@ -54,7 +56,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
 
         def destination_metadata(directory):
             try:
-                descriptor = os.open(".env", os.O_PATH | os.O_NOFOLLOW, dir_fd=directory)
+                descriptor = os.open(target_name, os.O_PATH | os.O_NOFOLLOW, dir_fd=directory)
             except FileNotFoundError:
                 return None, None
             metadata = os.fstat(descriptor)
@@ -107,6 +109,8 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
             if account.pw_name != expected_user or (require_home and account.pw_dir != base):
                 raise BoundaryError
             if not os.path.isabs(base) or os.path.normpath(base) != base:
+                raise BoundaryError
+            if target_name not in (".env", ".env.testing"):
                 raise BoundaryError
             segments = base.split("/")[1:]
             if not segments or any(segment in ("", ".", "..") for segment in segments):
@@ -204,7 +208,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
                     candidate_identity = None
                     print("UNCHANGED")
                 else:
-                    os.replace(candidate_name, ".env", src_dir_fd=current, dst_dir_fd=current)
+                    os.replace(candidate_name, target_name, src_dir_fd=current, dst_dir_fd=current)
                     replacement_installed = True
                     candidate_name = None
                     candidate_identity = None
@@ -307,6 +311,23 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
         #[SensitiveParameter]
         string $contents,
     ): InstanceEnvironmentWriteResult {
+        return $this->replace($context, $contents, '.env');
+    }
+
+    public function writeTesting(
+        InstanceEnvironmentContext $context,
+        #[SensitiveParameter]
+        string $contents,
+    ): InstanceEnvironmentWriteResult {
+        return $this->replace($context, $contents, InstanceTestEnvironmentWriter::FILE);
+    }
+
+    private function replace(
+        InstanceEnvironmentContext $context,
+        #[SensitiveParameter]
+        string $contents,
+        string $file,
+    ): InstanceEnvironmentWriteResult {
         try {
             $input = ProtectedInput::fromString($contents);
         } catch (Throwable) {
@@ -319,6 +340,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
                 'write',
                 maximumOutputBytes: 64,
                 protectedInput: $input,
+                file: $file,
             );
         } catch (Throwable) {
             return InstanceEnvironmentWriteResult::unconfirmed();
@@ -353,6 +375,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
         int $maximumOutputBytes,
         int $requiredCapacityBytes = 0,
         ?ProtectedInput $protectedInput = null,
+        string $file = '.env',
     ): CommandResult {
         $host = $context->node->wireguard_ip;
 
@@ -393,6 +416,7 @@ final readonly class RemoteInstanceEnvironmentAccess implements InstanceEnvironm
                         (string) InstanceEnvironmentValidator::MaximumFileBytes,
                         $context->environment === 'production' ? '1' : '0',
                         (string) $requiredCapacityBytes,
+                        ...($file === '.env' ? [] : [$file]),
                     ],
                     protectedInput: $protectedInput,
                     maxOutputBytes: $maximumOutputBytes,

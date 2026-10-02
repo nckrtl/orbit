@@ -7,6 +7,7 @@ namespace App\Http\Mcp;
 use App\Domain\Extensions\ExtensionStore;
 use InvalidArgumentException;
 use JsonException;
+use stdClass;
 
 /**
  * The generated list of API operations the MCP server exposes as tools.
@@ -33,7 +34,9 @@ final readonly class ToolManifest
         }
 
         try {
-            $decoded = json_decode($contents, associative: true, flags: JSON_THROW_ON_ERROR);
+            // Associative decoding turns {} into []. Keep an empty object as stdClass so the
+            // catalogue encodes it as {} again. A list stays a list.
+            $decoded = self::preserveEmptyObjects(json_decode($contents, associative: false, flags: JSON_THROW_ON_ERROR));
         } catch (JsonException $exception) {
             throw new InvalidArgumentException('The MCP tool manifest is not valid JSON.', previous: $exception);
         }
@@ -59,5 +62,33 @@ final readonly class ToolManifest
             static fn (ToolDefinition $definition): ApiOperationTool => new ApiOperationTool($definition, $dispatcher),
             array_filter($this->definitions(), static fn (ToolDefinition $definition): bool => $definition->extension === null || $extensions->enabled($definition->extension)),
         ));
+    }
+
+    /**
+     * Objects stay arrays with string keys. An empty object stays stdClass, so encoding keeps {}.
+     */
+    private static function preserveEmptyObjects(mixed $value): mixed
+    {
+        if ($value instanceof stdClass) {
+            $properties = get_object_vars($value);
+
+            if ($properties === []) {
+                return new stdClass;
+            }
+
+            $object = [];
+
+            foreach ($properties as $key => $item) {
+                $object[$key] = self::preserveEmptyObjects($item);
+            }
+
+            return $object;
+        }
+
+        if (is_array($value)) {
+            return array_map(self::preserveEmptyObjects(...), $value);
+        }
+
+        return $value;
     }
 }

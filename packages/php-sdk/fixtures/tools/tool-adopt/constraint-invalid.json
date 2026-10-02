@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "tool.constraint_invalid",
+            "message": "The version constraint is invalid.",
+            "details": {
+                "step": "adopt",
+                "outcome": "constraint_invalid"
+            }
+        }
+    }
+}

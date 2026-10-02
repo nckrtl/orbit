@@ -5,6 +5,9 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
+/** Pest's process count in CI: 6 on the self-hosted Sabre runner, 4 on GitHub-hosted runners. */
+const CI_PEST_PROCESSES = '--processes=${{ runner.environment == \'self-hosted\' && 6 || 4 }}';
+
 describe('Composer configuration', function (): void {
     it('enables TIA for every repository-owned Pest command', function (): void {
         foreach ([
@@ -213,24 +216,31 @@ describe('Composer configuration', function (): void {
         expect($steps['Run affected tests'])
             ->toMatchArray([
                 'if' => "github.event_name == 'pull_request'",
-                'run' => 'vendor/bin/pest --parallel --processes=4 --tia --compact',
+                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact',
             ]);
-        expect($steps['Run full test suite'])
+        // The fresh TIA run executes every test, so one run on main is both the full-suite gate and the graph refresh.
+        expect($steps['Run full test suite and refresh Pest TIA graph'])
             ->toMatchArray([
                 'if' => "github.event_name == 'push' || github.event_name == 'workflow_dispatch'",
-                'run' => 'vendor/bin/pest --parallel --processes=4 --no-tia --compact',
+                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
             ]);
-        expect($steps['Refresh Pest TIA graph'])
-            ->toMatchArray([
-                'if' => "github.event_name == 'push'",
-                'run' => 'vendor/bin/pest --parallel --processes=4 --tia --fresh --compact',
-            ]);
+        expect($steps)->not->toHaveKey('Run full test suite')->not->toHaveKey('Refresh Pest TIA graph');
+        // Only pushes and pull requests from this repository may reach the self-hosted Sabre runner.
+        expect($project['runs-on'])
+            ->toContain("matrix.directory == 'apps/gateway'")
+            ->toContain("vars.ORBIT_SABRE_RUNNER == 'true'")
+            ->toContain("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository")
+            ->toContain("fromJSON('[\"self-hosted\", \"sabre\"]')")
+            ->toContain("'ubuntu-26.04'");
         expect($steps['Run architecture tests'])
             ->toMatchArray([
                 'if' => "always() && github.event_name == 'pull_request'",
             ])
             ->and($steps['Run architecture tests']['run'])
             ->toContain('tests/Feature/CommandSurfaceTest.php')
+            // TIA does not link workflow files to the tests that read them, so these contracts always run on pull requests.
+            ->toContain('tests/Feature/CliBinaryBuildContractTest.php')
+            ->toContain('tests/Feature/Configuration/ComposerConfigurationTest.php')
             ->toContain('tests/Unit/Architecture')
             ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
             ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
@@ -240,7 +250,7 @@ describe('Composer configuration', function (): void {
             ->toContain('tests/Unit/RepositoryGuidanceTest.php')
             ->toContain('tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php')
             ->toContain('tests/Unit/Requests/Deployments/DeploymentRequestsTest.php')
-            ->toContain('vendor/bin/pest --parallel --processes=4 --compact "$architecture_test"');
+            ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --compact "$architecture_test"');
         expect($steps['Run architecture tests']['run'])->not->toContain('--tia');
     });
 
@@ -266,10 +276,10 @@ describe('Composer configuration', function (): void {
             ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-')
             ->toContain('if: success()')
             ->toContain('coverage: pcov')
-            ->toContain('vendor/bin/pest --parallel --processes=4 --tia --compact')
+            ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact')
             ->toContain("github.event_name == 'push' || github.event_name == 'workflow_dispatch'")
-            ->toContain('vendor/bin/pest --parallel --processes=4 --no-tia --compact')
-            ->toContain('vendor/bin/pest --parallel --processes=4 --tia --fresh --compact')
+            ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
+            ->not->toContain('--no-tia')
             ->toContain('tests/Unit/Architecture')
             ->toContain("github.event_name == 'pull_request'")
             ->toContain("github.event_name == 'workflow_dispatch'")

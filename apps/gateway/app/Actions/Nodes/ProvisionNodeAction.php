@@ -76,6 +76,7 @@ final readonly class ProvisionNodeAction
         private UpdateNodeSettingsAction $nodeSettings,
         private ManagedUserAccountResolver $accounts,
         private ActiveTldScopeGuard $tldScope,
+        private EnrollMacOsNodeAction $macNodes,
         private ?RouteMutationReconciler $routes = null,
         private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
@@ -135,6 +136,12 @@ final readonly class ProvisionNodeAction
 
         $node = Node::query()->firstOrNew(['name' => $data->name]);
         $wasNew = ! $node->exists;
+
+        if ($this->enrollsMacOs($node, $data)) {
+            $enrolled = $this->macNodes->execute($node, $data);
+
+            return $wasNew ? $this->announceCreated($enrolled) : $this->announceUpdated($enrolled);
+        }
 
         $clusterId = $data->clusterId ?? ($node->exists ? $node->cluster_id : null);
         $lanIp = $data->lanIpProvided
@@ -861,6 +868,15 @@ final readonly class ProvisionNodeAction
         $this->handleFailure($node, $failure, $priorActiveState);
 
         throw $failure;
+    }
+
+    private function enrollsMacOs(Node $node, ProvisionNodeData $data): bool
+    {
+        if ($data->platform === 'macos') {
+            return true;
+        }
+
+        return $node->exists && $node->platform === 'macos';
     }
 
     private function platform(Node $node, ProvisionNodeData $data): string

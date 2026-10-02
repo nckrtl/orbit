@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tool.version_probe_failed",
+            "message": "The installed version cannot be read.",
+            "details": {
+                "step": "adopt",
+                "outcome": "manager_failed"
+            }
+        }
+    }
+}

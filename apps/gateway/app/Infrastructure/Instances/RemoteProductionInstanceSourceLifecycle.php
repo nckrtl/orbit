@@ -71,7 +71,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
     {
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
-        $script = GitReadScript::for($this->access->for($instance->project->repository_url), <<<'BASH'
+        $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), <<<'BASH'
                     set -o pipefail
                     repository=$1
                     user=$2
@@ -199,7 +199,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-source-resolve', 'instance.branch_resolution_failed');
         }
 
-        $script = GitReadScript::for($this->access->for($instance->project->repository_url), <<<'BASH'
+        $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), <<<'BASH'
                     repository=$1
                     user=$2
                     home=$3

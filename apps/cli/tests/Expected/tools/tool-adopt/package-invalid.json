@@ -1,0 +1,1 @@
+{"error":{"code":"tool.package_invalid","message":"The package coordinate is invalid.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

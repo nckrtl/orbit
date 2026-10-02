@@ -20,7 +20,7 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 An Instance Process serves one Instance. The Gateway derives its Node, user, and default working directory from the Instance. [Instance removal](/reference/instance-removal) removes it.
 
-A Node Process serves the Node itself, for example a shared Docker database. It runs as the Node's managed user, with `/home/{user}` as its default working directory. It reads no Instance environment file. The Node must be an active Linux Node with a WireGuard address. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
+A Node Process serves the Node itself, for example a shared Docker database. It runs as the Node's managed user, with `/home/{user}` as its default working directory. It reads no Instance environment file. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
 
 `process:create` and `process:list` take exactly one owner: `--instance`, `--node`, or `--project` for a definition. The API sends `target_type` as `instance` or `node` with a positive `target_id`. Start, stop, restart, logs, and destroy take the Process ID and use that record's owner.
 
@@ -73,7 +73,7 @@ The Gateway exposes these Process endpoints.
 | `POST /api/v1/processes` | Creates one Process. |
 | `POST /api/v1/processes/{process}/start`, `/stop`, `/restart` | Changes the runtime and stores the desired state: `running` after start and restart, `stopped` after stop. |
 | `GET /api/v1/processes/{process}/logs?lines=N` | A tail of 1 through 1,000 lines over SSH. See [Live logs](/reference/live-logs) to follow new lines. |
-| `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. |
+| `DELETE /api/v1/processes/{process}` | Stops the Process, removes its unit or container, and deletes the record. The Process of a [Database server](/reference/database-servers) is refused with `process.required_by_database_server` (409); remove the server instead. |
 
 Creating or starting an Instance Process needs an active Instance on an active Node. Creating or starting a Node Process needs an active managed Node. Otherwise the Gateway refuses with `process.target_inactive` before it changes anything. Removal can use the recorded placement of a failed or removing Instance while its Node is active.
 

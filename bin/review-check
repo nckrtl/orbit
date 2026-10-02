@@ -39,6 +39,11 @@ ARCHITECTURE_TESTS = {
 }
 BASES = ('origin/main', 'main')
 NO_SELECTION = 'No affected tests found'
+FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
+              '--fail-on-empty-test-suite', '--compact', '--colors=never')
+# The whole-suite fallback runs in parallel: in one process the Gateway suite takes about 11 minutes.
+PARALLEL_FULL_SUITE = ('../../bin/pest-plain', 'vendor/bin/pest', '--parallel', '--processes=4', '--no-tia',
+                       '--fail-on-empty-test-suite', '--compact', '--colors=never')
 
 
 def git(root, *args):
@@ -120,12 +125,31 @@ def project_tia_directory(root, project):
     return root / project / '.orbit-tia'
 
 
+def keep_main_baseline(destination):
+    """Drop branch baselines so the run selects every change since main."""
+    graph_path = destination / 'graph.json'
+    if not graph_path.is_file():
+        return
+    try:
+        graph = json.loads(graph_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(graph, dict):
+        return
+    baselines = graph.get('baselines')
+    if not isinstance(baselines, dict) or set(baselines) <= {'main'}:
+        return
+    graph['baselines'] = {'main': baselines['main']} if 'main' in baselines else {}
+    graph_path.write_text(json.dumps(graph, separators=(',', ':'), ensure_ascii=True))
+
+
 def prepare_tia_directory(root, project, destination):
-    """Copy the configured TIA cache into a fresh, run-specific directory."""
+    """Copy the project TIA cache into a run directory that keeps only the main baseline."""
     source = project_tia_directory(root, project)
     destination.mkdir(parents=True, exist_ok=True)
     if source.is_dir() and source.resolve() != destination.resolve() and destination.resolve() not in source.resolve().parents:
         shutil.copytree(source, destination, dirs_exist_ok=True)
+        keep_main_baseline(destination)
     (destination / 'affected.json').unlink(missing_ok=True)
 
 
@@ -250,14 +274,15 @@ def main():
                 check['selected_test_files'] = sorted(selected_tests)
                 check['selection_evidence_current'] = has_current_evidence
                 check['selection_artifact'] = str(run_tia_directory / 'affected.json')
+                if warning is not None:
+                    commands.append(PARALLEL_FULL_SUITE)
                 for test in changed_php_tests(paths):
                     if not test.startswith(project + '/'):
                         continue
                     relative = test[len(project) + 1:]
                     if (root / test).is_file() and relative not in selected_tests:
                         commands.extend((('vendor/bin/pest', '--list-tests', relative),
-                                         ('../../bin/pest-plain', 'vendor/bin/pest', '--no-tia',
-                                          '--fail-on-empty-test-suite', '--compact', '--colors=never', relative)))
+                                         (*FULL_SUITE, relative)))
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
     report['passed'] = report['unchanged'] and bool(report['checks']) and all(
         check['exit_code'] == 0 for check in report['checks'])
@@ -265,7 +290,7 @@ def main():
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')
     if report['warnings']:
-        print(f'Selection warnings: {len(report["warnings"])}; the receipt proves no affected tests for those projects.',
+        print(f'Selection warnings: {len(report["warnings"])}; the receipt records the full suite with --no-tia for those projects.',
               flush=True)
     candidate = head if committed else f'{head} with uncommitted changes (tree {tree})'
     print(f'Candidate gate {"PASSED" if report["passed"] else "FAILED"} at {candidate}; receipt: {path}', flush=True)

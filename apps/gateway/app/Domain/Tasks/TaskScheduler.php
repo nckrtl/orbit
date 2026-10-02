@@ -56,12 +56,6 @@ final readonly class TaskScheduler
     /** The Pi server reports this when it restarted while a turn was still active (ADR 0116, ADR 0167). */
     public const string PiServerRestartError = 'The Pi server restarted during the turn.';
 
-    /** T3 0.0.42 reports this when a provider session does not survive a server restart and continuation is off. */
-    public const string T3ServerRestartError = 'Provider session did not survive a server restart. Send a new message to continue.';
-
-    /** T3 0.0.42 reports this when restart continuation was on and the continue itself failed. */
-    public const string T3ServerRestartContinuationError = 'Could not continue this thread after the server restart. Send a new message to continue.';
-
     /** One continue, on the same thread, after that restart. It does not ask for assistance. */
     public const string PiServerRestartContinue = 'Your previous turn was interrupted by a server restart. Check git status and git diff, finish the subtask, and hand off with the turn command.';
 
@@ -80,10 +74,6 @@ final readonly class TaskScheduler
         self::StartFailedReason,
         self::ReservationExpiredReason,
     ];
-
-    private const string BASELINE_COMPOSER_INSTALL_STEP = '[Orbit internal] Install Composer dependencies';
-
-    private const string BASELINE_JAVASCRIPT_INSTALL_STEP = '[Orbit internal] Install JavaScript dependencies';
 
     /** A baseline row reserved before its process exists. A real check pid is at least 1. */
     private const int BASELINE_UNSTARTED_PID = 0;
@@ -121,7 +111,9 @@ final readonly class TaskScheduler
         private TaskBroadcasts $broadcasts,
         private RemoveTaskWorkspaceAction $workspaces,
         private TaskBaseBranchFetcher $bases,
-        private ArchiveFinishedTaskThreads $archives,
+        private PrunePendingTaskThreads $pendingThreads,
+        private TaskReviewPacketBuilder $reviewPackets,
+        private TaskTurnFetcher $turnFetcher,
     ) {}
 
     /**
@@ -298,7 +290,7 @@ final readonly class TaskScheduler
             }
         }
 
-        $this->archives->run();
+        $this->pendingThreads->run();
 
         return $decisions;
     }
@@ -343,7 +335,7 @@ final readonly class TaskScheduler
             return true;
         }
 
-        $items = $this->implementerItems($group, $task, $implementer, $read, $receipt);
+        $items = $this->implementerItems($task, $implementer, $read, $receipt);
         if ($this->failedItems($items) === [] && $receipt instanceof TaskComment) {
             $this->checkHandoff($group, $task, $implementer, $receipt, $observation);
 
@@ -881,11 +873,9 @@ final readonly class TaskScheduler
     }
 
     /** @return list<TaskRubricItem> */
-    private function implementerItems(Task $group, Task $task, TaskThreadObservation $thread, ?TaskTurnReceipt $read, ?TaskComment $receipt): array
+    private function implementerItems(Task $task, TaskThreadObservation $thread, ?TaskTurnReceipt $read, ?TaskComment $receipt): array
     {
-        $instance = $group->taskable;
         $items = [
-            new TaskRubricItem('check_script', ! self::runsComposerCheck($group->project->taskCheckCommand()) || $instance instanceof Instance && $this->workspace->definesComposerCheckScript($instance), 'composer.json in the workspace does not define a check script, so Orbit cannot run composer check. Restore the check script.'),
             $this->receiptItem($read, $receipt),
         ];
         $confirmation = $this->confirmationItem($task, $receipt, TaskThreadRole::Implementer);
@@ -1071,17 +1061,21 @@ final readonly class TaskScheduler
     }
 
     /** @throws TaskTurnReceiptException */
-    private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null): void
+    private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false): void
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
             throw new TaskTurnReceiptException('The task workspace is unavailable.');
         }
+        if (! $alreadyFetched) {
+            $this->turnFetcher->beforeTurn($group);
+        }
+        $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
         $consult = $role === TaskThreadRole::Reviewer && $task->consult_comment_id !== null;
         $relay = $role === TaskThreadRole::Reviewer && ! $consult && $task->direction_relay_comment_id !== null;
         $causeRequired = $role === TaskThreadRole::Reviewer && ! $consult && ! $relay && TaskQuestions::awaitsCause($task);
         $mode = $consult || $relay || $causeRequired ? new TaskTurnMode(consult: $consult, relay: $relay, causeRequired: $causeRequired) : null;
-        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $mode);
+        $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $mode, $context);
     }
 
     private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
@@ -1248,7 +1242,8 @@ final readonly class TaskScheduler
 
         try {
             $reserved = $this->spawner->reserveReviewer($task);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reserved, new TaskTurnMode(consult: true));
+            $this->turnFetcher->beforeTurn($group);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reserved, new TaskTurnMode(consult: true), $this->reviewPackets->reviewContext($task));
             $threadId = $this->spawner->consult($task, trim($receipt->body)."\n\n".TaskTurnInstructions::consult($reserved), $this->consultSendKey($receipt));
             if ($threadId === null) {
                 throw new AgentDriverException('The reviewer conversation could not be started.');
@@ -1499,7 +1494,8 @@ final readonly class TaskScheduler
 
         try {
             $reserved = $this->spawner->reserveReviewer($task);
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reserved, new TaskTurnMode(relay: true));
+            $this->turnFetcher->beforeTurn($group);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reserved, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
             $threadId = $this->spawner->relay($task, trim($resolution->body)."\n\n".TaskTurnInstructions::relay($reserved));
             if ($threadId === null) {
                 throw new AgentDriverException('The reviewer conversation could not be started.');
@@ -1745,7 +1741,7 @@ final readonly class TaskScheduler
     }
 
     /**
-     * Resumes a Pi or T3 turn that failed only because the server restarted (ADR 0167).
+     * Resumes a Pi turn that failed only because the server restarted (ADR 0167).
      *
      * @return 'handled'|'assist'|'skip' handled owns the tick, assist asks for assistance, skip keeps today's failure path
      */
@@ -1763,20 +1759,9 @@ final readonly class TaskScheduler
             && $acting->turnId === $task->pi_restart_source_turn_id
             && is_string($task->pi_restart_key)
             && $task->pi_restart_key !== '') {
-            if ($this->t3AcceptedResume($record, $acting, $task->pi_restart_key)) {
-                if (! $this->t3SessionRevisionChanged($task, $acting)) {
-                    // The stored session.updatedAt is unchanged. This is the error from before the
-                    // command. The message clock and the node clock are not compared (ADR 0167).
-                    return 'handled';
-                }
-                // session.updatedAt differs from the revision stored with this reservation. T3 wrote
-                // a new session error before latestTurn changed. Repeating the command id starts no turn.
-                $task->update(['pi_restart_reservation' => self::PiRestartAccepted]);
-            } else {
-                $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
+            $this->sendPiRestartResume($task, $group, $acting, $task->pi_restart_key);
 
-                return 'handled';
-            }
+            return 'handled';
         }
         if ((int) $task->pi_restart_resumes >= self::PiServerRestartResumeLimit) {
             return 'assist';
@@ -1788,49 +1773,21 @@ final readonly class TaskScheduler
             'pi_restart_thread_id' => $acting->threadId,
             'pi_restart_source_turn_id' => $acting->turnId,
             'pi_restart_reservation' => self::PiRestartPending,
-            'pi_restart_session_revision' => $acting->sessionUpdatedAt === '' ? null : $acting->sessionUpdatedAt,
         ]);
         $this->sendPiRestartResume($task, $group, $acting, $key);
 
         return 'handled';
     }
 
-    /** T3 persisted the reserved message. That write happens before the session leaves its previous error. */
-    private function t3AcceptedResume(AgentThread $record, TaskThreadObservation $acting, string $key): bool
-    {
-        return $record->driver === 't3' && array_any(
-            $acting->recentMessages,
-            fn (array $message): bool => $message['id'] === $key,
-        );
-    }
-
-    /**
-     * The reservation stores the exact session.updatedAt seen when it was reserved.
-     * A different non-empty value is a new session write. Ordering it against the message time is
-     * not evidence: that time is the Gateway clock, and session.updatedAt is the node clock.
-     */
-    private function t3SessionRevisionChanged(Task $task, TaskThreadObservation $acting): bool
-    {
-        $stored = $task->pi_restart_session_revision;
-        $current = $acting->sessionUpdatedAt;
-
-        return is_string($stored) && $stored !== ''
-            && is_string($current) && $current !== ''
-            && $stored !== $current;
-    }
-
-    /** Pi uses its restart error. T3 0.0.42 uses the orphaned-session error, or the continuation failure. */
+    /** Only Pi restart failures can resume a task-agent turn. */
     private function isServerRestartError(string $driver, ?string $error): bool
     {
-        return match ($driver) {
-            'pi' => $error === self::PiServerRestartError,
-            't3' => in_array($error, [self::T3ServerRestartError, self::T3ServerRestartContinuationError], true),
-            default => false,
-        };
+        return $driver === 'pi' && $error === self::PiServerRestartError;
     }
 
     private function sendPiRestartResume(Task $task, Task $group, TaskThreadObservation $acting, string $key): void
     {
+        $this->turnFetcher->beforeTurn($group);
         try {
             $this->actor->resumeInterruptedTurn($group, $acting, self::PiServerRestartContinue, $key);
         } catch (AgentDriverException $exception) {
@@ -3048,7 +3005,7 @@ final readonly class TaskScheduler
     {
         $counts = $this->fixupCountsSinceOperatorWork($group);
 
-        foreach (TaskSettlingFixup::plans((string) $group->project->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+        foreach (TaskSettlingFixup::plans($group->project->taskCheckCommand(), $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
             if ($conflictOnly && $plan->conflictBase() === null) {
                 continue;
             }
@@ -3066,7 +3023,7 @@ final readonly class TaskScheduler
         $counts = $this->fixupCountsSinceOperatorWork($group);
         $reasons = [];
 
-        foreach (TaskSettlingFixup::plans((string) $group->project->slug, $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
+        foreach (TaskSettlingFixup::plans($group->project->taskCheckCommand(), $health->conflicts, $health->baseRef, $health->failedChecks) as $plan) {
             if ($conflictOnly && $plan->conflictBase() === null) {
                 continue;
             }
@@ -3199,35 +3156,33 @@ final readonly class TaskScheduler
         if ($base !== null && $group->status === TaskGroupStatus::Settling) {
             $this->leaveSettling($group);
         }
-        if (! $this->prepareResumedWorkspace($group, $todo, $base)) {
+        if (! $this->prepareResumedWorkspace($group, $todo)) {
             return;
         }
 
         $started = $this->activateResumedTask($todo);
         if ($started instanceof Task) {
-            $this->beginRunningTask($started);
+            $this->beginRunningTask($started, alreadyFetched: true);
         }
     }
 
     /**
-     * Before a resumed subtask starts, fast-forwards the workspace to `origin/task-{group id}` when it is
-     * strictly behind, and fetches a conflict fixup's base ref. A failure waits out #760's backoff of 1, 2,
+     * Reuses the general turn fetch, then fast-forwards the workspace to `origin/task-{group id}` when
+     * it is strictly behind. A failure waits out #760's backoff of 1, 2,
      * 5, 10, and 30 minutes, leaves the subtask todo, and asks for assistance on the fifth failure.
      * On a group with no pull request, a missing `origin/task-{group id}` is not a failure.
      */
-    private function prepareResumedWorkspace(Task $group, Task $todo, ?string $base): bool
+    private function prepareResumedWorkspace(Task $group, Task $todo): bool
     {
         $key = 'tasks.resume-fetch.'.$todo->id;
         if (! $this->retryIsDue($key, 'resume fetch')) {
             return false;
         }
         try {
-            $fresh = $group->fresh() ?? $group;
+            $fresh = $group->fresh(['project', 'taskable']) ?? $group;
+            $this->turnFetcher->fetch($fresh);
             $this->bases->fastForward($fresh, ! is_string($fresh->pr_url) || $fresh->pr_url === '');
-            if ($base !== null) {
-                $this->bases->fetch($fresh, $base);
-            }
-        } catch (TaskPullRequestException $exception) {
+        } catch (Throwable $exception) {
             $this->extendBackoff($key, $this->readBackoff($key, 'resume fetch'), 'resume fetch');
             $this->recordCommunicationFailure($todo, $group, $exception->getMessage());
 
@@ -3425,14 +3380,14 @@ final readonly class TaskScheduler
      * Starts a subtask the way startTask does: records the start commit, then runs the baseline check
      * when no implementer has started in the group yet, or starts the implementer.
      */
-    private function beginRunningTask(Task $task): void
+    private function beginRunningTask(Task $task, bool $alreadyFetched = false): void
     {
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
             $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
             $this->handleBaseline($group, $task);
         } else {
-            $this->assignImplementer($task);
+            $this->assignImplementer($task, $alreadyFetched);
         }
     }
 
@@ -3518,9 +3473,6 @@ final readonly class TaskScheduler
             : 0;
         $branch = 'task-'.$group->id;
         $reason = match (true) {
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_COMPOSER_INSTALL_STEP => "Composer dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === self::BASELINE_JAVASCRIPT_INSTALL_STEP => "JavaScript dependency installation failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Restore the required dependencies, then cancel and create the group again. The task's check shows the install output.",
-            $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step === null && $this->checkOutputShowsMissingDependencies($check) => "Project dependencies appear to be missing on a fresh checkout of {$branch}, before any agent started. Install the required dependencies, then cancel and create the group again. The task's check shows the missing-dependency output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed && $check->failed_step !== null && $check->failed_step !== self::CHECK_ERROR_STEP => "The Project setup step \"{$check->failed_step}\" failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the setup or the branch, then cancel and create the group again. The task's check shows the output.",
             $check instanceof TaskCheck && $status === TaskCheckStatus::Failed => "The Project baseline check failed with exit code {$check->exit_code} on a fresh checkout of {$branch}, before any agent started. Fix the configured check or the branch, then cancel and create the group again. The task's check shows the output.",
             $status === TaskCheckStatus::Cancelled => 'An operator cancelled the baseline check before any agent started.',
@@ -3535,22 +3487,6 @@ final readonly class TaskScheduler
         }
 
         $this->startBaseline($group, $task);
-    }
-
-    /**
-     * Only a task check that runs `composer check` needs the workspace's Composer `check` script.
-     */
-    private static function runsComposerCheck(?string $command): bool
-    {
-        return $command !== null && preg_match('/(?:^|[\s;&|(])composer\s+check(?=$|[\s;&|)])/', $command) === 1;
-    }
-
-    private function checkOutputShowsMissingDependencies(TaskCheck $check): bool
-    {
-        return preg_match(
-            '/(?:vendor\\/bin\\/[^:\\s]+|node_modules\\/\\.bin\\/[^:\\s]+):\\s*(?:not found|No such file or directory)|(?:vendor\\/autoload\\.php|node_modules\\/[^\\s]+).{0,160}(?:failed to open stream|Failed opening required|No such file|not found)|Failed opening required [\'\"][^\'\"]*(?:vendor\\/autoload\\.php|node_modules\\/)/i',
-            (string) $check->output,
-        ) === 1;
     }
 
     private function startBaseline(Task $group, Task $task): void
@@ -3570,20 +3506,6 @@ final readonly class TaskScheduler
             ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
             ->all());
         $command = $instance->project->taskCheckCommand();
-        if ($command !== null && preg_match('/(?:^|[\\s;&|(])composer(?=$|\\s)|\\bvendor\\//i', $command) === 1) {
-            $setup[] = [
-                'name' => self::BASELINE_COMPOSER_INSTALL_STEP,
-                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")',
-                'timeout_seconds' => 600,
-            ];
-        }
-        if ($command !== null && preg_match('/\\b(?:bun|npm|pnpm|yarn|node|vp)\\b|node_modules/i', $command) === 1) {
-            $setup[] = [
-                'name' => self::BASELINE_JAVASCRIPT_INSTALL_STEP,
-                'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/package.json}"; [ "$project" = "$manifest" ] && project="."; if [ ! -d "$project/node_modules" ] && { [ -f "$project/pnpm-lock.yaml" ] || [ -f "$project/bun.lock" ] || [ -f "$project/bun.lockb" ] || [ -f "$project/package-lock.json" ] || [ -f "$project/yarn.lock" ]; }; then (cd "$project" && vp install --frozen-lockfile) || exit $?; fi; done < <(git ls-files -z -- "package.json" ":(glob)**/package.json")',
-                'timeout_seconds' => 600,
-            ];
-        }
         $claim = $this->claimBaseline($task);
         if (! $claim instanceof TaskCheck) {
             return;
@@ -3681,7 +3603,7 @@ final readonly class TaskScheduler
             ->first();
     }
 
-    private function assignImplementer(Task $task): void
+    private function assignImplementer(Task $task, bool $alreadyFetched = false): void
     {
         if ($task->status !== TaskStatus::Running) {
             return;
@@ -3695,7 +3617,7 @@ final readonly class TaskScheduler
                 if ($reserved === null && $this->spawner instanceof TaskAgentSpawner) {
                     $reserved = $this->spawner->reserveImplementer($task->fresh() ?? $task);
                 }
-                $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved);
+                $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched);
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
             }
         } catch (TaskTurnReceiptException $exception) {

@@ -19,7 +19,7 @@ it('uses the exact Doctor JSON transport contract', function (
             'data' => [
                 'healthy' => true,
                 'nodes' => [],
-                'summary' => ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0],
+                'summary' => ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0, 'informational' => 0],
             ],
             'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
         ]),

@@ -1760,7 +1760,7 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip the destructive confirmation prompt"
                   }
                 },
@@ -1974,7 +1974,7 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip the destructive confirmation prompt"
                   }
                 },
@@ -2226,14 +2226,116 @@
         "tags": [
           "Database connections"
         ],
-        "description": "Create a Database connection through the Gateway.",
+        "description": "Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "type": "object",
-                "additionalProperties": false
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "slug": {
+                        "type": "string",
+                        "pattern": "",
+                        "maxLength": 63
+                      },
+                      "driver": {
+                        "type": "string",
+                        "enum": [
+                          "mysql",
+                          "pgsql",
+                          "sqlite",
+                          "redis"
+                        ]
+                      },
+                      "node_id": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 1
+                      },
+                      "host": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "",
+                        "maxLength": 255
+                      },
+                      "port": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "maximum": 65535,
+                        "minimum": 1
+                      },
+                      "database": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "",
+                        "maxLength": 64
+                      },
+                      "path": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "",
+                        "maxLength": 1024
+                      },
+                      "username": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "pattern": "",
+                        "maxLength": 128
+                      },
+                      "password": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 1024
+                      }
+                    },
+                    "required": [
+                      "slug",
+                      "driver"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "slug": {
+                        "type": "string",
+                        "pattern": "",
+                        "maxLength": 63
+                      },
+                      "server": {
+                        "type": "string",
+                        "pattern": "",
+                        "maxLength": 63
+                      },
+                      "instance_id": {
+                        "type": "integer",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "slug",
+                      "server"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
               }
             }
           }
@@ -2318,12 +2420,12 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '\"example\"'\n"
           },
           {
             "lang": "php",
             "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseConnectionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseConnectionRequest(slug: 'acme', driver: 'mysql'))->dto();\n"
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseConnectionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseConnectionRequest(slug: 'acme'))->dto();\n"
           }
         ]
       }
@@ -3150,6 +3252,529 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\ListDatabaseUsersRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListDatabaseUsersRequest(slug: 'acme'))->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "database-user-create",
+        "summary": "Add a database user",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_connection",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database connection slug."
+          }
+        ],
+        "description": "Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 32,
+                    "description": "Username, a 1-32 character identifier"
+                  },
+                  "password": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "Password for the new user"
+                  },
+                  "read_only": {
+                    "type": "boolean",
+                    "description": "Grant only SELECT on the database"
+                  }
+                },
+                "required": [
+                  "username",
+                  "password"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseUser"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseUser"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-connections/app/users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"username\": \"app\", \"password\": \"secret\", \"read_only\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseUserRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseUserRequest(slug: 'acme', username: 'app', password: 'secret'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/database-servers": {
+      "get": {
+        "operationId": "database-server-list",
+        "summary": "List Database servers",
+        "tags": [
+          "Database connections"
+        ],
+        "description": "List the Database servers.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DatabaseServer"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/database-servers\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\ListDatabaseServersRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListDatabaseServersRequest())->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "database-server-create",
+        "summary": "Create a Database server",
+        "tags": [
+          "Database connections"
+        ],
+        "description": "Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "slug": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 63,
+                    "description": "Database server slug"
+                  },
+                  "node_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "tag": {
+                    "type": "string",
+                    "pattern": "",
+                    "maxLength": 128,
+                    "description": "MySQL image tag. Defaults to 8.4"
+                  },
+                  "port": {
+                    "type": "integer",
+                    "maximum": 65535,
+                    "minimum": 1,
+                    "description": "Port to publish on the Node WireGuard address. Defaults to 3306"
+                  }
+                },
+                "required": [
+                  "slug",
+                  "node_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseServer"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseServer"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/database-servers\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"node_id\": 7, \"tag\": \"8.4\", \"port\": 3306}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\CreateDatabaseServerRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseServerRequest(slug: 'acme', nodeId: 7))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/database-servers/{database_server}": {
+      "delete": {
+        "operationId": "database-server-destroy",
+        "summary": "Remove a Database server",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_server",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database server slug."
+          }
+        ],
+        "description": "Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DatabaseServer"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/database-servers/beast-mysql\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\DestroyDatabaseServerRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyDatabaseServerRequest(slug: 'acme'))->dto();\n"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "database-server-show",
+        "summary": "Show a Database server",
+        "tags": [
+          "Database connections"
+        ],
+        "parameters": [
+          {
+            "name": "database_server",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Database server slug."
+          }
+        ],
+        "description": "Shows one Database server with the connections of the databases on it.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/DatabaseServer"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "databases": {
+                              "type": "array",
+                              "items": {
+                                "$ref": "#/components/schemas/DatabaseConnection"
+                              }
+                            }
+                          }
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/database-servers/beast-mysql\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseServers\\ShowDatabaseServerRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowDatabaseServerRequest(slug: 'acme'))->dto();\n"
           }
         ]
       }
@@ -4250,7 +4875,7 @@
         "tags": [
           "Instances"
         ],
-        "description": "Adopt the current Git source as a managed Instance.",
+        "description": "Adopt the current Git source as a managed Instance of an existing Project.",
         "requestBody": {
           "required": true,
           "content": {
@@ -4270,22 +4895,6 @@
                   "project_id": {
                     "type": "integer"
                   },
-                  "project_name": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "Confirmed Project display name"
-                  },
-                  "project_slug": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9_-]+$",
-                    "maxLength": 63,
-                    "description": "Confirmed Project slug"
-                  },
-                  "default_branch": {
-                    "type": "string",
-                    "maxLength": 255,
-                    "description": "Confirmed Project default branch"
-                  },
                   "instance_name": {
                     "type": "string",
                     "maxLength": 63
@@ -4293,7 +4902,7 @@
                   "root": {
                     "type": "string",
                     "maxLength": 255,
-                    "description": "Confirmed Project root or existing-Project root override"
+                    "description": "Relative web-root override for this Instance"
                   },
                   "domain": {
                     "type": "string",
@@ -4314,30 +4923,8 @@
           }
         },
         "responses": {
-          "201": {
-            "description": "Created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/InstanceRegistration"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
           "200": {
-            "description": "The request succeeded; an exact retry returned the existing record.",
+            "description": "The request succeeded.",
             "content": {
               "application/json": {
                 "schema": {
@@ -4727,7 +5314,7 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Delete dirty or unpublished source after identity checks"
                   }
                 },
@@ -6913,6 +7500,7 @@
             "description": "Numeric Instance ID."
           }
         ],
+        "x-orbit-task-action": true,
         "description": "Deploy the configured branch of a production Instance.",
         "requestBody": {
           "required": false,
@@ -7898,7 +8486,7 @@
         ],
         "description": "Update one stored Instance environment value without changing the workload file.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -7909,6 +8497,9 @@
                     "description": "Exact string value; quote empty, multiline, or placeholder values for the shell"
                   }
                 },
+                "required": [
+                  "value"
+                ],
                 "additionalProperties": false
               }
             }
@@ -8827,6 +9418,7 @@
             "description": "Numeric Instance ID."
           }
         ],
+        "x-orbit-task-action": true,
         "description": "Select one retained production Instance release.",
         "requestBody": {
           "required": true,
@@ -9291,11 +9883,11 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip confirmation"
                   },
                   "purge_data": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Delete Metrics data"
                   }
                 },
@@ -9978,9 +10570,10 @@
                   "platform": {
                     "type": "string",
                     "enum": [
-                      "linux"
+                      "linux",
+                      "macos"
                     ],
-                    "description": "Node platform (linux only)"
+                    "description": "linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address"
                   },
                   "architecture": {
                     "type": [
@@ -10005,11 +10598,11 @@
                   },
                   "user": {
                     "type": "string",
-                    "description": "Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node"
+                    "description": "Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account"
                   },
                   "orbit_user": {
                     "type": "string",
-                    "description": "Orbit-managed system user; defaults to orbit for a new node"
+                    "description": "Managed user; Linux defaults to orbit, and macOS requires the same existing account as user"
                   },
                   "roles": {
                     "type": "array",
@@ -10041,7 +10634,7 @@
                       "string",
                       "null"
                     ],
-                    "description": "Stable WireGuard IP address"
+                    "description": "Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it"
                   },
                   "lan_ip": {
                     "type": [
@@ -10209,11 +10802,11 @@
                 "type": "object",
                 "properties": {
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Skip the destructive confirmation prompt"
                   },
                   "offline": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Shed roles and remove a node Orbit cannot reach"
                   }
                 },
@@ -12073,15 +12666,15 @@
                     "description": "Role name"
                   },
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Confirm destructive role removal and dependent cleanup"
                   },
                   "purge_data": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Request supported role-owned data cleanup"
                   },
                   "offline": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Remove the role from a node Orbit cannot reach"
                   }
                 },
@@ -12234,7 +12827,7 @@
                     "description": "Role name"
                   },
                   "force": {
-                    "type": "string",
+                    "type": "boolean",
                     "description": "Confirm the role transfer"
                   },
                   "from": {
@@ -13044,168 +13637,6 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Processes\\DestroyProcessRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProcessRequest(processId: 41))->dto();\n"
-          }
-        ]
-      }
-    },
-    "/api/v1/processes/{process}/database-users": {
-      "post": {
-        "operationId": "database-user-create",
-        "summary": "Create a managed MySQL user",
-        "tags": [
-          "Database connections"
-        ],
-        "parameters": [
-          {
-            "name": "process",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "integer",
-              "minimum": 1
-            },
-            "description": "Numeric Process ID."
-          }
-        ],
-        "description": "Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "slug": {
-                    "type": "string",
-                    "pattern": "",
-                    "maxLength": 63,
-                    "description": "Database connection slug"
-                  },
-                  "database": {
-                    "type": "string",
-                    "pattern": "",
-                    "maxLength": 32,
-                    "description": "Database name to create"
-                  },
-                  "username": {
-                    "type": "string",
-                    "pattern": "",
-                    "maxLength": 32,
-                    "description": "Username to create"
-                  },
-                  "password": {
-                    "type": "string",
-                    "maxLength": 1024,
-                    "description": "Password for the created user"
-                  }
-                },
-                "required": [
-                  "slug",
-                  "database",
-                  "username",
-                  "password"
-                ],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Created.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/DatabaseConnection"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "200": {
-            "description": "The request succeeded; an exact retry returned the existing record.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "data": {
-                      "$ref": "#/components/schemas/DatabaseConnection"
-                    },
-                    "meta": {
-                      "$ref": "#/components/schemas/Meta"
-                    }
-                  },
-                  "required": [
-                    "data",
-                    "meta"
-                  ]
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "No record matches the path parameters.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "bash",
-            "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/processes/41/database-users\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"slug\": \"acme\", \"database\": \"app\", \"username\": \"app\", \"password\": \"secret\"}'\n"
-          },
-          {
-            "lang": "php",
-            "label": "PHP SDK",
-            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\DatabaseConnections\\CreateDatabaseUserRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateDatabaseUserRequest(\n    processId: 41,\n    slug: 'acme',\n    database: 'app',\n    username: 'app',\n    password: 'secret',\n))->dto();\n"
           }
         ]
       }
@@ -14061,6 +14492,14 @@
                     "type": "string",
                     "maxLength": 2048
                   },
+                  "source_access": {
+                    "type": "string",
+                    "enum": [
+                      "github_app",
+                      "gh_cli"
+                    ],
+                    "description": "How Orbit reads a private github.com repository: github_app (default) or gh_cli"
+                  },
                   "default_branch": {
                     "type": "string",
                     "maxLength": 255,
@@ -14077,7 +14516,11 @@
                       "null"
                     ],
                     "maxLength": 4096,
-                    "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
+                    "description": "Task check command. Omitted stores none"
+                  },
+                  "task_workspace_routed": {
+                    "type": "boolean",
+                    "description": "Whether new task workspaces get a Route (true or false)"
                   }
                 },
                 "required": [
@@ -14409,6 +14852,14 @@
                     "type": "string",
                     "maxLength": 2048
                   },
+                  "source_access": {
+                    "type": "string",
+                    "enum": [
+                      "github_app",
+                      "gh_cli"
+                    ],
+                    "description": "How Orbit reads a private github.com repository: github_app or gh_cli"
+                  },
                   "default_branch": {
                     "type": "string",
                     "maxLength": 255,
@@ -14426,6 +14877,10 @@
                     ],
                     "maxLength": 4096,
                     "description": "New task check command for task baselines and handoffs"
+                  },
+                  "task_workspace_routed": {
+                    "type": "boolean",
+                    "description": "Change routing for future task workspaces (true or false)"
                   }
                 },
                 "additionalProperties": false
@@ -16572,6 +17027,951 @@
         ]
       }
     },
+    "/api/v1/projects/{project}/task-definitions": {
+      "post": {
+        "operationId": "tasks-definition-create",
+        "summary": "tasks:definition:create",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "brief": {
+                    "type": "string",
+                    "maxLength": 8000
+                  },
+                  "parameters": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "text",
+                            "app",
+                            "subtasks"
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "default": {}
+                      },
+                      "required": [
+                        "name",
+                        "type",
+                        "required"
+                      ]
+                    }
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "backlog",
+                      "todo"
+                    ]
+                  },
+                  "schedule": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "cron": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "values": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "phases": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 160
+                        },
+                        "brief": {
+                          "type": "string",
+                          "maxLength": 8000
+                        },
+                        "repeat": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "title",
+                        "brief",
+                        "repeat"
+                      ]
+                    }
+                  },
+                  "subtasks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 160
+                        },
+                        "kind": {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        "brief": {
+                          "type": "string",
+                          "maxLength": 8000
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "deliverables": {
+                          "type": "array",
+                          "maxItems": 5,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "file",
+                                  "command",
+                                  "review"
+                                ]
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "path": {
+                                "type": "string",
+                                "maxLength": 500,
+                                "description": "Conditionally required."
+                              },
+                              "change": {
+                                "type": "string",
+                                "enum": [
+                                  "created",
+                                  "modified",
+                                  "any"
+                                ],
+                                "description": "Conditionally required."
+                              },
+                              "fails_on_base": {
+                                "type": "boolean"
+                              },
+                              "command": {
+                                "type": "string",
+                                "maxLength": 1000,
+                                "description": "Conditionally required."
+                              },
+                              "directory": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "paths": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 500
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "type",
+                              "description"
+                            ]
+                          }
+                        },
+                        "routes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "implementer_model": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "reviewer_model": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "operation": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "arguments": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "question": {
+                          "type": "string",
+                          "maxLength": 8000
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "min_probability": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "title",
+                        "kind"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "title",
+                  "brief",
+                  "parameters",
+                  "status",
+                  "subtasks"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskDefinition"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskDefinition"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Project already uses the name (`tasks.definition_exists`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/task-definitions\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"example\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateTaskDefinitionRequest(\n    projectId: 4,\n    definition: '{\"name\": \"example\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}',\n))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/task-definitions/{name}": {
+      "delete": {
+        "operationId": "tasks-definition-destroy",
+        "summary": "tasks:definition:destroy",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "maxLength": 63
+            },
+            "description": "Task definition name, unique within the Project."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Deletes a task definition and returns it. The call does not delete a task and does not start one. Gateway access is required. Returns `extension.disabled` while the tasks extension is off.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskDefinition"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/projects/4/task-definitions/build-feature\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\DestroyTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyTaskDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "tasks-definition-show",
+        "summary": "tasks:definition:show",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "maxLength": 63
+            },
+            "description": "Task definition name, unique within the Project."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskDefinition"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/task-definitions/build-feature\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ShowTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowTaskDefinitionRequest(projectId: 4, name: 'example'))->dto();\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "tasks-definition-update",
+        "summary": "tasks:definition:update",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+              "maxLength": 63
+            },
+            "description": "Task definition name, unique within the Project."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Replaces a task definition. The body is the whole definition. It may omit `name`; the path then supplies it. A body `name` that differs from the path is refused. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422). Returns `extension.disabled` while the tasks extension is off.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Definition name"
+                  },
+                  "title": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "brief": {
+                    "type": "string",
+                    "maxLength": 8000
+                  },
+                  "parameters": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "name": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "type": "string",
+                          "enum": [
+                            "text",
+                            "app",
+                            "subtasks"
+                          ]
+                        },
+                        "required": {
+                          "type": "boolean"
+                        },
+                        "default": {}
+                      },
+                      "required": [
+                        "name",
+                        "type",
+                        "required"
+                      ]
+                    }
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "backlog",
+                      "todo"
+                    ]
+                  },
+                  "schedule": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "cron": {
+                        "type": "string",
+                        "maxLength": 100
+                      },
+                      "values": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    }
+                  },
+                  "phases": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 160
+                        },
+                        "brief": {
+                          "type": "string",
+                          "maxLength": 8000
+                        },
+                        "repeat": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "title",
+                        "brief",
+                        "repeat"
+                      ]
+                    }
+                  },
+                  "subtasks": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "key": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string",
+                          "maxLength": 160
+                        },
+                        "kind": {
+                          "type": "string",
+                          "maxLength": 32
+                        },
+                        "brief": {
+                          "type": "string",
+                          "maxLength": 8000
+                        },
+                        "phase": {
+                          "type": "string"
+                        },
+                        "deliverables": {
+                          "type": "array",
+                          "maxItems": 5,
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "maxLength": 64
+                              },
+                              "type": {
+                                "type": "string",
+                                "enum": [
+                                  "file",
+                                  "command",
+                                  "review"
+                                ]
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "path": {
+                                "type": "string",
+                                "maxLength": 500,
+                                "description": "Conditionally required."
+                              },
+                              "change": {
+                                "type": "string",
+                                "enum": [
+                                  "created",
+                                  "modified",
+                                  "any"
+                                ],
+                                "description": "Conditionally required."
+                              },
+                              "fails_on_base": {
+                                "type": "boolean"
+                              },
+                              "command": {
+                                "type": "string",
+                                "maxLength": 1000,
+                                "description": "Conditionally required."
+                              },
+                              "directory": {
+                                "type": "string",
+                                "maxLength": 500
+                              },
+                              "paths": {
+                                "type": "array",
+                                "maxItems": 100,
+                                "items": {
+                                  "type": "string",
+                                  "maxLength": 500
+                                }
+                              }
+                            },
+                            "required": [
+                              "id",
+                              "type",
+                              "description"
+                            ]
+                          }
+                        },
+                        "routes": {
+                          "type": "object",
+                          "additionalProperties": {
+                            "type": "string"
+                          }
+                        },
+                        "implementer_model": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "reviewer_model": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "operation": {
+                          "type": "string",
+                          "maxLength": 200
+                        },
+                        "arguments": {
+                          "type": "object",
+                          "additionalProperties": true
+                        },
+                        "question": {
+                          "type": "string",
+                          "maxLength": 8000
+                        },
+                        "options": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "evidence": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "min_probability": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "key",
+                        "title",
+                        "kind"
+                      ]
+                    }
+                  }
+                },
+                "required": [
+                  "name",
+                  "title",
+                  "brief",
+                  "parameters",
+                  "status",
+                  "subtasks"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskDefinition"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard. A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/task-definitions/build-feature\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"name\": \"build-feature\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\UpdateTaskDefinitionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateTaskDefinitionRequest(\n    projectId: 4,\n    name: 'example',\n    definition: '{\"name\": \"example\", \"title\": \"Build a feature\", \"brief\": \"Document and build it.\", \"parameters\": [], \"status\": \"backlog\", \"subtasks\": [{\"key\": \"docs\", \"title\": \"Write the docs\", \"kind\": \"agent\"}]}',\n))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/projects/{project}/teardown-steps": {
       "get": {
         "operationId": "instance-teardown-step-list",
@@ -17376,6 +18776,76 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProxyCli\\UpdateProxyCliAccountRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProxyCliAccountRequest(account: 'value', disabled: true))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/proxycli/models": {
+      "get": {
+        "operationId": "proxycli-models",
+        "summary": "List proxycli models",
+        "tags": [
+          "proxycli"
+        ],
+        "x-orbit-extension": "proxycli",
+        "description": "Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProxyCliModel"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The collector is not set up (`proxycli.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/proxycli/models\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProxyCli\\ListProxyCliModelsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProxyCliModelsRequest())->dto();\n"
           }
         ]
       }
@@ -19230,6 +20700,87 @@
         ]
       }
     },
+    "/api/v1/task-definitions": {
+      "get": {
+        "operationId": "tasks-definition-list",
+        "summary": "tasks:definition:list",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/TaskDefinition"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-definitions?project_id=4\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ListTaskDefinitionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListTaskDefinitionsRequest())->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups": {
       "get": {
         "operationId": "tasks-list",
@@ -19360,7 +20911,10 @@
                   },
                   "status": {
                     "type": "string",
-                    "enum": [],
+                    "enum": [
+                      "backlog",
+                      "todo"
+                    ],
                     "description": "backlog (default) or todo"
                   },
                   "notify_coder": {
@@ -19684,7 +21238,10 @@
                   },
                   "status": {
                     "type": "string",
-                    "enum": [],
+                    "enum": [
+                      "backlog",
+                      "todo"
+                    ],
                     "description": "backlog or todo"
                   }
                 },
@@ -21386,6 +22943,103 @@
         ]
       }
     },
+    "/api/v1/tool-inventory": {
+      "get": {
+        "operationId": "tool-scan",
+        "summary": "Scan installed packages",
+        "tags": [
+          "Tools"
+        ],
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/ToolInventory"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No Node matches `node_id` (`http.404`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The Node is not active (`tool.node_inactive`) or is not Gateway-managed (`tool.node_unmanaged`). `error.details.step` is `scan`, `error.details.outcome` is `manager_failed`, and there is no Tool id. A manager that is absent, unsupported, conflicting, or incomplete does not fail the request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/tool-inventory?node_id=7\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ScanToolInventoryRequest(nodeId: 7))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/tool-managers": {
       "get": {
         "operationId": "tool-manager-list",
@@ -21657,6 +23311,143 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\InstallToolRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new InstallToolRequest(nodeId: 7, manager: 'vp', package: '@openai/codex'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/tools/adopt": {
+      "post": {
+        "operationId": "tool-adopt",
+        "summary": "Adopt a Tool",
+        "tags": [
+          "Tools"
+        ],
+        "description": "Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "node_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "manager": {
+                    "type": "string",
+                    "maxLength": 32,
+                    "description": "Tool manager name"
+                  },
+                  "package": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Manager-native package coordinate"
+                  },
+                  "version_constraint": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255
+                  }
+                },
+                "required": [
+                  "node_id",
+                  "manager",
+                  "package"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Tool"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "The request succeeded; an exact retry returned the existing record.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Tool"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/tools/adopt\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"node_id\": 7, \"manager\": \"vp\", \"package\": \"@openai/codex\", \"version_constraint\": \"^0.150\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new AdoptToolRequest(nodeId: 7, manager: 'vp', package: '@openai/codex'))->dto();\n"
           }
         ]
       }
@@ -22147,6 +23938,24 @@
           },
           "has_password": {
             "type": "boolean"
+          },
+          "server": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "owner_instance_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "test_database": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -22173,6 +23982,38 @@
           },
           "created_at": {
             "type": "string"
+          }
+        }
+      },
+      "DatabaseServer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "slug": {
+            "type": "string"
+          },
+          "node_id": {
+            "type": "integer"
+          },
+          "process_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": "string"
+          },
+          "port": {
+            "type": "integer"
+          },
+          "status": {
+            "type": "string"
+          },
+          "databases_count": {
+            "type": "integer"
           }
         }
       },
@@ -22328,6 +24169,7 @@
           "kind": {
             "type": "string",
             "enum": [
+              "informational",
               "drift",
               "unverifiable"
             ]
@@ -22337,6 +24179,7 @@
           },
           "resource_id": {
             "type": [
+              "integer",
               "string",
               "null"
             ]
@@ -22352,12 +24195,14 @@
           },
           "expected": {
             "type": [
+              "boolean",
               "string",
               "null"
             ]
           },
           "observed": {
             "type": [
+              "boolean",
               "string",
               "null"
             ]
@@ -22907,6 +24752,13 @@
           "repository_url": {
             "type": "string"
           },
+          "source_access": {
+            "type": "string",
+            "enum": [
+              "github_app",
+              "gh_cli"
+            ]
+          },
           "default_branch": {
             "type": [
               "string",
@@ -22924,6 +24776,9 @@
               "string",
               "null"
             ]
+          },
+          "task_workspace_routed": {
+            "type": "boolean"
           }
         }
       },
@@ -23704,6 +25559,251 @@
           }
         }
       },
+      "TaskDefinition": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "brief": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "app",
+                    "subtasks"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "default": {}
+              },
+              "required": [
+                "name",
+                "type",
+                "required"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo"
+            ]
+          },
+          "schedule": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "repeat": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "brief",
+                "repeat"
+              ]
+            }
+          },
+          "subtasks": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "kind": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "deliverables": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "file",
+                          "command",
+                          "review"
+                        ]
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "Conditionally required."
+                      },
+                      "change": {
+                        "type": "string",
+                        "enum": [
+                          "created",
+                          "modified",
+                          "any"
+                        ],
+                        "description": "Conditionally required."
+                      },
+                      "fails_on_base": {
+                        "type": "boolean"
+                      },
+                      "command": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Conditionally required."
+                      },
+                      "directory": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "paths": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "description"
+                    ]
+                  }
+                },
+                "routes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "implementer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "reviewer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "operation": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "arguments": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "question": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "min_probability": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "kind"
+              ]
+            }
+          }
+        },
+        "required": [
+          "project_id",
+          "name",
+          "title",
+          "brief",
+          "parameters",
+          "status",
+          "schedule",
+          "phases",
+          "subtasks"
+        ]
+      },
+      "ProxyCliModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          }
+        }
+      },
       "Schedule": {
         "type": "object",
         "properties": {
@@ -24468,6 +26568,93 @@
           }
         }
       },
+      "ToolInventory": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer"
+          },
+          "observed_at": {
+            "type": "string"
+          },
+          "managers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ToolInventoryManager"
+            }
+          }
+        }
+      },
+      "ToolInventoryManager": {
+        "type": "object",
+        "properties": {
+          "manager": {
+            "type": "string"
+          },
+          "scan_state": {
+            "type": "string",
+            "enum": [
+              "complete",
+              "absent",
+              "unsupported",
+              "incomplete",
+              "conflicting"
+            ]
+          },
+          "packages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ToolInventoryPackage"
+            }
+          }
+        }
+      },
+      "ToolInventoryPackage": {
+        "type": "object",
+        "properties": {
+          "manager": {
+            "type": "string"
+          },
+          "package": {
+            "type": "string"
+          },
+          "package_kind": {
+            "type": "string",
+            "enum": [
+              "formula",
+              "cask",
+              "global"
+            ]
+          },
+          "installed_version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dependency": {
+            "type": "boolean"
+          },
+          "registered": {
+            "type": "boolean"
+          },
+          "tool_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "adoption": {
+            "type": "string"
+          },
+          "adoption_block": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "ToolManager": {
         "type": "object",
         "properties": {
@@ -24528,7 +26715,15 @@
             ]
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              "installing",
+              "installed",
+              "updating",
+              "removing",
+              "failed",
+              "removed"
+            ]
           },
           "installed_version": {
             "type": [

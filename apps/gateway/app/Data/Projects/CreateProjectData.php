@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 
 final readonly class CreateProjectData
@@ -18,13 +19,24 @@ final readonly class CreateProjectData
         public ?string $code = null,
         public bool $taskCheckProvided = false,
         public ?string $taskCheck = null,
+        public ProjectSourceAccess $sourceAccess = ProjectSourceAccess::GitHubApp,
+        public bool $taskWorkspaceRoutedProvided = false,
+        public bool $taskWorkspaceRouted = true,
     ) {}
 
     /**
-     * The task check to store: the sent value, or the type's default when none was sent.
+     * The task check to store. An omitted command is null for every Project type.
      */
     public function resolvedTaskCheck(): ?string
     {
-        return $this->taskCheckProvided ? $this->taskCheck : $this->type->defaultTaskCheck();
+        return $this->taskCheckProvided ? $this->taskCheck : null;
+    }
+
+    /**
+     * Routing for task workspaces created later. An omitted value defaults to routed.
+     */
+    public function resolvedTaskWorkspaceRouted(): bool
+    {
+        return $this->taskWorkspaceRoutedProvided ? $this->taskWorkspaceRouted : true;
     }
 }

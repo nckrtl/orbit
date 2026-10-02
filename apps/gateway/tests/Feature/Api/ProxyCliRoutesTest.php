@@ -92,7 +92,7 @@ function proxycli_valkey(Node $node, string $slug = 'valkey'): DatabaseConnectio
     ]);
 }
 
-it('exposes the six proxycli routes with stable methods', function (): void {
+it('exposes the proxycli routes with stable methods', function (): void {
     $routes = collect(app('router')->getRoutes()->getRoutes())
         ->filter(static fn (Route $route): bool => str_starts_with((string) $route->getName(), 'proxycli:'))
         ->mapWithKeys(static fn (Route $route): array => [
@@ -106,6 +106,7 @@ it('exposes the six proxycli routes with stable methods', function (): void {
         'proxycli:status' => ['api/v1/proxycli', ['GET', 'HEAD']],
         'proxycli:list' => ['api/v1/proxycli/providers', ['GET', 'HEAD']],
         'proxycli:show' => ['api/v1/proxycli/providers/{provider}', ['GET', 'HEAD']],
+        'proxycli:models' => ['api/v1/proxycli/models', ['GET', 'HEAD']],
         'proxycli:update' => ['api/v1/proxycli/accounts/{account}', ['PATCH']],
     ]);
 });

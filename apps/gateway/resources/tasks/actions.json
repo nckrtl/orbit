@@ -1,0 +1,6 @@
+{
+  "actions": [
+    "instance-deploy",
+    "instance-rollback"
+  ]
+}

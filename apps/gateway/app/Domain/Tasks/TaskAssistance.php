@@ -50,7 +50,7 @@ final class TaskAssistance
      * Records the request against the current database row. Returns false when that row must stay as it is.
      *
      * The check and the write are one update, so a stale in-memory model cannot replace a newer direction
-     * request or leave its question behind.
+     * request or leave its question behind. Ended tasks keep the reason but never ask for assistance.
      */
     public static function apply(Task $record, AssistanceKind $kind, ?string $question, string $reason, bool $replaceFailure = false, bool $replaceDirection = false): bool
     {
@@ -74,7 +74,7 @@ final class TaskAssistance
                     });
             })
             ->update([
-                'assistance_requested' => true,
+                'assistance_requested' => DB::raw("CASE WHEN status IN ('completed', 'cancelled') THEN 0 ELSE 1 END"),
                 'assistance_kind' => $kind->value,
                 'assistance_question' => $attributes['assistance_question'],
                 'assistance_reason' => $reason,

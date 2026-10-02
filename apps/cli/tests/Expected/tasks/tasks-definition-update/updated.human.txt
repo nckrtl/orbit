@@ -1,0 +1,34 @@
+Replacing task definition...
+
+┌  Replace task definition
+│
+├  ● Replaced task definition
+│
+└  Replaced task definition.
+
+
+┌  Task definition: build-feature
+│
+├  Project      1
+│
+├  Name         build-feature
+│
+├  Title        Build the feature
+│
+├  Status       todo
+│
+├  Schedule     —
+│
+├  Parameters   —
+│
+└  Phases       —
+
+Brief
+  Document and build it.
+
+ ┌──────┬────────────────┬───────┬───────┐
+ │ KEY  │ TITLE          │ KIND  │ PHASE │
+ ├──────┼────────────────┼───────┼───────┤
+ │ docs │ Write the docs │ agent │ —     │
+ └──────┴────────────────┴───────┴───────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

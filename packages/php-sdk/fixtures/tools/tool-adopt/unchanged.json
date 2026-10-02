@@ -1,0 +1,23 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "node_id": 2,
+            "manager": "apt",
+            "package": "jq",
+            "version_constraint": "^1.0",
+            "status": "installed",
+            "installed_version": "1.0.0",
+            "failed_operation": null,
+            "error_code": null,
+            "outcome": "unchanged"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

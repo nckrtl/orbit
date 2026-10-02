@@ -6,6 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
@@ -14,6 +15,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Models\Project;
 use App\Models\Task;
 
 final readonly class CreateTaskGroupAction
@@ -27,6 +29,14 @@ final readonly class CreateTaskGroupAction
     public function execute(CreateTaskGroupData $data): Task
     {
         $this->requireExtension->execute();
+
+        // Tasks publish only through the GitHub App (/reference/github-app#read-through-the-github-cli).
+        if (Project::query()->find($data->projectId)?->source_access === ProjectSourceAccess::GhCli) {
+            throw new ResourceOperationException(
+                'tasks.github_app_required',
+                'Tasks publish through the GitHub App, and this Project reads its repository through the GitHub CLI.',
+            );
+        }
 
         try {
             $implementerDriver = $this->drivers->get($this->configuredDriver('orbit.tasks.implementer_agent_driver'))->key();
@@ -83,9 +93,10 @@ final readonly class CreateTaskGroupAction
 
     private function configuredDriver(string $key): string
     {
-        $driver = config($key, 't3');
+        $driver = config($key, 'pi');
 
-        if (! is_string($driver)) {
+        // ADR 0190: a new task stores the pi driver only. Any other value stores no task.
+        if (! is_string($driver) || $driver !== 'pi') {
             throw new AgentDriverException('The configured agent driver is unavailable.');
         }
 

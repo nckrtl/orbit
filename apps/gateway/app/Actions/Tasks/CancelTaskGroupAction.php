@@ -98,9 +98,13 @@ final readonly class CancelTaskGroupAction
 
         $group->tasks()
             ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
-            ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
+            ->update([
+                'status' => TaskStatus::Cancelled,
+                'settled_at' => now(),
+                'assistance_requested' => false,
+            ]);
         $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        // Removal success clears the assistance flag and keeps the last reason. An unreachable Node keeps the flag.
+        // Removal success clears the assistance flag and keeps the last reason. A cancelled task keeps the reason and does not ask.
         if (! $cancelled->assistance_requested) {
             $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
             $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;

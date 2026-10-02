@@ -85,11 +85,27 @@ function docsImpactFixture(): string
     file_put_contents($root.'/config/app.php', "<?php return [];\n");
     file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return ['docs/reference/tasks.md'];\n");
     exec('git -C '.escapeshellarg($root).' init -q');
+    // Keep background Git processes from writing pack files during cleanup.
+    exec('git -C '.escapeshellarg($root).' config gc.auto 0');
+    exec('git -C '.escapeshellarg($root).' config maintenance.auto false');
     exec('git -C '.escapeshellarg($root).' add .');
     exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm fixture');
 
     return $root;
 }
+
+it('docs impact fixtures disable automatic Git maintenance before cleanup', function (): void {
+    $root = docsImpactFixture();
+    $gcAuto = trim(shell_exec('git -C '.escapeshellarg($root).' config --local --get gc.auto') ?? '');
+    $maintenanceAuto = trim(shell_exec('git -C '.escapeshellarg($root).' config --local --get maintenance.auto') ?? '');
+
+    expect($gcAuto)->toBe('0')
+        ->and($maintenanceAuto)->toBe('false');
+
+    removeDocsImpactFixturePath($root);
+
+    expect(is_dir($root))->toBeFalse();
+});
 
 it('docs impact reports a new API operation and generator surfaces', function (): void {
     $root = docsImpactFixture();

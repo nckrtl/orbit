@@ -17,7 +17,7 @@ Orbit consists of these components. Each one lives in its own project in the rep
 | CLI | `apps/cli`, `packages/php-sdk` | A thin client for humans and agents. It calls the Gateway API and never connects to a Node. |
 | Web app | `apps/web`, `apps/desktop` | A static single-page app that reads the API and shows record changes live. The desktop app is a native shell around it. |
 | Node agent | `apps/agent` | A program on every Node that reports presence and Process state. It never changes a Node. |
-| pi-server | `apps/pi-server` | Runs coding-agent sessions for the Tasks `pi` driver on `app-dev` Nodes. The `t3` driver uses T3, which runs outside this repository. |
+| pi-server | `apps/pi-server` | Runs Pi sessions for task agents on `app-dev` Nodes. Implementers and reviewers use this driver only. T3 runs outside this repository and serves annotation threads, not task agents. |
 
 ## Trust
 
@@ -27,7 +27,9 @@ The Gateway is private and reachable only over WireGuard. Public traffic enters 
 
 ## Nodes and roles
 
-A Node is an Ubuntu 26.04 machine. Its roles decide its work, and Orbit installs and manages only what those roles need. Services run natively under systemd. Container Processes and the `metrics` role's Prometheus and Grafana run in Docker.
+A Node is a machine in the WireGuard fleet. Ubuntu 26.04 Nodes run Orbit service roles. macOS Nodes support selected tools through their existing SSH account and package managers, with no service roles. Tools do not require a role. [Node provisioning](/reference/node-provisioning#macos-nodes) describes macOS enrollment.
+
+On Ubuntu, services run natively under systemd. Container Processes and the `metrics` role's Prometheus and Grafana run in Docker. macOS tool support does not enable these runtimes.
 
 | Role | Work |
 | --- | --- |

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskDefinitionName;
 use App\Http\Controllers\Api\ActivitiesController;
 use App\Http\Controllers\Api\AgentRealtimeController;
 use App\Http\Controllers\Api\AgentThreadsController;
@@ -10,7 +11,7 @@ use App\Http\Controllers\Api\AnnotationsController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
-use App\Http\Controllers\Api\DatabaseUsersController;
+use App\Http\Controllers\Api\DatabaseServersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
@@ -55,9 +56,11 @@ use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
+use App\Http\Controllers\Api\TaskDefinitionsController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
 use App\Http\Controllers\Api\TasksController;
+use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
 use App\Http\Controllers\Api\ToolsController;
 use App\Http\Middleware\RecordCommandActivity;
@@ -471,8 +474,6 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:stop');
         Route::post('processes/{process}/restart', [ProcessesController::class, 'restart'])
             ->name('process:restart');
-        Route::post('processes/{process}/database-users', [DatabaseUsersController::class, 'store'])
-            ->name('database:user:create');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:destroy');
         Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
@@ -485,6 +486,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('database-connections/{database_connection}/users', [DatabaseConnectionsController::class, 'users'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:user:list');
+        Route::post('database-connections/{database_connection}/users', [DatabaseConnectionsController::class, 'storeUser'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:user:create');
         Route::patch('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'update'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:update');
@@ -504,6 +508,18 @@ Route::prefix('v1')->group(function (): void {
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->where('table', '[A-Za-z_][A-Za-z0-9_]*')
             ->name('database:describe');
+        Route::get('database-servers', [DatabaseServersController::class, 'index'])
+            ->name('database:server:list');
+        Route::post('database-servers', [DatabaseServersController::class, 'store'])
+            ->name('database:server:create');
+        Route::get('database-servers/{database_server}', [DatabaseServersController::class, 'show'])
+            ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:server:show');
+        Route::delete('database-servers/{database_server}', [DatabaseServersController::class, 'destroy'])
+            ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:server:destroy');
+        Route::get('tool-inventory', [ToolInventoryController::class, 'scan'])
+            ->name('tool:scan');
         Route::get('tool-managers', [ToolManagersController::class, 'index'])
             ->name('tool:manager:list');
         Route::get('tools', [ToolsController::class, 'index'])->name('tool:list');
@@ -511,6 +527,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('tool')
             ->name('tool:show');
         Route::post('tools', [ToolsController::class, 'store'])->name('tool:install');
+        Route::post('tools/adopt', [ToolsController::class, 'adopt'])->name('tool:adopt');
         Route::post('tools/{tool}/update', [ToolsController::class, 'update'])
             ->whereNumber('tool')
             ->name('tool:update');
@@ -524,6 +541,7 @@ Route::prefix('v1')->group(function (): void {
         Route::get('proxycli/providers/{provider}', [ProxyCliController::class, 'show'])
             ->where('provider', '[a-z][a-z0-9-]*')
             ->name('proxycli:show');
+        Route::get('proxycli/models', [ProxyCliController::class, 'models'])->name('proxycli:models');
         Route::patch('proxycli/accounts/{account}', [ProxyCliController::class, 'update'])
             ->where('account', '[A-Za-z0-9._-]+')
             ->name('proxycli:update');
@@ -578,5 +596,17 @@ Route::prefix('v1')->group(function (): void {
         Route::post('task-groups/{group}/complete', [TaskGroupsController::class, 'complete'])
             ->whereNumber('group')
             ->name('tasks:complete');
+        Route::get('task-definitions', [TaskDefinitionsController::class, 'index'])->name('tasks:definition:list');
+        Route::get('projects/{project}/task-definitions/{name}', [TaskDefinitionsController::class, 'show'])
+            ->where('name', TaskDefinitionName::Pattern)
+            ->name('tasks:definition:show');
+        Route::post('projects/{project}/task-definitions', [TaskDefinitionsController::class, 'store'])
+            ->name('tasks:definition:create');
+        Route::put('projects/{project}/task-definitions/{name}', [TaskDefinitionsController::class, 'update'])
+            ->where('name', TaskDefinitionName::Pattern)
+            ->name('tasks:definition:update');
+        Route::delete('projects/{project}/task-definitions/{name}', [TaskDefinitionsController::class, 'destroy'])
+            ->where('name', TaskDefinitionName::Pattern)
+            ->name('tasks:definition:destroy');
     });
 });

@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CreateTaskDefinitionRequest",
+    "route": "POST /api/v1/projects/{project}/task-definitions",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "tasks.definition_exists",
+            "message": "The Project already uses this task definition name.",
+            "details": {
+                "name": "build-feature"
+            }
+        }
+    }
+}

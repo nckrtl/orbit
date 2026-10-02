@@ -3,21 +3,25 @@ Fetching Instances...
 
 ┌  Project: charlie-shop
 │
-├  ID               3
+├  ID                      3
 │
-├  Name             Charlie shop
+├  Name                    Charlie shop
 │
-├  Type             laravel-app
+├  Type                    laravel-app
 │
-├  Repository       git@github.com:charlie/shop.git
+├  Repository              git@github.com:charlie/shop.git
 │
-├  Default branch   release
+├  Source access           github_app
 │
-├  Web root         web/public
+├  Default branch          release
 │
-├  Task check       —
+├  Web root                web/public
 │
-└  Excluded nodes   —
+├  Task check              —
+│
+├  Task workspace routed   yes
+│
+└  Excluded nodes          —
 
  ┌────┬──────────────────┬─────────┬────────────────────────────────────┬────────┐
  │ ID │ NAME             │ NODE    │ DOMAIN                             │ STATUS │

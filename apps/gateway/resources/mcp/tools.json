@@ -580,7 +580,7 @@
             "description": "Numeric Node ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           }
         },
@@ -647,7 +647,7 @@
             "description": "Numeric Cluster ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           }
         },
@@ -738,7 +738,7 @@
       "name": "database-create",
       "extension": null,
       "title": "Create a Database connection",
-      "description": "Create a Database connection through the Gateway.",
+      "description": "Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.",
       "method": "POST",
       "path": "/api/v1/database-connections",
       "path_inputs": [],
@@ -746,8 +746,190 @@
       "streams": false,
       "input_schema": {
         "type": "object",
-        "properties": {},
-        "additionalProperties": false
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 63
+          },
+          "driver": {
+            "type": "string",
+            "enum": [
+              "mysql",
+              "pgsql",
+              "sqlite",
+              "redis"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 255
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 65535,
+            "minimum": 1
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 64
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 1024
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "",
+            "maxLength": 128
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024
+          },
+          "server": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 63
+          },
+          "instance_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string",
+                "pattern": "",
+                "maxLength": 63
+              },
+              "driver": {
+                "type": "string",
+                "enum": [
+                  "mysql",
+                  "pgsql",
+                  "sqlite",
+                  "redis"
+                ]
+              },
+              "node_id": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1
+              },
+              "host": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 255
+              },
+              "port": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "maximum": 65535,
+                "minimum": 1
+              },
+              "database": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 64
+              },
+              "path": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 1024
+              },
+              "username": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "pattern": "",
+                "maxLength": 128
+              },
+              "password": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 1024
+              }
+            },
+            "required": [
+              "slug",
+              "driver"
+            ],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "slug": {
+                "type": "string",
+                "pattern": "",
+                "maxLength": 63
+              },
+              "server": {
+                "type": "string",
+                "pattern": "",
+                "maxLength": 63
+              },
+              "instance_id": {
+                "type": "integer",
+                "minimum": 1
+              }
+            },
+            "required": [
+              "slug",
+              "server"
+            ],
+            "additionalProperties": false
+          }
+        ]
       }
     },
     {
@@ -893,6 +1075,119 @@
       }
     },
     {
+      "name": "database-server-create",
+      "extension": null,
+      "title": "Create a Database server",
+      "description": "Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.",
+      "method": "POST",
+      "path": "/api/v1/database-servers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 63,
+            "description": "Database server slug"
+          },
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "tag": {
+            "type": "string",
+            "pattern": "",
+            "maxLength": 128,
+            "description": "MySQL image tag. Defaults to 8.4"
+          },
+          "port": {
+            "type": "integer",
+            "maximum": 65535,
+            "minimum": 1,
+            "description": "Port to publish on the Node WireGuard address. Defaults to 3306"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "slug",
+          "node_id"
+        ]
+      }
+    },
+    {
+      "name": "database-server-destroy",
+      "extension": null,
+      "title": "Remove a Database server",
+      "description": "Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.",
+      "method": "DELETE",
+      "path": "/api/v1/database-servers/{database_server}",
+      "path_inputs": [
+        "database_server"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_server": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database server slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_server"
+        ]
+      }
+    },
+    {
+      "name": "database-server-list",
+      "extension": null,
+      "title": "List Database servers",
+      "description": "List the Database servers.",
+      "method": "GET",
+      "path": "/api/v1/database-servers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "database-server-show",
+      "extension": null,
+      "title": "Show a Database server",
+      "description": "Shows one Database server with the connections of the databases on it.",
+      "method": "GET",
+      "path": "/api/v1/database-servers/{database_server}",
+      "path_inputs": [
+        "database_server"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "database_server": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database server slug."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "database_server"
+        ]
+      }
+    },
+    {
       "name": "database-show",
       "extension": null,
       "title": "Show a Database connection",
@@ -976,52 +1271,42 @@
     {
       "name": "database-user-create",
       "extension": null,
-      "title": "Create a managed MySQL user",
-      "description": "Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.",
+      "title": "Add a database user",
+      "description": "Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.",
       "method": "POST",
-      "path": "/api/v1/processes/{process}/database-users",
+      "path": "/api/v1/database-connections/{database_connection}/users",
       "path_inputs": [
-        "process"
+        "database_connection"
       ],
       "query_inputs": [],
       "streams": false,
       "input_schema": {
         "type": "object",
         "properties": {
-          "process": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Numeric Process ID."
-          },
-          "slug": {
+          "database_connection": {
             "type": "string",
-            "pattern": "",
-            "maxLength": 63,
-            "description": "Database connection slug"
-          },
-          "database": {
-            "type": "string",
-            "pattern": "",
-            "maxLength": 32,
-            "description": "Database name to create"
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Database connection slug."
           },
           "username": {
             "type": "string",
             "pattern": "",
             "maxLength": 32,
-            "description": "Username to create"
+            "description": "Username, a 1-32 character identifier"
           },
           "password": {
             "type": "string",
             "maxLength": 1024,
-            "description": "Password for the created user"
+            "description": "Password for the new user"
+          },
+          "read_only": {
+            "type": "boolean",
+            "description": "Grant only SELECT on the database"
           }
         },
         "additionalProperties": false,
         "required": [
-          "process",
-          "slug",
-          "database",
+          "database_connection",
           "username",
           "password"
         ]
@@ -1183,7 +1468,8 @@
         "additionalProperties": false,
         "required": [
           "instance",
-          "key"
+          "key",
+          "value"
         ]
       }
     },
@@ -2190,7 +2476,7 @@
             "description": "Numeric Instance ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Delete dirty or unpublished source after identity checks"
           }
         },
@@ -2302,7 +2588,7 @@
       "name": "instance-register",
       "extension": null,
       "title": "Register an Instance",
-      "description": "Adopt the current Git source as a managed Instance.",
+      "description": "Adopt the current Git source as a managed Instance of an existing Project.",
       "method": "POST",
       "path": "/api/v1/instances/register",
       "path_inputs": [],
@@ -2323,22 +2609,6 @@
           "project_id": {
             "type": "integer"
           },
-          "project_name": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "Confirmed Project display name"
-          },
-          "project_slug": {
-            "type": "string",
-            "pattern": "^[A-Za-z0-9_-]+$",
-            "maxLength": 63,
-            "description": "Confirmed Project slug"
-          },
-          "default_branch": {
-            "type": "string",
-            "maxLength": 255,
-            "description": "Confirmed Project default branch"
-          },
           "instance_name": {
             "type": "string",
             "maxLength": 63
@@ -2346,7 +2616,7 @@
           "root": {
             "type": "string",
             "maxLength": 255,
-            "description": "Confirmed Project root or existing-Project root override"
+            "description": "Relative web-root override for this Instance"
           },
           "domain": {
             "type": "string",
@@ -2962,11 +3232,11 @@
         "type": "object",
         "properties": {
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip confirmation"
           },
           "purge_data": {
-            "type": "string",
+            "type": "boolean",
             "description": "Delete Metrics data"
           }
         },
@@ -3162,9 +3432,10 @@
           "platform": {
             "type": "string",
             "enum": [
-              "linux"
+              "linux",
+              "macos"
             ],
-            "description": "Node platform (linux only)"
+            "description": "linux for Ubuntu service Nodes, or macos for tools on an existing account; no default account or address"
           },
           "architecture": {
             "type": [
@@ -3189,11 +3460,11 @@
           },
           "user": {
             "type": "string",
-            "description": "Bootstrap SSH user; defaults to root for a new node and to the managed user for an existing node"
+            "description": "Bootstrap SSH user; root for a new Linux node, the managed user for an existing one; macOS requires the account"
           },
           "orbit_user": {
             "type": "string",
-            "description": "Orbit-managed system user; defaults to orbit for a new node"
+            "description": "Managed user; Linux defaults to orbit, and macOS requires the same existing account as user"
           },
           "roles": {
             "type": "array",
@@ -3225,7 +3496,7 @@
               "string",
               "null"
             ],
-            "description": "Stable WireGuard IP address"
+            "description": "Stable WireGuard address; Linux allocates when omitted. macOS requires the existing one and does not replace it"
           },
           "lan_ip": {
             "type": [
@@ -3422,11 +3693,11 @@
             "description": "Numeric Node ID."
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Skip the destructive confirmation prompt"
           },
           "offline": {
-            "type": "string",
+            "type": "boolean",
             "description": "Shed roles and remove a node Orbit cannot reach"
           }
         },
@@ -3592,7 +3863,7 @@
             "description": "Role name"
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Confirm the role transfer"
           },
           "from": {
@@ -3646,15 +3917,15 @@
             "description": "Role name"
           },
           "force": {
-            "type": "string",
+            "type": "boolean",
             "description": "Confirm destructive role removal and dependent cleanup"
           },
           "purge_data": {
-            "type": "string",
+            "type": "boolean",
             "description": "Request supported role-owned data cleanup"
           },
           "offline": {
-            "type": "string",
+            "type": "boolean",
             "description": "Remove the role from a node Orbit cannot reach"
           }
         },
@@ -4083,6 +4354,14 @@
             "type": "string",
             "maxLength": 2048
           },
+          "source_access": {
+            "type": "string",
+            "enum": [
+              "github_app",
+              "gh_cli"
+            ],
+            "description": "How Orbit reads a private github.com repository: github_app (default) or gh_cli"
+          },
           "default_branch": {
             "type": "string",
             "maxLength": 255,
@@ -4099,7 +4378,11 @@
               "null"
             ],
             "maxLength": 4096,
-            "description": "Task check command; defaults to composer check for Laravel types and none otherwise"
+            "description": "Task check command. Omitted stores none"
+          },
+          "task_workspace_routed": {
+            "type": "boolean",
+            "description": "Whether new task workspaces get a Route (true or false)"
           }
         },
         "additionalProperties": false,
@@ -4936,6 +5219,14 @@
             "type": "string",
             "maxLength": 2048
           },
+          "source_access": {
+            "type": "string",
+            "enum": [
+              "github_app",
+              "gh_cli"
+            ],
+            "description": "How Orbit reads a private github.com repository: github_app or gh_cli"
+          },
           "default_branch": {
             "type": "string",
             "maxLength": 255,
@@ -4953,6 +5244,10 @@
             ],
             "maxLength": 4096,
             "description": "New task check command for task baselines and handoffs"
+          },
+          "task_workspace_routed": {
+            "type": "boolean",
+            "description": "Change routing for future task workspaces (true or false)"
           }
         },
         "additionalProperties": false,
@@ -4968,6 +5263,22 @@
       "description": "Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.",
       "method": "GET",
       "path": "/api/v1/proxycli/providers",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "proxycli-models",
+      "extension": "proxycli",
+      "title": "List proxycli models",
+      "description": "Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.",
+      "method": "GET",
+      "path": "/api/v1/proxycli/models",
       "path_inputs": [],
       "query_inputs": [],
       "streams": false,
@@ -5878,7 +6189,10 @@
           },
           "status": {
             "type": "string",
-            "enum": [],
+            "enum": [
+              "backlog",
+              "todo"
+            ],
             "description": "backlog (default) or todo"
           },
           "notify_coder": {
@@ -5980,6 +6294,623 @@
           "project_id",
           "title",
           "brief"
+        ]
+      }
+    },
+    {
+      "name": "tasks-definition-create",
+      "extension": "tasks",
+      "title": "tasks:definition:create",
+      "description": "Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/task-definitions",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "app",
+                    "subtasks"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "default": {}
+              },
+              "required": [
+                "name",
+                "type",
+                "required"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo"
+            ]
+          },
+          "schedule": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "cron": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "repeat": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "brief",
+                "repeat"
+              ]
+            }
+          },
+          "subtasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "kind": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "deliverables": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "file",
+                          "command",
+                          "review"
+                        ]
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "Conditionally required."
+                      },
+                      "change": {
+                        "type": "string",
+                        "enum": [
+                          "created",
+                          "modified",
+                          "any"
+                        ],
+                        "description": "Conditionally required."
+                      },
+                      "fails_on_base": {
+                        "type": "boolean"
+                      },
+                      "command": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Conditionally required."
+                      },
+                      "directory": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "paths": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "description"
+                    ]
+                  }
+                },
+                "routes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "implementer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "reviewer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "operation": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "arguments": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "question": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "min_probability": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "kind"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name",
+          "title",
+          "brief",
+          "parameters",
+          "status",
+          "subtasks"
+        ]
+      }
+    },
+    {
+      "name": "tasks-definition-destroy",
+      "extension": "tasks",
+      "title": "tasks:definition:destroy",
+      "description": "Deletes a task definition and returns it. The call does not delete a task and does not start one. Gateway access is required. Returns `extension.disabled` while the tasks extension is off.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{project}/task-definitions/{name}",
+      "path_inputs": [
+        "project",
+        "name"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63,
+            "description": "Task definition name, unique within the Project."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "tasks-definition-list",
+      "extension": "tasks",
+      "title": "tasks:definition:list",
+      "description": "Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-definitions",
+      "path_inputs": [],
+      "query_inputs": [
+        "project_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "tasks-definition-show",
+      "extension": "tasks",
+      "title": "tasks:definition:show",
+      "description": "Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/task-definitions/{name}",
+      "path_inputs": [
+        "project",
+        "name"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63,
+            "description": "Task definition name, unique within the Project."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "tasks-definition-update",
+      "extension": "tasks",
+      "title": "tasks:definition:update",
+      "description": "Replaces a task definition. The body is the whole definition. It may omit `name`; the path then supplies it. A body `name` that differs from the path is refused. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422). Returns `extension.disabled` while the tasks extension is off.",
+      "method": "PUT",
+      "path": "/api/v1/projects/{project}/task-definitions/{name}",
+      "path_inputs": [
+        "project",
+        "name"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Task definition name, unique within the Project.",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "maxLength": 63
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 160
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 8000
+          },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "app",
+                    "subtasks"
+                  ]
+                },
+                "required": {
+                  "type": "boolean"
+                },
+                "default": {}
+              },
+              "required": [
+                "name",
+                "type",
+                "required"
+              ]
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo"
+            ]
+          },
+          "schedule": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "cron": {
+                "type": "string",
+                "maxLength": 100
+              },
+              "values": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          },
+          "phases": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "repeat": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "brief",
+                "repeat"
+              ]
+            }
+          },
+          "subtasks": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 160
+                },
+                "kind": {
+                  "type": "string",
+                  "maxLength": 32
+                },
+                "brief": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "phase": {
+                  "type": "string"
+                },
+                "deliverables": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "type": {
+                        "type": "string",
+                        "enum": [
+                          "file",
+                          "command",
+                          "review"
+                        ]
+                      },
+                      "description": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "path": {
+                        "type": "string",
+                        "maxLength": 500,
+                        "description": "Conditionally required."
+                      },
+                      "change": {
+                        "type": "string",
+                        "enum": [
+                          "created",
+                          "modified",
+                          "any"
+                        ],
+                        "description": "Conditionally required."
+                      },
+                      "fails_on_base": {
+                        "type": "boolean"
+                      },
+                      "command": {
+                        "type": "string",
+                        "maxLength": 1000,
+                        "description": "Conditionally required."
+                      },
+                      "directory": {
+                        "type": "string",
+                        "maxLength": 500
+                      },
+                      "paths": {
+                        "type": "array",
+                        "maxItems": 100,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        }
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "type",
+                      "description"
+                    ]
+                  }
+                },
+                "routes": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "implementer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "reviewer_model": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "operation": {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                "arguments": {
+                  "type": "object",
+                  "additionalProperties": true
+                },
+                "question": {
+                  "type": "string",
+                  "maxLength": 8000
+                },
+                "options": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "evidence": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "min_probability": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "title",
+                "kind"
+              ]
+            }
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name",
+          "title",
+          "brief",
+          "parameters",
+          "status",
+          "subtasks"
         ]
       }
     },
@@ -6425,13 +7356,59 @@
           },
           "status": {
             "type": "string",
-            "enum": [],
+            "enum": [
+              "backlog",
+              "todo"
+            ],
             "description": "backlog or todo"
           }
         },
         "additionalProperties": false,
         "required": [
           "group"
+        ]
+      }
+    },
+    {
+      "name": "tool-adopt",
+      "extension": null,
+      "title": "Adopt a Tool",
+      "description": "Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.",
+      "method": "POST",
+      "path": "/api/v1/tools/adopt",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "manager": {
+            "type": "string",
+            "maxLength": 32,
+            "description": "Tool manager name"
+          },
+          "package": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "Manager-native package coordinate"
+          },
+          "version_constraint": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id",
+          "manager",
+          "package"
         ]
       }
     },
@@ -6554,6 +7531,32 @@
         "additionalProperties": false,
         "required": [
           "tool"
+        ]
+      }
+    },
+    {
+      "name": "tool-scan",
+      "extension": null,
+      "title": "Scan installed packages",
+      "description": "Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.",
+      "method": "GET",
+      "path": "/api/v1/tool-inventory",
+      "path_inputs": [],
+      "query_inputs": [
+        "node_id"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node_id"
         ]
       }
     },

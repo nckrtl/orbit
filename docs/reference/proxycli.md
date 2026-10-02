@@ -1,6 +1,6 @@
 ---
 title: "proxycli"
-description: "The optional Orbit extension that collects CLIProxyAPI quota into shared Valkey and publishes provider pools at collector.cli-proxy-api.orbit."
+description: "The optional Orbit extension that collects CLIProxyAPI quota and its model list into shared Valkey, and publishes provider pools at collector.cli-proxy-api.orbit."
 covers:
   - apps/gateway/app/{Domain,Infrastructure}/ProxyCli/**
   - apps/gateway/app/{Actions,Data,Http/Requests}/ProxyCli/**
@@ -55,7 +55,7 @@ The collector Node must be an active Linux Node with a WireGuard address. Otherw
 
 `--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. Use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node. The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
 
-Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again. Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
+Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again. A collector that is already running keeps its old script until setup runs again. Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
 
 ## What setup deploys
 
@@ -69,7 +69,7 @@ Setup places these pieces on the collector Node and in Gateway settings.
 | Private DNS `host-record` | VPN DNS | `collector.cli-proxy-api.orbit` to the Node's WireGuard address |
 | Management key, read token, and control token | Gateway settings | Stored as secrets |
 
-The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `PROXYCLI_*` values as `Environment=` directives: the CLIProxyAPI URL and management key, the read and control tokens, the port, and the Valkey host, port, username, and password. [Processes and schedules](/reference/processes-and-schedules#environment-of-a-systemd-process) describes that environment.
+The Process runs `/usr/bin/python3 /var/lib/orbit/proxycli/server.py`. systemd does not search `PATH`, so the command names the absolute path. The unit receives the `PROXYCLI_*` values as `Environment=` directives: the CLIProxyAPI URL and management key (`PROXYCLI_MANAGEMENT_KEY`), the read and control tokens, the port, and the Valkey host, port, username, and password. The script uses that management key to read auth-file models. It receives no client API key. [Processes and schedules](/reference/processes-and-schedules#environment-of-a-systemd-process) describes that environment.
 
 While setup holds the collector, `process:destroy` refuses to remove the Process with `process.required_by_proxycli`.
 
@@ -81,7 +81,7 @@ Setup publishes the Caddy site before it recreates the collector Process. The si
 
 ## Collection
 
-The collector is the only process that calls CLIProxyAPI for quota. Every minute it takes the Valkey lock `orbit:proxycli:lock` for up to 120 seconds. When another holder has the lock, it skips the round. It lists the CLIProxyAPI auth files, fetches quota for each account that is due through `POST /v0/management/api-call`, and writes `orbit:proxycli:raw` and `orbit:proxycli:snapshot`.
+The collector is the only process that calls CLIProxyAPI for quota. Every minute it takes the Valkey lock `orbit:proxycli:lock` for up to 120 seconds. When another holder has the lock, it skips the round. It lists the CLIProxyAPI auth files, fetches quota for each account that is due through `POST /v0/management/api-call`, and writes `orbit:proxycli:raw` and `orbit:proxycli:snapshot`. It remembers each auth file's models in `orbit:proxycli:model-files`.
 
 | Rule | Value |
 | --- | --- |
@@ -114,13 +114,37 @@ Every read uses the Valkey snapshot and never calls CLIProxyAPI. An account togg
 
 ## Clients
 
-The Gateway reads the snapshot from Valkey through the cache connection. `proxycli:list`, `proxycli:show`, and the Quota pages use it. A read or toggle before setup, or after teardown, fails with `proxycli.disabled` (409).
+The Gateway reads the snapshot from Valkey through the cache connection. `proxycli:list`, `proxycli:show`, `proxycli:models`, and the Quota pages use it. A read or toggle before setup, or after teardown, fails with `proxycli.disabled` (409).
 
 `proxycli:update` checks that the account is in the snapshot, or fails with `resource.not_found`. The Gateway then sends `PATCH https://{node-wireguard-ip}:443/v1/accounts/{account}` with `Host: collector.cli-proxy-api.orbit`, Orbit CA verification, and the control token. The account ID must match `[A-Za-z0-9._-]+`. The Gateway then writes the snapshot again with the new state. That write sets `collected_at` to the toggle time and drops each account's `checked_at` and `next_check_at` until the next collection round. The schedule itself is unchanged. When the collector refuses or cannot be reached, the call fails with `proxycli.upstream_failed` (502).
 
 The web app shows the Quota section while the `proxycli` extension is enabled, and reads it every 60 seconds. It shows provider quota when the collector is configured, whether or not the `tasks` extension is enabled. When the collector is not configured, the page names what is missing. A provider page lists the accounts, the remaining quota and reset time of each window, and the controls to enable or disable an account.
 
 `proxycli:status` reports whether the collector is set up, its hostname, Node, cache connection, and `collected_at`.
+
+## Models
+
+`GET /api/v1/proxycli/models` (`proxycli:models`) lists the models CLIProxyAPI offers. Each item is `{id, provider}`. The route reads that list from the collector snapshot and does not call CLIProxyAPI.
+
+On each poll, for every auth file from `GET /v0/management/auth-files`, the collector reads `GET /v0/management/auth-files/models?name=` that file's name. It sends the management key as `Authorization: Bearer`. It does not call `GET /v1/models`. That route checks a client API key, and the management key is valid only for `/v0/management`. When that request fails, the collector keeps the models it stored for that auth file on the previous poll. A file that answers replaces only its own models. A file the auth list does not include drops out of the union.
+
+A `models` entry always has `id`. It includes `owned_by`, `display_name`, and `type` only when the registry set them. The collector stores one `{id, provider}` per id. It does not store `display_name` or `type`. A repeated id keeps the provider from the first auth file.
+
+When `owned_by` is present, the collector maps it with the table below. When `owned_by` is absent, it maps the auth file's `provider` with that same table. The management list sets that file's `provider` and `type` to one value. The entry's `type` is not a provider, so the collector does not map it. A model with neither `owned_by` nor an auth-file provider is omitted.
+
+`provider` is the ProxyCli provider that serves the model:
+
+| `owned_by` | `provider` |
+| --- | --- |
+| `openai` | `codex` |
+| `anthropic` | `claude` |
+| `xai` | `grok` |
+| `moonshot` | `kimi` |
+| `google` | `google`. No ProxyCli provider serves it |
+| `meta` | `meta`. No ProxyCli provider serves it |
+| Any other value | That same value |
+
+`antigravity` keeps its name, and it is a ProxyCli provider. The route refuses with `proxycli.disabled` (409) while the collector is not set up. A snapshot that has no models returns an empty list. A collector deployed before this read has no models until `proxycli:setup` runs again and the next poll stores them.
 
 ## Check the collector
 
@@ -150,7 +174,7 @@ These codes come from the Gateway on setup, teardown, reads, and toggles.
 | Code | Status | When |
 | --- | --- | --- |
 | `extension.disabled` | 409 | The `proxycli` extension is disabled. |
-| `proxycli.disabled` | 409 | A read or toggle runs while the collector is not set up. |
+| `proxycli.disabled` | 409 | A read, the model list, or a toggle runs while the collector is not set up. |
 | `proxycli.cache_missing` | 422 | No Database connection has the cache slug. |
 | `proxycli.cache_invalid` | 422 | The cache connection is not Redis. |
 | `proxycli.cache_unplaced` | 422 | The cache connection's Node is not in the fleet or has no active `database` role. |
@@ -173,7 +197,7 @@ Quota collection is optional fleet infrastructure, not a capability of one Node.
 
 ### One collector, one snapshot
 
-A refresh of the web page or CodexBar must never start an upstream poll. A second polling loop in the Gateway would call CLIProxyAPI on every refresh. So one collector polls under a Valkey lock, and every client reads the snapshot.
+A refresh of the web page or CodexBar must never start an upstream poll. A second polling loop in the Gateway would call CLIProxyAPI on every refresh. So one collector polls under a Valkey lock, and every client reads the snapshot. `proxycli:models` reads the model list from that same snapshot.
 
 ### A reserved name, not a Route
 

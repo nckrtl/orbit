@@ -26,7 +26,7 @@ describe('success request ID boundary', function (): void {
             'data' => [
                 'healthy' => true,
                 'nodes' => [],
-                'summary' => ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0],
+                'summary' => ['nodes' => 0, 'families' => 0, 'checks' => 0, 'drift' => 0, 'unverifiable' => 0, 'informational' => 0],
             ],
             'meta' => $meta,
         ]);

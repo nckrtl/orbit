@@ -222,6 +222,72 @@ describe('project requests', function (): void {
             ->and(ProjectResponse::fromGatewayData(['id' => 4], 'request-id')->taskCheck)->toBeNull();
     });
 
+    it('transports source access on create and update only when given', function (): void {
+        $create = static fn (?string $sourceAccess): CreateProjectRequest => new CreateProjectRequest(
+            slug: 'leden',
+            repositoryUrl: 'git@github.com:acme/leden.git',
+            root: 'public',
+            sourceAccess: $sourceAccess,
+        );
+
+        expect($create(null)->body()->all())->not->toHaveKey('source_access')
+            ->and($create('gh_cli')->body()->all())->toMatchArray(['source_access' => 'gh_cli'])
+            ->and(new UpdateProjectRequest(projectId: 14, defaultBranch: 'main', sourceAccess: 'gh_cli')->body()->all())
+            ->toBe(['source_access' => 'gh_cli', 'default_branch' => 'main'])
+            ->and(new UpdateProjectRequest(projectId: 14, defaultBranch: 'main')->body()->all())
+            ->not->toHaveKey('source_access');
+    });
+
+    it('reads source access from a Project response', function (): void {
+        $response = ProjectResponse::fromGatewayData(['id' => 14, 'source_access' => 'gh_cli'], 'request-id');
+
+        expect($response->sourceAccess)->toBe('gh_cli')
+            ->and($response->toArray()['source_access'])->toBe('gh_cli')
+            ->and(ProjectResponse::fromGatewayData(['id' => 4], 'request-id')->sourceAccess)->toBe('github_app');
+    });
+
+    it('serializes task workspace routing as true, false, or omitted', function (): void {
+        $create = static fn (?bool $routed): CreateProjectRequest => new CreateProjectRequest(
+            slug: 'kit',
+            repositoryUrl: 'https://github.com/acme/kit.git',
+            root: '.',
+            type: 'node-package',
+            taskWorkspaceRouted: $routed,
+        );
+        $update = static fn (?bool $routed): UpdateProjectRequest => new UpdateProjectRequest(
+            projectId: 3,
+            taskWorkspaceRouted: $routed,
+        );
+
+        expect($create(null)->body()->all())->not->toHaveKey('task_workspace_routed')
+            ->and($create(false)->body()->all())->toMatchArray(['task_workspace_routed' => false])
+            ->and((string) $create(false)->body())->toContain('"task_workspace_routed":false')
+            ->and($create(true)->body()->all())->toMatchArray(['task_workspace_routed' => true])
+            ->and($update(null)->body()->all())->toBe([])
+            ->and($update(false)->body()->all())->toBe(['task_workspace_routed' => false])
+            ->and((string) $update(false)->body())->toBe('{"task_workspace_routed":false}')
+            ->and($update(true)->body()->all())->toBe(['task_workspace_routed' => true]);
+    });
+
+    it('parses true, false, and omitted task workspace routing without coercing other types', function (): void {
+        $response = static fn (mixed $routed): ProjectResponse => ProjectResponse::fromGatewayData([
+            'id' => 3,
+            'task_workspace_routed' => $routed,
+        ], 'request-id');
+        $omitted = ProjectResponse::fromGatewayData(['id' => 4], 'request-id');
+
+        expect($response(false)->taskWorkspaceRouted)->toBeFalse()
+            ->and($response(false)->toArray()['task_workspace_routed'])->toBeFalse()
+            ->and(json_encode($response(false)->toArray(), JSON_THROW_ON_ERROR))->toContain('"task_workspace_routed":false')
+            ->and($response(true)->taskWorkspaceRouted)->toBeTrue()
+            ->and($response(true)->toArray()['task_workspace_routed'])->toBeTrue()
+            ->and($omitted->taskWorkspaceRouted)->toBeNull()
+            ->and($omitted->toArray())->not->toHaveKey('task_workspace_routed')
+            ->and($response('false')->taskWorkspaceRouted)->toBeNull()
+            ->and($response(0)->taskWorkspaceRouted)->toBeNull()
+            ->and($response(null)->toArray())->not->toHaveKey('task_workspace_routed');
+    });
+
     it('does not keep the replaced Project request class name', function (): void {
         expect(class_exists('Orbit\\Sdk\\Requests\\Projects\\RemoveAppRequest'))->toBeFalse();
     });
@@ -244,9 +310,11 @@ function project_gateway_data(): array
         'slug' => 'orbit-docs',
         'type' => 'laravel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit-docs.git',
+        'source_access' => 'github_app',
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',
+        'task_workspace_routed' => true,
     ];
 }
 

@@ -9,6 +9,7 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Extensions\ListExtensionsRequest;
 use Orbit\Sdk\Requests\Nodes\ListNodesRequest;
+use Orbit\Sdk\Requests\ProxyCli\ListProxyCliModelsRequest;
 use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
 use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
@@ -101,6 +102,42 @@ it('lists provider windows from the snapshot without Primary or Secondary labels
     expect($exit)->toBe(0)
         ->and($output)->toContain('codex', '7d', '5h')
         ->and($output)->not->toContain('Primary', 'Secondary');
+});
+
+it('lists models from the snapshot', function (): void {
+    MockClient::global([
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
+        ListProxyCliModelsRequest::class => MockResponse::make([
+            'data' => [
+                ['id' => 'gpt-5.6-luna', 'provider' => 'codex'],
+                ['id' => 'claude-opus', 'provider' => 'claude'],
+            ],
+            'meta' => ['request_id' => proxycli_cli_request_id()],
+        ]),
+    ]);
+
+    [$exit, $output] = proxycli_cli_display('proxycli:models');
+
+    expect($exit)->toBe(0)
+        ->and($output)->toContain('gpt-5.6-luna', 'codex', 'claude-opus', 'claude')
+        ->and($output)->not->toContain('display_name');
+});
+
+it('returns an empty model list as json', function (): void {
+    MockClient::global([
+        ListExtensionsRequest::class => proxycli_cli_extensions_response(),
+        ListProxyCliModelsRequest::class => MockResponse::make([
+            'data' => [],
+            'meta' => ['request_id' => proxycli_cli_request_id()],
+        ]),
+    ]);
+
+    [$exit, $output] = proxycli_cli_display('proxycli:models', ['--json' => true]);
+    $decoded = json_decode($output, true);
+
+    expect($exit)->toBe(0)
+        ->and($decoded['models'])->toBe([])
+        ->and($decoded['request_id'])->toBe(proxycli_cli_request_id());
 });
 
 it('shows one provider and omits a window the snapshot did not return', function (): void {

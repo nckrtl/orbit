@@ -15,6 +15,7 @@ use Orbit\Sdk\Requests\Tools\InstallToolRequest;
 use Orbit\Sdk\Requests\Tools\ListToolManagersRequest;
 use Orbit\Sdk\Requests\Tools\ListToolsRequest;
 use Orbit\Sdk\Requests\Tools\RemoveToolRequest;
+use Orbit\Sdk\Requests\Tools\ScanToolInventoryRequest;
 use Orbit\Sdk\Requests\Tools\ShowToolRequest;
 use Orbit\Sdk\Requests\Tools\UpdateToolRequest;
 use Saloon\Exceptions\Request\FatalRequestException;
@@ -334,6 +335,7 @@ it('renders shared gateway errors safely for every tool command', function (
     ],
     'tool update' => ['tool:update', ['tool' => '41'], UpdateToolRequest::class],
     'tool remove' => ['tool:remove', ['tool' => '41', '--yes' => true], RemoveToolRequest::class],
+    'tool scan' => ['tool:scan', ['--node' => '12'], ScanToolInventoryRequest::class],
 ]);
 
 it('renders malformed successful tool responses through the shared json boundary', function (): void {
@@ -636,7 +638,7 @@ it('renders local validation failures through the exact json boundary', function
         'node:add',
         ['name' => 'node', 'host' => 'node.test', '--platform' => 'validation-secret'],
         'node.platform_invalid',
-        'Platform must be linux.',
+        'Platform must be linux or macos.',
     ],
     'node host key fingerprint' => [
         'node:add',
@@ -644,50 +646,73 @@ it('renders local validation failures through the exact json boundary', function
         'node.host_key_fingerprint_invalid',
         'Host key fingerprint must use SSH SHA256 format: SHA256 followed by 43 base64 characters.',
     ],
-    'database user process' => [
-        'database:user:create',
-        [
-            'slug' => 'app',
-            '--process' => 'validation-secret',
-            '--database' => 'app',
-            '--username' => 'app',
-            '--password' => 'secret',
-        ],
-        'database.process_invalid',
-        'Process ID must be a positive integer.',
-    ],
     'database user password' => [
         'database:user:create',
         [
             'slug' => 'app',
-            '--process' => '12',
-            '--database' => 'app',
             '--username' => 'app',
         ],
         'database.password_required',
-        'A managed MySQL user requires --password.',
-    ],
-    'database user database' => [
-        'database:user:create',
-        [
-            'slug' => 'app',
-            '--process' => '12',
-            '--username' => 'app',
-            '--password' => 'secret',
-        ],
-        'database.database_required',
-        'A managed MySQL user requires --database.',
+        'A database user requires --password.',
     ],
     'database user username' => [
         'database:user:create',
         [
             'slug' => 'app',
-            '--process' => '12',
-            '--database' => 'app',
             '--password' => 'secret',
         ],
         'database.username_required',
-        'A managed MySQL user requires --username.',
+        'A database user requires --username.',
+    ],
+    'database user username format' => [
+        'database:user:create',
+        [
+            'slug' => 'app',
+            '--username' => 'validation-secret',
+            '--password' => 'secret',
+        ],
+        'database.username_invalid',
+        'Username must be a 1-32 character identifier of letters, digits, and underscores.',
+    ],
+    'database server options' => [
+        'database:create',
+        [
+            'slug' => 'app',
+            '--server' => 'beast-mysql',
+            '--host' => 'validation-secret',
+        ],
+        'database.server_options_conflict',
+        'The --server option excludes --host. The Gateway derives the connection from the server.',
+    ],
+    'database server instance' => [
+        'database:create',
+        [
+            'slug' => 'app',
+            '--server' => 'beast-mysql',
+            '--instance' => 'validation-secret',
+        ],
+        'database.instance_invalid',
+        'Instance ID must be a positive integer.',
+    ],
+    'database server port' => [
+        'database:server:create',
+        [
+            'slug' => 'beast-mysql',
+            '--node' => '7',
+            '--port' => 'validation-secret',
+        ],
+        'database.port_invalid',
+        'Port must be an integer from 1 through 65535.',
+    ],
+    'database server tag' => [
+        'database:server:create',
+        [
+            'slug' => 'beast-mysql',
+            '--node' => '7',
+            '--tag' => 'validation secret',
+        ],
+        'database.server_tag_invalid',
+        'Tag must be a MySQL image tag such as 8.4.',
     ],
     'process target selection' => [
         'process:create',
@@ -1107,6 +1132,22 @@ it('keeps the step, outcome, and id of a tool operation failure', function (): v
         'step' => 'install', 'outcome' => 'manager_failed', 'id' => 110, 'manager_output' => 'private-output',
     ]))->toBe(['id' => 110, 'step' => 'install', 'outcome' => 'manager_failed'])
         ->and(GatewayFailureRenderer::safeDetails('tool.version_probe_failed', ['outcome' => 'Manager Failed!', 'id' => 0]))->toBe([]);
+});
+
+it('keeps a closed adoption block token and drops a malformed one', function (): void {
+    expect(GatewayFailureRenderer::safeDetails('tool.adoption_unsupported', [
+        'step' => 'adopt',
+        'outcome' => 'manager_failed',
+        'adoption_block' => 'authorization_required',
+        'manager_output' => 'secret',
+    ]))->toBe([
+        'step' => 'adopt',
+        'outcome' => 'manager_failed',
+        'adoption_block' => 'authorization_required',
+    ])->and(GatewayFailureRenderer::safeDetails('tool.adoption_unsupported', [
+        'step' => 'adopt',
+        'adoption_block' => 'Not A Token',
+    ]))->toBe(['step' => 'adopt']);
 });
 
 it('keeps the step next to the set of a failed Caddy build', function (): void {

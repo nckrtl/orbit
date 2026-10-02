@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Models\Project;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -20,9 +21,11 @@ final class ProjectData extends Data
         public string $code,
         public ProjectType $type,
         public string $repositoryUrl,
+        public ProjectSourceAccess $sourceAccess,
         public ?string $defaultBranch,
         public ?string $root,
-        public ?string $taskCheck = null,
+        public ?string $taskCheck,
+        public bool $taskWorkspaceRouted,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -34,9 +37,11 @@ final class ProjectData extends Data
             code: $project->code,
             type: $project->type,
             repositoryUrl: $project->repository_url,
+            sourceAccess: $project->source_access,
             defaultBranch: $project->default_branch,
             root: $project->root,
             taskCheck: $project->taskCheckCommand(),
+            taskWorkspaceRouted: $project->task_workspace_routed,
         );
     }
 }

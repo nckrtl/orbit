@@ -18,6 +18,10 @@ use Orbit\Sdk\Requests\DatabaseConnections\RemoveInstanceDatabaseRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseConnectionRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\ShowDatabaseSchemaRequest;
 use Orbit\Sdk\Requests\DatabaseConnections\UpdateDatabaseConnectionRequest;
+use Orbit\Sdk\Requests\DatabaseServers\CreateDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\DestroyDatabaseServerRequest;
+use Orbit\Sdk\Requests\DatabaseServers\ListDatabaseServersRequest;
+use Orbit\Sdk\Requests\DatabaseServers\ShowDatabaseServerRequest;
 use Orbit\Sdk\Requests\Deployments\CreateInstanceDeployStepRequest;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\DestroyInstanceDeployStepRequest;
@@ -60,6 +64,7 @@ use Orbit\Sdk\Requests\Projects\AddProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectExcludedNodesRequest;
 use Orbit\Sdk\Requests\Projects\RemoveProjectExcludedNodeRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
+use Orbit\Sdk\Requests\ProxyCli\ListProxyCliModelsRequest;
 use Orbit\Sdk\Requests\ProxyCli\ListProxyCliProvidersRequest;
 use Orbit\Sdk\Requests\ProxyCli\SetupProxyCliRequest;
 use Orbit\Sdk\Requests\ProxyCli\ShowProxyCliProviderRequest;
@@ -79,15 +84,20 @@ use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CreateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
+use Orbit\Sdk\Requests\Tasks\CreateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\DestroySubtaskRequest;
+use Orbit\Sdk\Requests\Tasks\DestroyTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskDefinitionsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
+use Orbit\Sdk\Requests\Tasks\UpdateTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 
 describe('repository guidance bootstrap', function (): void {
@@ -189,7 +199,7 @@ describe('repository guidance bootstrap', function (): void {
     });
 
     it('inventories every concrete transport operation and the Tool response DTOs', function (): void {
-        $preScheduleOperationCount = 106;
+        $preScheduleOperationCount = 108;
         $scheduleRequests = [
             ListSchedulesRequest::class,
             CreateScheduleRequest::class,
@@ -215,6 +225,12 @@ describe('repository guidance bootstrap', function (): void {
             DescribeDatabaseTableRequest::class,
             ListDatabaseUsersRequest::class,
         ];
+        $databaseServerRequests = [
+            ListDatabaseServersRequest::class,
+            ShowDatabaseServerRequest::class,
+            CreateDatabaseServerRequest::class,
+            DestroyDatabaseServerRequest::class,
+        ];
         $gitHubRequests = [
             InstallGitHubAppRequest::class,
             ShowGitHubAppRequest::class,
@@ -227,6 +243,7 @@ describe('repository guidance bootstrap', function (): void {
             ListProxyCliProvidersRequest::class,
             ShowProxyCliProviderRequest::class,
             UpdateProxyCliAccountRequest::class,
+            ListProxyCliModelsRequest::class,
         ];
         $taskRequests = [
             ShowTasksStatusRequest::class,
@@ -244,6 +261,11 @@ describe('repository guidance bootstrap', function (): void {
             ListTaskCommentsRequest::class,
             ListTaskQuestionsRequest::class,
             ListTaskAgentsRequest::class,
+            ListTaskDefinitionsRequest::class,
+            ShowTaskDefinitionRequest::class,
+            CreateTaskDefinitionRequest::class,
+            UpdateTaskDefinitionRequest::class,
+            DestroyTaskDefinitionRequest::class,
         ];
         $lifecycleRequests = [
             CreateProjectLifecycleStepRequest::class,
@@ -272,16 +294,21 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Extensions\\DisableExtensionRequest',
         ];
         $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
-        $expectedOperationCount = count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests);
+        $expectedOperationCount = count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests);
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ListToolsRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ShowToolRequest',
             'Orbit\\Sdk\\Requests\\Tools\\InstallToolRequest',
+            'Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest',
             'Orbit\\Sdk\\Requests\\Tools\\UpdateToolRequest',
             'Orbit\\Sdk\\Requests\\Tools\\RemoveToolRequest',
         ];
         $expectedResponses = [
+            'Orbit\\Sdk\\Responses\\Tools\\ToolInventoryManagerResponse',
+            'Orbit\\Sdk\\Responses\\Tools\\ToolInventoryPackageResponse',
+            'Orbit\\Sdk\\Responses\\Tools\\ToolInventoryResponse',
             'Orbit\\Sdk\\Responses\\Tools\\ToolManagerResponse',
             'Orbit\\Sdk\\Responses\\Tools\\ToolManagersResponse',
             'Orbit\\Sdk\\Responses\\Tools\\ToolResponse',
@@ -305,10 +332,10 @@ describe('repository guidance bootstrap', function (): void {
         );
 
         expect($toolRequestClasses)
-            ->toHaveCount(6)
+            ->toHaveCount(8)
             ->toEqualCanonicalizing($expectedRequests)
             ->and($toolResponseClasses)
-            ->toHaveCount(4)
+            ->toHaveCount(7)
             ->toEqualCanonicalizing($expectedResponses);
 
         foreach (array_merge($expectedRequests, $expectedResponses) as $class) {
@@ -412,6 +439,13 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(array_values(array_filter(
             $requestClasses,
+            static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\DatabaseServers\\'),
+        )))
+            ->toHaveCount(count($databaseServerRequests))
+            ->toEqualCanonicalizing($databaseServerRequests);
+
+        expect(array_values(array_filter(
+            $requestClasses,
             static fn (string $class): bool => str_starts_with($class, 'Orbit\\Sdk\\Requests\\GitHub\\'),
         )))
             ->toHaveCount(count($gitHubRequests))
@@ -432,16 +466,16 @@ describe('repository guidance bootstrap', function (): void {
             ->toEqualCanonicalizing($taskRequests);
     });
 
-    it('documents the 168-operation SDK surface including proxycli transport', function (): void {
+    it('documents the 177-operation SDK surface including proxycli, questions, and task definition transport', function (): void {
         $publicContract = repository_guidance_contents('.ai/rules/public-contract.md');
         $normalizedPublicContract = repository_guidance_normalized_contents('.ai/rules/public-contract.md');
 
         expect($publicContract)
-            ->toContain('The SDK models exactly 169 concrete public Gateway API operations:')
+            ->toContain('The SDK models exactly 177 concrete public Gateway API operations:')
+            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy.')
             ->toContain('- Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.')
             ->toContain('- Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.')
-            ->toContain('- proxycli: enable, disable, status, provider list, provider show, and account update.')
-            ->toContain('- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, and agent thread list.')
+            ->toContain('- proxycli: enable, disable, status, provider list, provider show, account update, and model list.')
             ->toContain(
                 '- Node: list, show, add, rename, settings update, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.',
             )
@@ -500,7 +534,10 @@ describe('repository guidance bootstrap', function (): void {
                 'Attach and detach send an Instance ID-or-domain selector, the connection slug, and an optional prefix.',
             )
             ->toContain(
-                'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update.',
+                'Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI URL, and management key on enable; a provider slug on show; and an account identity plus disabled flag on update. Status, disable, provider list, and model list are bodyless.',
+            )
+            ->toContain(
+                "Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update.",
             );
 
         expect(repository_guidance_normalized_contents('.ai/rules/redaction-security.md'))
@@ -510,8 +547,8 @@ describe('repository guidance bootstrap', function (): void {
 
         expect(repository_guidance_normalized_contents('README.md'))
             ->toContain(
-                'The SDK exposes exactly 169 public Gateway operations.',
-                'The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector.',
+                'The SDK exposes exactly 177 public Gateway operations.',
+                'The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector.',
                 'The SDK exposes typed list, show, add, update, remove, attach, detach, query, tables, schema, describe, and user create requests for Gateway-owned database connection records.',
                 'The SDK exposes typed list, create, show, update, and destroy requests for Project process and Schedule definitions.',
                 'The SDK exposes typed list, add, show, run, logs, complete, remove, and activate requests for Node and Instance Schedules.',

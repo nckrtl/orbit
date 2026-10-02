@@ -1,0 +1,21 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\DatabaseServers\\CreateDatabaseServerRequest",
+    "route": "POST /api/v1/database-servers",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 1,
+            "slug": "beast-mysql",
+            "node_id": 2,
+            "process_id": 1,
+            "tag": "8.4",
+            "port": 3306,
+            "status": "active",
+            "databases_count": 0
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

@@ -1,6 +1,6 @@
 ---
 title: "GitHub App"
-description: "How a Gateway registers its own GitHub App, how an operator installs it on a GitHub account, and how Orbit uses it to read private repositories and publish task pull requests."
+description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, and publishes task pull requests."
 covers:
   - apps/gateway/app/Domain/GitHub/**
   - apps/gateway/app/Infrastructure/GitHub/**
@@ -10,7 +10,7 @@ covers:
 
 # GitHub App
 
-A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it. Orbit reads public repositories without the App.
+A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it. Orbit reads public repositories without the App. A Project whose owner does not install the App can [read through the Gateway's GitHub CLI](#read-through-the-github-cli) instead.
 
 ## What the App is
 
@@ -37,7 +37,9 @@ On the install page, choose the account or organization and all or selected repo
 
 ## How Orbit reads a repository
 
-The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, and the published-commit check before a development checkout is removed.
+The Gateway reads a Project repository with `git ls-remote` to resolve its default branch. A Node clones or fetches source for production provisioning, a deployment, a development checkout, a repository or default-branch change, an Instance clone, the published-commit check before a development checkout is removed, and a task workspace before each agent turn.
+
+Each Project has a `source_access` setting. This section describes `github_app`, the default. [Read through the GitHub CLI](#read-through-the-github-cli) describes `gh_cli`.
 
 For each read of a `github.com` repository that an installation covers, the Gateway asks GitHub for a token with `contents: read` for that one repository. The token expires after one hour. The Gateway passes it to `git` through the environment of that one command, as `GIT_CONFIG_*` variables. The token never appears in the origin URL, the command arguments, `.git/config`, or a file on the Node.
 
@@ -47,9 +49,48 @@ For each read of a `github.com` repository that an installation covers, the Gate
 | On `github.com`, not covered | Without a credential. A public repository works, and a private repository fails. |
 | On another host | Without a credential. A private repository needs an SSH key that you place on the Node. |
 
-When the Gateway cannot resolve the default branch of a `github.com` repository, `project.default_branch_unavailable` names a missing installation as a possible cause.
+When the Gateway cannot resolve the default branch of a `github.com` repository, `project.default_branch_unavailable` names a missing installation and the `gh_cli` setting as possible fixes.
 
 The Gateway needs outbound HTTPS to `api.github.com` for every read of a covered repository. When GitHub does not answer, Orbit reads without a credential, so a public repository still works.
+
+## Read through the GitHub CLI
+
+A Project with `source_access: gh_cli` is read with the GitHub CLI login of the Gateway's `orbit` user. Orbit never asks the App for that Project. Use it for a private `github.com` repository whose owner does not install the App.
+
+```bash
+orbit project:update 14 --source-access=gh_cli --default-branch=main
+```
+
+### Prepare the Gateway
+
+Install `gh` on the Gateway host and log in as the `orbit` user:
+
+```bash
+sudo -u orbit -H gh auth login --hostname github.com
+sudo -u orbit -H gh auth status
+```
+
+Nodes need no GitHub CLI and no login. So a `gh_cli` Instance moves to any Node, as any other Instance does.
+
+Orbit accepts any login and does not check its scopes. A usual `gh auth login` gives a token that reaches every repository of the account, with write access, until you revoke it. A [fine-grained token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens) with only `Contents: read` limits that reach. Pass it with `gh auth login --with-token`.
+
+### How a read works
+
+For each read, the Gateway runs `gh auth token --hostname github.com` as `orbit`. It hands the token to `git` in the same way as an App token, for the same reads: through `GIT_CONFIG_*` variables of one command, on the Gateway or on a Node through the script on standard input. An SSH-form origin is read through its HTTPS form, and the stored origin stays as it is.
+
+The Gateway stores no token. No API response, Activity, Doctor result, origin URL, command argument, `.git/config`, or file on a Node contains it.
+
+### Limits and failures
+
+`gh_cli` needs a `github.com` repository URL. For another host, validation fails on `source_access`. The same check runs when an update changes the URL.
+
+A read never falls back to the App or to a read without a credential. When `gh` is missing, the request fails with `github.cli_unauthenticated`. It fails the same way when `orbit` has no login for `github.com`.
+
+A read that the login cannot complete keeps its own code, such as `project.default_branch_unavailable`. The message names the GitHub CLI login.
+
+A change of `source_access` alone touches no checkout. The Gateway first resolves the remote default branch with the new setting. When that read fails, nothing changes.
+
+Tasks publish only through the App. Creating a task for a `gh_cli` Project fails with `tasks.github_app_required`. A task that exists when its Project changes to `gh_cli` fails to publish and asks for assistance.
 
 ## How Orbit publishes a task pull request
 
@@ -67,11 +108,13 @@ The checks token is separate, because GitHub refuses a whole token request when 
 
 ## What the App does not cover
 
-Git commands that you or an agent run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in. Agents never receive a token.
+Git commands that you or an agent run by hand in a development checkout use your own credentials. Orbit installs no credential helper on a Node and does not sign the GitHub CLI in on a Node. Agents hold no GitHub token. They never fetch and they never push.
+
+Before each agent turn, the Gateway itself fetches the task workspace. That fetch uses the read token and `--no-tags`, not a token handed to the agent. [Tasks](/reference/tasks#fetch-before-a-turn) names the refs. When the fetch fails, the turn still starts, and its message says the fetch failed and warns that `origin/*` may be stale.
 
 ## Errors
 
-The `github` commands return these codes.
+The `github` commands return these codes. Reads of a `gh_cli` Project return `github.cli_unauthenticated`.
 
 | Error code | Meaning |
 | --- | --- |
@@ -80,6 +123,7 @@ The `github` commands return these codes.
 | `github.registration_failed` | GitHub refused to exchange the one-time code. |
 | `github.unavailable` | The Gateway could not reach `api.github.com`, or GitHub refused the App credential. |
 | `github.installation_pending` | The command stopped waiting before the Gateway saw a new installation. Finish the installation in the browser and check with `github:app:show`. |
+| `github.cli_unauthenticated` | A read of a `gh_cli` Project found no `gh` on the Gateway, or no `github.com` login for the `orbit` user. Run `gh auth login` as `orbit`. |
 
 A read that fails for a repository reason keeps its own error code, such as `project.default_branch_unavailable`.
 
@@ -103,7 +147,13 @@ The Gateway starts every repository read and push itself, so it can create a tok
 
 ### No personal access token and no deploy keys
 
-A personal access token acts as the operator, lasts for months, and would rest on every Node. A deploy key needs repository administration rights to install, one key per repository and Node, and gives no single place to grant or revoke access.
+A personal access token acts as the operator, lasts for months, and would rest on every Node. The [GitHub CLI setting](#the-gateway-github-cli-for-projects-without-the-app) accepts the first two costs for the Projects that choose it, and keeps the token on the Gateway. A deploy key needs repository administration rights to install, one key per repository and Node, and gives no single place to grant or revoke access.
+
+### The Gateway GitHub CLI for Projects without the App
+
+An organization can refuse to install a third-party App. Its operators already have a GitHub CLI login. One login on the Gateway serves every Node, because the Gateway already sends a token with each read. The token rests only on the Gateway, which already holds the App's private key and SSH access to every Node. A Node sees the token only while a read runs there, so whoever controls that Node can copy it. That person already controls the Node, so this adds no new boundary.
+
+A login on each Node was rejected. Every Node needs its own login, and moving an Instance needs one on the target. A credential helper that runs `gh` in each command was rejected, because production clones run as the Instance user, which has no login. Storing the token in Orbit was rejected, because the GitHub CLI already stores and refreshes it. A fallback to the App or to no credential was rejected, because the error then points at the wrong cause. Publishing task pull requests through the GitHub CLI is not built yet.
 
 ### No webhooks
 

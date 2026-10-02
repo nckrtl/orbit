@@ -12,7 +12,8 @@ use App\Models\Project;
  * The text is at most 16,000 characters. No part is exempt. A part under its cap leaves those
  * characters for the diff body, which also stops at 16,384 bytes. Retrieval commands are reserved
  * first and are never cut. A continued turn omits the group brief, the deliverables, and the
- * earlier approvals, and that spare goes to the diff body.
+ * earlier approvals, and that spare goes to the diff body. Every cut note names
+ * `.git/orbit/context.md`, which holds those parts uncut.
  */
 final readonly class TaskReviewPacket
 {
@@ -86,17 +87,17 @@ final readonly class TaskReviewPacket
             $this->resolution === '' ? '' : $this->section('Resolution', $this->cutEnd(
                 $this->resolution,
                 self::ResolutionLimit,
-                'The end is cut. tasks-comment-list returns the comment.',
+                'The end is cut. '.TaskReviewContext::Path.' holds the full resolution.',
             )),
             $this->continued ? '' : $this->section('Group brief', $this->cutEnd(
                 $this->groupBrief,
                 self::BriefLimit,
-                'The end is cut. tasks-show returns the full brief.',
+                'The end is cut. '.TaskReviewContext::Path.' holds the full brief.',
             )),
             $this->section('Subtask brief', $this->cutEnd(
                 $this->subtaskBrief,
                 self::BriefLimit,
-                'The end is cut. tasks-show returns the full brief.',
+                'The end is cut. '.TaskReviewContext::Path.' holds the full brief.',
             )),
             $this->continued ? '' : $this->section('Deliverables', $this->deliverablesText()),
             $this->continued ? '' : $this->section('Earlier approved subtasks', $this->approvalsText()),
@@ -139,7 +140,7 @@ final readonly class TaskReviewPacket
             $shown = mb_substr($this->taskCheck, 0, self::CommandLimit);
             $rule .= ' The Project task check is `'.$shown.'`.';
             if (mb_strlen($this->taskCheck) > self::CommandLimit) {
-                $rule .= ' .git/orbit/check.log holds the rest.';
+                $rule .= ' .git/orbit/check.log holds the rest. '.TaskReviewContext::Path.' holds the full task context.';
             }
         }
         $rule .= ' Run another command only when you need evidence the handoff result does not give, and say why in the approved or changes_requested summary.';
@@ -187,7 +188,7 @@ final readonly class TaskReviewPacket
                 $omitted > 1 => $omitted.' deliverables were omitted.',
                 default => '',
             };
-            $show = $omitted > 0 || $cut ? 'tasks-show returns every field.' : '';
+            $show = $omitted > 0 || $cut ? TaskReviewContext::Path.' holds every field.' : '';
 
             return trim($dropped.' '.$show);
         });
@@ -227,7 +228,7 @@ final readonly class TaskReviewPacket
                 $omitted > 1 => $omitted.' earlier approvals were omitted.',
                 default => '',
             };
-            $show = $omitted > 0 || $cut ? 'tasks-comment-list returns each approval summary.' : '';
+            $show = $omitted > 0 || $cut ? TaskReviewContext::Path.' holds each approval body.' : '';
 
             return trim($dropped.' '.$show);
         });
@@ -249,7 +250,7 @@ final readonly class TaskReviewPacket
                 $omitted > 1 => $omitted.' answered consults were omitted.',
                 default => '',
             };
-            $show = $omitted > 0 || $cut ? 'tasks-question-list returns each question and answer.' : '';
+            $show = $omitted > 0 || $cut ? TaskReviewContext::Path.' holds each question and answer.' : '';
 
             return trim($dropped.' '.$show);
         });
@@ -290,7 +291,7 @@ final readonly class TaskReviewPacket
     {
         $summary = $this->diffSummary();
         if (! $this->diffFilesComplete) {
-            $text = $summary."\nThe path list was cut. The stat command prints the rest.";
+            $text = $summary."\nThe path list was cut. The stat command prints the rest. ".TaskReviewContext::Path.' holds the full task context.';
 
             return mb_strlen($text) > self::DiffStatLimit ? mb_substr($text, 0, self::DiffStatLimit) : $text;
         }
@@ -308,7 +309,7 @@ final readonly class TaskReviewPacket
             }
             $label = $omitted === 1 ? '1 path was omitted.' : $omitted.' paths were omitted.';
 
-            return $label.' The stat command prints the rest.';
+            return $label.' The stat command prints the rest. '.TaskReviewContext::Path.' holds the full task context.';
         });
 
         return $summary."\n".$fitted;
@@ -404,7 +405,7 @@ final readonly class TaskReviewPacket
             default => '',
         };
 
-        return trim($dropped.' .git/orbit/check.log holds the command text and any cut tail. .git/orbit/check.json stores the exit codes.');
+        return trim($dropped.' .git/orbit/check.log holds the command text and any cut tail. .git/orbit/check.json stores the exit codes. '.TaskReviewContext::Path.' holds the full task context.');
     }
 
     /** The Project task check, then each deliverable command, including its base run when requested.
@@ -464,7 +465,7 @@ final readonly class TaskReviewPacket
         }
         // git diff emits file bytes unchanged. Scrub before both the whole diff and the cut prefix.
         $diff = $this->utf8($this->diff);
-        $note = "\nThe end of the diff is cut. The diff command prints the rest, including the content of untracked files.";
+        $note = "\nThe end of the diff is cut. The diff command prints the rest, including the content of untracked files. ".TaskReviewContext::Path.' holds the full task context.';
         $used = mb_strlen(implode("\n\n", [...$before, ...$after])) + mb_strlen("\n\n");
         $remaining = max(0, self::Limit - $used - mb_strlen($heading));
         if ($this->fits($diff, $remaining)) {

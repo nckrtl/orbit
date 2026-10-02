@@ -1,0 +1,1 @@
+{"error":{"code":"tool.version_probe_failed","message":"The installed version cannot be read.","details":{"step":"adopt","outcome":"manager_failed"},"request_id":null}}

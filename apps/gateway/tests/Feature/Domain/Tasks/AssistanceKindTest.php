@@ -122,6 +122,21 @@ it('does not let a stale failure writer replace a direction request or keep its 
         ->and($group->fresh()?->assistance_reason)->toBe($reason);
 });
 
+it('keeps the reason without asking when a stale assistance writer targets an ended task', function (string $level, string $status, AssistanceKind $kind): void {
+    $group = assistance_kind_group();
+    $record = $level === 'group' ? $group : $group->tasks->sole();
+    $stale = clone $record;
+    DB::table('tasks')->where('id', $record->id)->update(['status' => $status]);
+    $reason = 'The request arrived after the task ended.';
+
+    $applied = TaskAssistance::apply($stale, $kind, $kind === AssistanceKind::Direction ? 'Which mirror?' : null, $reason);
+
+    expect($applied)->toBeTrue()
+        ->and($stale->status->value)->toBe($status)
+        ->and($stale->assistance_requested)->toBeFalse()
+        ->and($stale->assistance_reason)->toBe($reason);
+})->with(['group', 'subtask'])->with(['completed', 'cancelled'])->with([AssistanceKind::Direction, AssistanceKind::Failure]);
+
 it('posts the assistance kind and question on the Coder webhook', function (AssistanceKind $kind, ?string $question, string $reason): void {
     $this->freezeTime();
     Http::preventStrayRequests();

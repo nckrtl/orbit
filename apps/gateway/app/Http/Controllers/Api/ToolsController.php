@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api;
 
+use App\Actions\Tools\AdoptToolAction;
 use App\Actions\Tools\InstallToolAction;
 use App\Actions\Tools\ListToolsAction;
 use App\Actions\Tools\RemoveToolAction;
@@ -14,6 +15,7 @@ use App\Domain\Tools\ToolOutcome;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Http\Requests\Tools\AdoptToolRequest;
 use App\Http\Requests\Tools\ListToolsRequest;
 use App\Http\Requests\Tools\StoreToolRequest;
 use App\Models\Tool;
@@ -58,6 +60,22 @@ final class ToolsController extends Controller
         );
     }
 
+    public function adopt(AdoptToolRequest $request, AdoptToolAction $action): JsonResponse
+    {
+        $result = $action->execute($request->payload());
+        $tool = $result->tool;
+        $tool->loadMissing('manager');
+        $this->setToolActivity($tool, ToolOperation::Adopt, $result->outcome);
+
+        return response()->json(
+            [
+                'data' => ToolData::fromModel($tool, $result->outcome)->toArray(),
+                'meta' => $this->meta($request),
+            ],
+            $result->created ? 201 : 200,
+        );
+    }
+
     public function update(
         Request $request,
         Tool $tool,
@@ -85,7 +103,7 @@ final class ToolsController extends Controller
         $this->setToolActivity($result->tool, ToolOperation::Remove, $result->outcome);
 
         return response()->json([
-            'data' => ToolData::fromModel($result->tool, $result->outcome)->toArray(),
+            'data' => ToolData::fromModel($result->tool, $result->outcome, $result->status)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

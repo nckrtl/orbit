@@ -19,6 +19,7 @@ constructor names when it does not. AnnotationData is the exception that sends c
 the controller returns the array fromModel() builds, and that schema is written below.
 """
 
+import copy
 import json
 import pathlib
 import re
@@ -459,16 +460,20 @@ def load_data_classes():
 
 
 def load_enums():
+    """String-backed enum values, plus Enum::Case names so Rule::in can name a subset."""
     enums = {}
+    enum_cases = {}
+    pattern = re.compile(r'enum (\w+)(?::\s*string)?\s*(?:implements [\w, \\]+)?\s*\{')
     for f in sorted((GW / 'app').rglob('*.php')):
         s = f.read_text()
-        m = re.search(r'enum (\w+)(?::\s*string)?\s*(?:implements [\w, \\]+)?\s*\{', s)
-        if not m:
-            continue
-        cases = re.findall(r"case \w+\s*=\s*'([^']+)'", s)
-        if cases:
-            enums[m.group(1)] = cases
-    return enums
+        for m in pattern.finditer(s):
+            pairs = re.findall(r"case (\w+)\s*=\s*'([^']+)'", block(s, m.start()))
+            if not pairs:
+                continue
+            enums[m.group(1)] = [value for _, value in pairs]
+            for case, value in pairs:
+                enum_cases[f'{m.group(1)}::{case}'] = value
+    return enums, enum_cases
 
 
 def load_sdk_requests():
@@ -538,7 +543,7 @@ commands = load_commands()
 controllers = load_controllers()
 form_requests = load_form_requests()
 gdata = load_data_classes()
-enums = load_enums()
+enums, enum_cases = load_enums()
 sdk = load_sdk_requests()
 sdkres = load_sdk_responses()
 
@@ -594,7 +599,7 @@ SUMMARIES = {
     'cluster:list': 'List Clusters', 'cluster:show': 'Show a Cluster', 'cluster:create': 'Create a Cluster', 'cluster:update': 'Update a Cluster', 'cluster:destroy': 'Remove a Cluster',
     'cluster:node:add': 'Attach a Node to a Cluster', 'cluster:node:remove': 'Detach a Node from a Cluster', 'cluster:router:set': 'Set the Cluster Router', 'cluster:router:unset': 'Clear the Cluster Router',
     'firewall:list': 'List firewall rules', 'firewall:fleet:list': 'List firewall rules on every Node', 'firewall:managed:list': "List Orbit's own firewall rules", 'firewall:live:list': 'List live UFW rules', 'firewall:allow': 'Allow a firewall rule', 'firewall:deny': 'Deny a firewall rule', 'firewall:remove': 'Remove a firewall rule',
-    'tool:manager:list': 'List Tool Managers', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
+    'tool:manager:list': 'List Tool Managers', 'tool:scan': 'Scan installed packages', 'tool:list': 'List Tools', 'tool:show': 'Show a Tool', 'tool:install': 'Install a Tool', 'tool:adopt': 'Adopt a Tool', 'tool:update': 'Update a Tool', 'tool:remove': 'Remove a Tool',
     'github:app:install': 'Start a GitHub App registration or installation', 'github:app:show': 'Show the GitHub App', 'github:app:destroy': 'Remove the stored GitHub App',
     'github:app:register': 'Serve the GitHub App manifest page', 'github:app:callback': 'Complete a GitHub App registration',
     'metrics:enable': 'Enable Metrics', 'metrics:disable': 'Disable Metrics', 'metrics:status': 'Show Metrics status', 'metrics:credentials': 'Show Metrics credentials', 'metrics:credentials:reset': 'Reset Metrics credentials',
@@ -612,13 +617,14 @@ SUMMARIES = {
     'instance:database:add': 'Attach a Database connection', 'instance:database:remove': 'Detach a Database connection',
     'env:import': 'Import the environment file', 'env:sync': 'Synchronize the environment file', 'env:update': 'Update an environment value',
     'route:list': 'List Routes', 'route:show': 'Show a Route', 'route:create': 'Create a Route', 'route:update': 'Update a Route', 'route:destroy': 'Remove a Route', 'route:target:set': 'Set the Route target', 'route:target:unset': 'Clear the Route target',
-    'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:user:create': 'Create a managed MySQL user', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'database:list': 'List Database connections', 'database:show': 'Show a Database connection', 'database:create': 'Create a Database connection', 'database:user:create': 'Add a database user', 'database:update': 'Update a Database connection', 'database:destroy': 'Remove a Database connection',
+    'database:server:list': 'List Database servers', 'database:server:show': 'Show a Database server', 'database:server:create': 'Create a Database server', 'database:server:destroy': 'Remove a Database server',
     'database:query': 'Query a Database connection', 'database:tables': 'List Database connection tables', 'database:schema': 'Show a Database connection schema', 'database:describe': 'Describe a Database table',
     'process:list': 'List Processes', 'process:create': 'Create a Process', 'process:start': 'Start a Process', 'process:stop': 'Stop a Process', 'process:restart': 'Restart a Process', 'process:logs': 'Read Process logs', 'instance:logs': 'Read Instance logs', 'instance:analytics:show': 'Show Instance analytics', 'instance:analytics:enable': 'Publish Instance tracking hosts', 'instance:analytics:disable': 'Remove Instance tracking hosts', 'instance:analytics:stats': 'Read Instance analytics stats', 'instance:queue': 'Read the Instance queue', 'process:destroy': 'Remove a Process',
     'schedule:list': 'List Schedules', 'schedule:show': 'Show a Schedule', 'schedule:create': 'Create a Schedule', 'schedule:run': 'Run a Schedule', 'schedule:logs': 'Read Schedule logs', 'schedule:enable': 'Enable a Schedule', 'schedule:destroy': 'Remove a Schedule', 'schedule:complete': 'Complete a Schedule run',
     'doctor': 'Run Doctor', 'activity:list': 'List Activities', 'activity:show': 'Show an Activity', 'analytics:update': 'Pin the Plausible version', 'analytics:credentials': 'Show analytics Stats API credentials', 'analytics:credentials:set': 'Store the analytics Stats API key', 'analytics:credentials:unset': 'Clear the analytics Stats API key',
     'extension:list': 'List extensions', 'extension:enable': 'Enable an extension', 'extension:disable': 'Disable an extension',
-    'proxycli:setup': 'Set up proxycli', 'proxycli:teardown': 'Tear down proxycli', 'proxycli:status': 'Show proxycli status', 'proxycli:list': 'List proxycli providers', 'proxycli:show': 'Show a proxycli provider', 'proxycli:update': 'Update a proxycli account',
+    'proxycli:setup': 'Set up proxycli', 'proxycli:teardown': 'Tear down proxycli', 'proxycli:status': 'Show proxycli status', 'proxycli:list': 'List proxycli providers', 'proxycli:show': 'Show a proxycli provider', 'proxycli:update': 'Update a proxycli account', 'proxycli:models': 'List proxycli models',
     'workspace:list': 'List Workspaces', 'workspace:show': 'Show a Workspace', 'workspace:new': 'Create a Workspace', 'workspace:php': 'Change the Workspace PHP version', 'workspace:remove': 'Remove a Workspace',
     'runtime-activation:app-instance': 'Wake an Instance',
     'realtime:auth': 'Authorize the orbit broadcast channel', 'realtime:show': 'Show the Reverb connection',
@@ -657,6 +663,8 @@ DESCRIPTIONS = {
     'database:tables': 'Lists tables on a registered Database connection. SQLite inspection runs on the associated Node.',
     'database:schema': 'Shows columns for every table on a registered Database connection. SQLite inspection runs on the associated Node.',
     'database:describe': 'Shows columns for one table on a registered Database connection. An unknown table returns database.table_missing.',
+    'tool:scan': 'Reads installed Homebrew formulae, casks, and Vite+ global packages for the enrolled account. The response reports each manager scan state, safe package facts, dependency and adoption support, and the UTC inspection time. It stores nothing, creates no Tool row, takes no manager lock, and does not install or refresh a manager. A failed read is `incomplete`, never an empty `complete` inventory. `absent` means the scope is not installed. `unsupported` means this platform does not offer the manager.',
+    'tool:adopt': 'Records Orbit ownership of one supported installed package. Send the Node, manager, package, and optional SemVer constraint. The call installs, updates, removes, and repins nothing. The same intent returns unchanged. A different constraint, a busy scope, a missing or unsupported package, or missing Node access leaves the host unchanged. `error.details.step` is `adopt`. `error.details.id` is present only when a Tool row already exists. `tool.adoption_unsupported` also includes `error.details.adoption_block`.',
     'firewall:fleet:list': 'Returns the operator firewall rules of every Node the caller can reach, in one response, ordered by Node and name. The web app uses it for the fleet list instead of one request per Node. The per-Node list stays for the CLI. The list does not SSH.',
     'firewall:managed:list': 'Returns the `orbit:` rules Orbit intends on the Node: WireGuard member trust, public SSH recovery only while no active role has closed it, then each active role and Metrics. The list does not SSH. No request adds, changes, or removes one of these rules.',
     'firewall:live:list': 'Reads `ufw status numbered` over WireGuard and classifies each IPv4 rule against the desired managed set and operator firewall records. Live rules that do not match are drift. Desired or operator rules absent from live are missing. An inactive, absent, or unreachable backend returns empty live and missing lists.',
@@ -667,7 +675,11 @@ DESCRIPTIONS = {
     'analytics:credentials': 'Returns whether a Plausible Stats API key is stored. The key itself is never returned.',
     'analytics:credentials:set': 'Stores a Plausible Stats API key as a protected Gateway setting. The key is never returned.',
     'analytics:credentials:unset': 'Clears the stored Plausible Stats API key.',
-    'database:user:create': 'Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.',
+    'database:user:create': 'Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.',
+    'database:create': 'Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.',
+    'database:server:create': 'Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.',
+    'database:server:destroy': 'Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.',
+    'database:server:show': 'Shows one Database server with the connections of the databases on it.',
     'tasks:status': 'Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.',
     'tasks:create': 'Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.',
     'tasks:update': 'Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
@@ -680,6 +692,11 @@ DESCRIPTIONS = {
     'tasks:subtask:cancel': 'Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.',
     'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.',
     'tasks:complete': 'Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
+    'tasks:definition:list': 'Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
+    'tasks:definition:show': 'Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
+    'tasks:definition:create': 'Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.',
+    'tasks:definition:update': 'Replaces a task definition. The body is the whole definition. It may omit `name`; the path then supplies it. A body `name` that differs from the path is refused. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422). Returns `extension.disabled` while the tasks extension is off.',
+    'tasks:definition:destroy': 'Deletes a task definition and returns it. The call does not delete a task and does not start one. Gateway access is required. Returns `extension.disabled` while the tasks extension is off.',
     'extension:list': 'Returns the Gateway-wide extension switch state as an object keyed by extension slug. The initial slugs are `tasks` and `proxycli`.',
     'extension:enable': 'Enable a Gateway extension for every client. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: true`.',
     'extension:disable': 'Disables one Gateway-wide extension without removing its setup data. Use `tasks` or `proxycli`; an unknown slug returns `validation.failed` (422). Returns the extension name and `enabled: false`.',
@@ -689,6 +706,7 @@ DESCRIPTIONS = {
     'proxycli:list': 'Returns provider pools from the Valkey snapshot. The request never calls CLIProxyAPI.',
     'proxycli:show': 'Returns one provider pool and its accounts from the Valkey snapshot. Window titles are duration labels. A missing window is omitted.',
     'proxycli:update': 'Patches CLIProxyAPI account status, then recompiles pools from the cached snapshot without fetching quota.',
+    'proxycli:models': 'Returns the models CLIProxyAPI offers, each as `id` and `provider`, from the collector snapshot. The request never calls CLIProxyAPI. A snapshot with no models returns an empty list. Returns `proxycli.disabled` while the collector is not set up.',
 }
 
 
@@ -746,13 +764,15 @@ PARAM_SCHEMAS = {
     'step': ({'type': 'string', 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'}, 'Deploy step name.'),
     'key': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,254}$'}, 'Environment key.'),
     'database_connection': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database connection slug.'),
+    'database_server': ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Database server slug.'),
     'table': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]*$', 'maxLength': 64}, 'Table name.'),
     'process_definition': ({'type': 'string'}, 'Process definition name, unique within the Project.'),
     'schedule_definition': ({'type': 'string'}, 'Schedule definition name, unique within the Project.'),
     'firewall_rule': ({'type': 'string'}, 'Firewall rule name, unique on the Node.'),
 }
+TASK_DEFINITION_NAME = ({'type': 'string', 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$', 'maxLength': 63}, 'Task definition name, unique within the Project.')
 ENV_INSTANCE = ({'type': 'string'}, 'Positive Instance ID or the exact Route domain of the Instance.')
-EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'project': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'group': 1, 'extension': 'tasks', 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'table': 'users', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
+EXAMPLE_PATH = {'node': 7, 'serving_node': 7, 'consumer_node': 3, 'cluster': 3, 'project': 4, 'instance': 12, 'candidate': 12, 'route': 9, 'activity': 481, 'tool': 41, 'workspace': 9, 'process': 41, 'session': 2, 'group': 1, 'extension': 'tasks', 'schedule': '9a1f0c2e-6b7d-4e5f-8a9b-0c1d2e3f4a5b', 'step': 'migrate', 'key': 'MAIL_MAILER', 'role': 'database', 'database_connection': 'app', 'database_server': 'beast-mysql', 'table': 'users', 'process_definition': 'queue', 'schedule_definition': 'hourly-report', 'firewall_rule': 'office-postgres'}
 
 
 def openapi_path(route):
@@ -861,12 +881,28 @@ def resolve_route_ternaries(value, route_name):
 
 
 def tokens_for(value, route_name=None):
+    """Laravel rule strings, plus strictBoolean and strictTrue, which accept only a JSON boolean."""
     v = strip_closures(resolve_route_ternaries(value, route_name))
     toks = []
+    # These closures are not Laravel rule names. strip_closures leaves the call in place, and without
+    # this the field falls through to string, so every value the tool schema allows is rejected.
+    if re.search(r'\bstrict(?:Boolean|True)\s*\(', value):
+        toks.append(('rule', 'boolean'))
     for m in re.finditer(r'Rule::enum\((\w+)::class\)', v):
         toks.append(('enum', m.group(1)))
     for m in re.finditer(r'Rule::in\(\[(.*?)\]\)', v, re.S):
-        toks.append(('in', re.findall(r"'([^']*)'", m.group(1))))
+        # Quoted values and `Enum::Case->value`. A bare case list used to become an empty enum.
+        values = []
+        for token in re.finditer(r"'([^']*)'|(\w+)::(\w+)->value", m.group(1)):
+            if token.group(1) is not None:
+                values.append(token.group(1))
+                continue
+            case = f'{token.group(2)}::{token.group(3)}'
+            value = enum_cases.get(case)
+            if value is None:
+                sys.exit(f'Rule::in references unknown enum case {case}')
+            values.append(value)
+        toks.append(('in', values))
     if 'Rule::requiredIf' in v or 'required_if' in v:
         toks.append(('requiredIf', None))
     v2 = re.sub(r'Rule::\w+\(.*?\)(?=\s*[,\]])', '', v, flags=re.S)
@@ -905,7 +941,8 @@ def schema_from_tokens(toks):
                 sch['format'] = base
             elif base == 'url':
                 sch['format'] = 'uri'
-            elif base == 'required':
+            elif base in ('required', 'present'):
+                # `present` means the key is in the body, which is `required` in OpenAPI.
                 required = True
             elif base == 'sometimes':
                 sometimes = True
@@ -1051,7 +1088,15 @@ def prop_schema(p):
     doc = (p['doc'] or '').replace('\\', '')
     nullable = t.startswith('?') or '|null' in t or 'null|' in t
     t = t.lstrip('?').replace('|null', '').replace('null|', '')
-    if t in SCALARS:
+    union = [part.strip() for part in t.split('|') if part.strip()]
+    if len(union) > 1 and all(part in SCALARS for part in union):
+        kinds = []
+        for part in union:
+            kind = SCALARS[part]
+            if kind not in kinds:
+                kinds.append(kind)
+        sch = {'type': kinds if len(kinds) > 1 else kinds[0]}
+    elif t in SCALARS:
         sch = {'type': SCALARS[t]}
     elif t == 'mixed':
         sch = {}
@@ -1082,7 +1127,10 @@ def prop_schema(p):
         if '$ref' in sch:
             sch = {'oneOf': [sch, {'type': 'null'}]}
         elif 'type' in sch:
-            sch = {**sch, 'type': [sch['type'], 'null']}
+            kinds = sch['type'] if isinstance(sch['type'], list) else [sch['type']]
+            if 'null' not in kinds:
+                kinds = [*kinds, 'null']
+            sch = {**sch, 'type': kinds}
             if 'enum' in sch and None not in sch['enum']:
                 sch['enum'] = [*sch['enum'], None]
     return sch
@@ -1142,7 +1190,7 @@ EXAMPLE_BY_NAME = {
     'publication': 'private', 'driver': 'mysql', 'host': 'db.example.test', 'port': 3306, 'database': 'app', 'username': 'app', 'password': 'secret', 'path': '/var/lib/app/database.sqlite', 'sql': 'SELECT id, email FROM users', 'table': 'users', 'prefix': 'DB',
     'runtime': 'systemd', 'command': ['/usr/bin/php', 'artisan', 'queue:work'], 'restart_policy': 'on-failure', 'keep_alive': True, 'start': True, 'image': 'postgres:18', 'working_directory': '/app',
     'calendar': 'daily', 'timeout_seconds': 3600, 'target_type': 'node', 'families': ['node', 'instance'], 'limit': 25, 'lines': 100,
-    'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150',
+    'manager': 'vp', 'package': '@openai/codex', 'version_constraint': '^0.150', 'tag': '8.4',
     'php_version': '8.5', 'source_path': '/srv/orbit/apps/acme/main', 'environments': ['production'], 'phase': 'before_activation', 'release': '20260914T101500Z', 'value': 'log', 'status': 'success', 'state': 'active',
     'force': True, 'offline': False, 'replace': True, 'converge': False, 'purge_data': False, 'include_worktrees': False,
     'source': '10.6.0.0/24', 'protocol': 'tcp', 'instance_id': 4, 'sqlite_source_path': '/home/acme/database/database.sqlite', 'apps': {'path': '/srv/orbit/apps'}, 'settings': {'apps': {'path': '/srv/orbit/apps'}},
@@ -1191,6 +1239,8 @@ def php_sample(sdkreq, stream, tag):
             continue
         if name == 'name':
             val = NAME_BY_TAG.get(tag, 'example')
+        elif name == 'definition' and tag == 'Tasks':
+            val = json.dumps(task_definition_document(NAME_BY_TAG.get(tag, 'example')))
         elif t == 'array' and name == 'command':
             val = ['/usr/bin/php', 'artisan', 'queue:work']
         elif name in PHP_EXAMPLES:
@@ -1266,8 +1316,45 @@ ACTIVITY_LIST_EXAMPLES = {
 }
 
 
+def correct_task_definition_body(schema):
+    """The Laravel array rule is a list. These three fields are JSON objects."""
+    properties = schema.get('properties') or {}
+    subtasks = ((properties.get('subtasks') or {}).get('items') or {}).get('properties') or {}
+    if 'routes' in subtasks:
+        subtasks['routes'] = {'type': 'object', 'additionalProperties': {'type': 'string'}}
+    if 'arguments' in subtasks:
+        subtasks['arguments'] = {'type': 'object', 'additionalProperties': True}
+    schedule = properties.get('schedule')
+    if isinstance(schedule, dict):
+        schedule['type'] = ['object', 'null']
+        if isinstance(schedule.get('properties'), dict):
+            schedule['properties']['values'] = {'type': 'object', 'additionalProperties': True}
+    default = (((properties.get('parameters') or {}).get('items') or {}).get('properties') or {}).get('default')
+    if isinstance(default, dict):
+        properties['parameters']['items']['properties']['default'] = {}
+
+
+def example_path(route, name):
+    """Example value for one path parameter. Task definition names are not the schema for every future `{name}`."""
+    if name == 'name' and str(route.get('name') or '').startswith('tasks:definition:'):
+        return 'build-feature'
+    return EXAMPLE_PATH.get(name, 1)
+
+
+def task_definition_document(name):
+    """A definition the Gateway accepts. `parameters` is present because the write requires it."""
+    return {
+        'name': name,
+        'title': 'Build a feature',
+        'brief': 'Document and build it.',
+        'parameters': [],
+        'status': 'backlog',
+        'subtasks': [{'key': 'docs', 'title': 'Write the docs', 'kind': 'agent'}],
+    }
+
+
 def bash_sample(route, path, body_schema, query, tag):
-    url = 'https://gateway.orbit' + re.sub(r'\{(\w+)\}', lambda m: str(EXAMPLE_PATH.get(m.group(1), 1)), path)
+    url = 'https://gateway.orbit' + re.sub(r'\{(\w+)\}', lambda m: str(example_path(route, m.group(1))), path)
     if query:
         examples = {**EXAMPLE_BY_NAME, **ACTIVITY_LIST_EXAMPLES} if route['name'] == 'activity:list' else EXAMPLE_BY_NAME
         url += '?' + '&'.join(f'{q}={examples.get(q, 1)}' for q in query)
@@ -1275,7 +1362,13 @@ def bash_sample(route, path, body_schema, query, tag):
     lines = [f'curl -sS {method}"{url}" \\', '  --cacert /path/to/orbit-root-ca.pem \\', "  -H 'Accept: application/json' \\", "  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'"]
     if body_schema is not None:
         lines[-1] += ' \\'
-        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}) + "'"]
+        if route['name'] == 'tasks:definition:update':
+            body = task_definition_document(example_path(route, 'name'))
+        elif route['name'] == 'tasks:definition:create':
+            body = task_definition_document('example')
+        else:
+            body = example_from_schema(body_schema, None, tag, update=route['method'] in ('PATCH', 'PUT')) or {}
+        lines += ["  -H 'Content-Type: application/json' \\", "  -d '" + json.dumps(body) + "'"]
     return '\n'.join(lines) + '\n'
 
 
@@ -1334,6 +1427,7 @@ CTRL_DATA_OVERRIDES = {
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
     'FleetFirewallRulesController@index': ('FirewallRuleData', True), 'ProcessesController@index': ('ProcessData', True), 'ProcessesController@start': ('ProcessData', False), 'ProcessesController@stop': ('ProcessData', False), 'ProcessesController@restart': ('ProcessData', False),
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
+    'ProxyCliController@models': ('ProxyCliModelData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
     'TasksController@status': ('TasksStatusData', False),
 }
@@ -1362,6 +1456,10 @@ def data_schema_for(route):
         return {'allOf': [ref('NodeData'), {'type': 'object', 'properties': {
             'access': ref('NodeAccessData'),
             'excluded_projects': {'type': 'array', 'items': ref('DevelopmentNodeExclusionData')},
+        }}]}, False
+    if action == 'DatabaseServersController@show':
+        return {'allOf': [ref('DatabaseServerData'), {'type': 'object', 'properties': {
+            'databases': {'type': 'array', 'items': ref('DatabaseConnectionData')},
         }}]}, False
     if action == 'ProjectsController@show':
         return {'allOf': [ref('ProjectData'), {'type': 'object', 'properties': {
@@ -1404,6 +1502,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         op['x-orbit-extension'] = 'tasks'
     elif route['name'] and route['name'].startswith('proxycli:'):
         op['x-orbit-extension'] = 'proxycli'
+    if route['name'] in ('instance:deploy', 'instance:rollback'):
+        op['x-orbit-task-action'] = True
     description = description_for(route)
     if description:
         op['description'] = description
@@ -1412,6 +1512,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
         if p == 'instance' and env_route:
             sch, desc = ENV_INSTANCE
+        if p == 'name' and str(route.get('name') or '').startswith('tasks:definition:'):
+            sch, desc = TASK_DEFINITION_NAME
         op['parameters'].append({'name': p, 'in': 'path', 'required': True, 'schema': sch, 'description': desc})
     rules_text = next((form_requests[rc] for rc in controllers.get(action, {}).get('requests', []) if rc in form_requests), None)
     sdkreq = sdk_by_key.get(route_key(route))
@@ -1439,6 +1541,15 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 sch['oneOf'] = [{'required': ['upstream']}, {'required': ['process_id']}]
                 body_schema = {'oneOf': [app_schema, sch]}
                 body_required = True
+            if route['name'] == 'database:create':
+                # StoreDatabaseConnectionRequest picks one of two rule sets: register an existing
+                # database, or create one on a Database server with `server`.
+                field_rules = (GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php').read_text()
+                register_schema, _ = rules_to_schema(block(field_rules, field_rules.find('function store(')), route['name'])
+                server_rules = block(field_rules, field_rules.find('function onServer(')).replace('$rules = [', 'return [', 1)
+                server_schema, _ = rules_to_schema(server_rules, route['name'])
+                body_schema = {'oneOf': [register_schema, server_schema]}
+                body_required = True
     elif route['method'] == 'GET' and sdkreq and sdkreq.get('query'):
         for k in re.findall(r"'([a-z_]+)'\s*=>", sdkreq['query']):
             op['parameters'].append({'name': k, 'in': 'query', 'required': True, 'schema': {'type': 'integer' if k.endswith('_id') else 'string'}})
@@ -1459,6 +1570,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             d = opts.get(k) or args.get(k)
             if d and 'description' not in v:
                 v['description'] = d
+    if route['name'] in ('tasks:definition:create', 'tasks:definition:update') and body_schema:
+        correct_task_definition_body(body_schema)
     if body_schema is not None:
         if 'oneOf' not in body_schema:
             body_schema['additionalProperties'] = False
@@ -1563,6 +1676,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`), its agent secret does not match (`agent.secret_invalid`), its Node is not eligible for an agent (`agent.node_ineligible`), or it asked for another Node\'s channel (`agent.channel_forbidden`).')
     elif route['name'] not in ('gateway:status', 'gateway:trust'):
         responses['403'] = error_response('The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).')
+    if route['name'] == 'tool:scan':
+        responses['404'] = error_response('No Node matches `node_id` (`http.404`).')
+        responses['409'] = error_response('The Node is not active (`tool.node_inactive`) or is not Gateway-managed (`tool.node_unmanaged`). `error.details.step` is `scan`, `error.details.outcome` is `manager_failed`, and there is no Tool id. A manager that is absent, unsupported, conflicting, or incomplete does not fail the request.')
+        responses['422'] = error_response('The query is not the one strict integer `node_id`, or the body is not empty (`validation.failed`).')
     if params and not stream and route['name'] not in INTERNAL and route['name'] not in ('extension:enable', 'extension:disable'):
         responses['404'] = error_response('No record matches the path parameters.')
     if route['method'] in ('POST', 'PUT', 'PATCH', 'DELETE') and route['name'] not in INTERNAL:
@@ -1587,10 +1704,16 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             responses['409']['description'] += ' ' + extension_error
         else:
             responses['409'] = error_response(extension_error)
+    if route['name'] == 'proxycli:models':
+        responses['409'] = error_response('The collector is not set up (`proxycli.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`).')
     if route['name'] in ('extension:enable', 'extension:disable'):
         responses['422'] = error_response('The extension slug is unknown (`validation.failed`).')
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
+    if route['name'] in ('tasks:definition:create', 'tasks:definition:update'):
+        responses['422'] = error_response('The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`.')
+    if route['name'] == 'tasks:definition:create':
+        responses['409'] = error_response('The Project already uses the name (`tasks.definition_exists`). A disabled extension returns HTTP 409 (`extension.disabled`).')
     if route['name'] in ('node:role:add', 'node:role:remove', 'node:role:relocate'):
         responses['502'] = error_response('A role step failed on the Node (`node_role.convergence_failed` or `node_role.remove_failed`). `error.details.step` names the failed step, and `error.details.error_code` names its own code, such as `node_role.node_busy` or `node_role.tool_manager_locked`.')
     if route['name'] in ('node:add', 'node:remove'):
@@ -1611,6 +1734,20 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     nav_pages[tag].append(f'{route["method"]} {path}')
 
 spec['components']['schemas'].update({k: v for k, v in components.items() if v is not None})
+
+
+def tighten_task_definition_response(document):
+    """The response always includes every field. Its lists use the write item schemas, not bare objects."""
+    body = document['paths']['/api/v1/projects/{project}/task-definitions']['post']['requestBody']['content']['application/json']['schema']
+    schema = document['components']['schemas']['TaskDefinition']
+    for name in ('parameters', 'phases', 'subtasks'):
+        schema['properties'][name]['items'] = copy.deepcopy(body['properties'][name]['items'])
+    schema['required'] = [
+        'project_id', 'name', 'title', 'brief', 'parameters', 'status', 'schedule', 'phases', 'subtasks',
+    ]
+
+
+tighten_task_definition_response(spec)
 annotation_create = spec['paths']['/api/v1/instances/{instance}/annotations']['post']['requestBody']['content']['application/json']['schema']
 annotation_create['properties']['boundingBox'] = {'type': 'object', 'properties': {key: {'type': 'number'} for key in ('x', 'y', 'width', 'height')}, 'additionalProperties': False}
 # AnnotationData::fromModel() builds camelCase (`instanceId`, `syncError`, and the browser context).

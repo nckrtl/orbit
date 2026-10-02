@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Orbit\Sdk\GatewayApiException;
 use Orbit\Sdk\Responses\ProxyCli\ProxyCliAccountResponse;
+use Orbit\Sdk\Responses\ProxyCli\ProxyCliModelResponse;
+use Orbit\Sdk\Responses\ProxyCli\ProxyCliModelsResponse;
 use Orbit\Sdk\Responses\ProxyCli\ProxyCliProviderResponse;
 use Orbit\Sdk\Responses\ProxyCli\ProxyCliStatusResponse;
 
@@ -64,6 +66,30 @@ it('rejects a missing window shown as an invented zero row', function (): void {
         'windows' => [['used_percent' => 0, 'remaining_percent' => 100]],
         'error' => null,
     ], 'req'))->toThrow(GatewayApiException::class, 'invalid proxycli window');
+});
+
+it('maps a model list and drops fields the collector does not store', function (): void {
+    $response = new ProxyCliModelsResponse([
+        ProxyCliModelResponse::fromGatewayData([
+            'id' => 'gpt-5.6-luna',
+            'provider' => 'codex',
+            'display_name' => 'Luna',
+            'type' => 'chat',
+        ], 'req'),
+    ], 'req');
+
+    expect($response->toArray())->toBe([
+        'models' => [
+            ['id' => 'gpt-5.6-luna', 'provider' => 'codex'],
+        ],
+        'request_id' => 'req',
+    ]);
+});
+
+it('rejects a model that has no provider', function (): void {
+    expect(fn () => ProxyCliModelResponse::fromGatewayData([
+        'id' => 'gpt-5.6-luna',
+    ], 'req'))->toThrow(GatewayApiException::class, 'invalid proxycli model');
 });
 
 it('rejects an incomplete status payload', function (): void {

@@ -1,0 +1,17 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tools\\AdoptToolRequest",
+    "route": "POST /api/v1/tools/adopt",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "validation.failed",
+            "message": "The request data is invalid.",
+            "details": {
+                "body": [
+                    "The request body contains unsupported top-level keys."
+                ]
+            }
+        }
+    }
+}

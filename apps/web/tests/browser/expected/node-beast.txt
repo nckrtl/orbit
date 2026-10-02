@@ -1,10 +1,16 @@
 ╭─ Nav
 │  Dashboard │
-│› Nodes │ 3
+│› Nodes │ 4
 │  Projects │ 3
 │  Databases │ 2
 │  Tasks │ 2
 │  Activity │
+╰─
+
+╭─ Menu
+│› Overview
+│  Tools
+│  Firewall
 ╰─
 
 ╭─ Properties
@@ -42,13 +48,6 @@
 ╭─ Node processes
 │  Name │ Status │ CPU │ MEM
 │› valkey │ running │ 1% │ 0.1G
-╰─
-
-╭─ Firewall
-│  Name │ Port │ Action │ Source │ Status
-│› ssh-wireguard │ 22/tcp │ allow │ 10.44.0.0/16 │ active
-│  https-public │ 443/tcp │ allow │ 0.0.0.0/0 │ active
-│  orbit:wireguard-members │ any │ allow │ any on orbit │ live
 ╰─
 
 ←→ navigation or page · ↑↓ panes · Enter focuses · Esc back · x or right-click actions    live updates paused demo fleet

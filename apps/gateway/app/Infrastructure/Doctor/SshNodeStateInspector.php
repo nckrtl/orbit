@@ -44,6 +44,38 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
             "$platform" "$architecture" "$wireguard" "$binary_exists" "$unit_exists" "$agent_active" "$checksum" "$secret_checksum" "$disk"
         BASH;
 
+    /**
+     * Bounded macOS observation. It reads platform, architecture, the enrolled
+     * address, and free space on the home volume. It does not call systemd,
+     * getent, or GNU df, and it does not look for a Node agent.
+     */
+    private const string MAC_SCRIPT = <<<'BASH'
+        address=$1
+        platform=$(uname -s)
+        architecture=$(uname -m)
+        if interfaces=$(/sbin/ifconfig); then
+          tunnel=ok
+          wireguard=0
+          if printf '%s\n' "$interfaces" | awk -v address="$address" '$1 == "inet" && $2 == address { found=1 } END { exit found ? 0 : 1 }'; then
+            wireguard=1
+          fi
+        else
+          tunnel=unreadable
+          wireguard=0
+        fi
+        home=${HOME-}
+        if [ -z "$home" ]; then
+          disk_status=unreadable
+          disk='0 0'
+        elif disk=$(LC_ALL=C df -kP "$home" | awk 'NR==2 { print $4, $2 }') && [ -n "$disk" ]; then
+          disk_status=ok
+        else
+          disk_status=unreadable
+          disk='0 0'
+        fi
+        printf '%s\n%s\n%s\n%s\n%s\n%s\n' "$platform" "$architecture" "$tunnel" "$wireguard" "$disk_status" "$disk"
+        BASH;
+
     public function __construct(
         private SshExecutor $ssh,
         private SshKeyProvider $keys,
@@ -68,7 +100,10 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
                     commandTimeout: $this->deadline->cap(30.0),
                     shareConnection: false,
                 ),
-                new RemoteCommand(['bash', '-seu', '--', $address], self::SCRIPT),
+                new RemoteCommand(
+                    ['bash', '-seu', '--', $address],
+                    $node->platform === 'macos' ? self::MAC_SCRIPT : self::SCRIPT,
+                ),
             );
         } catch (Throwable) {
             return new NodeInspectionData(false, null, null, null);
@@ -78,6 +113,9 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
         }
         if ($result->truncated) {
             throw new DoctorInspectionException;
+        }
+        if ($node->platform === 'macos') {
+            return $this->macInspection($result->stdout);
         }
         $lines = explode("\n", $result->stdout);
         if (count($lines) !== 12 || $lines[11] !== '' || preg_match('/\A\s*Filesystem\s+Avail\s+1K-blocks\s+IFree\s+Inodes\s*\z/', $lines[8]) !== 1) {
@@ -164,6 +202,56 @@ final readonly class SshNodeStateInspector implements NodeStateInspector
                 : hash_equals(NodeAgentFootprint::checksum($agentArchitecture), $checksum),
             $secretChecksum === '' ? null : $secretChecksum,
             $filesystems,
+        );
+    }
+
+    private function macInspection(string $stdout): NodeInspectionData
+    {
+        $lines = explode("\n", $stdout);
+        $platform = strtolower($lines[0]);
+        if (! in_array($platform, ['linux', 'darwin', 'freebsd'], strict: true) || ! isset($lines[1])) {
+            throw new DoctorInspectionException;
+        }
+        $architecture = match (strtolower($lines[1])) {
+            'x86_64', 'amd64' => 'x86_64',
+            'aarch64', 'arm64' => 'aarch64',
+            default => throw new DoctorInspectionException,
+        };
+        // Ubuntu has no /sbin/ifconfig, so a Linux host prints an unreadable tunnel
+        // before any disk line. That is a platform mismatch, not a failed read.
+        if ($platform !== 'darwin') {
+            return new NodeInspectionData(true, $platform, $architecture, true);
+        }
+        if (
+            count($lines) !== 7
+            || $lines[6] !== ''
+            || ! in_array($lines[2], ['ok', 'unreadable'], strict: true)
+            || ! in_array($lines[3], ['0', '1'], strict: true)
+            || ! in_array($lines[4], ['ok', 'unreadable'], strict: true)
+            || $lines[2] === 'unreadable'
+            || $lines[4] === 'unreadable'
+        ) {
+            throw new DoctorInspectionException;
+        }
+        if (preg_match('/\A([0-9]+) ([0-9]+)\z/', $lines[5], $matches) !== 1) {
+            throw new DoctorInspectionException;
+        }
+        $available = $matches[1];
+        $size = $matches[2];
+        if (filter_var($available, FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]) === false
+            || filter_var($size, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
+            || (int) $available > (int) $size) {
+            throw new DoctorInspectionException;
+        }
+
+        return new NodeInspectionData(
+            true,
+            $platform,
+            $architecture,
+            $lines[3] === '1',
+            diskFilesystems: [
+                new NodeDiskFilesystemData('home', (int) $available, (int) $size, null, null),
+            ],
         );
     }
 }

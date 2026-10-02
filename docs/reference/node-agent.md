@@ -14,13 +14,13 @@ covers:
 
 # Node agent
 
-`orbit-agent` is a small Rust program on every managed Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
+`orbit-agent` is a small Rust program on every managed Linux Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
 
 The agent only observes. It runs no command, changes nothing on the Node, and listens on no port. Every change to a Node still runs over SSH.
 
 ## Where it runs
 
-The Gateway installs the agent only on Nodes that it manages: active Linux Nodes with a WireGuard address and a pinned SSH host key. Only a Node inside this managed-Node boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
+The Gateway installs the agent only on active managed Linux Nodes with a WireGuard address and a pinned SSH host key. macOS tool-only Nodes need no agent and hold no agent secret. An install or repair aimed at macOS returns `node.agent_unsupported` (HTTP 422) before SSH. Only a Node inside the Linux agent boundary runs the agent and holds an agent secret. [Exporter selection](/reference/metrics#exporter-selection) uses the same boundary. The agent needs no role. A Node that the Gateway does not manage over SSH runs no agent.
 
 ## What it observes
 
@@ -65,7 +65,7 @@ The agent accepts only a normalized absolute path of at most 4,096 bytes that op
 
 The agent reads Git with libgit2 in its own process, which runs no hooks, filters, or `fsmonitor` programs. The checkouts belong to `orbit` and the agent runs as `root`, so the agent turns off libgit2's owner check.
 
-Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, `packed-refs`, the current branch ref, and the base ref. When one changed, it reads the checkout again. It also reads every checkout every 30 seconds, because an edit to a working file changes none of those files.
+Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, `packed-refs`, the current branch ref, the local base ref, and `origin/base`. When one changed, it reads the checkout again. It also reads every checkout every 30 seconds, because an edit to a working file changes none of those files.
 
 | Field | Meaning |
 | --- | --- |
@@ -74,7 +74,7 @@ Every 2 seconds, the agent checks the size, time, and inode of `HEAD`, `index`, 
 | `head` | The full `HEAD` commit, or null in an empty repository. |
 | `dirty` | `true` when the index or working tree differs from `HEAD`, untracked files included. Null when the agent cannot read the working tree. |
 | `commits` | Commits reachable from `HEAD` but not from `start`, at most 1,000. Null without `start`. |
-| `diff` | `{ files, added, removed, truncated }` as `git diff --numstat base...HEAD` counts it. Null when `base` does not resolve. |
+| `diff` | `{ files, added, removed, truncated }` as `git diff --numstat origin/base...HEAD` counts it. Null when `origin/base` does not resolve. |
 
 | Limit | Value |
 | --- | --- |
@@ -207,7 +207,7 @@ The subscriber runs next to PHP-FPM on the Gateway machine.
 | Unit | `/etc/systemd/system/orbit-agent-view.service`, with `Restart=always` and `RestartSec=2` |
 | Installed by | `orbit:bootstrap` and `orbit:gateway-web` |
 | Connection | One WebSocket to Reverb for all Nodes, verifying `reverb.orbit` against the Orbit root CA |
-| Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every managed Node |
+| Channels | `presence-node.{id}` and `presence-node-logs.{id}` for every managed Linux Node |
 | Member | `gateway.{socket id}`, with `user_info` `{ "kind": "gateway" }`, signed with the Reverb app secret |
 
 A new member makes every agent on the channel send a complete snapshot. So when a channel owes a snapshot for 5 seconds, the subscriber leaves and joins it again. A channel owes one while agent events arrive without a complete snapshot, or after the agent's `sequence` goes back without a membership change. The subscriber asks each channel at most once every 5 seconds and keeps what it knows until the snapshot arrives.
@@ -333,7 +333,7 @@ Online [`node:remove`](/reference/node-provisioning#remove-a-node) stops and dis
 
 ## Doctor
 
-Doctor checks the agent in the `node` family on every managed Node.
+Doctor checks the agent in the `node` family on every managed Linux Node.
 
 | Issue code | Meaning |
 | --- | --- |
@@ -356,7 +356,7 @@ Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node 
 
 ## Releases
 
-A tag named `agent-v{version}` releases the agent. The version must equal the one in `apps/agent/Cargo.toml`. The release job builds static musl binaries and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a commit that is already on GitHub:
+A tag named `agent-v{version}` releases the agent. The version must equal the one in `apps/agent/Cargo.toml`. The release job runs on `ubuntu-26.04`, builds static musl binaries, and publishes them as a GitHub release of that tag. Create the tag with the GitHub CLI on a commit that is already on GitHub:
 
 ```bash
 gh api repos/nckrtl/orbit/git/refs -f ref=refs/tags/agent-v{version} -f sha={commit}

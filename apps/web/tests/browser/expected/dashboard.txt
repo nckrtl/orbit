@@ -1,6 +1,6 @@
 ╭─ Nav
 │› Dashboard │
-│  Nodes │ 3
+│  Nodes │ 4
 │  Projects │ 3
 │  Databases │ 2
 │  Tasks │ 2
@@ -15,7 +15,8 @@
 ╰─
 
 ╭─ Client nodes
-│ No client nodes.
+│  Name │ Status │ WireGuard IP
+│› studio │ active │ 10.44.0.4
 ╰─
 
 ╭─ Projects

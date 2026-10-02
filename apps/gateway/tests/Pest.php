@@ -7,6 +7,7 @@ use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\Deployment\DeploymentPhase;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
@@ -15,7 +16,6 @@ use App\Domain\Nodes\NodeAgentRuntime;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\NullTaskReviewDiff;
-use App\Domain\Tasks\TaskBridgeWorktreeRemover;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -28,7 +28,6 @@ use App\Infrastructure\Nodes\NodeLocks;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
-use App\Infrastructure\Tasks\RemoteTaskBridgeWorktreeRemover;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -41,6 +40,7 @@ use Illuminate\Support\Sleep;
 use Laravel\Ai\Classification;
 use Tests\Support\FakeAgentationSiteProjection;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\FakeInstanceDependencyCopier;
 use Tests\Support\FakeNodeAgentRuntime;
 use Tests\Support\FakeNodeCaddyBuilds;
 use Tests\Support\FakeRouterLanIngressReconciler;
@@ -75,16 +75,8 @@ uses(TestCase::class, RefreshDatabase::class)
         app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
         app()->instance(TaskCheckRunner::class, new FakeTaskCheckRunner);
         app()->instance(TaskReviewDiff::class, new NullTaskReviewDiff);
-        // Bridge removal runs Git on the Node. Feature tests skip it unless they opt in.
-        app()->instance(TaskBridgeWorktreeRemover::class, new class implements TaskBridgeWorktreeRemover
-        {
-            public function remove(Instance $instance): void
-            {
-                if (config('orbit.tasks.remove_bridge_worktree') === true) {
-                    app(RemoteTaskBridgeWorktreeRemover::class)->remove($instance);
-                }
-            }
-        });
+        // A dependency copy runs `cp` over SSH on the Node; tests record copy requests instead.
+        app()->instance(InstanceDependencyCopier::class, new FakeInstanceDependencyCopier);
         // A Node Caddy build runs local `sudo` on a Gateway Node; tests record build requests instead.
         app()->instance(NodeCaddyBuilds::class, new FakeNodeCaddyBuilds);
         // The view's file store under ORBIT_HOME would outlive a test; each test gets its own.
@@ -114,6 +106,7 @@ pest()->tia()->directory(is_string($tiaDirectory) && $tiaDirectory !== '' ? $tia
 pest()->tia()->watch([
     'resources/tasks/check' => 'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
     'resources/tasks/turn' => 'tests/Feature/Tasks/TurnReceiptTest.php',
+    'resources/tasks/actions.json' => 'tests/Feature/Tasks/TaskDefinitionValidationTest.php',
     'resources/mcp/tools.json' => 'tests/Feature/Mcp',
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
     'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',

@@ -53,7 +53,7 @@ function instance_source_consent_case(string $family): array
             'arguments' => ['instance:register'],
             'prompt' => 'Transfer source [/work/source] to Orbit ownership, allowing relocation and later removal?',
             'reads' => 0, 'option' => '--yes', 'code' => 'input.confirmation_required',
-            'registration_facts' => ['path' => '/work/source', 'repositoryUrl' => 'git@github.com:acme/source.git', 'slug' => 'source', 'defaultBranch' => 'main', 'branch' => 'main', 'root' => 'public', 'layout' => 'checkout', 'commit' => str_repeat('a', 40)],
+            'registration_facts' => ['path' => '/work/source', 'repositoryUrl' => 'git@github.com:acme/source.git'],
             'replies' => [instance_source_reply(RegisterInstanceRequest::class, ['project' => ['id' => 3, 'slug' => 'source'], 'instance' => $instance, 'instances' => [$instance], 'status' => 'completed', 'source_count' => 1, 'completed_count' => 1])],
             'mutation' => RegisterInstanceRequest::class, 'body' => ['source_path' => '/work/source'],
         ],
@@ -197,28 +197,28 @@ it('rejects invalid supplied registration fields before consent or mutation', fu
     expect($result['status'])->toBe(1)->and($result['requests'])->toBe([]);
     $error = json_decode($result['output'], true, flags: JSON_THROW_ON_ERROR)['error'];
     expect($error['code'])->toBe('validation.failed')->and($error['message'])->toBe('The request data is invalid.')
-        ->and($error['details'])->toBe([$field => [$field === 'default_branch'
-            ? 'The default branch is not a valid Git branch name.'
-            : 'The root must be a normalized relative web path.']])->and($error['request_id'])->toBeNull();
+        ->and($error['details'])->toBe([$field => ['The root must be a normalized relative web path.']])
+        ->and($error['request_id'])->toBeNull();
 })->with([
-    ['--default-branch', 'bad branch', 'default_branch'],
-    ['--default-branch', 'HEAD', 'default_branch'],
     ['--root', '../public', 'root'],
     ['--root', '/public', 'root'],
 ]);
 
-it('retries invalid unresolved registration values before asking for ownership consent', function (): void {
+it('asks only for ownership consent and sends no Project values', function (): void {
     $case = instance_source_consent_case('register');
-    $case['registration_facts']['defaultBranch'] = null;
-    $case['registration_facts']['root'] = null;
-    $case['prompt'] = 'Default branch';
     $case['arguments'][] = '--no-ansi';
-    $result = run_instance_source_consent($case, ['..', "\r", "\x7f\x7f", 'release/next', "\r", '../web', "\r", str_repeat("\x7f", 6), 'web/public', "\r", 'y', "\r"]);
-    expect($result['status'])->toBe(0)->and($result['restored'])->toBeTrue()->and($result['keys_remaining'])->toBe(0)
-        ->and($result['requests'])->toHaveCount(1)->and($result['requests'][0]['body'])->toBe([
-            'source_path' => '/work/source', 'default_branch' => 'release/next', 'root' => 'web/public',
-        ])->and($result['output'])->toContain('Enter a valid Git branch name.', 'Enter a normalized relative web path.', 'Transfer source [/work/source]');
+    $result = run_instance_source_consent($case, ['y', "\r"]);
+    expect($result['status'])->toBe(0)->and($result['keys_remaining'])->toBe(0)
+        ->and($result['requests'])->toHaveCount(1)->and($result['requests'][0]['body'])->toBe(['source_path' => '/work/source'])
+        ->and($result['output'])->toContain('Transfer source [/work/source]')->not->toContain('Default branch', 'Web root');
 });
+
+it('refuses the removed Project creation options before any request', function (string $option): void {
+    $case = instance_source_consent_case('register');
+    $case['arguments'] = [...$case['arguments'], $option, '--yes', '--json'];
+    $result = run_instance_source_consent($case, [], pty: false);
+    expect($result['status'])->not->toBe(0)->and($result['requests'])->toBe([]);
+})->with(['--project-slug=source', '--project-name=Source', '--default-branch=main']);
 
 it('preserves the Gateway deployment-eligibility refusal before deploy-step consent', function (): void {
     $case = instance_source_consent_case('step');

@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\ToolAdoptionFact;
+use App\Domain\Tools\ToolInventoryPackage;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -102,7 +104,7 @@ describe(ComposerToolManager::class, function (): void {
         expect($ssh->arguments())
             ->toBe([['sudo', 'bash', '-seu', '--', 'orbit']])
             ->and($ssh->commands[0]->input)
-            ->toContain('apt-get install --yes --no-install-recommends --no-remove -- composer git unzip')
+            ->toContain('apt-get -o DPkg::Lock::Timeout=300 install --yes --no-install-recommends --no-remove -- composer git unzip')
             ->and($ssh->commands[0]->input)
             ->toContain('COMPOSER_HOME=/opt/orbit/composer');
     });
@@ -604,6 +606,35 @@ describe(ComposerToolManager::class, function (): void {
             'remove',
         ],
     ]);
+
+    it('reads composer roots without bootstrapping and refuses a dependency', function (): void {
+        $installed = json_encode([
+            'installed' => [
+                ['name' => 'laravel/pint', 'version' => '1.20.0'],
+                ['name' => 'symfony/console', 'version' => '7.1.0'],
+            ],
+        ], JSON_THROW_ON_ERROR);
+        [$manager, $ssh] = composer_tool_manager([
+            composer_result("laravel/pint\n"),
+            composer_result($installed),
+        ]);
+
+        expect($manager->inspectForAdoption(composer_tool_node(role: null), 'laravel/pint'))
+            ->toEqual(new ToolAdoptionFact('1.20.0', null));
+
+        [$dependency, $dependencySsh] = composer_tool_manager([
+            composer_result("laravel/pint\n"),
+            composer_result($installed),
+        ]);
+
+        expect($dependency->inspectForAdoption(composer_tool_node(role: null), 'symfony/console'))
+            ->toEqual(new ToolAdoptionFact('7.1.0', ToolInventoryPackage::BLOCK_DEPENDENCY))
+            ->and($ssh->commands[0]->input)->not->toContain('apt-get')
+            ->and($ssh->commands[0]->input)->not->toContain('install -d')
+            ->and($dependencySsh->arguments()[1])->not->toContain('require')
+            ->not->toContain('update')
+            ->not->toContain('remove');
+    });
 });
 
 /**

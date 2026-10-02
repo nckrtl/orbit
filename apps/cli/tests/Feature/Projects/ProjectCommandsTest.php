@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Commands\Projects\CreateProjectCommand;
 use App\Commands\Projects\UpdateProjectCommand;
 use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
@@ -89,6 +90,34 @@ describe('project:create', function (): void {
             ->toMatchArray(['type' => 'node-package', 'root' => '.']);
     });
 
+    it('creates a Project that reads through the GitHub CLI', function (): void {
+        $mockClient = MockClient::global([
+            CreateProjectRequest::class => app_mock_response(201),
+        ]);
+
+        $this->artisan('project:create', [
+            'slug' => 'leden',
+            'type' => 'laravel-app',
+            'repository' => 'git@github.com:acme/leden.git',
+            '--source-access' => 'gh_cli',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toMatchArray(['source_access' => 'gh_cli']);
+    });
+
+    it('refuses an unknown source access before contacting the Gateway', function (string $command, array $arguments): void {
+        $mockClient = MockClient::global();
+
+        $this->artisan($command, [...$arguments, '--source-access' => 'token', '--json' => true])
+            ->expectsOutputToContain('project.source_access_invalid')
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'create' => ['project:create', ['slug' => 'leden', 'type' => 'laravel-app', 'repository' => 'git@github.com:acme/leden.git']],
+        'update' => ['project:update', ['project' => '14']],
+    ]);
+
     it('defaults the root by Project type when --root is omitted', function (string $type, string $root): void {
         $mockClient = MockClient::global([
             CreateProjectRequest::class => app_mock_response(201),
@@ -169,6 +198,75 @@ describe('project:create', function (): void {
         'NUL' => "orbit\0slug-secret",
         'over maximum length' => str_repeat(string: 'a', times: 64).'slug-secret',
     ]);
+
+    it('sends task workspace routing only when the caller sets true or false', function (?string $option, array $expected): void {
+        $mockClient = MockClient::global([
+            CreateProjectRequest::class => app_mock_response(201),
+        ]);
+        $arguments = [
+            'slug' => 'kit',
+            'type' => 'node-package',
+            'repository' => 'https://github.com/acme/kit.git',
+            '--root' => '.',
+        ];
+
+        if ($option !== null) {
+            $arguments['--task-workspace-routed'] = $option;
+        }
+
+        $this->artisan('project:create', $arguments)->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe([
+            'slug' => 'kit',
+            'type' => 'node-package',
+            'repository_url' => 'https://github.com/acme/kit.git',
+            'root' => '.',
+            ...$expected,
+        ]);
+    })->with([
+        'omitted' => [null, []],
+        'true' => ['true', ['task_workspace_routed' => true]],
+        'false' => ['false', ['task_workspace_routed' => false]],
+    ]);
+
+    it('rejects an invalid task workspace routing value before a request', function (?string $value): void {
+        $mockClient = MockClient::global();
+
+        $this->artisan('project:create', [
+            'slug' => 'kit',
+            'type' => 'node-package',
+            'repository' => 'https://github.com/acme/kit.git',
+            '--task-workspace-routed' => $value,
+            '--json' => true,
+        ])->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'project.task_workspace_routed_invalid',
+                'message' => 'Task workspace routed must be true or false.',
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'yes' => 'yes',
+        'no' => 'no',
+        'one' => '1',
+        'zero' => '0',
+        'uppercase' => 'TRUE',
+        'mixed case' => 'False',
+        'empty' => '',
+        'missing value' => null,
+    ]);
+
+    it('does not describe a type-specific task check default', function (): void {
+        $definition = $this->app->make(CreateProjectCommand::class)->getDefinition();
+
+        expect($definition->getOption('task-check')->getDescription())
+            ->toBe('Task check command. Omitted stores none')
+            ->and($definition->getOption('task-workspace-routed')->getDescription())
+            ->toBe('Whether new task workspaces get a Route (true or false)');
+    });
 
     it('passes project slug policy values through the typed SDK request', function (): void {
         $mockClient = MockClient::global([
@@ -436,6 +534,34 @@ describe('project:show', function (): void {
             ->not->toContain(app_request_id());
     });
 
+    it('shows task workspace routing in human and JSON detail', function (bool $routed, string $label): void {
+        $payload = [...app_payload(), 'task_workspace_routed' => $routed];
+        MockClient::global([
+            ShowProjectRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => app_request_id()],
+            ]),
+            ListInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
+
+        expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
+        expect(Artisan::output())->toContain('Task workspace routed')
+            ->toContain($label);
+
+        MockClient::global([
+            ShowProjectRequest::class => MockResponse::make([
+                'data' => $payload,
+                'meta' => ['request_id' => app_request_id()],
+            ]),
+        ]);
+
+        expect(Artisan::call('project:show', ['project' => '3', '--json' => true]))->toBe(0);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['task_workspace_routed'])->toBe($routed);
+    })->with([
+        'routed' => [true, 'yes'],
+        'unrouted' => [false, 'no'],
+    ]);
+
     it('returns legacy null source defaults unchanged', function (): void {
         $payload = [...app_payload(), 'default_branch' => null, 'root' => null];
         MockClient::global([
@@ -510,6 +636,19 @@ describe('project:update', function (): void {
 
     });
 
+    it('switches a Project to the GitHub CLI with its default branch in one update', function (): void {
+        $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+
+        $this->artisan('project:update', [
+            'project' => '14',
+            '--source-access' => 'gh_cli',
+            '--default-branch' => 'main',
+        ])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())
+            ->toBe(['source_access' => 'gh_cli', 'default_branch' => 'main']);
+    });
+
     it('refuses --task-check with --clear-task-check before contacting the Gateway', function (): void {
         $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
 
@@ -554,6 +693,56 @@ describe('project:update', function (): void {
             ->expectsOutputToContain(app_request_id())
             ->assertExitCode(0);
     });
+
+    it('updates task workspace routing alone and omits it when the flag is absent', function (?string $option, array $body): void {
+        $mockClient = MockClient::global([
+            UpdateProjectRequest::class => app_mock_response(),
+        ]);
+        $arguments = ['project' => '3'];
+
+        if ($option !== null) {
+            $arguments['--task-workspace-routed'] = $option;
+        } else {
+            $arguments['--slug'] = 'orbit';
+        }
+
+        $this->artisan('project:update', $arguments)->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe($body);
+    })->with([
+        'false only' => ['false', ['task_workspace_routed' => false]],
+        'true only' => ['true', ['task_workspace_routed' => true]],
+        'omitted' => [null, ['slug' => 'orbit']],
+    ]);
+
+    it('rejects an invalid task workspace routing value before a request', function (?string $value): void {
+        $mockClient = MockClient::global();
+
+        $this->artisan('project:update', [
+            'project' => '3',
+            '--slug' => 'orbit',
+            '--task-workspace-routed' => $value,
+            '--json' => true,
+        ])->expectsOutput(json_encode([
+            'error' => [
+                'code' => 'project.task_workspace_routed_invalid',
+                'message' => 'Task workspace routed must be true or false.',
+                'request_id' => null,
+            ],
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'yes' => 'yes',
+        'no' => 'no',
+        'one' => '1',
+        'zero' => '0',
+        'uppercase' => 'TRUE',
+        'mixed case' => 'False',
+        'empty' => '',
+        'missing value' => null,
+    ]);
 
     it('refuses an empty update without gateway IO', function (): void {
         $mockClient = MockClient::global();
@@ -627,6 +816,7 @@ function app_payload(): array
         'slug' => 'orbit',
         'type' => 'laravel-app',
         'repository_url' => 'git@github.com:nckrtl/orbit.git',
+        'source_access' => 'github_app',
         'default_branch' => 'main',
         'root' => 'public',
         'task_check' => 'composer check',

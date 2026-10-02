@@ -14,7 +14,7 @@ use App\Models\Node;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
-final class FakeAgentDriver implements AgentDriver
+class FakeAgentDriver implements AgentDriver
 {
     public ?AgentObservation $observation = null;
 
@@ -37,6 +37,9 @@ final class FakeAgentDriver implements AgentDriver
 
     public bool $failNextCreate = false;
 
+    /** @var (Closure(string): void)|null runs at the start of create and send, before the call is recorded */
+    public ?Closure $beforeTurn = null;
+
     public function __construct(private readonly string $key = 'example') {}
 
     public function key(): string
@@ -51,6 +54,9 @@ final class FakeAgentDriver implements AgentDriver
 
     public function create(AgentThreadStart $intent): string
     {
+        if ($this->beforeTurn instanceof Closure) {
+            ($this->beforeTurn)($intent->prompt);
+        }
         $this->calls[] = ['operation' => 'create', 'prompt' => $intent->prompt, 'title' => $intent->title];
         if ($this->failNextCreate) {
             $this->failNextCreate = false;
@@ -63,6 +69,9 @@ final class FakeAgentDriver implements AgentDriver
 
     public function send(AgentThread $thread, string $message, ?string $key = null): void
     {
+        if ($this->beforeTurn instanceof Closure) {
+            ($this->beforeTurn)($message);
+        }
         $call = ['operation' => 'send', 'thread' => $thread->external_id, 'message' => $message];
         if ($key !== null) {
             $call['key'] = $key;

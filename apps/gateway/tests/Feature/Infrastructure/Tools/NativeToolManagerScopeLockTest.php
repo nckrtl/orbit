@@ -28,4 +28,16 @@ describe(NativeToolManagerScopeLock::class, function (): void {
         expect($events)->toBe(['outer-enter', 'inner-enter', 'inner-return', 'outer-before-release']);
         expect($independent->run($nodeId, $manager, static fn (): string => 'released'))->toBe('released');
     });
+
+    it('uses the Homebrew prefix lock for both brew and brew-cask', function (): void {
+        $brew = new NativeToolManagerScopeLock;
+        $cask = new NativeToolManagerScopeLock;
+
+        $brew->run(4, ToolManagerName::Brew, function () use ($cask): void {
+            expect(fn () => $cask->run(4, ToolManagerName::BrewCask, static fn (): null => null))
+                ->toThrow(ToolManagerScopeLockException::class);
+        });
+
+        expect($cask->run(4, ToolManagerName::BrewCask, static fn (): string => 'released'))->toBe('released');
+    });
 });

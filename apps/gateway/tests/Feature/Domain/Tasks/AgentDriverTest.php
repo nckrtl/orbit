@@ -12,6 +12,7 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
+use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -20,6 +21,7 @@ use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSessionObserver;
+use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -187,8 +189,10 @@ it('routes an attached conversation without a legacy pointer', function (): void
     $decisions = app(TaskScheduler::class)->tick();
 
     expect($decisions)->toBe([])
-        ->and($driver->calls)->toHaveCount(3)
-        ->and($driver->calls[2]['operation'])->toBe('send')
+        ->and(array_column($driver->calls, 'operation'))->toBe(['create', 'create'])
+        ->and(app(TaskCheckRunner::class)->commands)->toBe(['composer check'])
+        ->and($task->fresh()->implementer_agent_thread_id)->toBeNull()
+        ->and($task->fresh()->status)->toBe(TaskStatus::Running)
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running);
 });
 
@@ -264,31 +268,6 @@ it('rejects an older in-flight read after another reader records a new outcome',
     expect($observer->record($older, new AgentObservation(AgentThreadState::Working, tokens: 10)))->toBeFalse();
     expect($older->fresh()->state)->toBe(AgentThreadState::Done)
         ->and($older->fresh()->tokens)->toBe(500);
-});
-
-it('does not lower tokens when a T3 polling read is stale', function (): void {
-    [, $task, , $registry] = driver_group();
-    $observer = new AgentThreadObserver($registry);
-    $thread = $task->implementerThread;
-
-    expect($observer->record($thread, new AgentObservation(
-        state: AgentThreadState::Done,
-        tokens: 100,
-        metricsCheckpoint: [
-            't3_input_tokens' => 80,
-            't3_cached_input_tokens' => 20,
-            't3_output_tokens' => 10,
-            't3_model_calls' => 1,
-            't3_peak_context_tokens' => 100,
-            't3_counted_total_processed_tokens' => 500,
-            't3_observed_total_processed_tokens' => 500,
-            't3_metrics_partial' => false,
-            't3_metrics_initialized' => true,
-            't3_event_sequence' => 12,
-        ],
-    )))->toBeTrue();
-
-    expect($thread->fresh()->tokens)->toBe(500);
 });
 
 it('stores a token breakdown and keeps it when a later read omits the fields', function (): void {

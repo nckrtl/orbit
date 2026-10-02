@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+# Remove the invoking task checkout's bridge from the registered primary checkout.
+#
+# Run from the checkout, with no arguments and no Gateway dependency. The reviewed
+# copy is installed outside checkouts at $HOME/.local/lib/orbit/e2e-task-cleanup.
+# An ordinary checkout or a missing registration exits successfully and changes
+# nothing. A registered worktree is removed only when its path and branch are
+# this task's bridge. The task branch is deleted only when no worktree has it
+# checked out, and only refs/orbit/e2e-bridge/<task> is deleted. A cleanup
+# command failure exits nonzero so teardown can retry. The invoking checkout
+# stays, and a topology is not released.
+set -euo pipefail
+
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR GIT_NAMESPACE GIT_PREFIX
+
+if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    exit 0
+fi
+
+checkout=$(git rev-parse --show-toplevel)
+instance_name=$(basename "$checkout")
+
+if [[ ! $instance_name =~ ^task-[0-9]+$ ]]; then
+    exit 0
+fi
+
+origin=$(git -C "$checkout" remote get-url origin 2>/dev/null || true)
+if [[ -z $origin ]]; then
+    exit 0
+fi
+
+origin_key() {
+    php -r '
+        $url = $argv[1] ?? "";
+        $pattern = "#\\A(?:[a-z][a-z0-9+.-]*://)?(?:[^@/]+@)?([^:/]+)[:/](.+?)(?:\\.git)?/*\\z#i";
+        if ($url === "") {
+            exit(0);
+        }
+        if (preg_match($pattern, $url, $matches) === 1) {
+            echo hash("sha256", strtolower($matches[1])."/".$matches[2]);
+            exit(0);
+        }
+        echo hash("sha256", $url);
+    ' "$1"
+}
+
+is_caller_tree() {
+    local candidate=$1
+    local resolved=$candidate
+    local line path path_resolved
+    if [[ -e $candidate ]]; then
+        resolved=$(readlink -f "$candidate" || true)
+    fi
+    while IFS= read -r line; do
+        [[ $line == worktree\ * ]] || continue
+        path=${line#worktree }
+        path_resolved=$path
+        if [[ -e $path ]]; then
+            path_resolved=$(readlink -f "$path" || true)
+        fi
+        if [[ $candidate == "$path" || ( -n $resolved && $resolved == "$path_resolved" ) ]]; then
+            return 0
+        fi
+    done <<< "$caller_listing"
+    return 1
+}
+
+expected_branch=$instance_name-e2e
+key=$(origin_key "$origin")
+if [[ ! $key =~ ^[0-9a-f]{64}$ ]]; then
+    exit 0
+fi
+
+state=${XDG_STATE_HOME:-$HOME/.local/state}
+link=$state/orbit/e2e-primary-checkouts/$key
+if [[ ! -L $link ]]; then
+    exit 0
+fi
+primary=$(readlink -f "$link" || true)
+if [[ ! -d $primary ]]; then
+    exit 0
+fi
+if [[ $(stat -c %u "$primary") != $(id -u) ]]; then
+    exit 0
+fi
+if [[ ! -f $primary/.e2e/topology-snapshot/promoted.json ]]; then
+    exit 0
+fi
+
+git_dir=$(git -C "$primary" rev-parse --path-format=absolute --git-dir)
+common=$(git -C "$primary" rev-parse --path-format=absolute --git-common-dir)
+if [[ $git_dir != "$common" ]]; then
+    exit 0
+fi
+
+primary_origin=$(git -C "$primary" remote get-url origin 2>/dev/null || true)
+primary_key=$(origin_key "$primary_origin")
+if [[ $primary_key != "$key" ]]; then
+    exit 0
+fi
+
+root=$(git -C "$primary" config --path --get orbit.worktreeRoot || true)
+if [[ -z $root ]]; then
+    root=/fast/worktrees/orbit
+fi
+if [[ -d $root ]]; then
+    root=$(readlink -f "$root")
+fi
+bridge=$root/$instance_name-e2e
+bridge_resolved=$bridge
+if [[ -d $bridge ]]; then
+    bridge_resolved=$(readlink -f "$bridge")
+fi
+
+caller_listing=$(git -C "$checkout" worktree list --porcelain)
+listing=$(git -C "$primary" worktree list --porcelain)
+registered_path=
+registered_branch=
+path=
+branch_line=
+flush_record() {
+    if [[ -n $path ]]; then
+        resolved=$path
+        if [[ -e $path ]]; then
+            resolved=$(readlink -f "$path")
+        fi
+        if [[ $path == "$bridge" || $resolved == "$bridge_resolved" ]]; then
+            registered_path=$path
+            registered_branch=$branch_line
+        fi
+    fi
+    path=
+    branch_line=
+}
+while IFS= read -r line; do
+    if [[ -z $line ]]; then
+        flush_record
+    elif [[ $line == worktree\ * ]]; then
+        path=${line#worktree }
+    elif [[ $line == branch\ * ]]; then
+        branch_line=${line#branch }
+    fi
+done <<< "$listing"
+flush_record
+
+if [[ -n $registered_path && $registered_branch == "refs/heads/$expected_branch" ]]; then
+    if ! is_caller_tree "$registered_path"; then
+        git -C "$primary" worktree remove --force "$registered_path"
+    fi
+fi
+
+expected_ref=refs/heads/$expected_branch
+staging=refs/orbit/e2e-bridge/$instance_name
+listing=$(git -C "$primary" worktree list --porcelain)
+checked_out=0
+if printf '%s\n' "$listing" | grep -Fxq "branch $expected_ref"; then
+    checked_out=1
+fi
+if [[ $checked_out == 0 ]] && git -C "$primary" show-ref --verify --quiet "$expected_ref"; then
+    git -C "$primary" branch -D "$expected_branch"
+fi
+if git -C "$primary" show-ref --verify --quiet "$staging"; then
+    git -C "$primary" update-ref -d "$staging"
+fi

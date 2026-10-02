@@ -49,6 +49,11 @@ type PaneProps<T> = {
     target?: (row: T) => Target | null;
     /** What a click on a row does when the row is not a record, such as opening a page elsewhere. */
     onRowClick?: (row: T) => void;
+    /**
+     * A second line under the row on a narrow screen, for fields the phone columns cannot fit.
+     * Desktop keeps those fields in their columns and hides this line.
+     */
+    detail?: (row: T) => React.ReactNode;
     bottomLeft?: React.ReactNode;
     bottomRight?: React.ReactNode;
     empty?: string;
@@ -77,6 +82,7 @@ export function Pane<T extends Record<string, any>>({
     danger,
     target,
     onRowClick,
+    detail,
     bottomLeft,
     bottomRight,
     empty = "None.",
@@ -238,7 +244,7 @@ export function Pane<T extends Record<string, any>>({
                             )}
                             <div
                                 ref={index === selected ? selectedRow : undefined}
-                                className="row"
+                                className={detail === undefined ? "row" : "row has-detail"}
                                 role="row"
                                 aria-selected={index === selected}
                                 data-link={
@@ -286,6 +292,9 @@ export function Pane<T extends Record<string, any>>({
                                         </span>
                                     );
                                 })}
+                                {detail !== undefined && (
+                                    <span className="row-detail">{detail(row.original)}</span>
+                                )}
                             </div>
                         </Fragment>
                     ))}

@@ -77,6 +77,22 @@ final readonly class TaskReviewPacketBuilder
             ->all());
     }
 
+    /** The uncut context written to `.git/orbit/context.md` before a review turn. */
+    public function reviewContext(Task $task): string
+    {
+        $task->loadMissing('parent');
+        $group = $task->parent;
+
+        return new TaskReviewContext(
+            taskBrief: $group->brief,
+            subtaskBrief: $task->brief,
+            deliverables: $task->deliverableList(),
+            approvals: $this->approvalBodies($group, $task),
+            resolution: $this->pendingResolution($task),
+            consults: $this->consults($task),
+        )->render();
+    }
+
     /** A resolution held for this attempt because the subtask had no reviewer thread yet. */
     private function pendingResolution(Task $task): string
     {
@@ -107,6 +123,17 @@ final readonly class TaskReviewPacketBuilder
         }
 
         return $approvals;
+    }
+
+    /** @return list<array{title: string, body: string}> */
+    private function approvalBodies(Task $group, Task $task): array
+    {
+        $bodies = [];
+        foreach ($this->approvals($group, $task) as $approval) {
+            $bodies[] = ['title' => $approval['title'], 'body' => $approval['summary']];
+        }
+
+        return $bodies;
     }
 
     /** @return array{status: string, exit: ?int, evidence: ?TaskDeliverableEvidence} */

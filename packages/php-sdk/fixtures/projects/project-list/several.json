@@ -12,9 +12,11 @@
                 "code": "ACM",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/acme/site.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 2,
@@ -23,9 +25,11 @@
                 "code": "BRA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:bravo/docs.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 3,
@@ -34,9 +38,11 @@
                 "code": "CHA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:charlie/shop.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "web/public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 4,
@@ -45,9 +51,11 @@
                 "code": "DEL",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/delta/api.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             }
         ],
         "meta": {

@@ -20,6 +20,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         private AgentDriverRegistry $drivers,
         private TaskReviewPacketBuilder $packets,
         private TaskWorkspaceMcp $mcp,
+        private TaskTurnFetchNotice $fetchNotice = new TaskTurnFetchNotice,
     ) {}
 
     public function spawnReviewer(Task $task): ?int
@@ -61,7 +62,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     {
         $existing = $this->subtaskReviewer($task);
         if ($existing instanceof AgentThread) {
-            $this->drivers->get($existing->driver)->send($existing, $message, $key);
+            $this->drivers->get($existing->driver)->send($existing, $this->fetchNotice->apply($message), $key);
 
             return $existing->id;
         }
@@ -139,7 +140,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             throw new AgentDriverException('Reviewer conversation is unavailable.');
         }
         try {
-            $this->drivers->get($thread->driver)->send($thread, $this->reviewPacket($task, true, $thread->id));
+            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($this->reviewPacket($task, true, $thread->id)));
         } catch (AgentDriverException) {
             // ADR 0169: a continued thread that cannot take a turn is replaced by a fresh thread and a full packet.
             $replacement = $this->openReviewer($task);
@@ -249,6 +250,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             return;
         }
         $task = is_numeric($thread->task_id) ? Task::query()->find((int) $thread->task_id) : null;
+        $context = $role === TaskThreadRole::Reviewer && $task instanceof Task ? $this->packets->reviewContext($task) : null;
         app(TaskTurnReceipts::class)->prepare(
             $instance,
             $role,
@@ -256,6 +258,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             $task instanceof Task ? $task->deliverableList() : [],
             $thread->id,
             $mode ?? $this->reviewerTurnMode($task, $role),
+            $context,
         );
     }
 
@@ -278,7 +281,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return null;
     }
 
-    /** Installs the turn file, and removes the reserved row when that install fails so the replacement does not start. */
+    /** Installs the turn file and the reviewer context, and removes the reserved row when that install fails so the replacement does not start. */
     private function installReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
         try {
@@ -294,6 +297,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     private function startPending(AgentThread $thread, string $title, string $prompt, ?string $key = null): ?int
     {
+        $prompt = $this->fetchNotice->apply($prompt);
         $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);
         $instance = $group?->taskable;
         if (! $group instanceof Task || ! $instance instanceof Instance) {

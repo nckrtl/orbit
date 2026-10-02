@@ -11,6 +11,7 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerRegistry;
 use App\Domain\Tools\ToolNodeEligibility;
+use App\Domain\Tools\ToolObjectStatus;
 use App\Domain\Tools\ToolOperation;
 use App\Domain\Tools\ToolOperationException;
 use App\Domain\Tools\ToolOperationLock;
@@ -59,30 +60,20 @@ final readonly class RemoveToolAction
         }
 
         if ($this->isUnprovenFailedTool($tool)) {
-            $tool->delete();
-
-            return new ToolActionResult($tool, ToolOutcome::Applied);
+            return $this->removed($tool);
         }
 
         try {
             $installedVersion = $this->installedVersion($tool, $node, $manager);
 
             if ($installedVersion === null) {
-                $tool->delete();
-
-                return new ToolActionResult($tool, ToolOutcome::Applied);
+                return $this->removed($tool);
             }
 
             try {
                 $plan = $manager->planRemoval($node, $tool->package);
             } catch (ToolManagerException $exception) {
-                throw $this->failure(
-                    tool: $tool,
-                    errorCode: 'tool.remove_failed',
-                    status: 502,
-                    message: 'The tool removal plan failed.',
-                    previous: $exception,
-                );
+                throw $this->removalFailure($tool, $exception, 'The tool removal plan failed.');
             } catch (Throwable $exception) {
                 throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool removal plan failed.', previous: NodeLockLoss::keep($exception));
             }
@@ -96,6 +87,9 @@ final readonly class RemoveToolAction
                 );
             }
 
+            $storedStatus = $tool->status;
+            $storedFailure = $tool->failed_operation;
+            $storedErrorCode = $tool->error_code;
             $tool->update([
                 'status' => ToolStatus::Removing,
                 'failed_operation' => null,
@@ -105,13 +99,7 @@ final readonly class RemoveToolAction
             try {
                 $manager->remove($node, $tool->package);
             } catch (ToolManagerException $exception) {
-                throw $this->failure(
-                    tool: $tool,
-                    errorCode: 'tool.remove_failed',
-                    status: 502,
-                    message: 'The tool manager removal failed.',
-                    previous: $exception,
-                );
+                throw $this->removalFailure($tool, $exception, 'The tool manager removal failed.');
             } catch (Throwable $exception) {
                 throw $this->failure($tool, 'tool.remove_failed', 502, 'The tool manager removal failed.', previous: NodeLockLoss::keep($exception));
             }
@@ -127,14 +115,34 @@ final readonly class RemoveToolAction
                 );
             }
 
-            $tool->delete();
-
-            return new ToolActionResult($tool, ToolOutcome::Applied);
+            return $this->removed($tool, $storedStatus, $storedFailure, $storedErrorCode);
         } catch (ToolOperationException $exception) {
             $this->markToolFailure($tool, ToolOperation::Remove, $exception);
 
             throw $exception;
         }
+    }
+
+    /**
+     * The activity snapshot is this deleted model. Drop the transient removing
+     * claim so a finished removal does not show `removing`.
+     */
+    private function removed(
+        Tool $tool,
+        ?ToolStatus $statusBeforeClaim = null,
+        ?ToolOperation $failedOperationBeforeClaim = null,
+        ?string $errorCodeBeforeClaim = null,
+    ): ToolActionResult {
+        $tool->delete();
+
+        if ($statusBeforeClaim instanceof ToolStatus && $tool->status === ToolStatus::Removing) {
+            $tool->status = $statusBeforeClaim;
+            $tool->failed_operation = $failedOperationBeforeClaim;
+            $tool->error_code = $errorCodeBeforeClaim;
+            $tool->syncOriginal();
+        }
+
+        return new ToolActionResult($tool, ToolOutcome::Applied, status: ToolObjectStatus::Removed);
     }
 
     private function isUnprovenFailedTool(Tool $tool): bool
@@ -149,12 +157,11 @@ final readonly class RemoveToolAction
         try {
             return $manager->installedVersion($node, $tool->package);
         } catch (ToolManagerException $exception) {
-            throw $this->failure(
-                tool: $tool,
-                errorCode: 'tool.version_probe_failed',
-                status: 502,
-                message: 'The installed tool version could not be verified.',
-                previous: $exception,
+            throw $this->removalFailure(
+                $tool,
+                $exception,
+                'The installed tool version could not be verified.',
+                'tool.version_probe_failed',
             );
         } catch (Throwable $exception) {
             throw $this->failure(
@@ -197,10 +204,35 @@ final readonly class RemoveToolAction
         $manager = $this->managers->find($record->name);
 
         if (! $manager instanceof ToolManager || ! $manager->supportsNode($node)) {
-            throw $this->failure($tool, 'tool.manager_unavailable', 409, 'The tool manager is not available.');
+            throw $this->failure($tool, 'tool.manager_unsupported', 422, 'The requested tool manager is not supported.');
         }
 
         return [$node, $record, $manager];
+    }
+
+    private function removalFailure(
+        Tool $tool,
+        ToolManagerException $exception,
+        string $message,
+        string $errorCode = 'tool.remove_failed',
+    ): ToolOperationException {
+        if (in_array($exception->step, ['manager-absent', 'manager-conflict'], true)) {
+            return $this->failure(
+                tool: $tool,
+                errorCode: 'tool.manager_unavailable',
+                status: 409,
+                message: 'The tool manager is not available.',
+                previous: $exception,
+            );
+        }
+
+        return $this->failure(
+            tool: $tool,
+            errorCode: $errorCode,
+            status: 502,
+            message: $message,
+            previous: $exception,
+        );
     }
 
     private function failure(

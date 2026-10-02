@@ -9,7 +9,7 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 169 public Gateway operations. It preserves typed
+The SDK exposes exactly 177 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
@@ -40,6 +40,16 @@ $response = $connector
 assert($response instanceof ToolResponse);
 ```
 
+`ScanToolInventoryRequest` reads `GET /api/v1/tool-inventory` for one Node.
+The response preserves each manager's scan state and package facts, including
+kind, dependency, registration, and adoption block. It does not adopt a
+package or decide manager policy.
+
+`AdoptToolRequest` posts the Node, manager, package, and optional constraint to
+`POST /api/v1/tools/adopt`. A null constraint is omitted. An explicit empty
+constraint is sent. The request does not install the package or decide whether
+that package may be adopted.
+
 ## Instance deployment and environment
 
 The SDK exposes typed deploy-step, deploy, rollback, and retained-release operations. Deployment streams are incremental, closeable, bounded, correlated, and never retried or replayed. Configuration commands and application output stay out of generic diagnostics.
@@ -65,11 +75,11 @@ The SDK exposes typed list, show, add, update, remove, attach, detach, query, ta
 
 ## proxycli
 
-The SDK exposes typed enable, disable, status, provider list, provider show, and account update requests for the optional CLIProxyAPI quota collector. Enable sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, disable, and provider list are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
+The SDK exposes typed enable, disable, status, provider list, provider show, account update, and model list requests for the optional CLIProxyAPI quota collector. Enable sends a Node ID, Redis connection slug, CLIProxyAPI URL, and management key. Status, disable, provider list, and model list are bodyless. Item and collection responses omit tokens and the management key. The Gateway owns Valkey placement, collection, publication, and pooling.
 
 ## Tasks
 
-The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, question list, and agent thread list requests for the Gateway tasks extension. Create sends the Project ID, title, brief, and the optional status, Coder notification flag, and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Question list sends optional Project, cause, status, and since filters. Toggle, status, cancel, complete, destroy, and question list requests are bodyless. Group and subtask responses keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`, keep subtasks in position order, and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
+The SDK exposes typed enable, disable, status, list, show, create, update, cancel, complete, subtask create, update, and destroy, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy requests for the Gateway tasks extension. Create and update of a task definition send the caller's exact JSON document. List accepts an optional Project ID filter. Show, update, and destroy address one definition by Project ID and name. Create sends the Project ID, title, brief, and the optional status, Coder notification flag, and ordered `SubtaskInput` values. Updates send only the supplied fields and an empty JSON object when none is supplied. Question list sends optional Project, cause, status, and since filters. Toggle, status, cancel, complete, destroy, and question list requests are bodyless. Group and subtask responses keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`, keep subtasks in position order, and give the human reference, such as `ORB-13`. The Gateway owns the lifecycle, scheduling, and every status rule.
 
 ## Logs
 

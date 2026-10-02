@@ -55,6 +55,7 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
 use App\Domain\Tasks\TaskTurnReceiptException;
@@ -63,9 +64,6 @@ use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
-use App\Infrastructure\Tasks\T3\NullT3ThreadReader;
-use App\Infrastructure\Tasks\T3\T3Dispatcher;
-use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -76,14 +74,21 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Exceptions;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
+use Tests\Support\AgentCommandDispatcher;
+use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\NullAgentSnapshotReader;
 
 use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
+});
+
+beforeEach(function (): void {
+    test_bind_snapshot_driver();
 });
 
 function scheduler_app(string $slug): Project
@@ -121,6 +126,7 @@ function scheduler_instance(Project $project, Node $node, string $name): Instanc
 function queued_group(Project $project, string $title, ?Instance $instance = null): Task
 {
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => $title,
         'brief' => "{$title} brief",
@@ -197,7 +203,7 @@ function scheduler_bind_claim(Instance $instance, AgentSpawner $spawner): void
     });
     app()->instance(AgentSpawner::class, $spawner);
     app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
-        new TaskGroupMetricsRefresher(test_agent_observer(new NullT3ThreadReader), new NullTaskWorkspaceDiffReader),
+        new TaskGroupMetricsRefresher(test_agent_observer(new NullAgentSnapshotReader), new NullTaskWorkspaceDiffReader),
     ));
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 }
@@ -222,6 +228,7 @@ it('reserves queued groups without a per-Project ceiling', function (): void {
 it('does not count completed groups toward the Project ceiling', function (): void {
     $project = scheduler_app('completed-app');
     Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Done',
         'brief' => 'Already settled',
@@ -237,6 +244,7 @@ it('claims another group when three reserved groups already occupy the App', fun
     $project = scheduler_app('full-app');
     foreach (['A', 'B', 'C'] as $title) {
         Task::topLevel()->create([
+            'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
             'project_id' => $project->id,
             'title' => $title,
             'brief' => $title,
@@ -258,6 +266,7 @@ it('applies the Node ceiling only after a Project instance is assigned', functio
         $owner = scheduler_app("node-owner-{$index}");
         $placed = scheduler_instance($owner, $node, "slot-{$index}");
         $group = Task::topLevel()->create([
+            'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
             'project_id' => $owner->id,
             'title' => "Active {$index}",
             'brief' => 'Occupies the node',
@@ -278,7 +287,7 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
     $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
     $instance = scheduler_instance($project, $node, 'isolated');
-    $group = queued_group($project, 'Wire T3');
+    $group = queued_group($project, 'Wire Pi');
 
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
@@ -286,7 +295,9 @@ it('starts a group when provisioning assigns an instance under both ceilings', f
 
         public function provision(InstanceProvisionIntent $intent): ?Instance
         {
-            expect($intent->visitable)->toBeFalse();
+            expect($intent->visitable)->toBeTrue()
+                ->and($intent->group->project->slug)->toBe('orbit')
+                ->and($intent->group->project->task_workspace_routed)->toBeTrue();
 
             return $this->instance;
         }
@@ -325,7 +336,7 @@ it('fails a group and its first task when the turn command cannot be installed',
     $project = scheduler_app('orbit');
     $node = scheduler_node('orbit-node', '10.44.0.91');
     $instance = scheduler_instance($project, $node, 'isolated');
-    $group = queued_group($project, 'Wire T3');
+    $group = queued_group($project, 'Wire Pi');
     app()->instance(InstanceProvisioning::class, new class($instance) implements InstanceProvisioning
     {
         public function __construct(private Instance $instance) {}
@@ -507,6 +518,7 @@ it('returns a provisioned group to todo on its Instance when the Node is already
         $owner = scheduler_app("fill-owner-{$index}");
         $placed = scheduler_instance($owner, $node, "fill-{$index}");
         $group = Task::topLevel()->create([
+            'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
             'project_id' => $owner->id,
             'title' => "Fill {$index}",
             'brief' => 'Fills the node',
@@ -535,9 +547,9 @@ it('returns a provisioned group to todo on its Instance when the Node is already
         ->and($queued->fresh()?->reviewer_agent_thread_id)->toBeNull();
 });
 
-it('advances a claimed Orbit group to running when the real provisioner and T3 spawner succeed', function (): void {
+it('advances a claimed unrouted group to running when the real provisioner and agent spawner succeed', function (): void {
     $project = scheduler_app('orbit');
-    $project->update(['root' => 'public']);
+    $project->update(['root' => 'public', 'task_workspace_routed' => false]);
     $node = scheduler_node('real-wire', '10.44.0.94');
     $node->update(['user' => 'orbit', 'tld' => 'test', 'settings' => ['apps' => ['path' => '/srv/orbit/apps']]]);
     $node->roles()->create([
@@ -545,10 +557,10 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         'status' => LifecycleStatus::Active,
     ]);
     $node->processes()->create([
-        'name' => 't3-code',
+        'name' => 'pi-server',
         'runtime' => ProcessRuntime::Systemd,
         'working_directory' => '/home/orbit',
-        'runtime_config' => ['command' => ['/home/orbit/.local/bin/t3', 'serve', '--port=3773']],
+        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server', 'serve', '--port=3774']],
         'restart_policy' => 'always',
         'keep_alive' => true,
         'desired_state' => DesiredProcessState::Running,
@@ -583,11 +595,11 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
             return new DevelopmentSourceResolution((string) $instance->branch, (string) $instance->starting_commit);
         }
     });
-    app()->instance(T3Dispatcher::class, new class implements T3Dispatcher
+    app()->instance(AgentCommandDispatcher::class, new class implements AgentCommandDispatcher
     {
         public function dispatch(Node $node, array $command): array
         {
-            $threadId = is_string($command['threadId'] ?? null) ? $command['threadId'] : 't3-thread';
+            $threadId = is_string($command['threadId'] ?? null) ? $command['threadId'] : 'agent-thread';
 
             return ['sequence' => 1, 'thread_id' => $threadId];
         }
@@ -609,6 +621,7 @@ it('advances a claimed Orbit group to running when the real provisioner and T3 s
         ->and($claimed?->taskable_id)->not->toBeNull()
         ->and($claimed?->taskable)->toBeInstanceOf(Instance::class)
         ->and($claimed?->taskable?->status)->toBe(InstanceState::SourceResolved)
+        ->and($claimed?->taskable?->task_workspace_routed)->toBeFalse()
         ->and($claimed?->taskable?->routes()->count())->toBe(0)
         ->and($claimed?->reviewer_agent_thread_id)->toBeNull()
         ->and($claimed?->tasks->first()?->status)->toBe(TaskStatus::Running)
@@ -738,7 +751,7 @@ it('starts a reviewer at each subtask handoff and starts the next implementer af
     });
     app()->instance(AgentSpawner::class, $spawner);
     app()->instance(TaskSettleMetricsCollector::class, new LocalTaskSettleMetricsCollector(
-        new TaskGroupMetricsRefresher(test_agent_observer(new NullT3ThreadReader), new NullTaskWorkspaceDiffReader),
+        new TaskGroupMetricsRefresher(test_agent_observer(new NullAgentSnapshotReader), new NullTaskWorkspaceDiffReader),
     ));
     app()->instance(CoderSettleNotifier::class, new NullCoderSettleNotifier);
 
@@ -782,6 +795,7 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
     $node = scheduler_node('unread-diff-node', '10.44.0.78');
     $instance = scheduler_instance($project, $node, 'unread');
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Unread diff',
         'brief' => 'The diff read fails.',
@@ -797,7 +811,7 @@ it('retries a review when the diff cannot be read instead of sending an empty ch
         'status' => TaskStatus::Running,
         'subtask_start_commit' => str_repeat('a', 40),
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
         public function read(Instance $instance, string $startCommit): array
@@ -822,6 +836,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
     $node = scheduler_node('reserved-review-node', '10.44.0.79');
     $instance = scheduler_instance($project, $node, 'reserved');
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Reserved review',
         'brief' => 'The diff read fails until the operator answers.',
@@ -857,7 +872,7 @@ it('holds a review resolution when diff reads fail on a reserved reviewer and re
             ];
         }
     };
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     $driver->observation = new AgentObservation(AgentThreadState::Idle);
     app()->instance(TaskReviewDiff::class, $diff);
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
@@ -941,6 +956,7 @@ it('records a missing start commit on a later tick', function (): void {
     $project = scheduler_app('retry-start');
     $instance = scheduler_instance($project, scheduler_node('retry-start-node', '10.44.0.71'), 'retry');
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Retry start',
         'brief' => 'The start read failed.',
@@ -972,11 +988,6 @@ it('records a missing start commit on a later tick', function (): void {
         {
             return 'task-retry';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app(TaskExtensionState::class)->enable();
 
@@ -989,6 +1000,7 @@ it('keeps a migrated continuation on its source subtask start after the source c
     $project = scheduler_app('continuation-start');
     $instance = scheduler_instance($project, scheduler_node('continuation-start-node', '10.44.0.74'), 'continuation');
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Continuation start',
         'brief' => 'Overflow deliverables preserve the source boundary.',
@@ -1030,11 +1042,6 @@ it('keeps a migrated continuation on its source subtask start after the source c
         {
             return 'task-continuation';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app(TaskExtensionState::class)->enable();
 
@@ -1047,6 +1054,7 @@ it('does not record a later head after the implementer starts and commits', func
     $project = scheduler_app('late-start');
     $instance = scheduler_instance($project, scheduler_node('late-start-node', '10.44.0.72'), 'late');
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Late start',
         'brief' => 'The start read failed until the implementer had committed.',
@@ -1081,11 +1089,6 @@ it('does not record a later head after the implementer starts and commits', func
         {
             return 'task-late';
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app(TaskExtensionState::class)->enable();
 
@@ -1105,6 +1108,7 @@ it('records a start commit on a later tick while the implementer is only reserve
     $project = scheduler_app('reserved-start');
     $instance = scheduler_instance($project, scheduler_node('reserved-start-node', '10.44.0.73'), 'reserved');
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Reserved start',
         'brief' => 'The implementer row is not a turn yet.',
@@ -1138,11 +1142,6 @@ it('records a start commit on a later tick while the implementer is only reserve
         public function currentBranch(Instance $instance): ?string
         {
             return 'task-reserved';
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app(TaskExtensionState::class)->enable();
@@ -1273,6 +1272,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
     $instance = scheduler_instance($project, scheduler_node($project->slug.'-node', '10.44.3.'.$octet), 'missing');
     $instance->update(['starting_commit' => $startingCommit]);
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Missing start',
         'brief' => 'Review without a recorded start.',
@@ -1305,7 +1305,7 @@ function scheduler_missing_start_review(?string $approvedCommit, string $startin
         'brief' => 'Review it.',
         'status' => TaskStatus::Running,
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
         public function read(Instance $instance, string $startCommit): array
@@ -1339,6 +1339,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
     $node = scheduler_node('fresh-reviewer-node', '10.44.0.77');
     $instance = scheduler_instance($project, $node, 'fresh');
     $group = Task::topLevel()->create([
+        'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
         'project_id' => $project->id,
         'title' => 'Fresh reviewers',
         'brief' => 'Each subtask gets its own reviewer.',
@@ -1390,7 +1391,7 @@ it('starts a fresh reviewer per subtask with the packet, and continues that thre
         'exit_code' => 0,
         'started_at' => now(),
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
     {
         public function read(Instance $instance, string $startCommit): array
@@ -1608,7 +1609,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($checks->commands)->toBe(['composer check'])
         ->and($check->kind)->toBe(TaskCheckKind::Baseline)
         ->and($check->task_comment_id)->toBeNull()
-        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600], ['name' => '[Orbit internal] Install Composer dependencies', 'command' => 'while IFS= read -r -d "" manifest; do project="${manifest%/composer.json}"; [ "$project" = "$manifest" ] && project="."; if { [ "$project" = "." ] || [ -f "$project/composer.lock" ]; } && [ ! -f "$project/vendor/autoload.php" ]; then (cd "$project" && if [ -f composer.lock ]; then composer install --no-interaction --prefer-dist; else composer install --no-interaction --prefer-dist && rm -f composer.lock; fi) || exit $?; fi; done < <(git ls-files -z -- "composer.json" ":(glob)**/composer.json")', 'timeout_seconds' => 600]]]);
+        ->and($checks->setups)->toBe([[['name' => 'Install', 'command' => 'composer install', 'timeout_seconds' => 600]]]);
 
     test_pass_baseline();
 
@@ -1616,7 +1617,7 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
         ->and($spawner->events)->toBe(['implementer:1']);
 });
 
-it('prepares Composer and JavaScript dependencies referenced by a custom baseline command', function (): void {
+it('runs a custom baseline command without inferring dependency installs', function (): void {
     $project = scheduler_app('custom-baseline-command');
     $project->update(['task_check' => 'composer test && bun run check']);
     $instance = scheduler_instance($project, scheduler_node('custom-baseline-node', '10.44.0.98'), 'custom-check');
@@ -1628,13 +1629,11 @@ it('prepares Composer and JavaScript dependencies referenced by a custom baselin
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
 
-    expect(array_column($checks->setups[0], 'name'))->toBe([
-        '[Orbit internal] Install Composer dependencies',
-        '[Orbit internal] Install JavaScript dependencies',
-    ])->and($checks->commands)->toBe(['composer test && bun run check']);
+    expect($checks->setups)->toBe([[]])
+        ->and($checks->commands)->toBe(['composer test && bun run check']);
 });
 
-it('prepares Composer dependencies only when the baseline command runs composer or uses vendor', function (string $command, bool $installs): void {
+it('does not infer a Composer install from the baseline command', function (string $command): void {
     $project = scheduler_app('composer-trigger');
     $project->update(['task_check' => $command]);
     $instance = scheduler_instance($project, scheduler_node('composer-trigger-node', '10.44.0.99'), 'composer-trigger');
@@ -1646,13 +1645,14 @@ it('prepares Composer dependencies only when the baseline command runs composer 
     app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
 
-    expect(in_array('[Orbit internal] Install Composer dependencies', array_column($checks->setups[0], 'name'), true))->toBe($installs);
+    expect($checks->setups)->toBe([[]])
+        ->and($checks->commands)->toBe([$command]);
 })->with([
-    'composer command' => ['composer test', true],
-    'composer after a shell operator' => ['cd app&&composer', true],
-    'vendor binary' => ['vendor/bin/pest', true],
-    'composer.json file name' => ['test -f composer.json && echo ok', false],
-    'composer in another word' => ['./mycomposer check', false],
+    'composer command' => ['composer test'],
+    'composer after a shell operator' => ['cd app&&composer'],
+    'vendor binary' => ['vendor/bin/pest'],
+    'composer.json file name' => ['test -f composer.json && echo ok'],
+    'composer in another word' => ['./mycomposer check'],
 ]);
 
 it('passes an unset Project baseline without a command and starts the first implementer', function (): void {
@@ -1722,14 +1722,14 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
     ]);
     test_link_agent_threads($group);
     app(TaskExtensionState::class)->enable();
-    app()->instance(T3Dispatcher::class, new class implements T3Dispatcher
+    app()->instance(AgentCommandDispatcher::class, new class implements AgentCommandDispatcher
     {
         public function dispatch(Node $node, array $command): array
         {
             return ['sequence' => 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
         }
     });
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
@@ -1748,11 +1748,6 @@ function scheduler_approved_subtask(string $slug, bool $last = false, ?string $r
         public function currentBranch(Instance $instance): ?string
         {
             return $this->branch;
-        }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
         }
     });
     app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts([
@@ -1890,7 +1885,7 @@ it('retries a failed push when the reviewer is unavailable', function (): void {
 
     app(TaskScheduler::class)->tick();
 
-    app()->instance(T3ThreadReader::class, new class implements T3ThreadReader
+    app()->instance(AgentSnapshotReader::class, new class implements AgentSnapshotReader
     {
         public function snapshot(Node $node, string $threadId): ?array
         {
@@ -2289,11 +2284,6 @@ function scheduler_review(array $receipts, bool $notified = true): array
         {
             return 'task-'.$this->groupId;
         }
-
-        public function definesComposerCheckScript(Instance $instance): bool
-        {
-            return true;
-        }
     });
     app()->instance(AgentSpawner::class, new class implements AgentSpawner
     {
@@ -2315,7 +2305,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
     if (! $checks instanceof FakeTaskCheckRunner) {
         throw new RuntimeException('The review test needs the fake check runner.');
     }
-    $dispatcher = new class implements T3Dispatcher
+    $dispatcher = new class implements AgentCommandDispatcher
     {
         /** @var list<array<string, mixed>> */
         public array $commands = [];
@@ -2327,8 +2317,8 @@ function scheduler_review(array $receipts, bool $notified = true): array
             return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
         }
     };
-    app()->instance(T3Dispatcher::class, $dispatcher);
-    $reader = new class($notified ? 'review-turn' : 'handoff-turn') implements T3ThreadReader
+    app()->instance(AgentCommandDispatcher::class, $dispatcher);
+    $reader = new class($notified ? 'review-turn' : 'handoff-turn') implements AgentSnapshotReader
     {
         public function __construct(public string $turnId) {}
 
@@ -2350,7 +2340,7 @@ function scheduler_review(array $receipts, bool $notified = true): array
             ]];
         }
     };
-    app()->instance(T3ThreadReader::class, $reader);
+    app()->instance(AgentSnapshotReader::class, $reader);
     $signer = new class implements TaskWorkspaceSigner
     {
         /** @var list<string> */
@@ -2420,7 +2410,7 @@ it('refuses a review when the reviewer changed the workspace and asks for assist
         ->and($task->comments()->sole()->getRawOriginal('type'))->toBe('approved')
         ->and($task->comments()->sole()->commit_sha)->toBeNull()
         ->and($dispatcher->commands)->toHaveCount(1)
-        ->and($dispatcher->commands[0]['message']['text'])->toBe($reminder);
+        ->and($dispatcher->commands[0]['message']['text'])->toBe(TaskTurnFetchNotice::Failed."\n\n".$reminder);
 
     app(TaskScheduler::class)->tick();
     $checks->tree = str_repeat('b', 40);

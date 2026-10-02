@@ -16,6 +16,22 @@ export type DeployStep = { phase: string; name: string; timeout_seconds: number 
 export type Process = Schema<"Process">;
 export type Schedule = Schema<"Schedule">;
 export type FirewallRule = Schema<"FirewallRule">;
+export type Tool = Schema<"Tool">;
+
+/** One installed package from `tool:scan`. Discoveries are not Tool rows. */
+export type ToolInventoryPackage = Required<components["schemas"]["ToolInventoryPackage"]>;
+
+export type ToolInventoryManager = Omit<
+    Required<components["schemas"]["ToolInventoryManager"]>,
+    "packages"
+> & {
+    packages: ToolInventoryPackage[];
+};
+
+/** A read-only inventory. It stores nothing and adopts nothing. */
+export type ToolInventory = Omit<Schema<"ToolInventory">, "managers"> & {
+    managers: ToolInventoryManager[];
+};
 export type Database = Schema<"DatabaseConnection">;
 export type DatabaseUser = Schema<"DatabaseUser">;
 export type Deployment = Schema<"InstanceDeployment">;

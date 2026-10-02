@@ -1,0 +1,15 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\AddNodeRequest",
+    "route": "POST /api/v1/nodes",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "node.wireguard_required",
+            "message": "macOS enrollment requires a WireGuard address that is already on the machine.",
+            "details": {
+                "step": "identity"
+            }
+        }
+    }
+}

@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 169 concrete public Gateway API operations:
+The SDK models exactly 177 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -15,14 +15,14 @@ The SDK models exactly 169 concrete public Gateway API operations:
 - Logs: Instance log read, and live log stream create, renew, and destroy for an Instance or a Process.
 - Schedule: list, add, show, run, logs, complete, remove, and activate.
 - Firewall: list, allow, deny, and remove.
-- Tool: manager list, tool list, show, install, update, and remove.
+- Tool: manager list, inventory scan, tool list, show, install, adopt, update, and remove.
 - Doctor: run the complete typed Gateway report.
 - Database connection: list, show, add, update, remove, attach, detach, query, tables, schema, describe, user create, and user list.
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
 - GitHub App: install, show, and destroy.
-- proxycli: enable, disable, status, provider list, provider show, and account update.
-- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, and agent thread list.
+- proxycli: enable, disable, status, provider list, provider show, account update, and model list.
+- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy.
 
 The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
@@ -103,7 +103,7 @@ operations. Keep the public API typed and small.
   inspection execution.
 - Keep proxycli transport limited to Node ID, Redis connection slug, CLIProxyAPI
   URL, and management key on enable; a provider slug on show; and an account
-  identity plus disabled flag on update. Status, disable, and provider list are
+  identity plus disabled flag on update. Status, disable, provider list, and model list are
   bodyless. Item and collection responses omit tokens and the management key.
   The Gateway owns Valkey placement, collection, publication, and pooling.
 - Keep Tasks transport limited to numeric task group and subtask IDs, the
@@ -114,8 +114,8 @@ operations. Keep the public API typed and small.
   body, author, and optional agent thread ID. Toggle, status, cancel, complete,
   destroy, and question list requests are bodyless. Task and subtask responses
   keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`.
-  The Gateway owns the lifecycle, scheduling, and every status rule. The agent
-  conversation stream stays outside the SDK.
+  The Gateway owns the lifecycle, scheduling, and every status rule.
+  Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update. List, show, and destroy are bodyless. The Gateway owns definition validation. The agent conversation stream stays outside the SDK.
 - Accept only the current Doctor family tokens: node, role, app, instance,
   schedule, tool, process, firewall, database_connection, and route.
   Keep Doctor verify-only and policy-free.
@@ -127,6 +127,14 @@ operations. Keep the public API typed and small.
   proxy, legacy Instance, or Workspace surfaces.
 - Coordinate contract changes with Gateway and CLI owners. Do not implement
   Gateway policy or CLI presentation in this repository.
+- Keep Tool inventory scan transport limited to a numeric Node ID. Preserve
+  scan state, package kind, version, dependency, registration, adoption block,
+  and inspection time. Do not adopt a package, infer ownership, or apply manager
+  policy.
+- Keep Tool adoption transport limited to a numeric Node ID, manager, package,
+  and optional version constraint. Preserve an explicit empty constraint and
+  omit only a null constraint. Do not decide ownership, scope, package support,
+  or manager policy.
 - Preserve manager, package, nullable constraint, outcomes, structured errors,
   and request IDs without applying policy. The SDK transports typed values; the
   Gateway owns validation and execution policy.

@@ -12,9 +12,11 @@
                 "code": "ACM",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/acme.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "web/public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 2,
@@ -23,9 +25,11 @@
                 "code": "BRA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/bravo-docs.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 3,
@@ -34,9 +38,11 @@
                 "code": "CHA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/charlie-shop.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 4,
@@ -45,9 +51,11 @@
                 "code": "DEL",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/delta-api.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 5,
@@ -56,9 +64,11 @@
                 "code": "ECH",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/echo-mail.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 6,
@@ -67,9 +77,11 @@
                 "code": "FOX",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/foxtrot-crm.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "web/public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 7,
@@ -78,9 +90,11 @@
                 "code": "GOL",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/golf-billing.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 8,
@@ -89,9 +103,11 @@
                 "code": "HOT",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/hotel-booking.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 9,
@@ -100,9 +116,11 @@
                 "code": "IND",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/india-search.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 10,
@@ -111,9 +129,11 @@
                 "code": "JUL",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/juliet-chat.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 11,
@@ -122,9 +142,11 @@
                 "code": "KIL",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/kilo-metrics.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "web/public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 12,
@@ -133,9 +155,11 @@
                 "code": "LIM",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/lima-auth.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 13,
@@ -144,9 +168,11 @@
                 "code": "MIK",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/mike-media.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 14,
@@ -155,9 +181,11 @@
                 "code": "NOV",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/november-news.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 15,
@@ -166,9 +194,11 @@
                 "code": "OSC",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/oscar-orders.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 16,
@@ -177,9 +207,11 @@
                 "code": "PAP",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/papa-payments.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "web/public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 17,
@@ -188,9 +220,11 @@
                 "code": "QUE",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/quebec-queue.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 18,
@@ -199,9 +233,11 @@
                 "code": "ROM",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/romeo-reports.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 19,
@@ -210,9 +246,11 @@
                 "code": "SIE",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/sierra-store.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 20,
@@ -221,9 +259,11 @@
                 "code": "TAN",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/tango-tickets.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 21,
@@ -232,9 +272,11 @@
                 "code": "UNI",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/uniform-uploads.git",
+                "source_access": "github_app",
                 "default_branch": "release",
                 "root": "web/public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 22,
@@ -243,9 +285,11 @@
                 "code": "VIC",
                 "type": "laravel-app",
                 "repository_url": "https://github.com/example/victor-video.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 23,
@@ -254,9 +298,11 @@
                 "code": "WHI",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/whiskey-wiki.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             },
             {
                 "id": 24,
@@ -265,9 +311,11 @@
                 "code": "XRA",
                 "type": "laravel-app",
                 "repository_url": "git@github.com:example/x-ray-export.git",
+                "source_access": "github_app",
                 "default_branch": "main",
                 "root": "public",
-                "task_check": null
+                "task_check": null,
+                "task_workspace_routed": true
             }
         ],
         "meta": {

@@ -1,0 +1,9 @@
+Loading task definition...
+
+┌  Show task definition
+│
+├  ● Loading task definition
+│
+└  Operation failed.
+
+Resource not found.

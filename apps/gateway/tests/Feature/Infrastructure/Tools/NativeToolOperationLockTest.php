@@ -30,6 +30,40 @@ describe(NativeToolOperationLock::class, function (): void {
         expect($manager->get())->toBeTrue();
         $manager->release();
     });
+
+    it('keeps formula and cask identities distinct while sharing the prefix lock', function (): void {
+        $held = new NativeToolManagerScopeLock;
+        $caskLock = new NativeToolOperationLock(new NativeToolManagerScopeLock);
+        $entered = false;
+
+        $held->run(7, ToolManagerName::Brew, function () use ($caskLock, &$entered): void {
+            expect(fn () => $caskLock->run(
+                nodeId: 7,
+                manager: ToolManagerName::BrewCask,
+                package: 'docker',
+                operation: ToolOperation::Update,
+                versionConstraint: null,
+                callback: static function () use (&$entered): true {
+                    $entered = true;
+
+                    return true;
+                },
+            ))->toThrow(function (ToolOperationException $exception): void {
+                expect($exception->errorCode)->toBe('tool.operation_locked')
+                    ->and($exception->manager)->toBe('brew-cask')
+                    ->and($exception->package)->toBe('docker');
+            });
+        });
+
+        $formulaIdentity = Cache::lock('orbit:tool:7:brew:'.hash(algo: 'sha256', data: 'docker'), 30);
+        $caskIdentity = Cache::lock('orbit:tool:7:brew-cask:'.hash(algo: 'sha256', data: 'docker'), 30);
+
+        expect($entered)->toBeFalse()
+            ->and($formulaIdentity->get())->toBeTrue()
+            ->and($caskIdentity->get())->toBeTrue();
+        $formulaIdentity->release();
+        $caskIdentity->release();
+    });
     it('rejects concurrent mutations for the same tool identity', function (): void {
         $lock = new NativeToolOperationLock(new NativeToolManagerScopeLock);
         $identityKey = 'orbit:tool:7:vp:'.hash(algo: 'sha256', data: '@openai/codex');

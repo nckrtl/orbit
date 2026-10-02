@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -90,6 +91,11 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],
         'tasks:complete' => ['api/v1/task-groups/{group}/complete', ['POST']],
+        'tasks:definition:list' => ['api/v1/task-definitions', ['GET', 'HEAD']],
+        'tasks:definition:show' => ['api/v1/projects/{project}/task-definitions/{name}', ['GET', 'HEAD']],
+        'tasks:definition:create' => ['api/v1/projects/{project}/task-definitions', ['POST']],
+        'tasks:definition:update' => ['api/v1/projects/{project}/task-definitions/{name}', ['PUT']],
+        'tasks:definition:destroy' => ['api/v1/projects/{project}/task-definitions/{name}', ['DELETE']],
     ]);
 });
 
@@ -307,7 +313,7 @@ it('creates a group with ordered tasks and lists and shows it', function (): voi
         ->assertJsonPath('data.status', 'backlog')
         ->assertJsonPath('data.notify_coder', true)
         ->assertJsonPath('data.implementer_model', 'gpt-5.6-luna')
-        ->assertJsonPath('data.reviewer_model', 'claude-opus-5')
+        ->assertJsonPath('data.reviewer_model', 'gpt-5.6-luna')
         ->assertJsonPath('data.taskable_type', null)
         ->assertJsonPath('data.tasks.0.position', 1)
         ->assertJsonPath('data.tasks.0.title', 'ADR')
@@ -522,17 +528,30 @@ it('stores the configured models on a new group and keeps the defaults when unse
     $this->assertDatabaseHas('tasks', ['title' => 'Models', 'parent_id' => null, 'implementer_model' => 'gpt-6-luna', 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
 });
 
-it('stores the configured implementer and reviewer drivers on a new group', function (): void {
+it('stores pi for both roles when that driver is configured', function (): void {
     tasks_gateway();
     enable_tasks();
     $project = tasks_app();
     config()->set('orbit.tasks.implementer_agent_driver', 'pi');
-    config()->set('orbit.tasks.reviewer_agent_driver', 't3');
+    config()->set('orbit.tasks.reviewer_agent_driver', 'pi');
 
-    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Mixed', 'brief' => 'Pi implements, T3 reviews'])
+    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Pi', 'brief' => 'Both roles run on Pi'])
         ->assertCreated();
 
-    $this->assertDatabaseHas('tasks', ['title' => 'Mixed', 'parent_id' => null, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 't3']);
+    $this->assertDatabaseHas('tasks', ['title' => 'Pi', 'parent_id' => null, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi']);
+});
+
+it('refuses a task for a Project that reads through the GitHub CLI before storing it', function (): void {
+    tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+    $project->update(['source_access' => ProjectSourceAccess::GhCli]);
+
+    $this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Refused', 'brief' => 'No App'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'tasks.github_app_required');
+
+    $this->assertDatabaseMissing('tasks', ['title' => 'Refused']);
 });
 
 it('rejects an unregistered configured driver with 409 before storing a group', function (string $role): void {

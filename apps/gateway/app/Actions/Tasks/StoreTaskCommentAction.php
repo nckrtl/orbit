@@ -12,8 +12,11 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskQuestions;
+use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnFetcher;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceiptException;
@@ -29,7 +32,14 @@ use Illuminate\Support\Str;
 
 final readonly class StoreTaskCommentAction
 {
-    public function __construct(private AgentDriverRegistry $drivers, private CoderSettleNotifier $notifier, private TaskTurnReceipts $receipts) {}
+    public function __construct(
+        private AgentDriverRegistry $drivers,
+        private CoderSettleNotifier $notifier,
+        private TaskTurnReceipts $receipts,
+        private TaskTurnFetcher $turnFetcher,
+        private TaskTurnFetchNotice $fetchNotice,
+        private TaskReviewPacketBuilder $reviewPackets,
+    ) {}
 
     /** @param array<string, mixed> $payload */
     public function execute(Task $task, array $payload): TaskComment
@@ -80,7 +90,8 @@ final readonly class StoreTaskCommentAction
                     if ($thread === null) {
                         throw new AgentDriverException('Blocked AgentThread is unavailable.');
                     }
-                    $this->drivers->get($thread->driver)->send($thread, $comment->body);
+                    $this->turnFetcher->beforeTurn($task->parent()->with(['project', 'taskable'])->firstOrFail());
+                    $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($comment->body));
                     $this->recordResolutionDelivered($task, $comment, $reviewing);
                 }
             } catch (AgentDriverException) {
@@ -158,8 +169,9 @@ final readonly class StoreTaskCommentAction
         }
 
         try {
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reviewer->id, new TaskTurnMode(causeRequired: true));
-            $this->drivers->get($reviewer->driver)->send($reviewer, trim($comment->body)."\n\n".TaskTurnInstructions::reviewer(final: $task->opensPullRequest(), deliverables: $task->deliverableList(), threadId: $reviewer->id));
+            $this->turnFetcher->beforeTurn($task->parent);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reviewer->id, new TaskTurnMode(causeRequired: true), $this->reviewPackets->reviewContext($task));
+            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::reviewer(final: $task->opensPullRequest(), deliverables: $task->deliverableList(), threadId: $reviewer->id)));
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             report($exception);
 
@@ -178,8 +190,9 @@ final readonly class StoreTaskCommentAction
         }
 
         try {
-            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reviewer->id, new TaskTurnMode(relay: true));
-            $this->drivers->get($reviewer->driver)->send($reviewer, trim($comment->body)."\n\n".TaskTurnInstructions::relay($reviewer->id));
+            $this->turnFetcher->beforeTurn($task->parent);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reviewer->id, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
+            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::relay($reviewer->id)));
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             report($exception);
 
