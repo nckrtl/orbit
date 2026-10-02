@@ -807,6 +807,8 @@ The Gateway tests inject these notice failures:
 
 After this reason is set, later list results do not replace `watched_pr_url` and do not clear the assistance. A resolution comment is stored and is not sent. The operator runs `tasks:complete` or cancels the task and starts a new one. There is no `tasks:continue` command.
 
+The [Incus proof](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/proofs/ended-pull-request.sh) runs a task whose pull request merges during a later subtask. It exercises the scheduler, assistance, one notice on a real Pi thread, and workspace removal through `tasks:complete` on a disposable lease. It substitutes GitHub state in-process and uses a local deterministic model to hold the real Pi turn open. It does not exercise a live GitHub merge; Gateway feature tests cover the HTTP reads.
+
 ### Settling
 
 For Orbit's own task pull requests, a Tasks engine subtask approval publishes that subtask's commit. It is not the final review of the whole pull request, and it does not merge. The [final DevOps review](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) submits a formal GitHub approval for the exact head commit.
@@ -1117,7 +1119,15 @@ Orbit holds the branch, the receipts, and the GitHub App, so it commits after ap
 
 ### A watched pull request is not the reviewed pull request
 
-`pr_url` means the reviewed pull request. The last approval sends its description, Jev checks `brief_coverage`, and cancel treats a `settling` task with `pr_url` as published. A pull request on `task-{id}` can end while a subtask is open, before that reviewed pull request exists. Orbit stores it in `watched_pr_url` and asks the operator. It does not stop the running turn. There is no `tasks:continue` command. Cancel the task and start a new one to continue the work. [ADR 0192](/decisions/0192-stop-a-group-whose-pull-request-ended) records the alternatives this rejects.
+`pr_url` means the reviewed pull request. The last approval sends its description, Jev checks `brief_coverage`, and cancel treats a `settling` task with `pr_url` as published. Reusing it for a pull request found before the last approval would skip the description and coverage checks and change cancel's publication rule. Orbit keeps that branch-watch result in `watched_pr_url` instead.
+
+An early merge or close leaves the remaining work with an ended pull request. Continuing to start subtasks, reviewers, or pushes would spend work against a pull request that has ended. Orbit holds the task and names the pull request, its state, and the open work in its assistance request. It leaves the operator to complete or cancel the task, rather than silently marking unfinished work completed.
+
+Interrupting a running agent would discard a turn that has not handed off its work. Orbit lets that turn finish, then sends one notice to its acting thread. It commits a stable send key before delivery so a crash or lost response can retry without a second notice. A resolution comment cannot lift this hold: answering a question does not reopen the pull request.
+
+Manual completion has a separate durable receipt in `watched_pr_completion`. That receipt holds execution independently of assistance text and preserves the operator's authorization when a stop, transaction, or cleanup fails. Resume does not depend on another GitHub read. Cancelling the open subtasks and completing their parent in one transaction prevents a crash from leaving a running task with no open work. Removing the workspace after that commit lets cleanup retry without undoing completion.
+
+There is no `tasks:continue` command. Cancel and a new task already cover continuing the work; adding a second recovery path would leave two ways to make the same choice. The [branch watch](#watch-the-branch-while-subtasks-are-open) and [manual completion](#complete-and-cleanup) define these rules.
 
 ### Fixups are bounded
 

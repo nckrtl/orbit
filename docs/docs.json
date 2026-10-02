@@ -567,8 +567,7 @@
             "pages": [
               "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
               "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0182-start-tasks-from-project-task-definitions",
-              "decisions/0192-stop-a-group-whose-pull-request-ended"
+              "decisions/0182-start-tasks-from-project-task-definitions"
             ]
           }
         ]
@@ -603,6 +602,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0192-stop-a-group-whose-pull-request-ended",
+      "destination": "/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request"
+    },
     {
       "source": "/reference/installation",
       "destination": "/quickstart"

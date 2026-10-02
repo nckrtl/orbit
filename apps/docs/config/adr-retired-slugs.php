@@ -187,4 +187,5 @@ return [
     '0185' => ['0185-report-informational-tool-discoveries-in-doctor'],
     '0188' => ['0188-read-private-github-repositories-through-the-gateway-github-cli'],
     '0189' => ['0189-register-instances-only-for-existing-projects'],
+    '0192' => ['0192-stop-a-group-whose-pull-request-ended'],
 ];
