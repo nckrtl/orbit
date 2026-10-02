@@ -37,6 +37,8 @@ Prefer a narrow vertical slice that a reviewer can verify from start to finish o
 
 Split a live proof by scenario, so one implementer can finish it within its context. A proof that covers several unrelated behaviors becomes several subtasks.
 
+Prove a subtask on an allocated Incus topology, never on shared machines such as beast or the live Gateway. A proof on shared machines needs merged, deployed code, so list it in the PR as an operator step after deploy.
+
 Keep CI, release, and deployment work separate from product code. Subtasks run in dependency order on one shared branch; a later subtask may build on an earlier one but never finishes its work.
 
 A subtask that changes the web UI must include a screenshot `review` deliverable for the phone and desktop PNGs produced by `bin/web-verify`. The reviewer judges the phone layout as described in [Verifying web UI](../verifying-web-ui/SKILL.md): content starts near the top, controls are reachable, filters are not an awkward stack, and long lists and filters use native patterns such as infinite scroll and sheets. Reading the diff is not a substitute for this review. Count the screenshot deliverable toward the five-deliverable limit.
