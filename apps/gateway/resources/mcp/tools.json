@@ -4574,6 +4574,184 @@
       }
     },
     {
+      "name": "project-dev-deploy-step-create",
+      "extension": null,
+      "title": "Create a development deploy step",
+      "description": "Record one named development deploy step on a Project.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/dev-deploy-steps",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Step name",
+            "maxLength": 63,
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+          },
+          "command": {
+            "type": "string",
+            "description": "Nonempty UTF-8 shell command, at most 16 KiB, without NUL bytes.",
+            "minLength": 1
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900,
+            "description": "Step timeout in seconds.",
+            "default": 300
+          },
+          "required": {
+            "type": "boolean",
+            "description": "true for required or false for best effort",
+            "default": true
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "name",
+          "command"
+        ]
+      }
+    },
+    {
+      "name": "project-dev-deploy-step-destroy",
+      "extension": null,
+      "title": "Remove a development deploy step",
+      "description": "Remove one named development deploy step.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{project}/dev-deploy-steps/{step}",
+      "path_inputs": [
+        "project",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "step"
+        ]
+      }
+    },
+    {
+      "name": "project-dev-deploy-step-list",
+      "extension": null,
+      "title": "List development deploy steps",
+      "description": "List a Project's development deploy steps.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/dev-deploy-steps",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project"
+        ]
+      }
+    },
+    {
+      "name": "project-dev-deploy-step-update",
+      "extension": null,
+      "title": "Update a development deploy step",
+      "description": "Change one named development deploy step.",
+      "method": "PATCH",
+      "path": "/api/v1/projects/{project}/dev-deploy-steps/{step}",
+      "path_inputs": [
+        "project",
+        "step"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "step": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "description": "Deploy step name."
+          },
+          "command": {
+            "type": "string",
+            "description": "Nonempty UTF-8 shell command, at most 16 KiB, without NUL bytes.",
+            "minLength": 1
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 900,
+            "description": "Step timeout in seconds."
+          },
+          "required": {
+            "type": "boolean",
+            "description": "true for required or false for best effort"
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "step"
+        ]
+      }
+    },
+    {
       "name": "project-excluded-node-add",
       "extension": null,
       "title": "project:excluded-node:add",

@@ -1105,7 +1105,8 @@
             "title": "Production release layout",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",

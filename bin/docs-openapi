@@ -612,6 +612,10 @@ SUMMARIES = {
     'github:app:register': 'Serve the GitHub App manifest page', 'github:app:callback': 'Complete a GitHub App registration',
     'metrics:enable': 'Enable Metrics', 'metrics:disable': 'Disable Metrics', 'metrics:status': 'Show Metrics status', 'metrics:credentials': 'Show Metrics credentials', 'metrics:credentials:reset': 'Reset Metrics credentials',
     'metrics:exporter:enable': 'Enable an exporter', 'metrics:exporter:disable': 'Disable an exporter', 'metrics:grafana:authorize': 'Authorize Grafana access', 'metrics:node:list': 'List Node metrics',
+    'project:dev-deploy-step:list': 'List development deploy steps',
+    'project:dev-deploy-step:create': 'Create a development deploy step',
+    'project:dev-deploy-step:update': 'Update a development deploy step',
+    'project:dev-deploy-step:destroy': 'Remove a development deploy step',
     'project:list': 'List Projects', 'project:show': 'Show a Project', 'project:create': 'Create a Project', 'project:update': 'Update a Project', 'project:destroy': 'Remove a Project',
     'project:process-definition:list': 'List process definitions', 'project:process-definition:create': 'Create a process definition',
     'project:process-definition:show': 'Show a process definition', 'project:process-definition:update': 'Replace a process definition',
@@ -1421,7 +1425,14 @@ def error_response(desc):
     return {'description': desc, 'content': {'application/json': {'schema': {'$ref': '#/components/schemas/Error'}}}}
 
 
+DEVELOPMENT_DEPLOY_STEP_SCHEMA = sdk_schema('DevelopmentDeployStepResponse')
+DEVELOPMENT_DEPLOY_STEP_SCHEMA['required'] = ['name', 'command', 'timeout_seconds', 'required']
+
 RESPONSE_OVERRIDES = {
+    'ProjectDevelopmentDeployStepsController@index': {'type': 'array', 'items': DEVELOPMENT_DEPLOY_STEP_SCHEMA},
+    'ProjectDevelopmentDeployStepsController@store': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
+    'ProjectDevelopmentDeployStepsController@update': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
+    'ProjectDevelopmentDeployStepsController@destroy': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
     'ExtensionsController@index': {'type': 'object', 'description': 'Enabled state keyed by extension slug.', 'properties': {'tasks': {'type': 'boolean'}, 'proxycli': {'type': 'boolean'}}, 'required': ['tasks', 'proxycli'], 'additionalProperties': False},
     'ExtensionsController@enable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': ['tasks', 'proxycli']}, 'enabled': {'type': 'boolean', 'const': True}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
     'ExtensionsController@disable': {'type': 'object', 'properties': {'name': {'type': 'string', 'enum': ['tasks', 'proxycli']}, 'enabled': {'type': 'boolean', 'const': False}}, 'required': ['name', 'enabled'], 'additionalProperties': False},
@@ -1616,6 +1627,14 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             d = opts.get(k) or args.get(k)
             if d and 'description' not in v:
                 v['description'] = d
+    if route['name'] in ('project:dev-deploy-step:create', 'project:dev-deploy-step:update') and body_schema:
+        props = body_schema['properties']
+        props['timeout_seconds'].update({'minimum': 1, 'maximum': 900, 'description': 'Step timeout in seconds.'})
+        props['command'].update({'minLength': 1, 'description': 'Nonempty UTF-8 shell command, at most 16 KiB, without NUL bytes.'})
+        if route['name'] == 'project:dev-deploy-step:create':
+            props['timeout_seconds']['default'] = 300
+            props['required']['default'] = True
+            props['name'].update({'maxLength': 63, 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'})
     if route['name'] in ('tasks:definition:create', 'tasks:definition:update') and body_schema:
         correct_task_definition_body(body_schema)
     if body_schema is not None:
@@ -1708,8 +1727,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             data = {'type': 'array', 'items': data}
         if controllers.get(action, {}).get('created'):
             responses['201'] = envelope(data, 'Created.')
-            # A creating action answers 200 when an exact retry returns the existing record.
-            responses['200'] = envelope(data, 'The request succeeded; an exact retry returned the existing record.')
+            # Development deploy step creation refuses duplicate names, including exact retries.
+            if route['name'] != 'project:dev-deploy-step:create':
+                responses['200'] = envelope(data, 'The request succeeded; an exact retry returned the existing record.')
         else:
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':

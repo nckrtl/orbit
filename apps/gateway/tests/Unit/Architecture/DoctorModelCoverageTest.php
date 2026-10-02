@@ -34,6 +34,7 @@ use App\Models\ProblemFingerprint;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
+use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
@@ -89,6 +90,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         InstanceDeployment::class,
         InstanceDeployStep::class,
         ProjectLifecycleStep::class,
+        ProjectDevelopmentDeployStep::class,
         ProjectNodeExclusion::class,
         InstanceRemoval::class,
         InstanceRemovalMember::class,

@@ -42,6 +42,7 @@ use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\ProcessLogStreamsController;
+use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ProjectRuntimeDefinitionsController;
@@ -273,6 +274,14 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('project')
             ->whereNumber('node')
             ->name('project:excluded-node:remove');
+        Route::get('projects/{project}/dev-deploy-steps', [ProjectDevelopmentDeployStepsController::class, 'index'])->name('project:dev-deploy-step:list');
+        Route::post('projects/{project}/dev-deploy-steps', [ProjectDevelopmentDeployStepsController::class, 'store'])->name('project:dev-deploy-step:create');
+        Route::patch('projects/{project}/dev-deploy-steps/{step}', [ProjectDevelopmentDeployStepsController::class, 'update'])
+            ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+            ->name('project:dev-deploy-step:update');
+        Route::delete('projects/{project}/dev-deploy-steps/{step}', [ProjectDevelopmentDeployStepsController::class, 'destroy'])
+            ->where('step', '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+            ->name('project:dev-deploy-step:destroy');
         Route::get('projects/{project}/setup-steps', [ProjectLifecycleStepsController::class, 'setupIndex'])->name('instance:setup-step:list');
         Route::post('projects/{project}/setup-steps', [ProjectLifecycleStepsController::class, 'setupStore'])->name('instance:setup-step:create');
         Route::patch('projects/{project}/setup-steps/{step}', [ProjectLifecycleStepsController::class, 'setupUpdate'])

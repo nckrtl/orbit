@@ -2,14 +2,14 @@
 title: "Production release layout"
 description: "How a production Instance stores deploy steps, separates releases from persistent files, deploys a branch, and rolls back retained code."
 covers:
-  - apps/gateway/app/Domain/Instances/Deployment/**
-  - apps/gateway/app/Actions/Instances/{Deploy,Rollback}InstanceAction.php
-  - apps/gateway/app/Actions/Instances/{InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction}.php
-  - apps/gateway/app/Actions/Instances/*InstanceDeployStep*Action.php
+  - apps/gateway/app/Domain/{Instances/Deployment/**,Projects/*DeployStep*.php}
+  - apps/gateway/app/Actions/Instances/{DeployInstanceAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
   - apps/gateway/app/Infrastructure/Instances/RemoteProductionDeployment.php
   - apps/gateway/app/Http/Streaming/**
-  - apps/gateway/app/Http/Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController}.php
-  - apps/gateway/app/Models/{InstanceDeployment,InstanceDeployStep}.php
+  - apps/gateway/app/Http/Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController}.php
+  - apps/gateway/app/Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep}.php
+  - apps/gateway/app/Http/Requests/Projects/*ProjectDevelopmentDeployStepRequest.php
+  - packages/php-sdk/src/{Requests,Responses}/Projects/*DevelopmentDeployStep*.php
 ---
 
 # Production release layout
@@ -35,7 +35,21 @@ The web root is the Instance root, or else the Project root, inside `current`. A
 
 ## Deploy steps
 
-A deploy step is a named command that runs during a deployment. Each production Instance stores its own steps. Storing a step does not start a deployment.
+A deploy step is a named command that runs during a deployment. Each production Instance stores its own steps. A Project stores a separate ordered development deploy list, shared by its development deployments and independent of setup and teardown. Storing a step does not start a deployment.
+
+### Development deploy steps
+
+Use `project:dev-deploy-step:list`, `project:dev-deploy-step:create`, `project:dev-deploy-step:update`, and `project:dev-deploy-step:destroy`, with `--project=ID`. The API collection is `/api/v1/projects/{project}/dev-deploy-steps`; GET lists, POST creates, and PATCH or DELETE on `/{name}` changes or removes one step. MCP exposes the same operations.
+
+Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lowercase letters, digits, and hyphens, with a letter or digit at each end, and are at most 63 characters. Commands are nonempty UTF-8 strings of at most 16 KiB without NUL bytes. Timeouts are 1–900 seconds, default 300. `required` is a JSON boolean, default `true`; the CLI accepts `--required=true` or `--required=false`. PATCH accepts any of command, timeout, required, or placement; omitted fields stay unchanged.
+
+A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
+
+Required steps must pass before a development deployment switches `current`. A failed best-effort step (`required: false`) is reported but does not prevent the switch; the release retains caches reflinked from the previous release. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
+
+### Production deploy steps
+
+Production steps belong to an Instance and run before or after activation.
 
 | Field | Contract |
 | --- | --- |

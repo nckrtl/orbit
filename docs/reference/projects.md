@@ -32,6 +32,10 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 
+## Development deploy steps
+
+A Project owns an ordered [development deploy list](/reference/deployments#development-deploy-steps), separate from setup and teardown and from production's per-Instance deploy steps. Use [`project:dev-deploy-step`](/cli/project#orbit-projectdev-deploy-steplist) to list, create, update, or remove a step. Each step stores a name, command, timeout, and `required` boolean, which defaults to true. These operations change configuration only; they never start a deployment.
+
 ## Project types
 
 The type belongs to the Project, so every Instance of one repository behaves the same way.

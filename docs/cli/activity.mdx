@@ -15,6 +15,8 @@ The Gateway records an Activity for every request that can change something and 
 
 Every result that the CLI prints carries a Gateway request ID. That ID is the link between a command you ran and the Activity the Gateway kept for it. Project create and update requests record the sent source defaults and task check as activity fields; an omitted field stays omitted.
 
+Project development deploy step changes record `project:dev-deploy-step:create`, `project:dev-deploy-step:update`, or `project:dev-deploy-step:destroy`. Their Activity input omits commands, including on refused requests. Use the request ID to find a step edit without exposing its shell command.
+
 ## Commands
 
 | Command | Result |

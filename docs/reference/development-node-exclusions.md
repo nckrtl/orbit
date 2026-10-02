@@ -6,9 +6,9 @@ covers:
   - apps/gateway/app/Models/ProjectNodeExclusion.php
   - apps/gateway/app/Data/Projects/**
   - apps/gateway/app/Http/Controllers/Api/{ProjectExcludedNodesController,NodeExcludedProjectsController}.php
-  - apps/cli/app/Commands/Projects/**
+  - apps/cli/app/Commands/Projects/{AddExcludedNode,ListExcludedNodes,RemoveExcludedNode}Command.php
   - apps/cli/app/Commands/Nodes/{AddExcludedProjectCommand,ListExcludedProjectsCommand,RemoveExcludedProjectCommand}.php
-  - packages/php-sdk/src/Requests/Projects/**
+  - packages/php-sdk/src/Requests/Projects/{AddProjectExcludedNode,ListProjectExcludedNodes,RemoveProjectExcludedNode}Request.php
 ---
 
 # Development node exclusions

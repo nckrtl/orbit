@@ -19,6 +19,10 @@ A Project records one Git repository and the defaults for running it. [Projects]
 | [`project:show`](#orbit-projectshow) | Show one Project. |
 | [`project:update`](#orbit-projectupdate) | Change a Project and reconcile its Instances. |
 | [`project:destroy`](#orbit-projectdestroy) | Remove a Project. |
+| [`project:dev-deploy-step:list`](#orbit-projectdev-deploy-steplist) | List development deploy steps. |
+| [`project:dev-deploy-step:create`](#orbit-projectdev-deploy-stepcreate) | Record a development deploy step. |
+| [`project:dev-deploy-step:update`](#orbit-projectdev-deploy-stepupdate) | Change a development deploy step. |
+| [`project:dev-deploy-step:destroy`](#orbit-projectdev-deploy-stepdestroy) | Remove a development deploy step. |
 
 Every command accepts `--json`. [`project:excluded-node`](/reference/development-node-exclusions) keeps a Project off selected `app-dev` Nodes.
 
@@ -97,6 +101,47 @@ orbit project:destroy <project> [--yes] [--json]
 ```
 
 The CLI shows the Project and asks for confirmation, with No selected. `--yes` confirms without a prompt and is required for JSON and noninteractive calls.
+
+## orbit project:dev-deploy-step:list
+
+List the Project's development deploy steps in stored order. Each entry shows its name, command, timeout, and whether it is required. JSON returns `steps` and `request_id`.
+
+```bash
+orbit project:dev-deploy-step:list --project=4 [--json]
+```
+
+## orbit project:dev-deploy-step:create
+
+Record a named step without starting a deployment. Human step results show control characters as visible escapes and preserve literal text such as `<error>` tags; JSON preserves the stored command unchanged. [Development deploy steps](/reference/deployments#development-deploy-steps) owns the limits, placement rules, and required-versus-best-effort behavior.
+
+```bash
+orbit project:dev-deploy-step:create install --project=4 --command="composer install --no-interaction" [--timeout=300] [--required=true|false] [--before=NAME | --after=NAME] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--project=ID` | Required numeric Project ID. |
+| `--command=COMMAND` | Required shell command for create; replacement command for update. |
+| `--timeout=SECONDS` | Step timeout, default 300 on create. |
+| `--required=true\|false` | Whether failure prevents activation. Defaults to true on create. |
+| `--before=NAME` | Place before another step in this list. |
+| `--after=NAME` | Place after another step in this list. Cannot be combined with `--before`. |
+
+## orbit project:dev-deploy-step:update
+
+Change a named step. Omitted fields keep their stored values. A required-only update is supported. JSON for create, update, and remove returns `name`, `command`, `timeout_seconds`, `required`, and `request_id`.
+
+```bash
+orbit project:dev-deploy-step:update cache --project=4 --required=false [--command=COMMAND] [--timeout=SECONDS] [--before=NAME | --after=NAME] [--json]
+```
+
+## orbit project:dev-deploy-step:destroy
+
+Remove a named step. The remaining steps keep their order. `--yes` confirms without prompting and is required for JSON and noninteractive calls.
+
+```bash
+orbit project:dev-deploy-step:destroy cache --project=4 [--yes] [--json]
+```
 
 ## Related
 

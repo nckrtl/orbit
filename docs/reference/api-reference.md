@@ -49,6 +49,8 @@ The script marks `instance:deploy` and `instance:rollback` with `x-orbit-task-ac
 
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
 
+The Project development deploy step operations publish typed step responses from the SDK response fields. Create publishes HTTP 201 for a new step and HTTP 422 for a duplicate name, including an exact retry; it has no HTTP 200 retry response. Their generated write schemas include the name pattern, timeout bounds and default, and `required: true` default on create. The [development deploy contract](/reference/deployments#development-deploy-steps) owns the list limits and refusal rules.
+
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.
 
 ## Pinned environment
