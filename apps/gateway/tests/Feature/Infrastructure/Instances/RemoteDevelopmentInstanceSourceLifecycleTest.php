@@ -562,6 +562,14 @@ describe('TaskWorkspaceAcl', function (): void {
         expect(is_dir($instance->checkout_path))->toBeFalse();
     })->with(['root', 'worker:rwX', '-R']);
 
+    it('checks out tracked files as the managed user while a worker is configured', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-owner');
+        clearstatcache();
+
+        expect(fileowner($instance->checkout_path.'/README.md'))->toBe(posix_geteuid());
+    });
+
     it('grants checkout access and inherited write access without changing the owner', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-acl');

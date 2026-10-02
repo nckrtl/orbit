@@ -207,7 +207,7 @@ For Project types other than `laravel-package`, Orbit treats a source as Laravel
 | Source | Code |
 | --- | --- |
 | For a non-package Project: `artisan` without the declaration, the declaration without `artisan`, the declaration in both sections, or a symlinked `artisan` | `app-dev.laravel_source_invalid` |
-| `composer.json` is a symlink, is not a regular file, or is owned by neither the Node's managed user nor the task worker (`ORBIT_TASKS_WORKER_USER`), which checks out the source; or `artisan` exists without `composer.json` | `app-dev.source_metadata_unsafe` |
+| `composer.json` is a symlink, is not a regular file, or is not owned by the Node's managed user; or `artisan` exists without `composer.json` | `app-dev.source_metadata_unsafe` |
 | `composer.json` is invalid JSON, or no supported PHP version meets its constraint | `app-dev.php_version_unsupported` |
 
 Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies.

@@ -13,7 +13,6 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 
 final readonly class RemoteDevelopmentInstanceConfigurator implements DevelopmentInstanceConfigurator
@@ -31,12 +30,10 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $account->user, TaskWorkerUser::name() ?? ''],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $account->user],
                 input: <<<'BASH'
                     checkout=$1
                     managed_user=$2
-                    # Since agents run as the worker, Orbit checks out source as the worker too.
-                    worker_user=$3
                     composer="$checkout/composer.json"
                     artisan="$checkout/artisan"
 
@@ -48,8 +45,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                         if [ -e "$artisan" ] || [ -L "$artisan" ]; then printf 'PARTIAL\n'; else printf 'NONE\n'; fi
                         exit 0
                     fi
-                    owner=$(stat -c %U -- "$composer")
-                    test "$owner" = "$managed_user" || { test -n "$worker_user" && test "$owner" = "$worker_user"; } || { printf 'UNSAFE\n'; exit 0; }
+                    test "$(stat -c %U -- "$composer")" = "$managed_user" || { printf 'UNSAFE\n'; exit 0; }
                     if [ -L "$artisan" ]; then artisan_kind=unsafe
                     elif [ -f "$artisan" ]; then artisan_kind=regular
                     elif [ -e "$artisan" ]; then artisan_kind=unsafe

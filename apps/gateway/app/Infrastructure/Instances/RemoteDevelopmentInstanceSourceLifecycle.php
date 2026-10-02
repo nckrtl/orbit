@@ -136,7 +136,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         source_ref="refs/remotes/origin/$default_branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
                     fi
-                    workspace_git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
+                    git -C "$checkout" checkout --quiet --force --no-track -B "$branch" "$source_ref"
                     test "$(git -C "$checkout" symbolic-ref --short HEAD)" = "$branch"
                     commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
                     printf '%s\n%s\n' "$branch" "$commit"
