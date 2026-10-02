@@ -151,7 +151,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             <<<'BASH'
                 path=$1
                 branch=$2
-                workspace_git -C "$path" checkout --track -B "$branch" "origin/$branch"
+                git -C "$path" checkout --track -B "$branch" "origin/$branch"
                 BASH,
             'app-update-default-branch-switch',
             'project.source_switch_failed',
@@ -166,7 +166,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             <<<'BASH'
                 path=$1
                 branch=$2
-                workspace_git -C "$path" checkout "$branch" --
+                git -C "$path" checkout "$branch" --
                 BASH,
             'app-update-default-branch-restore',
             'project.source_switch_failed',
