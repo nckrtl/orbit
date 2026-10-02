@@ -52,6 +52,8 @@ The response returns `selected_branch` and `branch_override`. `branch_override` 
 
 Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`.
 
+If creation fails before `active`, the Instance stays in `reserved`, `checkout_prepared`, or `source_resolved` and records the failure in `failed_step` and `error_code`. You can retry creation or [remove the failed Instance](/reference/instance-removal#failed-creation) with `instance:destroy`. Removal deletes any partial checkout, deletes the reserved Route if one exists, releases the reserved Vite port, and deletes the Instance row. Orbit still refuses removal while creation is in progress; a non-active state without failure evidence is not enough.
+
 After activation, you can commit and move `HEAD`. The recorded branch and starting commit stay as they are. One exception: when the Project default branch changes, Orbit switches a `default` Instance without `branch_override` and records the new branch. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
 The Gateway refuses these requests before it changes anything:
