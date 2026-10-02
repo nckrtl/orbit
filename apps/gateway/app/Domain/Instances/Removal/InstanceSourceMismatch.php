@@ -24,7 +24,7 @@ enum InstanceSourceMismatch: string
     {
         return "Instance [{$instanceName}] ".match ($this) {
             self::Path => 'source path is not the recorded Orbit-owned directory.',
-            self::Ownership => 'source is not owned by the managed Node account.',
+            self::Ownership => 'source does not match the recorded managed ownership.',
             self::Layout => 'source Git layout does not match the recorded source layout.',
             self::Origin => 'source origin does not match the Project repository.',
             self::Branch => 'source branch does not match the recorded branch.',

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\CreateInstanceAction;
+use App\Actions\Routes\ConvergeRouteAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Data\Instances\InstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
@@ -669,6 +670,33 @@ describe('development Instance rename', function (): void {
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)->assertOk();
         expect($this->renameInstance->refresh()->branch)->toBe('t3code/login')->and(Route::query()->sole()->domain)->toBe('login.acme.test');
     });
+
+    it('refuses the original domain while a failed replacement is retained without recording branch or environment', function (bool $afterCutover): void {
+        $id = $this->renameInstance->id;
+        $this->renameInstance->update(['source_is_laravel' => true]);
+        $value = InstanceEnvironmentValue::query()->create(['instance_id' => $id, 'env_key' => 'APP_URL', 'env_value' => 'https://dev.acme.test']);
+        if ($afterCutover) {
+            $this->routeProjection->shouldReceive('cleanup')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Retained cleanup failure.', 502));
+        } else {
+            $this->routeProjection->shouldReceive('publishDns')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Failure before cutover.', 502));
+            $this->routeProjection->shouldReceive('rollbackCaddy')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Retained rollback failure.', 502));
+        }
+        $this->postJson("/api/v1/instances/{$id}/rename", ['branch' => 't3code/login', 'domain' => 'login.acme.test'])->assertStatus(502);
+        expect(Route::query()->count())->toBe(2);
+        $beforeRoutes = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
+        $beforeValue = $value->refresh()->getAttributes();
+        $original = Route::query()->whereNull('replaces_route_id')->sole();
+        expect(fn () => app(ConvergeRouteAction::class)->assertConvergible($original, 'dev.acme.test', allowGenerated: true))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.domain_change_conflict'));
+        $this->configuration->urls = [];
+        $this->postJson("/api/v1/instances/{$id}/rename", ['branch' => 't3code/login', 'domain' => 'dev.acme.test'])
+            ->assertConflict()->assertJsonPath('error.code', 'route.domain_change_conflict');
+        expect($this->renameInstance->refresh()->branch)->toBe('dev')
+            ->and($this->renameInstance->branch_override)->toBeNull()
+            ->and($value->refresh()->getAttributes())->toBe($beforeValue)
+            ->and($this->configuration->urls)->toBe([])
+            ->and(Route::query()->orderBy('id')->get()->map->getAttributes()->all())->toBe($beforeRoutes);
+    })->with(['before cutover' => false, 'after cutover' => true]);
 
     it('refuses an Instance with an unfinished removal', function (): void {
         $id = $this->renameInstance->id;

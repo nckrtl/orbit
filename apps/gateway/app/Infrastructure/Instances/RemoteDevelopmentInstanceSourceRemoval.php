@@ -127,6 +127,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     $inspectContent && ! $force && $instance->starting_commit !== null ? '1' : '0',
                     $instance->starting_commit === null ? '1' : '0',
                     $instance->project->repository_url,
+                    $instance->source_prepare_id ?? '',
                 ],
                 input: self::inspectionScript(),
             ),
@@ -1745,6 +1746,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             inspect_content=$7
             unresolved=$8
             expected_origin=$9
+            prepare_id=${10:-}
             encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
             export GIT_OPTIONAL_LOCKS=0
             failure=10
@@ -1778,6 +1780,14 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             failure=11
             test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             test "$(stat -c '%U:%G' "$(dirname "$checkout")")" = "$managed_user:$managed_group"
+            if [ -n "$prepare_id" ]; then
+                test -d "$checkout/.git"
+                test ! -L "$checkout/.git"
+                test -f "$checkout/.git/orbit-source-prepare"
+                test ! -L "$checkout/.git/orbit-source-prepare"
+                test "$(stat -c '%U:%G' "$checkout/.git/orbit-source-prepare")" = "$managed_user:$managed_group"
+                test "$(cat "$checkout/.git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
+            fi
             failure=12
             top=$(git -C "$checkout" rev-parse --show-toplevel)
             git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)

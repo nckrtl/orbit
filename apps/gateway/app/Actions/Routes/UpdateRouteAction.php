@@ -94,6 +94,11 @@ final readonly class UpdateRouteAction
         $requestedPublication = $data->publicationProvided ? $data->publication : null;
         $domainChanges = $domain !== null && $domain !== $route->domain;
 
+        // An original-domain request must not bypass a retained replacement as a same-domain no-op.
+        if ($domain !== null && ($route->replaced_by_route_id !== null || $route->replaces_route_id !== null)) {
+            return $this->converge->execute($route, $domain, $requestedPublication, allowGenerated: $allowGenerated);
+        }
+
         if (
             $domainChanges
             && in_array($route->status, [

@@ -35,7 +35,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     public function prepare(Instance $instance, bool $allowExisting): void
     {
         $context = $this->context($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -54,7 +54,11 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                         exit 0
                     fi
 
+                    mkdir -m 0755 -- "$checkout"
                     git_read git clone --no-checkout --origin origin -- "$repository" "$checkout"
+                    if [ -n "$prepare_id" ]; then
+                        (umask 077; set -C; printf '%s:%s\n' "$prepare_id" "$(stat -c '%d:%i' "$checkout")" > "$checkout/.git/orbit-source-prepare")
+                    fi
                     inspect_prepared_repository
                     BASH);
         $this->ssh->execute(
@@ -76,7 +80,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->node,
             new RemoteCommand(
                 arguments: $this->arguments($instance, $context),
-                input: self::preparedRepositoryGuard().<<<'BASH'
+                input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -97,7 +101,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard().<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -157,7 +161,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 $instance->node,
                 new RemoteCommand(
                     arguments: [...$this->arguments($instance, $context), $branch ?? ''],
-                    input: self::preparedRepositoryGuard().<<<'BASH'
+                    input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                         repository=$1
                         checkout=$2
                         allowed_root=$3
@@ -223,7 +227,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->node,
             new RemoteCommand(
                 arguments: $this->arguments($instance, $context),
-                input: self::preparedRepositoryGuard().<<<'BASH'
+                input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -340,9 +344,9 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         return $branch;
     }
 
-    private static function preparedRepositoryGuard(): string
+    private static function preparedRepositoryGuard(?string $prepareId = null): string
     {
-        return <<<'BASH'
+        return 'prepare_id='.escapeshellarg($prepareId ?? '')."\n".<<<'BASH'
             guard_parent_chain() {
                 parent=$1
                 root=$2
@@ -389,6 +393,12 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
                 if [ "${1:-verify}" = verify ]; then
                     test "$(git -C "$checkout" config --get remote.origin.url)" = "$repository"
+                fi
+                if [ -n "$prepare_id" ]; then
+                    test -f "$checkout/.git/orbit-source-prepare"
+                    test ! -L "$checkout/.git/orbit-source-prepare"
+                    test "$(stat -c '%U:%G' "$checkout/.git/orbit-source-prepare")" = "$managed_user:$managed_group"
+                    test "$(cat "$checkout/.git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
                 fi
             }
 

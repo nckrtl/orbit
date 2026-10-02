@@ -140,7 +140,7 @@ final readonly class ConvergeRouteAction
 
         $domain = RouteDomain::validate($domain);
 
-        if ($route->replaced_by_route_id !== null && $route->status !== RouteStatus::Retiring) {
+        if ($route->replaced_by_route_id !== null) {
             $replacement = Route::query()->find($route->replaced_by_route_id);
 
             if (! $replacement instanceof Route || $replacement->domain !== $domain) {

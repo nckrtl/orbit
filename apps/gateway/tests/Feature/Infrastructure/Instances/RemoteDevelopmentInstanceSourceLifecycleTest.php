@@ -2,13 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\CreateInstanceAction;
+use App\Data\Instances\CreateInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\DevelopmentInstanceProvisioner;
+use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
+use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationExpectation;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
@@ -133,6 +140,70 @@ beforeEach(function (): void {
 
 afterEach(function (): void {
     $this->files->deleteDirectory($this->sandbox);
+});
+
+it('preserves a pre-existing same-origin checkout through the whole failed create and retry', function (): void {
+    orb866_bind_create_sources($this);
+    $path = $this->appsRoot.'/acme/unregistered';
+    $this->files->makeDirectory(dirname($path), 0o755, true);
+    orb76_run(['git', 'clone', $this->repository, $path]);
+    orb76_run(['git', '-C', $path, 'checkout', 'main']);
+    orb76_run(['git', '-C', $path, 'config', 'user.name', 'Orbit Test']);
+    orb76_run(['git', '-C', $path, 'config', 'user.email', 'orbit@example.test']);
+    orb76_run(['git', '-C', $path, 'commit', '--allow-empty', '-m', 'Unpublished local work']);
+    file_put_contents($path.'/README.md', "uncommitted local work\n");
+    file_put_contents($path.'/untracked.txt', "untracked local work\n");
+    $before = orb866_source_bytes($path);
+    $data = new CreateInstanceData($this->orbitApp->id, $this->node->id, 'unregistered', null, null, 't3code/new');
+    foreach ([1, 2] as $attempt) {
+        try {
+            app(CreateInstanceAction::class)->execute($data);
+            $this->fail('Expected preparation to refuse the pre-existing checkout.');
+        } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+            expect(is_dir($path))->toBeTrue()->and(orb866_source_bytes($path))->toBe($before);
+            expect($exception)->toBeInstanceOf(ResourceOperationException::class)
+                ->and($exception->details['cleanup'])->toBe('incomplete');
+        }
+    }
+});
+
+it('retains an interrupted prepare without a receipt and cleans a lost response with a receipt', function (string $failure): void {
+    orb866_bind_create_sources($this);
+    $this->transport->prepareFailure = $failure;
+    $path = $this->appsRoot.'/acme/interrupted';
+    $data = new CreateInstanceData($this->orbitApp->id, $this->node->id, 'interrupted', null, null, 't3code/new');
+    try {
+        app(CreateInstanceAction::class)->execute($data);
+        $this->fail('Expected the injected prepare failure.');
+    } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+        expect($exception->errorCode)->toBe('instance.clone_failed');
+        if ($failure === 'before receipt') {
+            expect($exception)->toBeInstanceOf(ResourceOperationException::class)
+                ->and($exception->details['cleanup'])->toBe('incomplete')
+                ->and(is_dir($path.'/.git'))->toBeTrue()
+                ->and(Instance::query()->where('name', 'interrupted')->exists())->toBeTrue();
+            $before = orb866_source_bytes($path);
+            $this->transport->prepareFailure = null;
+            expect(fn () => app(CreateInstanceAction::class)->execute($data))
+                ->toThrow(ResourceOperationException::class, 'cleanup is incomplete');
+            expect(orb866_source_bytes($path))->toBe($before);
+        } else {
+            expect(is_dir($path))->toBeFalse()
+                ->and(Instance::query()->where('name', 'interrupted')->exists())->toBeFalse();
+        }
+    }
+})->with(['interrupted before receipt' => 'before receipt', 'lost completed response' => 'lost response']);
+
+it('does not transfer an attempt receipt to a replacement directory even with force', function (): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'owned');
+    $instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $this->source->prepare($instance, false);
+    rename($instance->checkout_path, $this->sandbox.'/owned-backup');
+    orb76_run(['git', 'clone', '--no-checkout', $this->repository, $instance->checkout_path]);
+    copy($this->sandbox.'/owned-backup/.git/orbit-source-prepare', $instance->checkout_path.'/.git/orbit-source-prepare');
+    expect(fn () => $this->source->inspectPrepared($instance))->toThrow(RuntimeConvergenceException::class);
+    expect(fn () => $this->removal->inspect($instance, true))->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)->toBe('instance.source_ownership_mismatch'));
+    expect(is_dir($instance->checkout_path))->toBeTrue();
 });
 
 it('creates independent clones from an existing remote branch and the exact fetched default branch', function (): void {
@@ -2344,6 +2415,37 @@ function orb178_remove_source(
     return $inventory;
 }
 
+/** @param object{node: Node, appsRoot: string, accounts: ManagedUserAccountResolver, source: RemoteDevelopmentInstanceSourceLifecycle, removal: RemoteDevelopmentInstanceSourceRemoval, sourceLock: NativeAppDevSourceOperationLock} $test */
+function orb866_bind_create_sources(object $test): void
+{
+    $test->node->update(['settings' => ['apps' => ['path' => $test->appsRoot]]]);
+    $test->node->roles()->firstOrCreate(['role' => 'app-dev'], ['status' => LifecycleStatus::Active]);
+    app()->instance(ManagedUserAccountResolver::class, $test->accounts);
+    app()->instance(DevelopmentInstanceSourceLifecycle::class, $test->source);
+    app()->instance(AppDevSourceOperationLock::class, $test->sourceLock);
+    app()->instance(DevelopmentInstanceSourceRemoval::class, $test->removal);
+    app()->instance(DevelopmentInstanceSourceFinalizer::class, $test->removal);
+    app()->instance(InstanceRemovalProjector::class, Mockery::mock(InstanceRemovalProjector::class)->shouldIgnoreMissing());
+    $provisioner = Mockery::mock(DevelopmentInstanceProvisioner::class);
+    $provisioner->shouldReceive('reserve')->andReturnNull();
+    $provisioner->shouldReceive('complete')->andThrow(new RuntimeException('Unexpected activation in a failed-prepare test.'));
+    app()->instance(DevelopmentInstanceProvisioner::class, $provisioner);
+}
+
+/** @return array<string, string> */
+function orb866_source_bytes(string $path): array
+{
+    $files = [];
+    foreach (new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS)) as $file) {
+        if ($file instanceof SplFileInfo && $file->isFile()) {
+            $files[substr($file->getPathname(), strlen($path))] = hash_file('sha256', $file->getPathname());
+        }
+    }
+    ksort($files);
+
+    return $files;
+}
+
 function orb76_source_instance(
     Project $project,
     Node $node,
@@ -2429,6 +2531,8 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public ?Closure $beforeFinalization = null;
 
+    public ?string $prepareFailure = null;
+
     public function __construct(
         public string $remoteOrigin,
         private readonly string $localOrigin,
@@ -2471,6 +2575,10 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
                 $input,
             );
         }
+        $preparing = is_string($input) && str_contains($input, 'allow_existing=$6');
+        if ($preparing && $this->prepareFailure === 'before receipt') {
+            $input = str_replace('git_read git clone --no-checkout --origin origin -- "$repository" "$checkout"', 'git_read git clone --no-checkout --origin origin -- "$repository" "$checkout"'."\nexit 75", $input);
+        }
         $arguments = array_map(
             fn (string $argument): string => $argument === $this->remoteOrigin ? $this->localOrigin : $argument,
             $command->arguments,
@@ -2482,7 +2590,7 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         ));
 
         return new CommandResult(
-            exitCode: $result->exitCode,
+            exitCode: $preparing && $this->prepareFailure === 'lost response' && $result->succeeded() ? 255 : $result->exitCode,
             stdout: str_replace(
                 [$this->localOrigin, base64_encode($this->localOrigin)],
                 [$this->remoteOrigin, base64_encode($this->remoteOrigin)],

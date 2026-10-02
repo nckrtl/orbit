@@ -41,6 +41,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class CreateInstanceAction
@@ -129,6 +130,7 @@ final readonly class CreateInstanceAction
                 'name' => $data->name,
                 'source_layout' => InstanceSourceLayout::Checkout,
                 'checkout_path' => $checkout->value,
+                'source_prepare_id' => (string) Str::uuid(),
                 'root' => $root,
                 'branch_override' => $data->branch,
                 'status' => InstanceState::Reserved,
@@ -202,6 +204,9 @@ final readonly class CreateInstanceAction
         $code = property_exists($failure, 'errorCode') && is_string($failure->errorCode)
             ? $failure->errorCode : 'instance.provisioning_failed';
         try {
+            if ($instance->status === InstanceState::Reserved && $instance->source_prepare_id === null) {
+                throw new ResourceOperationException('instance.source_ownership_mismatch', 'Unconfirmed source has no preparation ownership evidence.', 409);
+            }
             ($this->remover ?? app(RemoveInstanceAction::class))->execute($instance, force: true, runTeardown: false, allowCascade: false, requirePreActivation: true);
         } catch (Throwable) {
             throw new ResourceOperationException(
@@ -360,7 +365,7 @@ final readonly class CreateInstanceAction
             $this->assertPersistedOwnership($instance);
 
             if ($instance->status === InstanceState::Reserved) {
-                $this->source->prepare($instance, $allowPreparedSource);
+                $this->source->prepare($instance, $allowPreparedSource && $instance->source_prepare_id !== null);
                 $this->transition($instance, InstanceState::Reserved, [
                     'status' => InstanceState::CheckoutPrepared,
                 ]);
