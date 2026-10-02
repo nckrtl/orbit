@@ -285,6 +285,8 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $user, $root, $checkout],
                 input: <<<'BASH'
+                    # find must restore its working directory after sudo changes users.
+                    cd /
                     user=$1
                     relative_root=$2
                     checkout=$3

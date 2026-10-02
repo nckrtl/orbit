@@ -339,7 +339,7 @@ final class IncusHost implements GuestTransport
                 '--config',
                 'limits.cpu='.$this->incusLimit('cpu', '1'),
                 '--config',
-                'limits.memory='.$this->incusLimit('memory', '2GiB'),
+                'limits.memory='.$this->incusLimit('memory', '2GiB', $vm['role']),
                 '--device',
                 'root,pool='.$this->pool,
                 '--device',
@@ -1073,11 +1073,14 @@ final class IncusHost implements GuestTransport
         return self::DEFAULT_ROUTE_INTERFACE_RESOLUTION.' && '.$machineIdReset.self::CLONED_HOST_STATE_RESET_SUFFIX;
     }
 
-    private function incusLimit(string $key, string $default): string
+    private function incusLimit(string $key, string $default, ?string $node = null): string
     {
         $configured = function_exists('config') && app()->bound('config')
             ? config("e2e.incus.{$key}", $default)
             : $default;
+        if ($key === 'memory' && is_array($configured)) {
+            $configured = $configured[$node ?? 'default'] ?? $configured['default'] ?? $default;
+        }
         if (is_int($configured) || is_float($configured)) {
             $value = (string) $configured;
         } elseif (is_string($configured)) {
@@ -1986,7 +1989,7 @@ final class IncusHost implements GuestTransport
                 '--config',
                 'limits.cpu='.$this->incusLimit('cpu', '1'),
                 '--config',
-                'limits.memory='.$this->incusLimit('memory', '2GiB'),
+                'limits.memory='.$this->incusLimit('memory', '2GiB', $role),
                 '--device',
                 'root,pool='.$this->pool,
                 '--device',
