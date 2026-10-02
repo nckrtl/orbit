@@ -2123,8 +2123,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     # Quarantine's parent is private. Enter the validated tree before dropping privileges.
                     (
                         cd -- "$tree"
-                        sudo -n -u "$trust_worker" -- find -P . -user "$trust_worker" -type d -perm /3000 \
-                            -exec chmod g-s,-t -- {} +
+                        sudo -n -u "$trust_worker" -- find -P . -user "$trust_worker" -type d \( -perm /3000 -o ! -perm -0070 \) \
+                            -exec chmod g-s,-t,g+rwx -- {} +
                     )
                 fi
                 if [ "$#" = 2 ]; then
