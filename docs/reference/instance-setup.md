@@ -14,7 +14,7 @@ covers:
 
 # Instance setup and teardown
 
-A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list when it creates a development Instance, and the teardown list before it removes one. Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps).
+A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list after it activates a new development Instance, and the teardown list before it removes an active development Instance. Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps).
 
 Each step is one database row with a name, a command string, a timeout, and a position. Orbit writes no script into the checkout. The lists belong to the Project, and no Instance keeps a copy. The next run uses the lists as they are at that moment.
 
@@ -52,6 +52,8 @@ A list holds at most 32 steps. The timeouts of one list add up to at most 540 se
 Authorized reads return the commands. [Activity](/cli/activity) records no input for the step commands and `instance:setup`, so it never holds command text or command output.
 
 ## Run setup
+
+A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
 `instance:create` runs the setup list after the Instance and its Route are active, and after the [dependency copy](/domains/applications#dependency-copy) and the [database clone](/domains/applications#database-clone) when they apply. So setup steps such as migrations run against the Instance's own copy. When the dependency copy fails, the Gateway log gets a warning with `instance.dependency_copy_failed`, and the setup steps install the dependencies in full. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 
@@ -95,7 +97,7 @@ A step that the request deadline stops, or that has no time left to start, is no
 
 ## Run teardown
 
-`instance:destroy` of a development Instance runs the teardown list after the [removal checks](/reference/instance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
+`instance:destroy` of an active development Instance runs the teardown list after the [removal checks](/reference/instance-removal) accept the source. Then Orbit checks the source again and deletes the Route, the source, and the record. In a forced removal of a checkout with worktrees, each member runs its own teardown list.
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 

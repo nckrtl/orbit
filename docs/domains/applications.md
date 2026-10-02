@@ -2,13 +2,13 @@
 title: "Applications"
 description: "How a Project becomes an Instance on a Node: create or adopt a development checkout, provision its endpoint, clone to production, move, and remove."
 covers:
-  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,RegisterInstanceAction,ListInstancesAction,ShowInstanceAction}.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,CopyInstanceDependenciesAction,CloneInstanceDatabaseAction,RegisterInstanceAction,RenameInstanceAction,ListInstancesAction,ShowInstanceAction}.php
   - apps/gateway/app/Domain/Instances/{DatabaseClone,DependencyCopy}/**
   - apps/gateway/app/Domain/Instances/{InstanceState,InstanceSourceLayout,InstanceDestinationGuard,ComposerSourceClassifier,Development*}.php
   - apps/gateway/app/Domain/Instances/Registration/**
   - apps/gateway/app/Infrastructure/Instances/{NativeDevelopmentInstanceProvisioner,RemoteDevelopmentInstanceSourceLifecycle,RemoteDevelopmentInstanceConfigurator,RemoteRegistrationSourceManager,RemoteInstanceDestinationGuard,RemoteInstanceSqliteCloner,RemoteInstanceDependencyCopier}.php
   - apps/gateway/app/{Http/Controllers/Api/InstancesController.php,Http/Requests/Instances/**,Data/Instances/**,Models/Instance.php}
-  - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
+  - apps/cli/app/Commands/Instances/{CreateInstanceCommand,RegisterInstanceCommand,RenameInstanceCommand,ListInstancesCommand,ShowInstanceCommand,InstanceOutput}.php
   - apps/cli/app/Services/Git/**
 ---
 
@@ -26,6 +26,7 @@ This page follows an Instance from creation to removal. Each step links to the p
 | Run application commands | `instance:setup` | [Instance setup and teardown](/reference/instance-setup) |
 | Create a production copy | `instance:clone` | [Instance cloning](/reference/instance-cloning) |
 | Deploy production code | `instance:deploy` | [Production release layout](/reference/deployments) |
+| Record a renamed branch or move its domain | `instance:rename` | [Record a renamed branch](#record-a-renamed-branch) |
 | Move to another Node | `instance:transfer` | [Instance transfer](/reference/instance-transfer) |
 | Remove | `instance:destroy` | [Instance removal](/reference/instance-removal) |
 
@@ -43,16 +44,18 @@ The Gateway clones the repository to `<apps-root>/<project-slug>/<name>`. It rea
 | Input | Selected branch |
 | --- | --- |
 | `default`, no `--branch` | The Project `default_branch`. |
-| Another name, no `--branch` | The remote branch with that name. If it is missing, a new branch with that name from the `default_branch` commit. |
-| `--branch=<branch>` | The existing remote branch. If it is missing and it equals a name other than `default`, a new branch from the `default_branch` commit. |
+| Another name, no `--branch` | The matching origin branch, otherwise the existing local branch, otherwise a new branch with that name from the fetched `default_branch` commit. |
+| Any name, `--branch=<branch>` | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. The branch need not equal the Instance name. |
 
-A missing branch in any other case returns `instance.branch_resolution_failed`. Orbit selects no fallback branch.
+For example, `instance:create <project> <node> t3-1a2b3c4d --branch=t3code/1a2b3c4d` creates that branch when it is missing. An origin branch keeps its existing selection behavior. An existing local branch is not reset to the default commit. A missing fetched `default_branch` when it is needed returns `instance.branch_resolution_failed`; Orbit selects no fallback branch. The implicit `default` selection must resolve the Project default branch. Invalid branch names return `validation.failed` before source changes.
 
 The response returns `selected_branch` and `branch_override`. `branch_override` holds the `--branch` value, also when it equals the default branch. It is null when the Instance inherits its branch. The Instance also records the starting commit.
 
-Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`.
+Creation moves through recorded states: `reserved`, `checkout_prepared`, `source_resolved`, and `active`. A failure before activation removes the new Instance and its owned checkout, Route and projections, runtime, staging paths, and database copies. Setup has not run, so cleanup runs no teardown and never cascades into another Instance. The response keeps the original failure code. Once cleanup completes, another create is a fresh request and can use a different branch.
 
-After activation, you can commit and move `HEAD`. The recorded branch and starting commit stay as they are. One exception: when the Project default branch changes, Orbit switches a `default` Instance without `branch_override` and records the new branch. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
+An interruption or incomplete cleanup can leave a pre-activation Instance. An identical retry resumes at the first unfinished state. The retry must name the same Project, Node, root, and branch override. A retry that changes one of them returns `instance.placement_conflict`. When cleanup cannot finish, the original error includes `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. [Pre-activation removal](/reference/instance-removal#pre-activation-removal) accepts these states without weakening the source ownership guards.
+
+After activation, you can commit and move `HEAD`. The starting commit stays as it is. The recorded branch changes only through [recording a renamed branch](#record-a-renamed-branch), or when a Project default-branch update switches a `default` Instance without `branch_override`. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
 The Gateway refuses these requests before it changes anything:
 
@@ -116,6 +119,28 @@ No teardown step runs after a failed copy, because no setup step ran yet. When t
 Orbit records each finished step of the copy on its connection. When a create stops before the copy finished, an identical `instance:create` finishes the copy and then runs the setup steps. It copies the data again unless the earlier copy finished, so it never keeps a partial copy.
 
 The copy holds the full data of the `default` Instance, including personal data. A Project without a `default` Instance, or whose `default` Instance has no `DB` attachment, gets no copy.
+
+## Record a renamed branch
+
+Rename the Git branch in the checkout first, then tell Orbit what is already checked out:
+
+```bash
+git branch -m t3code/login-redirect
+orbit instance:rename <instance> --branch=t3code/login-redirect
+orbit instance:rename <instance> --branch=t3code/login-redirect --domain=login-redirect.orbit-website.test
+```
+
+The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain` strings; at least one nonempty value is required. The MCP tool is `instance-rename`. All forms return the same Instance representation as `instance:show`. Only an active development checkout is eligible, not a linked worktree or production Instance. The Instance ID, name, path, layout, starting commit, and placement stay the same.
+
+For a supplied branch, Orbit reads the checkout locally on its Node. Symbolic `HEAD` must already name that exact branch, or the request returns `instance.branch_not_checked_out` without changing anything. Orbit checks source identity but never contacts origin, changes Git refs, switches the checkout, or renames the branch itself. Dirty or unpublished source is allowed for this recording operation.
+
+A changed branch becomes both `selected_branch` and `branch_override`. This pins even a `default` Instance to the explicit selection. Supplying the already recorded branch is a no-op that preserves the existing override. Domain-only rename leaves both branch fields alone. Removal, cloning, and Doctor then check the newly recorded branch; normal removal still requires clean, published source.
+
+A supplied domain moves the Instance's own single-target Project Route through [Route replacement](/reference/routes#change-an-instance-route-domain), including a generated Route. Laravel's stored `APP_URL`, `.env`, and cached config follow the new URL. All supplied fields and the domain's availability are checked before mutation. A combined request with a wrong branch or occupied domain changes neither record. The branch record changes only after any requested domain convergence succeeds.
+
+An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response. Incomplete Route replacements follow [Route recovery](/reference/routes#resume-or-refuse-a-change). If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds.
+
+Another lifecycle owner returns `instance.lifecycle_busy`; a different domain while replacement recovery is incomplete returns `route.domain_change_conflict`. Infrastructure failure can leave Route recovery work before or after cutover, so inspect the Route and repeat the same request. [instance:rename](/cli/instance#orbit-instancerename) lists the inputs, output, and refusal codes. [ADR 0193](/decisions/0193-record-development-branch-renames) records the reasons and alternatives while this contract is built.
 
 ## Register an existing checkout
 

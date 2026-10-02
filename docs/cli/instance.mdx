@@ -1,9 +1,12 @@
 ---
 title: "instance"
-description: "Create, register, set up, clone, deploy, roll back, and remove Instances, and attach Database connections to them."
+description: "Create, register, reconcile a renamed branch or domain, set up, clone, deploy, roll back, and remove Instances."
 covers:
   - apps/cli/app/Commands/Instances/**
-  - packages/php-sdk/src/Requests/Instances/{Create,Register,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
+  - apps/gateway/app/Actions/Instances/{CreateInstanceAction,RenameInstanceAction}.php
+  - apps/gateway/app/Data/Instances/{CreateInstanceData,RenameInstanceData}.php
+  - apps/gateway/app/Http/Requests/Instances/{StoreInstanceRequest,RenameInstanceRequest}.php
+  - packages/php-sdk/src/Requests/Instances/{Create,Register,Rename,Show,Update,Destroy,Clone,Transfer}InstanceRequest.php
   - packages/php-sdk/src/Requests/Instances/ListInstancesRequest.php
   - packages/php-sdk/src/Responses/Instances/**
 ---
@@ -33,6 +36,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node.
 | [`instance:teardown-step:destroy`](#orbit-instanceteardown-stepdestroy) | Remove one named teardown step. |
 | [`instance:list`](#orbit-instancelist) | List Instances. |
 | [`instance:show`](#orbit-instanceshow) | Show one Instance with its Route, source, and deploy steps. |
+| [`instance:rename`](#orbit-instancerename) | Record an already checked-out branch and change a development checkout's Route domain. |
 | [`instance:transfer`](#orbit-instancetransfer) | Move a development Instance to another Node. |
 | [`instance:destroy`](#orbit-instancedestroy) | Remove an Instance and its owned Processes, Schedules, and Route. |
 | [`instance:logs`](#orbit-instancelogs) | Return the application log tail, or follow new lines. |
@@ -93,21 +97,126 @@ Development placement and branch selection follow the requested name.
 | Creation input | Managed placement | Selected branch |
 | --- | --- | --- |
 | `default` without `--branch` | `<node-apps-root>/<project-slug>/default` | The Project `default_branch`. |
-| Another name without `--branch` | `<node-apps-root>/<project-slug>/<name>` | The matching remote branch, or a new branch from the fetched `default_branch` commit. |
-| Any name with `--branch` | The placement for the requested name | The existing remote branch, or a new branch from the fetched `default_branch` commit when `--branch` matches a non-default Instance name. |
+| Another name without `--branch` | `<node-apps-root>/<project-slug>/<name>` | The matching origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. |
+| Any name with `--branch` | The placement for the requested name | The requested origin branch, otherwise the existing local branch, otherwise a new branch from the fetched `default_branch` commit. It need not match the Instance name. |
 
 ```bash
 orbit instance:create 4 7 default
 orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test
+orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
-An identical retry resumes an incomplete creation. A retry that changes the root or `--branch` returns `instance.placement_conflict`.
+A requested origin branch keeps its existing selection behavior. Orbit does not reset an existing local branch to the default commit. A missing fetched `default_branch` when required returns `instance.branch_resolution_failed`, not a different fallback branch. An invalid Git branch name returns `validation.failed` before source changes.
+
+A create that fails before activation removes its owned resources and Instance row without teardown. The response keeps the original error code. Once cleanup completes, a new create can select a different branch. If an interruption or incomplete cleanup leaves a pre-activation Instance, an identical retry resumes it; a retry that changes the root or `--branch` returns `instance.placement_conflict`. Incomplete cleanup reports `details.cleanup = "incomplete"` and a recovery command. [`instance:destroy`](#orbit-instancedestroy) accepts `reserved`, `checkout_prepared`, and `source_resolved` for [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
 <Note>
 The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful create response also means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
 </Note>
 
 A failed setup step removes the new Instance after the teardown steps run. See [Instance setup and teardown](/reference/instance-setup#run-setup).
+
+## orbit instance:rename
+
+Record a Git branch that is already checked out, change the Instance's Route domain, or do both. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or run Git commands that alter the checkout.
+
+```bash
+orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
+```
+
+| Argument | Required | Meaning |
+| --- | --- | --- |
+| `instance` | yes | Positive numeric Instance ID. |
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--branch=BRANCH` | unchanged | Record this local branch. Symbolic `HEAD` must already name it. |
+| `--domain=HOST` | unchanged | Replace the domain of the Instance's own single-target Project Route, including a generated Route. |
+| `--json` | off | Return one Instance JSON document, or one error document, without prompts or progress. |
+
+Supply at least one of `--branch` and `--domain`. Supplied values must be nonempty strings. The command needs no `--yes` or `--force`: it records intent and converges the Route without discarding source. In a terminal, an omitted Instance selector uses the shared Instance selection prompt; in noninteractive or JSON mode it returns `instance.id_invalid`. There is no implicit branch or domain selection.
+
+Rename the branch locally before recording it. Orbit checks the managed checkout's identity and the supplied branch locally on the Node, with no origin access. A dirty or unpublished branch can be recorded. Normal removal still requires clean, published source.
+
+```bash
+# In the Instance checkout:
+git branch -m t3code/login-redirect
+orbit instance:rename 1 --branch=t3code/login-redirect
+orbit instance:rename 1 --domain=login-redirect.acme.test
+orbit instance:rename 1 --branch=t3code/login-redirect --domain=login-redirect.acme.test --json
+```
+
+A changed branch updates `selected_branch` and `branch_override`. Recording the already recorded branch is a no-op that preserves its existing override. A domain-only request does not change either branch field. The domain follows [Route replacement](/reference/routes#change-an-instance-route-domain); Laravel's stored `APP_URL`, `.env`, and cached configuration follow it. Generated provenance stays generated, so a later Project slug or effective-TLD change can recompute the domain.
+
+All supplied fields, checkout identity, the supplied branch, and domain availability are checked before mutation. A combined request with a branch mismatch or domain conflict changes nothing. A changed branch is recorded only after any requested domain convergence succeeds. An identical retry after a completed rename returns the Instance without creating an additional Route, including when the caller lost the success response. An incomplete Route replacement follows the existing recovery rules. If a full rollback before cutover deleted the failed replacement, an identical retry can reserve a fresh replacement; the changed branch is still recorded only after domain convergence succeeds. A different domain while replacement recovery is incomplete is refused. See [recorded branch behavior](/domains/applications#record-a-renamed-branch) and [Route recovery](/reference/routes#resume-or-refuse-a-change).
+
+### Human output
+
+The command shows truthful waiting feedback during the synchronous request, then the shared Instance detail tree. Project and Node labels use their slug and name. It does not show a Process selector or invent remote progress stages. The following abbreviated example shows the fields affected by a combined rename; the full tree also has the usual ID, placement, root, and Vite-port fields:
+
+```text
+┌  Instance: dev
+│
+├  Project           acme
+│
+├  Node              app-dev
+│
+├  Selected branch   t3code/login-redirect
+│
+├  Branch override   t3code/login-redirect
+│
+├  Domain            login-redirect.acme.test
+│
+└  URL               https://login-redirect.acme.test
+```
+
+A refusal shows the stable error code and a useful message, with no success tree. For example, `instance.branch_not_checked_out` tells the caller to check out the requested branch first. Success exits with status `0`; a refusal or failed convergence exits with status `1`.
+
+### JSON and API output
+
+The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain`, for example `{"branch":"t3code/login-redirect","domain":"login-redirect.acme.test"}`. At least one field is required; null, empty, and wrong-type values are invalid. The MCP tool is `instance-rename`, with `instance_id` and the same optional fields.
+
+Success returns the full Instance shape used by `GET /api/v1/instances/{instance}` and `instance:show --json`, including Project and Node identities, source and placement fields, `route`, `domain`, `url`, removal and transfer state, deploy steps, and `request_id`. It has no rename-specific envelope. This abbreviated JSON example selects fields from that response, not a separate response schema:
+
+```json
+{
+  "id": 1,
+  "name": "dev",
+  "project": {"id": 1, "name": "Acme", "slug": "acme"},
+  "node": {"id": 1, "name": "app-dev"},
+  "source_layout": "checkout",
+  "checkout_path": "/srv/orbit/apps/acme/dev",
+  "selected_branch": "t3code/login-redirect",
+  "branch_override": "t3code/login-redirect",
+  "status": "active",
+  "domain": "login-redirect.acme.test",
+  "url": "https://login-redirect.acme.test"
+}
+```
+
+Failures use the existing error shape, with the stable code under `error.code`, the message under `error.message`, and the request correlation ID under `error.request_id`. JSON output contains no human tree, prompt, or animation.
+
+### Refusal codes
+
+| Code | Meaning |
+| --- | --- |
+| `validation.failed` | Neither field was supplied, or a supplied value is null, empty, wrong-type, or an invalid Git branch name. |
+| `instance.id_invalid` | The CLI Instance selector is missing in noninteractive mode or is not a positive numeric ID. |
+| `instance.rename_unsupported` | The Instance is production or is not a development checkout, including linked worktrees. |
+| `instance.rename_inactive` | The development checkout is not active and is not being removed. |
+| `instance.lifecycle_busy` | Another lifecycle or environment operation owns the Instance, including removal, an incomplete transfer, or clone. |
+| `instance.source_identity_invalid` | Local inspection cannot establish the managed checkout's path, ownership, layout, or Project origin identity. |
+| `instance.branch_not_checked_out` | The supplied branch is not the current symbolic `HEAD`, including detached `HEAD`. |
+| `instance.route_required` | A domain was supplied, but there is no own single-target Project Route. |
+| `route.domain_invalid` | The requested domain is invalid. |
+| `route.domain_conflict` | Another Route owns the normalized domain, or it is a reserved domain. |
+| `route.domain_change_conflict` | A different domain replacement is already in progress. |
+| `instance.source_profile_missing` | Domain convergence lacks the recorded source profile needed for URL synchronization. |
+| `env.owner_changed` | Route targets or environment ownership changed while acquiring the operation owner. |
+| `route.reconciliation_required` | An incompatible Route or placement reconciliation is in progress. |
+| `route.domain_change_failed` | Route projection or URL synchronization failed; inspect Route failure details and retry the same request. |
+
+Authentication, access and missing-record errors, and more specific Route projection errors retain the shared API error contract. A preflight refusal changes nothing. Infrastructure failure during convergence follows Route rollback before cutover and forward recovery after cutover; it is not a promise of atomic rollback across the Node and Gateway.
 
 ## orbit instance:register
 

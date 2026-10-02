@@ -310,6 +310,7 @@
             "kind": "product",
             "components": [
                 "apps/cli",
+                "apps/gateway",
                 "packages/php-sdk"
             ],
             "concepts": [
@@ -322,7 +323,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -764,6 +766,31 @@
             ]
         },
         {
+            "path": "docs/decisions/0193-record-development-branch-renames.md",
+            "title": "ADR 0193: Record development branch renames",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Subtask"
+            ],
+            "governing_adrs": [
+                "0191",
+                "0193"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -809,7 +836,8 @@
                 "0175",
                 "0182",
                 "0190",
-                "0191"
+                "0191",
+                "0193"
             ]
         },
         {
@@ -833,6 +861,7 @@
             "concepts": [
                 "Cluster",
                 "Deployment",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -840,9 +869,12 @@
                 "Project",
                 "Role",
                 "Route",
-                "Task"
+                "Task",
+                "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0193"
+            ]
         },
         {
             "path": "docs/index.mdx",
@@ -1531,9 +1563,7 @@
                 "Process",
                 "Project",
                 "Route",
-                "Schedule",
-                "Task",
-                "Task workspace"
+                "Schedule"
             ],
             "governing_adrs": []
         },
@@ -1880,7 +1910,9 @@
                 "Role",
                 "Route"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0193"
+            ]
         },
         {
             "path": "docs/reference/schedules.md",

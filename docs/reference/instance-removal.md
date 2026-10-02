@@ -41,7 +41,7 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, or `source_resolved` with no Route, such as a task workspace. A `laravel-app` Instance must have exactly one Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+Removal accepts `active` Instances and development Instances in the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved`. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
@@ -60,10 +60,24 @@ For a development Instance, the Gateway compares the checkout with its record. E
 | `instance.source_ownership_mismatch` | The managed Node user does not own the directory or its parent. |
 | `instance.source_layout_mismatch` | The Git directory does not match the recorded checkout or worktree layout. |
 | `instance.source_origin_mismatch` | The origin is not the Project repository. |
-| `instance.source_branch_mismatch` | The branch differs from the recorded branch. |
+| `instance.source_branch_mismatch` | Resolved source differs from the recorded branch, including detached `HEAD` when a branch was recorded. This check also applies with `--force`. |
 | `instance.source_worktrees_mismatch` | Git's worktree list does not include the recorded checkout. |
 | `instance.checkout_path_unsafe` | The path overlaps another managed Instance. |
 | `instance.force_failed` | A forced check failed for another reason. |
+
+After a caller renames a branch locally, [`instance:rename --branch=BRANCH`](/cli/instance#orbit-instancerename) records the current branch before removal. Force does not bypass this reconciliation. Recording the branch does not waive normal removal's dirty or unpublished-source checks.
+
+### Pre-activation removal
+
+A failed create normally cleans up its new Instance before returning the original error. It removes only the attempt's owned checkout, Route and projections, runtime, dependency-copy staging paths, and database copies, with no teardown and no cascade into another Instance. Once cleanup completes, the name, path, and domain are free for a fresh create, including a different branch. See [creation recovery](/domains/applications#create-a-development-instance).
+
+If the process is interrupted or cleanup cannot finish, `instance:destroy` accepts development Instances in `reserved`, `checkout_prepared`, and `source_resolved`. It uses the same recorded removal steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal.
+
+A reserved Instance may have no checkout directory. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
+
+Orbit checks the recorded path, managed ownership, repository layout, and Project origin for every artifact that exists. It refuses an unsafe path, foreign repository, or foreign worktree instead of deleting it. When no source was resolved, removal does not require a nonexistent recorded branch or `HEAD` to pass the branch or publication checks. Once source has been resolved, the recorded-branch check and normal dirty and unpublished-source checks apply, even before activation.
+
+Cleanup that cannot finish retains the Instance and removal progress. A failed create reports its original error with `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. Follow that command to finish removal; `--yes` supplies consent and `--force` waives only the normal dirty, unpublished-source, and linked-worktree refusals. Cleanup never deletes the Instance row before its owned resources have been handled.
 
 ### Worktree sets
 
@@ -73,7 +87,7 @@ A checkout with registered worktrees needs `--force`. Then Orbit removes every w
 
 ### Teardown
 
-Before it accepts a development removal, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
+Before it accepts an active development removal, the Gateway runs the Project [teardown steps](/reference/instance-setup#run-teardown). A failed step stops the removal and keeps the Instance. Then the Gateway checks the source again. A teardown that changed the source identity returns `instance.remove_refused`. Production removal runs no teardown.
 
 ## Removal steps
 
