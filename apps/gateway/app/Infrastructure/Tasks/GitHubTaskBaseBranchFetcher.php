@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Task;
@@ -68,7 +69,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
 
         $instance->loadMissing('node');
         // The turn fetch has already updated this ref. This step is local and needs no token.
-        $script = <<<'BASH'
+        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             branch=$2
             status=0
@@ -82,7 +83,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             head=$(git -C "$checkout" rev-parse HEAD)
             remote=$(git -C "$checkout" rev-parse "refs/remotes/origin/$branch")
             if [ "$head" != "$remote" ] && git -C "$checkout" merge-base --is-ancestor "$head" "$remote"; then
-                git -C "$checkout" merge --ff-only --quiet "$remote"
+                workspace_git -C "$checkout" merge --ff-only --quiet "$remote"
             fi
             BASH;
         $arguments = ['bash', '-seu', '--', $instance->checkout_path, 'task-'.$group->id];
@@ -109,11 +110,11 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             throw new TaskPullRequestException('The baseline workspace could not be reset.');
         }
         $instance->loadMissing('node');
-        $script = <<<'BASH'
+        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             branch=$2
             tip=$(git -C "$checkout" rev-parse --verify "refs/remotes/origin/$branch^{commit}")
-            git -C "$checkout" reset --hard --quiet "$tip"
+            workspace_git -C "$checkout" reset --hard --quiet "$tip"
             git -C "$checkout" rev-parse HEAD
             BASH;
         try {
@@ -212,7 +213,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             task_branch=$3
             pull_base=$4
             status=0
-            git_read git -C "$checkout" ls-remote --exit-code --heads origin "refs/heads/$task_branch" >/dev/null || status=$?
+            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" ls-remote --exit-code --heads origin "refs/heads/$task_branch" >/dev/null || status=$?
             if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
                 exit "$status"
             fi
@@ -223,7 +224,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             if [ -n "$pull_base" ]; then
                 refspecs+=("+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}")
             fi
-            git_read git -C "$checkout" fetch --no-tags --quiet origin "${refspecs[@]}"
+            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --no-tags --quiet origin "${refspecs[@]}"
             if [ "$status" -eq 2 ]; then
                 git -C "$checkout" update-ref -d "refs/remotes/origin/$task_branch"
             fi
@@ -245,7 +246,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
             checkout=$1
             base=$2
-            git_read git -C "$checkout" fetch --quiet origin "$base"
+            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"
             BASH);
         try {
             $this->ssh->execute($instance->node, new RemoteCommand(

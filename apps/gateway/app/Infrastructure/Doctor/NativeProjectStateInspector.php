@@ -150,7 +150,7 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
                         ."\n"
                         .'  case "$checkout" in "$expected_root"|"$expected_root"/*) ;; *) exit 1 ;; esac'
                         ."\n"
-                        .'  if test -d "$checkout" && test ! -L "$checkout" && test "$(git -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
+                        .'  if test -d "$checkout" && test ! -L "$checkout" && test "$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
                         ."\n"
                         .'  exit 0'
                         ."\n"
@@ -164,8 +164,8 @@ final readonly class NativeProjectStateInspector implements ProjectStateInspecto
                         .' && sudo -u "$user" -H -- test ! -L "$checkout"'
                         .' && test "$(sudo -u "$user" -H -- realpath -e "$checkout")" = "$checkout"'
                         .' && test "$(sudo -u "$user" -H -- stat -c %U "$checkout")" = "$user"'
-                        .' && test "$(sudo -u "$user" -H -- git -C "$checkout" rev-parse --show-toplevel 2>/dev/null)" = "$checkout"'
-                        .' && test "$(sudo -u "$user" -H -- git -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
+                        .' && test "$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --show-toplevel 2>/dev/null)" = "$checkout"'
+                        .' && test "$(sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url 2>/dev/null)" = "$repository"; then printf "1\\n"; else printf "0\\n"; fi'
                         ."\n",
                     ),
                 );

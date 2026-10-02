@@ -102,7 +102,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             checkout=$1
             branch=$2
             commit=$3
-            git_read git -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"
+            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"
             BASH);
         try {
             $this->ssh->execute($instance->node, new RemoteCommand(

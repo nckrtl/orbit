@@ -70,6 +70,39 @@ function transfer_env_source(): RemoteInstanceTransferSource
     return new RemoteInstanceTransferSource(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $knownHosts), new LocalScpProcessRunner, $keys, $knownHosts);
 }
 
+describe('TaskCheckWorkerUser', function (): void {
+    it('reconstructs a transferred worktree with worker Git and managed directory ownership', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $root = sys_get_temp_dir().'/orbit-worker-transfer-'.bin2hex(random_bytes(6));
+        $checkout = $root.'/source';
+        $primary = $root.'/primary';
+        $files = new Filesystem;
+        (new Process(['git', 'init', '-q', '-b', 'main', $primary]))->mustRun();
+        (new Process(['git', '-C', $primary, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'start']))->mustRun();
+        (new Process(['git', '-C', $primary, 'worktree', 'add', '-q', '-b', 'transfer', $checkout]))->mustRun();
+        $node = Node::query()->create(['name' => 'worker-transfer', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.44.0.53', 'wireguard_ip' => '10.44.0.53']);
+        $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'dev', 'checkout_path' => $checkout, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
+        $source = transfer_env_source();
+        $capture = null;
+
+        try {
+            $capture = $source->capture($instance);
+            $source->materialize($capture, $node, StoragePath::parse($root.'/destination'));
+            clearstatcache();
+
+            expect(fileowner($root.'/destination'))->toBe(posix_geteuid())
+                ->and(fileowner($root.'/destination/.git'))->toBe(posix_geteuid())
+                ->and(fileowner($root.'/destination/.git/index'))->toBe(65534);
+        } finally {
+            $files->deleteDirectory($root);
+            if ($capture !== null && is_file($capture->archiveIdentity)) {
+                unlink($capture->archiveIdentity);
+            }
+        }
+    });
+});
+
 it('materializes a transferred checkout with an environment that other local users cannot read', function (): void {
     $root = sys_get_temp_dir().'/orbit-transfer-env-'.bin2hex(random_bytes(4));
     $name = 'source-'.bin2hex(random_bytes(4));

@@ -613,6 +613,10 @@
       "destination": "/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request"
     },
     {
+      "source": "/decisions/0193-run-task-agents-as-a-dedicated-user",
+      "destination": "/reference/pi-server#one-user-for-every-task-agent"
+    },
+    {
       "source": "/reference/installation",
       "destination": "/quickstart"
     },

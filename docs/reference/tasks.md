@@ -582,6 +582,14 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Like any new development Instance, it gets a [dependency copy](/domains/applications#dependency-copy) from the Project's `default` Instance on the same Node.
 
+The copy preserves the source directories' modes and ACLs, which may predate worker access. Before returning the workspace or activating its Route, Orbit inspects the checkout again and restores the default-first worker and managed-user ACLs. This inspection also runs after a logged copy failure, because an earlier directory may already have been copied. An inspection failure leaves the workspace unexposed and the claim fails.
+
+The checkout directory stays owned by the Node's managed user and group. `ORBIT_TASKS_WORKER_USER` selects the worker account, normally `orbit-worker`. When it is unset or that account is absent, prepare leaves checkout access unchanged. Otherwise, prepare and inspect grant both users `rwX` access and default ACLs on the checkout, including `.git`.
+
+Default ACLs are installed before worker write access, so a partial grant cannot expose a directory without inheritance. Files the worker creates inherit the managed user's access, so removal can delete them without changing the checkout owner. Inspection repairs ACLs on entries the managed user owns. Entries the worker owns keep the ACLs they inherited. The grant does not cover either user's home.
+
+`.git/orbit` is mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker, but the writable checkout root means that protection is not a trust boundary. Git creates `index.lock` in `.git`. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account and ACL choices.
+
 | Project setting | New workspace |
 | --- | --- |
 | `task_workspace_routed: false` | Not visitable. The checkout has no Route and stays in the lifecycle state `source_resolved`. |
@@ -825,6 +833,14 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
+When `ORBIT_TASKS_WORKER_USER` is configured, the check process runs as that worker, normally `orbit-worker`. The Gateway connects as the managed user and writes `.git/orbit/check` as that user only when `.git` and `.git/orbit` are directories that user owns and not symbolic links. It starts the process with `sudo -n -u orbit-worker -H --`. Status, cancel, and the workspace snapshot use the same account, because the process belongs to it.
+
+Managed writes of the check, turn command, turn context, and MCP configuration use verified directory descriptors and exclusive, no-follow file descriptors. Replacing a candidate or metadata directory cannot redirect writes into another file. The Gateway reads receipts and updates Git's exclude file without following links, and refuses unsafe entries.
+
+Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. The Project check, baseline setup commands, and deliverable commands, including their start-commit runs, run in that process. Orbit workspace commits and fast-forward merges also run as the worker. The Gateway keeps token-bearing network reads under the managed account; a merge and any checkout filter it starts receive no credential environment. An unset worker keeps the managed-user behavior during rollout; a configured worker never falls back to it.
+
+When the account is missing, the check does not start and the task asks for assistance with the reason `The Node has no orbit-worker user.` When sudo cannot switch, the reason is `The managed user cannot run commands as orbit-worker.` [Host setup](/reference/pi-server#host-setup) creates the account.
+
 | Check state | Result |
 | --- | --- |
 | `running` | The tick waits. The subtask's `check` shows the start time. |
@@ -916,7 +932,7 @@ After that reminder, the Gateway waits for a newer stopped reviewer turn. When t
 
 ## Pull request and settle metrics
 
-Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
+Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
 After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head. It stores `pr_url` and moves the task to `settling`.
 
@@ -1162,6 +1178,7 @@ These Gateway environment keys configure the extension.
 
 | Environment key | Meaning |
 | --- | --- |
+| `ORBIT_TASKS_WORKER_USER` | The worker account granted checkout ACLs. Unset leaves checkout access unchanged during rollout |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
 | `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
@@ -1206,6 +1223,10 @@ Tasks is an extension, so an operator can switch it off without a Gateway downgr
 Three alternatives were rejected. Selecting one Project's behavior by its slug would keep a second task policy in the Gateway. Inferring that policy from repository files would hide it in the engine instead of the Project's skill and task check. A compatibility path for a planner thread was rejected, because you plan with an external ADE and the engine keeps no planner state.
 
 Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
+
+### Agents and checks run as orbit-worker
+
+The task check, the baseline setup, and task teardown run programs that the workspace can name. Running them as the managed user would let those programs read that user's home, so they run as `orbit-worker`. Teardown's command is the root-owned helper `/usr/local/lib/orbit/e2e-task-cleanup`, which `orbit-worker` can execute and cannot write. Privileged removal is separate: the managed user deletes the tree and does not run a checkout program. The Pi server runs as `orbit-worker`, and an agent can read the server token and the provider sign-in. [Pi server limits](/reference/pi-server#limits) records the root-equivalent `incus-admin` access.
 
 ### Backlog before Todo
 

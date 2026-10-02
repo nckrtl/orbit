@@ -47,6 +47,8 @@ The Gateway derives the file location and the user from the Instance's placement
 
 On `app-prod`, every release links its own `.env` to the production home's file. See [Production release layout](/reference/deployments).
 
+`ORBIT_TASKS_WORKER_USER` is a setting in the Gateway's own environment, not in an Instance's `.env`. It selects the worker account for [checkout ACLs](/reference/instance-setup#checkout-access), normally `orbit-worker`. An unset setting leaves checkout access unchanged. It does not change the Instance's placement, the user that imports or synchronizes its environment, or the mode `0600` used for a synchronized `.env` file. Setting an Instance key with that name does not configure the Gateway.
+
 ## Import
 
 Import reads the Instance's `.env`. It never reads `.env.example`. Before it reads the contents, the Gateway checks SSH access, the user, the path, the file type, the owner, and the size. A missing, unsafe, or oversized file stops the import.

@@ -23,7 +23,9 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
@@ -689,7 +691,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         InstanceRemovalMember $member,
     ): InstanceSourceRevalidationState {
         $this->assertDevelopmentMember($member);
-        [$node, $user, $group, $root] = $this->memberContext($member);
+        [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
         $result = $this->ssh->execute(
             $node,
             new RemoteCommand(
@@ -706,8 +708,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     (string) $member->source_identity,
                     $user,
                     $group,
+                    $groupingDirectory,
                 ],
-                input: self::revalidationScript(),
+                input: self::releaseEmptyGroupingDirectoryFunction().self::revalidationScript(),
             ),
             step: 'app-instance-removal-revalidation',
             errorCode: 'instance.removal_conflict',
@@ -1153,7 +1156,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function preparationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             root=$1
             operation=$2
             member=$3
@@ -1284,6 +1287,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test -f "$receipt_path"
             test ! -L "$receipt_path"
             printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
+            test "$(stat -c '%U:%G' "$receipt_path")" = "$managed_user:$managed_group"
+            # Deletion and config publication are not atomic. Authenticate the
+            # completed removal, then retry exact-path trust cleanup before success.
+            release_empty_grouping_directory "${10}"
             printf 'completed\n'
             BASH;
     }
@@ -1572,7 +1579,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function finalizationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             common_repository=$3
@@ -1705,7 +1712,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
             test "$worktrees" = "$expected_worktrees"
             if [ "$force" != 1 ]; then
-                test -z "$(git -C "$physical" status --porcelain --untracked-files=all)"
+                status=$(workspace_git -C "$physical" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status"
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT
                 git init --bare --quiet "$scratch/repository.git"
@@ -1804,7 +1812,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function inspectionScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             managed_user=$3
@@ -1890,7 +1898,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             dirty=
             if [ "$inspect_content" = 1 ]; then
                 dirty=0
-                test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)" || dirty=1
+                status=$(workspace_git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status" || dirty=1
             fi
             encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
             encode "$top"
@@ -1907,7 +1916,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function publicationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             origin=$1
             commit=$2
             scratch=$(mktemp -d)
@@ -1933,7 +1942,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function removalScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             grouping_directory=$3
@@ -2074,7 +2083,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test "$linked_count" = 1
             if [ "$force" != 1 ]; then
                 failure=20
-                test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
+                status=$(workspace_git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status"
                 failure=1
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT
@@ -2107,8 +2117,22 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function releaseEmptyGroupingDirectoryFunction(): string
     {
-        return <<<'BASH'
+        $worker = TaskWorkerUser::name() ?? '';
+
+        return 'trust_worker='.escapeshellarg($worker)."\n".<<<'BASH'
             release_empty_grouping_directory() {
+                test ! -e "$checkout"
+                test ! -L "$checkout"
+                if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then
+                    test "$(id -u "$trust_worker")" != 0
+                    test "$trust_worker" != "$managed_user"
+                    if sudo -n -u "$trust_worker" -H -- git config --global --fixed-value --unset-all safe.directory "$checkout"; then
+                        :
+                    else
+                        status=$?
+                        test "$status" = 5
+                    fi
+                fi
                 grouping_directory=$1
                 test "$grouping_directory" != "$root"
                 test "$grouping_directory" = "$(dirname "$checkout")"

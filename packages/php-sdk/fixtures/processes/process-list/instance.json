@@ -28,7 +28,8 @@
                 "failed_step": null,
                 "error_code": null,
                 "cpu": null,
-                "memory_bytes": null
+                "memory_bytes": null,
+                "user": null
             },
             {
                 "id": 2,
@@ -53,7 +54,8 @@
                 "failed_step": null,
                 "error_code": null,
                 "cpu": null,
-                "memory_bytes": null
+                "memory_bytes": null,
+                "user": null
             }
         ],
         "meta": {

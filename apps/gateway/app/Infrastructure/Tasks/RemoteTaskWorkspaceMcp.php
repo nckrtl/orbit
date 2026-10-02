@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Shared\StoredValue;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use Illuminate\Support\Facades\Log;
@@ -41,30 +42,17 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
 
         try {
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: [
-                    'bash', '-seu', '--',
-                    $instance->checkout_path,
-                    base64_encode($config),
-                    'missing',
-                ],
-                input: <<<'BASH'
-                    cd -- "$1"
-                    if git ls-files --error-unmatch -- .mcp.json >/dev/null 2>&1; then
+                arguments: ['bash', '-seu', '--', $instance->checkout_path],
+                input: "checkout=\$1\n".WorkspaceGit::workerPreamble(TaskWorkerUser::name()).TaskWorkspaceMetadata::bashPreamble().<<<'BASH'
+                    status=0
+                    workspace_git -C "$checkout" ls-files --error-unmatch -- .mcp.json >/dev/null 2>&1 || status=$?
+                    if [ "$status" = 0 ]; then
                         printf 'tracked\n'
                         exit 0
                     fi
-                    if [ "$3" = missing ] && [ -e .mcp.json ]; then
-                        printf 'present\n'
-                        exit 0
-                    fi
-                    printf '%s' "$2" | base64 -d > .mcp.json.orbit-new
-                    printf '\n' >> .mcp.json.orbit-new
-                    mv -f -- .mcp.json.orbit-new .mcp.json
-                    exclude=$(git rev-parse --git-path info/exclude)
-                    mkdir -p -- "$(dirname -- "$exclude")"
-                    grep -qxF '/.mcp.json' "$exclude" 2>/dev/null || printf '/.mcp.json\n' >> "$exclude"
-                    printf 'installed\n'
-                    BASH,
+                    test "$status" = 1 || exit "$status"
+
+                    BASH.TaskWorkspaceMetadata::operation('mcp', ['config' => $config]),
             ), 'task-workspace-mcp', 'tasks.workspace_mcp_failed');
         } catch (RuntimeConvergenceException) {
             return false;

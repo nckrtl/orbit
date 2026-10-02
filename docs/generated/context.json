@@ -394,7 +394,8 @@
             "title": "process",
             "kind": "product",
             "components": [
-                "apps/cli"
+                "apps/cli",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Doctor",
@@ -1233,6 +1234,7 @@
                 "Extension",
                 "Gateway",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Subtask",
@@ -1270,6 +1272,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
+                "Process",
                 "Project",
                 "Schedule",
                 "Subtask",
@@ -1469,6 +1473,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Deployment",
                 "Gateway",
@@ -1683,10 +1688,12 @@
             "title": "Pi server",
             "kind": "reference",
             "components": [
+                "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
@@ -1694,7 +1701,9 @@
                 "Schedule",
                 "Subtask",
                 "Task",
-                "Tool"
+                "Task workspace",
+                "Tool",
+                "Turn receipt"
             ],
             "governing_adrs": []
         },
@@ -2008,6 +2017,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route",
                 "Schedule",
