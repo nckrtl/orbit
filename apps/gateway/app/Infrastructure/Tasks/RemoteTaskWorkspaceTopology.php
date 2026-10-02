@@ -18,11 +18,13 @@ final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopolog
     private const string Script = <<<'BASH'
         cd -- "$1"
         test -x bin/e2e-topology || exit 0
+        # `status` prints `absent` when the group holds no topology; older harnesses exit non-zero instead.
+        state=$(bin/e2e-topology status "$2" 2>/dev/null | tail -n 1) || state=absent
         if [ "$3" = acquire ]; then
-            bin/e2e-topology status "$2" >/dev/null 2>&1 && exit 0
-            exec bin/e2e-topology acquire "$2" .
+            case "$state" in absent | '') exec bin/e2e-topology acquire "$2" . ;; esac
+            exit 0
         fi
-        bin/e2e-topology status "$2" >/dev/null 2>&1 || exit 0
+        case "$state" in absent | '') exit 0 ;; esac
         exec bin/e2e-topology release "$2"
         BASH;
 
