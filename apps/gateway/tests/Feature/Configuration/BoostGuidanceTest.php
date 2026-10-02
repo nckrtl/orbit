@@ -16,6 +16,7 @@ it('regenerates strict guidance while preserving project-owned sections', functi
     $guidelineDirectory = storage_path('framework/testing/boost-guidance-'.Str::uuid());
     $guidelinePath = "{$guidelineDirectory}/AGENTS.md";
     $originalGuidelinePath = Config::get('boost.agents.codex.guidelines_path');
+    $originalCompiledPath = Config::get('view.compiled');
     $committedGuidance = File::get(base_path('AGENTS.md'));
     $managedBlockStart = strpos(haystack: $committedGuidance, needle: '<laravel-boost-guidelines>');
     $managedBlockEnd = strpos(haystack: $committedGuidance, needle: '</laravel-boost-guidelines>');
@@ -43,6 +44,9 @@ it('regenerates strict guidance while preserving project-owned sections', functi
         $projectPrefix."<laravel-boost-guidelines>\nstale guidance\n</laravel-boost-guidelines>".$projectSuffix,
     );
     Config::set('boost.agents.codex.guidelines_path', $guidelinePath);
+    // Keep Blade rendering away from caches cleared by concurrent Artisan tests.
+    File::ensureDirectoryExists("{$guidelineDirectory}/views");
+    Config::set('view.compiled', "{$guidelineDirectory}/views");
 
     try {
         $boost = new BoostConfig;
@@ -57,8 +61,11 @@ it('regenerates strict guidance while preserving project-owned sections', functi
         $codexAgent = app(app(BoostManager::class)->getAgents()['codex']);
         $result = new GuidelineWriter($codexAgent)->write($effectiveGuidance);
         $regeneratedGuidance = File::get($guidelinePath);
+
+        expect(File::files("{$guidelineDirectory}/views"))->not->toBeEmpty();
     } finally {
         Config::set('boost.agents.codex.guidelines_path', $originalGuidelinePath);
+        Config::set('view.compiled', $originalCompiledPath);
         File::deleteDirectory($guidelineDirectory);
     }
 
