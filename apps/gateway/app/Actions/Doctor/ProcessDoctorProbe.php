@@ -108,6 +108,18 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
                 $observed = $inspection->status;
                 if ($observed === null) {
                     $issue = $this->failure($process);
+                } elseif (
+                    $process->runtime === ProcessRuntime::Systemd
+                    && $process->desired_state === DesiredProcessState::Running
+                    && $inspection->isCrashLoop()
+                ) {
+                    $issue = $this->issue(
+                        $process,
+                        ProcessDoctorIssueCode::CrashLoop,
+                        DoctorIssueKind::Drift,
+                        DesiredProcessState::Running->value,
+                        $inspection->crashLoopEvidence(),
+                    );
                 } elseif (! $this->isHealthy($process, $observed, $asleep)) {
                     $issue = $this->issue(
                         $process,
@@ -236,7 +248,9 @@ final readonly class ProcessDoctorProbe implements DoctorFamilyProbe
             'process',
             $process->id,
             $process->name,
-            "Process [{$process->name}] does not match its managed runtime state.",
+            $code === ProcessDoctorIssueCode::CrashLoop
+                ? "Process [{$process->name}] is crash-looping while desired running."
+                : "Process [{$process->name}] does not match its managed runtime state.",
             $expected,
             $observed,
         );

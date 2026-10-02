@@ -1561,6 +1561,7 @@
             ],
             "concepts": [
                 "Access grant",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -2004,6 +2005,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Role",
                 "Route",
                 "Schedule",
