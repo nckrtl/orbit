@@ -173,6 +173,28 @@ describe('TaskCheckWorkerUser', function (): void {
         expect(check_runner_as_worker($checkout, 'printf x >> .git/config'))->not->toBe(0);
     });
 
+    it('skips worker directories the managed user cannot enter and still shares the rest', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        // An earlier worker-run gate left private report directories, like this mkdtemp directory, that the managed user cannot enter.
+        $private = $checkout.'/.git/orbit-checks/earlier/review-worker';
+        expect(check_runner_as_worker($checkout, 'install -d -m 0700 .git/orbit-checks/earlier/review-worker && printf worker > .git/orbit-checks/earlier/review-worker/check.log'))->toBe(0)
+            ->and(is_readable($private))->toBeFalse();
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($checkout);
+
+        try {
+            $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'install -d -m 0700 ignored/private'));
+
+            expect($reading->exitCode)->toBe(0)
+                ->and($reading->failedStep)->toBeNull()
+                ->and(check_runner_as_worker($checkout, 'touch ignored/private/worker && grep -qx worker .git/orbit-checks/earlier/review-worker/check.log'))->toBe(0);
+        } finally {
+            check_runner_as_worker($checkout, 'rm -rf .git/orbit-checks/earlier');
+        }
+    });
+
     it('shares what a cancelled check created with the worker', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
