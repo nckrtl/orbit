@@ -219,7 +219,7 @@ it('retains an interrupted prepare without a receipt and cleans a lost response 
 
 it('does not transfer an attempt receipt to a replacement directory even with force', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'owned');
-    $instance->update(['source_prepare_id' => (string) Str::uuid()]);
+    $instance->update(['source_prepare_id' => (string) Str::uuid(), 'failed_step' => 'source-prepare', 'error_code' => 'instance.clone_failed']);
     $this->source->prepare($instance, false);
     rename($instance->checkout_path, $this->sandbox.'/owned-backup');
     orb76_run(['git', 'clone', '--no-checkout', $this->repository, $instance->checkout_path]);
@@ -696,6 +696,7 @@ describe('TaskWorkspaceAcl', function (): void {
 it('removes a checkout_prepared failed create with its partial checkout Route and Vite reservation', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-create', 'missing');
     $this->source->prepare($instance, false);
+    $this->files->deleteDirectory($this->repository);
     expect(fn () => $this->source->resolve($instance))->toThrow(RuntimeConvergenceException::class);
     $instance->update([
         'status' => InstanceState::CheckoutPrepared,
@@ -732,6 +733,7 @@ it('removes a checkout_prepared failed create with its partial checkout Route an
 
 it('removes a failed reserved create whose clone never made a checkout', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-clone');
+    $this->transport->prepareFailure = 'before directory';
     $this->files->deleteDirectory($this->repository);
     expect(fn () => $this->source->prepare($instance, false))->toThrow(RuntimeConvergenceException::class);
     $instance->update(['failed_step' => 'checkout_prepared', 'error_code' => 'instance.clone_failed']);
@@ -819,6 +821,7 @@ it('does not authorize reserved checkout deletion from incomplete or mismatched 
 
 it('retries empty Project directory cleanup after absent-source finalization is interrupted', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'failed-clone-retry');
+    $this->transport->prepareFailure = 'before directory';
     $this->files->deleteDirectory($this->repository);
     expect(fn () => $this->source->prepare($instance, false))->toThrow(RuntimeConvergenceException::class);
     $instance->update(['failed_step' => 'checkout_prepared', 'error_code' => 'instance.clone_failed']);
@@ -1112,12 +1115,13 @@ it('checks local HEAD before rename without contacting origin or changing Git so
 
 it('inspects unresolved prepared repositories and absent reserved paths without force', function (bool $prepared): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'stuck');
+    $instance->update(['failed_step' => 'source-prepare', 'error_code' => 'instance.clone_failed']);
     if ($prepared) {
         $this->source->prepare($instance, false);
         $instance->update(['status' => InstanceState::CheckoutPrepared]);
     }
     $inventory = $this->removal->inspect($instance, false);
-    expect($inventory->startingCommit)->toBe('')
+    expect($inventory->startingCommit)->toBe(str_repeat('0', 40))
         ->and($inventory->branch)->toBeNull()
         ->and($inventory->linkedWorktreePaths)->toBe([$instance->checkout_path]);
     $member = orb180_record_source($this->removal, $instance, false, activate: false);
@@ -2821,6 +2825,7 @@ function orb180_record_source(
             'route_id' => $route->id,
             'name' => $instance->name,
             'environment' => $instance->defaultAppEnv(),
+            'runtime_published' => $activate,
             'source_layout' => $inventory->layout,
             'repository_identity' => $inventory->repositoryIdentity,
             'checkout_path' => $inventory->checkoutPath,
@@ -3368,8 +3373,12 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
             );
         }
         $preparing = is_string($input) && str_contains($input, 'allow_existing=$6');
+        if ($preparing && $this->prepareFailure === 'before directory') {
+            $input = str_replace('mkdir -m 0755 -- "$checkout"', 'exit 75', $input);
+        }
         if ($preparing && $this->prepareFailure === 'before receipt') {
-            $input = str_replace('git_read git clone --no-checkout --origin origin -- "$repository" "$checkout"', 'git_read git clone --no-checkout --origin origin -- "$repository" "$checkout"'."\nexit 75", $input);
+            $clone = 'git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"';
+            $input = str_replace($clone, $clone."\nexit 75", $input);
         }
         $arguments = array_map(
             fn (string $argument): string => $argument === $this->remoteOrigin ? $this->localOrigin : $argument,

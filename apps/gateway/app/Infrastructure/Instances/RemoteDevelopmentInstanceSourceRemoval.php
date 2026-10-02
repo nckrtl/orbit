@@ -101,6 +101,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $this->failedCreation($instance)
             && $instance->status === InstanceState::Reserved
             && $inventory->sourceIdentity !== 'absent'
+            && $instance->source_prepare_id === null
             && ! $this->removableInPlaceRegistration($instance, $inventory)
         ) {
             throw new RuntimeConvergenceException(
@@ -328,9 +329,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     ): void {
         $this->lock->synchronized($member->node_id, function () use ($member, $expectation): void {
             $this->inspectRecordedLocked($member, InstanceSourceRevalidationState::Present, $expectation);
-            if ($member->source_identity === 'absent') {
-                return;
-            }
             [$node, $user, $group, $root] = $this->memberContext($member);
             $this->ssh->execute(
                 $node,
@@ -365,11 +363,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $member,
             $expectation,
         ): InstanceSourceRevalidationState {
-            if ($member->source_identity === 'absent') {
-                $this->inspectRecordedLocked($member, InstanceSourceRevalidationState::Present);
-
-                return $member->source_finalized_at === null ? InstanceSourceRevalidationState::Present : InstanceSourceRevalidationState::Completed;
-            }
             $state = $member->source_prepared_at === null
                 ? InstanceSourceRevalidationState::Present
                 : $this->revalidationStateLocked($member);
@@ -423,11 +416,6 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         ?InstanceSourceRevalidationExpectation $expectation = null,
     ): string {
         return $this->lock->synchronized($member->node_id, function () use ($member, $expectation): string {
-            if ($member->source_identity === 'absent') {
-                $this->inspectRecordedLocked($member, InstanceSourceRevalidationState::Present);
-
-                return $this->receipt($member);
-            }
             $state = $this->revalidationStateLocked($member);
             $receipt = $this->receipt($member);
 

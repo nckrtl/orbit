@@ -71,11 +71,11 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         private ?DropOwnedDatabasesAction $databases = null,
     ) {}
 
-    public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true): InstanceRemoval
+    public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true, bool $requirePreActivation = false): InstanceRemoval
     {
         $instanceId = $instance->id;
         $instanceName = $instance->name;
-        $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade);
+        $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
         $broadcaster = $this->broadcaster ?? app(RecordEventBroadcaster::class);
 
         if (Instance::query()->whereKey($instanceId)->exists()) {
@@ -95,12 +95,12 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         return $removal;
     }
 
-    private function performRemoval(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade): InstanceRemoval
+    private function performRemoval(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
     {
         if ($instance->placedOnAppProd()) {
             return $this->environmentOperations->run(
                 [$instance->id],
-                fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade),
+                fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade, $requirePreActivation),
             );
         }
 
@@ -110,7 +110,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             $ownerIds,
             fn (): InstanceRemoval => $this->sourceLock->synchronized(
                 $instance->node_id,
-                function () use ($instance, $force, $ownerIds, $runTeardown, $allowCascade): InstanceRemoval {
+                function () use ($instance, $force, $ownerIds, $runTeardown, $allowCascade, $requirePreActivation): InstanceRemoval {
                     $currentOwnerIds = $allowCascade ? $this->removalEnvironmentOwnerIds($instance->refresh(), $force) : [$instance->id];
 
                     if ($currentOwnerIds !== $ownerIds) {
@@ -121,15 +121,18 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         );
                     }
 
-                    return $this->executeOwned($instance, $force, $runTeardown, $allowCascade);
+                    return $this->executeOwned($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
                 },
             ),
         );
     }
 
-    private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade): InstanceRemoval
+    private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
     {
         $snapshot = $instance->refresh()->load($this->removalRelations());
+        if ($requirePreActivation && $snapshot->status === InstanceState::Active) {
+            throw new ResourceOperationException('instance.remove_refused', 'Failed-create cleanup cannot remove an activated Instance.', 409);
+        }
 
         if ($snapshot->status === InstanceState::Removing) {
             return $this->resume($snapshot, $force);

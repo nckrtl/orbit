@@ -57,11 +57,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
-use App\Infrastructure\Ssh\HostKey;
-use App\Infrastructure\Ssh\KnownHostsStore;
-use App\Infrastructure\Ssh\RemoteCommand;
-use App\Infrastructure\Ssh\SshConnection;
-use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
@@ -71,7 +66,12 @@ use App\Infrastructure\Metrics\ServiceMetricsRuntime;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Ssh\HostKey;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Activity;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -1551,7 +1551,7 @@ it('removes stuck pre-activation checkouts and their pending or failed Routes wi
         'failed_step' => $routeStatus === 'failed' ? 'source-resolve' : null,
         'error_code' => $routeStatus === 'failed' ? 'instance.branch_resolution_failed' : null,
     ]);
-    $instance->update(['status' => $state, 'starting_commit' => $state === 'source_resolved' ? $instance->starting_commit : null, 'branch' => $state === 'source_resolved' ? $instance->branch : null]);
+    $instance->update(['status' => $state, 'failed_step' => 'provisioning', 'error_code' => 'instance.provisioning_failed', 'starting_commit' => $state === 'source_resolved' ? $instance->starting_commit : null, 'branch' => $state === 'source_resolved' ? $instance->branch : null]);
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'must-not-run', 'command' => 'exit 1', 'timeout_seconds' => 30, 'position' => 0]);
     $transport = new LifecycleSshExecutor;
     app()->instance(ProjectLifecycleRunner::class, $transport->runner());

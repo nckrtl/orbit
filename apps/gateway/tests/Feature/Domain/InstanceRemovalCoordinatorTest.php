@@ -943,9 +943,9 @@ it('removes a source-resolved task workspace that never received a Route', funct
         ->toBeFalse();
 });
 
-it('removes a source-resolved development Instance that owns a Route', function (): void {
+it('removes a failed source-resolved development Instance that owns a Route', function (): void {
     $instance = orb181_coordinator_instance();
-    $instance->update(['status' => InstanceState::SourceResolved]);
+    $instance->update(['status' => InstanceState::SourceResolved, 'failed_step' => 'provisioning', 'error_code' => 'instance.provisioning_failed']);
 
     $this->orb181Coordinator->execute($instance->refresh()->load(['project', 'node', 'routes.targets']), true);
     expect(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();

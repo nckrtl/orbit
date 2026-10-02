@@ -3,14 +3,12 @@ title: "Instance removal"
 description: "How Orbit removes an Instance, what --force changes for development source, how owned Processes and Schedules go with it, and how an interrupted removal resumes."
 covers:
   - apps/gateway/app/Actions/{Instances/RemoveInstanceAction,DatabaseConnections/DropOwnedDatabasesAction}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRemover,InstanceRemovalStatus,InstanceRemovalStep}.php
-  - apps/gateway/app/Domain/Instances/Removal/**
+  - apps/gateway/app/Domain/Instances/{InstanceRemover.php,InstanceRemovalStatus.php,InstanceRemovalStep.php,Removal/**}
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/2026_10_09_000000_allow_failed_creation_removal.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
-  - apps/gateway/database/migrations/*_{allow_pre_activation_instance_removal,add_instance_source_prepare_id}.php
 ---
 
 # Instance removal
@@ -80,7 +78,7 @@ A reserved Instance may have no checkout directory. A prepared repository may co
 
 For new reservations, preparation writes a receipt in Git metadata with the recorded preparation ID and the directory's device and inode. Removal requires that receipt whenever the directory exists, even with `--force`. A matching origin and account owner do not prove that the create attempt owns a pre-existing checkout. A lost prepare response with a valid receipt can be cleaned up. If preparation stops before recording ownership, cleanup retains the unconfirmed directory for inspection rather than deleting it. Do not bypass an ownership refusal to finish cleanup.
 
-Orbit checks the recorded path, managed ownership, repository layout, and Project origin for every artifact that exists. It refuses an unsafe path, foreign repository, or foreign worktree instead of deleting it. When no source was resolved, removal does not require a nonexistent recorded branch or `HEAD` to pass the branch or publication checks. Once source has been resolved, the recorded-branch check and normal dirty and unpublished-source checks apply, even before activation.
+Orbit checks the recorded path, managed ownership, repository layout, and Project origin for every artifact that exists. It refuses an unsafe path, foreign repository, or foreign worktree instead of deleting it. When no source was resolved, removal does not require a nonexistent recorded branch or `HEAD` to pass the branch or publication checks. Once source has been resolved, the recorded-branch check still applies before activation. Failed creation can leave dirty or unpublished partial source; removing that owned partial checkout needs no `--force`. Adopted source from registration still follows the normal dirty and unpublished-source checks.
 
 Cleanup that cannot finish retains the Instance and removal progress. A failed create reports its original error with `details.cleanup = "incomplete"`, the Instance identity, and a recovery command. Follow that command to finish removal; `--yes` supplies consent and `--force` waives only the normal dirty, unpublished-source, and linked-worktree refusals. Cleanup never deletes the Instance row before its owned resources have been handled.
 
