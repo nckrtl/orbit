@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 REPOSITORY = Path(sys.argv.pop(1)).resolve()
 loader = importlib.machinery.SourceFileLoader('e2e_clone_bridge', str(REPOSITORY / 'bin/e2e-clone-bridge'))
@@ -72,6 +73,38 @@ class CloneBridgeTest(unittest.TestCase):
     def key(self):
         return bridge.origin_key(self.clone)
 
+    def test_finds_a_shared_registration_owned_by_the_checkout_owner(self):
+        shared = Path(self.temporary.name) / 'shared-registry'
+        shared.mkdir()
+        (shared / self.key()).symlink_to(self.primary)
+        # Real repositories have the managed user's ownership; only the worker UID
+        # and root-owned registry location are substituted, without requiring sudo.
+        with patch.object(bridge, 'SHARED_REGISTRY', shared, create=True), \
+                patch.object(bridge.os, 'geteuid', return_value=os.getuid() + 1):
+            self.assertEqual(bridge.bridge_primary(self.clone), self.primary)
+
+    def test_rejects_a_shared_primary_owned_by_neither_allowed_user(self):
+        shared = Path(self.temporary.name) / 'shared-registry'
+        shared.mkdir()
+        (shared / self.key()).symlink_to(self.primary)
+        with patch.object(bridge, 'SHARED_REGISTRY', shared, create=True), \
+                patch.object(bridge.os, 'geteuid', return_value=os.getuid() + 1):
+            self.assertIsNone(bridge.registered_primary(self.key()))
+
+    def test_reads_home_registration_after_an_invalid_xdg_registration(self):
+        home = Path(self.temporary.name) / 'home'
+        link = home / '.local/state/orbit/e2e-primary-checkouts' / self.key()
+        link.parent.mkdir(parents=True)
+        link.symlink_to(self.primary)
+        invalid = bridge.registry_path(self.key())
+        invalid.parent.mkdir(parents=True)
+        invalid.symlink_to(Path(self.temporary.name) / 'missing')
+        with patch.object(bridge.Path, 'home', return_value=home):
+            self.assertEqual(bridge.bridge_primary(self.clone), self.primary)
+        self.assertTrue(bridge.register(self.primary))
+        with patch.object(bridge.Path, 'home', return_value=home):
+            self.assertEqual(bridge.bridge_primary(self.clone), self.primary)
+
     def test_registers_only_a_checkout_that_holds_a_promoted_generation(self):
         with self.assertRaisesRegex(bridge.BridgeFailure, 'no promoted topology snapshot'):
             bridge.register(self.clone)
@@ -115,6 +148,52 @@ class CloneBridgeTest(unittest.TestCase):
         self.assertIsNone(bridge.bridge_primary(linked))
         git(self.clone, 'remote', 'set-url', 'origin', 'git@github.com:someone/else.git')
         self.assertIsNone(bridge.bridge_primary(self.clone))
+
+    def test_mirrors_vendor_without_preserving_owner_or_group(self):
+        if not shutil.which('rsync'):
+            self.skipTest('rsync is required for the cross-owner mirror regression')
+        source = self.clone / 'vendor'
+        destination = self.bridge / 'vendor'
+        source.mkdir()
+        destination.mkdir(parents=True)
+        executable = source / 'runner'
+        executable.write_text('new dependency')
+        executable.chmod(0o755)
+        os.utime(executable, (1700000000, 1700000000))
+        (source / 'link').symlink_to('runner')
+        (source / '.hidden').write_text('hidden dependency')
+        (source / 'new-runner').write_text('new executable')
+        (source / 'new-runner').chmod(0o755)
+        (destination / 'stale').write_text('removed dependency')
+        (destination / 'runner').write_text('old dependency')
+        (destination / 'runner').chmod(0o775)
+        destination.chmod(0o775)
+        original_run = subprocess.run
+
+        def cross_owner_run(command, **options):
+            # Model a worker that may write the destination but cannot chown/chgrp
+            # it. Keep the actual rsync transfer real after disabling those requests.
+            if command[0] == 'rsync' and not all(
+                    flag in command and command.index(flag) > command.index('-a')
+                    for flag in ('--no-owner', '--no-group')):
+                return subprocess.CompletedProcess(command, 23, '', 'chgrp: Operation not permitted')
+            if command[0] == 'rsync' and '--no-perms' not in command:
+                return subprocess.CompletedProcess(command, 23, '', 'failed to set permissions: Operation not permitted')
+            if command[0] == 'rsync' and '--omit-dir-times' not in command:
+                return subprocess.CompletedProcess(command, 23, '', 'failed to set times on vendor/.: Operation not permitted')
+            return original_run(command, **options)
+
+        with patch.object(bridge.subprocess, 'run', side_effect=cross_owner_run):
+            bridge.mirror_vendor(self.clone, self.bridge, Path('vendor'))
+
+        self.assertEqual((destination / 'runner').read_text(), 'new dependency')
+        self.assertEqual((destination / 'runner').stat().st_mode & 0o777, 0o775)
+        self.assertEqual(destination.stat().st_mode & 0o777, 0o775)
+        self.assertTrue(os.access(destination / 'new-runner', os.X_OK))
+        self.assertEqual((destination / 'runner').stat().st_mtime, 1700000000)
+        self.assertEqual(os.readlink(destination / 'link'), 'runner')
+        self.assertEqual((destination / '.hidden').read_text(), 'hidden dependency')
+        self.assertFalse((destination / 'stale').exists())
 
     def test_mirrors_the_clone_head_and_uncommitted_work_into_a_linked_bridge(self):
         bridge.register(self.primary)

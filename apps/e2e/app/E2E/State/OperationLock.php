@@ -44,7 +44,13 @@ final class OperationLock
             throw new RuntimeException('Unable to open the operation lock.');
         }
 
-        chmod($file, 0600);
+        try {
+            $this->paths->makeFilePrivate('locks/'.$name.'.lock');
+        } catch (Throwable $exception) {
+            fclose($handle);
+
+            throw $exception;
+        }
         $deadline = hrtime(true) + (int) ($timeoutSeconds * 1_000_000_000);
         $mode = ($exclusive ? LOCK_EX : LOCK_SH) | LOCK_NB;
 
