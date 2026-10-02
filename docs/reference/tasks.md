@@ -833,13 +833,15 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
-When `ORBIT_TASKS_WORKER_USER` is configured, the check process runs as that worker, normally `orbit-worker`. The Gateway connects as the managed user and writes `.git/orbit/check` as that user only when `.git` and `.git/orbit` are directories that user owns and not symbolic links. It starts the process with `sudo -n -u orbit-worker -H --`. Status, cancel, and the workspace snapshot use the same account, because the process belongs to it.
+The check process runs as the Node's managed user, the account the Gateway connects as. A Project check can need that account's passwordless sudo, ACL tools, or access to the `caddy` account. The Gateway writes `.git/orbit/check` only when `.git` and `.git/orbit` are directories that the managed user owns and not symbolic links. Status, cancel, and the workspace snapshot run as the same user. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) explains the choice and its cost.
+
+When `ORBIT_TASKS_WORKER_USER` names an account on the Node, normally `orbit-worker`, the check shares what it created with that worker before it writes `.git/orbit/check.json`. It grants the worker and the managed user `rwX` on every checkout entry the managed user owns, with default ACLs on directories first, as [workspace inspection](/reference/instance-setup#checkout-access) does. `.git/config` and `.git/hooks` keep their read-only worker access.
+
+The worker's next turn can then read and change the check log, `check.json`, and reports such as `.git/orbit-checks`, even when a command created them with a private mode. A cancelled check also shares before it exits. A check killed from outside shares nothing. When the grant fails, the check fails with `check_error`, and the log names the failed command. When the account does not exist, the check runs and changes no ACL.
 
 Managed writes of the check, turn command, turn context, and MCP configuration use verified directory descriptors and exclusive, no-follow file descriptors. Replacing a candidate or metadata directory cannot redirect writes into another file. The Gateway reads receipts and updates Git's exclude file without following links, and refuses unsafe entries.
 
-Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. The Project check, baseline setup commands, and deliverable commands, including their start-commit runs, run in that process. Orbit workspace commits and fast-forward merges also run as the worker. The Gateway keeps token-bearing network reads under the managed account; a merge and any checkout filter it starts receive no credential environment. An unset worker keeps the managed-user behavior during rollout; a configured worker never falls back to it.
-
-When the account is missing, the check does not start and the task asks for assistance with the reason `The Node has no orbit-worker user.` When sudo cannot switch, the reason is `The managed user cannot run commands as orbit-worker.` [Host setup](/reference/pi-server#host-setup) creates the account.
+Gateway `git` commands in the workspace pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. The Project check, baseline setup commands, and deliverable commands, including their start-commit runs, run in that process. Orbit workspace commits and fast-forward merges run as the worker. The Gateway keeps token-bearing network reads under the managed account; a merge and any checkout filter it starts receive no credential environment. For commits and merges, an unset worker keeps the managed-user behavior during rollout; a configured worker never falls back to it.
 
 | Check state | Result |
 | --- | --- |
@@ -1226,9 +1228,11 @@ Three alternatives were rejected. Selecting one Project's behavior by its slug w
 
 Shared prompts stay free of Project policy. They do not name a feature contract or an Orbit lease rule. The repository's instructions and `orbit-tasks` skill carry that policy.
 
-### Agents and checks run as orbit-worker
+### Agents run as orbit-worker
 
-The task check, the baseline setup, and task teardown run programs that the workspace can name. Running them as the managed user would let those programs read that user's home, so they run as `orbit-worker`. Teardown's command is the root-owned helper `/usr/local/lib/orbit/e2e-task-cleanup`, which `orbit-worker` can execute and cannot write. Privileged removal is separate: the managed user deletes the tree and does not run a checkout program. The Pi server runs as `orbit-worker`, and an agent can read the server token and the provider sign-in. [Pi server limits](/reference/pi-server#limits) records the root-equivalent `incus-admin` access.
+Task agents and task teardown run as `orbit-worker`, so a program an agent starts cannot read the managed user's home. The baseline and handoff checks are the exception: they run as the managed user, because host-dependent tests need its sudo, ACL, and `caddy` access. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records that choice and its cost.
+
+Teardown's command is the root-owned helper `/usr/local/lib/orbit/e2e-task-cleanup`, which `orbit-worker` can execute and cannot write. Privileged removal is separate: the managed user deletes the tree and does not run a checkout program. The Pi server runs as `orbit-worker`, and an agent can read the server token and the provider sign-in. [Pi server limits](/reference/pi-server#limits) records the root-equivalent `incus-admin` access.
 
 ### Backlog before Todo
 

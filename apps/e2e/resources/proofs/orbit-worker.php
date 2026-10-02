@@ -56,7 +56,7 @@ try {
             'slug' => 'orbit-worker-proof', 'name' => 'Disposable orbit-worker proof', 'type' => ProjectType::Monorepo,
             'repository_url' => 'https://github.com/octocat/Hello-World.git', 'default_branch' => 'master',
             'task_workspace_routed' => false, 'root' => '.',
-            'task_check' => 'test "$(id -un)" = orbit-worker && printf "GATEWAY_CHECK_WORKER_PASSED\\n"',
+            'task_check' => 'test "$(id -un)" = orbit && printf "GATEWAY_CHECK_MANAGED_PASSED\\n"',
         ]);
         $state['project'] = $project->id;
         saveProof($state);
@@ -90,7 +90,7 @@ try {
             sleep(1);
         }
         echo $reading->output;
-        requireProof($reading->state === 'finished' && $reading->exitCode === 0, 'Native worker baseline failed.');
+        requireProof($reading->state === 'finished' && $reading->exitCode === 0, 'Native baseline failed.');
         $threadId = app(AgentSpawner::class)->spawnImplementer($task->fresh());
         requireProof(is_int($threadId), 'Native Pi implementer spawn failed.');
         $task->update(['implementer_agent_thread_id' => $threadId, 'start_commit' => $instance->starting_commit]);
