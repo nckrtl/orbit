@@ -122,12 +122,17 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         }
         $group = $task->parent;
         $pending = $this->pending($group->id, $task->id, TaskThreadRole::Implementer);
+        $needsReceipt = $pending === null || str_starts_with($task->fixup_problem ?? '', 'review:');
         $title = 'Orbit task #'.$group->id.' / subtask #'.$task->id.' · Implementer: '.$task->title;
         if ($pending === null) {
             $pending = $this->insertPending($group, $task->id, TaskThreadRole::Implementer);
             if ($pending === null) {
                 return null;
             }
+        }
+        // A reserved row does not prove that context was installed. Refresh it
+        // before every feedback startup, including retries after interruption.
+        if ($needsReceipt) {
             $this->installReceipt($pending);
         }
 
@@ -251,7 +256,9 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             return;
         }
         $task = is_numeric($thread->task_id) ? Task::query()->find((int) $thread->task_id) : null;
-        $context = $role === TaskThreadRole::Reviewer && $task instanceof Task ? $this->packets->reviewContext($task) : null;
+        $needsContext = $task instanceof Task && ($role === TaskThreadRole::Reviewer
+            || str_starts_with($task->fixup_problem ?? '', 'review:'));
+        $context = $needsContext ? $this->packets->reviewContext($task) : null;
         app(TaskTurnReceipts::class)->prepare(
             $instance,
             $role,
@@ -282,7 +289,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         return null;
     }
 
-    /** Installs the turn file and the reviewer context, and removes the reserved row when that install fails so the replacement does not start. */
+    /** Installs the turn file and full task context, and removes the reserved row when that install fails so the replacement does not start. */
     private function installReceipt(AgentThread $thread, ?TaskTurnMode $mode = null): void
     {
         try {
