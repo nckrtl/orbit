@@ -111,6 +111,8 @@ cAdvisor collects only CPU and memory. Its flags disable every other metric kind
 
 If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. The operation that triggered the reconcile continues. For example, an Instance removal on another Node does not fail because service metrics cannot reconcile on this Node. The Gateway skips the degraded Node and continues reconciling the rest of the fleet. It retries the Node on a later reconcile and clears the degradation when reconciliation succeeds. Inspect the Node's exporter row in `orbit metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
 
+Service degradation belongs to service metrics. Exporter and cAdvisor snapshots do not clear it. The Gateway clears it only after that Node's service reconciliation and publication succeed. Step and error-code updates are atomic. If the operation loses a Node lock, reconciliation stops and reports `node.lock_lost`. This failure affects the whole operation, not only service metrics on one Node.
+
 ## Process runtime status
 
 A Process list reads each Process's status from the Gateway's [view of the Node agents](/reference/node-agent#gateway-view) first. For a Process whose Node has no fresh view, it reads Prometheus in one query.
