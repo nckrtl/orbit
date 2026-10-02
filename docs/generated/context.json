@@ -972,9 +972,12 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deliverable",
                 "Deployment",
                 "Gateway",
                 "Instance",
+                "Node",
+                "Project",
                 "Route",
                 "Subtask",
                 "Task",
@@ -1614,6 +1617,7 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Deliverable",
                 "Extension",
                 "Gateway",
                 "Instance",
