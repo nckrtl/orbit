@@ -7,16 +7,18 @@ description: Use when a feature or review must be proved on an Incus topology wi
 
 Prove a feature on a disposable three-Node topology: `gateway`, `app-dev`, and `app-prod`. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command. This skill covers the working habits that keep a proof fast and its evidence trustworthy.
 
-## Lease the topology
+## Use the allocated topology
 
-Run `bin/e2e-topology acquire ISSUE .` from the task workspace. The issue must appear in the branch name, so branch `task-58` uses `TASK-58`. A task workspace clone runs through its [bridge worktree](../../../docs/reference/incus-topologies.md#task-workspace-clones). Acquisition takes about a minute.
+Use only the topology Orbit or the operator allocated to the task. Agents and reviewers never acquire or release topologies, receive no sudo, and do not touch the host firewall. If no topology is allocated, request one from the operator instead of running `acquire`.
 
-Keep the lease while you wait for help. A new lease starts again from the promoted snapshot, so it drops every agent, role converge, and fix you applied. Release the topology only when the proof is complete.
+Run commands from the task workspace. The issue must appear in the branch name, so branch `task-58` uses `TASK-58`. A task workspace clone runs through its [bridge worktree](../../../docs/reference/incus-topologies.md#task-workspace-clones).
+
+Leave the topology allocated while you wait for help and after the proof. Orbit or the operator owns teardown. Clean up only the disposable processes and fixtures you created within that allocation.
 
 ## Run commands on a Node
 
 - `exec ISSUE NODE --argv='[...]'` runs one argument vector as `orbit` in `/home/orbit` and waits for it. It allows 60 seconds; pass `--timeout=SECONDS` for slower work such as a converge, up to 3600.
-- Prefix root work with `sudo`, for example `["sudo","systemctl","stop","orbit-agent"]`. Wrap a pipeline in `["sh","-c","..."]`. Guests have no `incus` command.
+- Do not use sudo or perform root work. Request operator help when the proof requires privileged changes. Wrap a pipeline in `["sh","-c","..."]`. Guests have no `incus` command.
 - Run the Orbit CLI on `gateway`: `["orbit","node:list"]`. The CLI's command names use colons, such as `node:role:add`.
 - Give your own Bash tool a timeout longer than the harness command. `sync` can take two minutes.
 

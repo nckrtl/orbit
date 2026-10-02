@@ -6,6 +6,7 @@ namespace App\E2E\State;
 
 use InvalidArgumentException;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 final readonly class StatePaths
 {
@@ -27,7 +28,7 @@ final readonly class StatePaths
             throw new RuntimeException('The state root must be a real directory.');
         }
 
-        chmod($resolved, 0700);
+        $this->makePrivate($resolved);
         $this->root = rtrim($resolved, '/');
     }
 
@@ -106,7 +107,7 @@ final readonly class StatePaths
                 throw new RuntimeException('A state directory cannot be a symbolic link.');
             }
 
-            chmod($cursor, 0700);
+            $this->makePrivate($cursor);
 
             if ($cursor === $this->root) {
                 break;
@@ -116,6 +117,40 @@ final readonly class StatePaths
         }
 
         return $this->path($relative);
+    }
+
+    public function makeFilePrivate(string $relative): void
+    {
+        $this->makePrivate($this->path($relative), 0600);
+    }
+
+    private function makePrivate(string $path, int $mode = 0700): void
+    {
+        clearstatcache(true, $path);
+
+        if ((fileperms($path) & 0777) === $mode) {
+            return;
+        }
+
+        $acl = new Process(['getfacl', '--omit-header', '--numeric', '--no-effective', '--', $path]);
+        $acl->mustRun();
+        $entries = explode("\n", $acl->getOutput());
+        $owner = $mode === 0700 ? 'rwx' : 'rw-';
+
+        if (
+            in_array('user::'.$owner, $entries, true)
+            && in_array('group::---', $entries, true)
+            && in_array('other::---', $entries, true)
+        ) {
+            return;
+        }
+
+        if (preg_match('/^mask::/m', $acl->getOutput()) === 1) {
+            $permissions = new Process(['setfacl', '--no-mask', '--modify', 'user::'.$owner.',group::---,other::---', '--', $path]);
+            $permissions->mustRun();
+        } elseif (! chmod($path, $mode)) {
+            throw new RuntimeException('Cannot make the state path private.');
+        }
     }
 
     private function isInsideRoot(string $path): bool
