@@ -611,7 +611,7 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
         'tld' => 'test',
         'public_ssh_host' => '192.0.2.105',
         'wireguard_ip' => '127.0.0.1',
-        'user' => get_current_user(),
+        'user' => orb105_effective_user(),
         'settings' => ['apps' => ['path' => $destinationRoot.'/managed']],
     ]);
     $project = Project::query()->create([
@@ -653,6 +653,18 @@ function orb105_relocation_fixture(bool $crossFilesystem = true): array
             'source_root' => $sourceRoot,
             'destination_root' => $destinationRoot,
         ];
+}
+
+/** Returns the account that creates the fixture files, not the PHP script's owner. */
+function orb105_effective_user(): string
+{
+    $user = posix_getpwuid(posix_geteuid());
+
+    if (! is_array($user) || ! is_string($user['name'] ?? null)) {
+        throw new RuntimeException('The test process user is unavailable.');
+    }
+
+    return $user['name'];
 }
 
 /**
