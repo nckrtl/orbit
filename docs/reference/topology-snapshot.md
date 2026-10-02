@@ -80,6 +80,8 @@ Convergence runs every Orbit step that a fresh topology needs, in this order. Th
 | `normalize.permissions` | Normalizes file permissions on every Node |
 | `compact.storage` | Clears cached APT archives and trims each guest root. On Nodes without `app-dev`, `database`, or `metrics`, it also removes Docker images that no container references. |
 
+Native production HTTPS checks use managed private DNS to reach the Route destination. They verify the Orbit CA certificate and follow the recipe's routing without assuming the Gateway is the Router.
+
 Storage cleanup runs after sample preparation and before readiness and snapshotting. It flushes root filesystem deletions before trimming. It preserves container data, container-referenced images, and the warm images on development, database, and Metrics Nodes. Later roles that need a removed image download it again. Unsupported block discard is skipped; other cleanup failures stop convergence. ZFS cannot reclaim blocks while an older retained snapshot still references them. The existing generation retention rules continue to apply. See [Clean the prepared guests](/solutions/incus-zfs-efficiency#clean-the-prepared-guests).
 
 #### Guest script inputs

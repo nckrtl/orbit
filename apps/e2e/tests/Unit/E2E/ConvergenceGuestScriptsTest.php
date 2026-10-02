@@ -2322,7 +2322,7 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('proves the production site from the Node Caddy build and refuses the fragment layout', function (): void {
+    it('proves native production Caddy and HTTPS through managed DNS and refuses the fragment layout', function (string $probe): void {
         $root = temporaryPath('orbit-production-caddy-probe-', 5);
         $home = "{$root}/home/e2e-prod";
         $socket = "{$root}/run/e2e-prod.sock";
@@ -2339,6 +2339,10 @@ describe('convergence guest scripts', function () {
             file_put_contents("{$root}/bin/caddy", "#!/usr/bin/env bash\nexit 0\n");
             chmod("{$root}/bin/systemctl", 0o700);
             chmod("{$root}/bin/caddy", 0o700);
+            file_put_contents("{$root}/bin/sudo", "#!/usr/bin/env bash\nset -euo pipefail\n[[ \$1 == -u ]]\nshift 2\n[[ \$1 == -- ]]\nshift\nexec \"\$@\"\n");
+            chmod("{$root}/bin/sudo", 0o700);
+            file_put_contents("{$root}/bin/curl", "#!/usr/bin/env bash\nset -euo pipefail\n[[ \" \$* \" == ' --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt https://e2e-prod.test/ ' ]]\n");
+            chmod("{$root}/bin/curl", 0o700);
             $site = "https://e2e-prod.test {\n    root * {$home}/public\n    php_fastcgi unix/{$socket}\n}\n";
             file_put_contents("{$version}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n\n{$site}");
             symlink("{$version}/Caddyfile", "{$root}/etc/caddy/Caddyfile");
@@ -2365,7 +2369,7 @@ describe('convergence guest scripts', function () {
             $command = [
                 'bash',
                 "{$root}/verify.sh",
-                'caddy.app-prod',
+                $probe,
                 'readiness',
                 str_repeat('a', 40),
                 'orbit-e2e-topology-snapshot-app-prod',
@@ -2376,7 +2380,9 @@ describe('convergence guest scripts', function () {
             $evidence = json_decode(new Process($command, env: $environment)->mustRun()->getOutput(), true, 16, JSON_THROW_ON_ERROR);
 
             expect($evidence['passed'])->toBeTrue()
-                ->and($evidence['observed'])->toBe("caddy=active,domain=e2e-prod.test,root={$home}/public,socket={$socket}");
+                ->and($evidence['observed'])->toBe($probe === 'caddy.app-prod'
+                    ? "caddy=active,domain=e2e-prod.test,root={$home}/public,socket={$socket}"
+                    : 'app-prod-laravel:flat:https-operational');
 
             file_put_contents("{$version}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n\n{$site}\n{$site}");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
@@ -2386,11 +2392,17 @@ describe('convergence guest scripts', function () {
             file_put_contents("{$version}/Caddyfile", "{\n    auto_https disable_certs\n}\nimport {$version}/fragments/*.caddy\n");
             expect(new Process($command, env: $environment)->run())->not->toBe(0);
 
+            if ($probe === 'laravel.prod') {
+                file_put_contents("{$version}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n\n{$site}");
+                file_put_contents("{$root}/bin/curl", "#!/usr/bin/env bash\nexit 60\n");
+                expect(new Process($command, env: $environment)->run())->not->toBe(0);
+            }
+
             fclose($server);
         } finally {
             new Filesystem()->deleteDirectory($root);
         }
-    });
+    })->with(['Caddy site' => 'caddy.app-prod', 'HTTPS readiness' => 'laravel.prod']);
 
     it('requires the Node Caddy build on app-dev', function (): void {
         $root = temporaryPath('orbit-app-dev-caddy-probe-', 5);
@@ -4504,7 +4516,7 @@ describe('convergence guest scripts', function () {
             ->toBe(64);
     });
 
-    it('probes the production site over the Orbit CA after hydration without touching Caddy', function () {
+    it('probes the production site over the Orbit CA after hydration without touching Caddy', function (bool $native): void {
         $root = temporaryPath('orbit-task7-caddy-', 6);
         mkdir("{$root}/etc/caddy", 0o700, true);
         mkdir("{$root}/state", 0o700, true);
@@ -4527,11 +4539,16 @@ describe('convergence guest scripts', function () {
 
         file_put_contents("{$root}/bin/composer", "#!/usr/bin/env bash\nexit 0\n");
         chmod("{$root}/bin/composer", 0o700);
+        $expectedProbe = $native
+            ? " --cacert {$root}/ca.crt https://e2e-prod.app-prod/ "
+            : " --cacert {$root}/ca.crt --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ ";
+        file_put_contents("{$root}/bin/id", "#!/usr/bin/env bash\nprintf '1000\\n'\n");
+        chmod("{$root}/bin/id", 0o700);
         file_put_contents(
             "{$root}/bin/curl",
             "#!/usr/bin/env bash\nset -euo pipefail\narguments=\" \$* \"\nprintf '%s\\n' \"\$*\" >>'{$root}/probes'\n"
             ."[[ \"\$arguments\" == *' --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 '* ]]\n"
-            ."[[ \"\$arguments\" == *\" --cacert {$root}/ca.crt --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ \"* ]]\n",
+            ."[[ \"\$arguments\" == *\"{$expectedProbe}\"* ]]\n",
         );
         chmod("{$root}/bin/curl", 0o700);
         foreach (['systemctl', 'caddy'] as $forbidden) {
@@ -4557,6 +4574,18 @@ describe('convergence guest scripts', function () {
         ));
         $environment = ['PATH' => "{$root}/bin:".getenv('PATH')];
         $arguments = ['bash', "{$root}/converge.sh", 'hydrate', str_repeat('b', 40), 'app-prod'];
+        if ($native) {
+            rename("{$root}/prod", "{$root}/release");
+            symlink('release', "{$root}/prod");
+            $arguments[] = base64_encode(json_encode([
+                'layout' => 'release',
+                'user' => 'orbit-fixture',
+                'home' => $root,
+                'checkout_path' => "{$root}/prod",
+                'current_target' => "{$root}/release",
+                'domain' => 'e2e-prod.app-prod',
+            ], JSON_THROW_ON_ERROR));
+        }
         new Process($arguments, env: $environment)->mustRun();
         new Process($arguments, env: $environment)->mustRun();
 
@@ -4572,7 +4601,7 @@ describe('convergence guest scripts', function () {
             ->toBeFalse()
             ->and(glob("{$root}/etc/caddy/Caddyfile.orbit-e2e*"))
             ->toBe([]);
-    });
+    })->with(['legacy local site' => false, 'native Route destination' => true]);
     it('proves a mounted source through the mountpoint and the git pointer hash', function () {
         $root = temporaryPath('orbit-verifier-mounted-', 4);
         mkdir("{$root}/bin", 0o700, true);
