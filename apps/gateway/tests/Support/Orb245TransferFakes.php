@@ -97,6 +97,8 @@ final class Orb245TransferSource implements InstanceTransferSource
 
     public bool $failMaterialize = false;
 
+    public bool $failDiscard = false;
+
     public ?Closure $onCall = null;
 
     public bool $cleanupIncomplete = false;
@@ -111,7 +113,7 @@ final class Orb245TransferSource implements InstanceTransferSource
 
     public ?string $common = null;
 
-    public function capture(Instance $instance): TransferSourceCapture
+    public function capture(Instance $instance, ?string $sqliteSourcePath = null): TransferSourceCapture
     {
         $this->calls[] = 'capture';
         ($this->onCall ?? static fn () => null)('capture');
@@ -159,6 +161,10 @@ final class Orb245TransferSource implements InstanceTransferSource
     public function discardDestination(Node $node, StoragePath $path): void
     {
         $this->discarded[] = $path->value;
+
+        if ($this->failDiscard) {
+            throw new ResourceOperationException('instance.transfer_failed', 'Destination rollback failed.', 409);
+        }
     }
 
     public function cleanupSource(InstanceTransfer $transfer): TransferCleanupResult
@@ -182,6 +188,8 @@ final class Orb245TransferRuntime implements InstanceTransferRuntime
     public ?Closure $onCall = null;
 
     public ?Closure $onPause = null;
+
+    public ?Closure $onRestore = null;
 
     public bool $processArtifactsRemoved = false;
 
@@ -207,6 +215,7 @@ final class Orb245TransferRuntime implements InstanceTransferRuntime
     public function restore(Instance $instance): void
     {
         $this->calls[] = 'restore';
+        ($this->onRestore)?->__invoke($instance);
     }
 
     public function relocate(
@@ -242,6 +251,20 @@ final class Orb245TransferRuntime implements InstanceTransferRuntime
 
 final class Orb245SqliteSeeder implements InstanceSqliteSeeder
 {
+    public bool $cleanupIncomplete = false;
+
+    public int $abandonments = 0;
+
+    public ?Closure $onAbandon = null;
+
+    public function abandon(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): bool
+    {
+        $this->abandonments++;
+        ($this->onAbandon)?->__invoke();
+
+        return ! $this->cleanupIncomplete;
+    }
+
     /** @var list<string> */
     public array $calls = [];
 

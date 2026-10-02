@@ -84,6 +84,8 @@ A missing Node TLD returns `route.tld_required`. A domain that another Route own
 
 `sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The Gateway checks the path and disk space on both Nodes before it replaces anything. Without the option, the clone gets no database.
 
+Cloning seeds a different production Instance at the fixed `<home>/database.sqlite` path. [Instance transfer](/reference/instance-transfer) instead keeps the Instance ID between development Nodes and installs the snapshot at the selected file's relative path in the destination checkout. Each transfer attempt has its own snapshot record. Transfer rollback abandons that seed and removes its owned temporary files before closure. An identical retry after restoration takes a fresh snapshot rather than reusing data captured before the source restarted. These transfer rules do not change the clone's destination or its identical-request retry.
+
 The snapshot holds whatever the candidate committed at that moment, queued jobs included. Remove copied queue rows or other data on the new Instance before you start its workers. Other databases and external storage need their own preparation.
 
 ## Candidate stays live

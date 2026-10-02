@@ -1161,6 +1161,8 @@ The Instance remover runs the Project's teardown steps before deleting the check
 
 `apps/e2e/resources/proofs/task-policy-handoff.sh` runs that install and the teardown create, update, readback, and destroy commands on a disposable Project. `apps/e2e/resources/proofs/project-owned-tasks.sh` proves the task lifecycle on the same topology. Neither proof uses the live Project. The directory also holds proofs that are not part of Tasks. `apps/e2e/resources/proofs/mcp-instance-timeouts.sh` calls `instance-create` and `instance-destroy` through the Gateway MCP endpoint on a disposable topology. It prints how long the first call waits, what an identical call returns while that work is still running, and what it returns after the Gateway has finished.
 
+`apps/e2e/resources/proofs/large-sqlite-transfer.py` proves [Instance transfer](/reference/instance-transfer) on an allocated topology. It checks a checkout larger than 1 GiB with a selected SQLite file inside it, Gateway disk staging, and a different request after a failed pre-cutover transfer. It verifies lease ownership before enlarging the allocated workload Nodes' memory and temporary staging capacity, and records that capacity before transfer. It records each result, removes its disposable fixtures, and audits for leftovers.
+
 When a manual complete cannot remove the workspace, the task is already `completed` and keeps its Instance. Open subtasks cancelled in the completion transaction stay `cancelled`. It does not ask for assistance. It keeps the reason `Workspace removal failed: `. The retry does not read GitHub.
 
 Each tick sweeps workspaces that still exist:

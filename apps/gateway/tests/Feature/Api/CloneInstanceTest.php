@@ -381,6 +381,11 @@ final class Orb198ApiEnvironmentWriter implements InstanceEnvironmentWriter
 
 final class Orb198ApiSqliteSeeder implements InstanceSqliteSeeder
 {
+    public function abandon(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): bool
+    {
+        throw new LogicException('Cloning retains its seed for identical retries.');
+    }
+
     public function seed(SqliteSeedPlacement $source, SqliteSeedPlacement $target, string $sourcePath): SqliteSeedResult
     {
         return SqliteSeedResult::changed();
