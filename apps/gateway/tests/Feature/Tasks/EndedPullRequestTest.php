@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -347,7 +348,7 @@ it('preserves an ended pull request hold established while a resolution send is 
     $driver->shouldReceive('key')->andReturn('pi');
     $driver->shouldReceive('observe')->andReturn(new AgentObservation(AgentThreadState::Working));
     $driver->shouldReceive('interrupt')->never();
-    $driver->shouldReceive('send')->once()->withArgs(static fn (AgentThread $thread, string $message): bool => $thread->task_id === $task->id && $message === 'Answer to the earlier question.')
+    $driver->shouldReceive('send')->once()->withArgs(static fn (AgentThread $thread, string $message): bool => $thread->task_id === $task->id && $message === TaskTurnFetchNotice::Failed."\n\nAnswer to the earlier question.")
         ->andReturnUsing(static function () use ($group): void {
             $group->update(['watched_pr_url' => 'https://github.com/acme/orbit/pull/42', 'watched_pr_state' => 'merged']);
             app(RequestEndedPullRequestAssistanceAction::class)->execute($group->fresh(['tasks']));
