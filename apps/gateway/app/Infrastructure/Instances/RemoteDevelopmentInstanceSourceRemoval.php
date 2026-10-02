@@ -1343,11 +1343,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     test "$quarantine_present" = 1
                     test ! -e "$recovery"
                     test ! -L "$recovery"
-                    if [ -e "$quarantine/.git" ] || [ -L "$quarantine/.git" ]; then
-                        printf 'intact\n'
-                    else
-                        printf 'incomplete\n'
-                    fi
+                    # The receipt authorizes cleanup even when partial deletion left a damaged .git.
+                    printf 'incomplete\n'
                     ;;
                 worktree)
                     test -f "$recovery"
@@ -1494,11 +1491,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     test "$quarantine_present" = 1
                     test ! -e "$recovery"
                     test ! -L "$recovery"
-                    test ! -e "$quarantine/.git"
-                    test ! -L "$quarantine/.git"
                     test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
                     test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                    rm -rf -- "$quarantine"
+                    remove_source_tree "$quarantine"
                     ;;
                 worktree)
                     test -f "$recovery"
@@ -1565,7 +1560,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     if [ "$quarantine_present" = 1 ]; then
                         test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
                         test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                        rm -rf -- "$quarantine"
+                        remove_source_tree "$quarantine"
                     fi
                     ;;
                 *) exit 1 ;;
@@ -1800,8 +1795,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
             fi
             case "$layout" in
-                worktree) git --git-dir="$common_repository/.git" worktree remove --force "$quarantine" ;;
-                checkout) rm -rf -- "$quarantine" ;;
+                worktree) remove_source_tree "$quarantine" "$common_repository" ;;
+                checkout) remove_source_tree "$quarantine" ;;
             esac
             test ! -e "$quarantine"
             test ! -L "$quarantine"
@@ -2110,7 +2105,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 trap - EXIT
             fi
             failure=1
-            rm -rf -- "$checkout"
+            remove_source_tree "$checkout"
             release_empty_grouping_directory "$grouping_directory"
             BASH;
     }
@@ -2120,6 +2115,25 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         $worker = TaskWorkerUser::name() ?? '';
 
         return 'trust_worker='.escapeshellarg($worker)."\n".<<<'BASH'
+            remove_source_tree() {
+                local tree=$1
+                if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then
+                    test "$(id -u "$trust_worker")" != 0
+                    test "$trust_worker" != "$managed_user"
+                    # Quarantine's parent is private. Enter the validated tree before dropping privileges.
+                    (
+                        cd -- "$tree"
+                        sudo -n -u "$trust_worker" -- find -P . -user "$trust_worker" -type d -perm /3000 \
+                            -exec chmod g-s,-t -- {} +
+                    )
+                fi
+                if [ "$#" = 2 ]; then
+                    git --git-dir="$2/.git" worktree remove --force "$tree"
+                else
+                    rm -rf -- "$tree"
+                fi
+            }
+
             release_empty_grouping_directory() {
                 test ! -e "$checkout"
                 test ! -L "$checkout"
