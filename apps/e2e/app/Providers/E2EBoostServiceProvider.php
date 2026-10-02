@@ -19,7 +19,7 @@ final class E2EBoostServiceProvider extends ServiceProvider
             return;
         }
 
-        config(['view.compiled' => storage_path('framework/cache')]);
+        config(['view.compiled' => config('view.compiled') ?: storage_path('framework/cache')]);
 
         $this->app->register(new class($this->app) extends BoostServiceProvider
         {

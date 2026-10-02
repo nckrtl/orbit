@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+# Guidance must not reuse Blade files or TIA graphs owned by another gate user.
+set -euo pipefail
+
+runtime=$(mktemp -d "${TMPDIR:-/tmp}/orbit-guidance.XXXXXXXXXX")
+trap 'rm -rf -- "$runtime"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+# Explicit modes also avoid sticky directories from alternative mkdir tools.
+mkdir -m 700 "$runtime/views" "$runtime/tia"
+export VIEW_COMPILED_PATH="$runtime/views"
+export ORBIT_TIA_DIRECTORY="$runtime/tia"
+
+vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact "$@"
