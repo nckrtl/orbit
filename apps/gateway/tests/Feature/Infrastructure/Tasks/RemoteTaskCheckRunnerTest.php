@@ -195,6 +195,54 @@ describe('TaskCheckWorkerUser', function (): void {
         }
     });
 
+    it('lets the check replace and write into what the worker created before it runs', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        // A package manager run by the agent leaves worker-owned directories with mode 0755, so the ACL mask hides the managed user's write.
+        expect(check_runner_as_worker($checkout, 'install -d -m 0755 ignored/node_modules/pkg ignored/build && install -m 0644 /dev/null ignored/node_modules/pkg/index.js'))->toBe(0)
+            ->and(is_writable($checkout.'/ignored/node_modules/pkg'))->toBeFalse();
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($checkout);
+
+        try {
+            $reading = check_runner_wait($runner, $instance, $runner->start($instance,
+                'rm -rf ignored/node_modules/pkg && mkdir ignored/node_modules/pkg && printf managed > ignored/build/out'));
+
+            expect($reading->exitCode)->toBe(0)
+                ->and($reading->failedStep)->toBeNull()
+                ->and(file_get_contents($checkout.'/ignored/build/out'))->toBe('managed');
+        } finally {
+            check_runner_as_worker($checkout, 'rm -rf ignored');
+        }
+    });
+
+    it('fails the check when it cannot take over the worker files', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        $runner = check_runner(new class implements SshExecutor
+        {
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                // The managed user has no sudo rule for the worker.
+                return new LocalShellSshExecutor()->execute($connection, new RemoteCommand(
+                    arguments: $command->arguments,
+                    input: "mkdir -p \"\$1/.git/no-sudo\" && printf '#!/bin/sh\\nexit 1\\n' > \"\$1/.git/no-sudo/sudo\"\n"
+                        ."chmod +x \"\$1/.git/no-sudo/sudo\" && export PATH=\"\$1/.git/no-sudo:\$PATH\"\n".$command->input,
+                    maxOutputBytes: $command->maxOutputBytes,
+                ));
+            }
+        });
+        $instance = check_runner_instance($checkout);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'touch ran'));
+
+        expect($reading->exitCode)->toBe(1)
+            ->and($reading->failedStep)->toBe('check_error')
+            ->and($reading->output)->toContain('The managed user cannot run commands as nobody.')
+            ->and(file_exists($checkout.'/ran'))->toBeFalse();
+    });
+
     it('shares what a cancelled check created with the worker', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');

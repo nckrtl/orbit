@@ -368,4 +368,6 @@ The baseline and handoff checks run as the managed user, not as `orbit-worker`. 
 
 Granting `orbit-worker` sudo was rejected, because sudo would remove the boundary the account exists for. Skipping host-dependent tests in the gate was rejected, because the gate would then pass changes that it did not test. Task agents still run as the worker. The check shares what it creates with the worker through the same workspace ACL as inspection, so the next turn can read the check's logs and reports.
 
+Before it runs, it also grants the managed user write on what the worker created, such as dependencies an agent installed. Only the owner can change an ACL, so that step runs as the worker through the managed user's existing `sudo -u orbit-worker`. The worker still has no sudo.
+
 The cost is that the gate runs programs that the workspace names, including code an agent wrote, as the managed user. Such a program can read that user's home, and it could observe a token-bearing `git` process of that user that runs at the same time. The agent itself still cannot. This serves [security fits the real threat model](/mission#principles): the gate must test the real host, and the agent stays separated.
