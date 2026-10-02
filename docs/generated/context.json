@@ -2041,9 +2041,9 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Deployment",
                 "Extension",
                 "Gateway",
-                "Instance",
                 "Node",
                 "Task"
             ],

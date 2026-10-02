@@ -84,28 +84,32 @@ The evidence labels include `bench-ext4`, `bench-xfs`, `prune-gateway`, `prune-a
 
 ### Implementation verification
 
-The implementation was checked at `f6b0041574345f7dfb8b5510510273613a516a19`. The full harness suite passed 1,705 tests and 9,585 assertions. The repository-wide `composer check` gate passed all 20 checks across the five projects. It ran in an accessible clone, with PHPStan's agent output hints disabled so the existing JSON-output tests received ordinary CI output. Formatting, static analysis, affected tests, documentation lint, Mint validation, and broken-link checks passed.
+Runtime verification used `315357731896000fb9c2fb258058d49df5f2d214`. The repository-wide `composer check` gate passed all 40 checks across the five projects. It ran all 8,879 Gateway tests and 56,582 assertions, and all 1,707 harness tests and 9,596 assertions. The gate ran in an accessible clone, with PHPStan's agent output hints disabled so the existing JSON-output tests received ordinary CI output. Formatting, static analysis, affected tests, and documentation lint passed. GitHub CI passed on this commit.
 
-The owned `ZFS-1` proof, attempt `379d22953787821f66f8df65ad1bf9b5`, passed all 25 readiness checks and the 120-request workload at the new limits. It reported no out-of-memory events or failed services. The implementation cleanup reduced Gateway referenced data from 6.59 GiB to 1.978 GiB, and app-prod from 7.149 GiB to 2.478 GiB. Flushing deletions before trimming was necessary for that saving.
+The owned `ZFS-1` storage proof used `f6b0041574345f7dfb8b5510510273613a516a19`, attempt `379d22953787821f66f8df65ad1bf9b5`. It passed all 25 readiness checks and the 120-request workload at the new limits. It reported no out-of-memory events or failed services. The implementation cleanup reduced Gateway referenced data from 6.59 GiB to 1.978 GiB, and app-prod from 7.149 GiB to 2.478 GiB. Flushing deletions before trimming was necessary for that saving.
 
-The normal Incus scenario run `97a67774c5171c74f057b87894e801da` used two workers and the default limits. CPU stayed at one vCPU on every Node. Its memory observer reported no out-of-memory events.
+The normal Incus scenario run `a0c593d015f86f8c847a6aee444897b4` used two workers and the default limits. CPU stayed at one vCPU on every Node. Its cold flow started from the unchanged base image and completed production cloning, the first deployment, and hydration.
 
 | Scenario | Result |
 | --- | --- |
-| `snapshot-lifecycle` | Passed, including all 25 readiness probes. |
-| `snapshot-isolation` | Passed, including all 25 readiness probes. |
-| `snapshot-extension` | Passed, including all 30 readiness probes and the 1 GiB production extension. |
+| `cold-four-node` | Passed all 15 final readiness probes and exact cleanup. |
 | `cold-construction-cleanup` | Passed the injected failure and exact cleanup checks. |
-| `cold-four-node` | Infrastructure error during production source classification. |
+| `snapshot-lifecycle` | Passed all 25 readiness probes. |
+| `snapshot-isolation` | Passed all 25 readiness probes and marker isolation. |
+| `snapshot-extension` | Passed all 30 readiness probes with 1 GiB for the added production Node. |
 
-Cold diagnostics exposed `app-prod.source_classification_failed` while cloning the sample production Instance. The same candidate at the original uniform 2 GiB limits failed at the same step in control run `4c2b242805b55d30bb4fffc27cc28518`. The production classification code is unchanged. The full cold build remains unverified; the error is not evidence of insufficient memory. Diagnostic output tracing only exposed the response that the fixture otherwise discards.
+The observer recorded 367 observations, including 348 samples of guest memory. No sampled guest reported an out-of-memory event. The recorded limits were 1536 MiB, 1 GiB, and 2 GiB. Startup and cleanup can prevent a guest read, so the observations are samples rather than a continuous guarantee.
 
-Verification also found two fixture omissions. Snapshot clones retained the old Gateway endpoint before dependency installation. Fresh production Nodes had no TLD for clone preview routes. Both original failures reproduced on unchanged main at 2 GiB per Node. The harness now repairs clone identity before hydration and assigns each fresh production Node its own name as its TLD through the existing provision command.
+Every attempt completed exact cleanup. The final host audit found no task VMs, networks, storage volumes, or ZFS datasets. It confirmed that the shared snapshots and unowned VM retained their CPU and memory settings. Other task topologies remained present. Detailed logs, scenario results, memory observations, and check receipts are retained outside the repository.
 
-All scenario attempts completed exact cleanup. The final audit found no task VMs, networks, volumes, or ZFS datasets. The promoted snapshot and the other active topology retained their original memory settings. Detailed logs, scenario results, memory observations, and the check receipt are retained in the implementation evidence bundle outside the repository.
+Cold diagnostics found two production scan defects. After SSH started in the private `/home/orbit` directory, `sudo -u` changed the user without changing the working directory. GNU `find` could not restore that directory. Source classification failed with `app-prod.source_classification_failed`. Retained-release listing then failed strict receipt validation with `deployment.receipt_invalid`, including after a clone had already become active. Both scripts now enter `/` before switching users. Regression tests run the scripts with different real users, keep the SSH home private, and verify source ownership and scan failure guards. The uniform 2 GiB control had failed at the same classification step, so this failure did not support raising the memory limits.
+
+Verification also found three harness assumptions. Snapshot clones retained the old Gateway endpoint before dependency installation. Fresh production Nodes had no TLD for clone preview routes. Both original failures reproduced on unchanged main at 2 GiB per Node. The harness repairs clone identity before hydration and assigns each fresh production Node its own name as its TLD through the existing provision command.
+
+Native production HTTPS checks also forced the Gateway IP, although the cold recipe's Gateway is not the Router. Hydration and readiness now follow managed private DNS and continue to verify the Orbit CA certificate. Tests cover both probes, the legacy local site, and certificate failures.
 
 ### Limits
 
-The workload and passing scenarios cover the sample topology. They do not establish memory requirements for larger applications, parallel PHP test suites inside guests, or long-running database load. The full cold build failed as described above. The XFS tests ran after the ext4 tests on a shared host, so their timings are indicative. The space and isolation checks provide stronger evidence than a small timing difference.
+The workload and passing scenarios cover the sample topology. They do not establish memory requirements for larger applications, parallel PHP test suites inside guests, or long-running database load. The XFS tests ran after the ext4 tests on a shared host, so their timings are indicative. The space and isolation checks provide stronger evidence than a small timing difference.
 
-The temporary XFS mount, loop device, and benchmark files were removed before the memory reboot checks. After release, the cleanup audit found no experiment VMs, network, storage volumes, or ZFS datasets. The shared snapshot VMs and the other active topology remained present with their original memory settings.
+The temporary XFS mount, loop device, and benchmark files were removed before the memory reboot checks. After release, the cleanup audit found no experiment VMs, network, storage volumes, or ZFS datasets. The shared snapshot VMs and other work remained untouched.
