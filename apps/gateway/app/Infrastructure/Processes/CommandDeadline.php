@@ -70,6 +70,8 @@ final class CommandDeadline
      *
      * @param  Closure(): T  $operation
      * @return T
+     *
+     * @phpstan-impure
      */
     public function within(float $seconds, Closure $operation): mixed
     {
@@ -83,6 +85,37 @@ final class CommandDeadline
             [$this->expiresAt, $this->seconds, $this->cleanupReserveSeconds, $this->exceeded] = $saved;
             // Once forward work ran out, the request's own cleanup keeps the reserve.
             $this->exceeded = $this->exceeded || $exceeded;
+        }
+    }
+
+    /**
+     * Caps forward work locally without charging the surrounding request's cleanup reserve against
+     * that local budget. Only expiry of the parent's forward-work deadline releases its cleanup reserve;
+     * a caught local expiry does not. Forward work never enters the parent's cleanup mode.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $operation
+     * @return T
+     *
+     * @phpstan-impure
+     */
+    public function withinForwardWork(float $seconds, Closure $operation): mixed
+    {
+        $parentExceeded = $this->exceeded;
+        $parentForwardDeadline = $this->expiresAt === null
+            ? null
+            : $this->expiresAt - $this->cleanupReserveSeconds - $this->heldSeconds;
+        $this->exceeded = false;
+
+        try {
+            return $this->within($seconds + $this->cleanupReserveSeconds, $operation);
+        } finally {
+            $this->exceeded = $parentExceeded || (
+                $this->exceeded
+                && $parentForwardDeadline !== null
+                && ($this->clock)() >= $parentForwardDeadline
+            );
         }
     }
 

@@ -23,7 +23,9 @@ use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
@@ -79,7 +81,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
     ): InstanceSourceInventory {
         $context = $this->context($instance);
 
-        return $this->inspectPathLocked(
+        $inventory = $this->inspectPathLocked(
             instance: $instance,
             physicalCheckout: $instance->checkout_path,
             logicalCheckout: $instance->checkout_path,
@@ -90,8 +92,25 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             expectedBranch: $context['branch'],
             expectedRepositoryIdentity: $context['repositoryIdentity'],
             force: $force,
-            inspectContent: $inspectContent,
+            inspectContent: $inspectContent && (! $this->failedCreation($instance) || $instance->registration_request_id !== null),
+            unresolved: $this->failedCreation($instance) && $instance->starting_commit === null,
+            allowAbsent: $this->failedCreation($instance),
         );
+
+        if (
+            $this->failedCreation($instance)
+            && $instance->status === InstanceState::Reserved
+            && $inventory->sourceIdentity !== 'absent'
+            && ! $this->removableInPlaceRegistration($instance, $inventory)
+        ) {
+            throw new RuntimeConvergenceException(
+                step: 'app-instance-source-removal-inspect',
+                errorCode: 'instance.remove_refused',
+                message: 'The reserved Instance has no completed source preparation. Its existing checkout cannot be removed.',
+            );
+        }
+
+        return $inventory;
     }
 
     /**
@@ -110,6 +129,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         bool $force,
         bool $inspectContent = true,
         array $quarantineMappings = [],
+        bool $unresolved = false,
+        bool $allowAbsent = false,
     ): InstanceSourceInventory {
         $result = $this->executeRefusable(
             $instance,
@@ -124,8 +145,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     $group,
                     $layout,
                     $expectedBranch ?? '',
-                    $inspectContent && ! $force && $instance->starting_commit !== null ? '1' : '0',
-                    $instance->starting_commit === null ? '1' : '0',
+                    $inspectContent && ! $force ? '1' : '0',
+                    $unresolved ? '1' : '0',
+                    $allowAbsent ? '1' : '0',
                     $instance->project->repository_url,
                     $instance->source_prepare_id ?? '',
                 ],
@@ -156,7 +178,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             || ! $commonPath instanceof StoragePath
             || ($commit !== '' || $instance->starting_commit !== null) && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1
             || ! in_array($dirty, ['', '0', '1'], true)
-            || ($sourceIdentity !== 'absent' || $instance->starting_commit !== null) && preg_match('/\A[0-9]+:[0-9]+\z/D', $sourceIdentity) !== 1
+            || (preg_match('/\A[0-9]+:[0-9]+\z/D', $sourceIdentity) !== 1 && ! ($allowAbsent && $sourceIdentity === 'absent'))
         ) {
             $this->invalidEvidence($instance, $force);
         }
@@ -171,7 +193,11 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $this->mismatch($instance, InstanceSourceMismatch::Layout);
         }
 
-        if ($instance->starting_commit !== null && $branch !== $expectedBranch) {
+        if ($unresolved) {
+            $branch = $expectedBranch;
+        }
+
+        if ($branch !== $expectedBranch) {
             $this->mismatch($instance, InstanceSourceMismatch::Branch);
         }
 
@@ -420,10 +446,14 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             $inventory = $this->inspectRecordedLocked($member, $state, $expectation);
             [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
             $removal = $member->removal()->firstOrFail();
-            $program = self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript();
-            $script = $member->starting_commit === null
-                ? null
-                : GitReadScript::for($this->access->for($inventory->origin, $this->sourceAccess($member->project_id)), $program);
+            $failedCreation = ! $member->runtime_published
+                && ($inventory->sourceIdentity === 'absent'
+                    || Instance::query()->whereKey($member->instance_id)->whereNull('registration_request_id')->whereNotNull('failed_step')->whereNotNull('error_code')->exists());
+            $input = self::releaseEmptyGroupingDirectoryFunction().self::finalizationScript();
+            $script = $failedCreation ? null : GitReadScript::for(
+                $this->access->for($inventory->origin, $this->sourceAccess($member->project_id)),
+                $input,
+            );
             $result = $this->ssh->execute(
                 $node,
                 new RemoteCommand(
@@ -440,7 +470,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                         (string) $member->id,
                         $member->source_digest,
                         $receipt,
-                        $removal->force ? '1' : '0',
+                        $removal->force || $failedCreation ? '1' : '0',
                         $user,
                         $group,
                         (string) $member->source_identity,
@@ -448,8 +478,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                         base64_encode($inventory->worktreeInventory),
                         (string) $member->source_commit,
                         $groupingDirectory,
+                        $member->starting_commit === null && ! $member->runtime_published ? '1' : '0',
                     ],
-                    input: $script === null ? $program : $script->input,
+                    input: $failedCreation ? $input : $script?->input,
                     protectedInput: $script?->protectedInput,
                 ),
                 step: 'app-instance-source-finalization',
@@ -511,7 +542,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             expectedBranch: $member->branch,
             expectedRepositoryIdentity: (string) $member->repository_identity,
             force: (bool) $removal->force,
+            inspectContent: $member->runtime_published || $instance->failed_step === null,
             quarantineMappings: $this->quarantineMappings($member, $context['root'], $expectation),
+            unresolved: $member->starting_commit === null && ! $member->runtime_published,
+            allowAbsent: $member->source_identity === 'absent',
         );
 
         if (
@@ -673,7 +707,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         InstanceRemovalMember $member,
     ): InstanceSourceRevalidationState {
         $this->assertDevelopmentMember($member);
-        [$node, $user, $group, $root] = $this->memberContext($member);
+        [$node, $user, $group, $root, $groupingDirectory] = $this->memberContext($member);
         $result = $this->ssh->execute(
             $node,
             new RemoteCommand(
@@ -690,8 +724,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     (string) $member->source_identity,
                     $user,
                     $group,
+                    $groupingDirectory,
                 ],
-                input: self::revalidationScript(),
+                input: self::releaseEmptyGroupingDirectoryFunction().self::revalidationScript(),
             ),
             step: 'app-instance-removal-revalidation',
             errorCode: 'instance.removal_conflict',
@@ -795,6 +830,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private function assertDevelopmentMember(InstanceRemovalMember $member): void
     {
+        $startingCommit = $member->getAttribute('starting_commit');
+
         if (
             $member->environment !== 'development'
             || ! in_array(
@@ -806,7 +843,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             || ! is_string($member->root)
             || $member->getAttribute('branch') !== null
             && ! is_string($member->getAttribute('branch'))
-            || $member->getAttribute('starting_commit') !== null && ! is_string($member->getAttribute('starting_commit'))
+            || (! is_string($startingCommit) && ($startingCommit !== null || $member->runtime_published))
             || ! is_string($member->source_commit)
             || ! is_string($member->common_repository_path)
             || ! is_string($member->source_identity)
@@ -883,6 +920,29 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         );
     }
 
+    private function removableInPlaceRegistration(Instance $instance, InstanceSourceInventory $inventory): bool
+    {
+        return $instance->failed_step === 'registration'
+            && $instance->registration_request_id !== null
+            && $instance->registration_source_digest !== null
+            && $instance->registration_original_path === $instance->checkout_path
+            && $instance->registration_authoritative_path === $instance->checkout_path
+            && in_array($instance->registration_relocation_state, ['reserved', 'relocating', 'destination_verified', 'original_cleanup', 'relocated'], true)
+            && $instance->registration_repository_identity === $inventory->repositoryIdentity
+            && $instance->registration_common_repository_path === $inventory->commonRepositoryPath.'/.git'
+            && $instance->starting_commit === $inventory->startingCommit
+            && $instance->branch === $inventory->branch
+            && $instance->registration_detached === ($inventory->branch === null);
+    }
+
+    private function failedCreation(Instance $instance): bool
+    {
+        return $instance->placedOnAppDev()
+            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
+            && $instance->failed_step !== null
+            && $instance->error_code !== null;
+    }
+
     /** @return array{root: StoragePath, user: string, group: string, branch: ?string, repositoryIdentity: string} */
     private function context(Instance $instance): array
     {
@@ -900,11 +960,16 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             );
         }
 
-        $branch = $instance->starting_commit === null ? null : $instance->getAttribute('branch');
+        $branch = $instance->getAttribute('branch');
+        $startingCommit = $instance->getAttribute('starting_commit');
 
-        if ($branch !== null && ! is_string($branch)
-            || $instance->getAttribute('starting_commit') !== null && ! is_string($instance->getAttribute('starting_commit'))
-            || $instance->starting_commit === null && (! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::Removing], true) || $instance->source_layout !== InstanceSourceLayout::Checkout->value)) {
+        if (
+            $branch !== null && ! is_string($branch)
+            || (! is_string($startingCommit)
+                && ! ($startingCommit === null
+                    && ($this->failedCreation($instance)
+                        || ($instance->status === InstanceState::Removing && $instance->failed_step !== null && $instance->error_code !== null))))
+        ) {
             $this->invalidEvidence($instance, false);
         }
 
@@ -1122,7 +1187,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function preparationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             root=$1
             operation=$2
             member=$3
@@ -1207,6 +1272,21 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test ! -L "$journal"
             test "$(stat -c '%U:%G' "$journal")" = "$managed_user:$managed_group"
             printf '%s\n' "$digest" | cmp -s - "$journal"
+            if [ "$source_identity" = absent ]; then
+                test ! -e "$checkout"
+                test ! -L "$checkout"
+                test ! -e "$quarantine"
+                test ! -L "$quarantine"
+                if [ -e "$receipt_path" ] || [ -L "$receipt_path" ]; then
+                    test -f "$receipt_path"
+                    test ! -L "$receipt_path"
+                    printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
+                    printf 'completed\n'
+                else
+                    printf 'present\n'
+                fi
+                exit 0
+            fi
             if [ -e "$checkout" ] || [ -L "$checkout" ]; then
                 test ! -e "$quarantine"
                 test ! -L "$quarantine"
@@ -1238,6 +1318,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test -f "$receipt_path"
             test ! -L "$receipt_path"
             printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
+            test "$(stat -c '%U:%G' "$receipt_path")" = "$managed_user:$managed_group"
+            # Deletion and config publication are not atomic. Authenticate the
+            # completed removal, then retry exact-path trust cleanup before success.
+            release_empty_grouping_directory "${10}"
             printf 'completed\n'
             BASH;
     }
@@ -1290,11 +1374,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     test "$quarantine_present" = 1
                     test ! -e "$recovery"
                     test ! -L "$recovery"
-                    if [ -e "$quarantine/.git" ] || [ -L "$quarantine/.git" ]; then
-                        printf 'intact\n'
-                    else
-                        printf 'incomplete\n'
-                    fi
+                    # The receipt authorizes cleanup even when partial deletion left a damaged .git.
+                    printf 'incomplete\n'
                     ;;
                 worktree)
                     test -f "$recovery"
@@ -1441,11 +1522,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     test "$quarantine_present" = 1
                     test ! -e "$recovery"
                     test ! -L "$recovery"
-                    test ! -e "$quarantine/.git"
-                    test ! -L "$quarantine/.git"
                     test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
                     test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                    rm -rf -- "$quarantine"
+                    remove_source_tree "$quarantine"
                     ;;
                 worktree)
                     test -f "$recovery"
@@ -1512,7 +1591,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     if [ "$quarantine_present" = 1 ]; then
                         test "$(stat -c '%d:%i' "$quarantine")" = "$source_identity"
                         test "$(stat -c '%U:%G' "$quarantine")" = "$managed_user:$managed_group"
-                        rm -rf -- "$quarantine"
+                        remove_source_tree "$quarantine"
                     fi
                     ;;
                 *) exit 1 ;;
@@ -1526,7 +1605,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function finalizationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             common_repository=$3
@@ -1545,6 +1624,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             expected_worktrees=$7
             source_commit=$8
             grouping_directory=$9
+            unresolved=${10}
             export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
@@ -1559,6 +1639,26 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test ! -L "$journal"
             test "$(stat -c '%U:%G' "$journal")" = "$managed_user:$managed_group"
             printf '%s\n' "$digest" | cmp -s - "$journal"
+            if [ "$source_identity" = absent ]; then
+                test ! -e "$checkout"
+                test ! -L "$checkout"
+                test ! -e "$quarantine"
+                test ! -L "$quarantine"
+                release_empty_grouping_directory "$grouping_directory"
+                if [ ! -e "$receipt_path" ] && [ ! -L "$receipt_path" ]; then
+                    candidate=$(mktemp "$state/.$operation.$member.receipt.XXXXXX")
+                    trap 'rm -f -- "$candidate"' EXIT
+                    printf '%s\n' "$receipt" > "$candidate"
+                    chmod 0600 -- "$candidate"
+                    mv -T -- "$candidate" "$receipt_path"
+                    trap - EXIT
+                fi
+                test -f "$receipt_path"
+                test ! -L "$receipt_path"
+                printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
+                printf '%s\n' "$receipt"
+                exit 0
+            fi
             if [ ! -e "$checkout" ] && [ ! -L "$checkout" ] && \
                 [ ! -e "$quarantine" ] && [ ! -L "$quarantine" ]; then
                 test -f "$receipt_path"
@@ -1622,11 +1722,12 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     ;;
                 *) exit 1 ;;
             esac
-            if [ -n "$source_commit" ]; then
-                current_branch=$(git -C "$physical" symbolic-ref --quiet --short HEAD || true)
+            current_branch=$(git -C "$physical" symbolic-ref --quiet --short HEAD || true)
+            if [ "$unresolved" != 1 ]; then
                 test "$current_branch" = "$branch"
-                test "$(git -C "$physical" rev-parse --verify HEAD^{commit})" = "$source_commit"
             fi
+            current_commit=$(git -C "$physical" rev-parse --verify HEAD^{commit} 2>/dev/null || printf '%040d' 0)
+            test "$current_commit" = "$source_commit"
             origin_with_marker=$(git -C "$physical" config --get remote.origin.url && printf x)
             origin=${origin_with_marker%x}
             case "$origin" in
@@ -1636,8 +1737,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test "$origin" = "$expected_origin"
             worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
             test "$worktrees" = "$expected_worktrees"
-            if [ "$force" != 1 ] && [ -n "$source_commit" ]; then
-                test -z "$(git -C "$physical" status --porcelain --untracked-files=all)"
+            if [ "$force" != 1 ]; then
+                status=$(workspace_git -C "$physical" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status"
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT
                 git init --bare --quiet "$scratch/repository.git"
@@ -1724,8 +1826,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 printf '%s\n' "$receipt" | cmp -s - "$receipt_path"
             fi
             case "$layout" in
-                worktree) git --git-dir="$common_repository/.git" worktree remove --force "$quarantine" ;;
-                checkout) rm -rf -- "$quarantine" ;;
+                worktree) remove_source_tree "$quarantine" "$common_repository" ;;
+                checkout) remove_source_tree "$quarantine" ;;
             esac
             test ! -e "$quarantine"
             test ! -L "$quarantine"
@@ -1736,7 +1838,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function inspectionScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             managed_user=$3
@@ -1745,8 +1847,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             expected_branch=$6
             inspect_content=$7
             unresolved=$8
-            expected_origin=$9
-            prepare_id=${10:-}
+            allow_absent=$9
+            expected_origin=${10}
+            prepare_id=${11:-}
             encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
             export GIT_OPTIONAL_LOCKS=0
             failure=10
@@ -1763,16 +1866,17 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 IFS=/
             done
             IFS=$old_ifs
-            if [ "$unresolved" = 1 ] && [ ! -e "$checkout" ] && [ ! -L "$checkout" ]; then
+            if [ "$allow_absent" = 1 ] && [ ! -e "$checkout" ] && [ ! -L "$checkout" ]; then
                 test "$layout" = checkout
                 encode "$checkout"
                 encode "$checkout/.git"
                 encode "$expected_origin"
-                encode ''
-                encode ''
+                encode "$expected_branch"
+                encode "$(printf '%040d' 0)"
                 encode ''
                 encode absent
-                encode ''
+                printf 'worktree %s\0\0' "$checkout" | base64 --wrap=0
+                printf '\n'
                 exit 0
             fi
             test -d "$checkout"
@@ -1809,8 +1913,9 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                     ;;
                 *) exit "$failure" ;;
             esac
-            commit=
-            if [ "$unresolved" != 1 ]; then
+            if [ "$unresolved" = 1 ]; then
+                commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit} 2>/dev/null || printf '%040d' 0)
+            else
                 commit=$(git -C "$checkout" rev-parse --verify HEAD^{commit})
             fi
             failure=13
@@ -1821,16 +1926,16 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 *) exit "$failure" ;;
             esac
             failure=14
-            branch=
+            branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
             if [ "$unresolved" != 1 ]; then
-                branch=$(git -C "$checkout" symbolic-ref --quiet --short HEAD || true)
                 test "$branch" = "$expected_branch"
             fi
             failure=1
             dirty=
             if [ "$inspect_content" = 1 ]; then
                 dirty=0
-                test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)" || dirty=1
+                status=$(workspace_git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status" || dirty=1
             fi
             encode() { printf '%s' "$1" | base64 --wrap=0; printf '\n'; }
             encode "$top"
@@ -1847,7 +1952,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function publicationScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             origin=$1
             commit=$2
             scratch=$(mktemp -d)
@@ -1873,7 +1978,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
 
     private static function removalScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             root=$2
             grouping_directory=$3
@@ -2014,7 +2119,8 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test "$linked_count" = 1
             if [ "$force" != 1 ]; then
                 failure=20
-                test -z "$(git -C "$checkout" status --porcelain --untracked-files=all)"
+                status=$(workspace_git -C "$checkout" status --porcelain --untracked-files=all) || exit 1
+                test -z "$status"
                 failure=1
                 scratch=$(mktemp -d)
                 trap 'rm -rf -- "$scratch"' EXIT
@@ -2040,15 +2146,48 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 trap - EXIT
             fi
             failure=1
-            rm -rf -- "$checkout"
+            remove_source_tree "$checkout"
             release_empty_grouping_directory "$grouping_directory"
             BASH;
     }
 
     private static function releaseEmptyGroupingDirectoryFunction(): string
     {
-        return <<<'BASH'
+        $worker = TaskWorkerUser::name() ?? '';
+
+        return 'trust_worker='.escapeshellarg($worker)."\n".<<<'BASH'
+            remove_source_tree() {
+                local tree=$1
+                if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then
+                    test "$(id -u "$trust_worker")" != 0
+                    test "$trust_worker" != "$managed_user"
+                    # Quarantine's parent is private. Enter the validated tree before dropping privileges.
+                    (
+                        cd -- "$tree"
+                        sudo -n -u "$trust_worker" -- find -P . -user "$trust_worker" -type d \( -perm /3000 -o ! -perm -0070 \) \
+                            -exec chmod g-s,-t,g+rwx -- {} +
+                    )
+                fi
+                if [ "$#" = 2 ]; then
+                    git --git-dir="$2/.git" worktree remove --force "$tree"
+                else
+                    rm -rf -- "$tree"
+                fi
+            }
+
             release_empty_grouping_directory() {
+                test ! -e "$checkout"
+                test ! -L "$checkout"
+                if [ -n "$trust_worker" ] && id "$trust_worker" >/dev/null 2>&1; then
+                    test "$(id -u "$trust_worker")" != 0
+                    test "$trust_worker" != "$managed_user"
+                    if sudo -n -u "$trust_worker" -H -- git config --global --fixed-value --unset-all safe.directory "$checkout"; then
+                        :
+                    else
+                        status=$?
+                        test "$status" = 5
+                    fi
+                fi
                 grouping_directory=$1
                 test "$grouping_directory" != "$root"
                 test "$grouping_directory" = "$(dirname "$checkout")"

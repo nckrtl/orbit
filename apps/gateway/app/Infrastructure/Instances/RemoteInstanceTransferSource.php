@@ -15,12 +15,16 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 final readonly class RemoteInstanceTransferSource implements InstanceTransferSource
@@ -32,14 +36,14 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         private KnownHostsStore $knownHosts,
     ) {}
 
-    public function capture(Instance $instance): TransferSourceCapture
+    public function capture(Instance $instance, ?string $sqliteSourcePath = null): TransferSourceCapture
     {
         $instance->loadMissing('node');
         $layout = InstanceSourceLayout::from($instance->source_layout);
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? ''],
                 input: $this->captureScript(),
             ),
             step: 'app-instance-transfer-capture',
@@ -138,31 +142,36 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
     private function stageArchive(Node $source, TransferSourceCapture $capture): string
     {
-        $temporary = tempnam(sys_get_temp_dir(), 'orbit-transfer-');
+        $directory = storage_path('app/transfer-staging');
+        $temporary = null;
 
-        if (! is_string($temporary)) {
-            throw $this->failed();
+        try {
+            new Filesystem()->ensureDirectoryExists($directory, 0700);
+            $temporary = tempnam($directory, 'orbit-transfer-');
+
+            // tempnam can fall back to the system temporary directory. Never stage there.
+            if (! is_string($temporary) || dirname($temporary) !== realpath($directory) || ! chmod($temporary, 0600)) {
+                throw $this->failed();
+            }
+        } catch (Throwable) {
+            if (is_string($temporary) && is_file($temporary)) {
+                unlink($temporary);
+            }
+
+            throw $this->stagingFailed('app-instance-transfer-stage');
         }
 
         try {
-            if (! chmod($temporary, 0600)) {
-                throw $this->failed();
-            }
-
-            $download = $this->processes->run(new ProcessInvocation(
+            $this->copyArchive(
                 $this->scpFromRemote($source, $capture->archiveIdentity, $temporary),
-                maxOutputBytes: 256,
-            ));
-
-            if (! $download->succeeded() || $download->truncated) {
-                throw $this->failed();
-            }
+                'app-instance-transfer-download',
+            );
         } catch (Throwable $exception) {
             if (is_file($temporary)) {
                 unlink($temporary);
             }
 
-            throw $exception instanceof ResourceOperationException ? $exception : $this->failed();
+            throw $exception;
         }
 
         return $temporary;
@@ -175,14 +184,10 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         TransferSourceCapture $capture,
     ): void {
         $remoteArchive = "/tmp/orbit-transfer-{$capture->instanceId}.tar";
-        $upload = $this->processes->run(new ProcessInvocation(
+        $this->copyArchive(
             $this->scpToRemote($destination, $archive, $remoteArchive),
-            maxOutputBytes: 256,
-        ));
-
-        if (! $upload->succeeded() || $upload->truncated) {
-            throw $this->failed();
-        }
+            'app-instance-transfer-upload',
+        );
 
         $this->ssh->execute(
             $destination,
@@ -202,6 +207,30 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             step: 'app-instance-transfer-materialize',
             errorCode: 'instance.transfer_failed',
         );
+    }
+
+    /** @param non-empty-list<string> $arguments */
+    private function copyArchive(array $arguments, string $step): void
+    {
+        try {
+            $result = $this->processes->run(new ProcessInvocation($arguments, maxOutputBytes: 256));
+        } catch (Throwable) {
+            throw $this->stagingFailed($step);
+        }
+
+        if (! $result->succeeded() || $result->truncated) {
+            throw $this->stagingFailed($step, $result->exitCode);
+        }
+    }
+
+    private function stagingFailed(string $step, ?int $exitCode = null): ResourceOperationException
+    {
+        Log::warning('Instance transfer archive staging failed.', [
+            'step' => $step,
+            'exit_code' => $exitCode,
+        ]);
+
+        return $this->failed();
     }
 
     /** @return non-empty-list<string> */
@@ -275,9 +304,10 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
     private function captureScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             source=$1
             layout=$2
+            sqlite_source=$3
             archive="/tmp/orbit-transfer-$(basename "$source")-$$.tar"
             cd -- "$source"
             head=$(git rev-parse HEAD)
@@ -292,13 +322,23 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
               common=$(git rev-parse --git-common-dir)
             fi
             refs=$(git for-each-ref --format='%(refname:short)' refs/heads)
+            exclusions=()
+            if [ -n "$sqlite_source" ]; then
+              case "$sqlite_source" in
+                "$source"/*)
+                  relative="./${sqlite_source#"$source"/}"
+                  exclusions=(--no-wildcards --anchored "--exclude=$relative" "--exclude=$relative-wal" "--exclude=$relative-shm")
+                  ;;
+                *) exit 20 ;;
+              esac
+            fi
             if [ "$layout" = "worktree" ]; then
               git bundle create "$archive.bundle" HEAD
-              tar --exclude=.git -cf "$archive" .
+              tar --exclude=.git "${exclusions[@]}" -cf "$archive" .
               tar -rf "$archive" -C "$(dirname "$archive")" "$(basename "$archive.bundle")"
               rm -f -- "$archive.bundle"
             else
-              tar -cf "$archive" .
+              tar "${exclusions[@]}" -cf "$archive" .
             fi
             printf 'head=%s\nbranch=%s\ndetached=%s\narchive=%s\ncommon=%s\nrefs=%s\n' \
               "$head" "$branch" "$detached" "$archive" "$common" "$refs"
@@ -307,7 +347,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
     private function materializeScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).'transfer_worker='.escapeshellarg(TaskWorkerUser::name() ?? '')."\n".<<<'BASH'
             archive=$1
             destination=$2
             head=$3
@@ -320,16 +360,30 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             cd -- "$destination"
             if [ ! -d .git ]; then
               git init --quiet
+              if [ -n "$transfer_worker" ]; then
+                worker_uid=$(id -u "$transfer_worker")
+                test "$worker_uid" != 0
+                test "$worker_uid" != "$(id -u)"
+                managed_user=$(id -un)
+                find -P "$destination" -type d -exec setfacl -m "d:u:$transfer_worker:rwX,d:u:$managed_user:rwX" -- {} +
+                setfacl -R -P -m "u:$transfer_worker:rwX,u:$managed_user:rwX" -- "$destination"
+                setfacl -m "u:$transfer_worker:r--" -- "$destination/.git/config"
+                find -P "$destination/.git/hooks" -type d -exec setfacl -m "u:$transfer_worker:r-X,d:u:$transfer_worker:r-X" -- {} +
+                find -P "$destination/.git/hooks" -type f -exec setfacl -m "u:$transfer_worker:r-X" -- {} +
+              fi
               if [ -f ./*.bundle ]; then
                 bundle=$(echo ./*.bundle)
-                git fetch --quiet "$bundle" HEAD
+                workspace_git -C "$destination" fetch --quiet "$bundle" HEAD
                 rm -f -- "$bundle"
               fi
               if [ "$detached" = "1" ] || [ -z "$branch" ]; then
-                git checkout --quiet --detach "$head"
+                workspace_git -C "$destination" update-ref --no-deref HEAD "$head"
               else
-                git checkout --quiet -B "$branch" "$head"
+                workspace_git -C "$destination" symbolic-ref HEAD "refs/heads/$branch"
+                workspace_git -C "$destination" update-ref HEAD "$head"
               fi
+              # Populate the index without replacing dirty files or restoring excluded SQLite files.
+              workspace_git -C "$destination" reset --mixed --quiet "$head"
             fi
             # Other local users, the Node agent included, never read an Instance's environment (ADR 0151).
             if [ -f .env ] && [ ! -L .env ]; then

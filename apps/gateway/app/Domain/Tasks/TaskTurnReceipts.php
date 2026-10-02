@@ -20,7 +20,7 @@ interface TaskTurnReceipts
      *
      * @throws TaskTurnReceiptException
      */
-    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void;
+    public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void;
 
     /**
      * Reads the receipt. When `$actingThreadId` is set, the receipt applies only when it names that

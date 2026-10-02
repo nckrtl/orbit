@@ -10,6 +10,7 @@ use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Doctor\ProcessInspectionData;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
+use App\Domain\Doctor\SystemdProcessObservationData;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\RuntimeHibernation;
@@ -17,11 +18,19 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Doctor\NativeProcessStateInspector;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Sleep;
 
 it('returns a healthy empty report without runtime inspection when the node has no processes', function (): void {
     $node = doctor_process_node();
@@ -235,6 +244,108 @@ it('does not inspect runtimes when the node is unreachable', function (): void {
         ->toBeNull();
 });
 
+it('reports a crash-looping systemd process even when both samples read active', function (): void {
+    $node = doctor_process_node();
+    orbit_test_set_app_placement_role($node, false);
+    $process = doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running);
+    $probe = doctor_systemd_probe([
+        "ActiveState=active\nSubState=running\nNRestarts=3\n",
+        "ActiveState=active\nSubState=running\nNRestarts=4\n",
+    ]);
+
+    $report = $probe->inspect(doctor_process_context($node));
+
+    expect($report->checked)->toBe(1)
+        ->and($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('process.crash_loop')
+        ->and($report->issues[0]->kind->value)->toBe('drift')
+        ->and($report->issues[0]->resourceId)->toBe($process->id)
+        ->and($report->issues[0]->resourceName)->toBe($process->name)
+        ->and($report->issues[0]->expected)->toBe('running')
+        ->and($report->issues[0]->observed)->toBe('active/running; NRestarts=3 -> active/running; NRestarts=4');
+});
+
+it('keeps a systemd Process healthy after earlier restarts when the count is stable', function (): void {
+    $node = doctor_process_node();
+    orbit_test_set_app_placement_role($node, false);
+    doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running);
+    $probe = doctor_systemd_probe([
+        "ActiveState=active\nSubState=running\nNRestarts=26000\n",
+        "ActiveState=active\nSubState=running\nNRestarts=26000\n",
+    ]);
+
+    $report = $probe->inspect(doctor_process_context($node));
+
+    expect($report->checked)->toBe(1)->and($report->issues)->toBeEmpty();
+});
+
+it('reports auto-restart as one crash-loop issue instead of a state mismatch', function (array $samples, string $evidence): void {
+    $node = doctor_process_node();
+    orbit_test_set_app_placement_role($node, false);
+    doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running);
+    $probe = doctor_systemd_probe($samples);
+
+    $report = $probe->inspect(doctor_process_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('process.crash_loop')
+        ->and($report->issues[0]->observed)->toBe($evidence);
+})->with([
+    'restart wait with no counter available' => [
+        ["ActiveState=activating\nSubState=auto-restart\n"],
+        'activating/auto-restart; NRestarts=unavailable',
+    ],
+    'active before restart wait with stable count' => [
+        ["ActiveState=active\nSubState=running\nNRestarts=4\n", "ActiveState=activating\nSubState=auto-restart\nNRestarts=4\n"],
+        'active/running; NRestarts=4 -> activating/auto-restart; NRestarts=4',
+    ],
+]);
+
+it('uses ordinary state comparison for activation without crash-loop evidence', function (): void {
+    $node = doctor_process_node();
+    orbit_test_set_app_placement_role($node, false);
+    doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Running);
+    $probe = doctor_systemd_probe([
+        "ActiveState=activating\nSubState=start\nNRestarts=3\n",
+        "ActiveState=activating\nSubState=start\nNRestarts=3\n",
+    ]);
+
+    $report = $probe->inspect(doctor_process_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('process.state_mismatch')
+        ->and($report->issues[0]->observed)->toBe('other');
+});
+
+it('does not apply crash-loop drift to a Process desired stopped', function (): void {
+    $node = doctor_process_node();
+    orbit_test_set_app_placement_role($node, false);
+    doctor_process($node, ProcessRuntime::Systemd, DesiredProcessState::Stopped);
+    $probe = doctor_systemd_probe(["ActiveState=activating\nSubState=auto-restart\nNRestarts=3\n"]);
+
+    $report = $probe->inspect(doctor_process_context($node));
+
+    expect($report->issues)->toHaveCount(1)
+        ->and($report->issues[0]->code)->toBe('process.state_mismatch')
+        ->and($report->issues[0]->expected)->toBe('stopped');
+    Sleep::assertNeverSlept();
+});
+
+it('does not apply systemd crash-loop evidence to a Docker Process', function (): void {
+    $node = doctor_process_node();
+    $process = doctor_process($node, ProcessRuntime::Docker, DesiredProcessState::Running);
+    $runtime = Mockery::mock(ProcessStateInspector::class);
+    $runtime->shouldReceive('inspect')->once()
+        ->with(Mockery::on(fn (Process $value): bool => $value->is($process)))
+        ->andReturn(new ProcessInspectionData(true, ProcessInspectionStatus::Running, [
+            new SystemdProcessObservationData('activating', 'auto-restart', 3),
+        ]));
+
+    $report = new ProcessDoctorProbe($runtime)->inspect(doctor_process_context($node));
+
+    expect($report->issues)->toBeEmpty();
+});
+
 it('supports all bounded healthy runtime states', function (
     ProcessRuntime $runtime,
     DesiredProcessState $desired,
@@ -393,6 +504,34 @@ it('reports a non-keep-alive Process that is down while the Instance is awake', 
         ->and($report->issues[0]->code)
         ->toBe('process.state_mismatch');
 });
+
+/** @param list<string> $samples */
+function doctor_systemd_probe(array $samples): ProcessDoctorProbe
+{
+    Sleep::fake();
+    $ssh = Mockery::mock(SshExecutor::class);
+    $ssh->shouldReceive('execute')->andReturnUsing(
+        static function (SshConnection $connection, RemoteCommand $command) use (&$samples): CommandResult {
+            $output = match (array_slice($command->arguments, 0, 3)) {
+                ['sudo', 'systemctl', 'is-active'] => "active\n",
+                ['sudo', 'systemctl', 'show'] => array_shift($samples) ?? throw new RuntimeException('Unexpected sample.'),
+                ['sudo', 'test', '-e'], ['sudo', 'grep', '-Fqx'] => '',
+                default => throw new RuntimeException('Unexpected command.'),
+            };
+
+            return new CommandResult(0, $output, '', 1, false);
+        },
+    );
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/managed-key');
+    $hosts = Mockery::mock(KnownHostsStore::class);
+    $hosts->shouldReceive('path')->andReturn('/pinned-hosts');
+    app()->instance(SshExecutor::class, $ssh);
+    app()->instance(SshKeyProvider::class, $keys);
+    app()->instance(KnownHostsStore::class, $hosts);
+
+    return new ProcessDoctorProbe(app(NativeProcessStateInspector::class));
+}
 
 function doctor_process_node(): Node
 {

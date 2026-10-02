@@ -7,6 +7,7 @@ namespace App\Infrastructure\GitHub;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
+use App\Domain\GitHub\GitHubBranchPullRequest;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubInstallation;
 use App\Domain\GitHub\GitHubPullRequest;
@@ -143,6 +144,44 @@ final readonly class HttpGitHubApi implements GitHubApi
         GitHubRepository $repository,
     ): string {
         return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write']);
+    }
+
+    public function repositoryPullRequestReadToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['pull_requests' => 'read']);
+    }
+
+    public function pullRequestsByHead(#[SensitiveParameter] string $token, GitHubRepository $repository, string $head): array
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)
+            ->get($this->repositoryPath($repository).'/pulls', [
+                'head' => $repository->owner.':'.$head,
+                'state' => 'all',
+            ]));
+        $rows = $response->json();
+        if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows)) {
+            throw GitHubApiException::unavailable();
+        }
+        $pullRequests = [];
+        foreach ($rows as $row) {
+            $url = is_array($row) ? $this->text($row['html_url'] ?? null) : null;
+            $number = is_array($row) ? ($row['number'] ?? null) : null;
+            if ($url === null || ! is_int($number) || $repository->pullRequestNumber($url) !== $number
+                || ! in_array($row['state'] ?? null, ['open', 'closed'], true)) {
+                throw GitHubApiException::unavailable();
+            }
+            $state = match (true) {
+                $this->text($row['merged_at'] ?? null) !== null => GitHubPullRequestState::Merged,
+                $row['state'] === 'closed' => GitHubPullRequestState::Closed,
+                default => GitHubPullRequestState::Open,
+            };
+            $pullRequests[] = new GitHubBranchPullRequest($url, $number, $state);
+        }
+
+        return $pullRequests;
     }
 
     public function repositoryChecksToken(

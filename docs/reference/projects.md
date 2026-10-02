@@ -143,6 +143,10 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 
 A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `project.update_in_progress`.
 
+When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git during preflight, origin changes, fetches, branch changes, and rollback. The Gateway does not run checkout hooks or a custom filesystem monitor for those operations. The overrides do not change the stored Git configuration.
+
+When a worker is configured, branch switch and rollback checkout commands run as that worker without a credential environment. Any clean, smudge, or process filter they start has the worker's identity, not the managed account's.
+
 Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 ### Repository changes
@@ -207,6 +211,16 @@ Instances of one repository share one serving contract. Per-Instance route or PH
 ### A setting routes task workspaces
 
 A new task workspace is visitable only when the Project's `task_workspace_routed` setting says so. Choosing that from the slug `orbit` was rejected, because the engine would then know one repository. [Task workspace routing](#task-workspace-routing) records the one-time migration of that old result, and that a later change does not reroute a workspace that already exists.
+
+### One public name without compatibility
+
+Project is the only public name for the repository record. Orbit has one operator, who does not value legacy support, so compatibility paths, aliases, inert endpoints, and conversion windows are removed by default without waiting for fleet migration or another confirmation. A second name adds code, tests, documentation, and ambiguity without protecting a supported user population.
+
+The supported surface is `/api/v1/projects`, `project:*`, the Project MCP tools, and Instance fields `project_id` and `project`. The former `/api/v1/apps` routes, their nested Process and Schedule definition routes, and generated `app-*` MCP tools are removed. Project creation requires an explicit `type`; there is no path-specific default for an old endpoint. CLI Project selection uses `--project`, not `--app`. [Dependency scan and update](/reference/instance-dependencies) select one Instance by its Route domain with `--project`.
+
+The same rule applies beyond the repository record: `--wireguard-ip` has no `--wireguard-address` alias, and the [task driver settings](/reference/tasks#drivers) use separate implementer and reviewer environment variables, with no `ORBIT_TASKS_AGENT_DRIVER` fallback. Older clients that depend on removed names must be updated; Orbit provides no compatibility period.
+
+Retaining `/apps` until clients migrate is rejected, because there is no other user's migration to protect. Keeping aliases because they seem cheap or harmless is rejected, because they obscure the supported interface and still need maintenance. A conversion window or an inert endpoint is rejected, because neither provides value to this operator. Public compatibility cleanup and [stored record naming](#project-and-instance) are separate decisions; coupling them would mix interface removal with database and class renaming. Unrelated names such as the GitHub App and Node roles are not compatibility aliases for Project.
 
 ### Project and Instance
 

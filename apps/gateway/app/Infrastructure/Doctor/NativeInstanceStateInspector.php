@@ -14,6 +14,7 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use Throwable;
@@ -151,7 +152,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
 
     private static function remoteScript(): string
     {
-        return <<<'BASH'
+        return WorkspaceGit::bashPreamble().<<<'BASH'
             repository=$1
             checkout=$2
             allowed_root=$3

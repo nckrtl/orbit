@@ -1,0 +1,16 @@
+Loading questions...
+
+┌  List questions
+│
+├  ● Loaded questions
+│
+└  Loaded questions.
+
+2026-10-07 12:00 · #13/57 · reviewer · answered · contract_gap
+  Which ADR decides the database?
+  Follow ADR 0187.
+
+2026-10-01 00:00 · #13/57 · implementer · open · —
+  Which mirror should the build use?
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

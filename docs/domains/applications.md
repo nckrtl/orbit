@@ -61,6 +61,7 @@ An interruption or incomplete cleanup can leave a pre-activation Instance. An id
 
 After activation, you can commit and move `HEAD`. The starting commit stays as it is. The recorded branch changes only through [recording a renamed branch](#record-a-renamed-branch), or when a Project default-branch update switches a `default` Instance without `branch_override`. Keep the recorded branch checked out. [Removal](/reference/instance-removal#checks-before-removal) refuses a checkout on another branch with `instance.source_branch_mismatch`, also with `--force`. [Cloning](/reference/instance-cloning#candidate-rules) refuses such a candidate with `instance.clone_candidate_branch_invalid`.
 
+
 The Gateway refuses these requests before it changes anything:
 
 | Code | Cause |
@@ -169,7 +170,9 @@ The Gateway then inspects the source on the caller's Node. It trusts none of the
 
 For a source that qualifies as `default`, a `--name` other than `default` returns `instance.identity_conflict`. A name must be a lowercase DNS label of at most 63 characters, or registration returns `instance.name_invalid`.
 
-Orbit records the source layout as `checkout` or `worktree`. It moves the complete source to `<apps-root>/<project-slug>/<name>`. `HEAD`, the branch or detached state, the index, dirty and untracked files, and all refs stay as they are. A source that is already at that path stays there.
+Orbit records the source layout as `checkout` or `worktree`. It moves the complete source to `<apps-root>/<project-slug>/<name>`. `HEAD`, the branch or detached state, the index, dirty and untracked files, and all refs stay as they are. A source that is already at that path is adopted in place: Orbit verifies it without moving, copying, or repairing its Git links.
+
+Source verification covers this source's `HEAD`, branch, index, working tree, and local Git configuration. It does not include other branches, tags, remote-tracking refs, or agent checkpoint refs in the shared repository. Those refs can change while registration runs or between attempts. A change to the source itself before adoption or during a move still refuses registration. An identical retry resumes when the source itself is unchanged. After adoption, the managed destination is authoritative and retries check its Git identity rather than the pre-adoption content digest.
 
 By default, registration adopts only the requested source. When Orbit moves a checkout that has linked worktrees, it repairs their Git links so they keep working. `--include-worktrees` adopts the checkout and every linked worktree in one step. The Gateway checks the complete set before it moves anything. If one check fails, nothing moves. A move to another filesystem copies and verifies the source before Orbit deletes the original. An identical retry resumes an interrupted move. The Gateway finishes that move during registration. It does not stop and ask you to change the source yourself.
 
@@ -195,7 +198,7 @@ A failed setup step during `instance:create` runs the teardown steps and removes
 
 An identical `instance:create` for an active Instance returns it unchanged and runs no setup. An Instance can stay active with a failed setup: after `instance:setup` or `instance:register --setup` fails, or when Orbit could not confirm the failed step or finish the rollback. Then `instance:create` returns `instance.setup_step_failed` until `instance:setup` succeeds, unless the [database clone](#database-clone) did not finish: then `instance:create` finishes it and runs setup.
 
-Orbit does not recover missing source profiles on older Instances. ADR 0177 records the no-legacy-support rule.
+Orbit does not recover missing source profiles on older Instances. [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) explains the no-legacy-support rule.
 
 ## Laravel application URL
 

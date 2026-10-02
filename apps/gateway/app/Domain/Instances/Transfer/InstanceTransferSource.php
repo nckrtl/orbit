@@ -11,7 +11,7 @@ use App\Models\Node;
 
 interface InstanceTransferSource
 {
-    public function capture(Instance $instance): TransferSourceCapture;
+    public function capture(Instance $instance, ?string $sqliteSourcePath = null): TransferSourceCapture;
 
     public function materialize(
         TransferSourceCapture $capture,

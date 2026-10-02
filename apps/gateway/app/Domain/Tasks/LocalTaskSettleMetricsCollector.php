@@ -18,6 +18,8 @@ final readonly class LocalTaskSettleMetricsCollector implements TaskSettleMetric
             tokens: max(0, (int) ($refreshed->tokens ?? 0)),
             lineDiff: max(0, (int) ($refreshed->line_diff ?? 0)),
             durationMs: max(0, (int) ($refreshed->duration_ms ?? 0)),
+            questions: max(0, (int) ($refreshed->questions ?? 0)),
+            escalations: max(0, (int) ($refreshed->escalations ?? 0)),
         );
     }
 }

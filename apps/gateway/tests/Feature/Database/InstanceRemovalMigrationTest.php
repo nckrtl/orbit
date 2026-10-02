@@ -261,6 +261,8 @@ it('backfills historical source commits and preserves distinct observed evidence
 });
 
 it('persists nullable detached branches without weakening recorded branch identity', function (): void {
+    $failedCreationMigration = require database_path('migrations/2026_10_09_000000_allow_failed_creation_removal.php');
+    $failedCreationMigration->down();
     $migration = orb105_nullable_removal_branch_migration();
     run_legacy_schema_migration($migration, 'down');
     [$detached, $detachedRoute] = orb179_removal_fixture('detached-removal');

@@ -19,6 +19,10 @@ Updating subtask...
 │
 ├  Assistance           no
 │
+├  Kind                 —
+│
+├  Question             —
+│
 ├  Reason               —
 │
 ├  Type                 implementation

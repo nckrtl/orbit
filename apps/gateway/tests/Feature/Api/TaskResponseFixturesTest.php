@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -16,6 +17,7 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Http;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\CancelTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\CompleteTaskGroupRequest;
@@ -30,6 +32,7 @@ use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeAgentDriver;
 
 /**
@@ -141,6 +144,29 @@ describe('task response fixtures', function (): void {
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk(), 'tasks/tasks-show/default', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
     });
 
+    it('records a watched pull request opened outside Orbit on a running group', function (): void {
+        Http::preventStrayRequests();
+        GitHubTestSupport::storeApp();
+        $group = task_fixture_group($this->project);
+        $group->update(['status' => TaskGroupStatus::Running]);
+        Http::fake([
+            'https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+            'https://api.github.com/repos/nckrtl/orbit/pulls?*' => Http::response([
+                ['number' => 451, 'html_url' => 'https://github.com/nckrtl/orbit/pull/451', 'state' => 'open', 'merged_at' => null],
+            ]),
+        ]);
+        app(WatchTaskBranchPullRequestAction::class)->execute($group);
+
+        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
+            ->assertJsonPath('data.pr_url', null)
+            ->assertJsonPath('data.watched_pr_url', 'https://github.com/nckrtl/orbit/pull/451')
+            ->assertJsonPath('data.watched_pr_number', 451)
+            ->assertJsonPath('data.watched_pr_state', 'open'),
+            'tasks/tasks-show/watched', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
+        Http::assertSentCount(3);
+    });
+
     it('records group updates, a refused update, cancel, and complete', function (): void {
         $group = task_fixture_group($this->project);
 
@@ -154,6 +180,28 @@ describe('task response fixtures', function (): void {
         $settling = task_fixture_group($this->project);
         $settling->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/nckrtl/orbit/pull/612']);
         record_fixture($this->postJson("/api/v1/task-groups/{$settling->id}/complete")->assertOk(), 'tasks/tasks-complete/completed', CompleteTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/complete');
+    });
+
+    it('records completion of an ended watched pull request and refusal of an open one', function (): void {
+        Http::preventStrayRequests();
+        GitHubTestSupport::storeApp();
+        $group = Task::topLevel()->create([
+            'project_id' => $this->project->id, 'title' => 'Finish ended pull request', 'brief' => 'Cancel the remaining work.',
+            'status' => TaskGroupStatus::Running, 'watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/544',
+            'watched_pr_number' => 544, 'watched_pr_state' => 'merged',
+        ]);
+        Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Remaining work', 'brief' => 'No longer needed.', 'status' => TaskStatus::Todo]);
+        Http::fake([
+            'https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['id' => 9]),
+            'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_complete'], 201),
+            'https://api.github.com/repos/nckrtl/orbit/pulls/544' => Http::sequence()
+                ->push(['state' => 'open', 'merged' => false])
+                ->push(['state' => 'closed', 'merged' => true, 'merged_at' => '2026-09-23T09:59:00Z']),
+        ]);
+
+        record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/complete")->assertStatus(409), 'tasks/tasks-complete/not-ready', CompleteTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/complete');
+        record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/complete")->assertOk()->assertJsonPath('data.tasks.0.status', 'cancelled'), 'tasks/tasks-complete/ended', CompleteTaskGroupRequest::class, 'POST /api/v1/task-groups/{group}/complete');
+        Http::assertSentCount(5);
     });
 
     it('records subtask create, update, and destroy', function (): void {

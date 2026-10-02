@@ -317,6 +317,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
         'process' => [
             'process.runtime_missing',
             'process.state_mismatch',
+            'process.crash_loop',
             'process.inspection_failed',
             'process.node_unreachable',
         ],

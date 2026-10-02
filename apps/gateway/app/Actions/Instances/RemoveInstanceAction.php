@@ -40,7 +40,6 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
-use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -72,11 +71,11 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         private ?DropOwnedDatabasesAction $databases = null,
     ) {}
 
-    public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true, bool $requirePreActivation = false): InstanceRemoval
+    public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true): InstanceRemoval
     {
         $instanceId = $instance->id;
         $instanceName = $instance->name;
-        $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
+        $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade);
         $broadcaster = $this->broadcaster ?? app(RecordEventBroadcaster::class);
 
         if (Instance::query()->whereKey($instanceId)->exists()) {
@@ -96,12 +95,12 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         return $removal;
     }
 
-    private function performRemoval(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
+    private function performRemoval(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade): InstanceRemoval
     {
         if ($instance->placedOnAppProd()) {
             return $this->environmentOperations->run(
                 [$instance->id],
-                fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade, $requirePreActivation),
+                fn (): InstanceRemoval => $this->executeOwned($instance, $force, false, $allowCascade),
             );
         }
 
@@ -111,7 +110,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             $ownerIds,
             fn (): InstanceRemoval => $this->sourceLock->synchronized(
                 $instance->node_id,
-                function () use ($instance, $force, $ownerIds, $runTeardown, $allowCascade, $requirePreActivation): InstanceRemoval {
+                function () use ($instance, $force, $ownerIds, $runTeardown, $allowCascade): InstanceRemoval {
                     $currentOwnerIds = $allowCascade ? $this->removalEnvironmentOwnerIds($instance->refresh(), $force) : [$instance->id];
 
                     if ($currentOwnerIds !== $ownerIds) {
@@ -122,18 +121,15 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         );
                     }
 
-                    return $this->executeOwned($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
+                    return $this->executeOwned($instance, $force, $runTeardown, $allowCascade);
                 },
             ),
         );
     }
 
-    private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
+    private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade): InstanceRemoval
     {
         $snapshot = $instance->refresh()->load($this->removalRelations());
-        if ($requirePreActivation && $snapshot->status === InstanceState::Active) {
-            throw new ResourceOperationException('instance.remove_refused', 'Failed-create cleanup cannot remove an activated Instance.', 409);
-        }
 
         if ($snapshot->status === InstanceState::Removing) {
             return $this->resume($snapshot, $force);
@@ -232,10 +228,14 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             throw new ResourceOperationException('instance.remove_refused', 'Create rollback cannot remove other Instances.', 409);
         }
 
-        if ($runTeardown && $snapshot->status === TaskWorkspaceLifecycle::settledState($snapshot)) {
+        if ($runTeardown) {
             $ranTeardown = false;
 
             foreach ($members as $member) {
+                if ($this->failedCreation($member)) {
+                    continue;
+                }
+
                 $ranTeardown = ($this->lifecycle ?? app(ProjectLifecycleRunner::class))->run($member, LifecyclePhase::Teardown) || $ranTeardown;
             }
 
@@ -317,7 +317,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
                     if (
                         ! $lockedRoute instanceof Route
-                        || ! $this->removableRouteStatus($lockedMember, $lockedRoute)
+                        || ! $this->removableRouteState($lockedRoute, $lockedMember)
                         || $lockedRoute->targets->count() !== 1
                         || $lockedRoute->targets->sole()->instance_id !== $lockedMember->id
                     ) {
@@ -447,7 +447,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
     {
         if (InstanceTransfer::query()
             ->where('instance_id', $instance->id)
-            ->where('status', '!=', 'completed')
+            ->open()
             ->exists()) {
             throw new ResourceOperationException(
                 errorCode: 'instance.transfer_incomplete',
@@ -536,7 +536,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                 );
             }
 
-            if ($registered->count() > 1 && ! $force) {
+            if ($registered->count() > 1 && (! $force || $this->failedCreation($requested))) {
                 throw new ResourceOperationException(
                     errorCode: 'instance.remove_refused',
                     message: 'The checkout has registered linked worktrees; retry with --force.',
@@ -668,7 +668,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $route = $instance->routes->sole();
 
         if (
-            ! $this->removableRouteStatus($instance, $route)
+            ! $this->removableRouteState($route, $instance)
             || $route->project_id !== $instance->project_id
             || $route->targets->count() !== 1
             || $route->targets->sole()->instance_id !== $instance->id
@@ -713,28 +713,33 @@ final readonly class RemoveInstanceAction implements InstanceRemover
     private function withoutRoute(Instance $instance): bool
     {
         return $instance->routes->isEmpty()
-            && (! $instance->requiresRoute() || $instance->status !== InstanceState::Active);
+            && (! $instance->requiresRoute() || $instance->status === InstanceState::SourceResolved || $this->failedCreation($instance));
     }
 
-    private function removableRouteStatus(Instance $instance, Route $route): bool
+    private function removableRouteState(Route $route, Instance $instance): bool
     {
         return $route->status === RouteStatus::Active
-            || $instance->placedOnAppDev()
-            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
-            && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true);
+            || ($this->failedCreation($instance)
+                && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
+                && $route->node_id === $instance->node_id
+                && $route->project_id === $instance->project_id);
     }
 
-    /** A pre-activation development checkout is removable without running teardown. */
+    private function failedCreation(Instance $instance): bool
+    {
+        return $instance->placedOnAppDev()
+            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
+            && $instance->failed_step !== null
+            && $instance->error_code !== null;
+    }
+
     private function removableState(Instance $instance): bool
     {
-        if ($instance->status === InstanceState::Active) {
+        if ($instance->status === InstanceState::Active || $this->failedCreation($instance)) {
             return true;
         }
 
-        return $instance->placedOnAppDev()
-            && $instance->source_layout === InstanceSourceLayout::Checkout->value
-            && in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true)
-            || $instance->status === InstanceState::SourceResolved
+        return $instance->status === InstanceState::SourceResolved
             && ! $instance->routes()->exists()
             && ! RouteTarget::query()->where('instance_id', $instance->id)->exists();
     }
@@ -914,7 +919,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         ($this->databases ?? app(DropOwnedDatabasesAction::class))->execute($member->instance_id);
 
         // A checkout that never became active, such as a task workspace, has no pool, site, or certificate to withdraw.
-        if ($member->runtime_published || $member->route_id !== null) {
+        if ($member->runtime_published) {
             $this->routes->cleanupRuntime($member);
         }
         $member->update(['runtime_cleaned_at' => now()]);
@@ -927,7 +932,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             $lockedMember = $lockedOperation->members()->lockForUpdate()->findOrFail($member->id);
             InstanceTransfer::query()
                 ->where('instance_id', $member->instance_id)
-                ->where('status', 'completed')
+                ->closed()
                 ->update(['instance_id' => null]);
             app(CancelInstanceAnnotationTasksAction::class)->execute($member->instance_id);
             Instance::query()->lockForUpdate()->findOrFail($member->instance_id)->delete();

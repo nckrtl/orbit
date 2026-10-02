@@ -17,7 +17,7 @@ final readonly class TaskSessionObserver
     /**
      * Observes the task's implementer and its reviewer. Only the thread that acts in the task's current
      * phase defers the task while it works: the implementer while the task runs, and that subtask's
-     * reviewer while it is in review. An earlier subtask's reviewer does not.
+     * reviewer while it is in review, in a consult, or relaying a direction. An earlier subtask's reviewer does not.
      */
     public function observe(Task $group, Task $task): TaskSessionObservation
     {
@@ -25,7 +25,7 @@ final readonly class TaskSessionObserver
         $records = AgentThread::query()->where('task_group_id', $group->id)->orderBy('id')->get();
         $reviewerId = $this->subtaskReviewerId($records, $group, $task);
         $observations = [];
-        $actingRole = $task->status === TaskStatus::Reviewing ? TaskThreadRole::Reviewer : TaskThreadRole::Implementer;
+        $actingRole = $task->status === TaskStatus::Reviewing || $this->reviewerIsActing($task) ? TaskThreadRole::Reviewer : TaskThreadRole::Implementer;
         $actingThreadWorks = false;
         foreach ($records as $thread) {
             if (str_starts_with($thread->external_id, TaskAgentSpawner::PendingPrefix)) {
@@ -105,6 +105,13 @@ final readonly class TaskSessionObserver
         }
 
         return $thread->task_id === null && $thread->id === $group->reviewer_agent_thread_id;
+    }
+
+    /** During a consult or a direction relay, the reviewer acts while the subtask stays running. */
+    private function reviewerIsActing(Task $task): bool
+    {
+        return $task->status === TaskStatus::Running
+            && ($task->consult_comment_id !== null || $task->direction_relay_comment_id !== null);
     }
 
     /** The acting reviewer is this subtask's reviewer, or a legacy shared reviewer after notification. */

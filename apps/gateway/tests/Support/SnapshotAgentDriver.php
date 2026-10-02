@@ -24,7 +24,7 @@ final class SnapshotAgentDriver extends FakeAgentDriver
 
     public function create(AgentThreadStart $intent): string
     {
-        $id = (string) Str::uuid();
+        $id = $intent->externalId ?? (string) Str::uuid();
         $result = $this->dispatch($intent->node, [
             'type' => 'create', 'threadId' => $id, 'title' => $intent->title,
             'model' => $intent->model, 'effort' => $intent->effort,

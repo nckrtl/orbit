@@ -13,6 +13,8 @@ final readonly class TaskAssistanceResponse
         public ?string $projectCode,
         public string $title,
         public string $status,
+        public ?string $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
     ) {}
 
@@ -26,6 +28,8 @@ final readonly class TaskAssistanceResponse
             projectCode: TaskFields::nullableText($data, 'project_code'),
             title: TaskFields::text($data, 'title', 'assisted task group', $requestId),
             status: TaskFields::text($data, 'status', 'assisted task group', $requestId),
+            assistanceKind: TaskFields::nullableText($data, 'assistance_kind'),
+            assistanceQuestion: TaskFields::nullableText($data, 'assistance_question'),
             assistanceReason: TaskFields::nullableText($data, 'assistance_reason'),
         );
     }
@@ -40,7 +44,19 @@ final readonly class TaskAssistanceResponse
             : "{$this->projectCode}-{$this->id}";
     }
 
-    /** @return array{id: int, project_id: int, project: string|null, project_code: string|null, title: string, status: string, assistance_reason: string|null} */
+    /**
+     * @return array{
+     *     id: int,
+     *     project_id: int,
+     *     project: string|null,
+     *     project_code: string|null,
+     *     title: string,
+     *     status: string,
+     *     assistance_kind: string|null,
+     *     assistance_question: string|null,
+     *     assistance_reason: string|null
+     * }
+     */
     public function toArray(): array
     {
         return [
@@ -50,6 +66,8 @@ final readonly class TaskAssistanceResponse
             'project_code' => $this->projectCode,
             'title' => $this->title,
             'status' => $this->status,
+            'assistance_kind' => $this->assistanceKind,
+            'assistance_question' => $this->assistanceQuestion,
             'assistance_reason' => $this->assistanceReason,
         ];
     }

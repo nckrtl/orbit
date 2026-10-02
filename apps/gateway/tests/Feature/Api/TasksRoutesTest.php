@@ -10,6 +10,9 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\QuestionAsker;
+use App\Domain\Tasks\QuestionCause;
+use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -25,6 +28,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskQuestion;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
@@ -74,6 +78,7 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:agent-stream' => ['api/v1/task-groups/{group}/agents/{session}/stream', ['GET', 'HEAD']],
         'tasks:status' => ['api/v1/tasks/status', ['GET', 'HEAD']],
         'tasks:list' => ['api/v1/task-groups', ['GET', 'HEAD']],
+        'tasks:question:list' => ['api/v1/task-questions', ['GET', 'HEAD']],
         'tasks:create' => ['api/v1/task-groups', ['POST']],
         'tasks:show' => ['api/v1/task-groups/{group}', ['GET', 'HEAD']],
         'tasks:update' => ['api/v1/task-groups/{group}', ['PATCH']],
@@ -643,23 +648,33 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
 
     Task::topLevel()->whereKey($flagged['id'])->update([
         'assistance_requested' => true,
+        'assistance_kind' => 'direction',
+        'assistance_question' => $question,
         'assistance_reason' => $blocked,
     ]);
     Task::query()->whereKey($flagged['tasks'][0]['id'])->update([
         'assistance_requested' => true,
+        'assistance_kind' => 'direction',
+        'assistance_question' => $question,
         'assistance_reason' => $question,
     ]);
 
-    $expectFields = function (array $group, bool $requested, ?string $reason, bool $firstRequested, ?string $firstReason): void {
+    $expectFields = function (array $group, bool $requested, ?string $kind, ?string $question, ?string $reason, bool $firstRequested, ?string $firstKind, ?string $firstQuestion, ?string $firstReason): void {
         expect($group)->toMatchArray([
             'assistance_requested' => $requested,
+            'assistance_kind' => $kind,
+            'assistance_question' => $question,
             'assistance_reason' => $reason,
         ])->and($group['tasks'])->toHaveCount(2)
             ->and($group['tasks'][0])->toMatchArray([
                 'assistance_requested' => $firstRequested,
+                'assistance_kind' => $firstKind,
+                'assistance_question' => $firstQuestion,
                 'assistance_reason' => $firstReason,
             ])->and($group['tasks'][1])->toMatchArray([
                 'assistance_requested' => false,
+                'assistance_kind' => null,
+                'assistance_question' => null,
                 'assistance_reason' => null,
             ]);
 
@@ -679,15 +694,15 @@ it('returns assistance fields on show and list for flagged and unflagged groups'
     $shown = $this->getJson('/api/v1/task-groups/'.$flagged['id'])->assertOk()->json('data');
     $clearShown = $this->getJson('/api/v1/task-groups/'.$clear['id'])->assertOk()->json('data');
     expect($shown)->toBeArray()->and($clearShown)->toBeArray();
-    $expectFields($shown, true, $blocked, true, $question);
-    $expectFields($clearShown, false, null, false, null);
+    $expectFields($shown, true, 'direction', $question, $blocked, true, 'direction', $question, $question);
+    $expectFields($clearShown, false, null, null, null, false, null, null, null);
 
     $listed = collect($this->getJson('/api/v1/task-groups')->assertOk()->json('data'))->keyBy('id');
     $flaggedList = $listed->get($flagged['id']);
     $clearList = $listed->get($clear['id']);
     expect($flaggedList)->toBeArray()->and($clearList)->toBeArray();
-    $expectFields($flaggedList, true, $blocked, true, $question);
-    $expectFields($clearList, false, null, false, null);
+    $expectFields($flaggedList, true, 'direction', $question, $blocked, true, 'direction', $question, $question);
+    $expectFields($clearList, false, null, null, null, false, null, null, null);
 });
 
 it('summarises groups asking for assistance on tasks status', function (): void {
@@ -721,6 +736,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     Task::topLevel()->whereKey($first)->update([
         'status' => 'running',
         'assistance_requested' => true,
+        'assistance_kind' => 'direction',
+        'assistance_question' => $question,
         'assistance_reason' => 'The implementer is blocked.',
     ]);
     Task::topLevel()->whereKey($clear)->update([
@@ -730,6 +747,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
     Task::topLevel()->whereKey($second)->update([
         'status' => 'settling',
         'assistance_requested' => true,
+        'assistance_kind' => 'failure',
+        'assistance_question' => null,
         'assistance_reason' => null,
     ]);
     Task::query()->where('parent_id', $subtaskOnly)->update([
@@ -745,6 +764,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
             'project_code' => $project->code,
             'title' => 'First stalled',
             'status' => 'running',
+            'assistance_kind' => 'direction',
+            'assistance_question' => $question,
             'assistance_reason' => 'The implementer is blocked.',
         ],
         [
@@ -754,6 +775,8 @@ it('summarises groups asking for assistance on tasks status', function (): void 
             'project_code' => $project->code,
             'title' => 'Second stalled',
             'status' => 'settling',
+            'assistance_kind' => 'failure',
+            'assistance_question' => null,
             'assistance_reason' => null,
         ],
     ];
@@ -772,4 +795,100 @@ it('summarises groups asking for assistance on tasks status', function (): void 
         ->assertOk()
         ->assertJsonPath('data.enabled', false)
         ->assertJsonPath('data.assistance', $assistance);
+});
+
+it('lists task questions newest first and filters by project, cause, status, and time', function (): void {
+    tasks_gateway();
+    $this->getJson('/api/v1/task-questions')->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
+    enable_tasks();
+    $project = tasks_app('questions');
+    $other = tasks_app('questions-other');
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id, 'title' => 'Questions', 'brief' => 'Record them.', 'status' => TaskGroupStatus::Running,
+    ]);
+    $subtask = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Ask', 'brief' => 'One question.', 'status' => 'running',
+    ]);
+    $elsewhere = Task::topLevel()->create([
+        'project_id' => $other->id, 'title' => 'Other', 'brief' => 'Another project.', 'status' => TaskGroupStatus::Running,
+    ]);
+    $otherSubtask = Task::query()->create([
+        'parent_id' => $elsewhere->id, 'position' => 1, 'title' => 'Other ask', 'brief' => 'Elsewhere.', 'status' => 'running',
+    ]);
+    $older = TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $subtask->id, 'attempt' => 1, 'asked_by' => QuestionAsker::Implementer,
+        'question' => 'Which mirror?', 'status' => QuestionStatus::Escalated, 'asked_at' => '2026-10-01 00:00:00', 'escalated_at' => '2026-10-01 00:00:00',
+    ]);
+    $newer = TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $subtask->id, 'attempt' => 2, 'asked_by' => QuestionAsker::Reviewer,
+        'question' => 'Which ADR?', 'status' => QuestionStatus::Answered, 'answered_by' => QuestionAsker::Operator,
+        'answer' => 'Follow the ADR.', 'cause' => QuestionCause::ContractGap, 'asked_at' => '2026-10-07 12:00:00',
+        'escalated_at' => '2026-10-07 12:00:00', 'answered_at' => '2026-10-07 13:00:00',
+        'opened_comment_id' => 9, 'resolution_comment_id' => 10, 'answered_comment_id' => 11,
+    ]);
+    TaskQuestion::query()->create([
+        'task_id' => $elsewhere->id, 'subtask_id' => $otherSubtask->id, 'attempt' => 1, 'asked_by' => QuestionAsker::Operator,
+        'question' => 'Other project', 'status' => QuestionStatus::Open, 'cause' => QuestionCause::Scope, 'asked_at' => '2026-10-08 00:00:00',
+    ]);
+
+    $this->getJson('/api/v1/task-questions?project_id='.$project->id.'&cause=contract_gap&status=answered&since=2026-10-07T00:00:00Z')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $newer->id)
+        ->assertJsonPath('data.0.asked_by', 'reviewer')
+        ->assertJsonPath('data.0.cause', 'contract_gap')
+        ->assertJsonPath('data.0.answer', 'Follow the ADR.')
+        ->assertJsonMissingPath('data.0.opened_comment_id')
+        ->assertJsonMissingPath('data.0.resolution_comment_id');
+
+    $this->getJson('/api/v1/task-questions?project_id='.$project->id)
+        ->assertOk()
+        ->assertJsonPath('data.0.id', $newer->id)
+        ->assertJsonPath('data.1.id', $older->id);
+
+    $this->getJson('/api/v1/task-questions?project_id='.$other->id)
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.question', 'Other project');
+
+    $this->getJson('/api/v1/task-questions?cause=contract_gap')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $newer->id);
+
+    $this->getJson('/api/v1/task-questions?status=escalated')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.id', $older->id);
+
+    $this->getJson('/api/v1/task-questions?since=2026-10-08T00:00:00Z')
+        ->assertOk()
+        ->assertJsonCount(1, 'data')
+        ->assertJsonPath('data.0.question', 'Other project');
+
+    $this->getJson('/api/v1/task-questions?cause=nope')->assertUnprocessable();
+});
+
+it('returns 403 node_access.required when listing questions without collection access', function (): void {
+    $gateway = Node::query()->create([
+        'name' => 'question-gateway', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.91', 'wireguard_ip' => '10.44.0.91',
+    ]);
+    $caller = Node::query()->create([
+        'name' => 'question-worker', 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.92', 'wireguard_ip' => '10.44.0.92',
+    ]);
+    $this->markAsGateway($gateway);
+    app(TaskExtensionState::class)->enable();
+
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->getJson('/api/v1/task-questions')
+        ->assertForbidden()
+        ->assertJsonPath('error.code', 'node_access.required');
+
+    $caller->accessibleNodes()->attach($gateway);
+    $this->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+        ->getJson('/api/v1/task-questions')
+        ->assertOk()
+        ->assertJsonPath('data', []);
 });

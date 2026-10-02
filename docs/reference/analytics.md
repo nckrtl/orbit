@@ -159,11 +159,17 @@ Without them, ClickHouse ran a merge loop on a small Node. Orbit uses Plausible'
 
 ### A dedicated Route kind with two paths
 
-A fixed pair of paths is small to verify and to keep private. General path proxying on any Route is a rejected alternative. A reserved prefix on the Instance's own site is also rejected, because it collides with the Project's paths. `analytics.orbit` stays private, because it serves the whole fleet's dashboard and login.
+Browsers must reach Plausible's script and event endpoints from the public internet, but they do not need the dashboard or the rest of its API. A dedicated Route kind derives its upstream from the active analytics role and exposes only `/js/*` and `/api/event`. Every other path returns 404. This fixed surface is small to verify and keeps the dashboard private.
+
+General path proxying on any Route is rejected, because nothing else needs it and it would broaden the [custom proxy upstream rules](/reference/routes#custom-proxy-routes). A reserved prefix on the Instance's own site is also rejected, because it puts fleet infrastructure inside every Project's site, can collide with the Project's paths, and makes tracking depend on the Instance's runtime being awake. Publishing `analytics.orbit` is rejected, because it would expose the whole fleet's dashboard and login.
 
 ### A tracking host that mirrors the Instance's Route
 
-The fleet does not have to own its public edge. A tracking host that always went public would demand an Ingress and a Cluster that the fleet does not otherwise need. A host on the Instance's own domain also stays first-party, so content blockers do not drop it.
+The fleet does not have to own its public edge. A tracking host mirrors the Instance's authoritative Route, including its scope and publication, so it works behind a CDN or another proxy without changing how the Instance is served. Always making tracking hosts public and Cluster-scoped is rejected, because it would demand an Ingress and a Cluster that the fleet does not otherwise need. A host under the Instance's own domain also keeps requests first-party, so content blockers that list Plausible's domains do not drop them.
+
+### The operator owns the Plausible site
+
+Orbit publishes the tracking endpoint, but the operator creates the site in Plausible and adds the script to the Project. Creating Plausible accounts or sites and injecting markup are rejected, because Orbit does not manage Plausible accounts and the Project owns its markup.
 
 ### Stats read on the Gateway
 

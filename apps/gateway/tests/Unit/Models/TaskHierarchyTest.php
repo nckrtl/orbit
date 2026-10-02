@@ -28,7 +28,9 @@ it('separates top-level tasks from subtasks and links parent and children', func
         ->and(Task::query()->orderBy('position')->pluck('title')->all())->toBe(['First', 'Second'])
         ->and($first->parent?->is($task))->toBeTrue()
         ->and($first->parent_id)->toBe($task->id)
-        ->and($task->children()->pluck('title')->all())->toBe(['First', 'Second']);
+        ->and($task->children()->pluck('title')->all())->toBe(['First', 'Second'])
+        ->and($task->implementer_agent_driver)->toBe('pi')
+        ->and($task->reviewer_agent_driver)->toBe('pi');
 });
 
 it('refuses a subtask column on a top-level task', function (string $column, mixed $value): void {

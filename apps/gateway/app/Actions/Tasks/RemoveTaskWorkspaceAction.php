@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
@@ -90,10 +92,7 @@ final readonly class RemoveTaskWorkspaceAction
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */
     public function recordFailure(Task $group, Throwable $exception, ?string $prefix = null): void
     {
-        $group->update([
-            'assistance_requested' => true,
-            'assistance_reason' => ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(),
-        ]);
+        TaskAssistance::apply($group, AssistanceKind::Failure, null, ($prefix ?? self::RemovalFailedPrefix).$exception->getMessage(), replaceFailure: true);
     }
 
     /** Clears assistance that this removal recorded, once the checkout is gone. Another cause is left alone. */
@@ -110,6 +109,6 @@ final readonly class RemoveTaskWorkspaceAction
             return;
         }
 
-        $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+        $group->update(TaskAssistance::cleared());
     }
 }

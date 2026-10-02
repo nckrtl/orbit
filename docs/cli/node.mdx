@@ -151,7 +151,7 @@ Set the apps root of a Node, the directory under which the Gateway creates devel
 orbit node:settings <node> --setting=apps.path:/mnt/apps [--json]
 ```
 
-The command needs at least one `--setting`. An empty value unsets the path: `--setting=apps.path:`. A change never moves an existing checkout. [Node settings](/reference/node-settings) lists the validation rules and failure codes.
+The command needs at least one `--setting`. It sends `{"apps":{"path":"/mnt/apps"}}` to the settings API, without a `settings` wrapper. An empty value unsets the path: `--setting=apps.path:` sends `{"apps":{"path":null}}`. The [API reference](/api/overview) and [MCP](/reference/mcp) publish the same nullable path inside a closed `apps` object. A change never moves an existing checkout. [Node settings](/reference/node-settings) lists the validation rules and failure codes.
 
 ## orbit node:role:add
 

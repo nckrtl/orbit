@@ -48,6 +48,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskDefinition;
+use App\Models\TaskQuestion;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
@@ -105,6 +106,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Task::class,
         TaskComment::class,
         TaskCheck::class,
+        TaskQuestion::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

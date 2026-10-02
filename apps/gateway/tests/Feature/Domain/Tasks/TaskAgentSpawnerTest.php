@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
@@ -18,6 +19,7 @@ use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -29,9 +31,15 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskComment;
+use App\Models\TaskQuestion;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\FakeTaskTurnReceipts;
 
 beforeEach(function (): void {
     test_bind_snapshot_driver();
@@ -348,7 +356,7 @@ it('does not start a replacement reviewer when the turn file cannot be written',
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void
         {
             throw new TaskTurnReceiptException('The turn file could not be written.');
         }
@@ -383,7 +391,7 @@ it('deletes a reserved reviewer when preparing the turn throws', function (): vo
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void
         {
             throw new RuntimeException('The turn file could not be written.');
         }
@@ -521,6 +529,124 @@ it('keeps persisted role links after workspace removal', function (): void {
         ->and($links[1]->node_id)->not->toBeNull();
 });
 
+it('imports legacy thread links using the instance morph alias', function (string $scenario): void {
+    $default = DB::getDefaultConnection();
+    config()->set('database.connections.agent_migration', ['driver' => 'sqlite', 'database' => ':memory:', 'foreign_key_constraints' => true]);
+    DB::setDefaultConnection('agent_migration');
+    try {
+        $paths = array_values(array_filter(glob(database_path('migrations/*.php')), static fn (string $path): bool => ! str_contains($path, 'create_agent_threads_from_task_agent_sessions')
+            // The per-role split depends on the column this legacy import creates.
+            && ! str_contains($path, 'split_task_group_agent_driver_by_role')
+            // The token split alters agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_token_metrics_to_agent_threads')
+            // The Pi resume points at agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_pi_restart_resume_to_tasks')
+            // Thread archiving alters agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_thread_archiving_to_agent_threads')
+            // Archive backoff alters agent_threads, which this legacy import creates.
+            && ! str_contains($path, 'add_archive_backoff_to_agent_threads')
+            && ! str_contains($path, 'merge_task_groups_into_tasks')));
+        Artisan::call('migrate', ['--database' => 'agent_migration', '--path' => $paths, '--realpath' => true, '--force' => true]);
+        $projectId = DB::table('projects')->insertGetId(['name' => 'legacy', 'slug' => 'legacy', 'code' => 'LEG', 'repository_url' => 'git@example.test:legacy.git', 'repository_identity' => 'example.test/legacy']);
+        $nodeId = DB::table('nodes')->insertGetId(['name' => 'legacy-node', 'public_ssh_host' => '10.44.0.110', 'status' => 'active', 'platform' => 'linux']);
+        $instanceId = DB::table('instances')->insertGetId(['project_id' => $projectId, 'node_id' => $nodeId, 'name' => 'task', 'checkout_path' => '/srv/legacy', 'status' => 'source_resolved']);
+        $groupId = DB::table('task_groups')->insertGetId([
+            'project_id' => $projectId, 'title' => 'Legacy', 'brief' => 'Legacy links',
+            'taskable_type' => 'instance', 'taskable_id' => $instanceId,
+            'reviewer_thread_id' => 'legacy-review', 'reviewer_model' => 'claude-opus-5', 'implementer_model' => 'gpt-5.6-luna',
+        ]);
+        $taskId = DB::table('tasks')->insertGetId(['task_group_id' => $groupId, 'position' => 1, 'title' => 'Legacy task', 'brief' => 'Legacy', 'implementer_thread_id' => 'legacy-implement']);
+        if ($scenario !== 'pointers') {
+            DB::table('task_agent_sessions')->insert([
+                'id' => 42, 'task_group_id' => $groupId, 'node_id' => $nodeId, 'task_id' => null,
+                'role' => $scenario === 'conflict' ? 'implementer' : 'reviewer', 'thread_id' => 'legacy-review',
+                'model' => 'claude-opus-5', 'effort' => 'high',
+            ]);
+        }
+        $migration = require glob(database_path('migrations/*create_agent_threads_from_task_agent_sessions.php'))[0];
+        if ($scenario === 'conflict') {
+            expect(fn () => run_legacy_schema_migration($migration, 'up'))->toThrow(RuntimeException::class, 'ownership is ambiguous');
+            expect(Schema::hasTable('task_agent_sessions'))->toBeTrue()
+                ->and(Schema::hasTable('agent_threads'))->toBeFalse();
+            DB::table('task_agent_sessions')->where('id', 42)->update(['role' => 'reviewer']);
+        }
+        run_legacy_schema_migration($migration, 'up');
+        $links = AgentThread::query()->orderBy('id')->get();
+        expect($links)->toHaveCount(2)
+            ->and($links[0]->node_id)->toBe($nodeId)
+            ->and($links[0]->id)->toBe($scenario === 'pointers' ? 1 : 42)
+            ->and($links[0]->effort)->toBe('high')
+            ->and($links[1]->effort)->toBe(config('orbit.tasks.implementer_effort'))
+            ->and($links[0]->model)->toBe('claude-opus-5')
+            ->and($links[0]->driver)->toBe('t3')
+            ->and($links[0]->runtime_key)->toBe('node:'.$nodeId)
+            ->and($links[1]->task_id)->toBe($taskId)
+            ->and($links[1]->external_id)->toBe('legacy-implement')
+            ->and(DB::table('task_groups')->where('id', $groupId)->value('reviewer_agent_thread_id'))->toBe($links[0]->id)
+            ->and(DB::table('tasks')->where('id', $taskId)->value('implementer_agent_thread_id'))->toBe($links[1]->id);
+    } finally {
+        DB::setDefaultConnection($default);
+        DB::purge('agent_migration');
+    }
+})->with(['persisted', 'pointers', 'conflict']);
+
+it('gives a fresh reviewer the questions and answers from earlier consults', function (): void {
+    $group = task_spawner_group();
+    $task = $group->tasks->first();
+    expect($task)->not->toBeNull();
+    foreach ([
+        ['May I install intl?', 'Yes. The contract allows it.'],
+        ['Which region?', 'The region named in the brief.'],
+    ] as [$question, $answer]) {
+        TaskQuestion::query()->create([
+            'task_id' => $group->id,
+            'subtask_id' => $task->id,
+            'attempt' => 1,
+            'asked_by' => 'implementer',
+            'question' => $question,
+            'answer' => $answer,
+            'status' => QuestionStatus::Answered,
+            'answered_by' => 'reviewer',
+            'consult' => true,
+            'cause' => 'missed_contract',
+            'asked_at' => now(),
+            'answered_at' => now(),
+        ]);
+    }
+    app()->instance(TaskReviewDiff::class, new class implements TaskReviewDiff
+    {
+        public function read(Instance $instance, string $startCommit): array
+        {
+            return [
+                'files' => [],
+                'diff' => '',
+                'files_complete' => true,
+                'diff_available' => true,
+                'summary' => ['files' => 0, 'insertions' => 0, 'deletions' => 0],
+            ];
+        }
+    });
+    app()->forgetInstance(TaskReviewPacketBuilder::class);
+    $driver = new FakeAgentDriver('pi');
+    $spawner = new TaskAgentSpawner(new AgentDriverRegistry([$driver]), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class));
+
+    expect($spawner->spawnReviewer($task))->not->toBeNull();
+    expect($driver->calls[0]['prompt'])->toContain('May I install intl?')
+        ->and($driver->calls[0]['prompt'])->toContain('Yes. The contract allows it.')
+        ->and($driver->calls[0]['prompt'])->toContain('Which region?')
+        ->and($driver->calls[0]['prompt'])->toContain('The region named in the brief.')
+        ->and(app(TaskTurnReceipts::class)->contexts[0])->toContain('May I install intl?', 'Yes. The contract allows it.', 'Which region?', 'The region named in the brief.');
+
+    $driver->failNextSend = true;
+    $spawner->requestReview($task->fresh() ?? $task);
+    $continued = collect($driver->calls)->first(fn (array $call): bool => $call['operation'] === 'send');
+    $fresh = collect($driver->calls)->last(fn (array $call): bool => $call['operation'] === 'create');
+    expect($continued['message'] ?? null)->not->toContain('May I install intl?')
+        ->and($fresh['prompt'] ?? null)->toContain('May I install intl?')
+        ->and($fresh['prompt'] ?? null)->toContain('Yes. The contract allows it.')
+        ->and($fresh['prompt'] ?? null)->toContain('The region named in the brief.');
+});
+
 it('lists the deliverables for the implementer and names the review deliverables the approval must confirm', function (): void {
     $group = task_spawner_group();
     $task = $group->tasks->first();
@@ -549,4 +675,41 @@ it('lists the deliverables for the implementer and names the review deliverables
         ->and($review)->toContain('- web-tests (command: `bun test` in apps/web): The web tests pass')
         ->and($review)->toContain('- error-copy (review: confirmed by the reviewer): Errors name the subtask')
         ->and($review)->toContain('The approval must confirm each review deliverable (error-copy) with --deliverable=ID=evidence');
+});
+
+it('installs relay mode for a new reviewer and keeps relay or cause-required mode when that thread is replaced', function (): void {
+    $group = task_spawner_group();
+    $task = $group->tasks->sole();
+    $receipts = new FakeTaskTurnReceipts;
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $driver = new FakeAgentDriver('pi');
+    $spawner = new TaskAgentSpawner(new AgentDriverRegistry([$driver]), app(TaskReviewPacketBuilder::class), app(TaskWorkspaceMcp::class));
+
+    $started = $spawner->relay($task, 'Use the mirror. '.TaskTurnInstructions::relay());
+
+    expect($started)->not->toBeNull()
+        ->and($receipts->modes)->toBe(['relay'])
+        ->and($receipts->contexts[0])->toContain($group->brief, $task->brief)
+        ->and($driver->calls[0]['prompt'])->toContain('--outcome=answered');
+
+    $task->update(['direction_relay_comment_id' => 1]);
+    $driver->failNextSend = true;
+    $spawner->requestReview($task->fresh() ?? $task);
+
+    expect($receipts->modes)->toBe(['relay', 'relay']);
+
+    $task->update(['direction_relay_comment_id' => null]);
+    $resolution = TaskComment::query()->create([
+        'task_id' => $task->id, 'task_group_id' => $group->id, 'type' => 'resolution',
+        'body' => 'Follow the ADR.', 'author' => 'operator', 'posted_at' => now(),
+    ]);
+    TaskQuestion::query()->create([
+        'task_id' => $group->id, 'subtask_id' => $task->id, 'attempt' => 1, 'asked_by' => 'reviewer',
+        'question' => 'Which ADR?', 'status' => QuestionStatus::Escalated, 'asked_at' => now(), 'escalated_at' => now(),
+        'resolution_comment_id' => $resolution->id,
+    ]);
+    $driver->failNextSend = true;
+    $spawner->requestReview($task->fresh() ?? $task);
+
+    expect($receipts->modes)->toBe(['relay', 'relay', 'cause']);
 });

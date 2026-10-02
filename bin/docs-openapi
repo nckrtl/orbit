@@ -217,7 +217,15 @@ def load_form_requests():
         i = s.find('function rules(')
         if i < 0:
             continue
-        reqs[f.stem] = block(s, i)
+        validation_index = s.find('function validationData(')
+        validation = block(s, validation_index) if validation_index >= 0 else ''
+        # Empty rules alone do not require a body. Read the explicit rejection before
+        # the empty-key inspector; EmptyTasksRequest instead accepts missing content.
+        requires_empty_body = bool(
+            re.search(r"if\s*\(trim\(\$content\)\s*===\s*''\)\s*\{\s*throw\s+(?:ValidationException::withMessages|new UnexpectedValueException)", validation)
+            and re.search(r'->inspect\(\$content,\s*\[\]\)', validation)
+        )
+        reqs[f.stem] = {'rules': block(s, i), 'requires_empty_body': requires_empty_body}
     return reqs
 
 
@@ -635,7 +643,7 @@ SUMMARIES = {
     'process:log-stream:create': 'Open a live Process log stream', 'process:log-stream:renew': 'Renew a live Process log stream', 'process:log-stream:destroy': 'Close a live Process log stream',
     'tasks:status': 'Show Tasks status',
     'tasks:agents': 'List task agent sessions', 'tasks:agent-stream': 'Watch a task agent session',
-    'tasks:list': 'List Task groups', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
+    'tasks:list': 'List Task groups', 'tasks:question:list': 'List task questions', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
     'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask', 'tasks:subtask:cancel': 'Cancel a todo or running subtask',
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
@@ -680,17 +688,18 @@ DESCRIPTIONS = {
     'database:server:create': 'Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.',
     'database:server:destroy': 'Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.',
     'database:server:show': 'Shows one Database server with the connections of the databases on it.',
-    'tasks:status': 'Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.',
-    'tasks:create': 'Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.',
-    'tasks:update': 'Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
-    'tasks:subtask:create': 'Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
+    'tasks:status': 'Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.',
+    'tasks:create': 'Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.',
+    'tasks:update': 'Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
+    'tasks:subtask:create': 'Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most five typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `command` adds `command`, an optional `directory` (default `.`), an optional boolean `fails_on_base`, and optional `paths` (workspace-relative file paths, not globs). Only `command` accepts `fails_on_base` and `paths`. With `fails_on_base: true`, `paths` must contain at least one file, and the command must fail on the start commit before it passes on the working tree; omitted `fails_on_base` is stored as false. `review` adds nothing. Orbit verifies file and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:update': 'Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:destroy': 'Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
-    'tasks:list': 'Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
-    'tasks:show': 'Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
+    'tasks:list': 'Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
+    'tasks:question:list': 'Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.',
+    'tasks:show': 'Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:cancel': 'Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.',
     'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.',
-    'tasks:complete': 'Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
+    'tasks:complete': 'Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.',
     'tasks:definition:list': 'Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:show': 'Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:create': 'Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.',
@@ -947,6 +956,9 @@ def schema_from_tokens(toks):
                 sometimes = True
             elif base == 'nullable':
                 nullable = True
+            elif base == 'array' and arg:
+                type_ = 'object'
+                sch['additionalProperties'] = False
             elif base == 'alpha_dash':
                 sch['pattern'] = '^[A-Za-z0-9_-]+$'
             elif base == 'max':
@@ -963,7 +975,8 @@ def schema_from_tokens(toks):
                 pat = arg
                 if pat and not pat[0].isalnum() and pat[0] not in '^(':
                     pat = pat[1:pat.rfind(pat[0])]
-                sch['pattern'] = pat.replace('\\A', '^').replace('\\z', '$')
+                # ECMAScript's $ also matches before a final newline. PCRE's \z must mean true end of input.
+                sch['pattern'] = pat.replace('\\A', '^').replace('\\z', r'$(?![\s\S])')
             elif base == 'required_without':
                 notes.append(f'Required when `{arg}` is absent.')
             elif base == 'prohibited':
@@ -1006,6 +1019,31 @@ def clean_schema(s):
     return s
 
 
+def database_field_rules():
+    """Resolve constant-backed regex rule strings from their shared PHP source."""
+    source = (GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php').read_text()
+    constants = dict(re.findall(r"\bconst\s+string\s+(\w+)\s*=\s*'((?:[^'\\]|\\.)*)';", source))
+
+    def resolve(match):
+        prefix, name = match.groups()
+        if name not in constants:
+            sys.exit(f'Unknown database rule constant self::{name}')
+        return "'" + prefix + constants[name] + "'"
+
+    return re.sub(r"'(regex:|not_regex:)'\s*\.\s*self::(\w+)", resolve, source)
+
+
+def database_update_rules(field_rules):
+    """Expand the shared store rules and the update method's removals and overrides."""
+    entries = parse_rule_entries(block(field_rules, field_rules.find('function store(')))
+    update = block(field_rules, field_rules.find('function update('))
+    for key in re.findall(r"unset\(\$rules\['([^']+)'\]\)", update):
+        entries.pop(key)
+    for key, value in re.findall(r"\$rules\['([^']+)'\]\s*=\s*(\[.*?\]);", update, re.S):
+        entries[key] = value
+    return 'return [' + ','.join(f"'{key}' => {value}" for key, value in entries.items()) + '];'
+
+
 def rules_to_schema(rules_text, route_name=None):
     root = {'type': 'object', 'properties': {}, 'required': []}
     body_required = False
@@ -1043,7 +1081,7 @@ def rules_to_schema(rules_text, route_name=None):
                     if parts[idx + 1] == '*':
                         child['type'] = 'array'
                     else:
-                        child['type'] = 'object'
+                        child['type'] = ['object', 'null'] if isinstance(child.get('type'), list) and 'null' in child['type'] else 'object'
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
@@ -1132,6 +1170,8 @@ def prop_schema(p):
             if 'null' not in kinds:
                 kinds = [*kinds, 'null']
             sch = {**sch, 'type': kinds}
+            if 'enum' in sch and None not in sch['enum']:
+                sch['enum'] = [*sch['enum'], None]
     return sch
 
 
@@ -1280,7 +1320,10 @@ def example_from_schema(sch, name, tag, depth=0, update=False):
     if name == 'name' and tag in NAME_BY_TAG:
         return NAME_BY_TAG[tag]
     if name in EXAMPLE_BY_NAME:
-        return EXAMPLE_BY_NAME[name]
+        example = EXAMPLE_BY_NAME[name]
+        if name == 'command' and t == 'string' and isinstance(example, list):
+            return ' '.join(example)
+        return example
     if sch.get('enum'):
         return sch['enum'][0]
     if t == 'object':
@@ -1516,7 +1559,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if p == 'name' and str(route.get('name') or '').startswith('tasks:definition:'):
             sch, desc = TASK_DEFINITION_NAME
         op['parameters'].append({'name': p, 'in': 'path', 'required': True, 'schema': sch, 'description': desc})
-    rules_text = next((form_requests[rc] for rc in controllers.get(action, {}).get('requests', []) if rc in form_requests), None)
+    form_request = next((form_requests[rc] for rc in controllers.get(action, {}).get('requests', []) if rc in form_requests), None)
+    rules_text = form_request['rules'] if form_request else None
     sdkreq = sdk_by_key.get(route_key(route))
     if sdkreq is None and route['name'] not in INTERNAL:
         unmatched.append(f'{route["method"]} {route["uri"]}')
@@ -1524,6 +1568,9 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     query = []
     cmd = commands.get(route['name'])
     if rules_text:
+        if 'return DatabaseConnectionFieldRules::update();' in rules_text:
+            field_rules = database_field_rules()
+            rules_text = database_update_rules(field_rules)
         sch, body_required = rules_to_schema(rules_text, route['name'])
         if route['method'] == 'GET':
             for k, v in (sch.get('properties') or {}).items():
@@ -1533,6 +1580,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
                 query.append(k)
         else:
             body_schema = sch
+            if not sch.get('properties') and form_request['requires_empty_body']:
+                body_required = True
             if route['name'] == 'route:create':
                 # StoreRouteRequest has separate app and custom-proxy rule sets.
                 # The generic parser sees only its first return (the proxy).
@@ -1545,7 +1594,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             if route['name'] == 'database:create':
                 # StoreDatabaseConnectionRequest picks one of two rule sets: register an existing
                 # database, or create one on a Database server with `server`.
-                field_rules = (GW / 'app/Http/Requests/DatabaseConnections/DatabaseConnectionFieldRules.php').read_text()
+                field_rules = database_field_rules()
                 register_schema, _ = rules_to_schema(block(field_rules, field_rules.find('function store(')), route['name'])
                 server_rules = block(field_rules, field_rules.find('function onServer(')).replace('$rules = [', 'return [', 1)
                 server_schema, _ = rules_to_schema(server_rules, route['name'])
@@ -1689,7 +1738,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('The live log path is not available (`logs.live_unavailable`); `details.reason` is `ssh_only` for a production Instance, or `realtime_not_configured`, `subscriber_down`, `agent_unavailable`, or `agent_not_joined`.')
     if route['name'] in ('instance:log-stream:renew', 'instance:log-stream:destroy', 'process:log-stream:renew', 'process:log-stream:destroy'):
         responses['404'] = error_response('The stream does not exist, has ended, belongs to another record, or was opened by another Node (`logs.stream_not_found`).')
-    if route['name'] in ('tasks:list', 'tasks:show', 'tasks:agents', 'tasks:agent-stream'):
+    if route['name'] in ('tasks:list', 'tasks:show', 'tasks:question:list', 'tasks:agents', 'tasks:agent-stream'):
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`).')
     if route['name'] == 'tasks:cancel':
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`).')
@@ -1698,7 +1747,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the subtask is not running (`tasks.subtask_not_running`).')
         responses['502'] = error_response('The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running.')
     if route['name'] == 'tasks:complete':
-        responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`).')
+        responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the Task group is not ready to complete (`tasks.not_settling`). Running or reviewing groups need an ended watched pull request or a stored completion receipt.')
+        responses['502'] = error_response('A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open.')
     if op.get('x-orbit-extension'):
         extension_error = 'A disabled extension returns HTTP 409 (`extension.disabled`).'
         if '409' in responses:

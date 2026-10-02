@@ -14,8 +14,10 @@ final class T3DispatchException extends AgentDriverException
     public function __construct(
         string $message = 'T3 dispatch failed.',
         public readonly ?string $existingProjectId = null,
+        ?string $createdThreadId = null,
     ) {
         parent::__construct($message);
+        $this->createdThreadId = $createdThreadId;
     }
 
     public static function existingProjectId(#[SensitiveParameter] string $body): ?string

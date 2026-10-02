@@ -661,18 +661,111 @@ it('restores the source and discards destination state when transfer fails befor
         ->and($transfer->current_step)->toBe(InstanceTransferStep::Reserved)
         ->and($transfer->status)->toBe(InstanceTransferStatus::Failed);
 
+    expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
+    $this->sources->failMaterialize = false;
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+    expect($result['created'])->toBeTrue()
+        ->and($result['transfer']->id)->not->toBe($transfer->id)
+        ->and($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+        ->and($result['instance']->node_id)->toBe($this->destinationNode->id);
+});
+
+it('persists open rollback intent and the original failure before abandoning SQLite or restoring source runtime', function (): void {
+    $this->reader->failure = new ResourceOperationException('env.import_preflight_failed', 'Injected environment failure.', 409);
+    $observed = [];
+    $inspect = static function (string $event) use (&$observed): void {
+        $transfer = InstanceTransfer::query()->sole();
+        $observed[] = [
+            $event,
+            $transfer->status->value,
+            $transfer->current_step->value,
+            $transfer->failed_step?->value,
+            $transfer->error_code,
+            $transfer->recovery_evidence['rollback_pending'] ?? false,
+            InstanceTransfer::query()->closed()->whereKey($transfer->id)->exists(),
+        ];
+    };
+    $this->sqlite->onAbandon = static fn () => $inspect('abandon');
+    $this->runtime->onRestore = static fn () => $inspect('restore');
+
+    expect(fn () => $this->action->execute($this->instance, new TransferInstanceData(
+        $this->destinationNode->id, null, $this->instance->checkout_path.'/database.sqlite',
+    )))->toThrow(ResourceOperationException::class);
+
+    expect($observed)->toBe([
+        ['abandon', 'failed', 'sqlite-transferred', 'sqlite-transferred', 'env.import_preflight_failed', true, false],
+        ['restore', 'failed', 'sqlite-transferred', 'sqlite-transferred', 'env.import_preflight_failed', true, false],
+    ]);
+    $transfer = InstanceTransfer::query()->sole();
+    expect($transfer->current_step)->toBe(InstanceTransferStep::Reserved)
+        ->and($transfer->recovery_evidence)->toBeNull()
+        ->and(InstanceTransfer::query()->closed()->whereKey($transfer->id)->exists())->toBeTrue();
+});
+
+it('finishes pending rollback when the replacement Route was deleted before its transfer reference was cleared', function (): void {
+    $schedule = null;
+    $interrupted = null;
+    $sourceRouteId = $this->route->id;
+    $this->sources->onCall = function (string $event) use (&$schedule): void {
+        if ($event === 'capture' && $schedule === null) {
+            $schedule = Schedule::query()->create([
+                'target_type' => Instance::MorphAlias,
+                'target_id' => $this->instance->id,
+                'host_node_id' => $this->sourceNode->id,
+                'name' => 'interruption-fixture',
+                'calendar' => '*-*-* 02:00:00',
+                'command' => 'php artisan schedule:run',
+                'timeout_seconds' => 60,
+                'desired_timer_state' => DesiredTimerState::Enabled,
+                'status' => LifecycleStatus::Active,
+            ]);
+        }
+    };
+    Route::deleted(static function (Route $route) use ($sourceRouteId, &$interrupted): void {
+        if ($route->replaces_route_id === $sourceRouteId) {
+            $interrupted = InstanceTransfer::query()->sole()->getAttributes();
+        }
+    });
+
+    expect(fn () => $this->action->execute($this->instance, $this->data))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('schedule.target_in_use'));
+    expect($interrupted)->toBeArray()
+        ->and($interrupted['current_step'])->toBe(InstanceTransferStep::RoutePrepared->value)
+        ->and(Route::query()->whereKey($interrupted['destination_route_id'])->exists())->toBeFalse();
+    $schedule->delete();
+    DB::table('instance_transfers')->where('id', $interrupted['id'])->update($interrupted);
+
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+
+    expect($result['created'])->toBeFalse()
+        ->and($result['transfer']->id)->toBe($interrupted['id'])
+        ->and($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+        ->and($result['transfer']->destination_route_id)->not->toBe($interrupted['destination_route_id'])
+        ->and(Route::query()->whereKey($result['transfer']->destination_route_id)->exists())->toBeTrue()
+        ->and($result['instance']->node_id)->toBe($this->destinationNode->id);
+});
+
+it('requires an identical retry for incomplete rollback then permits new input once rollback finishes', function (): void {
+    $this->sources->failMaterialize = true;
+    $this->sources->failDiscard = true;
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = InstanceTransfer::query()->sole();
+    expect($transfer->recovery_evidence['incomplete'])->toBe(['destination-checkout']);
     expect(fn () => $this->action->execute(
         $this->instance->refresh(),
         new TransferInstanceData($this->destinationNode->id, 'other', null),
     ))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_retry_conflict'));
 
-    expect(DB::table('vite_port_assignments')->where('instance_id', $this->instance->id)->pluck('node_id')->all())->toBe([$this->sourceNode->id]);
+    $this->sources->failDiscard = false;
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+    expect($transfer->refresh()->recovery_evidence)->toBeNull()
+        ->and(InstanceTransfer::query()->count())->toBe(1);
     $this->sources->failMaterialize = false;
-    $result = $this->action->execute($this->instance->refresh(), $this->data);
-
-    expect($result['created'])->toBeFalse()
-        ->and($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
-        ->and($result['instance']->node_id)->toBe($this->destinationNode->id);
+    $result = $this->action->execute($this->instance->refresh(), new TransferInstanceData($this->destinationNode->id, 'other', null));
+    expect($result['created'])->toBeTrue()
+        ->and($result['transfer']->id)->not->toBe($transfer->id)
+        ->and($result['instance']->name)->toBe('other');
 });
 
 it('rolls back imported env when route preparation fails before cutover', function (): void {
@@ -767,9 +860,15 @@ it('continues only forward after cutover and does not recopy source', function (
         ->and($this->runtime->calls)->not->toContain('restore')
         ->and($this->sources->calls)->toBe(['capture', 'materialize']);
 
+    expect(fn () => $this->action->execute(
+        $this->instance->refresh(),
+        new TransferInstanceData($this->destinationNode->id, 'other', null),
+    ))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.transfer_retry_conflict'));
+
     $result = $this->action->execute($this->instance->refresh(), $this->data);
 
-    expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+    expect($result['created'])->toBeFalse()
+        ->and($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
         ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup'])
         ->and($this->runtime->calls)->not->toContain('restore');
 });

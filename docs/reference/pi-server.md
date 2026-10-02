@@ -1,8 +1,10 @@
 ---
 title: "Pi server"
-description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, agent tools, API, thread states, and restart behavior."
+description: "How the Pi server runs Pi agent sessions on a Node for the Gateway's pi driver: configuration, sign-in, the orbit-worker install, agent tools, API, thread states, and restart behavior."
 covers:
   - apps/pi-server/**
+  - apps/e2e/resources/proofs/orbit-worker{.sh,.php,-provider.ts}
+  - apps/e2e/tests/Unit/E2E/OrbitWorkerProofRecoveryTest.php
   - apps/gateway/app/Infrastructure/Tasks/Pi/{PiConnection,PiModel,PiNodeEligibility}.php
 ---
 
@@ -53,27 +55,131 @@ The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. 
 
 ## Sign in to a provider
 
-Sign in once per provider on each Node, as the user that runs the server. Run `pi-server login openai-codex` or `pi-server login xai`, choose device-code sign-in, and approve the code from any browser. Pi stores the credential in its own directory, where the server reads it. The Gateway never receives it. `pi-server login anthropic` is refused.
+Sign in once per provider on each Node, as the user that runs the server. On a Node that runs task agents, that user is `orbit-worker`. Run `pi-server login openai-codex` or `pi-server login xai`, choose device-code sign-in, and approve the code from any browser. Pi stores the credential in its own directory, where the server reads it. The Gateway never receives it. `pi-server login anthropic` is refused.
 
 By default the server accepts only subscription sign-ins, such as ChatGPT for Codex models. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set or `--allow-provider` names it.
+
+## Host setup
+
+Create `orbit-worker` on every Node that runs task agents, before [Install on a Node](#install-on-a-node). The Gateway does not create the account during `node:add`. The account separates agent programs from the managed user's SSH login and token-bearing Git commands. [One user for every task agent](#one-user-for-every-task-agent) explains the choice.
+
+1. Create the user and group `orbit-worker`, with home `/home/orbit-worker` and shell `/bin/bash`. Give the user no password and no sudo. Do not add the user to the managed user's group.
+2. Set `/home/orbit-worker` to mode `0700`.
+3. Install the `acl` package when `setfacl` is missing.
+4. Confirm `sudo -n -u orbit-worker -H true` works as the managed user. Node bootstrap already grants that user passwordless sudo.
+5. Add `orbit-worker` to `incus-admin` only on a host where task agents run `incus`.
+
+Set the managed home to mode `0700` when the apps root is outside it. Set it to mode `0711` when the apps root is inside it, so `orbit-worker` can traverse to the checkouts without listing the home. Private directories in that home, including `.ssh`, `.config`, and `.pi`, stay mode `0700`. [Limits](#limits) states what membership of `incus-admin` does to this boundary.
 
 ## Install on a Node
 
 Build the binary on a workstation with `bun run build:linux` in `apps/pi-server`. It writes `dist/pi-server-linux-x64` and `dist/pi-server-linux-arm64`. Each is one file that includes the Bun runtime.
 
-On the Node, as the managed runtime user:
+The files belong to `orbit-worker`. `orbit-worker` has no sudo, so the managed user runs these steps and `sudo -u orbit-worker -H` does the work inside that account. On a Node that does not already run Pi, step 2 also sets `ORBIT_PI_TOKEN` on the Gateway. On a Node that already runs Pi, leave that Gateway value unchanged. [Roll out orbit-worker on beast](#roll-out-orbit-worker-on-beast) sets it after the copied sessions have been checked.
 
-1. Copy the binary for the Node's architecture to `~/.local/bin/pi-server` and make it executable.
-2. Write a random token of at least 32 characters to `~/.pi/agent/orbit-token` with mode `600`. Set the same value as `ORBIT_PI_TOKEN` on the Gateway.
-3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or run `pi-server login openai-codex` and complete the device-code sign-in.
+1. Copy the binary for the Node's architecture to `/home/orbit-worker/.local/bin/pi-server` and make it executable. `sudo install -o orbit-worker -g orbit-worker -m 0755` writes it.
+2. Write a random token of at least 32 characters to `/home/orbit-worker/.pi/agent/orbit-token` with mode `600`, as `orbit-worker`.
+3. [Connect through CLIProxyAPI](#connect-through-cliproxyapi), or complete device-code sign-in as `orbit-worker`: `sudo -u orbit-worker -H /home/orbit-worker/.local/bin/pi-server login openai-codex`.
 
-Then register the managed Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
+Then register the Process from a machine with the Orbit CLI. Replace the address with the Node's WireGuard address and the root with its apps path:
 
 ```bash
-orbit process:create pi-server --node=NODE --command=/home/orbit/.local/bin/pi-server --command=serve --command=--host=10.44.0.9 --command=--token-file=/home/orbit/.pi/agent/orbit-token --command=--workspace-root=/srv/orbit/apps --restart=always --keep-alive --start
+orbit process:create pi-server \
+  --node=NODE \
+  --user=orbit-worker \
+  --working-directory=/home/orbit-worker \
+  --command=/home/orbit-worker/.local/bin/pi-server \
+  --command=serve \
+  --command=--host=10.44.0.9 \
+  --command=--token-file=/home/orbit-worker/.pi/agent/orbit-token \
+  --command=--workspace-root=/srv/orbit/apps \
+  --restart=always \
+  --keep-alive \
+  --start
 ```
 
-Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway, and for reviewers with `ORBIT_TASKS_REVIEWER_AGENT_DRIVER=pi`. Both default to `pi`.
+`--user` is the [Process user](/reference/processes-and-schedules#owners). The default working directory is the selected account's home. The command sets `--working-directory` explicitly to make the install path clear. Add `--command=--allow-provider=cliproxyapi` when the Node uses CLIProxyAPI. The `pi` driver accepts the Node once this Process is active with desired state `running`. `GET /capabilities` lists the signed-in models. Select Pi for implementers with `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER=pi` on the Gateway, and for reviewers with `ORBIT_TASKS_REVIEWER_AGENT_DRIVER=pi`. Both default to `pi`.
+
+## Limits
+
+Three limits bound what `orbit-worker` separates.
+
+`incus-admin` is root-equivalent. A member can start a privileged container, read any home, and observe another user's process. Homes at mode `0700` are the policy for a worker who is not in that group. They are not a hard wall on a host where the worker is in the group. beast adds `orbit-worker` to `incus-admin` so task agents can run `incus`.
+
+An agent is a process of the Pi server and shares its user. It can read `/home/orbit-worker/.pi/agent/orbit-token` and the provider sign-in in that home. The design does not give each agent a separate user. The GitHub token is a different secret: the agent does not receive it. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states that enforcement.
+
+The candidate gate runs as the managed user. The baseline and handoff checks run programs that the workspace names, including code an agent wrote. Those programs can read the managed user's home and use its sudo. `orbit-worker` separates the agent, not the code the agent leaves for the check. [The candidate gate runs as the managed user](#the-candidate-gate-runs-as-the-managed-user) explains why.
+
+## Prove the account on Incus
+
+Run the [orbit-worker proof script](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/proofs/orbit-worker.sh) from the task workspace on a fresh [allocated Incus lease](/reference/incus-topologies#task-workspace-clones). Replace `TASK-820` with the issue named by your branch:
+
+```bash
+bin/e2e-topology acquire TASK-820 .
+bash apps/e2e/resources/proofs/orbit-worker.sh TASK-820
+bin/e2e-topology release TASK-820
+```
+
+The script creates the account by the host setup above and registers a real `pi-server` Process with `--user=orbit-worker`. A deterministic local model response makes Pi run one bash tool call. That call refuses readable managed homes, sudo access, or SSH access as the managed user; writes a workspace file; tests its contents; and runs `incus list` against a daemon inside app-dev.
+
+The Gateway's real task components provision the checkout, run the baseline and handoff checks as the managed user, read its turn receipt, commit its file, and remove the workspace. The proof also reads the committed blob and checks that the checkout remains managed-owned while the file belongs to the worker.
+
+The proof driver calls the task components directly. It does not exercise scheduler review policy, a live model, or GitHub publication. Its disposable monorepo Project declares the repository root as `.` and uses no Route. It installs Incus only inside the disposable guest and never exposes the harness host's socket. Membership of `incus-admin` still has the [root-equivalent limit](#limits); the denied home, sudo, and SSH checks do not prove isolation against that power.
+
+Every proof step uses `--record` labels. `worker-agent-and-gateway-commit` contains the actual Pi tool result, its five `WORKER_*` markers, the handoff check, and the new commit SHA. `worker-commit-readback` verifies the blob and author. `worker-gateway-removal`, `worker-checkout-removal-audit`, `worker-account-cleanup`, and `worker-final-audit` check the database, checkout, scoped Git trust, account, processes, and fixture files after cleanup.
+
+An unexpected result exits nonzero. A cleanup failure keeps the recorded state for diagnosis rather than claiming success. The final Process-list audit runs before state deletion, so a failed read or assertion preserves the recovery file. Repeat the proof on a fresh lease, not by adopting leftover fixtures.
+
+## Roll out orbit-worker on beast
+
+beast is the Node that runs Pi for Orbit's tasks, and task agents there run `incus`. Use the same cutover on any Node that already runs `pi-server` as the managed user. Deploy the Gateway that grants the workspace ACL, runs teardown as `orbit-worker`, and isolates token-bearing `git` before this cutover.
+
+Set `ORBIT_TASKS_WORKER_USER=orbit-worker` on the Gateway to enable checkout ACLs. A Node without that account keeps its existing checkout access during rollout. An agent cannot write a checkout until the ACL exists.
+
+Follow [Roll out a new binary](#roll-out-a-new-binary) until no Pi session you will restart is `working`. Leave the scheduler stopped, and stop the `pi-server` Process. Confirm no `pi-server` process remains.
+
+Save the installed spec and the Gateway token before [Install on a Node](#install-on-a-node). `orbit process:list --node=NODE --json` lists Node Processes. `process:show` does not: it shows a Project definition and requires `--project`. Keep the object whose `name` is `pi-server`, including `id`, `user`, `working_directory`, `runtime_config`, `restart_policy`, and `keep_alive`. A null `user` is the managed user. The command and its token-file path are in `runtime_config`. Record the current Gateway `ORBIT_PI_TOKEN` beside that object. Leave the old token file in place.
+
+Create the account with [Host setup](#host-setup), and on beast add `orbit-worker` to `incus-admin`. Install the binary, the new token file, and the provider sign-in under `/home/orbit-worker`. Do not change `ORBIT_PI_TOKEN` in that install.
+
+Apply the ACL to each existing development checkout as the managed user. The command is the same recursive grant prepare uses, including `.git`, because `git commit` creates `index.lock` in that directory. Then add that checkout's absolute path to `safe.directory` in `orbit-worker`'s global Git config. Git 2.55 ignores the key in the checkout's own config, and the ACL does not change the directory owner. Do not set `*`. The example uses `orbit`. Substitute the managed user and the checkout path:
+
+```bash
+setfacl -R -m u:orbit-worker:rwX,u:orbit:rwX -m d:u:orbit-worker:rwX,d:u:orbit:rwX -- /srv/orbit/apps/PROJECT/CHECKOUT
+sudo -u orbit-worker -H git config --global --add safe.directory /srv/orbit/apps/PROJECT/CHECKOUT
+```
+
+Copy primary-checkout registrations before any task teardown runs as `orbit-worker`. [Primary registration](/reference/instance-setup#primary-registration) is the procedure. A registration left only in the managed user's home is invisible to the helper, and the helper then leaves the bridge in place.
+
+Agents that run Incus proofs also need the primary's `.e2e` directory. It holds the host locks, the topology snapshot state, and the scenario runs. Grant it the same recursive ACL as the primary's `.git`. When the primary is inside the managed home, give `orbit-worker` traverse access on the home and on the primary with `setfacl -m u:orbit-worker:x`. Do not widen their modes.
+
+Confirm a private directory of the managed home, such as `.ssh`, is mode `0700`. When the apps root is inside that home, set the home to `0711`. When the apps root is outside it, set the home to `0700`.
+
+### Move existing sessions
+
+The default session directory is `<agent dir>/orbit-sessions`. For the managed user that is `/home/orbit/.pi/agent/orbit-sessions`. The new Process uses `/home/orbit-worker/.pi/agent/orbit-sessions`. The server does not move the files. Each session is one `<id>.orbit.json` record and one `<timestamp>_<id>.jsonl` transcript. The Gateway's `external_id` is that `<id>`.
+
+The spec and `ORBIT_PI_TOKEN` were saved before install. Do not destroy the Process, and do not change `ORBIT_PI_TOKEN`, until the session copy has been checked.
+
+Copy while `pi-server` is stopped. On the same filesystem, copy the `*.orbit.json` and `*.jsonl` files into `/home/orbit-worker/.pi/agent/orbit-sessions.migrate`. Leave every other file behind. Set the directory to mode `0700` and the files to mode `0600`, owned by `orbit-worker:orbit-worker`. When the destination `orbit-sessions` already contains a file, stop and do not merge over it.
+
+Rename the staging directory to `orbit-sessions` only after the copy is complete. A rename on the same filesystem is one replacement. When the copy is interrupted, delete the staging directory and copy again. The source directory stays in place.
+
+Check the copy before the Process is destroyed. From [`tasks:agents`](/cli/tasks#orbit-tasksagents), take each `pi` thread whose task is not completed or cancelled, and skip an `external_id` that starts with `pending:`. For every other id, the destination has exactly one `<id>.orbit.json` and exactly one file ending in `_<id>.jsonl`. Each file's size and SHA-256 match the source. A missing id, a second transcript, or a checksum mismatch stops the cutover.
+
+When the copy or a checksum fails, delete the staging directory and leave the source. Start the stopped Process. It still exists. Install did not change `ORBIT_PI_TOKEN`, so the Gateway token still matches that Process. `GET /sessions/{external_id}` for one id already stored on that server returns the session. Start the scheduler only after that read. This rollback is available only before destroy.
+
+When the copy matches, destroy the old Process by its saved `id`. [`process:list`](/cli/process#orbit-processlist) `--node=NODE --json` then has no `name` of `pi-server`. Create the replacement with `--user=orbit-worker` and the paths under `/home/orbit-worker`. Create has no update. An error or a lost response does not mean the name is free.
+
+Create saves the row before it installs the unit. When that install fails, the row remains and its status is `failed`. A lost response can also hide a row whose status is `provisioning` or `active`. Read [`process:list`](/cli/process#orbit-processlist) `--node=NODE --json` after every unsuccessful create and after every lost response.
+
+When that list shows the replacement `active` and `user` is `orbit-worker`, set `ORBIT_PI_TOKEN` to the token in `/home/orbit-worker/.pi/agent/orbit-token`, then start the new Process. Any other status uses the rollback below, and the Gateway token stays unchanged.
+
+Do not start the scheduler yet. `GET /sessions/{external_id}` for every id checked above returns the session, not `session_not_found` and not an authentication failure. Start the scheduler with [`process:start`](/cli/process#orbit-processstart) only after those reads. Confirm a session can create a file in a task workspace, and `orbit-worker` cannot read `/home/orbit/.ssh`. Keep the old session directory and the old token file until those reads succeed. Deleting the old binary, the old token, and the old session directory is a separate step after that.
+
+After the old Process has been destroyed, start does not bring it back. Stop a running replacement. This list is the authority, not the create response. When `pi-server` is present, in any status, destroy that `id`. That includes `failed` and `provisioning`. A create of the saved name while that record exists returns `process.name_taken` and changes nothing. List again and confirm the name is absent before creating the saved spec.
+
+Restore `ORBIT_PI_TOKEN` to the value saved before install. Create the old Process from the saved object: the same command, working directory, user, restart policy, and keep-alive, with the old token file. That Process reads the old session directory. Do not start the scheduler until `GET /sessions/{external_id}` succeeds against it. A Gateway token that still names the new file fails authentication against the old server.
 
 ## Agent tools
 
@@ -103,7 +209,9 @@ A `read` or `bash` result larger than 8 KiB does not enter the model context. Th
 
 8 KiB is 8,192 UTF-8 bytes. `read` measures the selected lines when the call sets `offset` or `limit`, and the whole file otherwise. `bash` measures stdout and stderr in the order the tool read them, without the exit line. A result of 8,192 bytes or fewer is returned in full. There is no line cap on that result.
 
-The file is new, under the session workspace at `.git/orbit/tool-output/`. The server creates the directory with mode `0700` when `.git` is a directory. The file mode is `0600`. Its name starts with the tool, the session id, and the tool call id. A second result does not replace an earlier file. The file contains the measured text only. The notice uses the absolute path.
+The file is new, under the session workspace at `.git/orbit/tool-output/`. The server creates the directory with mode `0770` when `.git` is a directory and the process can create it. The file mode is `0660`. Its name starts with the tool, the session id, and the tool call id. A second result does not replace an earlier file. The file contains the measured text only. The notice uses the absolute path.
+
+Those group bits keep the workspace ACL in force, so the managed user and `orbit-worker` can both read the file and delete it. The server does not change the mode of a directory it does not own.
 
 The notice is at most 8,192 bytes:
 
@@ -214,9 +322,15 @@ Stop the Gateway scheduler before you replace `pi-server` on a Node. A restart k
 
 For a `pi` thread, `GET /sessions/{external_id}` on that Node is the live snapshot. Wait until `state` is not `working`. The first `snapshot` event on `GET /api/v1/task-groups/{group}/agents/{thread}/stream` is that same snapshot. The stream reads Pi and does not write the stored row. The [agent viewer](/reference/tasks#agent-viewer) shows it.
 
-The [install steps](#install-on-a-node) copy the binary to `~/.local/bin/pi-server`. Replace the file that Process actually runs.
+The [install steps](#install-on-a-node) copy the binary to `/home/orbit-worker/.local/bin/pi-server`. Replace the file that Process actually runs.
 
 A turn still `working` at the restart fails with the restart error. The next tick resumes it, at most twice for that subtask. Do not post a resolution comment for that failure.
+
+## Test worker file access
+
+Run `bun run test` in `apps/pi-server` on Linux with `setfacl` and passwordless `sudo -n -u nobody` available. The worker ACL test writes tool output as `nobody` inside a temporary checkout owned by the test runner, then checks that the checkout owner can read and rewrite it.
+
+The test copies the Bun runtime and the tool-output module into its temporary fixture. It invokes the runtime by absolute path with a restricted `PATH` and uses the fixture as its working directory. This keeps the worker independent of sudo's executable search path and of access to the test runner's home or source checkout. Cleanup removes both copies and the checkout; the test does not change home permissions or sudo policy.
 
 ## Why it works this way
 
@@ -236,4 +350,24 @@ The server already holds the transcript and its order, so it resumes a stream af
 
 ### Large tool output goes to a file
 
-A large tool result fills the model context, and each later call sends that text again. Cutting the result would lose the rest for good. So a large result goes to a file that a later turn can read. The file sits inside `.git`, so diffs and the review tree never include it. When the file cannot be written, the result is an error, because inlining it would bring back the cost.
+A large tool result fills the model context, and each later call sends that text again. Cutting the result would lose the rest for good. So a large result goes to a file that a later turn can read. The file sits inside `.git`, so diffs and the review tree never include it. When the file cannot be written, the result is an error, because inlining it would bring back the cost. The file mode keeps the workspace ACL, so the managed user can delete what `orbit-worker` wrote.
+
+### One user for every task agent
+
+The managed user holds the SSH login and runs Gateway `git` with the GitHub token. `orbit-worker` has neither. Keeping the agent as the managed user and relying on a prompt was rejected: the agent could read that home and install a program that inherits the token. This separation serves [security fits the real threat model](/mission#principles), subject to the [incus-admin and shared-credential limits](#limits).
+
+One Pi server Process on the Node serves every session, including sessions in development Instances. Every agent therefore shares that user and can read the server token and provider sign-in. A user per task would need a separate Pi server and provider sign-in for every account. Running the server as root and dropping privileges inside a session was rejected, because a fault in that path is root. The systemd Process's `User=` sets the account before the server starts.
+
+The Gateway still connects as the managed user. Workspace ACLs let both accounts edit and remove the same checkout without changing its owner. A user namespace was rejected because every checkout would need a second mount. Making `.git` unwritable would stop Git from creating `index.lock`; excluding only config and hooks would not create a trust boundary because the worker can rename `.git` from the writable checkout root. The boundary is which user runs the program, not whether the agent can change Git metadata.
+
+An ACL does not satisfy Git's ownership check. Prepare and inspect add the exact checkout path to the worker's global `safe.directory`, not `*`; removal deletes that entry. Primary checkouts and bridge worktrees need the same scoped trust and access for teardown. [Checkout access](/reference/instance-setup#checkout-access) and [Primary registration](/reference/instance-setup#primary-registration) own those procedures. Teardown runs as the worker; privileged removal deletes the tree without running checkout programs. [The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) explains the separate Git boundary.
+
+### The candidate gate runs as the managed user
+
+The baseline and handoff checks run as the managed user, not as `orbit-worker`. This replaces the part of the one-user decision (ADR 0193) that also ran the checks as the worker. A Project check can include host-dependent tests. Orbit's own Gateway tests need passwordless sudo, the ACL tools `getfacl` and `setfacl`, and the `caddy` account. `orbit-worker` has no sudo, so those tests failed in every gate, although they passed as the managed user, and every task that changed those areas stopped.
+
+Granting `orbit-worker` sudo was rejected, because sudo would remove the boundary the account exists for. Skipping host-dependent tests in the gate was rejected, because the gate would then pass changes that it did not test. Task agents still run as the worker. The check shares what it creates with the worker through the same workspace ACL as inspection, so the next turn can read the check's logs and reports.
+
+Before it runs, it also grants the managed user write on what the worker created, such as dependencies an agent installed. Only the owner can change an ACL, so that step runs as the worker through the managed user's existing `sudo -u orbit-worker`. The worker still has no sudo.
+
+The cost is that the gate runs programs that the workspace names, including code an agent wrote, as the managed user. Such a program can read that user's home, and it could observe a token-bearing `git` process of that user that runs at the same time. The agent itself still cannot. This serves [security fits the real threat model](/mission#principles): the gate must test the real host, and the agent stays separated.

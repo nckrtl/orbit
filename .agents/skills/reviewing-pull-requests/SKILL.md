@@ -17,6 +17,8 @@ For command behavior, use [designing-cli-commands](../designing-cli-commands/SKI
 
 Reproduce the feature's user-visible behavior and important failure cases on Incus. Verify the running source commit and use machines allocated to the review. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. If access is unavailable, return the code findings and leave Incus review pending.
 
+Review a proof script against its brief: it fails closed, its post-cleanup audit shows no leftovers, and its scenario reproduces. Do not block on the script's own crash or recovery paths. Record such a concern as a non-blocking limitation. Product-code findings stay blocking.
+
 ## Report
 
 Give actionable findings with file references, their effect, and suggested corrections. Include the reviewed commit, check results, Incus observations, and limitations. Link sanitized evidence stored outside the repository.

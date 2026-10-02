@@ -17,5 +17,8 @@ final readonly class AgentThreadStart
         public string $model,
         public string $effort,
         public TaskThreadRole $role,
+        public ?string $openingKey = null,
+        public ?string $externalId = null,
+        public bool $deferOpeningTurn = false,
     ) {}
 }

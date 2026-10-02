@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
@@ -31,11 +32,15 @@ final class TaskData extends Data
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public int $questions,
+        public int $escalations,
         public TaskType $type,
         public ?string $targetThreadId,
         public ?string $completionSummary,
         public ?TaskCheckData $check,
         public bool $assistanceRequested,
+        public ?AssistanceKind $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
         public ?string $fixupProblem,
     ) {}
@@ -50,6 +55,8 @@ final class TaskData extends Data
             completionSummary: $task->completion_summary,
             check: $check instanceof TaskCheck ? TaskCheckData::fromModel($check) : null,
             assistanceRequested: $task->assistance_requested,
+            assistanceKind: $task->assistance_kind,
+            assistanceQuestion: $task->assistance_question,
             assistanceReason: $task->assistance_reason,
             fixupProblem: $task->fixup_problem,
 
@@ -66,6 +73,8 @@ final class TaskData extends Data
             linesAdded: $task->lines_added,
             linesDeleted: $task->lines_deleted,
             durationMs: $task->duration_ms,
+            questions: (int) ($task->questions ?? 0),
+            escalations: (int) ($task->escalations ?? 0),
         );
     }
 }

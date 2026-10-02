@@ -14,7 +14,7 @@ The docs-first subtask writes an ADR when a feature needs an architectural decis
 
 The pull request that completes a decision writes its behavior into the owning page and its lasting reasons and rejected alternatives into that page's "Why it works this way" section. It deletes the ADR, removes it from Records, redirects the exact ADR path to the absorbing section, adds a Retired decisions row, and updates inbound links. A decision completed in one pull request never leaves an ADR on main; a record stays only while a decision spans multiple pull requests. Numbers are never reused. The retired table and redirects resolve old numbers and links, including those in code comments.
 
-`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section and include a `Principle:` line. A lower number follows those same two rules only when Retired decisions does not list it. The open gaps are 0007 and 0020. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/decisions/0175-docs-impact-check-in-orbit-repo) and `covers:` frontmatter keep pages in step with code between decisions.
+`composer docs-lint` enforces this lifecycle: retired slugs have no matching file and each has a redirect from its exact path. Live ADRs numbered 0180 or later must say `In progress.` in their Status section and include a `Principle:` line. A lower number follows those same two rules only when Retired decisions does not list it. The open gaps are 0007 and 0020. The committed allowlist for older live records can only shrink as those records retire. The [docs-impact check](/contributor-guide#docs-impact-stays-in-the-repository) and `covers:` frontmatter keep pages in step with code between decisions.
 
 ## Why it works this way
 
@@ -24,8 +24,6 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 
 | Record | Decision | Status |
 | --- | --- | --- |
-| [0097](/decisions/0097-publish-analytics-tracking-hosts-for-app-instances) | Publish analytics tracking hosts for Instances | Proposed |
-| [0175](/decisions/0175-docs-impact-check-in-orbit-repo) | Keep the docs-impact check in Orbit's repository | Proposed |
 | [0182](/decisions/0182-start-tasks-from-project-task-definitions) | Start tasks from Project task definitions | In progress; amends [0178](/reference/tasks#project-owned-task-policy) |
 | [0190](/decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password) | Run MySQL servers with a Gateway-held admin password | In progress |
 | [0191](/decisions/0191-clone-the-default-instance-database-for-each-new-instance) | Clone the default Instance's database for each new Instance | In progress |
@@ -130,6 +128,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0094 | Project WireGuard hub config onto the VPN node | [Node provisioning: The hub stays on the vpn Node](/reference/node-provisioning#the-hub-stays-on-the-vpn-node) |
 | 0095 | Relocate relocatable singleton roles as one Orbit action | [node: node:role:relocate](/cli/node#orbit-noderolerelocate) |
 | 0096 | Run Plausible through an analytics role | [Analytics role](/reference/analytics) |
+| 0097 | Publish analytics tracking hosts for Instances | [Analytics role: Why it works this way](/reference/analytics#why-it-works-this-way) |
 | 0098 | Read GitHub repositories through a Gateway-owned GitHub App | [GitHub App: Why it works this way](/reference/github-app#why-it-works-this-way) |
 | 0099 | Collect role-specific service metrics | [Service metrics](/reference/service-metrics) |
 | 0100 | Install Caddy from the pinned Caddy apt source | [Node provisioning: Package sources](/reference/node-provisioning#package-sources) |
@@ -208,7 +207,9 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0172 | Count every T3 model call in thread metrics | [Tasks: Thread token metrics](/reference/tasks#thread-token-metrics) |
 | 0173 | Record and label every Jev decision | [Tasks: Jev decision records](/reference/tasks#jev-decision-records) |
 | 0174 | Match the task gate to CI and repeated findings | [Feature delivery: The candidate gate](/reference/implementation-loop#the-candidate-gate) |
+| 0175 | Keep the docs-impact check in Orbit's repository | [Contributor guide: Docs impact stays in the repository](/contributor-guide#docs-impact-stays-in-the-repository) |
 | 0176 | File recurring production problems as repro-first bug groups | [Tasks: Outer loop](/reference/tasks#outer-loop) |
+| 0177 | Remove the app compatibility surface | [Projects: One public name without compatibility](/reference/projects#one-public-name-without-compatibility) |
 | 0178 | Run project-agnostic Tasks without a planner | [Tasks: Project-owned task policy](/reference/tasks#project-owned-task-policy) |
 | 0179 | Gate every extension surface with one Gateway switch | [extension: Why it works this way](/cli/extension#why-it-works-this-way) |
 | 0180 | Absorb built decisions into the documentation | [Architecture decisions: Why it works this way](/decisions/overview#why-it-works-this-way) |
@@ -216,7 +217,10 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0183 | Manage macOS tools without service roles | [Node provisioning: A Mac needs no service role](/reference/node-provisioning#a-mac-needs-no-service-role) |
 | 0184 | Adopt selected tools from existing managers | [Tools: Selected adoption](/reference/tools#selected-adoption) |
 | 0185 | Report informational tool discoveries in Doctor | [doctor: Informational findings stay healthy](/cli/doctor#informational-findings-stay-healthy) |
+| 0187 | Ask the reviewer before the operator and record every question | [Tasks: Questions go through the reviewer](/reference/tasks#questions-go-through-the-reviewer) |
 | 0188 | Read private GitHub repositories through the Gateway's GitHub CLI | [GitHub App: Read through the GitHub CLI](/reference/github-app#read-through-the-github-cli) |
 | 0189 | Register Instances only for existing Projects | [Projects: Registration needs a Project](/reference/projects#registration-needs-a-project) |
 | 0192 | Run task agents on Pi only | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
+| 0192 | Stop a group whose pull request ended | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request) |
+| 0193 | Run task agents as a dedicated user | [Pi server: One user for every task agent](/reference/pi-server#one-user-for-every-task-agent); [GitHub App: The checkout cannot inherit the token](/reference/github-app#the-checkout-cannot-inherit-the-token) |
 | 0193 | Record development branch renames | [Applications: Development branch reconciliation](/domains/applications#development-branch-reconciliation) |

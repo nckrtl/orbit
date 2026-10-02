@@ -8,6 +8,8 @@ use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\ProcessInspectionData;
 use App\Domain\Doctor\ProcessInspectionStatus;
 use App\Domain\Doctor\ProcessStateInspector;
+use App\Domain\Doctor\SystemdProcessObservationData;
+use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -21,23 +23,16 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
 use App\Models\Process;
+use Illuminate\Support\Sleep;
 use Throwable;
 
 final readonly class NativeProcessStateInspector implements ProcessStateInspector
 {
     private const string DOCKER_INSPECT_FORMAT = '{{ index .Config.Labels "orbit.managed" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.container.kind" }}{{ printf "\\n" }}{{ index .Config.Labels "orbit.process.id" }}{{ printf "\\n" }}{{ .State.Status }}';
 
-    /** @var list<string> */
-    private const array SYSTEMD_STATES = [
-        'active',
-        'reloading',
-        'inactive',
-        'failed',
-        'activating',
-        'deactivating',
-        'maintenance',
-        'unknown',
-    ];
+    private const float SYSTEMD_INSPECTION_SECONDS = 10.0;
+
+    private const int RESTART_OBSERVATION_SECONDS = 2;
 
     /** @var list<string> */
     private const array DOCKER_STATES = [
@@ -64,11 +59,13 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
     {
         try {
             $target = $this->targets->forInspection($process);
-            $connection = $this->connection($target->node);
 
             return match ($process->runtime) {
-                ProcessRuntime::Systemd => $this->inspectSystemd($process, $connection),
-                ProcessRuntime::Docker => $this->inspectDocker($process, $connection),
+                ProcessRuntime::Systemd => $this->deadline->withinForwardWork(
+                    self::SYSTEMD_INSPECTION_SECONDS,
+                    fn (): ProcessInspectionData => $this->inspectSystemd($process, $target->node),
+                ),
+                ProcessRuntime::Docker => $this->inspectDocker($process, $this->connection($target->node)),
             };
         } catch (DoctorInspectionException $exception) {
             throw $exception;
@@ -77,11 +74,11 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
         }
     }
 
-    private function inspectSystemd(Process $process, SshConnection $connection): ProcessInspectionData
+    private function inspectSystemd(Process $process, Node $node): ProcessInspectionData
     {
         $path = $this->systemd->unitPath($process);
         $exists = $this->ssh->execute(
-            $connection,
+            $this->connection($node),
             new RemoteCommand(['sudo', 'test', '-e', $path]),
         );
 
@@ -93,7 +90,7 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
         }
 
         $owned = $this->ssh->execute(
-            $connection,
+            $this->connection($node),
             new RemoteCommand([
                 'sudo',
                 'grep',
@@ -107,34 +104,69 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
             throw new DoctorInspectionException;
         }
 
-        $status = $this->ssh->execute(
-            $connection,
+        $before = $this->systemdObservation($process, $node);
+        $observations = [$before];
+        if ($process->desired_state === DesiredProcessState::Running && ! $before->isAutoRestart()) {
+            if ($this->deadline->cap(self::SYSTEMD_INSPECTION_SECONDS) <= self::RESTART_OBSERVATION_SECONDS) {
+                throw new DoctorInspectionException;
+            }
+
+            Sleep::for(self::RESTART_OBSERVATION_SECONDS)->seconds();
+            $observations[] = $this->systemdObservation($process, $node);
+        }
+
+        return new ProcessInspectionData(true, array_last($observations)->status(), $observations);
+    }
+
+    private function systemdObservation(Process $process, Node $node): SystemdProcessObservationData
+    {
+        $result = $this->ssh->execute(
+            $this->connection($node),
             new RemoteCommand([
                 'sudo',
                 'systemctl',
-                'is-active',
+                'show',
+                '--property=ActiveState,SubState,NRestarts',
+                '--',
                 $this->systemd->unitName($process),
             ]),
         );
-
-        if (
-            $status->truncated
-            || $status->stderr !== ''
-            || ! in_array($status->exitCode, [0, 3, 4], strict: true)
-        ) {
+        if (! $result->succeeded() || $result->truncated || $result->stderr !== '') {
             throw new DoctorInspectionException;
         }
 
-        $value = $this->singleLine($status->stdout);
-        if (! in_array($value, self::SYSTEMD_STATES, strict: true)) {
+        $lines = explode("\n", $result->stdout);
+        if (array_pop($lines) !== '' || count($lines) < 2 || count($lines) > 3) {
             throw new DoctorInspectionException;
         }
 
-        return new ProcessInspectionData(true, match ($value) {
-            'active' => ProcessInspectionStatus::Active,
-            'inactive' => ProcessInspectionStatus::Inactive,
-            default => ProcessInspectionStatus::Other,
-        });
+        $properties = [];
+        foreach ($lines as $line) {
+            $parts = explode('=', $line, 2);
+            if (
+                count($parts) !== 2
+                || ! in_array($parts[0], ['ActiveState', 'SubState', 'NRestarts'], strict: true)
+                || array_key_exists($parts[0], $properties)
+            ) {
+                throw new DoctorInspectionException;
+            }
+            $properties[$parts[0]] = $parts[1];
+        }
+
+        if (! isset($properties['ActiveState'], $properties['SubState'])) {
+            throw new DoctorInspectionException;
+        }
+
+        $restarts = $properties['NRestarts'] ?? '';
+        if ($restarts !== '' && (preg_match('/\A(?:0|[1-9][0-9]{0,9})\z/D', $restarts) !== 1 || (int) $restarts > 4294967295)) {
+            throw new DoctorInspectionException;
+        }
+
+        return new SystemdProcessObservationData(
+            $properties['ActiveState'],
+            $properties['SubState'],
+            $restarts === '' ? null : (int) $restarts,
+        );
     }
 
     private function inspectDocker(Process $process, SshConnection $connection): ProcessInspectionData
@@ -216,14 +248,5 @@ final readonly class NativeProcessStateInspector implements ProcessStateInspecto
             ! $result->succeeded()
             && $result->stdout === ''
             && (str_contains($result->stderr, 'No such object') || str_contains($result->stderr, 'No such container'));
-    }
-
-    private function singleLine(string $output): string
-    {
-        if (substr_count(haystack: $output, needle: "\n") !== 1 || ! str_ends_with($output, "\n")) {
-            throw new DoctorInspectionException;
-        }
-
-        return substr(string: $output, offset: 0, length: -1);
     }
 }

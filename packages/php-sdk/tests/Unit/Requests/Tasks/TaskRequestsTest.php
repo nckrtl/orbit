@@ -18,6 +18,7 @@ use Orbit\Sdk\Requests\Tasks\ListTaskAgentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskCommentsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskDefinitionsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
+use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskDefinitionRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
@@ -32,6 +33,7 @@ use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
+use Orbit\Sdk\Responses\Tasks\TaskQuestionsResponse;
 use Orbit\Sdk\Responses\Tasks\TasksStatusResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -56,6 +58,7 @@ describe('task transport', function (): void {
         'subtask cancel' => [new CancelSubtaskRequest(13, 57), Method::POST, '/api/v1/task-groups/13/tasks/57/cancel'],
         'comment create' => [new CreateTaskCommentRequest(13, 57, 'resolution', 'Done.', 'nick'), Method::POST, '/api/v1/task-groups/13/tasks/57/comments'],
         'comment list' => [new ListTaskCommentsRequest(13, 57), Method::GET, '/api/v1/task-groups/13/tasks/57/comments'],
+        'question list' => [new ListTaskQuestionsRequest, Method::GET, '/api/v1/task-questions'],
         'agents' => [new ListTaskAgentsRequest(13), Method::GET, '/api/v1/task-groups/13/agents'],
         'definition list' => [new ListTaskDefinitionsRequest, Method::GET, '/api/v1/task-definitions'],
         'definition show' => [new ShowTaskDefinitionRequest(4, 'build-feature'), Method::GET, '/api/v1/projects/4/task-definitions/build-feature'],
@@ -107,7 +110,10 @@ describe('task transport', function (): void {
 
     it('puts list filters in the query and omits absent ones', function (): void {
         expect(new ListTaskGroupsRequest()->query()->all())->toBe([])
-            ->and(new ListTaskGroupsRequest(4, 'backlog')->query()->all())->toBe(['project_id' => 4, 'status' => 'backlog']);
+            ->and(new ListTaskGroupsRequest(4, 'backlog')->query()->all())->toBe(['project_id' => 4, 'status' => 'backlog'])
+            ->and(new ListTaskQuestionsRequest()->query()->all())->toBe([])
+            ->and(new ListTaskQuestionsRequest(4, 'contract_gap', 'answered', '2026-10-07T00:00:00Z')->query()->all())
+            ->toBe(['project_id' => 4, 'cause' => 'contract_gap', 'status' => 'answered', 'since' => '2026-10-07T00:00:00Z']);
     });
 
     it('keeps status, task, and read requests bodyless', function (GatewayRequest $request): void {
@@ -125,6 +131,7 @@ describe('task transport', function (): void {
             ->and((string) $mockClient->getLastPendingRequest()?->createPsrRequest()->getBody())->toBeEmpty();
     })->with([
         'status' => [new ShowTasksStatusRequest],
+        'question list' => [new ListTaskQuestionsRequest],
         'cancel' => [new CancelTaskGroupRequest(13)],
         'complete' => [new CompleteTaskGroupRequest(13)],
         'destroy' => [new DestroySubtaskRequest(13, 57)],
@@ -154,6 +161,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'subtask cancel' => ['tasks-subtask-cancel/cancelled', new CancelSubtaskRequest(1, 1), SubtaskResponse::class],
         'comment create' => ['tasks-comment-create/created', new CreateTaskCommentRequest(1, 1, 'resolution', 'Body', 'nick'), TaskCommentResponse::class],
         'comment list' => ['tasks-comment-list/default', new ListTaskCommentsRequest(1, 1), TaskCommentsResponse::class],
+        'question list' => ['tasks-question-list/default', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
+        'empty question list' => ['tasks-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
     ]);
 
@@ -168,9 +177,17 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($group->project)->toBe('orbit')
             ->and($group->executionMode)->toBe('managed')
             ->and($group->assistanceRequested)->toBeFalse()
+            ->and($group->assistanceKind)->toBeNull()
+            ->and($group->assistanceQuestion)->toBeNull()
             ->and($group->assistanceReason)->toBeNull()
+            ->and($group->questions)->toBe(0)
+            ->and($group->escalations)->toBe(0)
             ->and($group->tasks[0]->assistanceRequested)->toBeFalse()
+            ->and($group->tasks[0]->assistanceKind)->toBeNull()
+            ->and($group->tasks[0]->assistanceQuestion)->toBeNull()
             ->and($group->tasks[0]->assistanceReason)->toBeNull()
+            ->and($group->tasks[0]->questions)->toBe(0)
+            ->and($group->tasks[0]->escalations)->toBe(0)
             ->and(array_map(static fn (SubtaskResponse $task): int => $task->position, $group->tasks))->toBe([1, 2])
             ->and($group->toArray())->not->toHaveKey('tasks.0.request_id')
             ->and($group->toArray()['tasks'][0])->not->toHaveKey('request_id')
@@ -194,11 +211,15 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'project_code' => 'ORB',
                 'title' => 'Blocked implementer',
                 'status' => 'running',
+                'assistance_kind' => null,
+                'assistance_question' => null,
                 'assistance_reason' => 'The implementer is blocked.',
             ])
             ->and($assisted->toArray()['assistance'][1])->toMatchArray([
                 'title' => 'Settling question',
                 'status' => 'settling',
+                'assistance_kind' => null,
+                'assistance_question' => null,
                 'assistance_reason' => 'Which database should this use?',
             ])
             ->and($assisted->toArray()['assistance'])->toHaveCount(2);
@@ -213,7 +234,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'brief' => 'The group is waiting.',
                 'status' => 'running',
                 'assistance_requested' => true,
+                'assistance_kind' => 'direction',
+                'assistance_question' => 'Which database should this use?',
                 'assistance_reason' => 'The implementer is blocked.',
+                'questions' => 3,
+                'escalations' => 1,
                 'tasks' => [
                     [
                         'id' => 8,
@@ -223,7 +248,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                         'brief' => 'Needs a decision.',
                         'status' => 'running',
                         'assistance_requested' => true,
-                        'assistance_reason' => 'Which database should this use?',
+                        'assistance_kind' => 'direction',
+                        'assistance_question' => 'Which database should this use?',
+                        'assistance_reason' => 'The implementer is blocked.',
+                        'questions' => 2,
+                        'escalations' => 1,
                     ],
                     [
                         'id' => 9,
@@ -245,16 +274,97 @@ describe('task responses from recorded Gateway fixtures', function (): void {
 
         expect($group)->toBeInstanceOf(TaskGroupResponse::class);
         assert($group instanceof TaskGroupResponse);
-        expect($group->toArray())->toMatchArray([
-            'assistance_requested' => true,
-            'assistance_reason' => 'The implementer is blocked.',
-        ])->and($group->toArray()['tasks'][0])->toMatchArray([
-            'assistance_requested' => true,
-            'assistance_reason' => 'Which database should this use?',
-        ])->and($group->toArray()['tasks'][1])->toMatchArray([
-            'assistance_requested' => false,
-            'assistance_reason' => null,
-        ]);
+        expect($group->assistanceKind)->toBe('direction')
+            ->and($group->assistanceQuestion)->toBe('Which database should this use?')
+            ->and($group->questions)->toBe(3)
+            ->and($group->escalations)->toBe(1)
+            ->and($group->tasks[0]->questions)->toBe(2)
+            ->and($group->tasks[0]->escalations)->toBe(1)
+            ->and($group->tasks[1]->questions)->toBe(0)
+            ->and($group->tasks[1]->escalations)->toBe(0)
+            ->and($group->toArray())->toMatchArray([
+                'assistance_requested' => true,
+                'assistance_kind' => 'direction',
+                'assistance_question' => 'Which database should this use?',
+                'assistance_reason' => 'The implementer is blocked.',
+                'questions' => 3,
+                'escalations' => 1,
+            ])->and($group->toArray()['tasks'][0])->toMatchArray([
+                'assistance_requested' => true,
+                'assistance_kind' => 'direction',
+                'assistance_question' => 'Which database should this use?',
+                'assistance_reason' => 'The implementer is blocked.',
+                'questions' => 2,
+                'escalations' => 1,
+            ])->and($group->toArray()['tasks'][1])->toMatchArray([
+                'assistance_requested' => false,
+                'assistance_kind' => null,
+                'assistance_question' => null,
+                'assistance_reason' => null,
+                'questions' => 0,
+                'escalations' => 0,
+            ]);
+    });
+
+    it('reads the task question list', function (): void {
+        $questions = task_fixture_send('tasks-question-list/default', new ListTaskQuestionsRequest);
+
+        expect($questions)->toBeInstanceOf(TaskQuestionsResponse::class);
+        assert($questions instanceof TaskQuestionsResponse);
+
+        expect($questions->questions)->toHaveCount(2)
+            ->and($questions->questions[0]->reference())->toBe('#13/57')
+            ->and($questions->questions[0]->askedBy)->toBe('reviewer')
+            ->and($questions->questions[0]->status)->toBe('answered')
+            ->and($questions->questions[0]->cause)->toBe('contract_gap')
+            ->and($questions->questions[0]->answer)->toBe('Follow ADR 0187.')
+            ->and($questions->questions[0]->escalatedAt)->not->toBeNull()
+            ->and($questions->questions[1]->askedBy)->toBe('implementer')
+            ->and($questions->questions[1]->status)->toBe('open')
+            ->and($questions->questions[1]->cause)->toBeNull()
+            ->and($questions->questions[1]->answer)->toBeNull()
+            ->and($questions->questions[1]->answeredBy)->toBeNull()
+            ->and($questions->toArray()['questions'][0])->not->toHaveKey('request_id')
+            ->and($questions->toArray()['questions'][0])->toMatchArray([
+                'id' => 2,
+                'task_id' => 13,
+                'subtask_id' => 57,
+                'attempt' => 2,
+                'asked_by' => 'reviewer',
+                'question' => 'Which ADR decides the database?',
+                'status' => 'answered',
+                'answered_by' => 'operator',
+                'answer' => 'Follow ADR 0187.',
+                'cause' => 'contract_gap',
+            ]);
+
+        $empty = task_fixture_send('tasks-question-list/empty', new ListTaskQuestionsRequest);
+
+        expect($empty)->toBeInstanceOf(TaskQuestionsResponse::class);
+        assert($empty instanceof TaskQuestionsResponse);
+        expect($empty->questions)->toBe([])
+            ->and($empty->toArray()['questions'])->toBe([]);
+    });
+
+    it('keeps the watched pull request separate from the published pull request', function (): void {
+        $group = task_fixture_send('tasks-show/watched', new ShowTaskGroupRequest(1));
+        assert($group instanceof TaskGroupResponse);
+
+        expect($group->watchedPrUrl)->toBe('https://github.com/nckrtl/orbit/pull/451')
+            ->and($group->watchedPrNumber)->toBe(451)
+            ->and($group->watchedPrState)->toBe('open')
+            ->and($group->prUrl)->toBeNull()
+            ->and($group->toArray())->toMatchArray([
+                'watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/451',
+                'watched_pr_number' => 451,
+                'watched_pr_state' => 'open',
+                'pr_url' => null,
+            ]);
+        $unwatched = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
+        assert($unwatched instanceof TaskGroupResponse);
+        expect($unwatched->watchedPrUrl)->toBeNull()
+            ->and($unwatched->watchedPrNumber)->toBeNull()
+            ->and($unwatched->watchedPrState)->toBeNull();
     });
 
     it('keeps fails_on_base on a test deliverable', function (): void {
@@ -335,6 +445,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'subtask with a scalar deliverable' => [new CreateSubtaskRequest(1, 'T', 'B'), ['id' => 1, 'task_group_id' => 1, 'position' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'todo', 'deliverables' => ['docs']]],
         'comment without author' => [new CreateTaskCommentRequest(1, 1, 'resolution', 'B', 'nick'), ['id' => 1, 'task_group_id' => 1, 'task_id' => 1, 'type' => 'resolution', 'body' => 'B', 'posted_at' => 'now']],
         'agent without driver' => [new ListTaskAgentsRequest(1), [['id' => 1, 'task_group_id' => 1, 'role' => 'reviewer', 'external_id' => 'x']]],
+        'group with a question count that is not an integer' => [new ShowTaskGroupRequest(1), ['id' => 1, 'project_id' => 1, 'title' => 'T', 'brief' => 'B', 'status' => 'backlog', 'questions' => 'many', 'tasks' => []]],
+        'question without an id' => [new ListTaskQuestionsRequest, [['task_id' => 1, 'subtask_id' => 2, 'attempt' => 1, 'asked_by' => 'implementer', 'question' => 'Which database?', 'status' => 'open', 'asked_at' => '2026-10-07T00:00:00+00:00']]],
     ]);
 });
 

@@ -53,6 +53,46 @@ afterEach(function (): void {
     }
 });
 
+describe('ProcessUser', function (): void {
+    it('sends --user for a Node systemd Process', function (): void {
+        $mock = MockClient::global([CreateProcessRequest::class => process_cli_response(201)]);
+        $this->artisan('process:create', [
+            'name' => 'worker', '--node' => '4', '--command' => ['/usr/bin/sleep', '60'], '--user' => 'orbit-worker', '--json' => true,
+        ])->assertExitCode(0);
+        expect($mock->getLastRequest())->toBeInstanceOf(CreateProcessRequest::class)
+            ->and($mock->getLastRequest()?->body()->all())->toMatchArray([
+                'target_type' => 'node', 'target_id' => 4, 'runtime' => 'systemd', 'user' => 'orbit-worker',
+            ]);
+    });
+
+    it('omits user unless explicitly supplied', function (): void {
+        $mock = MockClient::global([CreateProcessRequest::class => process_cli_response(201)]);
+        $this->artisan('process:create', ['name' => 'worker', '--node' => '4', '--command' => ['/usr/bin/sleep', '60']])->assertExitCode(0);
+        expect($mock->getLastRequest()?->body()->all())->not->toHaveKey('user');
+    });
+
+    it('refuses unsupported --user combinations without a request', function (array $options): void {
+        $mock = MockClient::global([]);
+        [$exit, $output] = process_cli_display('process:create', [
+            'name' => 'worker', '--user' => 'orbit-worker', '--json' => true, ...$options,
+        ]);
+        expect($exit)->toBe(1)->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.option_invalid');
+        $mock->assertNothingSent();
+    })->with([
+        'Instance' => [['--instance' => '7']],
+        'Docker' => [['--node' => '4', '--runtime' => 'docker']],
+        'preset' => [['--instance' => '7', '--preset' => 'vp-dev']],
+        'definition' => [['--project' => '3', '--for' => 'production']],
+    ]);
+
+    it('refuses unsafe account names without a request', function (string $user): void {
+        $mock = MockClient::global([]);
+        [$exit, $output] = process_cli_display('process:create', ['name' => 'worker', '--node' => '4', '--user' => $user, '--json' => true]);
+        expect($exit)->toBe(1)->and(json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('process.user_invalid');
+        $mock->assertNothingSent();
+    })->with(['root', '--root', 'Worker', '', 'worker!', "worker\n", str_repeat('a', 33)]);
+});
+
 it('adds one explicit Docker process through the active gateway', function (): void {
     $mock = MockClient::global([
         CreateProcessRequest::class => process_cli_response(201),
@@ -1428,6 +1468,7 @@ function process_cli_payload(array $overrides = []): array
         'error_code' => null,
         'cpu' => null,
         'memory_bytes' => null,
+        'user' => null,
     ], $overrides);
 }
 

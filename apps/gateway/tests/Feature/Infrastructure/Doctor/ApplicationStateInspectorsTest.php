@@ -171,7 +171,7 @@ it('checks app-production origins as the app owner within its production root', 
             '',
         ])
         ->and($ssh->commands[0]->input)
-        ->toContain('sudo -u "$user" -H -- git -C "$checkout" config --get remote.origin.url');
+        ->toContain('sudo -u "$user" -H -- git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" config --get remote.origin.url');
 });
 
 it('returns a bounded mismatch for an app-production origin', function (): void {

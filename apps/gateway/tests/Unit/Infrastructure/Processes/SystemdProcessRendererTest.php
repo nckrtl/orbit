@@ -9,6 +9,18 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
+describe('ProcessUser', function (): void {
+    it('refuses stored user directive injection and root', function (string $user): void {
+        $process = new Process([
+            'name' => 'worker', 'working_directory' => '/home/worker', 'restart_policy' => 'never',
+            'runtime_config' => ['command' => ['/usr/bin/sleep', '60'], 'user' => $user],
+        ]);
+        $process->id = 9;
+        $target = new ProcessTarget(node: new Node(['name' => 'beast']), user: 'orbit', checkoutPath: '/home/orbit');
+        expect(fn (): string => new SystemdProcessRenderer()->render($process, $target))->toThrow(InvalidArgumentException::class);
+    })->with(['root', "worker\nGroup=root", '--root']);
+});
+
 it('renders an Orbit-owned systemd unit with fixed argv and the target identity', function (): void {
     $node = new Node(['name' => 'production', 'wireguard_ip' => '10.44.0.4']);
     $process = new Process([

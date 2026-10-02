@@ -28,7 +28,21 @@ final readonly class TasksStatusResponse
     }
 
     /**
-     * @return array{enabled: bool, request_id: string}|array{enabled: bool, assistance: list<array{id: int, project_id: int, project: string|null, project_code: string|null, title: string, status: string, assistance_reason: string|null}>, request_id: string}
+     * @return array{enabled: bool, request_id: string}|array{
+     *     enabled: bool,
+     *     assistance: list<array{
+     *         id: int,
+     *         project_id: int,
+     *         project: string|null,
+     *         project_code: string|null,
+     *         title: string,
+     *         status: string,
+     *         assistance_kind: string|null,
+     *         assistance_question: string|null,
+     *         assistance_reason: string|null
+     *     }>,
+     *     request_id: string
+     * }
      */
     public function toArray(): array
     {

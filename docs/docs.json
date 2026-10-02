@@ -494,6 +494,7 @@
               "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "GET /api/v1/task-questions",
               "GET /api/v1/tasks/status"
             ]
           },
@@ -571,8 +572,6 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
-              "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance"
@@ -611,6 +610,14 @@
   },
   "redirects": [
     {
+      "source": "/decisions/0192-stop-a-group-whose-pull-request-ended",
+      "destination": "/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request"
+    },
+    {
+      "source": "/decisions/0193-run-task-agents-as-a-dedicated-user",
+      "destination": "/reference/pi-server#one-user-for-every-task-agent"
+    },
+    {
       "source": "/reference/installation",
       "destination": "/quickstart"
     },
@@ -637,6 +644,10 @@
     {
       "source": "/decisions/0096-run-plausible-through-an-analytics-role",
       "destination": "/reference/analytics"
+    },
+    {
+      "source": "/decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
+      "destination": "/reference/analytics#why-it-works-this-way"
     },
     {
       "source": "/decisions/0099-collect-role-specific-service-metrics",
@@ -1323,6 +1334,10 @@
       "destination": "/reference/projects#project-and-instance"
     },
     {
+      "source": "/decisions/0187-ask-the-reviewer-before-the-operator",
+      "destination": "/reference/tasks#questions-go-through-the-reviewer"
+    },
+    {
       "source": "/decisions/0183-manage-macos-tools-without-service-roles",
       "destination": "/reference/node-provisioning#a-mac-needs-no-service-role"
     },
@@ -1379,8 +1394,16 @@
       "destination": "/reference/implementation-loop#the-candidate-gate"
     },
     {
+      "source": "/decisions/0175-docs-impact-check-in-orbit-repo",
+      "destination": "/contributor-guide#docs-impact-stays-in-the-repository"
+    },
+    {
       "source": "/decisions/0176-file-repro-first-bug-groups",
       "destination": "/reference/tasks#outer-loop"
+    },
+    {
+      "source": "/decisions/0177-remove-the-app-compatibility-surface",
+      "destination": "/reference/projects#one-public-name-without-compatibility"
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",

@@ -107,7 +107,8 @@ function rename_migration_migrate(): void
     $cutoff = RENAME_APP_DOMAIN_MIGRATION.'.php';
     $paths = array_values(array_filter(
         glob(database_path('migrations/*.php')) ?: [],
-        static fn (string $path): bool => basename($path) <= $cutoff,
+        static fn (string $path): bool => ! str_contains($path, 'merge_task_groups_into_tasks')
+            && basename($path) <= $cutoff,
     ));
     Artisan::call('migrate', ['--path' => $paths, '--realpath' => true, '--force' => true]);
 }

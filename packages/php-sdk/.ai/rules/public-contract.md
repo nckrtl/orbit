@@ -22,7 +22,7 @@ The SDK models exactly 177 concrete public Gateway API operations:
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
 - GitHub App: install, show, and destroy.
 - proxycli: enable, disable, status, provider list, provider show, account update, and model list.
-- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, agent thread list, and task definition list, show, create, update, and destroy.
+- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy.
 
 The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.
@@ -108,12 +108,15 @@ operations. Keep the public API typed and small.
   bodyless. Item and collection responses omit tokens and the management key.
   The Gateway owns Valkey placement, collection, publication, and pooling.
 - Keep Tasks transport limited to numeric task group and subtask IDs, the
-  optional Project ID and status list filters, the group title, brief, status,
+  optional Project ID and status list filters, the question list filters
+  (Project ID, cause, status, and since), the group title, brief, status,
   Coder notification flag, and ordered subtask titles and briefs on create,
   partial title, brief, status, and position updates, and the comment type,
   body, author, and optional agent thread ID. Toggle, status, cancel, complete,
-  and destroy requests are bodyless. The Gateway owns the lifecycle, scheduling,
-  and every status rule. Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update. List, show, and destroy are bodyless. The Gateway owns definition validation. The agent conversation stream stays outside the SDK.
+  destroy, and question list requests are bodyless. Task and subtask responses
+  keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`.
+  The Gateway owns the lifecycle, scheduling, and every status rule.
+  Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update. List, show, and destroy are bodyless. The Gateway owns definition validation. The agent conversation stream stays outside the SDK.
 - Accept only the current Doctor family tokens: node, role, app, instance,
   schedule, tool, process, firewall, database_connection, and route.
   Keep Doctor verify-only and policy-free.

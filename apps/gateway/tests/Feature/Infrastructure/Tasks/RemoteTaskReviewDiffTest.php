@@ -168,7 +168,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         $bin = TestOrbitHome::scratch('git-bin');
         mkdir($bin);
         $git = trim((string) shell_exec('command -v git'));
-        file_put_contents($bin.'/git', "#!/bin/sh\nif [ \"\$1\" = ls-files ]; then echo ls-files-failed >&2; exit 1; fi\nexec ".escapeshellarg($git)." \"\$@\"\n");
+        file_put_contents($bin.'/git', "#!/bin/sh\nfor argument in \"\$@\"; do if [ \"\$argument\" = ls-files ]; then echo ls-files-failed >&2; exit 1; fi; done\nexec ".escapeshellarg($git)." \"\$@\"\n");
         \chmod($bin.'/git', 0755);
         putenv('PATH='.$bin.':'.$path);
     }
@@ -189,7 +189,7 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         'status' => TaskStatus::Running,
         'subtask_start_commit' => $start,
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(TaskReviewDiff::class, review_diff_reader(new LocalShellSshExecutor));
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);

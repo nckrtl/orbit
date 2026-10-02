@@ -7,6 +7,8 @@ namespace App\Models;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
+use Illuminate\Database\Eloquent\Attributes\Scope;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
@@ -85,6 +87,29 @@ final class InstanceTransfer extends Model
             $id = $transfer->getAttribute('id');
             $transfer->id = is_string($id) && $id !== '' ? $id : (string) Str::uuid();
         });
+    }
+
+    /** @param Builder<self> $query */
+    #[Scope]
+    protected function closed(Builder $query): void
+    {
+        $query->where(fn (Builder $closed) => $closed
+            ->where('status', InstanceTransferStatus::Completed)
+            ->orWhere(fn (Builder $rolledBack) => $rolledBack
+                ->where('status', InstanceTransferStatus::Failed)
+                ->whereNull('cutover_at')
+                ->where('current_step', InstanceTransferStep::Reserved)
+                ->whereNull('recovery_evidence')
+                ->where(fn (Builder $imports) => $imports
+                    ->whereNull('imported_environment_keys')
+                    ->orWhere('imported_environment_keys', '[]'))));
+    }
+
+    /** @param Builder<self> $query */
+    #[Scope]
+    protected function open(Builder $query): void
+    {
+        $query->whereNot(fn (Builder $closed) => $closed->closed());
     }
 
     /** @return BelongsTo<Instance, $this> */

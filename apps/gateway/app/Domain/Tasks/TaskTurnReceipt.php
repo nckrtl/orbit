@@ -23,6 +23,7 @@ final readonly class TaskTurnReceipt
         public ?string $question = null,
         public array $deliverables = [],
         public ?int $threadId = null,
+        public ?string $cause = null,
     ) {}
 
     public static function parse(string $contents): self
@@ -44,14 +45,31 @@ final readonly class TaskTurnReceipt
                 return new self($hash, null, '');
             }
         }
+        $cause = self::cause($data['cause'] ?? null);
+        if ($cause === false) {
+            return new self($hash, null, '');
+        }
 
-        return new self($hash, $outcome, trim($data['summary']), TaskTurnPullRequest::fromArray($data['pull_request'] ?? null), $question, self::confirmations($data['deliverables'] ?? null), self::threadId($data['thread'] ?? null));
+        return new self($hash, $outcome, trim($data['summary']), TaskTurnPullRequest::fromArray($data['pull_request'] ?? null), $question, self::confirmations($data['deliverables'] ?? null), self::threadId($data['thread'] ?? null), $cause);
     }
 
     /** The same receipt, named as written by this Orbit thread. The content hash stays the hash of the file. */
     public function withThread(int $threadId): self
     {
-        return new self($this->hash, $this->outcome, $this->summary, $this->pullRequest, $this->question, $this->deliverables, $threadId);
+        return new self($this->hash, $this->outcome, $this->summary, $this->pullRequest, $this->question, $this->deliverables, $threadId, $this->cause);
+    }
+
+    /** @return string|null|false false when the receipt names a cause that is not one of the five */
+    private static function cause(mixed $value): string|null|false
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (! is_string($value) || QuestionCause::tryFrom($value) === null) {
+            return false;
+        }
+
+        return $value;
     }
 
     private static function threadId(mixed $value): ?int

@@ -38,7 +38,7 @@ final readonly class DevelopmentCaddyAccessCommand
                     test -d "$checkout"
                     test ! -L "$checkout"
                     test "$(realpath -e -- "$checkout")" = "$checkout"
-                    test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
+                    test "$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
                     test "$(stat -c %U -- "$checkout")" = "$(id -un)"
                     document_root="$checkout/$relative_root"
                     test -d "$document_root"

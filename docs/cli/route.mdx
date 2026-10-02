@@ -123,7 +123,7 @@ During a domain change, `route:show` shows both Routes, `replacement_step`, `fai
 | `route.domain_conflict` | Another Route owns the new domain. |
 | `route.domain_change_conflict` | Another domain change is in progress. |
 | `route.reconciliation_required` | The Route or its targets do not allow this change, for example a public domain for development Instances. |
-| `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see ADR 0177. |
+| `instance.source_profile_missing` | A target has no recorded source profile. Orbit does not recover missing profiles on older Instances; see the [no-legacy-support rule](/reference/projects#one-public-name-without-compatibility). |
 
 ## orbit route:target:set
 

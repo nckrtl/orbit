@@ -20,7 +20,18 @@ final class UpdateNodeSettingsRequest extends FormRequest
     /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return [];
+        return [
+            'apps' => ['present', 'nullable', 'array:path'],
+            'apps.path' => ['sometimes', 'nullable', 'string'],
+        ];
+    }
+
+    /** @return array<string, mixed> */
+    public function validationData(): array
+    {
+        $patch = $this->payload();
+
+        return ['apps' => $patch->apps === null ? null : ['path' => $patch->apps->path]];
     }
 
     public function payload(): NodeSettingsPatch

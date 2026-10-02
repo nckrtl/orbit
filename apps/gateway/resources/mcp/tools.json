@@ -158,7 +158,7 @@
         "properties": {
           "version": {
             "type": "string",
-            "pattern": "^\\d+\\.\\d+\\.\\d+$",
+            "pattern": "^\\d+\\.\\d+\\.\\d+$(?![\\s\\S])",
             "description": "Plausible Community Edition version, for example 3.2.1"
           }
         },
@@ -465,7 +465,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Optional development TLD"
           }
@@ -715,7 +715,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "New development TLD; empty unsets it"
           },
@@ -749,7 +749,7 @@
         "properties": {
           "slug": {
             "type": "string",
-            "pattern": "",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
             "maxLength": 63
           },
           "driver": {
@@ -773,7 +773,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
             "maxLength": 255
           },
           "port": {
@@ -789,7 +789,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
             "maxLength": 64
           },
           "path": {
@@ -797,7 +797,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
             "maxLength": 1024
           },
           "username": {
@@ -805,7 +805,7 @@
               "string",
               "null"
             ],
-            "pattern": "",
+            "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
             "maxLength": 128
           },
           "password": {
@@ -817,7 +817,7 @@
           },
           "server": {
             "type": "string",
-            "pattern": "",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
             "maxLength": 63
           },
           "instance_id": {
@@ -832,7 +832,7 @@
             "properties": {
               "slug": {
                 "type": "string",
-                "pattern": "",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                 "maxLength": 63
               },
               "driver": {
@@ -856,7 +856,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
                 "maxLength": 255
               },
               "port": {
@@ -872,7 +872,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
                 "maxLength": 64
               },
               "path": {
@@ -880,7 +880,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
                 "maxLength": 1024
               },
               "username": {
@@ -888,7 +888,7 @@
                   "string",
                   "null"
                 ],
-                "pattern": "",
+                "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
                 "maxLength": 128
               },
               "password": {
@@ -910,12 +910,12 @@
             "properties": {
               "slug": {
                 "type": "string",
-                "pattern": "",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                 "maxLength": 63
               },
               "server": {
                 "type": "string",
-                "pattern": "",
+                "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                 "maxLength": 63
               },
               "instance_id": {
@@ -1260,6 +1260,76 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "description": "Database connection slug."
+          },
+          "driver": {
+            "type": "string",
+            "enum": [
+              "mysql",
+              "pgsql",
+              "sqlite",
+              "redis"
+            ],
+            "description": "Driver: mysql, pgsql, sqlite, or redis"
+          },
+          "node_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "host": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,253}[A-Za-z0-9])?$(?![\\s\\S])",
+            "maxLength": 255,
+            "description": "Hostname or IP for mysql and pgsql"
+          },
+          "port": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "maximum": 65535,
+            "minimum": 1,
+            "description": "TCP port for mysql and pgsql"
+          },
+          "database": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^(?:[A-Za-z_][A-Za-z0-9_$]{0,63}|[0-9]{1,3})$(?![\\s\\S])",
+            "maxLength": 64,
+            "description": "Database name for mysql and pgsql"
+          },
+          "path": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^\\/[^\\x00]{1,1023}$(?![\\s\\S])",
+            "maxLength": 1024,
+            "description": "Unix absolute sqlite path"
+          },
+          "username": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[\\x21-\\x7E]{1,128}$(?![\\s\\S])",
+            "maxLength": 128,
+            "description": "Username"
+          },
+          "password": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 1024,
+            "description": "Password"
           }
         },
         "additionalProperties": false,
@@ -1571,7 +1641,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Stable firewall rule name"
           },
@@ -1623,7 +1693,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Stable firewall rule name"
           },
@@ -1846,7 +1916,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?$",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9 ._-]{0,32}[A-Za-z0-9])?$(?![\\s\\S])",
             "description": "Proposed App name for a first registration"
           },
           "owner": {
@@ -1854,7 +1924,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$",
+            "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$(?![\\s\\S])",
             "description": "GitHub organization that owns the App registration"
           }
         },
@@ -2018,7 +2088,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Target production Instance name"
           },
@@ -2034,7 +2104,7 @@
           },
           "sqlite_source_path": {
             "type": "string",
-            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$(?![\\s\\S])",
             "maxLength": 4096,
             "description": "Optional SQLite database path on the candidate"
           }
@@ -2069,7 +2139,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Instance name; default is reserved for the default development source"
           },
@@ -2300,11 +2370,42 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Instance ID."
+          },
+          "name": {
+            "type": "string",
+            "description": "Deploy step name"
+          },
+          "command": {
+            "type": "string",
+            "description": "Command the Gateway runs"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before_activation",
+              "after_activation"
+            ],
+            "description": "before_activation or after_activation"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "maximum": 900,
+            "minimum": 1
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step in the same phase"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step in the same phase"
           }
         },
         "additionalProperties": false,
         "required": [
-          "instance"
+          "instance",
+          "name",
+          "command"
         ]
       }
     },
@@ -2394,6 +2495,29 @@
             "type": "string",
             "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
             "description": "Deploy step name."
+          },
+          "command": {
+            "type": "string",
+            "description": "Command the Gateway runs"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "before_activation",
+              "after_activation"
+            ],
+            "description": "before_activation or after_activation"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "before": {
+            "type": "string",
+            "description": "Place before this step in the same phase"
+          },
+          "after": {
+            "type": "string",
+            "description": "Place after this step in the same phase"
           }
         },
         "additionalProperties": false,
@@ -2599,7 +2723,7 @@
         "properties": {
           "source_path": {
             "type": "string",
-            "pattern": "^\\/[^\\x00-\\x1f]*$",
+            "pattern": "^\\/[^\\x00-\\x1f]*$(?![\\s\\S])",
             "maxLength": 4096
           },
           "include_worktrees": {
@@ -3178,13 +3302,13 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Optional destination Instance name"
           },
           "sqlite_source_path": {
             "type": "string",
-            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$",
+            "pattern": "^\\/[^\\x00-\\x1F\\x7F]*$(?![\\s\\S])",
             "maxLength": 4096,
             "description": "Optional SQLite database path on the source"
           }
@@ -3215,11 +3339,16 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Instance ID."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Deployment branch"
           }
         },
         "additionalProperties": false,
         "required": [
-          "instance"
+          "instance",
+          "branch"
         ]
       }
     },
@@ -3486,7 +3615,7 @@
               "string",
               "null"
             ],
-            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$(?![\\s\\S])",
             "maxLength": 253,
             "description": "Node TLD; required for production clone preview domains"
           },
@@ -3561,7 +3690,7 @@
               "string",
               "null"
             ],
-            "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
+            "pattern": "^SHA256:[A-Za-z0-9+/]{43}$(?![\\s\\S])",
             "description": "Approved SSH SHA256 host key fingerprint"
           }
         },
@@ -3992,11 +4121,27 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Node ID."
+          },
+          "apps": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
           }
         },
         "additionalProperties": false,
         "required": [
-          "node"
+          "node",
+          "apps"
         ]
       }
     },
@@ -4053,13 +4198,19 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Process name"
           },
           "preset": {
             "type": "string",
             "description": "Process preset: vp-dev, agentation-mcp, or antigravity-watch"
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])",
+            "maxLength": 32,
+            "description": "Existing non-root account for a Node systemd Process"
           },
           "runtime": {
             "type": "string",
@@ -4084,13 +4235,13 @@
               "string",
               "null"
             ],
-            "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
             "maxLength": 255,
             "description": "Conditionally required."
           },
           "working_directory": {
             "type": "string",
-            "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+            "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
             "maxLength": 4096,
             "description": "Runtime working directory"
           },
@@ -4108,7 +4259,7 @@
             "maxItems": 100,
             "items": {
               "type": "string",
-              "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+              "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
             }
           },
           "volumes": {
@@ -4116,15 +4267,16 @@
             "maxItems": 100,
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "source": {
                   "type": "string",
-                  "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                  "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                   "maxLength": 4096
                 },
                 "target": {
                   "type": "string",
-                  "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                  "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                   "maxLength": 4096
                 },
                 "read_only": {
@@ -4369,7 +4521,7 @@
           },
           "code": {
             "type": "string",
-            "pattern": "^[A-Z]{3}$"
+            "pattern": "^[A-Z]{3}$(?![\\s\\S])"
           },
           "slug": {
             "type": "string",
@@ -4591,7 +4743,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -4629,13 +4781,13 @@
                   "string",
                   "null"
                 ],
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
                 "maxLength": 255,
                 "description": "Conditionally required."
               },
               "working_directory": {
                 "type": "string",
-                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                 "maxLength": 4096
               },
               "environment": {
@@ -4651,7 +4803,7 @@
                 "maxItems": 100,
                 "items": {
                   "type": "string",
-                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
                 }
               },
               "volumes": {
@@ -4659,15 +4811,16 @@
                 "maxItems": 100,
                 "items": {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "source": {
                       "type": "string",
-                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "target": {
                       "type": "string",
-                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "read_only": {
@@ -4828,7 +4981,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -4866,13 +5019,13 @@
                   "string",
                   "null"
                 ],
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._\\/:@-]*$(?![\\s\\S])",
                 "maxLength": 255,
                 "description": "Conditionally required."
               },
               "working_directory": {
                 "type": "string",
-                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$",
+                "pattern": "^\\/(?!.*(?:^|\\/)\\.\\.(?:\\/|$))[^\\x00\\r\\n]*$(?![\\s\\S])",
                 "maxLength": 4096
               },
               "environment": {
@@ -4888,7 +5041,7 @@
                 "maxItems": 100,
                 "items": {
                   "type": "string",
-                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$"
+                  "pattern": "^(?:(?:\\d{1,3}\\.){3}\\d{1,3}:)?\\d{1,5}:\\d{1,5}(?:\\/(?:tcp|udp))?$(?![\\s\\S])"
                 }
               },
               "volumes": {
@@ -4896,15 +5049,16 @@
                 "maxItems": 100,
                 "items": {
                   "type": "object",
+                  "additionalProperties": false,
                   "properties": {
                     "source": {
                       "type": "string",
-                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$",
+                      "pattern": "^(?:\\/[A-Za-z0-9._\\/ -]+|[A-Za-z0-9][A-Za-z0-9_.-]*)$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "target": {
                       "type": "string",
-                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$",
+                      "pattern": "^\\/[A-Za-z0-9._\\/ -]*$(?![\\s\\S])",
                       "maxLength": 4096
                     },
                     "read_only": {
@@ -4968,7 +5122,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -4991,7 +5145,7 @@
               },
               "calendar": {
                 "type": "string",
-                "pattern": "^[\\x20-\\x7E]+$",
+                "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
                 "maxLength": 255
               },
               "timeout_seconds": {
@@ -5136,7 +5290,7 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$",
+            "pattern": "^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$(?![\\s\\S])",
             "maxLength": 63
           },
           "environments": {
@@ -5159,7 +5313,7 @@
               },
               "calendar": {
                 "type": "string",
-                "pattern": "^[\\x20-\\x7E]+$",
+                "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
                 "maxLength": 255
               },
               "timeout_seconds": {
@@ -5234,7 +5388,7 @@
           },
           "code": {
             "type": "string",
-            "pattern": "^[A-Z]{3}$"
+            "pattern": "^[A-Z]{3}$(?![\\s\\S])"
           },
           "type": {
             "type": "string",
@@ -5801,13 +5955,13 @@
           },
           "name": {
             "type": "string",
-            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
             "maxLength": 63,
             "description": "Schedule name"
           },
           "calendar": {
             "type": "string",
-            "pattern": "^[\\x20-\\x7E]+$",
+            "pattern": "^[\\x20-\\x7E]+$(?![\\s\\S])",
             "maxLength": 255,
             "description": "Native systemd calendar expression"
           },
@@ -6174,7 +6328,7 @@
       "name": "tasks-complete",
       "extension": "tasks",
       "title": "Complete a Task group",
-      "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+      "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/complete",
       "path_inputs": [
@@ -6201,7 +6355,7 @@
       "name": "tasks-create",
       "extension": "tasks",
       "title": "Create a Task group",
-      "description": "Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.",
+      "description": "Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.",
       "method": "POST",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -6258,10 +6412,11 @@
                   "maxItems": 5,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "id": {
                         "type": "string",
-                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                        "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                         "maxLength": 64
                       },
                       "type": {
@@ -6369,6 +6524,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "type": "string"
@@ -6405,6 +6561,7 @@
               "object",
               "null"
             ],
+            "additionalProperties": false,
             "properties": {
               "cron": {
                 "type": "string",
@@ -6420,6 +6577,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "key": {
                   "type": "string"
@@ -6473,6 +6631,7 @@
                   "maxItems": 5,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "id": {
                         "type": "string",
@@ -6726,6 +6885,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "name": {
                   "type": "string"
@@ -6762,6 +6922,7 @@
               "object",
               "null"
             ],
+            "additionalProperties": false,
             "properties": {
               "cron": {
                 "type": "string",
@@ -6777,6 +6938,7 @@
             "type": "array",
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "key": {
                   "type": "string"
@@ -6830,6 +6992,7 @@
                   "maxItems": 5,
                   "items": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "id": {
                         "type": "string",
@@ -6955,7 +7118,7 @@
       "name": "tasks-list",
       "extension": "tasks",
       "title": "List Task groups",
-      "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+      "description": "Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
       "method": "GET",
       "path": "/api/v1/task-groups",
       "path_inputs": [],
@@ -6990,10 +7153,57 @@
       }
     },
     {
+      "name": "tasks-question-list",
+      "extension": "tasks",
+      "title": "List task questions",
+      "description": "Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.",
+      "method": "GET",
+      "path": "/api/v1/task-questions",
+      "path_inputs": [],
+      "query_inputs": [
+        "project_id",
+        "cause",
+        "status",
+        "since"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "cause": {
+            "type": "string",
+            "enum": [
+              "brief_unclear",
+              "contract_gap",
+              "scope",
+              "environment",
+              "missed_contract"
+            ]
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "escalated",
+              "answered"
+            ]
+          },
+          "since": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "tasks-show",
       "extension": "tasks",
       "title": "Show a Task group",
-      "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
+      "description": "Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.",
       "method": "GET",
       "path": "/api/v1/task-groups/{group}",
       "path_inputs": [
@@ -7020,7 +7230,7 @@
       "name": "tasks-status",
       "extension": null,
       "title": "Show Tasks status",
-      "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.",
+      "description": "Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.",
       "method": "GET",
       "path": "/api/v1/tasks/status",
       "path_inputs": [],
@@ -7068,7 +7278,7 @@
       "name": "tasks-subtask-create",
       "extension": "tasks",
       "title": "Create a subtask",
-      "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
+      "description": "Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most five typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `command` adds `command`, an optional `directory` (default `.`), an optional boolean `fails_on_base`, and optional `paths` (workspace-relative file paths, not globs). Only `command` accepts `fails_on_base` and `paths`. With `fails_on_base: true`, `paths` must contain at least one file, and the command must fail on the start commit before it passes on the working tree; omitted `fails_on_base` is stored as false. `review` adds nothing. Orbit verifies file and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/tasks",
       "path_inputs": [
@@ -7099,10 +7309,11 @@
             "maxItems": 5,
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "id": {
                   "type": "string",
-                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                   "maxLength": 64
                 },
                 "type": {
@@ -7245,10 +7456,11 @@
             "maxItems": 5,
             "items": {
               "type": "object",
+              "additionalProperties": false,
               "properties": {
                 "id": {
                   "type": "string",
-                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+                  "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$(?![\\s\\S])",
                   "maxLength": 64
                 },
                 "type": {
@@ -7318,7 +7530,7 @@
       "name": "tasks-update",
       "extension": "tasks",
       "title": "Update a Task group",
-      "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
+      "description": "Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
       "method": "PATCH",
       "path": "/api/v1/task-groups/{group}",
       "path_inputs": [

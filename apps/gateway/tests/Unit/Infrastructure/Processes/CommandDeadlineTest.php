@@ -107,6 +107,89 @@ it('restores the request deadline after a nested operation instead of clearing i
     expect($deadline->cap(9_999.0))->toBe(9_999.0);
 });
 
+it('keeps a local forward-work budget separate from the parent cleanup reserve', function (float $reserve, float $remaining): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, $reserve);
+
+    $inside = $deadline->withinForwardWork(10.0, static function () use ($deadline, &$now): float {
+        expect($deadline->cap(30.0))->toBe(10.0);
+        $now = 2.0;
+
+        return $deadline->cap(30.0);
+    });
+
+    expect($inside)->toBe(8.0)->and($deadline->cap(9999.0))->toBe($remaining);
+})->with([
+    'no reserve' => [0.0, 568.0],
+    'five-second reserve' => [5.0, 563.0],
+    'API cleanup reserve' => [CommandDeadline::CleanupReserveSeconds, 548.0],
+]);
+
+it('restores the parent forward cutoff after a caught local expiry', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    $expire = static function () use ($deadline, &$now): float {
+        $now = 10.0;
+
+        return $deadline->cap(30.0);
+    };
+    expect(fn () => $deadline->withinForwardWork(10.0, $expire))->toThrow(ResourceOperationException::class);
+
+    expect($deadline->cap(9999.0))->toBe(540.0)
+        ->and($deadline->withinForwardWork(10.0, static fn (): float => $deadline->cap(30.0)))->toBe(10.0)
+        ->and($deadline->cap(9999.0))->toBe(540.0);
+
+    $now = 550.0;
+    expect(fn () => $deadline->withinForwardWork(10.0, static fn (): float => $deadline->cap(30.0)))
+        ->toThrow(ResourceOperationException::class);
+    expect($deadline->cap(30.0))->toBe(20.0);
+});
+
+it('keeps request-level cleanup available without allowing another forward operation to consume it', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+    $now = 550.0;
+    expect(fn () => $deadline->cap(30.0))->toThrow(ResourceOperationException::class);
+
+    expect(fn () => $deadline->withinForwardWork(10.0, static fn (): float => $deadline->cap(30.0)))
+        ->toThrow(ResourceOperationException::class);
+
+    expect($deadline->cap(30.0))->toBe(20.0);
+    $now = 570.0;
+    expect(fn () => $deadline->cap(30.0))->toThrow(ResourceOperationException::class);
+});
+
+it('does not extend a shorter parent forward-work deadline or spend its cleanup reserve', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+    $now = 547.0;
+
+    $inside = $deadline->withinForwardWork(10.0, static function () use ($deadline, &$now): float {
+        expect($deadline->cap(30.0))->toBe(3.0);
+        $now = 549.0;
+
+        return $deadline->cap(30.0);
+    });
+
+    expect($inside)->toBe(1.0)->and($deadline->cap(30.0))->toBe(1.0);
+    $now = 550.0;
+    expect(fn () => $deadline->cap(30.0))->toThrow(ResourceOperationException::class);
+    expect($deadline->cap(30.0))->toBe(20.0);
+});
+
 it('holds time back from work for what must follow it, even after that work ran out of time', function (): void {
     $now = 0.0;
     $deadline = new CommandDeadline(static function () use (&$now): float {

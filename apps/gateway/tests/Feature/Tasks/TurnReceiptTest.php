@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskPromptGroup;
 use App\Domain\Tasks\TaskPromptRenderer;
@@ -11,6 +12,7 @@ use App\Domain\Tasks\TaskRubricItem;
 use App\Domain\Tasks\TaskRubricReminder;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOutcome;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -86,6 +88,37 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
+describe('TaskGitHardening', function (): void {
+    it('publishes turn metadata without writing through planted final or temporary links', function (string $name): void {
+        $checkout = turn_receipt_checkout();
+        File::ensureDirectoryExists($checkout.'/.git/orbit');
+        $target = TestOrbitHome::scratch('private-turn-target');
+        file_put_contents($target, 'private Node file');
+        chmod($target, 0600);
+        symlink($target, $checkout.'/.git/orbit/'.$name);
+
+        turn_receipts(new LocalShellSshExecutor)->prepare(turn_receipt_instance($checkout), TaskThreadRole::Implementer, threadId: 17, context: 'Task context');
+
+        expect(file_get_contents($target))->toBe('private Node file')
+            ->and(file_get_contents($checkout.'/.git/orbit/context.md'))->toBe('Task context');
+    })->with(['turn.new', 'turn.json.new', 'context.md.new', 'turn', 'turn.json', 'context.md', 'receipt.json']);
+
+    it('refuses to read a turn or receipt link into a private Node file', function (string $name): void {
+        $checkout = turn_receipt_checkout();
+        $instance = turn_receipt_instance($checkout);
+        $receipts = turn_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, TaskThreadRole::Implementer);
+        file_put_contents($checkout.'/.git/orbit/receipt.json', '{}');
+        $target = TestOrbitHome::scratch('private-read-target');
+        file_put_contents($target, 'private Node file');
+        unlink($checkout.'/.git/orbit/'.$name);
+        symlink($target, $checkout.'/.git/orbit/'.$name);
+
+        expect(fn () => $receipts->read($instance))->toThrow(TaskTurnReceiptException::class)
+            ->and(file_get_contents($target))->toBe('private Node file');
+    })->with(['turn.json', 'receipt.json']);
+});
+
 it('installs the turn command outside the tracked tree and reads the receipt it writes', function (): void {
     $checkout = turn_receipt_checkout();
     $instance = turn_receipt_instance($checkout);
@@ -99,6 +132,7 @@ it('installs the turn command outside the tracked tree and reads the receipt it 
     expect($written->getExitCode())->toBe(0)
         ->and($written->getOutput())->toBe("Orbit recorded the turn receipt (ready_for_review). End your turn now.\n")
         ->and(is_executable($checkout.'/.git/orbit/turn'))->toBeTrue()
+        ->and(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775)
         ->and(is_file($checkout.'/.git/orbit/run'))->toBeFalse()
         ->and(is_file($checkout.'/.git/orbit/run.json'))->toBeFalse()
         ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer', 'final' => false, 'deliverables' => []])
@@ -299,6 +333,11 @@ it('refuses input that does not fit the turn', function (TaskThreadRole $role, a
     'a blocked reviewer turn without a question' => [TaskThreadRole::Reviewer, ['--outcome=blocked', '--summary=The brief is unclear.'], 'blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.'],
     'an empty question' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=No.', '--question= '], '--question cannot be empty.'],
     'a question on another outcome' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--question=Is this fine?'], '--question is only for --outcome=blocked.'],
+    'a blocked reviewer turn without a cause' => [TaskThreadRole::Reviewer, ['--outcome=blocked', '--summary=The brief is unclear.', '--question=Which ADR wins?'], '--cause must be one of: brief_unclear, contract_gap, scope, environment, missed_contract.'],
+    'a cause on an implementer turn' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=No.', '--question=May I install it?', '--cause=scope'], '--cause is only for a reviewer answering or blocked, or the review after a direction resolution.'],
+    'a cause on an ordinary approval' => [TaskThreadRole::Reviewer, ['--outcome=approved', '--summary=Good.', '--cause=scope'], '--cause is only for a reviewer answering or blocked, or the review after a direction resolution.'],
+    'a cause on an ordinary changes request' => [TaskThreadRole::Reviewer, ['--outcome=changes_requested', '--summary=Fix the export.', '--cause=scope'], '--cause is only for a reviewer answering or blocked, or the review after a direction resolution.'],
+    'a cause on an ordinary ready for review' => [TaskThreadRole::Implementer, ['--outcome=ready_for_review', '--summary=Done.', '--cause=environment'], '--cause is only for a reviewer answering or blocked, or the review after a direction resolution.'],
 ]);
 
 it('records the question of a blocked turn', function (): void {
@@ -314,6 +353,70 @@ it('records the question of a blocked turn', function (): void {
         ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Blocked)
         ->and($receipt?->question)->toBe('May I run sudo apt-get install php8.5-intl?')
         ->and($receipt?->body())->toBe("Installing intl needs sudo.\n\nQuestion: May I run sudo apt-get install php8.5-intl?");
+});
+
+it('records a reviewer cause and limits a relay to answered or blocked', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: new TaskTurnMode(relay: true));
+
+    $refused = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Good.', '--cause=scope']);
+    expect($refused->getExitCode())->toBe(2)
+        ->and($refused->getErrorOutput())->toBe("orbit turn: --outcome must be one of: answered, blocked.\n");
+
+    $recorded = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Use the ADR.', '--cause=contract_gap']);
+    $receipt = $receipts->read($instance);
+
+    expect($recorded->getExitCode())->toBe(0)
+        ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Answered)
+        ->and($receipt?->cause)->toBe(QuestionCause::ContractGap->value)
+        ->and($receipt?->summary)->toBe('Use the ADR.');
+});
+
+it('requires a known cause on an answered relay and accepts every cause', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: new TaskTurnMode(relay: true));
+    $causeError = '--cause must be one of: brief_unclear, contract_gap, scope, environment, missed_contract.';
+
+    $missing = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Use the ADR.']);
+    $invalid = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Use the ADR.', '--cause=nope']);
+
+    expect($missing->getExitCode())->toBe(2)
+        ->and($missing->getErrorOutput())->toBe("orbit turn: {$causeError}\n")
+        ->and($invalid->getExitCode())->toBe(2)
+        ->and($invalid->getErrorOutput())->toBe("orbit turn: {$causeError}\n")
+        ->and($receipts->read($instance))->toBeNull();
+
+    foreach (QuestionCause::cases() as $cause) {
+        $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: new TaskTurnMode(relay: true));
+        $process = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Noted.', '--cause='.$cause->value]);
+        $receipt = $receipts->read($instance);
+
+        expect($process->getExitCode())->toBe(0)
+            ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Answered)
+            ->and($receipt?->cause)->toBe($cause->value);
+    }
+});
+
+it('requires a cause on every outcome of the review after a direction resolution', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, mode: new TaskTurnMode(causeRequired: true));
+
+    $refused = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Good.']);
+    expect($refused->getExitCode())->toBe(2)
+        ->and($refused->getErrorOutput())->toContain('--cause must be one of:');
+
+    $recorded = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Good.', '--cause=brief_unclear']);
+    $receipt = $receipts->read($instance);
+
+    expect($recorded->getExitCode())->toBe(0)
+        ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Approved)
+        ->and($receipt?->cause)->toBe('brief_unclear');
 });
 
 it('refuses to write a receipt before Orbit starts a turn', function (): void {
@@ -341,6 +444,7 @@ it('treats a hand-written receipt without an outcome and summary as invalid', fu
     'empty summary' => ['{"outcome":"blocked","summary":" "}'],
     'blocked without a question' => ['{"outcome":"blocked","summary":"Gateway implementation not completed."}'],
     'blocked with an empty question' => ['{"outcome":"blocked","summary":"Stuck.","question":" "}'],
+    'an unknown cause' => ['{"outcome":"blocked","summary":"Stuck.","question":"Which?","cause":"taste"}'],
 ]);
 
 it('reports an unreachable workspace instead of a missing receipt', function (): void {
@@ -514,9 +618,19 @@ it('names the turn command in the prompts and the reminder', function (): void {
 
     expect($prompt)->toContain('.git/orbit/turn --thread=17 --outcome=ready_for_review')
         ->and($prompt)->toContain('.git/orbit/turn --thread=17 --outcome=blocked')
+        ->and($prompt)->toContain('consult')
+        ->and($prompt)->toContain('answered')
+        ->and($prompt)->toContain('brief_unclear, contract_gap, scope, environment, or missed_contract')
         ->and($prompt)->not->toContain('.git/orbit/run')
         ->and($reviewer)->toContain('.git/orbit/turn --thread=19 --outcome=approved')
         ->and($reviewer)->toContain('.git/orbit/turn --thread=19 --outcome=changes_requested')
+        ->and($reviewer)->not->toContain('This is a consult')
+        ->and($reviewer)->not->toContain('--outcome=answered')
+        ->and(TaskTurnInstructions::consult(19))->toContain('.git/orbit/turn --thread=19 --outcome=answered')
+        ->and(TaskTurnInstructions::consult(19))->toContain('This is a consult, not a review.')
+        ->and(TaskTurnInstructions::consult(19))->toContain('brief_unclear, contract_gap, scope, environment, or missed_contract')
+        ->and(TaskTurnInstructions::relay(19))->toContain("This is a relay of the operator's direction, not a review.")
+        ->and(TaskTurnInstructions::relay(19))->toContain('.git/orbit/turn --thread=19 --outcome=answered')
         ->and($reviewer)->not->toContain('.git/orbit/run')
         ->and($reminder)->toContain('No turn receipt was found.')
         ->and($reminder)->toContain('.git/orbit/turn --thread=17 --outcome=ready_for_review')
@@ -559,9 +673,9 @@ it('reports an unreachable workspace when the review context cannot be written',
         context: "# Task context\n",
     ))->toThrow(TaskTurnReceiptException::class, 'The task workspace could not be reached for the turn receipt.');
 
-    expect($transport->commands[0]->input)->toContain('turn.json.new')
-        ->and($transport->commands[0]->input)->toContain('context.md.new')
-        ->and($transport->commands[0]->input)->toContain('mv -fT -- "$dir/context.md.new" "$dir/context.md"');
+    expect($transport->commands[0]->input)->toContain('python3 -I -c')
+        ->and($transport->commands[0]->input)->toContain('| workspace_metadata \'turn\'')
+        ->and($transport->commands[0]->input)->not->toContain('context.md.new');
 });
 
 it('replaces a context path that is a symlink to a directory instead of writing inside it', function (): void {

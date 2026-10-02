@@ -28,16 +28,10 @@ return new class extends Migration
     /** @return list<array{string, string, string}> */
     private function changes(): array
     {
-        $development = static fn (string $node): string => "EXISTS (SELECT 1 FROM node_roles WHERE node_id = {$node} AND role = 'app-dev' AND status = 'active') AND NOT EXISTS (SELECT 1 FROM node_roles WHERE node_id = {$node} AND role = 'app-prod' AND status = 'active')";
-        $preActivation = "source_layout = 'checkout' AND status IN ('reserved', 'checkout_prepared', 'source_resolved') AND ".$development('instances.node_id');
-        $memberPreActivation = "instances.source_layout = 'checkout' AND instances.status IN ('reserved', 'checkout_prepared', 'source_resolved') AND ".$development('instances.node_id');
-
+        // Failed-create eligibility and nullable starting commits are guarded by
+        // allow_failed_creation_removal, which runs before this migration.
         return [
-            ['instance_removals_insert', "status = 'active' OR", "({$preActivation}) OR status = 'active' OR"],
-            ['instance_removal_members_insert', "instances.status = 'active'", "({$memberPreActivation}) OR instances.status = 'active'"],
             ['instance_removal_members_insert', 'instances.branch IS NEW.branch', '(instances.starting_commit IS NULL OR instances.branch IS NEW.branch)'],
-            ['instance_removal_members_insert', 'OR NEW.starting_commit IS NULL', "OR (NEW.starting_commit IS NULL AND NOT EXISTS (SELECT 1 FROM instances WHERE id = NEW.instance_id AND source_layout = 'checkout' AND status IN ('reserved', 'checkout_prepared') AND ".$development('instances.node_id').'))'],
-            ['instances_removal_status_update', "OLD.status NOT IN ('active', 'source_resolved')", "(OLD.status NOT IN ('active', 'source_resolved') AND NOT (OLD.source_layout = 'checkout' AND OLD.status IN ('reserved', 'checkout_prepared') AND ".$development('OLD.node_id').'))'],
             ['instance_removal_members_source_commit_insert', 'length(NEW.source_commit) NOT IN (40, 64)', "(length(NEW.source_commit) NOT IN (40, 64) AND NOT (NEW.source_commit = '' AND NEW.starting_commit IS NULL AND NEW.environment = 'development' AND NEW.source_layout = 'checkout'))"],
         ];
     }

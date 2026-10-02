@@ -10,12 +10,13 @@ enum TaskTurnOutcome: string
     case Approved = 'approved';
     case ChangesRequested = 'changes_requested';
     case Blocked = 'blocked';
+    case Answered = 'answered';
 
     public function fits(TaskThreadRole $role): bool
     {
         return match ($this) {
             self::ReadyForReview => $role === TaskThreadRole::Implementer,
-            self::Approved, self::ChangesRequested => $role === TaskThreadRole::Reviewer,
+            self::Approved, self::ChangesRequested, self::Answered => $role === TaskThreadRole::Reviewer,
             self::Blocked => true,
         };
     }

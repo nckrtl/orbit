@@ -54,7 +54,37 @@ final class TaskFields
     }
 
     /**
-     * A subtask's typed deliverables. String fields pass through, and a test deliverable may carry boolean
+     * A required non-negative integer, such as a question attempt.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function nonNegative(array $data, string $key, string $record, string $requestId): int
+    {
+        $value = $data[$key] ?? null;
+
+        if (! is_int($value) || $value < 0) {
+            throw self::invalid($record, $requestId);
+        }
+
+        return $value;
+    }
+
+    /**
+     * A count. A missing or null value is zero; any other non-integer is invalid.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public static function count(array $data, string $key, string $record, string $requestId): int
+    {
+        if (! array_key_exists($key, $data) || $data[$key] === null) {
+            return 0;
+        }
+
+        return self::nonNegative($data, $key, $record, $requestId);
+    }
+
+    /**
+     * A subtask's typed deliverables. String fields pass through, and a command deliverable may carry boolean
      * fails_on_base. A record without the list has none.
      *
      * @param  array<string, mixed>  $data

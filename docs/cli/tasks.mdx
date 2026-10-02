@@ -3,6 +3,8 @@ title: "tasks"
 description: "Create, prepare, inspect, cancel, and complete tasks, and read or replace a Project's task definitions, through the Gateway tasks extension."
 covers:
   - "apps/cli/app/Commands/Tasks/**"
+  - "packages/php-sdk/src/Requests/Tasks/**"
+  - "packages/php-sdk/src/Responses/Tasks/**"
 ---
 
 The `tasks` family runs the operations of the Gateway [tasks extension](/reference/tasks) from the command line. Agents usually use the [MCP server](/reference/mcp); the CLI offers the same operations when MCP is unavailable. Each command name equals its Gateway route name, and its MCP tool name uses hyphens instead of colons, so `tasks:subtask:create` is the MCP tool `tasks-subtask-create`. Two operations have no CLI command. Use the MCP tool `tasks-check-cancel` to stop a running task check. The agent thread stream, `GET /api/v1/task-groups/{group}/agents/{session}/stream`, serves the web app.
@@ -19,13 +21,14 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:create`](#orbit-taskscreate) | Create a task in Backlog or Todo. |
 | [`tasks:update`](#orbit-tasksupdate) | Change a task's title, brief, or status. |
 | [`tasks:cancel`](#orbit-taskscancel) | Cancel a task and remove its Instance. |
-| [`tasks:complete`](#orbit-taskscomplete) | Complete a settling task and remove its Instance. |
+| [`tasks:complete`](#orbit-taskscomplete) | Complete a settling task, or a running or reviewing task whose watched pull request ended, and remove its Instance. |
 | [`tasks:subtask:create`](#orbit-taskssubtaskcreate) | Append a subtask to a task. |
 | [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, position, or deliverables. |
 | [`tasks:subtask:destroy`](#orbit-taskssubtaskdestroy) | Delete a subtask. |
 | [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a Todo or running subtask. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
+| [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
 | [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
 | [`tasks:definition:list`](#orbit-tasksdefinitionlist) | List task definitions. This command does not start a task. |
 | [`tasks:definition:show`](#orbit-tasksdefinitionshow) | Show one task definition. This command does not start a task. |
@@ -33,9 +36,9 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:definition:update`](#orbit-tasksdefinitionupdate) | Replace a task definition from a JSON file. This command does not start a task. |
 | [`tasks:definition:destroy`](#orbit-tasksdefinitiondestroy) | Delete a task definition. This command does not delete tasks. |
 
-Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `agents`, or `task_definitions`.
+Every command accepts `--json`. JSON output is the Gateway record with `request_id` beside its fields. A list holds its records under `task_groups`, `comments`, `questions`, `agents`, or `task_definitions`. The [PHP SDK](/api/php-sdk) task responses return those same records, including `assistance_kind` and `assistance_question` on a task and a subtask.
 
-`tasks:list`, `tasks:show`, `tasks:definition:list`, and `tasks:definition:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. `tasks:definition:create`, `tasks:definition:update`, and `tasks:definition:destroy` need Gateway access. The remaining commands need Gateway access too: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
+`tasks:list`, `tasks:show`, `tasks:question:list`, `tasks:definition:list`, and `tasks:definition:show` accept any authorized peer. `tasks:update` and the `tasks:subtask:*` commands need access to the Node that holds the task's Instance, or to the Gateway for a task without one. `tasks:definition:create`, `tasks:definition:update`, and `tasks:definition:destroy` need Gateway access. The remaining commands need Gateway access too: run them on the Gateway, or on a Node with an access grant to the Gateway. Other callers receive `node_access.required`. While the extension is off, every command except enable, disable, and status fails with `extension.disabled`.
 
 ## Select a task or subtask
 
@@ -55,11 +58,11 @@ Show whether the tasks extension is on, then list every task currently asking fo
 orbit tasks:status [--json]
 ```
 
-JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending task id order. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human table shows the task reference, title, status, and reason. An empty table says `No groups are asking for assistance.`
+JSON returns `enabled` as `true` or `false`, and `assistance` as a list in ascending task id order. Each entry has the task's `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is empty when no task is asking, and it is present while the extension is off. The human output shows direction requests first, under `Needs your direction`, with the task reference, title, status, and question. Failures follow under `Failures`, with the task reference, title, status, and reason. An empty list says `No groups are asking for assistance.` The [tasks reference](/reference/tasks#direction-requests) defines the two kinds.
 
 ## orbit tasks:list
 
-List tasks with their title, Project, status, number of completed subtasks, and assistance reason when the task is asking.
+List tasks with their title, Project, status, and number of completed subtasks. The list shows each task's assistance kind. A task that asks for direction shows its question. A task that asks because of a failure shows its reason. A task that is not asking shows an em dash for both, even when an old value is still stored. JSON includes `assistance_kind` and `assistance_question` on each task.
 
 ```bash
 orbit tasks:list [--project=ID] [--status=STATUS] [--json]
@@ -80,7 +83,9 @@ Show one task as a detail tree, followed by its brief and a table of its subtask
 orbit tasks:show [group] [--json]
 ```
 
-The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, and assistance reason of each subtask. A subtask or task that is not asking shows an em dash in that column, even when an old reason is still stored. JSON includes `assistance_requested` and `assistance_reason` on the task and each subtask, and `fails_on_base` on every test deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every command deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+
+On the task, `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` report the pull request found on `task-{id}` while subtasks are open. Those fields do not change `pr_url`, which remains the reviewed pull request Orbit opened.
 
 ## orbit tasks:create
 
@@ -161,7 +166,9 @@ In a terminal, the task list leaves out `settling` and `completed` tasks. Before
 
 ## orbit tasks:complete
 
-Complete a `settling` task after its pull request is reviewed and merged. The Gateway marks the task `completed` and removes its shared Instance. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal.
+Complete a `settling` task after its pull request is reviewed and merged. Also complete a `running` or `reviewing` task whose watched pull request has merged or closed. The Gateway marks the task `completed` and removes its shared Instance.
+
+On the `running` or `reviewing` path it stores the ended state, stops the running implementer or reviewer and any running check, then cancels each open subtask and marks the task `completed` in one transaction. A failed stop returns `tasks.subtask_interrupt_failed`, keeps the task and its subtasks open, and leaves the stored completion for retry. The [tasks reference](/reference/tasks#complete-and-cleanup) defines how a crash resumes without another GitHub read. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal. There is no `tasks:continue` command.
 
 ```bash
 orbit tasks:complete [group] [--yes] [--json]
@@ -171,7 +178,7 @@ orbit tasks:complete [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the task list shows only `settling` tasks. The question names the task and its Instance and defaults to No. Consent failures match `tasks:cancel`. Any other status fails with `tasks.not_settling`. When removal fails, the task is still marked `completed`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
+In a terminal, the task list shows only `settling` tasks. Pass the task id to complete a `running` or `reviewing` task whose watched pull request has ended. The question names the task and its Instance and defaults to No. Consent failures match `tasks:cancel`. A task that is not one of those ready cases fails with `tasks.not_settling`. That includes a `running` or `reviewing` task whose watched pull request is missing, open, or unreadable, unless completion was already recorded. When removal fails, the task is still marked `completed`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
 
 ## orbit tasks:subtask:create
 
@@ -185,7 +192,7 @@ orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] 
 | --- | --- | --- |
 | `title` | prompt | Short name of the step. |
 | `--brief=TEXT` | prompt | Goal and acceptance of the step. |
-| `--deliverables=FILE` | none | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables). A test deliverable may set `fails_on_base` to `true` or `false`. The CLI refuses that field on any other type. |
+| `--deliverables=FILE` | none | JSON file with an array of at most five [deliverables](/reference/tasks#deliverables), of type `file`, `command`, or `review`. Only a command deliverable may set `fails_on_base` to `true` or `false` and supply `paths`. When `fails_on_base` is `true`, `paths` must list at least one workspace-relative file for the base run. The CLI refuses these fields on any other type. |
 
 ```bash
 orbit tasks:subtask:create 13 "Document the export" --brief="$(cat step.md)" --deliverables=deliverables.json
@@ -256,7 +263,7 @@ In a terminal, the task list shows tasks with a cancellable `todo` or `running` 
 
 ## orbit tasks:comment:create
 
-Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task and notifies Coder once. A `resolution` comment clears the flag and continues the blocked agent thread. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
+Post a typed comment on a subtask. An `assistance_requested` comment flags the subtask and its task as a direction request and notifies Coder once. A `resolution` comment clears the flag. It goes to the subtask's reviewer on a direction request, and to the blocked agent thread on a failure. The [tasks reference](/reference/tasks#assistance-and-resolution) owns these effects.
 
 ```bash
 orbit tasks:comment:create [group] [subtask] [--type=TYPE] [--body=TEXT] [--author=NAME] [--agent-thread=ID] [--json]
@@ -280,6 +287,25 @@ orbit tasks:comment:list [group] [subtask] [--json]
 ```
 
 Human output prints one header line for each comment, with its time, type, author, review attempt, and commit when present. The full body follows, indented by two spaces.
+
+## orbit tasks:question:list
+
+List the questions that implementers and reviewers asked, newest first, across every task you can read. Each question marks a subtask that its brief did not fully decide.
+
+```bash
+orbit tasks:question:list [--project=ID] [--cause=CAUSE] [--status=STATUS] [--since=DATE] [--json]
+```
+
+| Option | Default | Effect |
+| --- | --- | --- |
+| `--project=ID` | every Project | Only questions from this Project's tasks. |
+| `--cause=CAUSE` | every cause | `brief_unclear`, `contract_gap`, `scope`, `environment`, or `missed_contract`. |
+| `--status=STATUS` | every status | `open`, `escalated`, or `answered`. |
+| `--since=DATE` | no limit | Only questions asked on or after this ISO 8601 date or time. |
+
+An invalid filter fails with `tasks.project_invalid`, `tasks.cause_invalid`, `tasks.status_invalid`, or `tasks.since_invalid` before the request.
+
+Human output prints one header line for each question, with its time, task and subtask reference, asker, status, and cause. The question and the answer follow, each indented by two spaces. An empty list says `No questions match.` JSON holds the records under `questions`. The [tasks reference](/reference/tasks#questions) defines each field, the relay routes, and the consult limit. The limit counts the consult records of the current implementer attempt, and a relay does not count. A direction resolution does not start a new implementer attempt. [Migrate open requests](/reference/tasks#migrate-open-requests) names `2026_10_07_000000_create_task_questions` before `2026_10_07_000001_add_assistance_kind_to_tasks`.
 
 ## orbit tasks:agents
 

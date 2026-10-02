@@ -14,6 +14,8 @@
                     "project_code": "ORB",
                     "title": "Blocked implementer",
                     "status": "running",
+                    "assistance_kind": null,
+                    "assistance_question": null,
                     "assistance_reason": "The implementer is blocked."
                 },
                 {
@@ -23,6 +25,8 @@
                     "project_code": "ORB",
                     "title": "Settling question",
                     "status": "settling",
+                    "assistance_kind": null,
+                    "assistance_question": null,
                     "assistance_reason": "Which database should this use?"
                 }
             ]

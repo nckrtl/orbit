@@ -15,10 +15,12 @@ final class UpdateInstanceRequest extends FormRequest
 {
     private ?string $branch = null;
 
-    /** @return array{} */
+    /** @return array<string, list<string>> */
     public function rules(): array
     {
-        return [];
+        return [
+            'branch' => ['required', 'string'],
+        ];
     }
 
     /** @return array<string, mixed> */
@@ -42,7 +44,7 @@ final class UpdateInstanceRequest extends FormRequest
 
         $this->branch = $payload['branch'];
 
-        return ['branch' => true];
+        return $payload;
     }
 
     public function branch(): string

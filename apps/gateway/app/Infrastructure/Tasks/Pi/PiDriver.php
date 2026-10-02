@@ -49,7 +49,7 @@ final readonly class PiDriver implements AgentDriver
         if ($cwd === '') {
             throw new AgentDriverException('The workspace has no checkout path.');
         }
-        $id = (string) Str::uuid();
+        $id = $intent->externalId ?? (string) Str::uuid();
         $this->client->create($intent->node, [
             'id' => $id,
             'cwd' => $cwd,
@@ -57,7 +57,18 @@ final readonly class PiDriver implements AgentDriver
             'thinkingLevel' => $intent->effort,
             'appendSystemPrompt' => null,
         ]);
-        $this->deliver($intent->node, $id, $intent->prompt);
+        if ($intent->deferOpeningTurn) {
+            return $id;
+        }
+        try {
+            $this->deliver($intent->node, $id, $intent->prompt, $intent->openingKey);
+        } catch (AgentDriverException $exception) {
+            // The session exists. A lost response is still that session, and a new id would not
+            // see the key Pi already accepted.
+            $exception->createdThreadId = $id;
+
+            throw $exception;
+        }
 
         return $id;
     }
