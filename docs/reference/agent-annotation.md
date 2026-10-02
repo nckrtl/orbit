@@ -116,9 +116,9 @@ Append the operation to the printed URL.
 | --- | --- |
 | `GET /annotations` | `{data: [...]}` with every record, completed ones included. |
 | `POST /annotations` | Creates a `todo` annotation. The same ID again returns the existing record. |
-| `POST /annotations/claim` | Moves the oldest `todo` annotation to `in_progress` and returns it. `204` when there is none. |
+| `POST /annotations/claim` | Without a body, claims the oldest non-question `todo` record. With `id`, claims that todo record, including a question, and clears its question marker. `204` when no eligible work remains. |
 | `POST /annotations/complete` | Takes `id` and an optional `summary`, and moves an `in_progress` annotation to `done`. |
-| `POST /annotations/release` | Takes `id` and moves an `in_progress` annotation back to `todo`. |
+| `POST /annotations/release` | Takes `id`, optional `summary`, and optional `question: true`, and returns an `in_progress` annotation to `todo`. A question requires its text as `summary`. |
 | `GET /annotations/events` | A server-sent event stream. Each event tells the client to fetch again. |
 | `DELETE /annotations/{id}` | Removes one annotation. |
 | `DELETE /annotations` | Removes every annotation, or with `?pathname=/page` those of one page. |
@@ -228,3 +228,17 @@ A delivered message does not mean done. The next annotation for a thread waits f
 ### Fixed IDs
 
 An annotation ID and its T3 command ID never change. A retry then cannot create a second turn. A changed instruction is a new annotation.
+
+## Instance Process server and queue threads
+
+Orbit runs the annotator as an Instance Process and publishes it under the Instance Route at `/__orbit/annotator`. `GET /health` returns 200 without reading the annotation store. `GET /inject.js` serves the installed package's `dist/inject.js`; hosts can load the overlay from the same server and version rather than bundle a copy.
+
+Pass `--allow-origin ORIGIN` once for each allowed browser origin. Orbit uses the Instance origin, `t3code://app`, and `t3code-dev://app`. The allow-list applies to reads, writes, event streams, and DELETE, including preflight requests. Requests from other origins receive 403. Requests without an Origin header remain available to agents. Without the flag, the server keeps wildcard CORS for local use.
+
+A host can call `mountAnnotation({ serverUrl: "/__orbit/annotator/annotations" })` or set that option in `window.__AGENT_ANNOTATION__` before loading `inject.js`. Without an explicit server or saved delivery choice, the overlay probes same-origin `/__orbit/annotator/annotations` and uses it only when the response identifies `meta.service` as `@nckrtl/annotator`. In server mode, a successful list is the only source of pins: local records missing from it are removed, even when the server's store was replaced and has no deletion history. Failed reads keep the cached pins.
+
+`GET /skill` keeps the watch instructions. `GET /skill?mode=queue` serves instructions for an orchestrating T3 thread: claim until the queue is empty, delegate independent annotations to sub-agents, keep related work together, complete with a summary, and end the turn. It does not run an endless event-stream loop. Refer to annotations by `number` (for example, #3), never by their internal `id`.
+
+When a comment needs clarification, release the claimed annotation with `POST /annotations/release` and `{"id":"CLAIMED_ID","question":true,"summary":"The question for the user"}`, then ask the user in the thread. The record stays `todo` with `question: true` and its summary; live clients and pins show that it needs an answer. A bodyless `POST /annotations/claim` skips questions, so Watch mode never re-sends them. After the user answers, claim that annotation with `{"id":"CLAIMED_ID"}`. An explicit claim accepts any todo annotation, clears the question marker and its summary, and marks it in progress. Live pins clear those fields without requiring a reload.
+
+Store transitions atomically commit the complete intended record before changing directories; after a process stop, the next read recovers that record, including question markers and cleared summaries. A stop before the intent commits leaves the old record unchanged. Plain releases keep their existing behavior.

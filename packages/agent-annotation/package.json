@@ -1,6 +1,6 @@
 {
     "name": "@nckrtl/annotator",
-    "version": "0.1.1",
+    "version": "0.1.2",
     "description": "Browser annotations with voice input and a local task server for coding agents.",
     "license": "MIT",
     "author": "Nick Retel",
@@ -38,7 +38,7 @@
     },
     "scripts": {
         "build": "vp build && ANNOTATION_INJECT=1 vp build && tsc --emitDeclarationOnly",
-        "test": "node tests/smoke.mjs && node tests/service.mjs && node tests/orbit.mjs && node tests/local-server.mjs && node tests/lifecycle.mjs && node tests/proxy.mjs && node tests/host-controls.mjs",
+        "test": "node tests/smoke.mjs && node tests/service.mjs && node tests/orbit.mjs && node tests/local-server.mjs && node tests/store-recovery.mjs && node tests/lifecycle.mjs && node tests/proxy.mjs && node tests/host-controls.mjs",
         "check": "vp check",
         "prepack": "vp run build"
     },

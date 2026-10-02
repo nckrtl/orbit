@@ -24,6 +24,7 @@ export default function AnnotationMarker({
     const { color: accentColor, textColor: accentTextColor } = useAnnotationAccent();
     const inProgress = annotation.status === "in_progress";
     const applied = annotation.status === "applied";
+    const question = annotation.question === true;
     const left = percentToViewportX(annotation.x);
     const top = annotation.isFixed ? annotation.y : annotation.y - window.scrollY;
 
@@ -58,9 +59,11 @@ export default function AnnotationMarker({
                 data-annotation-marker
                 className="pointer-events-auto relative flex size-full items-center justify-center rounded-full text-xxs font-semibold text-white"
                 style={{
-                    backgroundColor: active
-                        ? `color-mix(in srgb, ${accentColor} 85%, black)`
-                        : accentColor,
+                    backgroundColor: question
+                        ? "#b45309"
+                        : active
+                          ? `color-mix(in srgb, ${accentColor} 85%, black)`
+                          : accentColor,
                     color: accentTextColor,
                     boxShadow: "0 2px 6px rgba(0, 0, 0, 0.2), inset 0 0 0 1px rgba(0, 0, 0, 0.04)",
                 }}
@@ -69,13 +72,15 @@ export default function AnnotationMarker({
                         ? mode === "server"
                             ? "Could not save annotation to the local server."
                             : `Delivery failed: ${annotation.syncError}`
-                        : inProgress
-                          ? `In progress: ${annotation.comment}`
-                          : applied
-                            ? `Applied: ${annotation.comment}`
-                            : annotation.comment
+                        : question
+                          ? `Question: ${annotation.summary || annotation.comment}`
+                          : inProgress
+                            ? `In progress: ${annotation.comment}`
+                            : applied
+                              ? `Applied: ${annotation.comment}`
+                              : annotation.comment
                 }
-                aria-label={`${inProgress ? "In progress annotation" : applied ? "Applied annotation" : "Edit annotation"} ${index}`}
+                aria-label={`${question ? "Question annotation" : inProgress ? "In progress annotation" : applied ? "Applied annotation" : "Edit annotation"} ${index}`}
                 onClick={onClick}
             >
                 {index}

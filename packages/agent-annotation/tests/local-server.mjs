@@ -46,6 +46,82 @@ try {
     const file = join(dir, "store");
     const first = await start(["--host", "127.0.0.1", "--store", file]);
     const second = await start(["--store", join(dir, "second")]);
+    const restricted = await start([
+        "--allow-origin",
+        "https://instance.orbit",
+        "--allow-origin",
+        "t3code://app",
+        "--allow-origin",
+        "t3code-dev://app",
+    ]);
+    for (const origin of ["https://instance.orbit", "t3code://app", "t3code-dev://app"]) {
+        for (const method of ["GET", "OPTIONS", "DELETE"]) {
+            const response = await fetch(restricted.url, {
+                method,
+                headers: { Origin: origin, "Access-Control-Request-Method": "DELETE" },
+            });
+            assert.equal(response.status, method === "OPTIONS" ? 204 : 200);
+            assert.equal(response.headers.get("access-control-allow-origin"), origin);
+            assert.match(response.headers.get("vary"), /Origin/);
+            assert.match(response.headers.get("access-control-allow-methods"), /DELETE/);
+        }
+    }
+    for (const method of ["GET", "POST", "DELETE", "OPTIONS"]) {
+        const response = await fetch(restricted.url, {
+            method,
+            headers: { Origin: "https://evil.example" },
+        });
+        assert.equal(response.status, 403);
+        assert.equal(response.headers.get("access-control-allow-origin"), null);
+    }
+    assert.equal((await fetch(restricted.url)).status, 200);
+    const healthUrl = new URL("/health", restricted.url);
+    assert.equal((await fetch(healthUrl)).status, 200);
+    // Corrupt the store: health must not list or otherwise read records.
+    const restrictedStore = restricted.output().match(/Store: (.+)/)[1];
+    await writeFile(join(restrictedStore, "todo", "broken.json"), "not json");
+    assert.equal((await fetch(healthUrl)).status, 200);
+    assert.equal((await fetch(restricted.url)).status, 500);
+    await rm(join(restrictedStore, "todo", "broken.json"));
+    const inject = await fetch(new URL("/inject.js", first.url));
+    assert.equal(inject.status, 200);
+    assert.match(inject.headers.get("content-type"), /javascript/);
+    assert.equal(await inject.text(), await readFile("dist/inject.js", "utf8"));
+    const queue = await (await fetch(new URL("/skill?mode=queue", first.url))).text();
+    assert.match(queue, /independent annotations to sub-agents/);
+    assert.match(queue, /question.*true/);
+    assert.match(queue, /end the turn/);
+    assert.match(queue, /never by `id`/);
+    assert.match(queue, /Do not run an endless/);
+    assert.ok(queue.includes(first.url));
+    {
+        const second = await start();
+        await post(second.url, { id: "question", comment: "Unclear" });
+        await post(second.url, { id: "normal", comment: "Clear" });
+        assert.equal((await (await post(`${second.url}/claim`, {})).json()).data.id, "question");
+        const questionRelease = await (
+            await post(`${second.url}/release`, {
+                id: "question",
+                question: true,
+                summary: "Which color?",
+            })
+        ).json();
+        assert.equal(questionRelease.data.question, true);
+        assert.equal(questionRelease.data.status, "todo");
+        assert.equal(questionRelease.data.summary, "Which color?");
+        const live = await (await fetch(second.url)).json();
+        assert.equal(live.data.find((a) => a.id === "question").question, true);
+        assert.equal((await (await post(`${second.url}/claim`, {})).json()).data.id, "normal");
+        assert.equal((await post(`${second.url}/claim`, {})).status, 204);
+        const explicit = await (await post(`${second.url}/claim`, { id: "question" })).json();
+        assert.equal(explicit.data.status, "in_progress");
+        assert.equal(explicit.data.question, undefined);
+        assert.equal(explicit.data.summary, undefined);
+        assert.equal((await post(`${second.url}/claim`, { id: "question" })).status, 409);
+        assert.equal((await post(`${second.url}/claim`, { id: "missing" })).status, 404);
+        assert.equal((await post(`${second.url}/claim`, { id: "../bad" })).status, 422);
+        await fetch(second.url, { method: "DELETE" });
+    }
     assert.notEqual(new URL(first.url).port, new URL(second.url).port);
     assert.equal(new URL(first.url).pathname, "/annotations");
     const skillUrl = new URL("/skill", first.url);

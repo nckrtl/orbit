@@ -71,6 +71,30 @@ export function clearStoredAnnotations(): void {
     }
 }
 
+/** A successful server snapshot owns all pins; missing records are not tombstones. */
+export function reconcileServerAnnotations(records: Annotation[]): string[] {
+    const present = new Set(records.map((record) => record.id));
+    const removed: string[] = [];
+    try {
+        for (const key of Object.keys(localStorage).filter((key) =>
+            key.startsWith(STORAGE_PREFIX),
+        )) {
+            const path = key.slice(STORAGE_PREFIX.length);
+            const cached = loadAnnotations(path);
+            removed.push(
+                ...cached.filter((record) => !present.has(record.id)).map((record) => record.id),
+            );
+            saveAnnotations(
+                cached.filter((record) => present.has(record.id)),
+                path,
+            );
+        }
+    } catch {
+        /* Optional storage. */
+    }
+    return removed;
+}
+
 const dismissedKey = "annotate:dismissed";
 export function isDismissed(id: string): boolean {
     try {

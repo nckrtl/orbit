@@ -110,7 +110,28 @@ export class AnnotationStore {
             unlinkSync(this.lock);
         }
     }
+    recoverTransition() {
+        const journal = join(this.path, ".transition.json");
+        if (!existsSync(journal)) return;
+        const { from, annotation } = JSON.parse(readFileSync(journal, "utf8"));
+        if (
+            !normalizeStatus(from) ||
+            !validId(annotation?.id) ||
+            !normalizeStatus(annotation.status) ||
+            typeof annotation.comment !== "string" ||
+            !Number.isSafeInteger(annotation.revision)
+        )
+            throw new Error("Invalid annotation transition journal");
+        // Publish the complete new record before removing the old one. The journal
+        // makes either interrupted write recoverable, including cleared fields.
+        this.write(annotation);
+        const source = join(this.path, folderFor(from), `${annotation.id}.json`);
+        const target = join(this.path, folderFor(annotation.status), `${annotation.id}.json`);
+        if (source !== target && existsSync(source)) unlinkSync(source);
+        unlinkSync(journal);
+    }
     list() {
+        this.recoverTransition();
         const result = [];
         const ids = new Set();
         for (const folder of ["todo", "in-progress", "done"]) {
@@ -132,7 +153,8 @@ export class AnnotationStore {
                 if (ids.has(annotation.id))
                     throw new Error(`Duplicate annotation: ${annotation.id}`);
                 ids.add(annotation.id);
-                // Directory ownership survives a crash between a move and the JSON update.
+                // External directory moves still determine status; server transitions
+                // recover their full payload from the journal before scanning.
                 const status =
                     folder === "todo"
                         ? "todo"
@@ -231,33 +253,47 @@ export class AnnotationStore {
         this.write(annotation);
         return { annotation, created: true };
     }
-    transition(annotation, status, summary) {
+    transition(annotation, status, summary, question) {
         const updated = {
             ...annotation,
             status,
             summary: summary ?? annotation.summary,
             revision: Math.max(0, ...this.list().map((a) => a.revision)) + 1,
         };
-        if (status === "in_progress") updated.claimedAt = Date.now();
+        if (status === "in_progress") {
+            updated.claimedAt = Date.now();
+            if (updated.question) delete updated.summary;
+            delete updated.question;
+        }
+        if (status === "todo") {
+            if (question === true) updated.question = true;
+            else delete updated.question;
+        }
         if (status === "done") updated.completedAt = Date.now();
         if (status === "todo") {
             delete updated.claimedAt;
             delete updated.completedAt;
         }
-        const source = join(this.path, folderFor(annotation.status), `${annotation.id}.json`);
-        const target = join(this.path, folderFor(status), `${annotation.id}.json`);
-        // No await between selecting work and committing the move; one server owns this store.
-        if (source !== target) renameSync(source, target);
-        try {
+        if (folderFor(annotation.status) === folderFor(status)) {
             this.write(updated);
-        } catch (error) {
-            if (source !== target) renameSync(target, source);
-            throw error;
+        } else {
+            // Atomic intent commit: recovery rolls forward the complete record.
+            // No await between selecting work and committing; one server owns the store.
+            const journal = join(this.path, ".transition.json");
+            writeFileSync(
+                `${journal}.tmp`,
+                JSON.stringify({ from: annotation.status, annotation: updated }),
+                { mode: 0o600 },
+            );
+            renameSync(`${journal}.tmp`, journal);
+            this.recoverTransition();
         }
         return updated;
     }
-    claim() {
-        const annotation = this.list().find((a) => a.status === "todo");
+    claim(id) {
+        const annotation = this.list().find(
+            (a) => a.status === "todo" && (id === undefined ? !a.question : a.id === id),
+        );
         return annotation ? this.transition(annotation, "in_progress") : null;
     }
 }

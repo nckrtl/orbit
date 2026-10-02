@@ -12,6 +12,8 @@ import type { DictationInput } from "./dictation-settings";
 export type AnnotationOptions = {
     floatingControl?: boolean;
     serviceUrl?: string;
+    /** Annotation server endpoint (not the Orbit Tasks API). */
+    serverUrl?: string;
     orbit?: OrbitOptions;
     realtime?: AnnotationRealtime;
     thread?: ThreadOptions;
@@ -29,7 +31,7 @@ export function mountAnnotation(options: AnnotationOptions = {}) {
         ...options.commander,
     });
     configureOrbit(options.serviceUrl, options.orbit);
-    configureAnnotationService(options.serviceUrl, options.realtime);
+    configureAnnotationService(options.serviceUrl, options.realtime, undefined, options.serverUrl);
     configureThread(options.thread);
     configureToolbarData(options.getToolbarData);
     ensureAnnotationRuntime(options);
