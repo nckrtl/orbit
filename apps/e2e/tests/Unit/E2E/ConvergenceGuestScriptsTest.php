@@ -1798,17 +1798,17 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('provisions app-prod with a preview TLD and always prepares its runtime', function (): void {
+    it('provisions app-prod with a unique preview TLD and always prepares its runtime', function (string $node, string $address): void {
         $fixture = convergence_app_fixture('converge-app-prod.sh');
 
         try {
             $process = new Process([
                 'bash',
                 $fixture['script'],
-                'app-prod',
+                $node,
                 '192.0.2.12',
                 'aarch64',
-                '10.44.0.3',
+                $address,
             ], env: [
                 'PATH' => "{$fixture['root']}/bin:".getenv('PATH'),
             ]);
@@ -1816,12 +1816,15 @@ describe('convergence guest scripts', function () {
                 ->toBe(0)
                 ->and(file_get_contents($fixture['commands']))
                 ->toContain('orbit:node-provision')
-                ->toContain('--tld=beast')
+                ->toContain('--tld='.$node)
                 ->toContain('ssh:-i');
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
-    });
+    })->with([
+        'primary production' => ['app-prod', '10.44.0.3'],
+        'production extension' => ['app-prod-2', '10.44.0.4'],
+    ]);
 
     it('writes no Caddy file on a Node and leaves the whole Caddyfile to the Node Caddy build', function (): void {
         $guest = dirname(__DIR__, 3).'/resources/guest';
