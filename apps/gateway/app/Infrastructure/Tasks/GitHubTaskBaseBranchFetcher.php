@@ -99,6 +99,39 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
     }
 
+    public function resetToDefault(Task $group): string
+    {
+        $group->loadMissing(['project', 'taskable']);
+        $instance = $group->taskable;
+        $default = $group->project->default_branch;
+        if (! $instance instanceof Instance || $instance->checkout_path === ''
+            || ! is_string($default) || ! GitBranchName::isValid($default)) {
+            throw new TaskPullRequestException('The baseline workspace could not be reset.');
+        }
+        $instance->loadMissing('node');
+        $script = <<<'BASH'
+            checkout=$1
+            branch=$2
+            tip=$(git -C "$checkout" rev-parse --verify "refs/remotes/origin/$branch^{commit}")
+            git -C "$checkout" reset --hard --quiet "$tip"
+            git -C "$checkout" rev-parse HEAD
+            BASH;
+        try {
+            $result = $this->ssh->execute($instance->node, new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default],
+                input: $script,
+            ), 'task-baseline-reset', 'tasks.baseline_reset_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException('The baseline workspace could not be reset.', previous: $exception);
+        }
+        $head = trim($result->stdout);
+        if (preg_match('/\\A[0-9a-f]{40}\\z/', $head) !== 1) {
+            throw new TaskPullRequestException('The baseline workspace start commit could not be read.');
+        }
+
+        return $head;
+    }
+
     public function fetchForTurn(Task $group): void
     {
         try {

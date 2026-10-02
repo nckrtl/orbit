@@ -33,4 +33,12 @@ interface TaskBaseBranchFetcher
      * @throws TaskPullRequestException
      */
     public function fetchForTurn(Task $group): void;
+
+    /**
+     * Resets an untouched task workspace to the already-fetched default-branch tip and returns HEAD.
+     * The caller must ensure that no implementer has started in the group.
+     *
+     * @throws TaskPullRequestException
+     */
+    public function resetToDefault(Task $group): string;
 }
