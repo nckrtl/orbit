@@ -214,8 +214,12 @@ describe("stored file", () => {
             "--",
             orbit,
         ]);
+        // The source checkout may also live under a private runner home.
+        const module = join(cwd, "tool-output.ts");
+        copyFileSync(new URL("../src/tool-output.ts", import.meta.url), module);
+        chmodSync(module, 0o644);
         const script = `
-            import { offloadToolOutput } from ${JSON.stringify(new URL("../src/tool-output.ts", import.meta.url).pathname)};
+            import { offloadToolOutput } from ${JSON.stringify(module)};
             const result = offloadToolOutput({
                 cwd: ${JSON.stringify(cwd)}, toolName: "read", sessionId: "worker", toolCallId: "acl",
                 text: "x".repeat(8193), preview: "head", previewLines: 20,
@@ -235,7 +239,7 @@ describe("stored file", () => {
         const path = execFileSync(
             "sudo",
             ["-n", "-u", "nobody", "--", "env", "PATH=/usr/bin:/bin", bun, "--eval", script],
-            { encoding: "utf-8" },
+            { cwd, encoding: "utf-8" },
         ).trim();
 
         expect(statSync(orbit).uid).toBe(userInfo().uid);

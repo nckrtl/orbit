@@ -326,7 +326,7 @@ A turn still `working` at the restart fails with the restart error. The next tic
 
 Run `bun run test` in `apps/pi-server` on Linux with `setfacl` and passwordless `sudo -n -u nobody` available. The worker ACL test writes tool output as `nobody` inside a temporary checkout owned by the test runner, then checks that the checkout owner can read and rewrite it.
 
-The test copies the Bun runtime into its temporary fixture and invokes it by absolute path with a restricted `PATH`. This keeps the test independent of sudo's executable search path and of access to the test runner's home. Cleanup removes the runtime copy and the checkout; the test does not change home permissions or sudo policy.
+The test copies the Bun runtime and the tool-output module into its temporary fixture. It invokes the runtime by absolute path with a restricted `PATH` and uses the fixture as its working directory. This keeps the worker independent of sudo's executable search path and of access to the test runner's home or source checkout. Cleanup removes both copies and the checkout; the test does not change home permissions or sudo policy.
 
 ## Why it works this way
 
