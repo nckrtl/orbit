@@ -194,7 +194,7 @@ It targets `task-{id}-e2e` under that primary's worktree root. It removes a regi
 
 An absent bridge, or a checkout with no registration, is success. A registration that exists is not that case. A cleanup command failure exits nonzero and makes teardown retain the task checkout and Instance for retry. Removal of a matching bridge, its unused branch, and its staging ref is idempotent. The helper does not alter the checkout that runs it or that checkout's worktrees.
 
-Orbit acquires a task group's topology, `TASK-<group>`, as the managed user when it provisions the group's workspace, and releases it before it removes the workspace. Acquiring changes host firewall rules, which the task worker cannot do; agents and reviewers only use the topology. Acquiring is best effort: a failure is logged and the group continues without a topology. A failed release keeps the workspace so a later removal retries it. Both steps first run `status`, so they do nothing when there is nothing to do, and a workspace without `bin/e2e-topology` has no topology.
+Orbit acquires a task group's topology, `TASK-<group>`, as the managed user when it provisions the group's workspace, and releases it before it removes the workspace. Acquiring changes host firewall rules, which the task worker cannot do; agents and reviewers only use the topology. Acquiring is best effort: a failure is logged and the group continues without a topology. A failed release keeps the workspace so a later removal retries it. Both steps first run `status`, which prints `absent` when the group holds no topology, so they do nothing when there is nothing to do, and a workspace without `bin/e2e-topology` has no topology.
 
 ## Release
 
