@@ -82,8 +82,30 @@ Use the [Incus proof workflow](/reference/incus-topologies#commands) to reproduc
 
 The evidence labels include `bench-ext4`, `bench-xfs`, `prune-gateway`, `prune-app-prod`, `baseline-workload`, `smaller-workload`, `smaller-inventory-gateway`, `smaller-inventory-app-dev`, `prod-small-workload`, `balanced-workload`, `balanced-repeat-workload`, `latency-high-workload`, `latency-low-workload`, and `bench-cleanup`. The research bundle holds their programs, outputs, host measurements, and verifier results outside the repository.
 
+### Implementation verification
+
+The implementation was checked at `f6b0041574345f7dfb8b5510510273613a516a19`. The full harness suite passed 1,705 tests and 9,585 assertions. The repository-wide `composer check` gate passed all 20 checks across the five projects. It ran in an accessible clone, with PHPStan's agent output hints disabled so the existing JSON-output tests received ordinary CI output. Formatting, static analysis, affected tests, documentation lint, Mint validation, and broken-link checks passed.
+
+The owned `ZFS-1` proof, attempt `379d22953787821f66f8df65ad1bf9b5`, passed all 25 readiness checks and the 120-request workload at the new limits. It reported no out-of-memory events or failed services. The implementation cleanup reduced Gateway referenced data from 6.59 GiB to 1.978 GiB, and app-prod from 7.149 GiB to 2.478 GiB. Flushing deletions before trimming was necessary for that saving.
+
+The normal Incus scenario run `97a67774c5171c74f057b87894e801da` used two workers and the default limits. CPU stayed at one vCPU on every Node. Its memory observer reported no out-of-memory events.
+
+| Scenario | Result |
+| --- | --- |
+| `snapshot-lifecycle` | Passed, including all 25 readiness probes. |
+| `snapshot-isolation` | Passed, including all 25 readiness probes. |
+| `snapshot-extension` | Passed, including all 30 readiness probes and the 1 GiB production extension. |
+| `cold-construction-cleanup` | Passed the injected failure and exact cleanup checks. |
+| `cold-four-node` | Infrastructure error during production source classification. |
+
+Cold diagnostics exposed `app-prod.source_classification_failed` while cloning the sample production Instance. The same candidate at the original uniform 2 GiB limits failed at the same step in control run `4c2b242805b55d30bb4fffc27cc28518`. The production classification code is unchanged. The full cold build remains unverified; the error is not evidence of insufficient memory. Diagnostic output tracing only exposed the response that the fixture otherwise discards.
+
+Verification also found two fixture omissions. Snapshot clones retained the old Gateway endpoint before dependency installation. Fresh production Nodes had no TLD for clone preview routes. Both original failures reproduced on unchanged main at 2 GiB per Node. The harness now repairs clone identity before hydration and assigns each fresh production Node its own name as its TLD through the existing provision command.
+
+All scenario attempts completed exact cleanup. The final audit found no task VMs, networks, volumes, or ZFS datasets. The promoted snapshot and the other active topology retained their original memory settings. Detailed logs, scenario results, memory observations, and the check receipt are retained in the implementation evidence bundle outside the repository.
+
 ### Limits
 
-The workload is a sample-topology check. It does not cover large package installs, parallel PHP test suites, all Orbit regression scenarios, or long-running database load. The XFS tests ran after the ext4 tests on a shared host, so their timings are indicative. The space and isolation checks provide stronger evidence than a small timing difference.
+The workload and passing scenarios cover the sample topology. They do not establish memory requirements for larger applications, parallel PHP test suites inside guests, or long-running database load. The full cold build failed as described above. The XFS tests ran after the ext4 tests on a shared host, so their timings are indicative. The space and isolation checks provide stronger evidence than a small timing difference.
 
 The temporary XFS mount, loop device, and benchmark files were removed before the memory reboot checks. After release, the cleanup audit found no experiment VMs, network, storage volumes, or ZFS datasets. The shared snapshot VMs and the other active topology remained present with their original memory settings.

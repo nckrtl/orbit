@@ -2041,8 +2041,11 @@
                 "apps/e2e"
             ],
             "concepts": [
+                "Extension",
                 "Gateway",
-                "Node"
+                "Instance",
+                "Node",
+                "Task"
             ],
             "governing_adrs": []
         },
