@@ -50,6 +50,8 @@ describe('a stale cached configuration with a database cache store', function ()
         $configuration = config()->all();
         $configuration['cache']['default'] = 'database';
         $configuration['app']['env'] = 'production';
+        $configuration['view']['compiled'] = $directory.'/views';
+        mkdir($configuration['view']['compiled'], 0o700);
         file_put_contents($path, '<?php return '.var_export($configuration, true).';'.PHP_EOL);
 
         return [$path, ['APP_CONFIG_CACHE' => $path, 'APP_ENV' => 'production']];
