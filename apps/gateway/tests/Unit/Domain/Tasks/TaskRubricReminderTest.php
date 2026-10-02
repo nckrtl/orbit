@@ -64,7 +64,9 @@ it('uses consult and relay instructions only for those turns', function (): void
 it('tells the implementer to pass the Project task check, or only to finish the brief without one', function (): void {
     expect(TaskTurnInstructions::implementer([], 'vp run check'))
         ->toContain('When the brief is complete and vp run check passes, end your turn')
+        ->toContain('Orbit runs vp run check again at handoff with access you do not have, such as sudo. When it fails for you only because you lack that access, hand off anyway.')
         ->and(TaskTurnInstructions::implementer([], null))
         ->toContain('When the brief is complete, end your turn')
-        ->not->toContain('composer check');
+        ->not->toContain('composer check')
+        ->not->toContain('again at handoff');
 });
