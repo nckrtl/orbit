@@ -144,10 +144,20 @@ final readonly class StatePaths
         $acl = new Process(['getfacl', '--omit-header', '--numeric', '--no-effective', '--', $path]);
         $acl->mustRun();
 
-        if (preg_match('/^user:[^:]+:/m', $acl->getOutput()) === 1) {
+        $entries = $acl->getOutput();
+
+        if (preg_match('/^user:[^:]+:/m', $entries) === 1) {
             $owner = $mode === 0700 ? 'rwx' : 'rw-';
-            // Without --no-mask, setfacl recalculates the mask as the union of the named entries.
-            new Process(['setfacl', '--modify', 'user::'.$owner.',group::---,other::---', '--', $path])->mustRun();
+            $private = preg_match('/^user::'.preg_quote($owner, '/').'$/m', $entries) === 1
+                && preg_match('/^group::---$/m', $entries) === 1
+                && preg_match('/^other::---$/m', $entries) === 1
+                && preg_match('/^mask::---$/m', $entries) !== 1;
+
+            // Only the owner can change an ACL; another named user, such as the task worker, uses the path as is.
+            if (! $private && fileowner($path) === posix_geteuid()) {
+                // Without --no-mask, setfacl recalculates the mask as the union of the named entries.
+                new Process(['setfacl', '--modify', 'user::'.$owner.',group::---,other::---', '--', $path])->mustRun();
+            }
 
             return;
         }
