@@ -26,7 +26,7 @@ provision() {
   fingerprint=$(scan_host_key "$2" | ssh-keygen -lf - -E sha256 | awk 'NR == 1 { print $2 }')
   [[ "$fingerprint" =~ ^SHA256:[A-Za-z0-9+/]{43}$ ]]
   sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway DB_DATABASE=/home/orbit/.orbit/gateway.sqlite php /home/orbit/orbit/apps/gateway/artisan orbit:node-provision "$1" "$2" \
-    --role=app-prod --architecture="$3" --user=orbit \
+    --role=app-prod --tld=beast --architecture="$3" --user=orbit \
     --wireguard-ip="$wireguard_ip" \
     --host-key-fingerprint="$fingerprint" --no-interaction
 }

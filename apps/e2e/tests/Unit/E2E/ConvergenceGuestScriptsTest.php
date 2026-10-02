@@ -1798,7 +1798,7 @@ describe('convergence guest scripts', function () {
         }
     });
 
-    it('always prepares app-prod after provisioning', function (): void {
+    it('provisions app-prod with a preview TLD and always prepares its runtime', function (): void {
         $fixture = convergence_app_fixture('converge-app-prod.sh');
 
         try {
@@ -1816,6 +1816,7 @@ describe('convergence guest scripts', function () {
                 ->toBe(0)
                 ->and(file_get_contents($fixture['commands']))
                 ->toContain('orbit:node-provision')
+                ->toContain('--tld=beast')
                 ->toContain('ssh:-i');
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
