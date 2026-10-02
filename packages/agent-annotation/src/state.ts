@@ -26,6 +26,7 @@ export function useRefValue<T>(ref: Ref<T>): T {
     return useStore(ref.store);
 }
 
+export const floatingControl = createRef(true);
 export const annotationMode = createRef(false);
 export const annotations = createRef<Annotation[]>([]);
 export const draft = createRef<AnnotationDraft | null>(null);

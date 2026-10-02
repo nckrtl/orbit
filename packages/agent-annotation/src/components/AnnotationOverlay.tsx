@@ -11,6 +11,7 @@ import { getAnnotationRootElement } from "../host";
 import { hoverLabelPosition, percentToViewportX } from "../dom";
 import {
     annotationMode,
+    floatingControl,
     annotations,
     draft,
     hover,
@@ -22,6 +23,7 @@ import { useToolbar } from "../composables/useToolbar";
 import { resolveToolbarFontSize } from "../core/font-size";
 
 export default function AnnotationOverlay() {
+    const showControl = useRefValue(floatingControl);
     const mode = useStore(deliveryMode);
     const isActive = useRefValue(annotationMode);
     const currentAnnotations = useRefValue(annotations);
@@ -82,7 +84,7 @@ export default function AnnotationOverlay() {
 
     return (
         <div className="contents">
-            <AnnotationFloatingControl />
+            {showControl ? <AnnotationFloatingControl /> : null}
             {!isActive ? null : (
                 <>
                     {currentHover && !currentDraft ? (

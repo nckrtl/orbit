@@ -1,13 +1,22 @@
 {
-    "name": "@nckrtl/annotate",
-    "version": "0.1.0",
+    "name": "@nckrtl/annotator",
+    "version": "0.1.1",
+    "description": "Browser annotations with voice input and a local task server for coding agents.",
+    "license": "MIT",
+    "author": "Nick Retel",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/nckrtl/orbit.git",
+        "directory": "packages/agent-annotation"
+    },
     "bin": {
-        "annotate": "bin/serve.mjs"
+        "annotator": "bin/serve.mjs"
     },
     "files": [
         "dist",
         "bin",
-        "README.md"
+        "README.md",
+        "LICENSE"
     ],
     "type": "module",
     "main": "./dist/index.js",
@@ -18,12 +27,20 @@
             "import": "./dist/index.js"
         },
         "./inject": "./dist/inject.js",
-        "./vite": "./bin/vite.mjs"
+        "./vite": {
+            "types": "./bin/vite.d.mts",
+            "import": "./bin/vite.mjs"
+        }
+    },
+    "publishConfig": {
+        "access": "public",
+        "registry": "https://registry.npmjs.org/"
     },
     "scripts": {
         "build": "vp build && ANNOTATION_INJECT=1 vp build && tsc --emitDeclarationOnly",
-        "test": "node tests/smoke.mjs && node tests/service.mjs && node tests/orbit.mjs && node tests/local-server.mjs && node tests/proxy.mjs",
-        "check": "vp check"
+        "test": "node tests/smoke.mjs && node tests/service.mjs && node tests/orbit.mjs && node tests/local-server.mjs && node tests/lifecycle.mjs && node tests/proxy.mjs && node tests/host-controls.mjs",
+        "check": "vp check",
+        "prepack": "vp run build"
     },
     "dependencies": {
         "@heroicons/react": "2",
@@ -48,7 +65,10 @@
         "packageManager": {
             "name": "bun",
             "version": "1.4.2",
-            "onFail": "download"
+            "onFail": "ignore"
         }
+    },
+    "engines": {
+        "node": ">=22"
     }
 }

@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import { ANNOTATION_HOST_ID } from "@nckrtl/annotate/host";
+import { ANNOTATION_HOST_ID } from "@nckrtl/annotator/host";
 import indexHtml from "../../index.html?raw";
 import { displayMode } from "../../src/ui/viewportReadout";
 import { setLiveness } from "../../src/realtime/liveness";

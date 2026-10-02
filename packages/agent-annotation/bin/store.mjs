@@ -57,6 +57,13 @@ export class AnnotationStore {
         closeSync(descriptor);
         this.ownsLock = true;
         try {
+            this.deletedFile = join(path, ".deleted.json");
+            const deleted = existsSync(this.deletedFile)
+                ? JSON.parse(readFileSync(this.deletedFile, "utf8"))
+                : [];
+            if (!Array.isArray(deleted) || deleted.some((id) => !validId(id)))
+                throw new Error("Invalid deleted annotation records");
+            this.deletedIds = new Set(deleted);
             this.counterFile = join(path, ".sequence");
             this.lastNumber = existsSync(this.counterFile)
                 ? Number(readFileSync(this.counterFile, "utf8"))
@@ -110,6 +117,10 @@ export class AnnotationStore {
             for (const name of readdirSync(join(this.path, folder))) {
                 if (!name.endsWith(".json")) continue;
                 const file = join(this.path, folder, name);
+                if (this.deletedIds.has(name.slice(0, -5))) {
+                    unlinkSync(file);
+                    continue;
+                }
                 const annotation = JSON.parse(readFileSync(file, "utf8"));
                 if (
                     !validId(annotation?.id) ||
@@ -176,6 +187,24 @@ export class AnnotationStore {
             throw new Error("Annotation sequence exhausted");
         this.saveNumber(this.lastNumber + 1);
         return this.lastNumber;
+    }
+    rememberDeleted(ids) {
+        const deleted = new Set([...this.deletedIds, ...ids]);
+        if (deleted.size === this.deletedIds.size) return;
+        writeFileSync(`${this.deletedFile}.tmp`, JSON.stringify([...deleted]), { mode: 0o600 });
+        renameSync(`${this.deletedFile}.tmp`, this.deletedFile);
+        this.deletedIds = deleted;
+    }
+    remove(id, pathname) {
+        const removed = this.list().filter(
+            (annotation) =>
+                (id === undefined || annotation.id === id) &&
+                (pathname === undefined || annotation.pathname === pathname),
+        );
+        this.rememberDeleted(removed.map((annotation) => annotation.id));
+        for (const annotation of removed)
+            unlinkSync(join(this.path, folderFor(annotation.status), `${annotation.id}.json`));
+        return removed;
     }
     find(id) {
         return this.list().find((a) => a.id === id);
