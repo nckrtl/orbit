@@ -470,6 +470,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                         (string) $member->source_commit,
                         $groupingDirectory,
                         $member->starting_commit === null && ! $member->runtime_published ? '1' : '0',
+                        $this->independentForcedWorktree($member) ? '1' : '0',
                     ],
                     input: $failedCreation ? $input : $script?->input,
                     protectedInput: $script?->protectedInput,
@@ -552,7 +553,11 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             );
         }
 
-        $this->assertExpectedLinkedInventory($member, $inventory, $expectation);
+        // A linked Instance owns only its worktree. Repository-wide membership is
+        // a deletion dependency for a checkout, not for a forced linked removal.
+        if (! $this->independentForcedWorktree($member)) {
+            $this->assertExpectedLinkedInventory($member, $inventory, $expectation);
+        }
 
         if (
             ! $allowDependentWorktrees
@@ -566,6 +571,15 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
         }
 
         return $inventory;
+    }
+
+    private function independentForcedWorktree(InstanceRemovalMember $member): bool
+    {
+        return $member->removal->force
+            && $member->source_layout === InstanceSourceLayout::Worktree->value
+            && ! $member->removal->members()
+                ->where('source_layout', InstanceSourceLayout::Checkout->value)
+                ->exists();
     }
 
     private function exactExpectation(
@@ -1613,6 +1627,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             source_commit=$8
             grouping_directory=$9
             unresolved=${10}
+            independent_worktree=${11}
             export GIT_OPTIONAL_LOCKS=0
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
@@ -1723,8 +1738,10 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                 *) exit 1 ;;
             esac
             test "$origin" = "$expected_origin"
-            worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
-            test "$worktrees" = "$expected_worktrees"
+            if [ "$layout" != worktree ] || [ "$force" != 1 ] || [ "$independent_worktree" != 1 ]; then
+                worktrees=$(git -C "$physical" worktree list --porcelain -z | base64 --wrap=0)
+                test "$worktrees" = "$expected_worktrees"
+            fi
             if [ "$force" != 1 ]; then
                 status=$(workspace_git -C "$physical" status --porcelain --untracked-files=all) || exit 1
                 test -z "$status"
