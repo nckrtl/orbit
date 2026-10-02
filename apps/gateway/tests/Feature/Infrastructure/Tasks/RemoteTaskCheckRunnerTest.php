@@ -173,6 +173,23 @@ describe('TaskCheckWorkerUser', function (): void {
         expect(check_runner_as_worker($checkout, 'printf x >> .git/config'))->not->toBe(0);
     });
 
+    it('skips a private directory the worker created and still shares what the check created', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        // Like the 0700 `.e2e` state directory the E2E harness creates during an agent turn.
+        expect(check_runner_as_worker($checkout, 'install -d -m 0700 .e2e/locks && touch .e2e/locks/held'))->toBe(0);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $instance = check_runner_instance($checkout);
+
+        $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'install -d -m 0700 ignored/cache'));
+
+        expect($reading->exitCode)->toBe(0)
+            ->and(check_runner_as_worker($checkout, 'touch ignored/cache/worker'))->toBe(0)
+            ->and(check_runner_as_worker($checkout, 'test -f .e2e/locks/held'))->toBe(0)
+            ->and(check_runner_as_worker($checkout, 'rm -r .e2e'))->toBe(0);
+    });
+
     it('shares what a cancelled check created with the worker', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
