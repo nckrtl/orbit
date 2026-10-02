@@ -2073,6 +2073,102 @@ it('refuses normal finalization when the observed commit is no longer published'
         ->toBeTrue();
 });
 
+it('converges forced linked removal beside independently changing siblings', function (string $change, bool $quarantined): void {
+    [$checkout, $worktree, $sibling] = orb180_worktree_source(
+        $this->source, $this->orbitApp, $this->node, $this->appsRoot, 'converge',
+    );
+    $member = orb180_record_source($this->removal, $worktree, true);
+    if ($quarantined) {
+        orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'move', $worktree->checkout_path, orb180_quarantine_path($member)]);
+    }
+    $siblingAdmin = trim(orb76_run(['git', '-C', $sibling, 'rev-parse', '--absolute-git-dir'])->stdout);
+    if ($change === 'added') {
+        $sibling = $this->appsRoot.'/acme/new-sibling';
+        orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'add', '-b', 'new-sibling', $sibling, 'HEAD']);
+    } elseif ($change === 'removed') {
+        orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'remove', $sibling]);
+    } else {
+        $sibling = dirname(orb180_quarantine_path($member)).'/independent.999.quarantine';
+        orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'move', $this->appsRoot.'/acme/converge-sibling', $sibling]);
+    }
+    $before = orb866_source_bytes($checkout->checkout_path.'/.git');
+    $siblingBefore = is_dir($sibling) ? orb866_source_bytes($sibling) : [];
+
+    expect($this->removal->revalidate($member))->toBe($quarantined
+        ? InstanceSourceRevalidationState::Quarantined
+        : InstanceSourceRevalidationState::Present);
+    $receipt = $this->removal->finalize($member);
+    expect($receipt)->not->toBeEmpty()
+        ->and($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Completed)
+        ->and(is_dir($worktree->checkout_path))->toBeFalse()
+        ->and(is_dir($checkout->checkout_path))->toBeTrue()
+        ->and(is_dir($sibling))->toBe($change !== 'removed');
+    if ($change !== 'removed') {
+        expect(orb866_source_bytes($sibling))->toBe($siblingBefore);
+    }
+    // Removing the target changes only its own administration in the shared Git directory.
+    $targetAdmin = $checkout->checkout_path.'/.git/worktrees/converge';
+    foreach ($before as $path => $bytes) {
+        if (! str_starts_with($path, '/worktrees/converge/')) {
+            expect(hash_file('sha256', $checkout->checkout_path.'/.git'.$path))->toBe($bytes);
+        }
+    }
+    expect(is_dir($targetAdmin))->toBeFalse()
+        ->and(is_dir($siblingAdmin))->toBe($change !== 'removed');
+})->with(['added', 'removed', 'quarantined'])->with(['at original path' => false, 'in quarantine' => true]);
+
+it('refuses real source drift during forced linked removal beside siblings', function (string $change): void {
+    [$checkout, $worktree, $sibling] = orb180_worktree_source(
+        $this->source, $this->orbitApp, $this->node, $this->appsRoot, 'drift',
+    );
+    $member = orb180_record_source($this->removal, $worktree, true);
+    if ($change === 'commit') {
+        orb76_run(['git', '-C', $worktree->checkout_path, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-m', 'changed']);
+    } elseif ($change === 'branch') {
+        orb76_run(['git', '-C', $worktree->checkout_path, 'checkout', '-b', 'changed']);
+    } elseif ($change === 'origin') {
+        orb76_run(['git', '-C', $worktree->checkout_path, 'remote', 'set-url', 'origin', 'ssh://git@example.test/foreign/site.git']);
+    } else {
+        rename($worktree->checkout_path, $worktree->checkout_path.'-old');
+        mkdir($worktree->checkout_path);
+    }
+    $siblingBefore = orb866_source_bytes($sibling);
+    expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class)
+        ->and(is_dir($worktree->checkout_path))->toBeTrue()
+        ->and(is_dir($checkout->checkout_path))->toBeTrue()
+        ->and(orb866_source_bytes($sibling))->toBe($siblingBefore);
+})->with(['commit', 'branch', 'origin', 'replacement']);
+
+it('finalizes forced linked removal when a sibling moves after the last inspection', function (): void {
+    [$checkout, $worktree, $sibling] = orb180_worktree_source(
+        $this->source, $this->orbitApp, $this->node, $this->appsRoot, 'late',
+    );
+    $member = orb180_record_source($this->removal, $worktree, true);
+    $destination = dirname(orb180_quarantine_path($member)).'/independent.999.quarantine';
+    $this->transport->beforeFinalization = static function () use ($checkout, $sibling, $destination): void {
+        orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'move', $sibling, $destination]);
+    };
+    expect($this->removal->finalize($member))->not->toBeEmpty()
+        ->and(is_dir($destination))->toBeTrue()
+        ->and(is_dir($worktree->checkout_path))->toBeFalse();
+});
+
+it('converges forced linked removal after its acknowledged quarantine is lost beside siblings', function (): void {
+    [$checkout, $worktree, $sibling] = orb180_worktree_source(
+        $this->source, $this->orbitApp, $this->node, $this->appsRoot, 'lost',
+    );
+    $member = orb180_record_source($this->removal, $worktree, true);
+    [$quarantine, $admin, $receipt] = orb180_stage_worktree_receipt($member);
+    $this->files->deleteDirectory($quarantine);
+    $siblingBefore = orb866_source_bytes($sibling);
+    expect($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::ReceiptPendingCleanup)
+        ->and($this->removal->finalize($member))->toBe($receipt)
+        ->and($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Completed)
+        ->and(is_dir($admin))->toBeFalse()
+        ->and(is_dir($checkout->checkout_path))->toBeTrue()
+        ->and(orb866_source_bytes($sibling))->toBe($siblingBefore);
+});
+
 it('finalizes one recorded worktree while preserving shared Git state', function (): void {
     $checkout = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'shared');
     $worktreePath = $this->appsRoot.'/acme/feature';

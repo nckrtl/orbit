@@ -169,11 +169,13 @@ Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 c
 
 Source finalization checks dirty and unpublished content before moving the tree into quarantine. A normal refusal leaves the source at its original path and does not change Git's worktree entry. It then moves the validated tree into quarantine and writes an authenticated receipt before deletion.
 
-After that receipt exists, a checkout retry checks the journal, receipt, quarantine path, owner, and recorded device and inode, then deletes the remaining tree. It does not require the quarantined checkout to remain a valid Git repository: a partial deletion may leave `.git` missing or damaged. Worktree recovery also checks the recorded common repository and worktree administration before cleanup. A replaced quarantine or mismatched receipt still stops removal.
+After that receipt exists, a checkout retry checks the journal, receipt, quarantine path, owner, and recorded device and inode, then deletes the remaining tree. It does not require the quarantined checkout to remain a valid Git repository: a partial deletion may leave `.git` missing or damaged. Worktree recovery also checks the recorded common repository and worktree administration before cleanup. If its quarantine directory is already gone, the matching journal, receipt, and recovery record authorize removal of only its recorded Git administration entry. A replaced quarantine or mismatched receipt still stops removal.
 
-### Post-deploy operator step: Instance 298 on beast
+Forced removal of a linked-worktree Instance, without a checkout in the removal's accepted member set, checks its own path, owner, repository, branch, and accepted commit, not the membership of unrelated sibling worktrees. Siblings may be added, removed, or moved into another removal's quarantine without blocking it. Those siblings, their Git administration entries, the common repository, and local branches stay untouched. Checkout removal still checks the accepted dependency inventory before cascading. A changed commit, branch, origin, or replaced source directory still stops a forced linked-worktree retry.
 
-After deploying this fix, the operator checks Instance 298 on beast and its recorded removal progress, confirms that its source belongs to that Instance, and retries `orbit instance:destroy 298 --yes --force`. Check that the operation completes, the quarantined directory and its Git worktree entry are gone, and the common repository and sibling Instances remain. This is a live-resource operator step, not part of the disposable Incus proof.
+### Post-deploy operator step: Instances 298 and 302 on beast
+
+After deploying this fix, the operator checks Instances 298 and 302 on beast and their recorded removal progress, confirms that each source belongs to its Instance, and retries `orbit instance:destroy 298 --yes --force` and `orbit instance:destroy 302 --yes --force`. For each Instance, check that the operation completes, its quarantined directory and Git worktree entry are gone, and the common repository and sibling Instances remain. This is a live-resource operator step, not part of the disposable Incus proof.
 
 ## Why it works this way
 
