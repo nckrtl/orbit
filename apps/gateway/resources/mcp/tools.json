@@ -4171,7 +4171,7 @@
           },
           "user": {
             "type": "string",
-            "pattern": "^[a-z_][a-z0-9_-]{0,31}$",
+            "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])",
             "maxLength": 32,
             "description": "Existing non-root account for a Node systemd Process"
           },
