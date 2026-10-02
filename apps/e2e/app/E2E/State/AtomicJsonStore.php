@@ -106,9 +106,7 @@ final readonly class AtomicJsonStore
                 fclose($handle);
             }
 
-            if (! chmod($temporary, 0600)) {
-                throw new RuntimeException('Unable to protect temporary state.');
-            }
+            $this->paths->makePathPrivate($temporary);
 
             $this->failure?->__invoke('after_temporary_write', $temporary, $file);
             $validated = file_get_contents($temporary);
@@ -121,9 +119,10 @@ final readonly class AtomicJsonStore
 
             $permissionResult = $this->failure?->__invoke('post_rename_chmod', $file, $file);
 
-            if ($permissionResult === false || ! chmod($file, 0600)) {
+            if ($permissionResult === false) {
                 throw new RuntimeException('JSON state was committed but its permissions could not be protected.');
             }
+            $this->paths->makePathPrivate($file);
 
             $this->syncDirectory($directory);
         } catch (JsonException $exception) {

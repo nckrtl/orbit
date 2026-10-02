@@ -9,6 +9,7 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
+use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Models\Instance;
 use App\Models\Task;
 use Carbon\CarbonInterface;
@@ -84,8 +85,14 @@ final readonly class RemoveTaskWorkspaceAction
     }
 
     /** Runs Project teardown through the generic Instance remover. The source and row stay when removal refuses. */
+    /** Releases the group's topology first; a failed release keeps the workspace for a retry. */
     public function remove(Instance $instance): void
     {
+        $group = Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->first();
+        if ($group instanceof Task) {
+            app(TaskWorkspaceTopology::class)->release($instance, $group->id);
+        }
+
         $this->remover->execute($instance, true);
     }
 

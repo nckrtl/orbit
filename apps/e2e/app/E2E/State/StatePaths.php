@@ -124,31 +124,35 @@ final readonly class StatePaths
         $this->makePrivate($this->path($relative), 0600);
     }
 
+    /** Make a file that already lies inside the state root private. */
+    public function makePathPrivate(string $path): void
+    {
+        if (! $this->isInsideRoot($path)) {
+            throw new InvalidArgumentException('The state path is outside the state root.');
+        }
+
+        $this->makePrivate($path, 0600);
+    }
+
+    /**
+     * Close state to the owning group and others. With named-user ACL entries, such as the task worker's, the mask is
+     * recalculated from those entries: a mode such as 0600 would otherwise set the mask to none and cancel them.
+     */
     private function makePrivate(string $path, int $mode = 0700): void
     {
         clearstatcache(true, $path);
-
-        if ((fileperms($path) & 0777) === $mode) {
-            return;
-        }
-
         $acl = new Process(['getfacl', '--omit-header', '--numeric', '--no-effective', '--', $path]);
         $acl->mustRun();
-        $entries = explode("\n", $acl->getOutput());
-        $owner = $mode === 0700 ? 'rwx' : 'rw-';
 
-        if (
-            in_array('user::'.$owner, $entries, true)
-            && in_array('group::---', $entries, true)
-            && in_array('other::---', $entries, true)
-        ) {
+        if (preg_match('/^user:[^:]+:/m', $acl->getOutput()) === 1) {
+            $owner = $mode === 0700 ? 'rwx' : 'rw-';
+            // Without --no-mask, setfacl recalculates the mask as the union of the named entries.
+            new Process(['setfacl', '--modify', 'user::'.$owner.',group::---,other::---', '--', $path])->mustRun();
+
             return;
         }
 
-        if (preg_match('/^mask::/m', $acl->getOutput()) === 1) {
-            $permissions = new Process(['setfacl', '--no-mask', '--modify', 'user::'.$owner.',group::---,other::---', '--', $path]);
-            $permissions->mustRun();
-        } elseif (! chmod($path, $mode)) {
+        if ((fileperms($path) & 0777) !== $mode && ! chmod($path, $mode)) {
             throw new RuntimeException('Cannot make the state path private.');
         }
     }

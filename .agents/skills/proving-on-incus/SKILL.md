@@ -9,7 +9,7 @@ Prove a feature on a disposable three-Node topology: `gateway`, `app-dev`, and `
 
 ## Use the allocated topology
 
-Use only the topology Orbit or the operator allocated to the task. Agents and reviewers never acquire or release topologies, receive no sudo, and do not touch the host firewall. If no topology is allocated, request one from the operator instead of running `acquire`.
+Orbit acquires the group's topology, `TASK-<group>`, when it provisions an Orbit task workspace, and releases it when it removes the workspace. The implementer and the reviewer share it. Check it with `bin/e2e-topology status TASK-<group>`. Agents and reviewers never acquire or release topologies, receive no sudo, and do not touch the host firewall. When `status` shows no topology, acquiring failed; ask the operator instead of running `acquire`.
 
 Run commands from the task workspace. The issue must appear in the branch name, so branch `task-58` uses `TASK-58`. A task workspace clone runs through its [bridge worktree](../../../docs/reference/incus-topologies.md#task-workspace-clones).
 
