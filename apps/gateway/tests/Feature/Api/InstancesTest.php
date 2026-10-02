@@ -2134,6 +2134,12 @@ it('rejects repository execution and unsupported transport keys', function (): v
 });
 
 it('completes Instance removal while another Node service metrics snapshot fails', function (): void {
+    // The creation request resolves singletons used by the native removal projector.
+    app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
+    $processes = Mockery::mock(ProcessRunner::class);
+    $processes->shouldReceive('run')->twice()->andReturn(new CommandResult(0, '', '', 1, false));
+    app()->instance(ProcessRunner::class, $processes);
+
     $created = $this->postJson('/api/v1/instances', [
         'project_id' => $this->orbitApp->id,
         'node_id' => $this->node->id,
@@ -2169,10 +2175,6 @@ it('completes Instance removal while another Node service metrics snapshot fails
         app(ServiceMetricsProjection::class), $services, app(ExporterDegradationRepository::class),
     ));
     app()->instance(MetricsFleetReconciler::class, $fleet);
-    app()->instance(SshExecutor::class, new AppDevFakeSshExecutor);
-    $processes = Mockery::mock(ProcessRunner::class);
-    $processes->shouldReceive('run')->andReturn(new CommandResult(0, '', '', 1, false));
-    app()->instance(ProcessRunner::class, $processes);
     app()->instance(InstanceRemovalProjector::class, app(NativeInstanceRemovalProjector::class));
 
     $this->deleteJson("/api/v1/instances/{$id}")->assertOk()
