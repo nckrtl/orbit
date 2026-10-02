@@ -570,8 +570,6 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
-              "decisions/0175-docs-impact-check-in-orbit-repo",
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance"
@@ -636,6 +634,10 @@
     {
       "source": "/decisions/0096-run-plausible-through-an-analytics-role",
       "destination": "/reference/analytics"
+    },
+    {
+      "source": "/decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
+      "destination": "/reference/analytics#why-it-works-this-way"
     },
     {
       "source": "/decisions/0099-collect-role-specific-service-metrics",
@@ -1374,8 +1376,16 @@
       "destination": "/reference/implementation-loop#the-candidate-gate"
     },
     {
+      "source": "/decisions/0175-docs-impact-check-in-orbit-repo",
+      "destination": "/contributor-guide#docs-impact-stays-in-the-repository"
+    },
+    {
       "source": "/decisions/0176-file-repro-first-bug-groups",
       "destination": "/reference/tasks#outer-loop"
+    },
+    {
+      "source": "/decisions/0177-remove-the-app-compatibility-surface",
+      "destination": "/reference/projects#one-public-name-without-compatibility"
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",
