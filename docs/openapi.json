@@ -7365,7 +7365,7 @@
         ],
         "description": "Scan root dependency manifests and lockfiles for one instance or every authorized instance.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -7474,7 +7474,7 @@
         ],
         "description": "Update development root packages within declared constraints and refresh inventory.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -7584,7 +7584,7 @@
         "x-orbit-task-action": true,
         "description": "Deploy the configured branch of a production Instance.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
@@ -8495,7 +8495,7 @@
         ],
         "description": "Synchronize stored Instance configuration to the workload environment file.",
         "requestBody": {
-          "required": false,
+          "required": true,
           "content": {
             "application/json": {
               "schema": {

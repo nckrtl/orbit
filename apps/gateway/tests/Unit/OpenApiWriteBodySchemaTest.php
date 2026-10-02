@@ -130,17 +130,36 @@ it('requires the Node settings member while accepting all clearing forms', funct
     }
 });
 
-it('keeps no-body operations closed and empty', function (): void {
+it('publishes empty-object bodies with the runtime requiredness', function (string $operationId, bool $required): void {
+    $root = dirname(__DIR__, 4);
+    $openapi = json_decode((string) file_get_contents($root.'/docs/openapi.json'), true, flags: JSON_THROW_ON_ERROR);
+    $catalogue = json_decode((string) file_get_contents($root.'/apps/gateway/resources/mcp/tools.json'), true, flags: JSON_THROW_ON_ERROR);
+    $operations = collect($openapi['paths'])->flatMap(fn (array $path): array => array_values($path))->keyBy('operationId');
+    $tools = collect($catalogue['tools'])->keyBy('name');
+    $operation = $operations->get($operationId);
+    $tool = $tools->get($operationId);
+
+    expect($operation['requestBody']['content']['application/json']['schema'])->toBe(['type' => 'object', 'additionalProperties' => false]);
+    expect($operation['requestBody']['required'])->toBe($required);
+    expect($tool['input_schema']['additionalProperties'])->toBeFalse();
+    expect(array_keys($tool['input_schema']['properties']))->toBe($tool['path_inputs']);
+    expect($tool['input_schema']['required'])->toBe($tool['path_inputs']);
+    expect($tool['query_inputs'])->toBe([]);
+})->with([
+    'deploy' => ['instance-deploy', true],
+    'environment sync' => ['env-sync', true],
+    'dependency scan' => ['instance-dependencies-scan', true],
+    'dependency update' => ['instance-dependencies-update', true],
+    'task cancellation' => ['tasks-cancel', false],
+    'task completion' => ['tasks-complete', false],
+    'schedule enable' => ['schedule-enable', false],
+]);
+
+it('keeps bodyless operations without a request body', function (): void {
     $root = dirname(__DIR__, 4);
     $openapi = json_decode((string) file_get_contents($root.'/docs/openapi.json'), true, flags: JSON_THROW_ON_ERROR);
     $operations = collect($openapi['paths'])->flatMap(fn (array $path): array => array_values($path))->keyBy('operationId');
 
-    foreach (['instance-deploy', 'tasks-cancel', 'schedule-enable'] as $operationId) {
-        $body = $operations->get($operationId)['requestBody']['content']['application/json']['schema'];
-
-        expect($body)->toBe(['type' => 'object', 'additionalProperties' => false]);
-        expect($operations->get($operationId)['requestBody']['required'])->toBeFalse();
-    }
-
     expect($operations->get('extension-enable'))->not->toHaveKey('requestBody');
+    expect($operations->get('instance-dependencies-show'))->not->toHaveKey('requestBody');
 });
