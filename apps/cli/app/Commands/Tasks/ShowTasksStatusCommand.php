@@ -54,18 +54,62 @@ final class ShowTasksStatusCommand extends TaskCommand
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Extension: tasks', [
             'Status' => $status->enabled ? 'enabled' : 'disabled',
         ]));
-        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Group', 'Title', 'Status', 'Reason'],
-            array_map(static fn (TaskAssistanceResponse $group): array => [
-                $group->reference(),
-                $group->title,
-                $group->status,
-                $group->assistanceReason,
-            ], $status->assistance ?? []),
-            'No groups are asking for assistance.',
-        ));
+        $this->renderAssistance($status->assistance ?? []);
         $this->writeHumanMessage("Request ID: {$status->requestId}");
 
         return self::SUCCESS;
+    }
+
+    /** @param list<TaskAssistanceResponse> $groups */
+    private function renderAssistance(array $groups): void
+    {
+        $direction = [];
+        $failures = [];
+
+        foreach ($groups as $group) {
+            if ($group->assistanceKind === 'direction') {
+                $direction[] = $group;
+            } else {
+                $failures[] = $group;
+            }
+        }
+
+        if ($direction === [] && $failures === []) {
+            $this->writeHumanMessage('No groups are asking for assistance.');
+
+            return;
+        }
+
+        if ($direction !== []) {
+            $this->writeSection('Needs your direction');
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+                ['Group', 'Title', 'Status', 'Question'],
+                array_map(static fn (TaskAssistanceResponse $group): array => [
+                    $group->reference(),
+                    $group->title,
+                    $group->status,
+                    $group->assistanceQuestion,
+                ], $direction),
+            ));
+        }
+
+        if ($failures !== []) {
+            $this->writeSection('Failures');
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+                ['Group', 'Title', 'Status', 'Reason'],
+                array_map(static fn (TaskAssistanceResponse $group): array => [
+                    $group->reference(),
+                    $group->title,
+                    $group->status,
+                    $group->assistanceReason,
+                ], $failures),
+            ));
+        }
+    }
+
+    private function writeSection(string $heading): void
+    {
+        $this->writeHumanMessage($heading);
+        ConsoleWriter::write($this->output, "\n");
     }
 }

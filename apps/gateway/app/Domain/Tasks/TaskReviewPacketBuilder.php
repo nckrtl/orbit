@@ -8,6 +8,7 @@ use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskQuestion;
 
 /**
  * Builds the review packet for one subtask from the group, the latest passed handoff, and the workspace diff.
@@ -52,7 +53,28 @@ final readonly class TaskReviewPacketBuilder
             resolution: $continued ? '' : $this->pendingResolution($task),
             threadId: $threadId,
             groupStartCommit: TaskReviewBase::groupStartCommit($group),
+            consults: $continued ? [] : $this->consults($task),
         )->render();
+    }
+
+    /**
+     * Answered consults for this subtask, oldest first. A fresh reviewer would otherwise lose them.
+     *
+     * @return list<array{question: string, answer: string}>
+     */
+    private function consults(Task $task): array
+    {
+        return array_values(TaskQuestion::query()
+            ->where('subtask_id', $task->id)
+            ->where('consult', true)
+            ->where('status', QuestionStatus::Answered)
+            ->orderBy('id')
+            ->get()
+            ->map(static fn (TaskQuestion $question): array => [
+                'question' => $question->question,
+                'answer' => is_string($question->answer) ? $question->answer : '',
+            ])
+            ->all());
     }
 
     /** The uncut context written to `.git/orbit/context.md` before a review turn. */
@@ -67,6 +89,7 @@ final readonly class TaskReviewPacketBuilder
             deliverables: $task->deliverableList(),
             approvals: $this->approvalBodies($group, $task),
             resolution: $this->pendingResolution($task),
+            consults: $this->consults($task),
         )->render();
     }
 

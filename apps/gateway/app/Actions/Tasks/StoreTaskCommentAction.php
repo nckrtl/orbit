@@ -6,15 +6,24 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskQuestions;
+use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnFetcher;
 use App\Domain\Tasks\TaskTurnFetchNotice;
+use App\Domain\Tasks\TaskTurnInstructions;
+use App\Domain\Tasks\TaskTurnMode;
+use App\Domain\Tasks\TaskTurnReceiptException;
+use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\Activity;
 use App\Models\AgentThread;
+use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
@@ -26,8 +35,10 @@ final readonly class StoreTaskCommentAction
     public function __construct(
         private AgentDriverRegistry $drivers,
         private CoderSettleNotifier $notifier,
+        private TaskTurnReceipts $receipts,
         private TaskTurnFetcher $turnFetcher,
         private TaskTurnFetchNotice $fetchNotice,
+        private TaskReviewPacketBuilder $reviewPackets,
         private RetryTaskBaselineAction $retryBaseline,
     ) {}
 
@@ -35,8 +46,9 @@ final readonly class StoreTaskCommentAction
     public function execute(Task $task, array $payload): TaskComment
     {
         $deliverResolution = false;
+        $deliverDirection = false;
         $retryBaselineQueued = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$retryBaselineQueued): TaskComment {
+        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -48,17 +60,26 @@ final readonly class StoreTaskCommentAction
             $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
             if ($type === TaskCommentType::AssistanceRequested) {
-                $task->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
-                $task->parent()->first()?->update(['assistance_requested' => true, 'assistance_reason' => $comment->body]);
+                TaskAssistance::apply($task, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
+                $parent = $task->parent()->lockForUpdate()->first();
+                if ($parent instanceof Task) {
+                    TaskAssistance::apply($parent, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
+                }
+                TaskQuestions::recordOperator($task, $comment);
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
-                $deliverResolution = true;
-                $retryBaselineQueued = $this->retryBaseline->queue($task, $comment);
+                $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
+                $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
+                $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
             }
 
             return $comment;
         });
+
+        if ($deliverDirection) {
+            $this->deliverDirection($task, $comment);
+        }
 
         if ($deliverResolution) {
             $task->loadMissing('implementerThread');
@@ -114,6 +135,93 @@ final readonly class StoreTaskCommentAction
     }
 
     /**
+     * A direction resolution is a question, not a failure.
+     * A reviewer who is already reading it answers next. A running subtask gets a relay, or a reviewer starts for one.
+     */
+    private function deliverDirection(Task $task, TaskComment $comment): void
+    {
+        $task->refresh();
+        $reviewer = $this->subtaskReviewer($task);
+        if ($task->status === TaskStatus::Reviewing && $reviewer instanceof AgentThread) {
+            $this->sendDirectionReview($task, $comment, $reviewer);
+
+            return;
+        }
+        if ($task->status === TaskStatus::Reviewing) {
+            $this->commitHeldDirectionReview($task, $comment);
+
+            return;
+        }
+        if ($task->status === TaskStatus::Running && $reviewer instanceof AgentThread) {
+            $this->sendDirectionRelay($task, $comment, $reviewer);
+
+            return;
+        }
+        if ($task->status === TaskStatus::Running) {
+            TaskQuestions::attachResolution($task, $comment);
+
+            return;
+        }
+
+        $this->recordResolutionDelivered($task, $comment, false);
+    }
+
+    private function sendDirectionReview(Task $task, TaskComment $comment, AgentThread $reviewer): void
+    {
+        $task->loadMissing('parent.taskable', 'parent.project');
+        $instance = $task->parent->taskable;
+        if (! $instance instanceof Instance) {
+            return;
+        }
+
+        try {
+            $this->turnFetcher->beforeTurn($task->parent);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, $task->opensPullRequest(), $task->deliverableList(), $reviewer->id, new TaskTurnMode(causeRequired: true), $this->reviewPackets->reviewContext($task));
+            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::reviewer(final: $task->opensPullRequest(), deliverables: $task->deliverableList(), threadId: $reviewer->id)));
+        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
+            report($exception);
+
+            return;
+        }
+
+        $this->recordResolutionDelivered($task, $comment, true);
+    }
+
+    private function sendDirectionRelay(Task $task, TaskComment $comment, AgentThread $reviewer): void
+    {
+        $task->loadMissing('parent.taskable');
+        $instance = $task->parent->taskable;
+        if (! $instance instanceof Instance) {
+            return;
+        }
+
+        try {
+            $this->turnFetcher->beforeTurn($task->parent);
+            $this->receipts->prepare($instance, TaskThreadRole::Reviewer, false, $task->deliverableList(), $reviewer->id, new TaskTurnMode(relay: true), $this->reviewPackets->reviewContext($task));
+            $this->drivers->get($reviewer->driver)->send($reviewer, $this->fetchNotice->apply(trim($comment->body)."\n\n".TaskTurnInstructions::relay($reviewer->id)));
+        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
+            report($exception);
+
+            return;
+        }
+
+        DB::transaction(function () use ($task, $comment): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if (! $locked->assistance_requested) {
+                return;
+            }
+            $locked->update([
+                ...TaskAssistance::cleared(),
+                'communication_failures' => 0,
+                'direction_relay_comment_id' => $comment->id,
+                'resolution_delivered_comment_id' => $comment->id,
+            ]);
+            $locked->parent()->update(TaskAssistance::cleared());
+            TaskQuestions::attachResolution($locked, $comment);
+        });
+    }
+
+    /**
      * No reviewer exists for this subtask. Clear assistance without marking the review sent,
      * so the tick starts a fresh reviewer and its opening packet can carry this resolution.
      */
@@ -126,13 +234,36 @@ final readonly class StoreTaskCommentAction
             }
             $comment->update(['review_attempt' => $locked->review_attempt]);
             $locked->update([
-                'assistance_requested' => false,
-                'assistance_reason' => null,
+                ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
                 'review_reminder_attempt' => null,
                 'review_reminder_input_id' => null,
             ]);
-            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $locked->parent()->update(TaskAssistance::cleared());
+            $this->log($locked, $comment, 'resolution held for reviewer');
+        });
+    }
+
+    /**
+     * Link the direction question and clear both assistance rows in one comment-keyed transaction.
+     * A retry of the same comment is a no-op once assistance is cleared.
+     */
+    public function commitHeldDirectionReview(Task $task, TaskComment $comment): void
+    {
+        DB::transaction(function () use ($task, $comment): void {
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if (! $locked->assistance_requested) {
+                return;
+            }
+            $comment->update(['review_attempt' => $locked->review_attempt]);
+            TaskQuestions::attachResolution($locked, $comment);
+            $locked->update([
+                ...TaskAssistance::cleared(),
+                'communication_failures' => 0,
+                'review_reminder_attempt' => null,
+                'review_reminder_input_id' => null,
+            ]);
+            $locked->parent()->update(TaskAssistance::cleared());
             $this->log($locked, $comment, 'resolution held for reviewer');
         });
     }
@@ -148,8 +279,9 @@ final readonly class StoreTaskCommentAction
             $attempt = $reviewing
                 ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
                 : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
-            $locked->update([...$attempt, 'assistance_requested' => false, 'assistance_reason' => null, 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
-            $locked->parent()->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $locked->update([...$attempt, ...TaskAssistance::cleared(), 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
+            $locked->parent()->update(TaskAssistance::cleared());
+            TaskQuestions::attachResolution($locked, $comment);
             $this->log($locked, $comment, 'resolution delivered');
         });
     }

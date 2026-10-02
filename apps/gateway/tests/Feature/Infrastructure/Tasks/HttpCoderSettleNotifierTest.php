@@ -46,6 +46,7 @@ it('posts an HMAC-signed settle body to Coder', function (): void {
     config()->set('orbit.tasks.coder_webhook_secret', 'coder-secret');
 
     $group = coder_settle_group();
+    $group->update(['questions' => 5, 'escalations' => 3]);
     app(HttpCoderSettleNotifier::class)->notify($group);
 
     Http::assertSent(function (Request $request) use ($group): bool {
@@ -64,6 +65,8 @@ it('posts an HMAC-signed settle body to Coder', function (): void {
                 'tokens' => 40,
                 'line_diff' => 12,
                 'duration_ms' => 1500,
+                'questions' => 5,
+                'escalations' => 3,
                 'pull_request_url' => 'https://github.com/nckrtl/orbit/pull/543',
             ]
             && ! str_contains($body, 'coder-secret');

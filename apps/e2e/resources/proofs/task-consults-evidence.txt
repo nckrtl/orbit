@@ -1,0 +1,754 @@
+=== 2026-10-01T22:47:19.365Z 760 successful scripted scheduler flow node=gateway exit=0 duration=15557ms end=2026-10-01T22:47:34.923Z
+$ sh -c 'cd /home/orbit/orbit/apps/gateway && php artisan tinker --execute '\''require "/home/orbit/orbit/apps/e2e/resources/proofs/task-consults.php";'\'''
+--- stdout
+=== baseline.json
+[
+    {
+        "id": 4,
+        "task_id": 8,
+        "task_comment_id": null,
+        "status": "passed",
+        "pid": 14850,
+        "process_started": "Thu Oct  1 22:47:22 2026",
+        "head_before": "3151e0595822851dd7b7676d36f577c182374397",
+        "tree_before": "009ba945c91df2ff0e4a09cc57720ff03e3f4ac4",
+        "head_after": "3151e0595822851dd7b7676d36f577c182374397",
+        "tree_after": "009ba945c91df2ff0e4a09cc57720ff03e3f4ac4",
+        "exit_code": 0,
+        "changed_paths": [],
+        "output": "",
+        "started_at": "2026-10-01T22:47:22.000000Z",
+        "finished_at": "2026-10-01T22:47:23.000000Z",
+        "created_at": "2026-10-01T22:47:22.000000Z",
+        "updated_at": "2026-10-01T22:47:23.000000Z",
+        "kind": "baseline",
+        "failed_step": null,
+        "deliverable_evidence": null
+    }
+]
+
+=== consult.json
+{
+    "task_id": 7,
+    "subtask_id": 8,
+    "completion_attempt": 1,
+    "question": {
+        "id": 5,
+        "task_id": 7,
+        "subtask_id": 8,
+        "attempt": 1,
+        "asked_by": "implementer",
+        "question": "Which cause applies when the contract already answers my question?",
+        "status": "answered",
+        "answered_by": "reviewer",
+        "answer": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.",
+        "cause": "missed_contract",
+        "asked_at": "2026-10-01T22:47:23.000000Z",
+        "escalated_at": null,
+        "answered_at": "2026-10-01T22:47:23.000000Z",
+        "opened_comment_id": 11,
+        "resolution_comment_id": null,
+        "answered_comment_id": 12,
+        "created_at": "2026-10-01T22:47:23.000000Z",
+        "updated_at": "2026-10-01T22:47:23.000000Z",
+        "consult": true
+    },
+    "continuation": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\n",
+    "calls": [
+        {
+            "operation": "create",
+            "thread": 5,
+            "external_id": "task-760-5",
+            "prompt": "Implement this subtask in the shared workspace. Complete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Add --deliverable=ID=evidence for each deliverable of this subtask (fixture), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file and command deliverables against your diff and its own run. Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\n\nOrbit task group #7\n\nFeature: TASK-760 consult and direction proof\n\nOrbit subtask #8\n\nSubtask: Ask two fixture questions\n\nConsult ADR 0187 for cause names. Database preference needs operator direction. All resources are disposable.\n\nDeliverables. Orbit checks each one before the review:\n- fixture (review: confirmed by the reviewer): Disposable proof only\n\nThe group started at 3151e0595822851dd7b7676d36f577c182374397.\ngit diff --stat 3151e0595822851dd7b7676d36f577c182374397..HEAD\n\nFollow this repository's task instructions."
+        },
+        {
+            "operation": "receipt",
+            "thread": 5,
+            "arguments": [
+                "--thread=5",
+                "--outcome=blocked",
+                "--summary=I missed the receipt cause in the contract.",
+                "--question=Which cause applies when the contract already answers my question?"
+            ],
+            "output": "Orbit recorded the turn receipt (blocked). End your turn now.\n"
+        },
+        {
+            "operation": "create",
+            "thread": 6,
+            "external_id": "def5b7bc-e724-6e39-1190-df315d79e43b",
+            "prompt": "I missed the receipt cause in the contract.\n\nQuestion: Which cause applies when the contract already answers my question?\n\nThis is a consult, not a review. Answer from the brief, the ADRs, the documentation, the code, and the task history. End your turn with .git/orbit/turn --thread=6 --outcome=answered --summary=\"The answer for the implementer\" --cause=CAUSE, or .git/orbit/turn --thread=6 --outcome=blocked --summary=\"Why the contract cannot answer it\" --question=\"One specific question\" --cause=CAUSE. CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract."
+        },
+        {
+            "operation": "send",
+            "thread": 6,
+            "role": "reviewer",
+            "key": "69bd8fbe-a4b7-b908-791d-3768cdb7780f",
+            "message": "I missed the receipt cause in the contract.\n\nQuestion: Which cause applies when the contract already answers my question?\n\nThis is a consult, not a review. Answer from the brief, the ADRs, the documentation, the code, and the task history. End your turn with .git/orbit/turn --thread=6 --outcome=answered --summary=\"The answer for the implementer\" --cause=CAUSE, or .git/orbit/turn --thread=6 --outcome=blocked --summary=\"Why the contract cannot answer it\" --question=\"One specific question\" --cause=CAUSE. CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract."
+        },
+        {
+            "operation": "receipt",
+            "thread": 6,
+            "arguments": [
+                "--thread=6",
+                "--outcome=answered",
+                "--summary=Use missed_contract. ADR 0187 defines it for a question already answered by the contract.",
+                "--cause=missed_contract"
+            ],
+            "output": "Orbit recorded the turn receipt (answered). End your turn now.\n"
+        },
+        {
+            "operation": "send",
+            "thread": 5,
+            "role": "implementer",
+            "key": "3c1590e7-a85e-3653-1ab8-5652011a7c50",
+            "message": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead."
+        }
+    ]
+}
+
+=== direction-status.txt
+Loading tasks status...
+
+┌  Show tasks status
+│
+├  ● Loaded tasks status
+│
+└  Loaded tasks status.
+
+
+┌  Extension: tasks
+│
+└  Status   enabled
+
+Needs your direction
+
+ ┌───────┬─────────────────────────────┬─────────┬─────────────────────────────┐
+ │ GROUP │ TITLE                       │ STATUS  │ QUESTION                    │
+ ├───────┼─────────────────────────────┼─────────┼─────────────────────────────┤
+ │ TAS-7 │ TASK-760 consult and direct │ running │ Which database should the d │
+ │       │ ion proof                   │         │ isposable fixture use?      │
+ └───────┴─────────────────────────────┴─────────┴─────────────────────────────┘
+Request ID: 2c879b1c-6d73-49c9-b113-f0d74317a6d4
+
+=== direction-status.json
+{"enabled":true,"assistance":[{"id":7,"project_id":7,"project":"task-760-proof","project_code":"TAS","title":"TASK-760 consult and direction proof","status":"running","assistance_kind":"direction","assistance_question":"Which database should the disposable fixture use?","assistance_reason":"The reviewer is blocked: The contract cannot choose an operator preference.\n\nQuestion: Which database should the disposable fixture use?"}],"request_id":"24300d3e-2800-4ee2-8f31-c31a38e5d4b4"}
+
+=== direction-questions.json
+{"questions":[{"id":6,"task_id":7,"subtask_id":8,"attempt":1,"asked_by":"implementer","question":"Which database should the disposable fixture use?","status":"escalated","answered_by":null,"answer":null,"cause":"contract_gap","asked_at":"2026-10-01T22:47:24+00:00","escalated_at":"2026-10-01T22:47:24+00:00","answered_at":null},{"id":5,"task_id":7,"subtask_id":8,"attempt":1,"asked_by":"implementer","question":"Which cause applies when the contract already answers my question?","status":"answered","answered_by":"reviewer","answer":"Use missed_contract. ADR 0187 defines it for a question already answered by the contract.","cause":"missed_contract","asked_at":"2026-10-01T22:47:23+00:00","escalated_at":null,"answered_at":"2026-10-01T22:47:23+00:00"}],"request_id":"55a9f3d0-d909-4748-a996-6227fb960a8a"}
+
+=== operator-resolution.json
+{
+    "argv": [
+        "env",
+        "ORBIT_HOME=/home/orbit/task-760-proof/cli",
+        "orbit",
+        "tasks:comment:create",
+        "7",
+        "8",
+        "--type=resolution",
+        "--body=Use SQLite only for the disposable TASK-753 fixture.",
+        "--author=TASK-753 fixture operator",
+        "--json"
+    ],
+    "requests": [
+        {
+            "method": "GET",
+            "uri": "/api/v1/extensions",
+            "peer": "10.44.0.1:33756",
+            "status": 200
+        },
+        {
+            "method": "POST",
+            "uri": "/api/v1/task-groups/7/tasks/8/comments",
+            "peer": "10.44.0.1:33766",
+            "status": 201
+        }
+    ],
+    "http_status": 201,
+    "exit": 0,
+    "stdout": "{\"id\":15,\"task_group_id\":7,\"task_id\":8,\"agent_thread_id\":null,\"type\":\"resolution\",\"body\":\"Use SQLite only for the disposable TASK-753 fixture.\",\"author\":\"TASK-753 fixture operator\",\"posted_at\":\"2026-10-01T22:47:31+00:00\",\"review_attempt\":null,\"commit_sha\":null,\"pull_request\":null,\"request_id\":\"64c86450-f2c5-45fe-b340-015d62eb7dc1\"}\n",
+    "stderr": ""
+}
+
+=== relay.json
+{
+    "completion_attempt": 1,
+    "reviewer_id": 6,
+    "questions": [
+        {
+            "id": 5,
+            "task_id": 7,
+            "subtask_id": 8,
+            "attempt": 1,
+            "asked_by": "implementer",
+            "question": "Which cause applies when the contract already answers my question?",
+            "status": "answered",
+            "answered_by": "reviewer",
+            "answer": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.",
+            "cause": "missed_contract",
+            "asked_at": "2026-10-01T22:47:23.000000Z",
+            "escalated_at": null,
+            "answered_at": "2026-10-01T22:47:23.000000Z",
+            "opened_comment_id": 11,
+            "resolution_comment_id": null,
+            "answered_comment_id": 12,
+            "created_at": "2026-10-01T22:47:23.000000Z",
+            "updated_at": "2026-10-01T22:47:23.000000Z",
+            "consult": true
+        },
+        {
+            "id": 6,
+            "task_id": 7,
+            "subtask_id": 8,
+            "attempt": 1,
+            "asked_by": "implementer",
+            "question": "Which database should the disposable fixture use?",
+            "status": "answered",
+            "answered_by": "operator",
+            "answer": "Use SQLite only for the disposable TASK-753 fixture.",
+            "cause": "contract_gap",
+            "asked_at": "2026-10-01T22:47:24.000000Z",
+            "escalated_at": "2026-10-01T22:47:24.000000Z",
+            "answered_at": "2026-10-01T22:47:31.000000Z",
+            "opened_comment_id": 13,
+            "resolution_comment_id": 15,
+            "answered_comment_id": 16,
+            "created_at": "2026-10-01T22:47:24.000000Z",
+            "updated_at": "2026-10-01T22:47:31.000000Z",
+            "consult": true
+        }
+    ],
+    "continuation": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\nThe operator chose SQLite. Use SQLite only for this disposable fixture.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\n",
+    "calls": [
+        {
+            "operation": "create",
+            "thread": 5,
+            "external_id": "task-760-5",
+            "prompt": "Implement this subtask in the shared workspace. Complete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Add --deliverable=ID=evidence for each deliverable of this subtask (fixture), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file and command deliverables against your diff and its own run. Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\n\nOrbit task group #7\n\nFeature: TASK-760 consult and direction proof\n\nOrbit subtask #8\n\nSubtask: Ask two fixture questions\n\nConsult ADR 0187 for cause names. Database preference needs operator direction. All resources are disposable.\n\nDeliverables. Orbit checks each one before the review:\n- fixture (review: confirmed by the reviewer): Disposable proof only\n\nThe group started at 3151e0595822851dd7b7676d36f577c182374397.\ngit diff --stat 3151e0595822851dd7b7676d36f577c182374397..HEAD\n\nFollow this repository's task instructions."
+        },
+        {
+            "operation": "receipt",
+            "thread": 5,
+            "arguments": [
+                "--thread=5",
+                "--outcome=blocked",
+                "--summary=I missed the receipt cause in the contract.",
+                "--question=Which cause applies when the contract already answers my question?"
+            ],
+            "output": "Orbit recorded the turn receipt (blocked). End your turn now.\n"
+        },
+        {
+            "operation": "create",
+            "thread": 6,
+            "external_id": "def5b7bc-e724-6e39-1190-df315d79e43b",
+            "prompt": "I missed the receipt cause in the contract.\n\nQuestion: Which cause applies when the contract already answers my question?\n\nThis is a consult, not a review. Answer from the brief, the ADRs, the documentation, the code, and the task history. End your turn with .git/orbit/turn --thread=6 --outcome=answered --summary=\"The answer for the implementer\" --cause=CAUSE, or .git/orbit/turn --thread=6 --outcome=blocked --summary=\"Why the contract cannot answer it\" --question=\"One specific question\" --cause=CAUSE. CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract."
+        },
+        {
+            "operation": "send",
+            "thread": 6,
+            "role": "reviewer",
+            "key": "69bd8fbe-a4b7-b908-791d-3768cdb7780f",
+            "message": "I missed the receipt cause in the contract.\n\nQuestion: Which cause applies when the contract already answers my question?\n\nThis is a consult, not a review. Answer from the brief, the ADRs, the documentation, the code, and the task history. End your turn with .git/orbit/turn --thread=6 --outcome=answered --summary=\"The answer for the implementer\" --cause=CAUSE, or .git/orbit/turn --thread=6 --outcome=blocked --summary=\"Why the contract cannot answer it\" --question=\"One specific question\" --cause=CAUSE. CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract."
+        },
+        {
+            "operation": "receipt",
+            "thread": 6,
+            "arguments": [
+                "--thread=6",
+                "--outcome=answered",
+                "--summary=Use missed_contract. ADR 0187 defines it for a question already answered by the contract.",
+                "--cause=missed_contract"
+            ],
+            "output": "Orbit recorded the turn receipt (answered). End your turn now.\n"
+        },
+        {
+            "operation": "send",
+            "thread": 5,
+            "role": "implementer",
+            "key": "3c1590e7-a85e-3653-1ab8-5652011a7c50",
+            "message": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead."
+        },
+        {
+            "operation": "receipt",
+            "thread": 5,
+            "arguments": [
+                "--thread=5",
+                "--outcome=blocked",
+                "--summary=The brief does not choose a fixture database.",
+                "--question=Which database should the disposable fixture use?"
+            ],
+            "output": "Orbit recorded the turn receipt (blocked). End your turn now.\n"
+        },
+        {
+            "operation": "send",
+            "thread": 6,
+            "role": "reviewer",
+            "key": "b54d4493-f2bf-dff0-a363-b509fd5dc8e9",
+            "message": "The brief does not choose a fixture database.\n\nQuestion: Which database should the disposable fixture use?\n\nThis is a consult, not a review. Answer from the brief, the ADRs, the documentation, the code, and the task history. End your turn with .git/orbit/turn --thread=6 --outcome=answered --summary=\"The answer for the implementer\" --cause=CAUSE, or .git/orbit/turn --thread=6 --outcome=blocked --summary=\"Why the contract cannot answer it\" --question=\"One specific question\" --cause=CAUSE. CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract."
+        },
+        {
+            "operation": "receipt",
+            "thread": 6,
+            "arguments": [
+                "--thread=6",
+                "--outcome=blocked",
+                "--summary=The contract cannot choose an operator preference.",
+                "--question=Which database should the disposable fixture use?",
+                "--cause=contract_gap"
+            ],
+            "output": "Orbit recorded the turn receipt (blocked). End your turn now.\n"
+        },
+        {
+            "operation": "send",
+            "thread": 6,
+            "role": "reviewer",
+            "key": null,
+            "message": "Use SQLite only for the disposable TASK-753 fixture.\n\nThis is a relay of the operator's direction, not a review. End your turn with .git/orbit/turn --thread=6 --outcome=answered --summary=\"The answer for the implementer\" --cause=CAUSE, or .git/orbit/turn --thread=6 --outcome=blocked --summary=\"Why the contract cannot answer it\" --question=\"One specific question\" --cause=CAUSE. CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract."
+        },
+        {
+            "operation": "receipt",
+            "thread": 6,
+            "arguments": [
+                "--thread=6",
+                "--outcome=answered",
+                "--summary=The operator chose SQLite. Use SQLite only for this disposable fixture.",
+                "--cause=contract_gap"
+            ],
+            "output": "Orbit recorded the turn receipt (answered). End your turn now.\n"
+        },
+        {
+            "operation": "send",
+            "thread": 5,
+            "role": "implementer",
+            "key": "72b30212-92d6-f3df-da0e-c76d19654254",
+            "message": "The operator chose SQLite. Use SQLite only for this disposable fixture.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead."
+        }
+    ]
+}
+
+=== question-list.txt
+Loading questions...
+
+┌  List questions
+│
+├  ● Loaded questions
+│
+└  Loaded questions.
+
+2026-10-01 22:47 · #7/8 · implementer · answered · contract_gap
+  Which database should the disposable fixture use?
+  Use SQLite only for the disposable TASK-753 fixture.
+
+2026-10-01 22:47 · #7/8 · implementer · answered · missed_contract
+  Which cause applies when the contract already answers my question?
+  Use missed_contract. ADR 0187 defines it for a question already answered by th
+  e contract.
+
+Request ID: 377f35b8-8639-4e67-b519-5655d7687bba
+
+=== question-list.json
+{"questions":[{"id":6,"task_id":7,"subtask_id":8,"attempt":1,"asked_by":"implementer","question":"Which database should the disposable fixture use?","status":"answered","answered_by":"operator","answer":"Use SQLite only for the disposable TASK-753 fixture.","cause":"contract_gap","asked_at":"2026-10-01T22:47:24+00:00","escalated_at":"2026-10-01T22:47:24+00:00","answered_at":"2026-10-01T22:47:31+00:00"},{"id":5,"task_id":7,"subtask_id":8,"attempt":1,"asked_by":"implementer","question":"Which cause applies when the contract already answers my question?","status":"answered","answered_by":"reviewer","answer":"Use missed_contract. ADR 0187 defines it for a question already answered by the contract.","cause":"missed_contract","asked_at":"2026-10-01T22:47:23+00:00","escalated_at":null,"answered_at":"2026-10-01T22:47:23+00:00"}],"request_id":"d675bd16-2f2c-4aec-9867-baf9e256a33a"}
+
+=== settle-metrics.json
+{
+    "task_id": 7,
+    "status": "settling",
+    "questions": 2,
+    "escalations": 1,
+    "subtask_questions": 2,
+    "subtask_escalations": 1,
+    "settled_at": "2026-10-01T22:47:34+00:00",
+    "tokens": 0,
+    "line_diff": 0
+}
+
+=== webhook-evidence.json
+[
+    {
+        "timestamp": "1790894844",
+        "signature_valid": true,
+        "body": {
+            "event": "task_group.assistance_requested",
+            "task_group_id": 7,
+            "title": "TASK-760 consult and direction proof",
+            "kind": "direction",
+            "question": "Which database should the disposable fixture use?",
+            "reason": "The reviewer is blocked: The contract cannot choose an operator preference.\n\nQuestion: Which database should the disposable fixture use?"
+        }
+    },
+    {
+        "timestamp": "1790894854",
+        "signature_valid": true,
+        "body": {
+            "event": "task_group.settled",
+            "task_group_id": 7,
+            "title": "TASK-760 consult and direction proof",
+            "tokens": 0,
+            "line_diff": 0,
+            "duration_ms": 14845,
+            "questions": 2,
+            "escalations": 1,
+            "pull_request_url": "https://example.invalid/task-760-proof"
+        }
+    }
+]
+
+=== result.json
+{
+    "passed": true,
+    "task_id": 7,
+    "subtask_id": 8,
+    "project_id": 7,
+    "limitation": "Agent turns came from a scripted AgentDriver bound in-process; no live Pi or T3 model ran. Gateway feature tests cover the drivers."
+}
+
+=== cleanup.json
+{
+    "before": {
+        "projects": 3,
+        "instances": 4,
+        "tasks": 0,
+        "questions": 0,
+        "threads": 0
+    },
+    "after": {
+        "projects": 3,
+        "instances": 4,
+        "tasks": 0,
+        "questions": 0,
+        "threads": 0
+    },
+    "extension_enabled": false,
+    "foreign_key_violations": []
+}
+
+--- stderr
+
+=== 2026-10-01T22:48:24.725Z 760 incus-consult answered and continued node=gateway exit=0 duration=364ms end=2026-10-01T22:48:25.089Z
+$ python3 -c 'import json,pathlib; p=pathlib.Path("/home/orbit/task-760-proof"); c=json.loads((p/"consult.json").read_text()); assert c["question"]["status"]=="answered" and c["question"]["answered_by"]=="reviewer" and c["question"]["cause"]=="missed_contract" and c["completion_attempt"]==1; print(json.dumps({k:v for k,v in c.items() if k != "calls"},indent=2)); print(json.dumps([x for x in c["calls"] if x["operation"]=="send" and x["role"]=="implementer"],indent=2))'
+--- stdout
+{
+  "task_id": 7,
+  "subtask_id": 8,
+  "completion_attempt": 1,
+  "question": {
+    "id": 5,
+    "task_id": 7,
+    "subtask_id": 8,
+    "attempt": 1,
+    "asked_by": "implementer",
+    "question": "Which cause applies when the contract already answers my question?",
+    "status": "answered",
+    "answered_by": "reviewer",
+    "answer": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.",
+    "cause": "missed_contract",
+    "asked_at": "2026-10-01T22:47:23.000000Z",
+    "escalated_at": null,
+    "answered_at": "2026-10-01T22:47:23.000000Z",
+    "opened_comment_id": 11,
+    "resolution_comment_id": null,
+    "answered_comment_id": 12,
+    "created_at": "2026-10-01T22:47:23.000000Z",
+    "updated_at": "2026-10-01T22:47:23.000000Z",
+    "consult": true
+  },
+  "continuation": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\n"
+}
+[
+  {
+    "operation": "send",
+    "thread": 5,
+    "role": "implementer",
+    "key": "3c1590e7-a85e-3653-1ab8-5652011a7c50",
+    "message": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead."
+  }
+]
+--- stderr
+
+=== 2026-10-01T22:48:27.723Z 760 incus-direction webhook resolution and relay node=gateway exit=0 duration=368ms end=2026-10-01T22:48:28.091Z
+$ python3 -c 'import json,pathlib; p=pathlib.Path("/home/orbit/task-760-proof"); print((p/"direction-status.txt").read_text()); print((p/"direction-status.json").read_text()); print((p/"webhook-evidence.json").read_text()); print((p/"operator-resolution.json").read_text()); r=json.loads((p/"relay.json").read_text()); assert r["questions"][1]["answered_by"]=="operator" and r["completion_attempt"]==1; print(json.dumps({k:v for k,v in r.items() if k != "calls"},indent=2)); print(json.dumps([x for x in r["calls"] if x["operation"]=="send"][-2:],indent=2))'
+--- stdout
+Loading tasks status...
+
+┌  Show tasks status
+│
+├  ● Loaded tasks status
+│
+└  Loaded tasks status.
+
+
+┌  Extension: tasks
+│
+└  Status   enabled
+
+Needs your direction
+
+ ┌───────┬─────────────────────────────┬─────────┬─────────────────────────────┐
+ │ GROUP │ TITLE                       │ STATUS  │ QUESTION                    │
+ ├───────┼─────────────────────────────┼─────────┼─────────────────────────────┤
+ │ TAS-7 │ TASK-760 consult and direct │ running │ Which database should the d │
+ │       │ ion proof                   │         │ isposable fixture use?      │
+ └───────┴─────────────────────────────┴─────────┴─────────────────────────────┘
+Request ID: 2c879b1c-6d73-49c9-b113-f0d74317a6d4
+
+{"enabled":true,"assistance":[{"id":7,"project_id":7,"project":"task-760-proof","project_code":"TAS","title":"TASK-760 consult and direction proof","status":"running","assistance_kind":"direction","assistance_question":"Which database should the disposable fixture use?","assistance_reason":"The reviewer is blocked: The contract cannot choose an operator preference.\n\nQuestion: Which database should the disposable fixture use?"}],"request_id":"24300d3e-2800-4ee2-8f31-c31a38e5d4b4"}
+
+[
+    {
+        "timestamp": "1790894844",
+        "signature_valid": true,
+        "body": {
+            "event": "task_group.assistance_requested",
+            "task_group_id": 7,
+            "title": "TASK-760 consult and direction proof",
+            "kind": "direction",
+            "question": "Which database should the disposable fixture use?",
+            "reason": "The reviewer is blocked: The contract cannot choose an operator preference.\n\nQuestion: Which database should the disposable fixture use?"
+        }
+    },
+    {
+        "timestamp": "1790894854",
+        "signature_valid": true,
+        "body": {
+            "event": "task_group.settled",
+            "task_group_id": 7,
+            "title": "TASK-760 consult and direction proof",
+            "tokens": 0,
+            "line_diff": 0,
+            "duration_ms": 14845,
+            "questions": 2,
+            "escalations": 1,
+            "pull_request_url": "https://example.invalid/task-760-proof"
+        }
+    }
+]
+
+{
+    "argv": [
+        "env",
+        "ORBIT_HOME=/home/orbit/task-760-proof/cli",
+        "orbit",
+        "tasks:comment:create",
+        "7",
+        "8",
+        "--type=resolution",
+        "--body=Use SQLite only for the disposable TASK-753 fixture.",
+        "--author=TASK-753 fixture operator",
+        "--json"
+    ],
+    "requests": [
+        {
+            "method": "GET",
+            "uri": "/api/v1/extensions",
+            "peer": "10.44.0.1:33756",
+            "status": 200
+        },
+        {
+            "method": "POST",
+            "uri": "/api/v1/task-groups/7/tasks/8/comments",
+            "peer": "10.44.0.1:33766",
+            "status": 201
+        }
+    ],
+    "http_status": 201,
+    "exit": 0,
+    "stdout": "{\"id\":15,\"task_group_id\":7,\"task_id\":8,\"agent_thread_id\":null,\"type\":\"resolution\",\"body\":\"Use SQLite only for the disposable TASK-753 fixture.\",\"author\":\"TASK-753 fixture operator\",\"posted_at\":\"2026-10-01T22:47:31+00:00\",\"review_attempt\":null,\"commit_sha\":null,\"pull_request\":null,\"request_id\":\"64c86450-f2c5-45fe-b340-015d62eb7dc1\"}\n",
+    "stderr": ""
+}
+
+{
+  "completion_attempt": 1,
+  "reviewer_id": 6,
+  "questions": [
+    {
+      "id": 5,
+      "task_id": 7,
+      "subtask_id": 8,
+      "attempt": 1,
+      "asked_by": "implementer",
+      "question": "Which cause applies when the contract already answers my question?",
+      "status": "answered",
+      "answered_by": "reviewer",
+      "answer": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.",
+      "cause": "missed_contract",
+      "asked_at": "2026-10-01T22:47:23.000000Z",
+      "escalated_at": null,
+      "answered_at": "2026-10-01T22:47:23.000000Z",
+      "opened_comment_id": 11,
+      "resolution_comment_id": null,
+      "answered_comment_id": 12,
+      "created_at": "2026-10-01T22:47:23.000000Z",
+      "updated_at": "2026-10-01T22:47:23.000000Z",
+      "consult": true
+    },
+    {
+      "id": 6,
+      "task_id": 7,
+      "subtask_id": 8,
+      "attempt": 1,
+      "asked_by": "implementer",
+      "question": "Which database should the disposable fixture use?",
+      "status": "answered",
+      "answered_by": "operator",
+      "answer": "Use SQLite only for the disposable TASK-753 fixture.",
+      "cause": "contract_gap",
+      "asked_at": "2026-10-01T22:47:24.000000Z",
+      "escalated_at": "2026-10-01T22:47:24.000000Z",
+      "answered_at": "2026-10-01T22:47:31.000000Z",
+      "opened_comment_id": 13,
+      "resolution_comment_id": 15,
+      "answered_comment_id": 16,
+      "created_at": "2026-10-01T22:47:24.000000Z",
+      "updated_at": "2026-10-01T22:47:31.000000Z",
+      "consult": true
+    }
+  ],
+  "continuation": "Use missed_contract. ADR 0187 defines it for a question already answered by the contract.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\nThe operator chose SQLite. Use SQLite only for this disposable fixture.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead.\n"
+}
+[
+  {
+    "operation": "send",
+    "thread": 6,
+    "role": "reviewer",
+    "key": null,
+    "message": "Use SQLite only for the disposable TASK-753 fixture.\n\nThis is a relay of the operator's direction, not a review. End your turn with .git/orbit/turn --thread=6 --outcome=answered --summary=\"The answer for the implementer\" --cause=CAUSE, or .git/orbit/turn --thread=6 --outcome=blocked --summary=\"Why the contract cannot answer it\" --question=\"One specific question\" --cause=CAUSE. CAUSE is one of brief_unclear, contract_gap, scope, environment, or missed_contract."
+  },
+  {
+    "operation": "send",
+    "thread": 5,
+    "role": "implementer",
+    "key": "72b30212-92d6-f3df-da0e-c76d19654254",
+    "message": "The operator chose SQLite. Use SQLite only for this disposable fixture.\n\nComplete your assigned work autonomously. You may create, modify, reset, and delete disposable fixtures within your task's allocated environment without asking for permission. This authority does not extend to live or shared resources or another task's fixtures. Resolve routine test prerequisites yourself. When the brief is complete, end your turn with .git/orbit/turn --thread=5 --outcome=ready_for_review --summary=\"What you changed\". Ask for help only when ownership is uncertain, an action affects live or shared resources beyond the task's authorization, required access is missing, or a product decision needs the operator. If one of these boundaries prevents further progress, end your turn with .git/orbit/turn --thread=5 --outcome=blocked --summary=\"What stops you, what you tried, and the boundary you cannot cross\" --question=\"One specific question\". A blocked turn starts a consult: Orbit sends the summary and the question to the subtask's reviewer before the operator. The reviewer answers with answered and you continue the same attempt, or the reviewer asks the operator. The reviewer sets --cause to one of brief_unclear, contract_gap, scope, environment, or missed_contract. A third block in one attempt asks the operator at once. If you can decide or find the answer yourself, keep working instead."
+  }
+]
+--- stderr
+
+=== 2026-10-01T22:48:30.666Z 760 incus-records question list and settle metrics node=gateway exit=0 duration=366ms end=2026-10-01T22:48:31.032Z
+$ python3 -c 'import json,pathlib; p=pathlib.Path("/home/orbit/task-760-proof"); print((p/"question-list.txt").read_text()); print((p/"question-list.json").read_text()); print((p/"settle-metrics.json").read_text()); j=json.loads((p/"settle-metrics.json").read_text()); assert j["questions"]==2 and j["escalations"]==1; print((p/"result.json").read_text()); print((p/"cleanup.json").read_text())'
+--- stdout
+Loading questions...
+
+┌  List questions
+│
+├  ● Loaded questions
+│
+└  Loaded questions.
+
+2026-10-01 22:47 · #7/8 · implementer · answered · contract_gap
+  Which database should the disposable fixture use?
+  Use SQLite only for the disposable TASK-753 fixture.
+
+2026-10-01 22:47 · #7/8 · implementer · answered · missed_contract
+  Which cause applies when the contract already answers my question?
+  Use missed_contract. ADR 0187 defines it for a question already answered by th
+  e contract.
+
+Request ID: 377f35b8-8639-4e67-b519-5655d7687bba
+
+{"questions":[{"id":6,"task_id":7,"subtask_id":8,"attempt":1,"asked_by":"implementer","question":"Which database should the disposable fixture use?","status":"answered","answered_by":"operator","answer":"Use SQLite only for the disposable TASK-753 fixture.","cause":"contract_gap","asked_at":"2026-10-01T22:47:24+00:00","escalated_at":"2026-10-01T22:47:24+00:00","answered_at":"2026-10-01T22:47:31+00:00"},{"id":5,"task_id":7,"subtask_id":8,"attempt":1,"asked_by":"implementer","question":"Which cause applies when the contract already answers my question?","status":"answered","answered_by":"reviewer","answer":"Use missed_contract. ADR 0187 defines it for a question already answered by the contract.","cause":"missed_contract","asked_at":"2026-10-01T22:47:23+00:00","escalated_at":null,"answered_at":"2026-10-01T22:47:23+00:00"}],"request_id":"d675bd16-2f2c-4aec-9867-baf9e256a33a"}
+
+{
+    "task_id": 7,
+    "status": "settling",
+    "questions": 2,
+    "escalations": 1,
+    "subtask_questions": 2,
+    "subtask_escalations": 1,
+    "settled_at": "2026-10-01T22:47:34+00:00",
+    "tokens": 0,
+    "line_diff": 0
+}
+
+{
+    "passed": true,
+    "task_id": 7,
+    "subtask_id": 8,
+    "project_id": 7,
+    "limitation": "Agent turns came from a scripted AgentDriver bound in-process; no live Pi or T3 model ran. Gateway feature tests cover the drivers."
+}
+
+{
+    "before": {
+        "projects": 3,
+        "instances": 4,
+        "tasks": 0,
+        "questions": 0,
+        "threads": 0
+    },
+    "after": {
+        "projects": 3,
+        "instances": 4,
+        "tasks": 0,
+        "questions": 0,
+        "threads": 0
+    },
+    "extension_enabled": false,
+    "foreign_key_violations": []
+}
+
+--- stderr
+
+=== 2026-10-01T22:49:29.688Z 760 source commit and scripted-driver limitation node=gateway exit=0 duration=439ms end=2026-10-01T22:49:30.128Z
+$ sh -c 'printf '\''Running Gateway source commit, host bridge HEAD verified: fdaf17b4f133fd8ed842d3d9fde58f7611c6215d
+'\''; sha256sum /home/orbit/orbit/apps/gateway/app/Domain/Tasks/TaskScheduler.php /home/orbit/orbit/apps/gateway/app/Infrastructure/Tasks/HttpCoderSettleNotifier.php /home/orbit/orbit/apps/e2e/resources/proofs/task-consults.php /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py; python3 -c '\''import pathlib; print(pathlib.Path("/home/orbit/task-760-proof/result.json").read_text())'\'''
+--- stdout
+Running Gateway source commit, host bridge HEAD verified: fdaf17b4f133fd8ed842d3d9fde58f7611c6215d
+f5aa7a997fc25eb800b8ccf917a2f081951383409d66e117d1fbc5d747926f49  /home/orbit/orbit/apps/gateway/app/Domain/Tasks/TaskScheduler.php
+1adbd5f166b7a2e195af73d2d56ebc1a50d858cf9336ba3c33edf7c1415345a3  /home/orbit/orbit/apps/gateway/app/Infrastructure/Tasks/HttpCoderSettleNotifier.php
+142f87e4403b7453ae0099cf215ccba09c70351042003fd791d090fa14608aba  /home/orbit/orbit/apps/e2e/resources/proofs/task-consults.php
+5c31e50fa8e53f0108143ccbe3b7565f8bee7906e47fd11b4eb1e1c851cd56ff  /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py
+{
+    "passed": true,
+    "task_id": 7,
+    "subtask_id": 8,
+    "project_id": 7,
+    "limitation": "Agent turns came from a scripted AgentDriver bound in-process; no live Pi or T3 model ran. Gateway feature tests cover the drivers."
+}
+
+--- stderr
+
+=== 2026-10-01T22:49:32.816Z 760 signed webhook receiver log node=gateway exit=0 duration=463ms end=2026-10-01T22:49:33.280Z
+$ sudo journalctl --no-pager --output=short-iso-precise --unit=orbit-e2e-task-760-webhook.service --lines=100
+--- stdout
+2026-10-01T22:41:30.973085+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: Started orbit-e2e-task-760-webhook.service - [systemd-run] /usr/bin/python3 /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py.
+2026-10-01T22:41:31.184536+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2310]: TASK-760 receiver listening on 127.0.0.1:18761
+2026-10-01T22:43:26.970718+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2310]: {"timestamp": "1790894606", "signature_valid": true, "body": {"event": "task_group.assistance_requested", "task_group_id": 3, "title": "TASK-760 consult and direction proof", "kind": "direction", "question": "Which database should the disposable fixture use?", "reason": "The reviewer is blocked: The contract cannot choose an operator preference.\n\nQuestion: Which database should the disposable fixture use?"}}
+2026-10-01T22:43:26.985940+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2310]: 127.0.0.1 - - [01/Oct/2026 22:43:26] "POST / HTTP/1.1" 200 -
+2026-10-01T22:45:54.607403+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: Stopping orbit-e2e-task-760-webhook.service - [systemd-run] /usr/bin/python3 /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py...
+2026-10-01T22:45:54.612375+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: orbit-e2e-task-760-webhook.service: Deactivated successfully.
+2026-10-01T22:45:54.613113+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: Stopped orbit-e2e-task-760-webhook.service - [systemd-run] /usr/bin/python3 /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py.
+2026-10-01T22:45:59.963120+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: Started orbit-e2e-task-760-webhook.service - [systemd-run] /usr/bin/python3 /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py.
+2026-10-01T22:46:00.077130+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2511]: TASK-760 receiver listening on 127.0.0.1:18761
+2026-10-01T22:46:08.619477+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2511]: {"timestamp": "1790894768", "signature_valid": true, "body": {"event": "task_group.assistance_requested", "task_group_id": 5, "title": "TASK-760 consult and direction proof", "kind": "direction", "question": "Which database should the disposable fixture use?", "reason": "The reviewer is blocked: The contract cannot choose an operator preference.\n\nQuestion: Which database should the disposable fixture use?"}}
+2026-10-01T22:46:08.619477+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2511]: 127.0.0.1 - - [01/Oct/2026 22:46:08] "POST / HTTP/1.1" 200 -
+2026-10-01T22:47:12.147190+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: Stopping orbit-e2e-task-760-webhook.service - [systemd-run] /usr/bin/python3 /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py...
+2026-10-01T22:47:12.153937+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: orbit-e2e-task-760-webhook.service: Deactivated successfully.
+2026-10-01T22:47:12.154820+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: Stopped orbit-e2e-task-760-webhook.service - [systemd-run] /usr/bin/python3 /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py.
+2026-10-01T22:47:17.133807+00:00 orbit-e2e-task-753-0fe465d6-gateway systemd[1]: Started orbit-e2e-task-760-webhook.service - [systemd-run] /usr/bin/python3 /home/orbit/orbit/apps/e2e/resources/proofs/task-consults-webhook.py.
+2026-10-01T22:47:17.224189+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2619]: TASK-760 receiver listening on 127.0.0.1:18761
+2026-10-01T22:47:24.256929+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2619]: {"timestamp": "1790894844", "signature_valid": true, "body": {"event": "task_group.assistance_requested", "task_group_id": 7, "title": "TASK-760 consult and direction proof", "kind": "direction", "question": "Which database should the disposable fixture use?", "reason": "The reviewer is blocked: The contract cannot choose an operator preference.\n\nQuestion: Which database should the disposable fixture use?"}}
+2026-10-01T22:47:24.257974+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2619]: 127.0.0.1 - - [01/Oct/2026 22:47:24] "POST / HTTP/1.1" 200 -
+2026-10-01T22:47:34.851138+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2619]: {"timestamp": "1790894854", "signature_valid": true, "body": {"event": "task_group.settled", "task_group_id": 7, "title": "TASK-760 consult and direction proof", "tokens": 0, "line_diff": 0, "duration_ms": 14845, "questions": 2, "escalations": 1, "pull_request_url": "https://example.invalid/task-760-proof"}}
+2026-10-01T22:47:34.851138+00:00 orbit-e2e-task-753-0fe465d6-gateway python3[2619]: 127.0.0.1 - - [01/Oct/2026 22:47:34] "POST / HTTP/1.1" 200 -
+--- stderr
+
+=== 2026-10-01T22:49:38.984Z 760 app-dev final leftover audit node=app-dev exit=0 duration=350ms end=2026-10-01T22:49:39.335Z
+$ sh -c 'set -eu; test ! -e /home/orbit/task-760-workspace; test -z "$(ps -eo args | grep '\''[p]ython3.*task-760-workspace'\'')"; printf '\''No task-760 workspace or check process remains on app-dev
+'\'''
+--- stdout
+No task-760 workspace or check process remains on app-dev
+--- stderr
+
+=== 2026-10-01T22:53:53.318Z 760 confirmed gateway leftover audit node=gateway exit=0 duration=2903ms end=2026-10-01T22:53:56.221Z
+$ sh -c 'set -eu; test ! -e /home/orbit/task-760-proof; test -z "$(ss -ltnH | grep -E '\'':(18760|18761)[[:space:]]'\'')"; cd /home/orbit/orbit/apps/gateway; php artisan tinker --execute '\''$counts = ["projects" => App\Models\Project::query()->count(), "instances" => App\Models\Instance::query()->count(), "tasks" => App\Models\Task::withoutGlobalScopes()->count(), "questions" => App\Models\TaskQuestion::query()->count(), "threads" => App\Models\AgentThread::query()->count()]; if ($counts !== ["projects" => 3, "instances" => 4, "tasks" => 0, "questions" => 0, "threads" => 0] || app(App\Domain\Tasks\TaskExtensionState::class)->enabled() || Illuminate\Support\Facades\DB::select("PRAGMA foreign_key_check") !== []) { exit(1); } echo json_encode($counts, JSON_PRETTY_PRINT), PHP_EOL; echo "No fixture rows, keys, profile, listeners, or enabled extension remain.\n";'\'''
+--- stdout
+{
+    "projects": 3,
+    "instances": 4,
+    "tasks": 0,
+    "questions": 0,
+    "threads": 0
+}
+No fixture rows, keys, profile, listeners, or enabled extension remain.
+--- stderr
+

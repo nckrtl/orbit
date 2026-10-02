@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverException;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -63,11 +65,10 @@ final readonly class RetryTaskBaselineAction
             }
             $locked->update([
                 'subtask_start_commit' => $head,
-                'assistance_requested' => false,
-                'assistance_reason' => null,
+                ...TaskAssistance::cleared(),
                 'communication_failures' => 0,
             ]);
-            $group->update(['assistance_requested' => false, 'assistance_reason' => null]);
+            $group->update(TaskAssistance::cleared());
 
             return true;
         });
@@ -77,7 +78,8 @@ final readonly class RetryTaskBaselineAction
     private function failedBaseline(Task $group, Task $task): ?TaskCheck
     {
         if ($group->execution_mode !== TaskExecutionMode::Managed || $group->status !== TaskGroupStatus::Running
-            || $task->status !== TaskStatus::Running || ! $task->assistance_requested) {
+            || $task->status !== TaskStatus::Running || ! $task->assistance_requested
+            || $task->assistance_kind === AssistanceKind::Direction || $group->assistance_kind === AssistanceKind::Direction) {
             return null;
         }
         $check = TaskCheck::query()->where('task_id', $task->id)

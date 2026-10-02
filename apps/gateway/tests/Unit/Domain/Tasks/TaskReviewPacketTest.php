@@ -42,6 +42,41 @@ it('keeps the full diff counts when the path list was cut and does not show a pa
         ->and($packet)->not->toContain('partial tail');
 });
 
+it('includes answered consults in the opening packet and leaves them out of a continued turn', function (): void {
+    $shown = review_packet(['consults' => [
+        ['question' => 'May I install intl?', 'answer' => 'Yes. The contract allows it.'],
+    ]]);
+    expect(packet_section($shown, 'Consults'))->toBe('- Question: May I install intl? Answer: Yes. The contract allows it.');
+
+    $consults = [];
+    for ($number = 1; $number <= 20; $number++) {
+        $consults[] = ['question' => 'Question '.$number.' '.str_repeat('q', 80), 'answer' => 'Answer '.$number.' '.str_repeat('a', 80)];
+    }
+    $section = packet_section(review_packet(['consults' => $consults]), 'Consults');
+    expect(mb_strlen($section))->toBeLessThanOrEqual(TaskReviewPacket::ConsultsLimit)
+        ->and($section)->toContain('answered consults were omitted')
+        ->and($section)->toContain('.git/orbit/context.md holds each question and answer.')
+        ->and($section)->toContain('Question 20')
+        ->and($section)->not->toContain('Question 1 ');
+
+    $longQuestion = str_repeat('q', 500);
+    $longAnswer = str_repeat('a', 500);
+    $long = packet_section(review_packet(['consults' => [
+        ['question' => $longQuestion, 'answer' => $longAnswer],
+    ]]), 'Consults');
+    $longLine = collect(explode("\n", $long))->first(fn (string $line): bool => str_starts_with($line, '- Question:')) ?? '';
+    expect(mb_strlen($long))->toBeLessThanOrEqual(TaskReviewPacket::ConsultsLimit)
+        ->and(mb_strlen($longLine))->toBeLessThanOrEqual(TaskReviewPacket::ConsultLineLimit)
+        ->and($longLine)->toContain(str_repeat('q', 40))
+        ->and($longLine)->toContain(' Answer: ')
+        ->and($longLine)->toContain(str_repeat('a', 40))
+        ->and($longLine)->not->toContain($longQuestion)
+        ->and($longLine)->not->toContain($longAnswer)
+        ->and($long)->toContain('.git/orbit/context.md holds each question and answer.');
+
+    expect(review_packet(['continued' => true, 'consults' => $consults]))->not->toContain('Question 20');
+});
+
 it('renders a review packet with the group brief, subtask brief, deliverables, approvals, diff stat, handoff, and diff', function (): void {
     $packet = review_packet();
 
@@ -614,6 +649,7 @@ function review_packet(array $overrides = []): string
         'diffFilesComplete' => true,
         'diffAvailable' => true,
         'diffCounts' => null,
+        'consults' => [],
         'resolution' => '',
     ];
     foreach ($overrides as $key => $value) {
@@ -640,6 +676,7 @@ function review_packet(array $overrides = []): string
         diffFilesComplete: $values['diffFilesComplete'],
         diffAvailable: $values['diffAvailable'],
         diffCounts: $values['diffCounts'],
+        consults: $values['consults'],
         resolution: $values['resolution'],
     )->render();
 }
@@ -672,6 +709,7 @@ function packet_section(string $packet, string $heading): string
         'Subtask brief',
         'Deliverables',
         'Earlier approved subtasks',
+        'Consults',
         'Diff stat',
         'Handoff',
         'Diff',

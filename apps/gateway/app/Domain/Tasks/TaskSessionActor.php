@@ -63,6 +63,12 @@ final readonly class TaskSessionActor
         $this->drivers->get($thread->driver)->send($thread, $message);
     }
 
+    public function relayAnswer(Task $group, TaskThreadObservation $observed, string $summary, ?string $key = null): void
+    {
+        $thread = $this->thread($group, $observed);
+        $this->drivers->get($thread->driver)->send($thread, $summary."\n\n".TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id), $key);
+    }
+
     public function relayReviewBody(Task $group, TaskThreadObservation $observed, string $body): void
     {
         $thread = $this->thread($group, $observed);

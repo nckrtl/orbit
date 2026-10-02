@@ -71,11 +71,12 @@ final class ListTaskGroupsCommand extends TaskCommand
             $group->project ?? $group->projectId,
             $group->status,
             count(array_filter($group->tasks, static fn (SubtaskResponse $task): bool => $task->status === 'completed')).'/'.count($group->tasks),
-            self::assistanceCell($group->assistanceRequested, $group->assistanceReason),
+            self::askingKind($group->assistanceRequested, $group->assistanceKind),
+            self::assistanceSummary($group->assistanceRequested, $group->assistanceKind, $group->assistanceQuestion, $group->assistanceReason),
         ], $groups->taskGroups);
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['ID', 'Title', 'Project', 'Status', 'Subtasks', 'Assistance'],
+            ['ID', 'Title', 'Project', 'Status', 'Subtasks', 'Kind', 'Assistance'],
             $rows,
             'No task groups.',
         ));

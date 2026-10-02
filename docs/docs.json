@@ -493,6 +493,7 @@
               "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "GET /api/v1/task-questions",
               "GET /api/v1/tasks/status"
             ]
           },
@@ -1322,6 +1323,10 @@
     {
       "source": "/decisions/0181-name-the-domain-project-and-instance-everywhere",
       "destination": "/reference/projects#project-and-instance"
+    },
+    {
+      "source": "/decisions/0187-ask-the-reviewer-before-the-operator",
+      "destination": "/reference/tasks#questions-go-through-the-reviewer"
     },
     {
       "source": "/decisions/0183-manage-macos-tools-without-service-roles",

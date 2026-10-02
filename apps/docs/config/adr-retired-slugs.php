@@ -188,6 +188,7 @@ return [
     '0183' => ['0183-manage-macos-tools-without-service-roles'],
     '0184' => ['0184-adopt-selected-tools-from-existing-managers'],
     '0185' => ['0185-report-informational-tool-discoveries-in-doctor'],
+    '0187' => ['0187-ask-the-reviewer-before-the-operator'],
     '0188' => ['0188-read-private-github-repositories-through-the-gateway-github-cli'],
     '0189' => ['0189-register-instances-only-for-existing-projects'],
     '0192' => ['0192-run-task-agents-on-pi-only'],

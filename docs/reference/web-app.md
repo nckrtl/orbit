@@ -82,6 +82,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 When the Gateway reports Tasks enabled, the app keeps the task board, each task, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
 
+A card for a task that asks for direction says `Needs your direction`, and the task page shows that question first. A card for a failure says `Needs attention`. The board does not answer either request. The operator answers through the CLI, MCP, or the API. [Direction requests](/reference/tasks#direction-requests) define the two kinds.
+
 | Event | The app refetches |
 | --- | --- |
 | `task_group.created`, `task_group.updated` | The task list and that task |
