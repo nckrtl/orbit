@@ -513,6 +513,7 @@ describe('TopologyConverger', function () {
             'hydrate.sample-apps',
             'converge.sample-fixtures',
             'normalize.permissions',
+            'compact.storage',
         ]);
 
         $guestCommands = collect($recorded)
@@ -525,7 +526,7 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(30)
+            ->toHaveCount(33)
             ->and(array_column(array_slice($guestCommands, 3, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
@@ -533,7 +534,7 @@ describe('TopologyConverger', function () {
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
             ]);
 
-        expect(array_map(fn (array $command): array => array_slice($command, 6), array_slice($guestCommands, 0, 30)))
+        expect(array_map(fn (array $command): array => array_slice($command, 6), $guestCommands))
             ->toBe([
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
@@ -577,6 +578,9 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
+                ['/usr/local/bin/prepare-node.sh', 'compact-storage', 'prune-images'],
+                ['/usr/local/bin/prepare-node.sh', 'compact-storage', 'keep-images'],
+                ['/usr/local/bin/prepare-node.sh', 'compact-storage', 'prune-images'],
             ]);
 
         Process::assertDidntRun(
@@ -664,6 +668,15 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/converge-sample-app.sh', 'metrics', 'operator'],
                 ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'operator'],
             );
+        $storageCommands = $guestCommands->filter(
+            fn (array $command): bool => ($command[7] ?? null) === 'compact-storage',
+        )->mapWithKeys(fn (array $command): array => [$command[4] => $command[8]])->all();
+        expect($storageCommands)->toBe([
+            'lab:'.$target->instance('gateway') => 'prune-images',
+            'lab:'.$target->instance('operator') => 'keep-images',
+            'lab:'.$target->instance('app-prod') => 'prune-images',
+            'lab:'.$target->instance('extra') => 'prune-images',
+        ]);
     });
 
     it('hydrates only the validated typed development checkout', function (): void {
