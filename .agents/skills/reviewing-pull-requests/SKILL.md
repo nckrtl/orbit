@@ -15,9 +15,7 @@ Check correctness, regressions, test coverage, architectural decisions, and docu
 
 For command behavior, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) for real terminal checks. For a web UI change, open the phone and desktop screenshots from [verifying-web-ui](../verifying-web-ui/SKILL.md) and judge the layout on a phone. Do not stop at the diff.
 
-Reproduce the feature's user-visible behavior and important failure cases on Incus. Verify the running source commit and use machines allocated to the review. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. If access is unavailable, return the code findings and leave Incus review pending.
-
-Review a proof script against its brief: it fails closed, its post-cleanup audit shows no leftovers, and its scenario reproduces. Do not block on the script's own crash or recovery paths. Record such a concern as a non-blocking limitation. Product-code findings stay blocking.
+Reproduce the feature's user-visible behavior and important failure cases on the group's Incus topology. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. If access is unavailable, return the code findings and leave Incus review pending.
 
 ## Report
 

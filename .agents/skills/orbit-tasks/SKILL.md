@@ -35,9 +35,7 @@ Name contract documents and paths in a brief when the contract requires them. Le
 
 Prefer a narrow vertical slice that a reviewer can verify from start to finish over a horizontal slice of one layer. When behavior spans several projects, split by project only when each project's tests prove its side of the contract. For a wide refactor that mechanically breaks many call sites, sequence separate expand, migrate, and contract subtasks: add the new form beside the old, move callers in batches, then remove the old form after no callers remain.
 
-Split a live proof by scenario, so one implementer can finish it within its context. A proof that covers several unrelated behaviors becomes several subtasks.
-
-Prove a subtask on an allocated Incus topology, never on shared machines such as beast or the live Gateway. A proof on shared machines needs merged, deployed code, so list it in the PR as an operator step after deploy.
+Subtasks never carry proofs, proof scripts, or proof deliverables. Behavior tests and the review accept a subtask. The implementer may use the group's Incus topology for discovery, and the reviewer reproduces the feature on it; see [using-incus-topologies](../using-incus-topologies/SKILL.md). A check on shared machines, such as beast or the live Gateway, needs merged, deployed code, so list it in the PR as an operator step after deploy.
 
 Keep CI, release, and deployment work separate from product code. Subtasks run in dependency order on one shared branch; a later subtask may build on an earlier one but never finishes its work.
 
@@ -94,7 +92,6 @@ Do not assume that every Project uses Composer, Pest, PHP, or any particular tes
 - Keep handoff evidence, such as impact reports, logs, and check output, under `.orbit-artifacts/`. Git ignores it. Do not commit evidence.
 - Build test fixtures from real output. Capture it from the real tool or its source, and do not invent it.
 - Make every new test able to fail. Confirm that it fails without the change.
-- Make proof scripts fail closed. Check every exit code, assert each expected result, and audit for leftovers after cleanup.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
 
 ## Review a subtask
