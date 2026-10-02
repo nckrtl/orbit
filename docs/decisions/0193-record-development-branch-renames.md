@@ -55,7 +55,7 @@ Keep the T3 client's names:
 - API: `POST /api/v1/instances/{instance}/rename`.
 - Body: `{"branch":"t3code/login-redirect","domain":"login-redirect.orbit-website.test"}`. Both fields are optional, but at least one must be supplied as a nonempty string. Null and empty values are invalid.
 - CLI: `orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]`.
-- MCP: `instance-rename`, with `instance_id` and optional `branch` and `domain`.
+- MCP: `instance-rename`, with `instance` and optional `branch` and `domain`.
 - Response: the full Instance representation returned by `GET /api/v1/instances/{instance}`, not a new rename response envelope.
 
 Only an active development Instance with `source_layout=checkout` is eligible. A linked worktree or production Instance is not eligible. The operation keeps the Instance ID, name, path, layout, starting commit, and Project and Node placement. It uses the Instance lifecycle and environment operation owners; it must not race create, setup, removal, transfer, clone, or another rename.
