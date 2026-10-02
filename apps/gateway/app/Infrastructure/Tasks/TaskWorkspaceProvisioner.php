@@ -137,6 +137,8 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             function () use ($instance, $visitable): Instance {
                 $resolved = $this->prepareSource($instance);
                 ($this->dependencies ?? app(CopyInstanceDependenciesAction::class))->execute($resolved);
+                // Archive copies retain source ACLs, including directories left by a failed copy.
+                $this->source->inspectPrepared($resolved);
 
                 if (! $visitable) {
                     return $resolved;

@@ -571,6 +571,8 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Like any new development Instance, it gets a [dependency copy](/domains/applications#dependency-copy) from the Project's `default` Instance on the same Node.
 
+The copy preserves the source directories' modes and ACLs, which may predate worker access. Before returning the workspace or activating its Route, Orbit inspects the checkout again and restores the default-first worker and managed-user ACLs. This inspection also runs after a logged copy failure, because an earlier directory may already have been copied. An inspection failure leaves the workspace unexposed and the claim fails.
+
 The checkout directory stays owned by the Node's managed user and group. `ORBIT_TASKS_WORKER_USER` selects the worker account, normally `orbit-worker`. When it is unset or that account is absent, prepare leaves checkout access unchanged. Otherwise, prepare and inspect grant both users `rwX` access and default ACLs on the checkout, including `.git`.
 
 Default ACLs are installed before worker write access, so a partial grant cannot expose a directory without inheritance. Files the worker creates inherit the managed user's access, so removal can delete them without changing the checkout owner. Inspection repairs ACLs on entries the managed user owns. Entries the worker owns keep the ACLs they inherited. The grant does not cover either user's home.

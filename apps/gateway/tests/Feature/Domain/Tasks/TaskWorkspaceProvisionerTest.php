@@ -223,7 +223,7 @@ it('creates a non-visitable Orbit checkout without activating a Route', function
         ->and($instance?->status)->toBe(InstanceState::SourceResolved)
         ->and($instance?->task_workspace_routed)->toBeFalse()
         ->and($instance?->routes()->count())->toBe(0)
-        ->and($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved'])
+        ->and($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved', 'inspect-prepared'])
         ->and($fakes->development->reserves)->toBe(0)
         ->and($fakes->development->completes)->toBe(0);
 });
