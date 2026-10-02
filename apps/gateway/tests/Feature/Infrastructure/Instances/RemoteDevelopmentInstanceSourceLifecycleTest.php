@@ -3204,7 +3204,8 @@ function orb895_native_removal_action(
 
         public function cleanupRuntime(InstanceRemovalMember $member): void
         {
-            throw new LogicException('A failed create has no published runtime.');
+            // A routed failed create may need partial runtime cleanup even before activation.
+            expect($member->runtime_published)->toBeFalse();
         }
     });
 

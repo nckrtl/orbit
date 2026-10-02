@@ -921,8 +921,9 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $this->processes->execute($member->instance_id);
         ($this->databases ?? app(DropOwnedDatabasesAction::class))->execute($member->instance_id);
 
-        // A checkout that never became active, such as a task workspace, has no pool, site, or certificate to withdraw.
-        if ($member->runtime_published) {
+        // A routed create can publish part of its runtime before activation.
+        // An unrouted task workspace has no pool, site, or certificate to withdraw.
+        if ($member->runtime_published || $member->route_id !== null) {
             $this->routes->cleanupRuntime($member);
         }
         $member->update(['runtime_cleaned_at' => now()]);
