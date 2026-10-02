@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal}.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -159,13 +159,21 @@ The API, SDK, CLI, and Activity report removal progress in one shape. `DELETE` r
 | `total`, `completed`, `remaining` | Member counts. |
 | `failed_step`, `error_code` | The step and code of a failure, or null. |
 
-Repeat the same command to resume at the first unfinished step. A changed `--force` value returns `instance.removal_conflict`. Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
+Repeat the same command to resume at the first unfinished step. To take over a failed normal removal, repeat it with `--force`. Orbit upgrades the same operation, keeps its accepted member set and completed steps, and rechecks the remaining source identities before continuing. This also works when source finalization already moved a linked worktree into authenticated quarantine; completion removes its Git worktree entry but keeps the common repository, local branch, and sibling worktrees. You cannot downgrade a forced operation or change the mode of an operation that is still running; those requests return `instance.removal_conflict`.
+
+Before it deletes more source, the Gateway checks each remaining source again. A retry after Route deletion does not recreate the Route. A cleanup failure keeps the Instance and its progress until you repair the Node or the artifact and retry. When a failed create has no checkout, finalization records completion only after it has cleaned up the empty Project directory. An interrupted directory cleanup stays unfinished and resumes on retry.
 
 Before deleting source, the Gateway runs `find -P` as the task worker on directories that worker owns. It clears setgid and sticky bits and gives the group `rwx`, which also sets the ACL mask. This lets the managed user remove the worker's entries without changing ownership or following symlinks. The managed user enters the validated tree before switching to the worker, so the quarantine's parent stays private.
 
 Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 can set setgid and sticky bits on directories created under a default ACL; GNU `mkdir` and `os.mkdir` do not. The ACL alone does not override the sticky bit. A directory created with an explicit mode such as `0755`, as Pest does for its graph, narrows the mask to `r-x` and hides the managed user's ACL entry.
 
-Source finalization moves the validated tree into quarantine and writes an authenticated receipt before deletion. After that receipt exists, a checkout retry checks the journal, receipt, quarantine path, owner, and recorded device and inode, then deletes the remaining tree. It does not require the quarantined checkout to remain a valid Git repository: a partial deletion may leave `.git` missing or damaged. Worktree recovery also checks the recorded common repository and worktree administration before cleanup. A replaced quarantine or mismatched receipt still stops removal.
+Source finalization checks dirty and unpublished content before moving the tree into quarantine. A normal refusal leaves the source at its original path and does not change Git's worktree entry. It then moves the validated tree into quarantine and writes an authenticated receipt before deletion.
+
+After that receipt exists, a checkout retry checks the journal, receipt, quarantine path, owner, and recorded device and inode, then deletes the remaining tree. It does not require the quarantined checkout to remain a valid Git repository: a partial deletion may leave `.git` missing or damaged. Worktree recovery also checks the recorded common repository and worktree administration before cleanup. A replaced quarantine or mismatched receipt still stops removal.
+
+### Post-deploy operator step: Instance 298 on beast
+
+After deploying this fix, the operator checks Instance 298 on beast and its recorded removal progress, confirms that its source belongs to that Instance, and retries `orbit instance:destroy 298 --yes --force`. Check that the operation completes, the quarantined directory and its Git worktree entry are gone, and the common repository and sibling Instances remain. This is a live-resource operator step, not part of the disposable Incus proof.
 
 ## Why it works this way
 

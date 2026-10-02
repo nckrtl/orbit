@@ -2639,6 +2639,61 @@ it('accepts a canonical-equivalent origin between retries', function (): void {
         ->toBeFalse();
 });
 
+it('refuses newly dirty normal worktree source before moving it', function (): void {
+    [$checkout, $instance] = orb182_real_source_graph($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'normal-refusal');
+    $member = orb180_record_source($this->removal, $instance, false);
+    $worktrees = orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'list', '--porcelain'])->stdout;
+    $this->transport->beforeFinalization = static function () use ($instance): void {
+        file_put_contents($instance->checkout_path.'/unsafe.txt', 'keep this work');
+    };
+
+    expect(fn () => $this->removal->finalize($member))->toThrow(RuntimeConvergenceException::class);
+
+    expect(is_dir($instance->checkout_path))->toBeTrue()
+        ->and(file_exists(orb180_quarantine_path($member)))->toBeFalse()
+        ->and(file_get_contents($instance->checkout_path.'/unsafe.txt'))->toBe('keep this work')
+        ->and(orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'list', '--porcelain'])->stdout)->toBe($worktrees);
+});
+
+it('lets force finish an interrupted normal removal of a quarantined linked worktree', function (): void {
+    [$checkout, $instance, $sibling] = orb182_real_source_graph($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'force-takeover');
+    $member = orb180_record_source($this->removal, $instance, false);
+    $runtimeCleanupIds = [];
+    $action = orb895_native_removal_action(
+        $this->removal,
+        $this->sourceLock,
+        $this->sandbox.'/removal-locks',
+        cleanupRuntime: static function (InstanceRemovalMember $removed) use (&$runtimeCleanupIds): void {
+            $runtimeCleanupIds[] = $removed->instance_id;
+        },
+    );
+    $this->transport->interruptAfterSourceMove = true;
+
+    expect(fn () => $action->execute($instance->refresh(), false, runTeardown: false))
+        ->toThrow(InstanceRemovalException::class);
+    $quarantine = orb180_quarantine_path($member);
+    expect(is_dir($quarantine))->toBeTrue()->and(is_dir($instance->checkout_path))->toBeFalse();
+    expect($member->refresh()->removal->failed_step)->toBe(InstanceRemovalStep::SourceFinalization)
+        ->and($member->runtime_published)->toBeTrue()
+        ->and($runtimeCleanupIds)->toBe([]);
+    file_put_contents($quarantine.'/unfinished-work', 'dirty quarantined source');
+
+    $completed = $action->execute($instance->refresh(), true, runTeardown: false);
+
+    expect($completed->id)->toBe($member->instance_removal_id)
+        ->and($completed->force)->toBeTrue()
+        ->and($completed->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($runtimeCleanupIds)->toBe([$instance->id])
+        ->and(file_exists($quarantine))->toBeFalse()
+        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse()
+        ->and(is_dir($checkout->checkout_path.'/.git'))->toBeTrue()
+        ->and(is_dir($sibling->checkout_path))->toBeTrue();
+    $worktrees = orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'list', '--porcelain'])->stdout;
+    expect($worktrees)->not->toContain($quarantine)->not->toContain($instance->checkout_path)
+        ->toContain($sibling->checkout_path);
+    expect(orb76_run(['git', '-C', $checkout->checkout_path, 'show-ref', '--verify', 'refs/heads/'.$instance->branch])->succeeded())->toBeTrue();
+});
+
 it('refuses an immediate forced finalization race', function (): void {
     $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'race');
     $member = orb180_record_source($this->removal, $instance, true);
@@ -3281,13 +3336,16 @@ function orb895_native_removal_action(
     RemoteDevelopmentInstanceSourceRemoval $source,
     AppDevSourceOperationLock $sourceLock,
     string $lockDirectory,
+    ?Closure $cleanupRuntime = null,
 ): RemoveInstanceAction {
     app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
     app()->instance(DevelopmentInstanceSourceFinalizer::class, $source);
     app()->instance(AppDevSourceOperationLock::class, $sourceLock);
     app()->instance(InstanceEnvironmentOperationLock::class, new NativeInstanceEnvironmentOperationLock($lockDirectory, new CommandDeadline));
-    app()->instance(InstanceRemovalProjector::class, new class implements InstanceRemovalProjector
+    app()->instance(InstanceRemovalProjector::class, new class($cleanupRuntime) implements InstanceRemovalProjector
     {
+        public function __construct(private readonly ?Closure $cleanup) {}
+
         public function clearRouteTarget(InstanceRemovalMember $member): string
         {
             Route::query()->findOrFail($member->route_id)->delete();
@@ -3297,6 +3355,12 @@ function orb895_native_removal_action(
 
         public function cleanupRuntime(InstanceRemovalMember $member): void
         {
+            if ($this->cleanup !== null) {
+                ($this->cleanup)($member);
+
+                return;
+            }
+
             // A routed failed create may need partial runtime cleanup even before activation.
             expect($member->runtime_published)->toBeFalse();
         }
@@ -3398,6 +3462,8 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
 
     public bool $interruptDuringSourceDeletion = false;
 
+    public bool $interruptAfterSourceMove = false;
+
     /** @var array<string, string> */
     public array $environment = [];
 
@@ -3430,6 +3496,11 @@ final class Orb76LocalSourceSshExecutor implements SshExecutor
         }
         if (is_string($input) && $this->workerGlobalConfig !== null) {
             $input = str_replace('-- git config --global', '-- env '.escapeshellarg('GIT_CONFIG_GLOBAL='.$this->workerGlobalConfig).' git config --global', $input);
+        }
+
+        if (is_string($input) && $this->interruptAfterSourceMove && str_contains($input, 'expected_origin=$6')) {
+            $this->interruptAfterSourceMove = false;
+            $input = str_replace('physical=$quarantine', 'physical=$quarantine; exit 74', $input);
         }
 
         if (is_string($input) && str_contains($input, 'expected_origin=$6')) {
