@@ -19,7 +19,7 @@ export function annotationServerProxy() {
         configureServer(server) {
             server.middlewares.use(async (req, res, next) => {
                 const match = req.url?.match(
-                    /^\/__annotate\/local\/(\d+)\/annotations(\/events|\/claim|\/complete|\/release|\/[^/?]+\/status)?$/,
+                    /^\/__annotate\/local\/(\d+)\/annotations(\/events|\/claim|\/complete|\/release|\/[^/?]+\/status|\/[A-Za-z0-9][A-Za-z0-9_-]{0,199})?$/,
                 );
                 if (!match) return next();
                 const port = Number(match[1]);
@@ -34,7 +34,7 @@ export function annotationServerProxy() {
                     return json(400, { error: "Invalid annotation server port" });
                 if (req.headers.origin && new URL(req.headers.origin).host !== req.headers.host)
                     return json(403, { error: "Use this development site's origin" });
-                if (!["GET", "POST"].includes(req.method))
+                if (!["GET", "POST", "DELETE"].includes(req.method))
                     return json(405, { error: "Method not allowed" });
                 // Demo mode, including bin/web-verify, must not connect to a local annotation server.
                 if (process.env.VITE_ORBIT_DEMO)
@@ -47,12 +47,14 @@ export function annotationServerProxy() {
                         signal: AbortSignal.timeout(3000),
                     });
                     const body = await check.json();
-                    if (!check.ok || body.meta?.service !== "@nckrtl/annotate")
+                    if (!check.ok || body.meta?.service !== "@nckrtl/annotator")
                         return json(502, {
-                            error: "This port is not an annotation server. Restart annotate serve with the latest package.",
+                            error: "This port is not an annotation server. Restart annotator serve with the latest package.",
                         });
                     if (req.method === "GET" && !match[2]) {
                         body.meta.eventsUrl = `${prefix}/${port}/annotations/events`;
+                        if (body.meta.skillUrl)
+                            body.meta.skillUrl = `${prefix}/${port}/annotations/skill`;
                         return json(200, body);
                     }
                     const upstream = request(

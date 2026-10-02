@@ -1,6 +1,6 @@
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import { ANNOTATION_HOST_ID, ANNOTATION_ROOT_ID } from "@nckrtl/annotate/host";
+import { ANNOTATION_HOST_ID, ANNOTATION_ROOT_ID } from "@nckrtl/annotator/host";
 import { openApp } from "./app";
 
 function annotationShadow(): ShadowRoot {

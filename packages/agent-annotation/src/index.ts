@@ -10,6 +10,7 @@ import { ensureAnnotationRuntime, teardownAnnotationRuntime } from "./runtime";
 import type { DictationInput } from "./dictation-settings";
 
 export type AnnotationOptions = {
+    floatingControl?: boolean;
     serviceUrl?: string;
     orbit?: OrbitOptions;
     realtime?: AnnotationRealtime;
@@ -38,6 +39,7 @@ export function mountAnnotation(options: AnnotationOptions = {}) {
 export { configureCommander } from "./commander";
 export {
     clearAllAnnotations,
+    clearPageAnnotations,
     ensureAnnotationRuntime,
     teardownAnnotationRuntime,
     toggleAnnotationMode,
@@ -46,3 +48,12 @@ export {
 export type { Annotation } from "./types";
 export type { DictationSettings } from "./dictation";
 export type { ToolbarData } from "./core/request-history";
+
+export {
+    getAnnotationState,
+    subscribeAnnotationState,
+    getAnnotationSettings,
+    saveAnnotationSettings,
+} from "./host-controls";
+export { checkAnnotationServer, type DeliveryMode } from "./sync";
+export { checkOrbit } from "./orbit";

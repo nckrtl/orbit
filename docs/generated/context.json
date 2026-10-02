@@ -827,6 +827,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Route",
                 "Subtask",

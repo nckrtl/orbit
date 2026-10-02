@@ -37,6 +37,19 @@ const configurationListeners = new Set<() => void>();
 export type DeliveryMode = "server" | "orbit";
 export const deliveryMode = createStore<DeliveryMode>("server");
 export const localSessionCount = createStore(0);
+export const removalError = createStore("");
+const localMutations = new Map<string, Promise<unknown>>();
+function mutateLocal<T>(url: string, operation: () => Promise<T>): Promise<T> {
+    const previous = localMutations.get(url) ?? Promise.resolve();
+    const pending = previous.catch(() => {}).then(operation);
+    localMutations.set(url, pending);
+    void pending
+        .finally(() => {
+            if (localMutations.get(url) === pending) localMutations.delete(url);
+        })
+        .catch(() => {});
+    return pending;
+}
 function rememberNumber(value: unknown): void {
     if (
         settings.mode !== "server" ||
@@ -103,6 +116,7 @@ export function configureAnnotationService(
     }
     settings = override ?? { mode: url ? "orbit" : "server", serviceUrl: "" };
     deliveryMode.setState(settings.mode);
+    removalError.setState("");
     serviceUrl =
         (settings.mode === "server"
             ? settings.serviceUrl
@@ -238,13 +252,17 @@ export async function pushAnnotation(annotation: Annotation): Promise<Annotation
     }
     if (serviceUrl) {
         const current = generation;
+        const endpoint = serviceUrl;
+        const local = settings.mode === "server";
         try {
             if (settings.mode === "orbit") {
                 const availability = await checkOrbit();
                 if (current !== generation) return working;
                 if (availability.state !== "available") throw new Error(availability.reason);
             }
-            const result = (await request(serviceUrl, working)) as {
+            const result = (await (local
+                ? mutateLocal(endpoint, () => request(endpoint, working))
+                : request(endpoint, working))) as {
                 annotation?: unknown;
                 data?: unknown;
             };
@@ -326,7 +344,7 @@ export async function fetchAnnotationSync(): Promise<AnnotationSync> {
             const result = (await request(serviceUrl)) as {
                 annotations?: unknown[];
                 data?: unknown[];
-                meta?: { eventsUrl?: string; lastNumber?: number };
+                meta?: { eventsUrl?: string; lastNumber?: number; deletedIds?: string[] };
             };
             if (current !== generation) return summary([]);
             serviceConnection.setState("Connected");
@@ -336,9 +354,16 @@ export async function fetchAnnotationSync(): Promise<AnnotationSync> {
                 const candidate = new URL(result.meta.eventsUrl, endpoint);
                 if (candidate.origin === endpoint.origin) eventsUrl = candidate.href;
             }
-            return summary(
+            const deletedIds =
+                settings.mode === "server" && Array.isArray(result.meta?.deletedIds)
+                    ? result.meta.deletedIds.filter((id): id is string => typeof id === "string")
+                    : [];
+            dismissAnnotations(deletedIds);
+            const snapshot = summary(
                 (result.annotations ?? result.data ?? []).flatMap((value) => receive(value) ?? []),
             );
+            snapshot.resolvedIds.push(...deletedIds);
+            return snapshot;
         } catch {
             if (current === generation) serviceConnection.setState("Unavailable");
             /* Keep local annotations visible when the service is offline. */
@@ -409,11 +434,46 @@ export function subscribeAnnotationEvents(handlers: AnnotationEventHandlers): ()
         stop();
     };
 }
-export async function deleteSyncedAnnotation(id: string): Promise<void> {
+async function removeLocalAnnotations(scope: { id?: string; pathname?: string }): Promise<boolean> {
+    const { id, pathname } = scope;
+    removalError.setState("");
+    if (settings.mode !== "server" || !serviceUrl) return true;
+    const endpoint = serviceUrl;
+    const target = id
+        ? `${endpoint}/${encodeURIComponent(id)}`
+        : pathname !== undefined
+          ? `${endpoint}?pathname=${encodeURIComponent(pathname)}`
+          : endpoint;
+    try {
+        await mutateLocal(endpoint, async () => {
+            const response = await fetch(target, {
+                method: "DELETE",
+                signal: AbortSignal.timeout(10000),
+            });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        });
+        return true;
+    } catch {
+        removalError.setState(
+            id
+                ? "Could not delete annotation from the local server. Try deleting it again."
+                : pathname !== undefined
+                  ? "Could not remove the annotations on this page from the local server. Try again."
+                  : "Could not remove all annotations from the local server. Try the bin button again.",
+        );
+        return false;
+    }
+}
+export function clearSyncedAnnotations(pathname?: string): Promise<boolean> {
+    return removeLocalAnnotations({ pathname });
+}
+export async function deleteSyncedAnnotation(id: string): Promise<boolean> {
+    if (!(await removeLocalAnnotations({ id }))) return false;
     dismissAnnotations([id]);
     const pathname = window.location.pathname;
     saveAnnotations(
         loadAnnotations(pathname).filter((annotation) => annotation.id !== id),
         pathname,
     );
+    return true;
 }
