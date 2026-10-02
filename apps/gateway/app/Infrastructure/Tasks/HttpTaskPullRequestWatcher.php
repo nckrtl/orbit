@@ -13,6 +13,7 @@ use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewComment;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\Tasks\TaskGitHubReviewObservations;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
@@ -63,6 +64,8 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
      */
     public function health(Task $group): ?TaskPullRequestHealth
     {
+        // Evidence is refreshed even when health cannot offer a repair. It grants no authority.
+        $this->reviews($group, fresh: true);
         $target = $this->target($group);
         if ($target === null) {
             return null;
@@ -132,6 +135,21 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
      */
     public function reviews(Task $group, bool $fresh = false): TaskReviewObservation
     {
+        $records = new TaskGitHubReviewObservations;
+        $sequence = $records->begin($group);
+        $cached = false;
+        $observation = $this->readReviews($group, $fresh, $cached);
+        if ($cached) {
+            $records->finishCached($group, $sequence);
+        } else {
+            $records->finish($group, $sequence, $observation);
+        }
+
+        return $observation;
+    }
+
+    private function readReviews(Task $group, bool $fresh, bool &$cached): TaskReviewObservation
+    {
         $target = $this->target($group);
         if ($target === null) {
             return new TaskReviewObservation(TaskReviewReadStatus::Unreadable);
@@ -144,6 +162,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
                 $repository, $number, $trust,
             );
         }
+        $pr = null;
         try {
             $token = $this->access->reviewsToken($repository);
             $pr = $this->github->pullRequest($token, $repository, $number);
@@ -159,11 +178,12 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
                 Cache::put($key, self::reviewCachePayload($reviews), 60);
             } else {
                 $selection = TaskReviewSelection::select($reviews, $trust, $pr->headSha, $pr->state === GitHubPullRequestState::Open);
+                $cached = true;
             }
 
             return new TaskReviewObservation(TaskReviewReadStatus::Complete, $repository, $number, $trust, $pr, $reviews, $selection);
         } catch (Throwable) {
-            return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust);
+            return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust, $pr);
         }
     }
 
