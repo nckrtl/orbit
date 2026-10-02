@@ -999,7 +999,8 @@
                 "Node",
                 "Node agent",
                 "Process",
-                "Role"
+                "Role",
+                "Task"
             ],
             "governing_adrs": []
         },

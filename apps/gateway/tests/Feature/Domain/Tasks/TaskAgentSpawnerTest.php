@@ -124,11 +124,11 @@ it('spawns fresh role threads on the workspace Node with the configured model an
         ->and($reviewer->role)->toBe('reviewer')->and($implementer->role)->toBe('implementer');
     expect($dispatcher->commands[0])->toMatchArray([
         'title' => 'Orbit task #'.$group->id.' · Review: '.$task->title,
-        'model' => TaskAgentDefaults::ReviewerModel, 'effort' => TaskAgentDefaults::ReviewerEffort,
+        'model' => TaskAgentDefaults::ReviewerModel, 'effort' => config('orbit.tasks.reviewer_effort'),
         'worktreePath' => '/srv/orbit/apps/orbit/task-1', 'branch' => 'task-1',
     ])->and($dispatcher->commands[0]['message']['text'])->toContain('Review subtask #'.$task->id, $group->brief, 'Do not re-run the Project task check')
         ->and($dispatcher->commands[1]['model'])->toBe(TaskAgentDefaults::ImplementerModel)
-        ->and($dispatcher->commands[1]['effort'])->toBe(TaskAgentDefaults::ImplementerEffort)
+        ->and($dispatcher->commands[1]['effort'])->toBe(config('orbit.tasks.implementer_effort'))
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Implement this subtask', 'The group started at '.str_repeat('b', 40), 'Follow this repository\'s task instructions.');
 });
 
@@ -217,7 +217,7 @@ it('sends the review request to the stored reviewer thread', function (): void {
         ->and($dispatcher->commands[0]['message']['text'])->toContain('The change list, summary and breaking list are yours to write: add a missing entry yourself instead of requesting changes.')
         ->and($dispatcher->commands[0]['message']['text'])->not->toContain('are the feature\'s contract.')
         ->and($dispatcher->commands[0]['model'])->toBe(TaskAgentDefaults::ReviewerModel)
-        ->and($dispatcher->commands[0]['effort'])->toBe(TaskAgentDefaults::ReviewerEffort);
+        ->and($dispatcher->commands[0]['effort'])->toBe(config('orbit.tasks.reviewer_effort'));
 });
 
 it('names a non-main project default branch in the opening review packet', function (): void {
@@ -513,11 +513,11 @@ it('keeps persisted role links after workspace removal', function (): void {
         ->and($links[0]->id)->toBe($reviewer)
         ->and($links[0]->task_id)->toBe($group->tasks->firstOrFail()->id)
         ->and($links[0]->model)->toBe(TaskAgentDefaults::ReviewerModel)
-        ->and($links[0]->effort)->toBe(TaskAgentDefaults::ReviewerEffort)
+        ->and($links[0]->effort)->toBe(config('orbit.tasks.reviewer_effort'))
         ->and($links[1]->id)->toBe($implementer)
         ->and($links[1]->task_id)->toBe($group->tasks->firstOrFail()->id)
         ->and($links[1]->model)->toBe(TaskAgentDefaults::ImplementerModel)
-        ->and($links[1]->effort)->toBe(TaskAgentDefaults::ImplementerEffort)
+        ->and($links[1]->effort)->toBe(config('orbit.tasks.implementer_effort'))
         ->and($links[1]->node_id)->not->toBeNull();
 });
 
