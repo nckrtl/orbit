@@ -8,6 +8,7 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewComment;
+use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\GitHub\GitHubReviewState;
 use DateTimeImmutable;
 use Illuminate\Http\Client\Response;
@@ -124,8 +125,11 @@ final readonly class HttpGitHubReviewReader
             if (! isset($links['next'])) {
                 return $records;
             }
-            if ($links['next'] !== $page + 1 || $page === $limit || $rows === []) {
+            if ($links['next'] !== $page + 1 || $rows === []) {
                 throw GitHubApiException::unavailable();
+            }
+            if ($page === $limit) {
+                throw new GitHubReviewOverflowException;
             }
         }
 

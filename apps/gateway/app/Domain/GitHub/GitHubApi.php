@@ -81,6 +81,7 @@ interface GitHubApi
      * @return list<GitHubReview>
      *
      * @throws GitHubApiException
+     * @throws GitHubReviewOverflowException
      */
     public function reviews(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): array;
 
@@ -93,6 +94,7 @@ interface GitHubApi
      * @return list<GitHubReviewComment>
      *
      * @throws GitHubApiException
+     * @throws GitHubReviewOverflowException
      */
     public function reviewComments(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): array;
 

@@ -11,6 +11,7 @@ use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewComment;
+use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Tasks\TaskGitHubReviewObservations;
@@ -65,7 +66,10 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     public function health(Task $group): ?TaskPullRequestHealth
     {
         // Evidence is refreshed even when health cannot offer a repair. It grants no authority.
-        $this->reviews($group, fresh: true);
+        $reviewBackoff = Cache::get('tasks.github-review-read.'.$group->id);
+        if (! is_array($reviewBackoff) || ! is_int($reviewBackoff['due'] ?? null) || $reviewBackoff['due'] <= now()->getTimestamp()) {
+            $this->reviews($group, fresh: true);
+        }
         $target = $this->target($group);
         if ($target === null) {
             return null;
@@ -182,6 +186,8 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             }
 
             return new TaskReviewObservation(TaskReviewReadStatus::Complete, $repository, $number, $trust, $pr, $reviews, $selection);
+        } catch (GitHubReviewOverflowException) {
+            return new TaskReviewObservation(TaskReviewReadStatus::Overflow, $repository, $number, $trust, $pr);
         } catch (Throwable) {
             return new TaskReviewObservation(TaskReviewReadStatus::Unreadable, $repository, $number, $trust, $pr);
         }
@@ -274,6 +280,8 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
 
             return new TaskReviewCandidateResult(TaskReviewReadStatus::Complete,
                 new TaskReviewCandidate($repository, $number, $head, $trust->revision, $review, $comments));
+        } catch (GitHubReviewOverflowException) {
+            return new TaskReviewCandidateResult(TaskReviewReadStatus::Overflow);
         } catch (Throwable) {
             return new TaskReviewCandidateResult(TaskReviewReadStatus::Unreadable);
         }

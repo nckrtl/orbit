@@ -6,6 +6,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Shared\LifecycleStatus;
@@ -394,7 +395,7 @@ describe('read-only GitHub review records', function (): void {
         }
         Http::fake($responses);
 
-        expect(fn () => GitHubTestSupport::readReviews($resource))->toThrow(GitHubApiException::class);
+        expect(fn () => GitHubTestSupport::readReviews($resource))->toThrow(GitHubReviewOverflowException::class);
         Http::assertSentCount($limit + (int) $canonical);
     })->with(['reviews overflow' => ['reviews', '', 10], 'comments overflow' => ['comments', '/101/comments', 5]])
         ->with(['short page' => 1, 'full page' => 100])

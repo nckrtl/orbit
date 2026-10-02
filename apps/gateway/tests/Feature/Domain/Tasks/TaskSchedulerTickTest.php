@@ -7,6 +7,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
+use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
@@ -34,18 +35,26 @@ use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGitHubReviewConsumption;
+use App\Domain\Tasks\TaskGitHubReviewFeedback;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestDescription;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskPullRequestReviewWatcher;
+use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
+use App\Domain\Tasks\TaskReviewFindingsPacket;
+use App\Domain\Tasks\TaskReviewReadStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskSessionClassificationException;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionObservation;
 use App\Domain\Tasks\TaskSettleMetrics;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnFetchNotice;
@@ -81,12 +90,14 @@ use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
+use Tests\Feature\Domain\Tasks\ApprovalObservationFixtures as FeedbackFixtures;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
 
 use function Pest\Laravel\mock;
@@ -798,6 +809,143 @@ function tick_assistance_notifier(): CoderSettleNotifier
 
     return $notifier;
 }
+
+it('preserves unresolved review assistance while CI and conflict fixes activate and continue', function (bool $conflict): void {
+    $group = tick_settling_group();
+    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
+    $source->candidateStatus = TaskReviewReadStatus::Unreadable;
+    app()->instance(TaskPullRequestReviewWatcher::class, $source);
+    $reason = 'The trusted review source remains unreadable (review:101:findings). Restore review-read access.';
+    app(TaskGitHubReviewFeedback::class)->change($group, ['review:101:findings' => $reason]);
+    mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth(
+        'open', ['Repair needed'], baseRef: 'main', conflicts: $conflict,
+        failedChecks: $conflict ? [] : [new TaskPullRequestCheck('Gateway', null)], headSha: 'abc123',
+    ));
+    $agents = tick_running_agents();
+    $snapshots = new class implements AgentSnapshotReader
+    {
+        public int $reads = 0;
+
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            $this->reads++;
+
+            return tick_checked_thread('running');
+        }
+    };
+    app()->instance(AgentSnapshotReader::class, $snapshots);
+    app(TaskScheduler::class)->tick();
+    $fixup = $group->tasks()->whereNotNull('fixup_problem')->sole();
+    expect($fixup->status)->toBe(TaskStatus::Running)
+        ->and($agents->spawned)->toBe([$fixup->id])
+        ->and($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toBe(TaskGitHubReviewFeedback::Prefix.$reason);
+    app(TaskScheduler::class)->tick();
+    expect($snapshots->reads)->toBeGreaterThan(0)
+        ->and($group->fresh()->assistance_reason)->toBe(TaskGitHubReviewFeedback::Prefix.$reason)
+        ->and($fixup->fresh()->status)->toBe(TaskStatus::Running)
+        ->and(app(TaskGitHubReviewFeedback::class)->causes($group))->toBe(['review:101:findings' => $reason]);
+})->with(['CI' => false, 'conflict' => true]);
+
+it('starts one feedback fixup after a workspace retry and preserves its consumption through restart', function (): void {
+    $group = tick_settling_group();
+    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
+    app()->instance(TaskPullRequestReviewWatcher::class, $source);
+    mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: 'abc123'));
+    $failedAgents = tick_running_agents(fetchFails: true);
+    app(TaskScheduler::class)->tick();
+    $fixup = $group->tasks()->where('fixup_problem', 'review:42')->sole();
+    expect($fixup->status)->toBe(TaskStatus::Todo)->and($failedAgents->spawned)->toBe([]);
+    $this->travel(60)->seconds();
+    $agents = tick_running_agents();
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+    expect($fixup->fresh()->status)->toBe(TaskStatus::Running)
+        ->and($agents->spawned)->toBe([$fixup->id])
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and(DB::table('task_github_review_consumptions')->count())->toBe(1)
+        ->and($source->candidates)->toBe(1);
+});
+
+it('recovers a crash after feedback activation without consuming or appending again', function (): void {
+    $group = tick_settling_group();
+    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
+    app()->instance(TaskPullRequestReviewWatcher::class, $source);
+    mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: 'abc123'));
+    tick_running_agents();
+    mock(AgentSpawner::class)->shouldReceive('spawnImplementer')->once()->andThrow(new RuntimeException('Fixture crash after activation.'));
+    expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'Fixture crash after activation.');
+    $fixup = $group->tasks()->where('fixup_problem', 'review:42')->sole();
+    expect($fixup->status)->toBe(TaskStatus::Running)
+        ->and(DB::table('task_github_review_consumptions')->count())->toBe(1);
+    $agents = tick_running_agents();
+    app(TaskScheduler::class)->tick();
+    expect($agents->spawned)->toBe([$fixup->id])
+        ->and($source->candidates)->toBe(1)
+        ->and($group->tasks()->where('fixup_problem', 'review:42')->count())->toBe(1);
+});
+
+it('retains consumption but skips feedback spawning when the PR closes after append', function (): void {
+    $group = tick_settling_group();
+    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
+    app()->instance(TaskPullRequestReviewWatcher::class, $source);
+    mock(TaskPullRequestWatcher::class)->shouldReceive('health')->andReturn(
+        new TaskPullRequestHealth('open', headSha: 'abc123'),
+        new TaskPullRequestHealth('closed', headSha: 'abc123'),
+    );
+    $agents = tick_running_agents();
+    app(TaskScheduler::class)->tick();
+    expect($group->tasks()->where('fixup_problem', 'review:42')->sole()->status)->toBe(TaskStatus::Cancelled)
+        ->and($agents->spawned)->toBe([])
+        ->and(DB::table('task_github_review_consumptions')->count())->toBe(1)
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Settling);
+});
+
+it('publishes a consumed feedback fixup once to the same PR and requires fresh external re-review', function (): void {
+    [$group, $task, , $signer, $publisher] = tick_review([
+        FakeTaskTurnReceipts::contents('approved', deliverables: ['review-findings' => 'Every immutable finding was addressed.']),
+    ], last: true);
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git', 'task_check' => null]);
+    $group->update(['pr_url' => 'https://github.com/acme/orbit/pull/42']);
+    config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
+    $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
+    app()->instance(TaskPullRequestReviewWatcher::class, $source);
+    $candidate = $source->reviewCandidate($group, 101)->candidate;
+    expect($candidate)->not->toBeNull();
+    $plan = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate($candidate));
+    $task->update(['fixup_problem' => $plan->identity, 'fixup_head_sha' => 'abc123', 'brief' => $plan->brief, 'deliverables' => $plan->deliverables]);
+    DB::transaction(fn () => app(TaskGitHubReviewConsumption::class)->record($group, $task, $candidate, $group->tasks()->get()));
+    $watcher = mock(TaskPullRequestWatcher::class);
+    $watcher->shouldReceive('status')->andReturn('open');
+    $watcher->shouldReceive('health')->andReturn(new TaskPullRequestHealth('open', headSha: str_repeat('c', 40)));
+    $publisher->pushFailures = 1;
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Reviewing)
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($task->comments()->sole()->commit_sha)->toBe(str_repeat('c', 40));
+    $this->travel(60)->seconds();
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Completed)
+        ->and($signer->messages)->toHaveCount(1)
+        ->and($publisher->bodies)->toBe([])
+        ->and($publisher->pushes)->toBe([$group->id, $group->id])
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Settling);
+    app(TaskScheduler::class)->tick();
+    expect(DB::table('task_github_review_consumptions')->count())->toBe(1);
+    $source->observation = FeedbackFixtures::observation([FeedbackFixtures::review(102, head: str_repeat('c', 40))], head: str_repeat('c', 40));
+    app(TaskScheduler::class)->tick();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+        ->and(DB::table('task_github_review_consumptions')->count())->toBe(1);
+    $source->observation = FeedbackFixtures::observation([FeedbackFixtures::review(103, GitHubReviewState::ChangesRequested, str_repeat('c', 40))], head: str_repeat('c', 40));
+    tick_running_agents();
+    app(TaskScheduler::class)->tick();
+    expect(DB::table('task_github_review_consumptions')->count())->toBe(2)
+        ->and($group->tasks()->where('fixup_problem', 'review:42')->count())->toBe(2);
+});
 
 it('asks for assistance once per set of pull request problems and withdraws it when the pull request is healthy', function (): void {
     $group = tick_settling_group();

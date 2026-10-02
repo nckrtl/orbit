@@ -116,6 +116,9 @@ final readonly class TaskScheduler
         private TaskReviewPacketBuilder $reviewPackets,
         private TaskTurnFetcher $turnFetcher,
         private RetryTaskBaselineAction $retryBaseline,
+        private TaskPullRequestReviewWatcher $reviewWatcher,
+        private TaskGitHubReviewConsumption $reviewConsumption,
+        private TaskGitHubReviewFeedback $reviewFeedback,
     ) {}
 
     /**
@@ -140,6 +143,7 @@ final readonly class TaskScheduler
         }
 
         foreach ($groups as $group) {
+            $this->reportMissingReviewFixups($group);
             if ($group->status !== TaskGroupStatus::Settling) {
                 continue;
             }
@@ -152,6 +156,7 @@ final readonly class TaskScheduler
 
                 continue;
             }
+            $reviews = $this->observeReviewFeedback($group);
             $health = $this->pullRequestWatcher->health($group);
             $status = $health?->state;
             if ($status === 'merged') {
@@ -171,7 +176,7 @@ final readonly class TaskScheduler
             } elseif ($status === 'closed') {
                 TaskAssistance::apply($group, AssistanceKind::Failure, null, 'The expected pull request closed without merging.', replaceFailure: true);
             } elseif ($health instanceof TaskPullRequestHealth) {
-                $this->healOpenPullRequest($group, $health);
+                $this->healOpenPullRequest($group, $health, $reviews);
             }
         }
 
@@ -206,7 +211,7 @@ final readonly class TaskScheduler
                 if ($task->status === TaskStatus::Running) {
                     $this->recordSubtaskStart($task);
                 }
-                if ($task->assistance_requested || $group->assistance_requested) {
+                if ($task->assistance_requested || $this->progressBlockedByAssistance($group)) {
                     if ($task->assistance_requested && ! $group->assistance_requested && $task->assistance_kind instanceof AssistanceKind && is_string($task->assistance_reason)) {
                         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                         if (! $group->assistance_requested) {
@@ -2891,7 +2896,7 @@ final readonly class TaskScheduler
      * A fixup that changed nothing asks for assistance instead of a second try on the same result.
      * A group keeps at most three Gateway fixups in total.
      */
-    private function healOpenPullRequest(Task $group, TaskPullRequestHealth $health): void
+    private function healOpenPullRequest(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
     {
         if ($this->otherAssistance($group) || $this->hasBusyTask($group->tasks)) {
             return;
@@ -2909,8 +2914,6 @@ final readonly class TaskScheduler
 
         if ($health->problems === []) {
             $this->reportPullRequestHealth($group, $health);
-
-            return;
         }
 
         $fixups = $this->orderedTasks($group->tasks)
@@ -2919,11 +2922,18 @@ final readonly class TaskScheduler
         $latest = $fixups->last();
         if ($latest instanceof Task && is_string($latest->fixup_head_sha) && $latest->fixup_head_sha === $health->headSha) {
             if ($this->fixupChangedNothing($latest)) {
-                $this->reportPullRequestHealth($group, $health, 'Fixup subtask #'.$latest->id.' changed nothing, so Orbit does not try again on the same result.');
+                $reason = 'Fixup subtask #'.$latest->id.' changed nothing, so Orbit does not try again on the same result.';
+                if ($health->problems === [] && ($reviews?->selection->requests ?? []) !== []) {
+                    $this->reviewFeedbackAssistance($group, $reason, 'unchanged-head');
+                } else {
+                    $this->reportPullRequestHealth($group, $health, $reason);
+                }
             }
 
             return;
         }
+
+        $this->changeReviewFeedback($group, 'unchanged-head', null);
 
         // A check pending for 60 minutes or less is not a result yet. Report a completed genuine
         // failure, and append no check fixup. A conflict does not wait. Infrastructure backoff starts
@@ -2936,13 +2946,20 @@ final readonly class TaskScheduler
             return;
         }
 
-        if (! $health->conflicts && $health->failedChecks === []) {
+        if (! $health->conflicts && $health->failedChecks === [] && $health->infrastructureChecks !== []) {
             $this->awaitInfrastructureChecks($group, $health);
 
             return;
         }
 
         $plan = $this->nextFixup($group, $health, $health->checksYoungPending);
+        if (! $plan instanceof TaskSettlingFixup && ! $health->checksPending && $health->infrastructureChecks === []) {
+            if ($this->appendReviewFeedback($group, $health, $reviews)) {
+                $this->resumeWaitingSubtask($group);
+
+                return;
+            }
+        }
         if (! $plan instanceof TaskSettlingFixup) {
             $this->reportPullRequestHealth(
                 $group,
@@ -2953,7 +2970,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        if ($this->fixupsSinceOperatorWork($this->orderedTasks($group->tasks))->count() >= TaskSettlingFixup::GroupLimit) {
+        if (array_sum($this->fixupCountsSinceOperatorWork($group)) >= TaskSettlingFixup::GroupLimit) {
             $this->reportPullRequestHealth($group, $health, 'Orbit already appended '.TaskSettlingFixup::GroupLimit.' fixups to this group.');
 
             return;
@@ -2962,6 +2979,153 @@ final readonly class TaskScheduler
         if ($this->appendFixup($group, $plan, $health->headSha) instanceof Task) {
             $this->resumeWaitingSubtask($group);
         }
+    }
+
+    private static function isReviewFeedbackReason(?string $reason): bool
+    {
+        return TaskGitHubReviewFeedback::isReason($reason);
+    }
+
+    /** Source-specific causes are durable; presentation never replaces unrelated assistance. */
+    private function changeReviewFeedback(Task $group, string $source, ?string $reason): void
+    {
+        if ($this->reviewFeedback->change($group, [$source => $reason])) {
+            $this->broadcasts->groupChanged($group->id);
+            if ($group->assistance_requested && is_string($group->assistance_reason)) {
+                $this->coder->assistance($group, $group->assistance_reason);
+            }
+        }
+    }
+
+    private function reviewFeedbackAssistance(Task $group, string $reason, string $source): void
+    {
+        $this->changeReviewFeedback($group, $source, $reason);
+    }
+
+    private function reportMissingReviewFixups(Task $group): void
+    {
+        $missing = $this->reviewConsumption->missingFixups($group);
+        foreach ($this->reviewFeedback->causes($group) as $source => $reason) {
+            if (str_starts_with($source, 'missing:') && ! isset($missing[$source])) {
+                $this->changeReviewFeedback($group, $source, null);
+            }
+        }
+        foreach ($missing as $source => $reason) {
+            $this->reviewFeedbackAssistance($group, $reason, $source);
+        }
+    }
+
+    private function reviewReadBackoffKey(Task $group, string $operation): string
+    {
+        return 'tasks.github-review-read.'.$group->id.($operation === 'list' ? '' : '.'.$operation);
+    }
+
+    private function reviewReadResult(Task $group, TaskReviewReadStatus $status, string $operation = 'list'): void
+    {
+        $key = $this->reviewReadBackoffKey($group, $operation);
+        if ($status === TaskReviewReadStatus::Unreadable) {
+            $backoff = $this->readBackoff($key, 'GitHub review read');
+            if ($backoff !== null && $backoff['failures'] >= self::InfrastructureCheckRetries) {
+                $this->reviewFeedbackAssistance($group, 'The trusted review source remains unreadable ('.$operation.'). Restore review-read access.', $operation);
+            }
+            $this->extendBackoff($key, $backoff, 'GitHub review read');
+
+            return;
+        }
+        if ($status === TaskReviewReadStatus::Changed) {
+            return;
+        }
+        if ($status === TaskReviewReadStatus::Overflow) {
+            $this->reviewFeedbackAssistance($group, 'The complete GitHub review source exceeds the pagination limit ('.$operation.'). Split the findings or append a scoped operator subtask.', $operation);
+
+            return;
+        }
+        $this->rememberBackoff($key, null, 'GitHub review read');
+        if ($status === TaskReviewReadStatus::InvalidTrust) {
+            $this->reviewFeedbackAssistance($group, 'The operator reviewer configuration is invalid. Correct the trusted numeric accounts.', 'trust');
+
+            return;
+        }
+        $this->changeReviewFeedback($group, $operation, null);
+        if ($operation === 'list') {
+            $this->changeReviewFeedback($group, 'trust', null);
+        }
+    }
+
+    private function observeReviewFeedback(Task $group): ?TaskReviewObservation
+    {
+        if (! $this->retryIsDue('tasks.github-review-read.'.$group->id, 'GitHub review read')) {
+            return null;
+        }
+        $observation = $this->reviewWatcher->reviews($group, fresh: true);
+        $this->reviewReadResult($group, $observation->status);
+        if (in_array($observation->status, [TaskReviewReadStatus::Complete, TaskReviewReadStatus::Disabled], true)) {
+            $eligible = array_map(static fn ($review): int => $review->id, $observation->selection->requests ?? []);
+            if ($eligible === []) {
+                $this->changeReviewFeedback($group, 'unchanged-head', null);
+            }
+            foreach ($this->reviewFeedback->causes($group) as $source => $reason) {
+                if (preg_match('/^review:([0-9]+):/', $source, $match) === 1 && ! in_array((int) $match[1], $eligible, true)) {
+                    $this->rememberBackoff($this->reviewReadBackoffKey($group, $source), null, 'GitHub review read');
+                    $this->changeReviewFeedback($group, $source, null);
+                }
+            }
+        }
+
+        return $observation;
+    }
+
+    /** Final source reads stay outside the append transaction. Local eligibility is checked again inside it. */
+    private function appendReviewFeedback(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $observation): bool
+    {
+        if ($observation?->status !== TaskReviewReadStatus::Complete || $observation->repository === null || $observation->number === null) {
+            return false;
+        }
+        $dispatchGroup = clone $group;
+        $counts = $this->fixupCountsSinceOperatorWork($group);
+        foreach ($observation->selection->requests ?? [] as $review) {
+            if ($this->reviewConsumption->consumed($group, $observation->repository->owner.'/'.$observation->repository->name, $observation->number, $review->id)) {
+                continue;
+            }
+            if (($counts['review:'.$review->reviewerId] ?? 0) >= TaskSettlingFixup::Limit || array_sum($counts) >= TaskSettlingFixup::GroupLimit) {
+                $this->reviewFeedbackAssistance($group, 'The automatic fixup cap was reached for account '.$review->reviewerId.' or this group. Append a scoped operator subtask.', 'review:'.$review->id.':cap');
+
+                continue;
+            }
+            $this->changeReviewFeedback($group, 'review:'.$review->id.':cap', null);
+            $findings = 'review:'.$review->id.':findings';
+            $validation = 'review:'.$review->id.':validation';
+            if (! $this->retryIsDue($this->reviewReadBackoffKey($group, $findings), 'GitHub review findings')
+                || ! $this->retryIsDue($this->reviewReadBackoffKey($group, $validation), 'GitHub review revalidation')) {
+                continue;
+            }
+            $result = $this->reviewWatcher->reviewCandidate($group, $review->id, fresh: true);
+            $this->reviewReadResult($group, $result->status, $findings);
+            if ($result->status !== TaskReviewReadStatus::Complete || $result->candidate === null) {
+                return false;
+            }
+            $candidate = $result->candidate;
+            if ($candidate->head !== $health->headSha) {
+                return false;
+            }
+            try {
+                $packet = TaskReviewFindingsPacket::fromCandidate($candidate);
+            } catch (\InvalidArgumentException|\LengthException $exception) {
+                $this->reviewFeedbackAssistance($group, $exception->getMessage(), 'review:'.$review->id.':packet');
+
+                return false;
+            }
+            $this->changeReviewFeedback($group, 'review:'.$review->id.':packet', null);
+            $result = $this->reviewWatcher->revalidateReviewCandidate($group, $candidate);
+            $this->reviewReadResult($group, $result->status, $validation);
+            if ($result->status !== TaskReviewReadStatus::Complete || $result->candidate === null) {
+                return false;
+            }
+
+            return $this->appendFixup($dispatchGroup, TaskSettlingFixup::reviewPlan($dispatchGroup->project->taskCheckCommand(), $packet), $candidate->head, $candidate) instanceof Task;
+        }
+
+        return false;
     }
 
     /**
@@ -3009,7 +3173,14 @@ final readonly class TaskScheduler
     /** Whether assistance was requested for a cause other than the open pull request's own problems. */
     private function otherAssistance(Task $group): bool
     {
-        return $group->assistance_requested && ! TaskPullRequestHealth::isReason($group->assistance_reason);
+        return $group->assistance_requested && ! TaskPullRequestHealth::isReason($group->assistance_reason)
+            && ! self::isReviewFeedbackReason($group->assistance_reason);
+    }
+
+    /** Review-source problems are observations, not a hold on otherwise authorized ongoing work. */
+    private function progressBlockedByAssistance(Task $group): bool
+    {
+        return $group->assistance_requested && ! self::isReviewFeedbackReason($group->assistance_reason);
     }
 
     /** @param  Collection<int, Task>  $tasks */
@@ -3058,7 +3229,7 @@ final readonly class TaskScheduler
     /** @return array<string, int> */
     private function fixupCountsSinceOperatorWork(Task $group): array
     {
-        $counts = [];
+        $counts = $this->reviewConsumption->orphanCharges($group, $group->tasks);
         foreach ($this->fixupsSinceOperatorWork($this->orderedTasks($group->tasks)) as $task) {
             if (is_string($task->fixup_problem) && $task->fixup_problem !== '') {
                 $counts[$task->fixup_problem] = ($counts[$task->fixup_problem] ?? 0) + 1;
@@ -3089,9 +3260,9 @@ final readonly class TaskScheduler
             ->values();
     }
 
-    private function appendFixup(Task $group, TaskSettlingFixup $plan, ?string $headSha): ?Task
+    private function appendFixup(Task $group, TaskSettlingFixup $plan, ?string $headSha, ?TaskReviewCandidate $candidate = null): ?Task
     {
-        return DB::transaction(function () use ($group, $plan, $headSha): ?Task {
+        return DB::transaction(function () use ($group, $plan, $headSha, $candidate): ?Task {
             $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
                 ->findOrFail($group->id);
@@ -3103,14 +3274,28 @@ final readonly class TaskScheduler
             if ($this->hasBusyTask($tasks) || $this->lowestTodo($tasks) instanceof Task) {
                 return null;
             }
-            $fixups = $this->fixupsSinceOperatorWork($tasks);
-            $count = $fixups->filter(static fn (Task $task): bool => $task->fixup_problem === $plan->identity)->count();
-            $total = $fixups->count();
+            $locked->setRelation('tasks', $tasks);
+            if ($candidate !== null) {
+                $trust = TaskReviewTrust::fromConfig($candidate->repository, config('orbit.tasks.github_reviewers', []));
+                if ($locked->pr_url !== $group->pr_url || $locked->project_id !== $group->project_id
+                    || ! is_string($locked->pr_url) || $candidate->repository->pullRequestNumber($locked->pr_url) !== $candidate->number
+                    || ! $trust->valid || $trust->revision !== $candidate->trustRevision
+                    || $this->reviewConsumption->consumed($locked, $candidate->repository->owner.'/'.$candidate->repository->name, $candidate->number, $candidate->review->id)) {
+                    return null;
+                }
+            }
+            $latest = $this->orderedTasks($tasks)->filter(static fn (Task $task): bool => is_string($task->fixup_problem) && $task->fixup_problem !== '')->last();
+            if ($latest instanceof Task && $latest->fixup_head_sha === $headSha) {
+                return null;
+            }
+            $counts = $this->fixupCountsSinceOperatorWork($locked);
+            $count = $counts[$plan->identity] ?? 0;
+            $total = array_sum($counts);
             if ($count >= TaskSettlingFixup::Limit || $total >= TaskSettlingFixup::GroupLimit) {
                 return null;
             }
 
-            return Task::query()->create([
+            $fixup = Task::query()->create([
                 'parent_id' => $locked->id,
                 'position' => StoredInteger::fromOrZero($tasks->max('position')) + 1,
                 'title' => $plan->title,
@@ -3120,6 +3305,11 @@ final readonly class TaskScheduler
                 'fixup_head_sha' => $headSha,
                 'status' => TaskStatus::Todo,
             ]);
+            if ($candidate !== null) {
+                $this->reviewConsumption->record($locked, $fixup, $candidate, $tasks);
+            }
+
+            return $fixup;
         });
     }
 
@@ -3129,7 +3319,7 @@ final readonly class TaskScheduler
      */
     private function resumeStrandedSubtask(Task $group): void
     {
-        if ($group->assistance_requested || $this->hasBusyTask($group->tasks)) {
+        if ($this->progressBlockedByAssistance($group) || $this->hasBusyTask($group->tasks)) {
             return;
         }
 
@@ -3156,7 +3346,7 @@ final readonly class TaskScheduler
         if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
             return;
         }
-        if ($group->status === TaskGroupStatus::Running && $group->assistance_requested) {
+        if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
             return;
         }
         if ($group->status === TaskGroupStatus::Settling && $this->resumeBlocked($group)) {
@@ -3236,7 +3426,7 @@ final readonly class TaskScheduler
                 if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
                     return null;
                 }
-                if ($group->status === TaskGroupStatus::Running && $group->assistance_requested) {
+                if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
                     return null;
                 }
                 if ($group->status === TaskGroupStatus::Settling && $this->resumeBlocked($group)) {
@@ -3300,7 +3490,8 @@ final readonly class TaskScheduler
     {
         return $group->assistance_requested
             && ! TaskPullRequestHealth::isReason($group->assistance_reason)
-            && ! self::isMissingPullRequestReason($group->assistance_reason);
+            && ! self::isMissingPullRequestReason($group->assistance_reason)
+            && ! self::isReviewFeedbackReason($group->assistance_reason);
     }
 
     /** Clears the pull-request and missing-pull-request reasons when a resumed subtask starts. */
@@ -3627,7 +3818,8 @@ final readonly class TaskScheduler
     /** Recheck immediately before spawning, including retries of an already running fixup. */
     private function skipStaleConflictFixup(Task $task): bool
     {
-        if ($this->conflictBase($task) === null) {
+        $feedback = is_string($task->fixup_problem) && str_starts_with($task->fixup_problem, 'review:');
+        if ($this->conflictBase($task) === null && ! $feedback) {
             return false;
         }
         $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
@@ -3635,12 +3827,12 @@ final readonly class TaskScheduler
         if (! $health instanceof TaskPullRequestHealth) {
             return true;
         }
-        if ($health->state === 'open' && $health->conflicts) {
+        if ($health->state === 'open' && ($health->conflicts || $feedback)) {
             return false;
         }
         $reason = match ($health->state) {
-            'merged' => 'Cancelled because the pull request merged; no conflict fixup is needed.',
-            'closed' => 'Cancelled because the pull request closed without merging; no conflict fixup can proceed.',
+            'merged' => $feedback ? 'Cancelled because the pull request merged; no feedback fixup can proceed.' : 'Cancelled because the pull request merged; no conflict fixup is needed.',
+            'closed' => $feedback ? 'Cancelled because the pull request closed without merging; no feedback fixup can proceed.' : 'Cancelled because the pull request closed without merging; no conflict fixup can proceed.',
             default => $health->mergeable === true
                 ? 'Cancelled because the pull request is mergeable again; no conflict fixup is needed.'
                 : null,
