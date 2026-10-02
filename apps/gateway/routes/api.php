@@ -11,7 +11,7 @@ use App\Http\Controllers\Api\AnnotationsController;
 use App\Http\Controllers\Api\ClustersController;
 use App\Http\Controllers\Api\DatabaseConnectionAttachmentsController;
 use App\Http\Controllers\Api\DatabaseConnectionsController;
-use App\Http\Controllers\Api\DatabaseUsersController;
+use App\Http\Controllers\Api\DatabaseServersController;
 use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
@@ -58,6 +58,7 @@ use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\TaskDefinitionsController;
 use App\Http\Controllers\Api\TaskGroupsController;
+use App\Http\Controllers\Api\TaskQuestionsController;
 use App\Http\Controllers\Api\TasksController;
 use App\Http\Controllers\Api\ToolInventoryController;
 use App\Http\Controllers\Api\ToolManagersController;
@@ -473,8 +474,6 @@ Route::prefix('v1')->group(function (): void {
             ->name('process:stop');
         Route::post('processes/{process}/restart', [ProcessesController::class, 'restart'])
             ->name('process:restart');
-        Route::post('processes/{process}/database-users', [DatabaseUsersController::class, 'store'])
-            ->name('database:user:create');
         Route::delete('processes/{process}', [ProcessesController::class, 'destroy'])
             ->name('process:destroy');
         Route::get('database-connections', [DatabaseConnectionsController::class, 'index'])
@@ -487,6 +486,9 @@ Route::prefix('v1')->group(function (): void {
         Route::get('database-connections/{database_connection}/users', [DatabaseConnectionsController::class, 'users'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:user:list');
+        Route::post('database-connections/{database_connection}/users', [DatabaseConnectionsController::class, 'storeUser'])
+            ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:user:create');
         Route::patch('database-connections/{database_connection}', [DatabaseConnectionsController::class, 'update'])
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->name('database:update');
@@ -506,6 +508,16 @@ Route::prefix('v1')->group(function (): void {
             ->where('database_connection', '[a-z0-9]+(?:-[a-z0-9]+)*')
             ->where('table', '[A-Za-z_][A-Za-z0-9_]*')
             ->name('database:describe');
+        Route::get('database-servers', [DatabaseServersController::class, 'index'])
+            ->name('database:server:list');
+        Route::post('database-servers', [DatabaseServersController::class, 'store'])
+            ->name('database:server:create');
+        Route::get('database-servers/{database_server}', [DatabaseServersController::class, 'show'])
+            ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:server:show');
+        Route::delete('database-servers/{database_server}', [DatabaseServersController::class, 'destroy'])
+            ->where('database_server', '[a-z0-9]+(?:-[a-z0-9]+)*')
+            ->name('database:server:destroy');
         Route::get('tool-inventory', [ToolInventoryController::class, 'scan'])
             ->name('tool:scan');
         Route::get('tool-managers', [ToolManagersController::class, 'index'])
@@ -555,6 +567,7 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('group')->whereNumber('session')->withoutMiddleware(RecordCommandActivity::class)->name('tasks:agent-stream');
         Route::get('tasks/status', [TasksController::class, 'status'])->name('tasks:status');
         Route::get('task-groups', [TaskGroupsController::class, 'index'])->name('tasks:list');
+        Route::get('task-questions', [TaskQuestionsController::class, 'index'])->name('tasks:question:list');
         Route::post('task-groups', [TaskGroupsController::class, 'store'])->name('tasks:create');
         Route::get('task-groups/{group}', [TaskGroupsController::class, 'show'])
             ->whereNumber('group')

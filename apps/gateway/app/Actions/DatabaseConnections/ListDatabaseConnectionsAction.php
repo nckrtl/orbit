@@ -13,6 +13,7 @@ final readonly class ListDatabaseConnectionsAction
     public function execute(): Collection
     {
         return DatabaseConnection::query()
+            ->with('server')
             ->orderBy('slug')
             ->get();
     }

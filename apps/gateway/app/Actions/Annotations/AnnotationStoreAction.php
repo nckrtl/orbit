@@ -91,9 +91,11 @@ final readonly class AnnotationStoreAction
                 $task->duration_ms = max(0, (int) $task->started_at->diffInMilliseconds(now()));
             }
             $task->save();
+            $completing = $next === TaskStatus::Completed;
             $task->parent()->update([
-                'status' => $next === TaskStatus::Completed ? TaskGroupStatus::Completed : TaskGroupStatus::Running,
+                'status' => $completing ? TaskGroupStatus::Completed : TaskGroupStatus::Running,
                 'started_at' => $task->started_at, 'settled_at' => $task->settled_at, 'duration_ms' => $task->duration_ms,
+                ...($completing ? ['assistance_requested' => false] : []),
             ]);
             $annotation->setRelation('task', $task);
             $annotation->delivery = 'sent';

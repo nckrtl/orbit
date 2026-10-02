@@ -150,7 +150,7 @@ it('marks the group completed and reports the removal failure when the workspace
 
     expect($completed->status)->toBe(TaskGroupStatus::Completed)
         ->and($completed->taskable_id)->toBe($instanceId)
-        ->and($completed->assistance_requested)->toBeTrue()
+        ->and($completed->assistance_requested)->toBeFalse()
         ->and($completed->assistance_reason)->toBe('Workspace removal failed: The Node is unreachable.')
         ->and(Instance::query()->find($instanceId))->not->toBeNull();
 

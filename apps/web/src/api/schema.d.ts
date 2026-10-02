@@ -343,7 +343,7 @@ export interface paths {
         put?: never;
         /**
          * Create a Database connection
-         * @description Create a Database connection through the Gateway.
+         * @description Registers an existing database, or with `server` creates a MySQL database and user on that Database server. `server` excludes every connection field; `instance_id` makes that Instance the owner, creates the test database, and attaches the connection under prefix DB. The response never contains a password.
          */
         post: operations["database-create"];
         delete?: never;
@@ -473,8 +473,60 @@ export interface paths {
          */
         get: operations["database-user-list"];
         put?: never;
-        post?: never;
+        /**
+         * Add a database user
+         * @description Adds a user to a database on a Database server, or sets the password and privileges of an existing one. `read_only` grants SELECT; otherwise the user gets all privileges on the database. A connection without a server returns `database.server_required`. The username of a connection on the server returns `database.name_conflict`.
+         */
+        post: operations["database-user-create"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/database-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Database servers
+         * @description List the Database servers.
+         */
+        get: operations["database-server-list"];
+        put?: never;
+        /**
+         * Create a Database server
+         * @description Runs a MySQL server as a Docker Node Process. The Gateway generates the root password, passes it to the container for the first start only, and then keeps it only encrypted. A retry of the same request continues from the first step that did not finish; another Node, tag, or port for an existing slug returns `database.server_slug_conflict`. No response contains the password.
+         */
+        post: operations["database-server-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/database-servers/{database_server}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a Database server
+         * @description Shows one Database server with the connections of the databases on it.
+         */
+        get: operations["database-server-show"];
+        put?: never;
+        post?: never;
+        /**
+         * Remove a Database server
+         * @description Removes the Process and the record of a Database server that no connection uses. The data volume stays on the Node. A server that a connection points to returns `database.server_in_use`.
+         */
+        delete: operations["database-server-destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1872,26 +1924,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/processes/{process}/database-users": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Create a managed MySQL user
-         * @description Creates a MySQL user and database through a Node-targeted Docker MySQL Process, then registers or refreshes the connection. The host is the Node WireGuard address and the port is the published host port for container port 3306. A slug that already names a mysql connection is refreshed. A pgsql or sqlite slug returns `database.slug_conflict`.
-         */
-        post: operations["database-user-create"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/processes/{process}/log-streams": {
         parameters: {
             query?: never;
@@ -2741,13 +2773,13 @@ export interface paths {
         };
         /**
          * List Task groups
-         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-list"];
         put?: never;
         /**
          * Create a Task group
-         * @description Creates a Task group for an App with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. `plan: true` on a `backlog` group provisions its Instance on an app-dev Node with access to itself and starts a T3 planner thread that becomes the reviewer (`tasks.plan_requires_backlog`, `tasks.planner_driver_unavailable`, `tasks.planner_node_unavailable`, `tasks.planner_unavailable`). Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
+         * @description Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-create"];
         delete?: never;
@@ -2765,7 +2797,7 @@ export interface paths {
         };
         /**
          * Show a Task group
-         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested` and `assistance_reason`. Returns `extension.disabled` while the extension is off.
+         * @description Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.
          */
         get: operations["tasks-show"];
         put?: never;
@@ -2775,7 +2807,7 @@ export interface paths {
         head?: never;
         /**
          * Update a Task group
-         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim; for a planning group Orbit first commits the workspace as `Plan: {title}` (`tasks.commit_failed`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-update"];
         trace?: never;
@@ -2868,7 +2900,7 @@ export interface paths {
         put?: never;
         /**
          * Create a subtask
-         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most 20 typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `test` adds `project`, `file` (a Pest test file in that project), `name` (a substring of the test name), and an optional boolean `fails_on_base` (true means the named test must fail on the start commit before it passes; omitted is stored as false, and any other type refuses the field); `command` adds `command` and an optional `directory`; `review` adds nothing. Orbit verifies file, test, and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most five typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `command` adds `command`, an optional `directory` (default `.`), an optional boolean `fails_on_base`, and optional `paths` (workspace-relative file paths, not globs). Only `command` accepts `fails_on_base` and `paths`. With `fails_on_base: true`, `paths` must contain at least one file, and the command must fail on the start commit before it passes on the working tree; omitted `fails_on_base` is stored as false. `review` adds nothing. Orbit verifies file and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         post: operations["tasks-subtask-create"];
         delete?: never;
@@ -2962,6 +2994,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-questions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List task questions
+         * @description Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.
+         */
+        get: operations["tasks-question-list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/tasks/status": {
         parameters: {
             query?: never;
@@ -2971,7 +3023,7 @@ export interface paths {
         };
         /**
          * Show Tasks status
-         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, and reason. The list is present while the extension is off.
+         * @description Returns whether the Gateway tasks extension is enabled, and every group currently asking for assistance. `assistance` lists those groups in ascending id order, each with its id, Project, title, status, `assistance_kind`, `assistance_question`, and `assistance_reason`. The list is present while the extension is off.
          */
         get: operations["tasks-status"];
         put?: never;
@@ -3179,6 +3231,9 @@ export interface components {
             path?: string | null;
             username?: string | null;
             has_password?: boolean;
+            server?: string | null;
+            owner_instance_id?: number | null;
+            test_database?: string | null;
         };
         DatabaseUser: {
             id?: number;
@@ -3187,6 +3242,16 @@ export interface components {
             privileges?: string;
             created_by?: string | null;
             created_at?: string;
+        };
+        DatabaseServer: {
+            id?: number;
+            slug?: string;
+            node_id?: number;
+            process_id?: number | null;
+            tag?: string;
+            port?: number;
+            status?: string;
+            databases_count?: number;
         };
         InstanceDeployment: {
             id?: number;
@@ -3692,6 +3757,9 @@ export interface components {
             watched_pr_state?: string | null;
             notify_coder?: boolean;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             implementer_model?: string;
             reviewer_model?: string;
@@ -3700,6 +3768,8 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             tasks?: components["schemas"]["Task"][];
             /** @enum {string} */
             execution_mode?: "managed" | "existing_thread";
@@ -3719,12 +3789,17 @@ export interface components {
             lines_added?: number | null;
             lines_deleted?: number | null;
             duration_ms?: number | null;
+            questions?: number;
+            escalations?: number;
             /** @enum {string} */
             type?: "implementation" | "annotation";
             target_thread_id?: string | null;
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
             assistance_requested?: boolean;
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
             fixup_problem?: string | null;
         };
@@ -3783,6 +3858,25 @@ export interface components {
             changes?: string[];
             breaking?: string[];
         };
+        TaskQuestion: {
+            id?: number;
+            task_id?: number;
+            subtask_id?: number;
+            attempt?: number;
+            /** @enum {string} */
+            asked_by?: "implementer" | "reviewer" | "operator";
+            question?: string;
+            /** @enum {string} */
+            status?: "open" | "escalated" | "answered";
+            /** @enum {string|null} */
+            answered_by?: "implementer" | "reviewer" | "operator" | null;
+            answer?: string | null;
+            /** @enum {string|null} */
+            cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract" | null;
+            asked_at?: string;
+            escalated_at?: string | null;
+            answered_at?: string | null;
+        };
         TasksStatus: {
             enabled?: boolean;
             assistance?: components["schemas"]["TaskAssistance"][];
@@ -3795,6 +3889,9 @@ export interface components {
             title?: string;
             /** @enum {string} */
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            /** @enum {string|null} */
+            assistance_kind?: "direction" | "failure" | null;
+            assistance_question?: string | null;
             assistance_reason?: string | null;
         };
         ToolInventory: {
@@ -4795,7 +4892,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip the destructive confirmation prompt */
-                    force: string;
+                    force: boolean;
                 };
             };
         };
@@ -4864,7 +4961,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip the destructive confirmation prompt */
-                    force: string;
+                    force: boolean;
                 };
             };
         };
@@ -5013,9 +5110,24 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    slug: string;
+                    /** @enum {string} */
+                    driver: "mysql" | "pgsql" | "sqlite" | "redis";
+                    node_id?: number | null;
+                    host?: string | null;
+                    port?: number | null;
+                    database?: string | null;
+                    path?: string | null;
+                    username?: string | null;
+                    password?: string | null;
+                } | {
+                    slug: string;
+                    server: string;
+                    instance_id?: number;
+                };
             };
         };
         responses: {
@@ -5181,7 +5293,26 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /**
+                     * @description Driver: mysql, pgsql, sqlite, or redis
+                     * @enum {string}
+                     */
+                    driver?: "mysql" | "pgsql" | "sqlite" | "redis";
+                    node_id?: number | null;
+                    /** @description Hostname or IP for mysql and pgsql */
+                    host?: string | null;
+                    /** @description TCP port for mysql and pgsql */
+                    port?: number | null;
+                    /** @description Database name for mysql and pgsql */
+                    database?: string | null;
+                    /** @description Unix absolute sqlite path */
+                    path?: string | null;
+                    /** @description Username */
+                    username?: string | null;
+                    /** @description Password */
+                    password?: string | null;
+                };
             };
         };
         responses: {
@@ -5507,6 +5638,296 @@ export interface operations {
             };
             /** @description No record matches the path parameters. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-user-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Database connection slug. */
+                database_connection: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Username, a 1-32 character identifier */
+                    username: string;
+                    /** @description Password for the new user */
+                    password: string;
+                    /** @description Grant only SELECT on the database */
+                    read_only?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseUser"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseUser"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Database server slug */
+                    slug: string;
+                    node_id: number;
+                    /** @description MySQL image tag. Defaults to 8.4 */
+                    tag?: string;
+                    /** @description Port to publish on the Node WireGuard address. Defaults to 3306 */
+                    port?: number;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded; an exact retry returned the existing record. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Database server slug. */
+                database_server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"] & {
+                            databases?: components["schemas"]["DatabaseConnection"][];
+                        };
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "database-server-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Database server slug. */
+                database_server: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DatabaseServer"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6408,7 +6829,7 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Delete dirty or unpublished source after identity checks */
-                    force?: string;
+                    force?: boolean;
                 };
             };
         };
@@ -6473,9 +6894,12 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deployment branch */
+                    branch: string;
+                };
             };
         };
         responses: {
@@ -7377,7 +7801,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7443,7 +7867,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7509,7 +7933,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -7637,9 +8061,24 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Deploy step name */
+                    name: string;
+                    /** @description Command the Gateway runs */
+                    command: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -7774,7 +8213,20 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Command the Gateway runs */
+                    command?: string;
+                    /**
+                     * @description before_activation or after_activation
+                     * @enum {string}
+                     */
+                    phase?: "before_activation" | "after_activation";
+                    timeout_seconds?: number;
+                    /** @description Place before this step in the same phase */
+                    before?: string;
+                    /** @description Place after this step in the same phase */
+                    after?: string;
+                };
             };
         };
         responses: {
@@ -7956,7 +8408,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
                 "application/json": Record<string, never>;
             };
@@ -8796,9 +9248,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip confirmation */
-                    force?: string;
+                    force?: boolean;
                     /** @description Delete Metrics data */
-                    purge_data?: string;
+                    purge_data?: boolean;
                 };
             };
         };
@@ -9295,9 +9747,9 @@ export interface operations {
             content: {
                 "application/json": {
                     /** @description Skip the destructive confirmation prompt */
-                    force?: string;
+                    force?: boolean;
                     /** @description Shed roles and remove a node Orbit cannot reach */
-                    offline?: string;
+                    offline?: boolean;
                 };
             };
         };
@@ -10255,11 +10707,11 @@ export interface operations {
                      */
                     role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
                     /** @description Confirm destructive role removal and dependent cleanup */
-                    force?: string;
+                    force?: boolean;
                     /** @description Request supported role-owned data cleanup */
-                    purge_data?: string;
+                    purge_data?: boolean;
                     /** @description Remove the role from a node Orbit cannot reach */
-                    offline?: string;
+                    offline?: boolean;
                 };
             };
         };
@@ -10343,7 +10795,7 @@ export interface operations {
                      */
                     role: "gateway" | "vpn" | "router" | "ingress" | "app-dev" | "app-prod" | "metrics" | "database" | "websocket" | "analytics";
                     /** @description Confirm the role transfer */
-                    force?: string;
+                    force?: boolean;
                     /** @description Optional source Node ID or name */
                     from?: number;
                 };
@@ -10419,9 +10871,13 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: {
+        requestBody: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    apps: {
+                        path?: string | null;
+                    } | null;
+                };
             };
         };
         responses: {
@@ -10763,93 +11219,6 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-        };
-    };
-    "database-user-create": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                /** @description Numeric Process ID. */
-                process: number;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    /** @description Database connection slug */
-                    slug: string;
-                    /** @description Database name to create */
-                    database: string;
-                    /** @description Username to create */
-                    username: string;
-                    /** @description Password for the created user */
-                    password: string;
-                };
-            };
-        };
-        responses: {
-            /** @description The request succeeded; an exact retry returned the existing record. */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DatabaseConnection"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description Created. */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        data: components["schemas"]["DatabaseConnection"];
-                        meta: components["schemas"]["Meta"];
-                    };
-                };
-            };
-            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
-            403: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description No record matches the path parameters. */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
-            409: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Error"];
-                };
-            };
-            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
-            422: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14724,7 +15093,7 @@ export interface operations {
                      * @description backlog (default) or todo
                      * @enum {string}
                      */
-                    status?: never;
+                    status?: "backlog" | "todo";
                     /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
                     notify_on_settle?: boolean;
@@ -14881,7 +15250,7 @@ export interface operations {
                      * @description backlog or todo
                      * @enum {string}
                      */
-                    status?: never;
+                    status?: "backlog" | "todo";
                 };
             };
         };
@@ -15715,6 +16084,52 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-question-list": {
+        parameters: {
+            query?: {
+                project_id?: number;
+                cause?: "brief_unclear" | "contract_gap" | "scope" | "environment" | "missed_contract";
+                status?: "open" | "escalated" | "answered";
+                since?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskQuestion"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The tasks extension is disabled (`extension.disabled`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

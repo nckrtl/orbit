@@ -102,7 +102,7 @@ describe("findings", () => {
         ]);
     });
 
-    it("reports a model no driver can run, and accepts a Claude model and a listed model", () => {
+    it("reports Claude and other models Pi cannot run, and accepts a listed Pi model", () => {
         const example = definition([
             subtask({
                 key: "docs",
@@ -125,10 +125,36 @@ describe("findings", () => {
         ];
         expect(findings(example, models)).toEqual([
             { key: "docs", message: "No driver can run gpt-missing." },
+            { key: "docs", message: "No driver can run claude-opus-5." },
             { key: "search", message: "No driver can run gemini-ultra." },
         ]);
-        expect(driverCanRun("claude-opus-5", [])).toBe(true);
+        expect(driverCanRun("claude-opus-5", [])).toBe(false);
         expect(findings(example)).toEqual([]);
+    });
+});
+
+describe("Pi-only task models", () => {
+    it.each([
+        ["claude-opus-5", "codex"],
+        ["Claude-opus-5", "codex"],
+        ["claude", "codex"],
+        ["claudeNext", "codex"],
+        ["proxy/claude-opus-5", "codex"],
+        ["anthropic/custom", "codex"],
+        ["custom", "anthropic"],
+        ["custom", "claude"],
+        ["gemini-ultra", "google"],
+        ["custom", "meta"],
+    ])("refuses %s even when listed through %s", (id, provider) => {
+        expect(driverCanRun(id, [{ id, provider }])).toBe(false);
+    });
+
+    it("requires a ProxyCli offer through a provider Pi runs", () => {
+        expect(driverCanRun("gpt-5.6-luna", [{ id: "gpt-5.6-luna", provider: "codex" }])).toBe(
+            true,
+        );
+        expect(driverCanRun("grok-4", [{ id: "grok-4", provider: "xai" }])).toBe(true);
+        expect(driverCanRun("gpt-5.6-luna", [])).toBe(false);
     });
 });
 

@@ -43,12 +43,17 @@ final readonly class TaskReviewPacket
 
     public const int RetrievalLimit = 1_000;
 
+    public const int ConsultsLimit = 2_000;
+
+    public const int ConsultLineLimit = 400;
+
     /**
      * @param  list<TaskDeliverable>  $deliverables
      * @param  list<array{title: string, summary: string}>  $approvals  earlier approved subtasks, oldest first
      * @param  list<array{path: string, insertions: int, deletions: int}>  $diffFiles  tracked and untracked files, empty when the list was cut
      * @param  array{files: int, insertions: int, deletions: int}|null  $diffCounts  full counts when the path list was cut
      * @param  string|null  $taskCheck  the Project task check, or null when the Project has none
+     * @param  list<array{question: string, answer: string}>  $consults  answered consults, oldest first
      */
     public function __construct(
         private string $groupBrief,
@@ -72,6 +77,7 @@ final readonly class TaskReviewPacket
         private string $resolution = '',
         private ?int $threadId = null,
         private string $groupStartCommit = '',
+        private array $consults = [],
     ) {}
 
     public function render(): string
@@ -95,6 +101,7 @@ final readonly class TaskReviewPacket
             )),
             $this->continued ? '' : $this->section('Deliverables', $this->deliverablesText()),
             $this->continued ? '' : $this->section('Earlier approved subtasks', $this->approvalsText()),
+            $this->continued || $this->consults === [] ? '' : $this->section('Consults', $this->consultsText()),
             $this->section('Diff stat', $this->diffStat()),
             $this->section('Handoff', $this->handoff()),
         ], static fn (string $part): bool => $part !== ''));
@@ -225,6 +232,59 @@ final readonly class TaskReviewPacket
 
             return trim($dropped.' '.$show);
         });
+    }
+
+    private function consultsText(): string
+    {
+        $lines = [];
+        $cut = false;
+        foreach ($this->consults as $consult) {
+            $line = $this->consultLine($consult['question'], $consult['answer']);
+            $lines[] = $line['text'];
+            $cut = $cut || $line['cut'];
+        }
+
+        return $this->fitLines($lines, self::ConsultsLimit, true, function (int $omitted) use ($cut): string {
+            $dropped = match (true) {
+                $omitted === 1 => '1 answered consult was omitted.',
+                $omitted > 1 => $omitted.' answered consults were omitted.',
+                default => '',
+            };
+            $show = $omitted > 0 || $cut ? TaskReviewContext::Path.' holds each question and answer.' : '';
+
+            return trim($dropped.' '.$show);
+        });
+    }
+
+    /**
+     * Keeps a prefix of the question and a prefix of the answer. A long question cannot erase the answer.
+     *
+     * @return array{text: string, cut: bool}
+     */
+    private function consultLine(string $question, string $answer): array
+    {
+        $prefix = '- Question: ';
+        $middle = ' Answer: ';
+        $full = $prefix.$question.$middle.$answer;
+        if (mb_strlen($full) <= self::ConsultLineLimit) {
+            return ['text' => $full, 'cut' => false];
+        }
+        $budget = self::ConsultLineLimit - mb_strlen($prefix) - mb_strlen($middle);
+        $questionRoom = min(mb_strlen($question), intdiv($budget, 2));
+        $answerRoom = min(mb_strlen($answer), $budget - $questionRoom);
+        $spare = $budget - $questionRoom - $answerRoom;
+        if (mb_strlen($question) > $questionRoom) {
+            $questionRoom += min($spare, mb_strlen($question) - $questionRoom);
+            $spare = $budget - $questionRoom - $answerRoom;
+        }
+        if (mb_strlen($answer) > $answerRoom) {
+            $answerRoom += min($spare, mb_strlen($answer) - $answerRoom);
+        }
+
+        return [
+            'text' => $prefix.mb_substr($question, 0, $questionRoom).$middle.mb_substr($answer, 0, $answerRoom),
+            'cut' => true,
+        ];
     }
 
     private function diffStat(): string

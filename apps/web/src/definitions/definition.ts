@@ -85,8 +85,8 @@ export type Finding = { key: string; message: string };
 const OUTCOMES = ["passed", "skipped", "failed"] as const;
 const KINDS = new Set<TaskKind>(["agent", "check", "merge", "action", "decide"]);
 
-/** Providers the task drivers do not run. ProxyCli keeps the name, and no driver serves it. */
-const UNRUN_PROVIDERS = new Set(["google", "meta"]);
+/** ProxyCli providers that Pi task agents cannot use. */
+const UNRUN_PROVIDERS = new Set(["claude", "anthropic", "google", "meta"]);
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -102,20 +102,20 @@ const stringList = (value: unknown): string[] | undefined => {
     return items.length === 0 ? undefined : items;
 };
 
-/** A Claude model runs on T3's own subscription, so it needs no ProxyCli offer. */
+/** Pi refuses Claude names, including provider/model names and the Anthropic provider. */
 export function isClaudeModel(id: string): boolean {
-    return /^claude([\s-]|$)/i.test(id);
+    const slash = id.indexOf("/");
+    const provider = slash === -1 ? null : id.slice(0, slash);
+    const name = slash === -1 ? id : id.slice(slash + 1);
+    return provider?.toLowerCase() === "anthropic" || /^claude/i.test(name);
 }
 
-/**
- * A model can run when ProxyCli offers it through a provider a driver runs, or when it is a Claude
- * model. A listed model whose provider no driver runs, such as `google`, cannot.
- */
+/** A task model needs a ProxyCli offer through a provider Pi runs. Claude is never runnable. */
 export function driverCanRun(model: string, models: readonly ProxyModel[]): boolean {
+    if (isClaudeModel(model)) return false;
     const listed = models.find((candidate) => candidate.id === model);
-    if (isClaudeModel(model) || listed?.provider === "claude") return true;
     if (listed === undefined) return false;
-    return !UNRUN_PROVIDERS.has(listed.provider);
+    return !UNRUN_PROVIDERS.has(listed.provider.toLowerCase());
 }
 
 /** The models an agent subtask names. A phase card unions the models inside it. */

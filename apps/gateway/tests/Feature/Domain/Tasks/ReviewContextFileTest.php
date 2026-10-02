@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
@@ -151,12 +152,12 @@ it('counts a communication failure and does not send the review when the context
         'brief' => 'Send no review when the file cannot be written.',
         'status' => TaskStatus::Running,
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
     app()->instance(TaskTurnReceipts::class, new class implements TaskTurnReceipts
     {
-        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?string $context = null): void
+        public function prepare(Instance $instance, TaskThreadRole $role, bool $final = false, array $deliverables = [], ?int $threadId = null, ?TaskTurnMode $mode = null, ?string $context = null): void
         {
             if ($context !== null) {
                 throw new TaskTurnReceiptException('The task workspace could not be reached for the turn receipt.');
@@ -234,7 +235,7 @@ it('does not send the review when the context path is a directory', function ():
         'brief' => 'Send no review when the context path is a directory.',
         'status' => TaskStatus::Running,
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
     app()->instance(TaskTurnReceipts::class, review_context_receipts(new LocalShellSshExecutor));
@@ -354,7 +355,7 @@ function review_context_opening(): array
         'review_attempt' => $task->review_attempt,
         'posted_at' => now(),
     ]);
-    $driver = new FakeAgentDriver('t3');
+    $driver = new FakeAgentDriver('pi');
     $log = new class
     {
         /** @var list<array{message: string, context: ?string}> */

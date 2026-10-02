@@ -190,7 +190,7 @@ describe('create and send', function (): void {
         $node = pi_node();
 
         expect(fn () => pi_driver()->create(new AgentThreadStart($node, pi_workspace($node), 'Task', 'Review', $model, 'high', TaskThreadRole::Reviewer)))
-            ->toThrow(AgentDriverException::class, 'Claude models run on the T3 driver, not on Pi.');
+            ->toThrow(AgentDriverException::class, 'Claude models are unavailable for task agents.');
         Http::assertNothingSent();
     })->with(['claude-opus-5', 'cliproxyapi/claude-opus-5', 'anthropic/claude-opus-5']);
 
@@ -199,7 +199,7 @@ describe('create and send', function (): void {
         $node = pi_node();
 
         expect(fn () => pi_driver()->create(new AgentThreadStart($node, pi_workspace($node), 'Task', 'Review', 'claude-opus-5', 'high', TaskThreadRole::Reviewer)))
-            ->toThrow(AgentDriverException::class, 'Claude models run on the T3 driver, not on Pi.');
+            ->toThrow(AgentDriverException::class, 'Claude models are unavailable for task agents.');
         Http::assertNothingSent();
     });
 

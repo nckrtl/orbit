@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
@@ -35,6 +36,8 @@ final class TaskGroupData extends Data
         public ?string $watchedPrState,
         public bool $notifyCoder,
         public bool $assistanceRequested,
+        public ?AssistanceKind $assistanceKind,
+        public ?string $assistanceQuestion,
         public ?string $assistanceReason,
         public string $implementerModel,
         public string $reviewerModel,
@@ -43,6 +46,8 @@ final class TaskGroupData extends Data
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public ?int $durationMs,
+        public int $questions,
+        public int $escalations,
         public array $tasks,
         public TaskExecutionMode $executionMode,
     ) {}
@@ -72,6 +77,8 @@ final class TaskGroupData extends Data
             watchedPrState: $group->watched_pr_state,
             notifyCoder: $group->notify_coder,
             assistanceRequested: $group->assistance_requested,
+            assistanceKind: $group->assistance_kind,
+            assistanceQuestion: $group->assistance_question,
             assistanceReason: $group->assistance_reason,
             implementerModel: $group->implementer_model,
             reviewerModel: $group->reviewer_model,
@@ -82,6 +89,8 @@ final class TaskGroupData extends Data
             durationMs: $status->isActive() && $group->started_at !== null
                 ? max(0, (int) now()->diffInMilliseconds($group->started_at, true))
                 : $group->duration_ms,
+            questions: (int) ($group->questions ?? 0),
+            escalations: (int) ($group->escalations ?? 0),
             tasks: array_values($group->tasks
                 ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
                 ->all()),

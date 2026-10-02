@@ -11,7 +11,10 @@ use App\Models\DatabaseConnection;
 
 final readonly class RemoveDatabaseConnectionAction
 {
-    public function __construct(private ?RecordEventBroadcaster $broadcaster = null) {}
+    public function __construct(
+        private DropServerDatabaseAction $drops,
+        private ?RecordEventBroadcaster $broadcaster = null,
+    ) {}
 
     public function execute(DatabaseConnection $connection): void
     {
@@ -23,6 +26,7 @@ final readonly class RemoveDatabaseConnectionAction
             );
         }
 
+        $this->drops->execute($connection);
         $connection->delete();
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(

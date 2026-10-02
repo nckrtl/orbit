@@ -304,7 +304,9 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Project' => $group->project ?? $group->projectId,
             'Status' => $group->status,
             'Assistance' => $group->assistanceRequested,
-            'Reason' => $group->assistanceReason,
+            'Kind' => self::askingKind($group->assistanceRequested, $group->assistanceKind),
+            'Question' => self::askingText($group->assistanceRequested, $group->assistanceQuestion),
+            'Reason' => self::askingText($group->assistanceRequested, $group->assistanceReason),
             'Instance' => $group->taskableId,
             'Pull request' => $group->prUrl,
             'Notify Coder' => $group->notifyCoder,
@@ -325,11 +327,12 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             self::tokens($task->tokens),
             self::lineDiff($task->lineDiff, $task->linesAdded, $task->linesDeleted),
             self::duration($task->durationMs),
-            self::assistanceCell($task->assistanceRequested, $task->assistanceReason),
+            self::askingKind($task->assistanceRequested, $task->assistanceKind),
+            self::assistanceSummary($task->assistanceRequested, $task->assistanceKind, $task->assistanceQuestion, $task->assistanceReason),
         ], $group->tasks);
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->table(
-            ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration', 'Assistance'],
+            ['Position', 'ID', 'Title', 'Status', 'Deliverables', 'Tokens', 'Line diff', 'Duration', 'Kind', 'Assistance'],
             $rows,
             'No subtasks.',
         ));
@@ -366,7 +369,9 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Title' => $task->title,
             'Status' => $task->status,
             'Assistance' => $task->assistanceRequested,
-            'Reason' => $task->assistanceReason,
+            'Kind' => self::askingKind($task->assistanceRequested, $task->assistanceKind),
+            'Question' => self::askingText($task->assistanceRequested, $task->assistanceQuestion),
+            'Reason' => self::askingText($task->assistanceRequested, $task->assistanceReason),
             'Type' => $task->type,
             'Implementer thread' => $task->implementerAgentThreadId,
             'Tokens' => self::tokens($task->tokens),
@@ -620,14 +625,46 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return mb_strlen($value) > $max ? "{$label} must be at most ".number_format($max).' characters.' : null;
     }
 
-    /** The reason while the record is asking for assistance, or null so the cell is an em dash. */
-    protected static function assistanceCell(bool $requested, ?string $reason): ?string
+    /** The kind while the record is asking, or null so the cell is an em dash. */
+    protected static function askingKind(bool $requested, ?string $kind): ?string
+    {
+        if (! $requested || $kind === null || $kind === '') {
+            return null;
+        }
+
+        return $kind;
+    }
+
+    /** The text while the record is asking, or null so an old value stays an em dash. */
+    protected static function askingText(bool $requested, ?string $text): ?string
+    {
+        if (! $requested || $text === null || $text === '') {
+            return null;
+        }
+
+        return $text;
+    }
+
+    /**
+     * The question for a direction request, otherwise the reason, while the record is asking.
+     * Null hides an old value behind an em dash.
+     */
+    protected static function assistanceSummary(bool $requested, ?string $kind, ?string $question, ?string $reason): ?string
     {
         if (! $requested) {
             return null;
         }
 
-        return $reason === null || $reason === '' ? 'yes' : $reason;
+        $primary = $kind === 'direction' ? $question : $reason;
+        $fallback = $kind === 'direction' ? $reason : null;
+
+        foreach ([$primary, $fallback] as $text) {
+            if (is_string($text) && $text !== '') {
+                return $text;
+            }
+        }
+
+        return 'yes';
     }
 
     protected static function tokens(?int $tokens): ?string

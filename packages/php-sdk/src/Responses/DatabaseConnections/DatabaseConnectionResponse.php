@@ -40,13 +40,20 @@ final readonly class DatabaseConnectionResponse
         public bool $hasPassword,
         public string $requestId,
         public ?int $usersCount = null,
+        public ?string $server = null,
+        public ?int $ownerInstanceId = null,
+        public ?string $testDatabase = null,
     ) {
-        if ($id < 1 || ($nodeId !== null && $nodeId < 1)) {
+        if ($id < 1 || ($nodeId !== null && $nodeId < 1) || ($ownerInstanceId !== null && $ownerInstanceId < 1)) {
             throw new InvalidArgumentException('Invalid Database connection response identifier.');
         }
 
         if ($port !== null && ($port < 1 || $port > 65535)) {
             throw new InvalidArgumentException('Invalid Database connection response field [port].');
+        }
+
+        if ($server !== null && (strlen($server) > self::SLUG_MAX_LENGTH || preg_match(self::SLUG_PATTERN, $server) !== 1)) {
+            throw new InvalidArgumentException('Invalid Database connection response field [server].');
         }
 
         if ($usersCount !== null && $usersCount < 0) {
@@ -76,6 +83,9 @@ final readonly class DatabaseConnectionResponse
             hasPassword: self::requiredBoolean($data, 'has_password'),
             requestId: GatewayRequestId::fromTransport($requestId) ?? '',
             usersCount: self::nullableInteger($data, 'users_count'),
+            server: self::nullableText($data, 'server', self::SLUG_MAX_LENGTH, $redactor),
+            ownerInstanceId: self::nullableInteger($data, 'owner_instance_id'),
+            testDatabase: self::nullableText($data, 'test_database', self::DATABASE_MAX_LENGTH, $redactor),
         );
     }
 
@@ -93,6 +103,9 @@ final readonly class DatabaseConnectionResponse
             'path' => $this->path,
             'username' => $this->username,
             'has_password' => $this->hasPassword,
+            'server' => $this->server,
+            'owner_instance_id' => $this->ownerInstanceId,
+            'test_database' => $this->testDatabase,
             'request_id' => $this->requestId,
         ];
 

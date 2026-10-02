@@ -6,8 +6,10 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
@@ -49,10 +51,10 @@ final readonly class RequestEndedPullRequestAssistanceAction
             $list = $open->map(static fn (Task $task): string => '#'.$task->id.' '.$task->title)->implode(', ');
             $reason = self::ReasonPrefix.$group->watched_pr_url.' is '.$group->watched_pr_state.'. Open subtasks: '.$list.'.';
             DB::transaction(function () use ($group, $open, $reason): void {
-                $group->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+                $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, $reason));
                 foreach ($open as $task) {
                     if (in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
-                        $task->update(['assistance_requested' => true, 'assistance_reason' => $reason]);
+                        $task->update(TaskAssistance::attributes(AssistanceKind::Failure, null, $reason));
                     }
                 }
             });

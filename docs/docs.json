@@ -73,6 +73,7 @@
               "reference/routes",
               "reference/environment-variables",
               "reference/database-connections",
+              "reference/database-servers",
               "reference/processes-and-schedules",
               "reference/schedules",
               "reference/app-dev-runtime-hibernation",
@@ -421,7 +422,11 @@
               "GET /api/v1/database-connections/{database_connection}/schema",
               "GET /api/v1/database-connections/{database_connection}/tables",
               "GET /api/v1/database-connections/{database_connection}/users",
-              "POST /api/v1/processes/{process}/database-users"
+              "POST /api/v1/database-connections/{database_connection}/users",
+              "GET /api/v1/database-servers",
+              "POST /api/v1/database-servers",
+              "DELETE /api/v1/database-servers/{database_server}",
+              "GET /api/v1/database-servers/{database_server}"
             ]
           },
           {
@@ -488,6 +493,7 @@
               "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "GET /api/v1/task-questions",
               "GET /api/v1/tasks/status"
             ]
           },
@@ -565,9 +571,9 @@
           {
             "group": "Records",
             "pages": [
-              "decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
-              "decisions/0175-docs-impact-check-in-orbit-repo",
-              "decisions/0182-start-tasks-from-project-task-definitions"
+              "decisions/0182-start-tasks-from-project-task-definitions",
+              "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
+              "decisions/0191-clone-the-default-instance-database-for-each-new-instance"
             ]
           }
         ]
@@ -633,6 +639,10 @@
     {
       "source": "/decisions/0096-run-plausible-through-an-analytics-role",
       "destination": "/reference/analytics"
+    },
+    {
+      "source": "/decisions/0097-publish-analytics-tracking-hosts-for-app-instances",
+      "destination": "/reference/analytics#why-it-works-this-way"
     },
     {
       "source": "/decisions/0099-collect-role-specific-service-metrics",
@@ -1319,6 +1329,10 @@
       "destination": "/reference/projects#project-and-instance"
     },
     {
+      "source": "/decisions/0187-ask-the-reviewer-before-the-operator",
+      "destination": "/reference/tasks#questions-go-through-the-reviewer"
+    },
+    {
       "source": "/decisions/0183-manage-macos-tools-without-service-roles",
       "destination": "/reference/node-provisioning#a-mac-needs-no-service-role"
     },
@@ -1337,6 +1351,10 @@
     {
       "source": "/decisions/0189-register-instances-only-for-existing-projects",
       "destination": "/reference/projects#registration-needs-a-project"
+    },
+    {
+      "source": "/decisions/0192-run-task-agents-on-pi-only",
+      "destination": "/reference/tasks#task-agents-run-on-pi"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",
@@ -1367,8 +1385,16 @@
       "destination": "/reference/implementation-loop#the-candidate-gate"
     },
     {
+      "source": "/decisions/0175-docs-impact-check-in-orbit-repo",
+      "destination": "/contributor-guide#docs-impact-stays-in-the-repository"
+    },
+    {
       "source": "/decisions/0176-file-repro-first-bug-groups",
       "destination": "/reference/tasks#outer-loop"
+    },
+    {
+      "source": "/decisions/0177-remove-the-app-compatibility-surface",
+      "destination": "/reference/projects#one-public-name-without-compatibility"
     },
     {
       "source": "/decisions/0104-own-cliproxyapi-quota-through-the-proxycli-extension",

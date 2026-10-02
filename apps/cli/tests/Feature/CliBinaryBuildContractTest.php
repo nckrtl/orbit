@@ -82,7 +82,7 @@ it('keeps the workflow artifact names, dest paths, and hosts aligned with the bu
         ->and($workflow)->toContain('bin/orbit-build-cli-binary linux x64')
         ->and($workflow)->toContain('working-dir=apps/cli/phpacker')
         ->and($workflow)->toContain('GITHUB_TOKEN: ${{ github.token }}')
-        ->and($workflow)->toContain('runs-on: ubuntu-latest')
+        ->and($workflow)->toContain('runs-on: ubuntu-26.04')
         ->and($workflow)->toContain('runs-on: [self-hosted, macOS, ARM64, mini]')
         ->and($workflow)->toContain("vars.ORBIT_MINI_RUNNER == 'true'")
         ->and($workflow)->not->toContain('macos-latest')

@@ -93,9 +93,10 @@ final readonly class CreateTaskGroupAction
 
     private function configuredDriver(string $key): string
     {
-        $driver = config($key, 't3');
+        $driver = config($key, 'pi');
 
-        if (! is_string($driver)) {
+        // ADR 0190: a new task stores the pi driver only. Any other value stores no task.
+        if (! is_string($driver) || $driver !== 'pi') {
             throw new AgentDriverException('The configured agent driver is unavailable.');
         }
 

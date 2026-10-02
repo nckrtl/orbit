@@ -7,14 +7,18 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceDiffReader;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LocalShellSshExecutor;
 
-function remote_diff_instance(): Instance
+function remote_diff_instance(string $checkout = '/srv/orbit/apps/orbit/task-12'): Instance
 {
     $project = Project::query()->create([
         'name' => 'orbit',
@@ -35,13 +39,13 @@ function remote_diff_instance(): Instance
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'task-12',
-        'checkout_path' => '/srv/orbit/apps/orbit/task-12',
+        'checkout_path' => $checkout,
         'branch' => 'task-12',
         'status' => 'source_resolved',
     ]);
 }
 
-function remote_diff_ssh(AppDevFakeSshExecutor $transport): DevelopmentSshExecutor
+function remote_diff_ssh(SshExecutor $transport): DevelopmentSshExecutor
 {
     return new DevelopmentSshExecutor(
         $transport,
@@ -88,6 +92,39 @@ it('reads insertions and deletions from git shortstat', function (): void {
             'main',
         ])
         ->and((string) $transport->commands[0]->input)->toContain('git -C "$checkout" diff --shortstat');
+});
+
+it('leaves a merged default branch out of the line counts', function (): void {
+    $root = sys_get_temp_dir().'/orbit-task-diff-'.bin2hex(random_bytes(6));
+    $git = fn (string $dir, string ...$arguments): string => trim((new Process(['git', '-C', $dir, '-c', 'user.name=Orbit', '-c', 'user.email=orbit@example.test', ...$arguments]))->mustRun()->getOutput());
+
+    try {
+        (new Process(['git', 'init', '--quiet', '--bare', '--initial-branch=main', "{$root}/origin.git"]))->mustRun();
+        (new Process(['git', 'clone', '--quiet', "{$root}/origin.git", "{$root}/upstream"]))->mustRun();
+        File::put("{$root}/upstream/a.txt", "a\n");
+        $git("{$root}/upstream", 'add', 'a.txt');
+        $git("{$root}/upstream", 'commit', '--quiet', '-m', 'root');
+        $git("{$root}/upstream", 'push', '--quiet', 'origin', 'HEAD:main');
+        (new Process(['git', 'clone', '--quiet', "{$root}/origin.git", "{$root}/task"]))->mustRun();
+        $git("{$root}/task", 'checkout', '--quiet', '-b', 'task-12');
+        File::put("{$root}/task/b.txt", "b1\nb2\n");
+        $git("{$root}/task", 'add', 'b.txt');
+        $git("{$root}/task", 'commit', '--quiet', '-m', 'task');
+        File::put("{$root}/upstream/c.txt", "c1\nc2\nc3\n");
+        $git("{$root}/upstream", 'add', 'c.txt');
+        $git("{$root}/upstream", 'commit', '--quiet', '-m', 'main moves');
+        $git("{$root}/upstream", 'push', '--quiet', 'origin', 'HEAD:main');
+        // The task merges the fetched main. Its local main stays at root.
+        $git("{$root}/task", 'fetch', '--quiet', 'origin');
+        $git("{$root}/task", 'merge', '--quiet', '--no-edit', 'origin/main');
+
+        expect(new RemoteTaskWorkspaceDiffReader(remote_diff_ssh(new LocalShellSshExecutor))->lineChanges(
+            remote_diff_instance("{$root}/task"),
+            'main',
+        ))->toBe(['additions' => 2, 'deletions' => 0]);
+    } finally {
+        File::deleteDirectory($root);
+    }
 });
 
 it('reports commits after a revision or date', function (): void {

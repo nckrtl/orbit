@@ -7,6 +7,8 @@ namespace App\Actions\Tasks;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -68,8 +70,9 @@ final readonly class CancelTaskGroupAction
             $keepOffline = $current instanceof Instance && $current->id === $offlineId;
             $attached = $current instanceof Instance && $current->id !== $removedId && ! $keepOffline ? $current : null;
             if ($keepOffline) {
-                $locked->assistance_requested = true;
-                $locked->assistance_reason = RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.';
+                if (! ($locked->assistance_requested && $locked->assistance_kind === AssistanceKind::Direction)) {
+                    $locked->fill(TaskAssistance::attributes(AssistanceKind::Failure, null, RemoveTaskWorkspaceAction::RemovalFailedPrefix.'The Node is unreachable.'));
+                }
             } else {
                 $locked->taskable()->dissociate();
                 $locked->assistance_requested = false;
@@ -95,9 +98,13 @@ final readonly class CancelTaskGroupAction
 
         $group->tasks()
             ->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Failed, TaskStatus::Cancelled])
-            ->update(['status' => TaskStatus::Cancelled, 'settled_at' => now()]);
+            ->update([
+                'status' => TaskStatus::Cancelled,
+                'settled_at' => now(),
+                'assistance_requested' => false,
+            ]);
         $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        // Removal success clears the assistance flag and keeps the last reason. An unreachable Node keeps the flag.
+        // Removal success clears the assistance flag and keeps the last reason. A cancelled task keeps the reason and does not ask.
         if (! $cancelled->assistance_requested) {
             $group->tasks()->where('assistance_requested', true)->update(['assistance_requested' => false]);
             $cancelled = $group->fresh(['project', 'tasks', 'taskable']) ?? $cancelled;

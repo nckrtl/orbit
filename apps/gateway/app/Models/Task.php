@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
@@ -14,6 +15,7 @@ use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
+use BackedEnum;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -21,6 +23,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use LogicException;
@@ -50,6 +53,8 @@ use LogicException;
  * @property string|null $review_workspace_head
  * @property string|null $review_workspace_tree
  * @property bool $assistance_requested
+ * @property AssistanceKind|null $assistance_kind
+ * @property string|null $assistance_question
  * @property string|null $assistance_reason
  * @property int $communication_failures
  * @property int|null $ended_pr_notice_thread_id
@@ -89,6 +94,12 @@ use LogicException;
  * @property int|null $lines_deleted
  * @property int|null $line_diff
  * @property int|null $duration_ms
+ * @property int $questions
+ * @property int $escalations
+ * @property int|null $direction_relay_comment_id
+ * @property int|null $consult_comment_id
+ * @property string|null $direction_answer_key
+ * @property string|null $direction_answer_source_turn_id
  * @property Carbon|null $started_at
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
@@ -157,6 +168,10 @@ final class Task extends Model
         'fixup_head_sha',
         'communication_failures',
         'resolution_delivered_comment_id',
+        'direction_relay_comment_id',
+        'consult_comment_id',
+        'direction_answer_key',
+        'direction_answer_source_turn_id',
         'pi_restart_resumes',
         'pi_restart_key',
         'pi_restart_thread_id',
@@ -182,6 +197,8 @@ final class Task extends Model
         'status',
         'implementer_agent_thread_id',
         'tokens',
+        'questions',
+        'escalations',
         'line_diff',
         'lines_added',
         'lines_deleted',
@@ -206,7 +223,7 @@ final class Task extends Model
         'review_notified_turn_id',
         'review_workspace_head',
         'review_workspace_tree',
-        'assistance_requested', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id',
+        'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'communication_failures', 'resolution_delivered_comment_id', 'direction_relay_comment_id', 'consult_comment_id', 'direction_answer_key', 'direction_answer_source_turn_id',
         'ended_pr_notice_thread_id', 'ended_pr_notice_key', 'ended_pr_notice_state',
         'pi_restart_resumes', 'pi_restart_key', 'pi_restart_thread_id', 'pi_restart_source_turn_id', 'pi_restart_reservation', 'pi_restart_session_revision',
         'project_id',
@@ -237,6 +254,7 @@ final class Task extends Model
             $task->applyLevelDefaults();
             $task->guardHierarchy();
             $task->guardStatus();
+            $task->clearAssistanceWhenEnded();
         });
     }
 
@@ -408,6 +426,10 @@ final class Task extends Model
             'lines_added' => 'integer',
             'lines_deleted' => 'integer',
             'duration_ms' => 'integer',
+            'questions' => 'integer',
+            'escalations' => 'integer',
+            'direction_relay_comment_id' => 'integer',
+            'consult_comment_id' => 'integer',
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'deliverables' => 'array',
@@ -420,6 +442,7 @@ final class Task extends Model
             'review_reminder_attempt' => 'integer',
             'review_notified_attempt' => 'integer',
             'assistance_requested' => 'boolean',
+            'assistance_kind' => AssistanceKind::class,
             'communication_failures' => 'integer',
             'pi_restart_resumes' => 'integer',
             'pi_restart_thread_id' => 'integer',
@@ -428,14 +451,101 @@ final class Task extends Model
         ];
     }
 
+    /**
+     * The assistance flag follows the stored status when this update does not change it.
+     * The decision is inside the UPDATE, so a stale loaded status cannot reflag an ended row.
+     */
+    private bool $assistanceFollowsDatabase = false;
+
+    #[\Override]
+    protected function performUpdate(Builder $query): bool
+    {
+        if ($this->fireModelEvent('updating') === false) {
+            return false;
+        }
+
+        if ($this->usesTimestamps()) {
+            $this->updateTimestamps();
+        }
+
+        $dirty = $this->guardEndedAssistance($this->getDirtyForUpdate());
+
+        if (count($dirty) > 0) {
+            $this->setKeysForSaveQuery($query)->update($dirty);
+
+            $this->refreshSavedAttributes();
+
+            if ($this->assistanceFollowsDatabase) {
+                $this->assistanceFollowsDatabase = false;
+                $this->syncAssistanceFromDatabase();
+            }
+
+            $this->syncChanges();
+
+            $this->fireModelEvent('updated', false);
+        }
+
+        return true;
+    }
+
+    /**
+     * @param  array<string, mixed>  $dirty
+     * @return array<string, mixed>
+     */
+    private function guardEndedAssistance(array $dirty): array
+    {
+        if (array_key_exists('status', $dirty) && $this->isEndedStatus($dirty['status'])) {
+            $this->assistance_requested = false;
+            $dirty['assistance_requested'] = $this->attributes['assistance_requested'];
+
+            return $dirty;
+        }
+
+        $requestsAssistance = array_key_exists('assistance_requested', $dirty)
+            && $this->isRequestedFlag($dirty['assistance_requested']);
+        $loadedEnded = ! array_key_exists('status', $dirty) && $this->isEndedStatus($this->attributes['status'] ?? null);
+
+        if (! array_key_exists('status', $dirty) && ($requestsAssistance || $loadedEnded)) {
+            $grammar = $this->getConnection()->getQueryGrammar();
+            $status = $grammar->wrap('status');
+            $flag = $requestsAssistance ? '1' : $grammar->wrap('assistance_requested');
+            $dirty['assistance_requested'] = new Expression(
+                "case when {$status} in ('completed', 'cancelled') then 0 else {$flag} end", // @phpstan-ignore argument.type (identifiers are grammar-wrapped, not user input)
+            );
+            $this->assistanceFollowsDatabase = true;
+        }
+
+        return $dirty;
+    }
+
+    private function syncAssistanceFromDatabase(): void
+    {
+        $stored = $this->newModelQuery()->whereKey($this->getKey())->value('assistance_requested');
+        $this->assistance_requested = $this->isRequestedFlag($stored);
+    }
+
+    private function isEndedStatus(mixed $status): bool
+    {
+        if ($status instanceof BackedEnum) {
+            $status = $status->value;
+        }
+
+        return $status === TaskStatus::Completed->value || $status === TaskStatus::Cancelled->value;
+    }
+
+    private function isRequestedFlag(mixed $flag): bool
+    {
+        return in_array($flag, [true, 1, '1'], true);
+    }
+
     private function applyLevelDefaults(): void
     {
         if ($this->parentKey() === null) {
             $this->fillIfMissing([
                 'status' => TaskGroupStatus::Backlog->value,
                 'execution_mode' => TaskExecutionMode::Managed->value,
-                'implementer_agent_driver' => 't3',
-                'reviewer_agent_driver' => 't3',
+                'implementer_agent_driver' => 'pi',
+                'reviewer_agent_driver' => 'pi',
                 'notify_coder' => false,
                 'assistance_requested' => false,
                 'implementer_model' => TaskAgentDefaults::ImplementerModel,
@@ -563,6 +673,31 @@ final class Task extends Model
 
         $this->attributes['parent_id'] = $stored['parent_id'];
         $this->syncOriginalAttribute('parent_id');
+    }
+
+    /**
+     * A completed or cancelled task never asks for assistance. The last reason stays.
+     * A query-builder update skips this hook, so that write clears the flag itself.
+     */
+    private function clearAssistanceWhenEnded(): void
+    {
+        $status = $this->attributes['status'] ?? null;
+
+        if ($status instanceof BackedEnum) {
+            $status = $status->value;
+        }
+
+        if (! is_string($status)) {
+            return;
+        }
+
+        $ended = $this->resolvedParentId() === null
+            ? in_array(TaskGroupStatus::tryFrom($status), [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
+            : in_array(TaskStatus::tryFrom($status), [TaskStatus::Completed, TaskStatus::Cancelled], true);
+
+        if ($ended) {
+            $this->assistance_requested = false;
+        }
     }
 
     private function guardStatus(): void

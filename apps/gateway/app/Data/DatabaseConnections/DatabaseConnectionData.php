@@ -23,6 +23,9 @@ final class DatabaseConnectionData extends Data
         public ?string $path,
         public ?string $username,
         public bool $hasPassword,
+        public ?string $server,
+        public ?int $ownerInstanceId,
+        public ?string $testDatabase,
     ) {}
 
     public static function fromModel(DatabaseConnection $connection): self
@@ -38,6 +41,9 @@ final class DatabaseConnectionData extends Data
             path: $connection->path,
             username: $connection->username,
             hasPassword: $connection->password !== null,
+            server: $connection->server?->slug,
+            ownerInstanceId: $connection->owner_instance_id,
+            testDatabase: $connection->test_database,
         );
     }
 }

@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\TaskAgentSpawner;
-use App\Infrastructure\Tasks\T3\T3Stream as TaskAgentStream;
 use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use Tests\Support\FakeAgentDriver;
 
 /** @return array{Task, AgentThread} */
 function agent_viewer_fixture(): array
@@ -18,7 +20,7 @@ function agent_viewer_fixture(): array
     test()->postJson('/api/v1/extensions/tasks/enable')->assertOk();
     $project = Project::query()->create(['name' => 'viewer', 'slug' => 'viewer', 'repository_url' => 'git@example.test:viewer.git', 'default_branch' => 'main']);
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Viewer', 'brief' => 'Read sessions']);
-    $session = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'claude-opus', 'effort' => 'high', 'external_id' => 'thread-one', 'driver' => 't3', 'runtime_key' => 'node:'.$node->id]);
+    $session = AgentThread::query()->create(['task_group_id' => $group->id, 'node_id' => $node->id, 'role' => 'reviewer', 'model' => 'gpt-5.6-luna', 'effort' => 'high', 'external_id' => 'thread-one', 'driver' => 'pi', 'runtime_key' => 'node:'.$node->id]);
 
     return [$group, $session];
 }
@@ -28,14 +30,14 @@ describe('task agent viewer', function (): void {
         [$group, $session] = agent_viewer_fixture();
         AgentThread::query()->create([
             'task_group_id' => $group->id, 'node_id' => $session->node_id, 'role' => 'reviewer',
-            'model' => 'claude-opus', 'effort' => 'high', 'external_id' => TaskAgentSpawner::PendingPrefix.'not-started',
-            'driver' => 't3', 'runtime_key' => 'node:'.$session->node_id,
+            'model' => 'gpt-5.6-luna', 'effort' => 'high', 'external_id' => TaskAgentSpawner::PendingPrefix.'not-started',
+            'driver' => 'pi', 'runtime_key' => 'node:'.$session->node_id,
         ]);
 
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")
             ->assertOk()->assertJsonCount(1, 'data')->assertJsonPath('data.0.external_id', 'thread-one')
             ->assertJsonPath('data.0.task_group_id', $group->id)->assertJsonPath('data.0.node_id', $session->node_id)
-            ->assertJsonPath('data.0.model', 'claude-opus')->assertJsonPath('data.0.effort', 'high');
+            ->assertJsonPath('data.0.model', 'gpt-5.6-luna')->assertJsonPath('data.0.effort', 'high');
         $this->postJson('/api/v1/extensions/tasks/disable')->assertOk()->assertJsonPath('data.enabled', false);
         $this->getJson("/api/v1/task-groups/{$group->id}/agents")->assertStatus(409)->assertJsonPath('error.code', 'extension.disabled');
     });
@@ -58,149 +60,43 @@ describe('task agent viewer', function (): void {
         $this->getJson("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_unavailable');
     });
 
-    it('reconnects with a full snapshot and relays entries and state', function (): void {
+    it('relays driver events, resumes the cursor, filters other threads, and hides errors', function (): void {
         [$group, $session] = agent_viewer_fixture();
         $session->update(['state' => 'done', 'tokens' => 500, 'observation_version' => 7]);
-        config()->set('orbit.t3.token', 'private-t3-bearer');
-        $fake = new class implements TaskAgentStream
+        $stored = $session->refresh()->getAttributes();
+        $driver = new class extends FakeAgentDriver
         {
-            public ?int $cursor = null;
+            public ?string $cursor = null;
 
-            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
+            public function events(AgentThread $thread, ?string $cursor, ?float $timeoutSeconds = null): iterable
             {
-                $this->cursor = $afterSequence;
-                yield ['kind' => 'snapshot', 'snapshot' => ['snapshotSequence' => 8, 'thread' => ['id' => $threadId, 'session' => ['status' => 'failed', 'lastError' => 'Turn failed.'], 'messages' => [['text' => 'TOKEN=hidden private-t3-bearer']]]]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 9, 'aggregateId' => 'unrelated', 'payload' => ['text' => 'must-not-leak']]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 10, 'aggregateId' => $threadId, 'type' => 'thread.message-sent', 'payload' => ['id' => 'm2', 'role' => 'assistant', 'text' => 'Visible progress']]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 11, 'aggregateId' => $threadId, 'type' => 'thread.message-sent', 'payload' => ['messageId' => 'm2', 'role' => 'assistant', 'text' => ' appended', 'streaming' => true]]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 12, 'aggregateId' => $threadId, 'type' => 'thread.turn-start-requested', 'payload' => []]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 13, 'aggregateId' => $threadId, 'type' => 'thread.activity-appended', 'payload' => ['activity' => ['id' => 'a1', 'kind' => 'approval', 'payload' => ['requestId' => 'request-1']]]]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 14, 'aggregateId' => $threadId, 'type' => 'thread.activity-appended', 'payload' => ['activity' => ['id' => 'a2', 'kind' => 'approval.resolved', 'payload' => ['requestId' => 'request-1']]]]];
-                yield ['kind' => 'event', 'event' => ['sequence' => 15, 'aggregateId' => $threadId, 'type' => 'thread.session-set', 'payload' => ['session' => ['status' => 'ready']]]];
-                throw new RuntimeException('private-t3-bearer secret error');
+                $this->cursor = $cursor;
+                yield new AgentThreadEvent($thread->id, 'snapshot', ['state' => 'working', 'entries' => []], 'run.8');
+                yield new AgentThreadEvent($thread->id + 1, 'entry', ['entry' => ['text' => 'must-not-leak']], 'run.9');
+                yield new AgentThreadEvent($thread->id, 'entry', ['entry' => ['text' => 'Visible progress TOKEN=hidden']], 'run.10');
+                yield new AgentThreadEvent($thread->id, 'heartbeat');
+                yield new AgentThreadEvent($thread->id, 'state', ['state' => 'done'], 'run.11');
+                throw new RuntimeException('secret error');
             }
         };
-        app()->instance(TaskAgentStream::class, $fake);
-        $response = $this->withHeader('Last-Event-ID', '7')->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream");
+        app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+        $session->update(['driver' => 'example']);
+        $stored = $session->refresh()->getAttributes();
+
+        $response = $this->withHeader('Last-Event-ID', 'run.7')->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream");
         $response->assertOk()->assertHeader('Content-Type', 'text/event-stream; charset=UTF-8');
         $output = $response->streamedContent();
-        expect($output)->toContain('id: 8', 'id: 10', 'Visible progress', '[REDACTED]', 'event: unavailable')
-            ->not->toContain('hidden', 'private-t3-bearer', 'must-not-leak', 'secret error');
-        expect($fake->cursor)->toBeNull();
-        $events = [];
-        foreach (explode("\n", $output) as $line) {
-            if (str_starts_with($line, 'data: ')) {
-                $events[] = json_decode(substr($line, 6), true, 512, JSON_THROW_ON_ERROR);
-            }
-        }
-        expect(array_column($events, 'kind'))->toBe(['snapshot', 'entry', 'entry', 'state', 'entry', 'entry', 'state'])
-            ->and($events[2]['entry']['text'])->toBe('Visible progress appended')
-            ->and($events[1])->not->toHaveKey('entries')
-            ->and($events[3]['state'])->toBe('working')
-            ->and($events[4]['state'])->toBe('working')
-            ->and($events[4]['input_requests'])->toBe([])
-            ->and($events[5]['state'])->toBe('working')
-            ->and($events[5]['input_requests'])->toBe([])
-            ->and($events[6]['state'])->toBe('done');
-        expect($session->fresh()->state->value)->toBe('done')
-            ->and($session->fresh()->tokens)->toBe(500)
-            ->and($session->fresh()->observation_version)->toBe(7)
-            ->and($session->fresh()->error)->toBeNull()
-            ->and($session->fresh()->observed_at)->toBeNull()
-            ->and($session->fresh()->observation_error)->toBeNull();
-    });
-
-    it('requests a full snapshot for a fresh viewer after collection has advanced', function (): void {
-        [$group, $session] = agent_viewer_fixture();
-        $session->update(['t3_metrics_initialized' => true, 't3_event_sequence' => 7]);
-        $fake = new class implements TaskAgentStream
-        {
-            public ?int $cursor = null;
-
-            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
-            {
-                $this->cursor = $afterSequence;
-                yield ['kind' => 'snapshot', 'snapshot' => [
-                    'snapshotSequence' => 8,
-                    'thread' => ['id' => $threadId, 'session' => ['status' => 'ready'], 'messages' => [['id' => 'm1', 'role' => 'assistant', 'text' => 'Existing transcript']]],
-                ]];
-            }
-        };
-        app()->instance(TaskAgentStream::class, $fake);
-
-        $output = $this->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertOk()->streamedContent();
-
-        expect($fake->cursor)->toBeNull()
-            ->and($output)->toContain('id: 8', 'Existing transcript');
-    });
-
-    it('accepts a viewer baseline at the durable sequence', function (): void {
-        [$group, $session] = agent_viewer_fixture();
-        $session->update(['t3_metrics_initialized' => true, 't3_event_sequence' => 8]);
-        $fake = new class implements TaskAgentStream
-        {
-            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
-            {
-                yield ['kind' => 'snapshot', 'snapshot' => [
-                    'snapshotSequence' => 8,
-                    'thread' => ['id' => $threadId, 'session' => ['status' => 'ready'], 'messages' => [['id' => 'm1', 'role' => 'assistant', 'text' => 'Stable transcript']]],
-                ]];
-            }
-        };
-        app()->instance(TaskAgentStream::class, $fake);
-
-        $output = $this->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertOk()->streamedContent();
-
-        expect($output)->toContain('id: 8', 'Stable transcript')->not->toContain('event: unavailable');
-    });
-
-    it('persists model calls from a snapshotless T3 replay', function (): void {
-        [$group, $session] = agent_viewer_fixture();
-        $session->update([
-            't3_metrics_initialized' => true,
-            't3_event_sequence' => 7,
-            't3_observed_total_processed_tokens' => 0,
-            't3_metrics_partial' => false,
-        ]);
-        $fake = new class implements TaskAgentStream
-        {
-            public ?int $cursor = null;
-
-            public function events(Node $node, string $threadId, ?int $afterSequence, ?float $timeoutSeconds = null): iterable
-            {
-                $this->cursor = $afterSequence;
-                foreach ([[8, 100, 90, 20, 10], [9, 250, 110, 30, 15]] as [$sequence, $total, $input, $cached, $output]) {
-                    yield ['kind' => 'event', 'event' => [
-                        'sequence' => $sequence, 'aggregateId' => $threadId, 'type' => 'thread.activity-appended',
-                        'payload' => ['activity' => ['kind' => 'context-window.updated', 'payload' => [
-                            'totalProcessedTokens' => $total, 'inputTokens' => $input, 'cachedInputTokens' => $cached, 'outputTokens' => $output,
-                        ]]],
-                    ]];
-                }
-            }
-        };
-        app()->instance(TaskAgentStream::class, $fake);
-
-        $this->withHeader('Last-Event-ID', '7')->get("/api/v1/task-groups/{$group->id}/agents/{$session->id}/stream")->assertOk()->streamedContent();
-        $stored = $session->fresh();
-
-        expect($fake->cursor)->toBeNull()
-            ->and($stored?->t3_event_sequence)->toBe(9)
-            ->and($stored?->model_calls)->toBe(2)
-            ->and($stored?->input_tokens)->toBe(150)
-            ->and($stored?->cached_input_tokens)->toBe(50)
-            ->and($stored?->output_tokens)->toBe(25);
+        expect($output)->toContain('id: run.8', 'id: run.10', 'id: run.11', 'Visible progress', '[REDACTED]', ': heartbeat', 'event: unavailable')
+            ->not->toContain('hidden', 'must-not-leak', 'secret error')
+            ->and($driver->cursor)->toBe('run.7')
+            ->and($session->fresh()->getAttributes())->toBe($stored);
     });
 
     it('shows per-thread token metrics', function (): void {
         [$group, $session] = agent_viewer_fixture();
         $session->update([
-            'tokens' => 130,
-            'input_tokens' => 40,
-            'cached_input_tokens' => 70,
-            'output_tokens' => 20,
-            'model_calls' => 2,
-            'peak_context_tokens' => 80,
+            'tokens' => 130, 'input_tokens' => 40, 'cached_input_tokens' => 70, 'output_tokens' => 20,
+            'model_calls' => 2, 'peak_context_tokens' => 80,
         ]);
         AgentThread::query()->create([
             'task_group_id' => $group->id, 'node_id' => $session->node_id, 'role' => 'implementer',
@@ -215,11 +111,8 @@ describe('task agent viewer', function (): void {
         expect($reported)->toMatchArray([
             'tokens' => 130, 'input_tokens' => 40, 'cached_input_tokens' => 70, 'output_tokens' => 20, 'model_calls' => 2, 'peak_context_tokens' => 80,
         ])->and($unknown)->toHaveKeys(['input_tokens', 'cached_input_tokens', 'output_tokens', 'model_calls', 'peak_context_tokens'])
-            ->and($unknown['tokens'])->toBeNull()
-            ->and($unknown['input_tokens'])->toBeNull()
-            ->and($unknown['cached_input_tokens'])->toBeNull()
-            ->and($unknown['output_tokens'])->toBeNull()
-            ->and($unknown['model_calls'])->toBeNull()
-            ->and($unknown['peak_context_tokens'])->toBeNull();
+            ->and($unknown['tokens'])->toBeNull()->and($unknown['input_tokens'])->toBeNull()
+            ->and($unknown['cached_input_tokens'])->toBeNull()->and($unknown['output_tokens'])->toBeNull()
+            ->and($unknown['model_calls'])->toBeNull()->and($unknown['peak_context_tokens'])->toBeNull();
     });
 });

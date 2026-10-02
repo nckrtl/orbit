@@ -1044,7 +1044,6 @@ function guest_script_response_shapes(): array
         'cluster:list' => ['schema' => 'Cluster', 'list' => 'clusters'],
         'database:create' => ['schema' => 'DatabaseConnection', 'list' => null],
         'database:list' => ['schema' => 'DatabaseConnection', 'list' => 'connections'],
-        'database:user:create' => ['schema' => 'DatabaseUser', 'list' => null],
         'doctor' => ['schema' => 'DoctorReport', 'list' => null],
         'instance:clone' => ['schema' => 'Instance', 'list' => null],
         'instance:create' => ['schema' => 'Instance', 'list' => null],

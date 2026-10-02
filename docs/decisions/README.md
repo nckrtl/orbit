@@ -36,10 +36,11 @@ Most decisions are built in one task, so their ADR is retired in the same pull r
 
 ## Retired decisions
 
-The [overview](/decisions/overview#retired-decisions) holds the full retired index. The completing Tasks change retires this decision and redirects its exact path to the section below.
+The [overview](/decisions/overview#retired-decisions) lists all retired decisions. Both retired ADR 0192 paths redirect to their absorbing sections in the Tasks reference.
 
 | Record | Retired path | Now in |
 | --- | --- | --- |
+| 0192 | `/decisions/0192-run-task-agents-on-pi-only` | [Tasks: Task agents run on Pi](/reference/tasks#task-agents-run-on-pi) |
 | 0192 | `/decisions/0192-stop-a-group-whose-pull-request-ended` | [Tasks: A watched pull request is not the reviewed pull request](/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request) |
 
 ## Record format
