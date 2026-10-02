@@ -24,6 +24,14 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositoryPullRequestToken($credentials, $installation, $repository);
     }
 
+    /** A separate read-only review token. Missing access is an error, never anonymous or empty success. */
+    public function reviewsToken(GitHubRepository $repository): string
+    {
+        [$credentials, $installation] = $this->installation($repository);
+
+        return $this->github->repositoryReviewsToken($credentials, $installation, $repository);
+    }
+
     /**
      * The token that reads the pull request's check runs
      * ([ADR 0140](/decisions/0140-watch-settling-pull-requests-for-conflicts-and-failed-checks)), or
