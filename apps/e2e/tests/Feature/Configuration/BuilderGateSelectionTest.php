@@ -398,7 +398,9 @@ describe('Builder gate', function (): void {
         $guidance = $root.'/vendor/.orbit-guidance-tia';
 
         expect($composer['scripts']['guidance:check'])->toBe(
-            'ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact',
+            in_array($project, ['apps/gateway', 'apps/cli', 'apps/e2e'], true)
+                ? '../../bin/guidance-check'
+                : 'ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact',
         );
         expect(orb277_tia_directory($root, 'vendor/.orbit-guidance-tia'))->toBe($guidance);
         expect(orb277_tia_directory($root, false))->not->toStartWith($guidance);

@@ -320,7 +320,7 @@ it('keeps Boost setup and repository-owned skills reproducible', function (): vo
         ->and($composer['scripts']['guidance:generate'] ?? null)
         ->toBe('@php orbit boost:update --no-discover --no-interaction')
         ->and($composer['scripts']['guidance:check'] ?? null)
-        ->toBe('ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact')
+        ->toBe('../../bin/guidance-check')
         ->and($composer['scripts']['test'] ?? null)
         ->toBe('../../bin/pest-plain vendor/bin/pest --parallel --tia --compact --colors=never')
         ->and($composer['scripts']['test:full'] ?? null)
@@ -428,7 +428,18 @@ it('never generates guidance that permits a silent rules skip', function (): voi
     $config->hasMcp = $boost->getMcp();
     $config->aiGuidelines = $boost->getPackages();
     $composer = app(GuidelineComposer::class)->config($config);
-    $generatedGuidance = $composer->compose();
+    $views = sys_get_temp_dir().'/orbit-cli-guidance-'.Str::uuid();
+    $files = new Filesystem;
+    $files->makeDirectory($views, 0700);
+    $originalCompiledPath = config('view.compiled');
+    config(['view.compiled' => $views]);
+
+    try {
+        $generatedGuidance = $composer->compose();
+    } finally {
+        config(['view.compiled' => $originalCompiledPath]);
+        $files->deleteDirectory($views);
+    }
     $requiredFallback = 'If `.ai/rules` does not exist, the checkout or Boost bootstrap is incomplete.';
     $forbiddenFallbackPattern = '/If `?\.ai\/rules`? (?:does not exist|is absent),\s*(?:you may\s+)?(?:continue|proceed|skip)\b/i';
     $committedGuidance = null;
