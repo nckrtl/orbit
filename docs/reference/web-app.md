@@ -16,7 +16,11 @@ The web app is Orbit's live view of the fleet. It is a static single-page app th
 
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) use the existing subtask `fixup_problem` and `brief` fields. Regenerating the API types confirms that feedback consumption adds no response field or web merge control. Source provenance is task data, not a rendered GitHub instruction or permission to merge.
 
+The generated Instance rename request exposes optional `branch` and `domain` fields. The Gateway still requires at least one; optional TypeScript properties do not replace API validation. This API operation adds no web UI control.
+
 The Project schema includes `task_workspace_routed`, which describes routing for new task workspaces; an existing workspace keeps its recorded mode. The Gateway serves it from its own origin.
+
+The generated Process schema includes nullable `user`, the explicitly selected account or null for the derived account. Process create accepts `user` only for a Node systemd Process without a preset. [Processes and schedules](/reference/processes-and-schedules#node-account) owns the account validation and working-directory defaults.
 
 Extension navigation follows the Gateway's enabled set: each page and its route depend only on their own extension. Tasks pages need only the `tasks` extension. The Quota page needs only `proxycli`, and it shows provider quota whenever `proxycli` is enabled and its collector is configured, whether or not Tasks is enabled. Tasks and ProxyCLI links and routes are absent while their extension is disabled. The Gateway API remains authoritative, so a stale direct request still receives `extension.disabled` rather than granting access.
 
@@ -81,6 +85,8 @@ A Node without an [agent](/reference/node-agent#where-it-runs) always uses the l
 CPU and memory come from [`process.usage`](/reference/events#process-usage) events. The app writes each sample into its cached Process list. While realtime is live, it reloads the Process list only when no sample arrived for 60 seconds.
 
 ## Live tasks
+
+The generated task schema keeps `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` apart from `pr_url`. The watched fields describe the pull request found on the task branch while subtasks are open; `pr_url` still identifies the reviewed pull request Orbit opened. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns that distinction. Regenerate the web schema after these response fields change, and keep typed test fixtures current. A task with no watched pull request has null watched fields; do not copy `pr_url` into them.
 
 When the Gateway reports Tasks enabled, the app keeps the task board, each task, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
 

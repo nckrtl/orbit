@@ -346,6 +346,27 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($empty->toArray()['questions'])->toBe([]);
     });
 
+    it('keeps the watched pull request separate from the published pull request', function (): void {
+        $group = task_fixture_send('tasks-show/watched', new ShowTaskGroupRequest(1));
+        assert($group instanceof TaskGroupResponse);
+
+        expect($group->watchedPrUrl)->toBe('https://github.com/nckrtl/orbit/pull/451')
+            ->and($group->watchedPrNumber)->toBe(451)
+            ->and($group->watchedPrState)->toBe('open')
+            ->and($group->prUrl)->toBeNull()
+            ->and($group->toArray())->toMatchArray([
+                'watched_pr_url' => 'https://github.com/nckrtl/orbit/pull/451',
+                'watched_pr_number' => 451,
+                'watched_pr_state' => 'open',
+                'pr_url' => null,
+            ]);
+        $unwatched = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
+        assert($unwatched instanceof TaskGroupResponse);
+        expect($unwatched->watchedPrUrl)->toBeNull()
+            ->and($unwatched->watchedPrNumber)->toBeNull()
+            ->and($unwatched->watchedPrState)->toBeNull();
+    });
+
     it('keeps fails_on_base on a test deliverable', function (): void {
         $mockClient = new MockClient([CreateSubtaskRequest::class => MockResponse::make([
             'data' => [

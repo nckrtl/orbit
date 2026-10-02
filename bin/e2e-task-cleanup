@@ -71,35 +71,45 @@ if [[ ! $key =~ ^[0-9a-f]{64}$ ]]; then
     exit 0
 fi
 
-state=${XDG_STATE_HOME:-$HOME/.local/state}
-link=$state/orbit/e2e-primary-checkouts/$key
-if [[ ! -L $link ]]; then
-    exit 0
+registries=()
+if [[ -n ${XDG_STATE_HOME:-} ]]; then
+    registries+=("$XDG_STATE_HOME/orbit/e2e-primary-checkouts")
 fi
-primary=$(readlink -f "$link" || true)
-if [[ ! -d $primary ]]; then
-    exit 0
-fi
-if [[ $(stat -c %u "$primary") != $(id -u) ]]; then
-    exit 0
-fi
-if [[ ! -f $primary/.e2e/topology-snapshot/promoted.json ]]; then
+registries+=("$HOME/.local/state/orbit/e2e-primary-checkouts" /var/lib/orbit/e2e-primary-checkouts)
+caller_owner=$(id -u)
+checkout_owner=$(stat -c %u "$checkout")
+primary=
+for registry in "${registries[@]}"; do
+    link=$registry/$key
+    [[ -L $link ]] || continue
+    candidate=$(readlink -f "$link" || true)
+    [[ -d $candidate ]] || continue
+    owner=$(stat -c %u "$candidate")
+    [[ $owner == "$caller_owner" || $owner == "$checkout_owner" ]] || continue
+    [[ -f $candidate/.e2e/topology-snapshot/promoted.json ]] || continue
+    git_dir=$(git -C "$candidate" rev-parse --path-format=absolute --git-dir)
+    common=$(git -C "$candidate" rev-parse --path-format=absolute --git-common-dir)
+    [[ -n $git_dir && $git_dir == "$common" ]] || continue
+    remotes=$(git -C "$candidate" remote)
+    grep -Fxq origin <<< "$remotes" || continue
+    primary_origin=$(git -C "$candidate" remote get-url origin)
+    [[ $(origin_key "$primary_origin") == "$key" ]] || continue
+    primary=$candidate
+    break
+done
+if [[ -z $primary ]]; then
     exit 0
 fi
 
-git_dir=$(git -C "$primary" rev-parse --path-format=absolute --git-dir)
-common=$(git -C "$primary" rev-parse --path-format=absolute --git-common-dir)
-if [[ $git_dir != "$common" ]]; then
-    exit 0
+if root=$(git -C "$primary" config --path --get orbit.worktreeRoot); then
+    :
+else
+    status=$?
+    if [[ $status != 1 ]]; then
+        exit "$status"
+    fi
+    root=
 fi
-
-primary_origin=$(git -C "$primary" remote get-url origin 2>/dev/null || true)
-primary_key=$(origin_key "$primary_origin")
-if [[ $primary_key != "$key" ]]; then
-    exit 0
-fi
-
-root=$(git -C "$primary" config --path --get orbit.worktreeRoot || true)
 if [[ -z $root ]]; then
     root=/fast/worktrees/orbit
 fi

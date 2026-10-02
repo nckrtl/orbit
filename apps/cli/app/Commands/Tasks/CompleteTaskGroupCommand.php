@@ -21,7 +21,10 @@ final class CompleteTaskGroupCommand extends TaskCommand
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Complete a settling task group and remove its Instance.';
+    protected $description = 'Complete a settling task group, or one whose watched pull request ended, and remove its Instance.';
+
+    #[\Override]
+    protected $help = 'A running or reviewing group can be completed when its watched pull request has merged or closed. Pass its numeric ID; the interactive list shows only settling groups. Completion cancels open subtasks and stops their running agents and checks before removing the Instance. Other groups fail with tasks.not_settling. A completed group retries workspace removal without reading GitHub.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

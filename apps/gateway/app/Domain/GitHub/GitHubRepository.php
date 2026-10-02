@@ -38,8 +38,8 @@ final readonly class GitHubRepository
      */
     public function pullRequestNumber(string $url): ?int
     {
-        $prefix = preg_quote('https://github.com/'.$this->owner.'/'.$this->name.'/pull/', '#');
+        $identity = preg_quote($this->owner.'/'.$this->name, '#');
 
-        return preg_match('#\A'.$prefix.'([1-9][0-9]{0,9})\z#D', $url, $matches) === 1 ? (int) $matches[1] : null;
+        return preg_match('#\Ahttps://github\.com/(?i:'.$identity.')/pull/([1-9][0-9]{0,9})\z#D', $url, $matches) === 1 ? (int) $matches[1] : null;
     }
 }

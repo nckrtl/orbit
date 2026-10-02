@@ -2786,6 +2786,43 @@
       }
     },
     {
+      "name": "instance-rename",
+      "extension": null,
+      "title": "instance:rename",
+      "description": "Record a development branch rename and move its Route.",
+      "method": "POST",
+      "path": "/api/v1/instances/{instance}/rename",
+      "path_inputs": [
+        "instance"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "instance": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Instance ID."
+          },
+          "branch": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Branch already checked out on the Node"
+          },
+          "domain": {
+            "type": "string",
+            "minLength": 1,
+            "description": "New domain for the Instance Route"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "instance"
+        ]
+      }
+    },
+    {
       "name": "instance-resolve",
       "extension": null,
       "title": "instance:resolve",
@@ -4168,6 +4205,12 @@
           "preset": {
             "type": "string",
             "description": "Process preset: vp-dev, agentation-mcp, or antigravity-watch"
+          },
+          "user": {
+            "type": "string",
+            "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])",
+            "maxLength": 32,
+            "description": "Existing non-root account for a Node systemd Process"
           },
           "runtime": {
             "type": "string",
@@ -6285,7 +6328,7 @@
       "name": "tasks-complete",
       "extension": "tasks",
       "title": "Complete a Task group",
-      "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+      "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/complete",
       "path_inputs": [

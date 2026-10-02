@@ -16,6 +16,7 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
@@ -36,12 +37,13 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             new RemoteCommand(
                 arguments: [
                     'python3',
-                    '-c',
+                    '-Ic',
                     self::inspectionScript(),
                     $sourcePath,
                     $includeWorktrees ? '1' : '0',
                     $account->user,
                     $account->group,
+                    TaskWorkerUser::name() ?? '',
                 ],
             ),
             step: 'registration-source-inspect',
@@ -222,6 +224,54 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             );
         }
 
+        if (array_all($members, static fn (array $member): bool => $member['facts']->path === $member['instance']->checkout_path)) {
+            if ($cleanupReady === 0) {
+                DB::transaction(static function () use ($members): void {
+                    foreach ($members as $member) {
+                        Instance::query()->whereKey($member['instance']->id)->update([
+                            'registration_relocation_state' => 'relocating',
+                            'registration_authoritative_path' => $member['facts']->path,
+                        ]);
+                    }
+                });
+
+                // An in-place source needs verification, not relocation or Git-link repair.
+                $this->runRelocation($node, 'adopt', $payload);
+
+                DB::transaction(static function () use ($members): void {
+                    foreach ($members as $member) {
+                        Instance::query()->whereKey($member['instance']->id)->update([
+                            'registration_relocation_state' => 'destination_verified',
+                            'registration_authoritative_path' => $member['instance']->checkout_path,
+                            'registration_source_device' => null,
+                            'registration_source_inode' => null,
+                        ]);
+                    }
+                });
+            }
+
+            foreach ($members as $member) {
+                $this->validateRetained($node, $member['facts'], $member['instance']->checkout_path);
+            }
+
+            // Persist adoption before changing environment permissions, so an interrupted
+            // finalization never compares those changes with the pre-adoption digest.
+            $this->runRelocation($node, 'adopt-finalize', $payload);
+
+            DB::transaction(static function () use ($members): void {
+                foreach ($members as $member) {
+                    Instance::query()->whereKey($member['instance']->id)->update([
+                        'registration_relocation_state' => 'relocated',
+                        'registration_authoritative_path' => $member['instance']->checkout_path,
+                        'registration_source_device' => null,
+                        'registration_source_inode' => null,
+                    ]);
+                }
+            });
+
+            return;
+        }
+
         if ($cleanupReady === 0) {
             DB::transaction(static function () use ($members): void {
                 foreach ($members as $member) {
@@ -366,10 +416,11 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             $node,
             new RemoteCommand([
                 'python3',
-                '-c',
+                '-Ic',
                 self::relocationScript(),
                 $operation,
                 json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
+                TaskWorkerUser::name() ?? '',
             ]),
             step: 'registration-source-relocate',
             errorCode: 'instance.registration_incomplete',
@@ -536,9 +587,117 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
         );
     }
 
-    private static function inspectionScript(): string
+    private static function workerStatusScript(): string
     {
         return <<<'PYTHON'
+            import contextlib, errno, os, pathlib, pwd, stat, struct, subprocess, sys
+
+            worker = sys.argv[-1]
+
+            class ReadGrant:
+                def __init__(self):
+                    self.stack = contextlib.ExitStack()
+                    self.anchors = []
+
+                def keep(self, fd):
+                    self.stack.callback(os.close, fd)
+                    return fd
+
+                def pin(self, path, directory=True):
+                    if not os.path.isabs(path) or os.path.normpath(path) != path: raise SystemExit(42)
+                    parent = self.keep(os.open('/', os.O_PATH | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC))
+                    parts = pathlib.Path(path).parts[1:]
+                    for index, name in enumerate(parts):
+                        flags = os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC
+                        if directory or index != len(parts) - 1: flags |= os.O_DIRECTORY
+                        fd = self.keep(os.open(name, flags, dir_fd=parent))
+                        info = os.fstat(fd)
+                        if stat.S_ISLNK(info.st_mode): raise SystemExit(42)
+                        self.anchors.append((parent, name, fd, info.st_size, info.st_mtime_ns))
+                        parent = fd
+                    if os.fstat(parent).st_uid != os.geteuid(): raise SystemExit(42)
+                    return parent
+
+                def verify(self):
+                    for parent, name, fd, size, mtime in self.anchors:
+                        current = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                        pinned = os.fstat(fd)
+                        if (current.st_dev, current.st_ino, stat.S_IFMT(current.st_mode)) != (pinned.st_dev, pinned.st_ino, stat.S_IFMT(pinned.st_mode)): raise SystemExit(42)
+                        if stat.S_ISREG(pinned.st_mode) and (pinned.st_size, pinned.st_mtime_ns) != (size, mtime): raise SystemExit(42)
+
+                def add_reads(self, fd, uid, groups):
+                    self.verify()
+                    info = os.fstat(fd)
+                    if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)): return
+                    if stat.S_ISREG(info.st_mode) and info.st_nlink != 1: return
+                    if info.st_uid == os.geteuid():
+                        target = '/proc/self/fd/' + str(fd)
+                        try: original = os.getxattr(target, 'system.posix_acl_access')
+                        except OSError as error:
+                            if error.errno != errno.ENODATA: raise
+                            original = None
+                        entries = list(struct.iter_unpack('<HHI', original[4:])) if original else [(1, (info.st_mode >> 6) & 7, 0xffffffff), (4, (info.st_mode >> 3) & 7, 0xffffffff), (32, info.st_mode & 7, 0xffffffff)]
+                        mask = next((perm for tag, perm, identity in entries if tag == 16), (info.st_mode >> 3) & 7)
+                        named = next((perm & mask for tag, perm, identity in entries if tag == 2 and identity == uid), None)
+                        matching = [perm for tag, perm, identity in entries if tag == 4 and info.st_gid in groups or tag == 8 and identity in groups]
+                        effective = named if named is not None else ((sum_bits(matching) & mask) if matching else next(perm for tag, perm, identity in entries if tag == 32))
+                        needed = 4 | (1 if stat.S_ISDIR(info.st_mode) or info.st_mode & 0o111 else 0)
+                        desired = effective | needed
+                        # Freeze other masked entries before adding mask bits for the worker.
+                        updated = [(tag, perm & mask if tag in (2, 4, 8) else perm, identity) for tag, perm, identity in entries if tag != 16 and not (tag == 2 and identity == uid)]
+                        updated.extend([(2, desired, uid), (16, mask | desired, 0xffffffff)])
+                        updated.sort(key=lambda entry: (entry[0], entry[2]))
+                        value = struct.pack('<I', 2) + b''.join(struct.pack('<HHI', *entry) for entry in updated)
+                        if value != original:
+                            self.verify()
+                            os.setxattr(target, 'system.posix_acl_access', value)
+                    if stat.S_ISDIR(info.st_mode):
+                        directory = os.open('.', os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+                        try:
+                            for name in os.listdir(directory):
+                                child = os.open(name, os.O_PATH | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=directory)
+                                try: self.add_reads(child, uid, groups)
+                                finally: os.close(child)
+                        finally: os.close(directory)
+                    self.verify()
+
+            def sum_bits(values):
+                result = 0
+                for value in values: result |= value
+                return result
+
+            def content_status(path):
+                env = {key: value for key, value in git_env.items() if key not in ('GIT_CONFIG_COUNT', 'GIT_CONFIG_PARAMETERS', 'GIT_ASKPASS', 'SSH_ASKPASS', 'GH_TOKEN', 'GITHUB_TOKEN') and not key.startswith(('GIT_CONFIG_KEY_', 'GIT_CONFIG_VALUE_'))}
+                command = ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, 'status', '--porcelain=v2', '--untracked-files=all']
+                if not worker: return subprocess.check_output(command, stderr=subprocess.DEVNULL, env=env)
+                try: account = pwd.getpwnam(worker)
+                except KeyError: raise SystemExit(126)
+                uid = account.pw_uid
+                if uid == 0 or uid == os.geteuid(): raise SystemExit(126)
+                groups = os.getgrouplist(worker, account.pw_gid)
+                access = ReadGrant()
+                with access.stack:
+                    source = access.pin(path)
+                    access.pin(path + '/.git', directory=False)
+                    common_path = git(path, 'rev-parse', '--path-format=absolute', '--git-common-dir')
+                    access.verify()
+                    common = access.pin(common_path)
+                    homes = [os.path.realpath(pwd.getpwuid(value).pw_dir) for value in (os.geteuid(), uid)]
+                    if any(os.path.commonpath([directory, home]) == directory for directory in (path, common_path) for home in homes): raise SystemExit(42)
+                    access.verify()
+                    access.add_reads(source, uid, groups)
+                    access.add_reads(common, uid, groups)
+                    command = ['sudo', '-n', '-u', worker, '-H', '--', 'env', 'GIT_OPTIONAL_LOCKS=0', 'git', '-c', 'safe.directory=' + path, *command[1:]]
+                    result = subprocess.check_output(command, stderr=subprocess.DEVNULL, env=env)
+                    access.verify()
+                    return result
+
+            PYTHON;
+    }
+
+    private static function inspectionScript(): string
+    {
+        return self::workerStatusScript().<<<'PYTHON'
             import hashlib, json, os, pathlib, stat, subprocess, sys
 
             requested = sys.argv[1]
@@ -548,7 +707,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
 
             def git(path, *args):
-                return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
+                return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
 
             def digest(path):
                 root = pathlib.Path(path)
@@ -558,10 +717,12 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     ('symbolic-ref', '-q', 'HEAD'),
                     ('status', '--porcelain=v2', '--untracked-files=all'),
                     ('config', '--local', '--null', '--list'),
-                    ('show-ref', '--head'),
+                    ('ls-files', '--stage', '-v'),
                 ]:
-                    try: value = subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env)
-                    except subprocess.CalledProcessError as error: value = error.output
+                    if args[0] == 'status': value = content_status(path)
+                    else:
+                        try: value = subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env)
+                        except subprocess.CalledProcessError as error: value = error.output
                     h.update(b'git\0' + b'\0'.join(a.encode() for a in args) + b'\0' + value)
                 for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
                     if pathlib.Path(current) == root and '.git' in dirs: dirs.remove('.git')
@@ -636,18 +797,20 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
 
     private static function relocationScript(): string
     {
-        return <<<'PYTHON'
+        return self::workerStatusScript().<<<'PYTHON'
             import errno, hashlib, json, os, pathlib, shutil, stat, subprocess, sys
             operation = sys.argv[1]
             members = json.loads(sys.argv[2])
             git_env = dict(os.environ, GIT_OPTIONAL_LOCKS='0')
 
-            def git(path, *args): return subprocess.check_output(['git', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
+            def git(path, *args): return subprocess.check_output(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-C', path, *args], stderr=subprocess.DEVNULL, env=git_env).decode().strip()
             def digest(path):
                 root = pathlib.Path(path); h = hashlib.sha256()
-                for args in [('rev-parse','HEAD'),('symbolic-ref','-q','HEAD'),('status','--porcelain=v2','--untracked-files=all'),('config','--local','--null','--list'),('show-ref','--head')]:
-                    try: value = subprocess.check_output(['git','-C',path,*args], stderr=subprocess.DEVNULL, env=git_env)
-                    except subprocess.CalledProcessError as error: value = error.output
+                for args in [('rev-parse','HEAD'),('symbolic-ref','-q','HEAD'),('status','--porcelain=v2','--untracked-files=all'),('config','--local','--null','--list'),('ls-files','--stage','-v')]:
+                    if args[0] == 'status': value = content_status(path)
+                    else:
+                        try: value = subprocess.check_output(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',path,*args], stderr=subprocess.DEVNULL, env=git_env)
+                        except subprocess.CalledProcessError as error: value = error.output
                     h.update(b'git\0'+b'\0'.join(a.encode() for a in args)+b'\0'+value)
                 for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
                     if pathlib.Path(current) == root and '.git' in dirs: dirs.remove('.git')
@@ -721,10 +884,10 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 if checkouts:
                     checkout=checkouts[0]
                     retained=[mapping.get(path,path) for path in checkout['worktrees'] if path != checkout['source']]
-                    subprocess.check_call(['git','-C',checkout['destination'],'worktree','repair',*retained], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.check_call(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',checkout['destination'],'worktree','repair',*retained], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 else:
                     member=members[0]
-                    subprocess.check_call(['git','--git-dir',member['common'],'worktree','repair',member['destination']], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    subprocess.check_call(['git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','--git-dir',member['common'],'worktree','repair',member['destination']], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             def cleanup(member):
                 source=member['source']; destination=member['destination']; stage=destination+'.orbit-stage-'+str(member['id'])
                 verify(destination, member)
@@ -743,7 +906,21 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                         else: os.rmdir(path)
                 os.rmdir(source)
             ordered = sorted(members, key=lambda m: 1 if m['layout'] == 'checkout' else 0)
-            if operation == 'prepare':
+            def close_environment():
+                # Other local users, the Node agent included, never read an Instance's environment.
+                for member in members:
+                    env=os.path.join(member['destination'],'.env')
+                    if os.path.isfile(env) and not os.path.islink(env) and os.lstat(env).st_mode & 0o007:
+                        os.chmod(env, stat.S_IMODE(os.lstat(env).st_mode) & 0o770)
+            if operation == 'adopt':
+                if any(member['source'] != member['destination'] for member in members): raise SystemExit(42)
+                for member in members: verify(member['destination'], member)
+            elif operation == 'adopt-finalize':
+                for member in members:
+                    if member['source'] != member['destination']: raise SystemExit(42)
+                    source_identity(member['destination'])
+                close_environment()
+            elif operation == 'prepare':
                 identities=[prepare(member) for member in ordered]
                 repair()
                 for member in members: verify(member['destination'], member)
@@ -752,11 +929,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 for member in members: cleanup(member)
                 for member in ordered: remove_original(member)
                 for member in members: verify(member['destination'], member)
-                # After the last verification: other local users, the Node agent included, never read an Instance's environment.
-                for member in members:
-                    env=os.path.join(member['destination'],'.env')
-                    if os.path.isfile(env) and not os.path.islink(env) and os.lstat(env).st_mode & 0o007:
-                        os.chmod(env, stat.S_IMODE(os.lstat(env).st_mode) & 0o770)
+                close_environment()
             else: raise SystemExit(42)
             PYTHON;
     }

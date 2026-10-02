@@ -17,7 +17,8 @@ final readonly class MetricsReconcileDegradationRepository
 
     public function errorCode(int $nodeId): ?string
     {
-        return $this->settings->get($this->scope($nodeId), self::KEY);
+        return $this->settings->get($this->scope($nodeId), self::KEY)
+            ?? $this->settings->get($this->scope($nodeId), ExporterDegradationRepository::ServiceErrorKey);
     }
 
     public function put(int $nodeId, string $errorCode): void

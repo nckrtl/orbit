@@ -25,6 +25,17 @@ beforeEach(function (): void {
     $this->orbitApp = runtime_definition_app('acme');
 });
 
+describe('ProcessUser', function (): void {
+    it('refuses an account in a Project definition on create and replace', function (): void {
+        $payload = runtime_definition_process_payload('worker', '/usr/bin/sleep');
+        $this->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", $payload)->assertCreated();
+        $payload['spec']['user'] = 'orbit-worker';
+        $this->postJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions", $payload)->assertUnprocessable();
+        $this->putJson("/api/v1/projects/{$this->orbitApp->id}/process-definitions/worker", $payload)->assertUnprocessable();
+        expect(ProcessDefinition::query()->sole()->spec)->not->toHaveKey('user');
+    });
+});
+
 it('provides complete process definition CRUD with command-safe collections', function (): void {
     $command = '/usr/bin/php-command-sentinel';
     $created = $this

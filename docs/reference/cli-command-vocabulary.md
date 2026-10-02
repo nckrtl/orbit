@@ -13,6 +13,8 @@ This page tells an operator or agent how to name a CLI command. It lists the ver
 
 Each command is one noun family and one last segment. The last segment is a verb from the pairs below, an action that its family lists, or a noun-ending command. The vocabulary also allows one hidden internal command, `internal:database-local`. Command-specific safety options do not create a new family action: for example, `gateway:add --accept-ca-change` explicitly accepts a replacement pinned root CA; see [Gateway trust](/reference/gateway-trust).
 
+`process:create --user` selects the account for a Node systemd Process; it does not add a command or family action. [Processes](/cli/process#orbit-processcreate) lists the accepted combinations.
+
 `CommandVocabulary` in `apps/cli` holds these lists. `CommandSurfaceTest` fails when a registered command, or a Gateway route that serves one, breaks them. It also fails when this page and the lists differ. Keep this test's command count and family names aligned when commands are removed as part of legacy cleanup.
 
 ## Verb pairs
@@ -77,7 +79,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
-| `instance` | `clone`, `deploy`, `logs`, `register`, `rollback`, `scan`, `setup`, `transfer` | The CLI clones, deploys, registers, rolls back, or transfers an Instance, reads its application log, scans its dependencies, or runs its Project setup steps. |
+| `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `rollback`, `scan`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs, scans dependencies, and runs setup. Rename records the checked-out branch and can move its Route. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `models`, `setup`, `teardown`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
 | `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |

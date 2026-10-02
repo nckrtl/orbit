@@ -26,6 +26,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     public function spawnReviewer(Task $task): ?int
     {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->spawnAdmittedReviewer($task));
+    }
+
+    private function spawnAdmittedReviewer(Task $task): ?int
+    {
         $existing = $this->subtaskReviewer($task);
         if ($existing !== null) {
             return $existing->id;
@@ -93,6 +98,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     /** Reserves the subtask reviewer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveReviewer(Task $task): ?int
     {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->reserveAdmittedReviewer($task));
+    }
+
+    private function reserveAdmittedReviewer(Task $task): ?int
+    {
         $existing = $this->subtaskReviewer($task) ?? $this->pending($task->requireGroupId(), $task->id, TaskThreadRole::Reviewer);
         if ($existing instanceof AgentThread) {
             return $existing->id;
@@ -103,6 +113,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
 
     /** Reserves the implementer's Orbit id before the opening prompt, or returns the thread that already exists. */
     public function reserveImplementer(Task $task): ?int
+    {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->reserveAdmittedImplementer($task));
+    }
+
+    private function reserveAdmittedImplementer(Task $task): ?int
     {
         if ($task->implementer_agent_thread_id !== null) {
             return (int) $task->implementer_agent_thread_id;
@@ -116,6 +131,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     }
 
     public function spawnImplementer(Task $task): ?int
+    {
+        return TaskExecutionHold::run($task->parent, fn (): ?int => $this->spawnAdmittedImplementer($task));
+    }
+
+    private function spawnAdmittedImplementer(Task $task): ?int
     {
         if ($task->implementer_agent_thread_id !== null) {
             return (int) $task->implementer_agent_thread_id;
@@ -140,6 +160,11 @@ final readonly class TaskAgentSpawner implements AgentSpawner
     }
 
     public function requestReview(Task $task): void
+    {
+        TaskExecutionHold::run($task->parent, fn () => $this->requestAdmittedReview($task));
+    }
+
+    private function requestAdmittedReview(Task $task): void
     {
         $thread = $this->subtaskReviewer($task);
         if ($thread === null) {

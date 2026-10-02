@@ -159,11 +159,20 @@
 .toolbar-annotation-marker-pulse-delay {
     animation-delay: 0.85s;
 }
+/* Reduced motion: the ring stays in place and only fades, so claimed work still stands out. */
+@keyframes toolbar-annotation-marker-fade {
+    0%,
+    100% {
+        opacity: 0.2;
+    }
+    50% {
+        opacity: 0.8;
+    }
+}
 @media (prefers-reduced-motion: reduce) {
     .toolbar-annotation-marker-pulse {
-        animation: none;
-        opacity: 0.4;
-        transform: scale(1.25);
+        animation: toolbar-annotation-marker-fade 1.7s ease-in-out infinite;
+        transform: scale(1.3);
     }
     .toolbar-annotation-marker-pulse-delay {
         display: none;

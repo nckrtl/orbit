@@ -24,8 +24,8 @@
         "noFallthroughCasesInSwitch": true,
         "paths": {
             "@/*": ["./src/*"],
-            "@nckrtl/annotate": ["../../packages/agent-annotation/src/index.ts"],
-            "@nckrtl/annotate/*": ["../../packages/agent-annotation/src/*"]
+            "@nckrtl/annotator": ["../../packages/agent-annotation/src/index.ts"],
+            "@nckrtl/annotator/*": ["../../packages/agent-annotation/src/*"]
         }
     },
     "include": ["src", "dev", "tests", "vite.config.ts"]

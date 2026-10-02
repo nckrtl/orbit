@@ -48,6 +48,34 @@ try {
     const second = await start(["--store", join(dir, "second")]);
     assert.notEqual(new URL(first.url).port, new URL(second.url).port);
     assert.equal(new URL(first.url).pathname, "/annotations");
+    const skillUrl = new URL("/skill", first.url);
+    const skill = await fetch(skillUrl);
+    assert.equal(skill.status, 200);
+    assert.match(skill.headers.get("content-type"), /^text\/markdown; charset=utf-8$/);
+    assert.equal(skill.headers.get("cache-control"), "no-store");
+    const instructions = await skill.text();
+    const skillApi = instructions.match(/^ANNOTATIONS_URL='([^']+)'/m)?.[1];
+    assert.equal(skillApi, first.url, "The skill uses this server's actual allocated port");
+    assert.equal(instructions.includes("{{ANNOTATIONS_URL}}"), false);
+    assert.equal(
+        instructions.match(/^PROJECT_ROOT='([^']+)'/m)?.[1],
+        process.cwd(),
+        "The skill names the directory where serve was started",
+    );
+    assert.match(
+        first.output(),
+        new RegExp(`Skill URL: ${skillUrl.href.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+    );
+    const discovered = await (await fetch(skillApi)).json();
+    assert.deepEqual(discovered.data, [], "Reading the skill does not create or claim work");
+    assert.equal(
+        await (await fetch(new URL(discovered.meta.skillUrl, first.url))).text(),
+        instructions,
+    );
+    assert.equal((await fetch(skillUrl, { method: "HEAD" })).status, 200);
+    assert.equal((await fetch(skillUrl, { method: "DELETE" })).status, 405);
+    assert.notEqual(await (await fetch(new URL("/skill", second.url))).text(), instructions);
+
     assert.equal((await fetch(new URL("/unknown", first.url))).status, 404);
     const preflight = await fetch(first.url, {
         method: "OPTIONS",
@@ -201,6 +229,54 @@ try {
         (await post(`${recovered.url}/claim`, {})).status,
         204,
         "Restart does not reclaim in-progress work",
+    );
+    assert.equal((await fetch(`${recovered.url}/task-3`, { method: "DELETE" })).status, 200);
+    await waitForLog(recovered, "#5 deleted: Task 3");
+    await fetch(`${recovered.url}/task-3`, { method: "DELETE" });
+    assert.equal(
+        recovered
+            .output()
+            .split("\n")
+            .filter((line) => line === "#5 deleted: Task 3").length,
+        1,
+    );
+    assert.equal((await post(recovered.url, { id: "task-3", comment: "Late retry" })).status, 410);
+    assert.equal(
+        (await post(recovered.url, { id: "page-task", comment: "Page only", pathname: "/page" }))
+            .status,
+        201,
+    );
+    const pageRemoval = await fetch(`${recovered.url}?pathname=${encodeURIComponent("/page")}`, {
+        method: "DELETE",
+    });
+    assert.deepEqual((await pageRemoval.json()).data.removedIds, ["page-task"]);
+    assert.equal(
+        (await (await fetch(recovered.url)).json()).data.some((a) => a.id === "page-task"),
+        false,
+    );
+    assert.equal((await fetch(recovered.url, { method: "DELETE" })).status, 200);
+    await waitForLog(recovered, "All annotations removed");
+    const cleared = await (await fetch(recovered.url)).json();
+    assert.deepEqual(cleared.data, []);
+    assert.equal(cleared.meta.lastNumber, 8);
+    assert.equal(cleared.meta.deletedIds.length, 8);
+    for (const folder of ["todo", "in-progress", "done"])
+        assert.deepEqual(await readdir(join(file, folder)), []);
+    const clearedStopped = once(recovered.child, "exit");
+    recovered.child.kill("SIGTERM");
+    await clearedStopped;
+    const afterClear = await start(["--store", file]);
+    assert.equal(
+        (await post(afterClear.url, { id: "task-0", comment: "Old retry after restart" })).status,
+        410,
+    );
+    assert.equal(
+        (
+            await (
+                await post(afterClear.url, { id: "after-clear", comment: "Continue counting" })
+            ).json()
+        ).data.number,
+        9,
     );
     const legacyFile = join(dir, "legacy.json");
     await writeFile(

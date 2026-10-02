@@ -35,6 +35,7 @@ final class ProcessData extends Data
         public ?float $cpu = null,
         /** Resident memory in bytes, null when unavailable — never zero for "not running". */
         public ?int $memoryBytes = null,
+        public ?string $user = null,
     ) {}
 
     public static function fromModel(
@@ -63,6 +64,7 @@ final class ProcessData extends Data
             errorCode: ValidatedData::nullableString($errorCode),
             cpu: $cpu,
             memoryBytes: $memoryBytes,
+            user: ValidatedData::nullableString($process->runtime_config['user'] ?? null),
         );
     }
 

@@ -373,6 +373,7 @@
               "GET /api/v1/instances/{instance}/logs",
               "GET /api/v1/instances/{instance}/queue",
               "GET /api/v1/instances/{instance}/releases",
+              "POST /api/v1/instances/{instance}/rename",
               "POST /api/v1/instances/{instance}/rollback",
               "POST /api/v1/instances/{instance}/setup",
               "POST /api/v1/instances/{instance}/transfer",
@@ -574,7 +575,7 @@
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
-              "decisions/0193-respond-to-github-review-feedback"
+              "decisions/0194-respond-to-github-review-feedback"
             ]
           }
         ]
@@ -609,6 +610,14 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0192-stop-a-group-whose-pull-request-ended",
+      "destination": "/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request"
+    },
+    {
+      "source": "/decisions/0193-run-task-agents-as-a-dedicated-user",
+      "destination": "/reference/pi-server#one-user-for-every-task-agent"
+    },
     {
       "source": "/reference/installation",
       "destination": "/quickstart"
@@ -1352,6 +1361,10 @@
     {
       "source": "/decisions/0192-run-task-agents-on-pi-only",
       "destination": "/reference/tasks#task-agents-run-on-pi"
+    },
+    {
+      "source": "/decisions/0193-record-development-branch-renames",
+      "destination": "/domains/applications#development-branch-reconciliation"
     },
     {
       "source": "/decisions/0150-keep-extension-commands-local-and-confirm-the-proxycli-fleet-stop",

@@ -50,7 +50,11 @@ The result names the new Instance, its branch, its preview domain, and its selec
 
 ## Candidate rules
 
-The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node, as the candidate's user.
+The candidate is an active development Instance with its checkout, or an active production Instance with a selected release. A development candidate must have its recorded branch checked out, not another branch or a detached `HEAD`. Its source must have no staged, unstaged, untracked, or submodule change. Its current commit must be in the Project repository. The Gateway checks this on the candidate's Node using its recorded source identity.
+
+Every Git invocation in the candidate inspection, including calls through `sudo` and checks inside submodules, passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. When a worker is configured, development candidate checks that inspect file contents run as that worker without a credential environment.
+
+A checkout's hooks and custom filesystem monitor do not run during that check. These overrides leave the candidate's stored Git configuration unchanged; they do not relax the clean-source rules.
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 
@@ -79,6 +83,8 @@ A missing Node TLD returns `route.tld_required`. A domain that another Route own
 ## SQLite seed
 
 `sqlite_source_path` must be inside the candidate's checkout or selected release, and it must be a readable SQLite database. Orbit takes a consistent snapshot while the candidate keeps writing, checks its integrity, and installs it as `<home>/database.sqlite`, owned by the new Instance's user. The Gateway checks the path and disk space on both Nodes before it replaces anything. Without the option, the clone gets no database.
+
+Cloning seeds a different production Instance at the fixed `<home>/database.sqlite` path. [Instance transfer](/reference/instance-transfer) instead keeps the Instance ID between development Nodes and installs the snapshot at the selected file's relative path in the destination checkout. Each transfer attempt has its own snapshot record. Transfer rollback abandons that seed and removes its owned temporary files before closure. An identical retry after restoration takes a fresh snapshot rather than reusing data captured before the source restarted. These transfer rules do not change the clone's destination or its identical-request retry.
 
 The snapshot holds whatever the candidate committed at that moment, queued jobs included. Remove copied queue rows or other data on the new Instance before you start its workers. Other databases and external storage need their own preparation.
 

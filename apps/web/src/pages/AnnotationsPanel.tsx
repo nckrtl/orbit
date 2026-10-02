@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { Annotation } from "@nckrtl/annotate";
+import type { Annotation } from "@nckrtl/annotator";
 import { api } from "../api/client";
 import { useFallbackPoll } from "../realtime/liveness";
 import { Frame, Note } from "../ui/Frame";

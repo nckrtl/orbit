@@ -358,6 +358,18 @@ describe('requests', function (): void {
         $mock->assertNothingSent();
     });
 
+    it('shows the watched pull request in JSON without changing the publication URL', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-show/watched'));
+
+        expect(Artisan::call('tasks:show', ['group' => '1', '--json' => true]))->toBe(0);
+        $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+        expect($output['watched_pr_url'])->toBe('https://github.com/nckrtl/orbit/pull/451')
+            ->and($output['watched_pr_number'])->toBe(451)
+            ->and($output['watched_pr_state'])->toBe('open')
+            ->and($output['pr_url'])->toBeNull();
+        $mock->assertSent(ShowTaskGroupRequest::class);
+    });
+
     it('shows fails_on_base for a test deliverable', function (): void {
         $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
         $fixture['body']['data']['tasks'][0]['deliverables'][1]['fails_on_base'] = true;

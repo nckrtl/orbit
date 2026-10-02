@@ -3,7 +3,7 @@ title: "Respond to GitHub review feedback"
 description: "How Orbit trusts reviewers, selects exact-head decisions, and consumes each review once to create a bounded fixup."
 ---
 
-# ADR 0193: Respond to GitHub review feedback
+# ADR 0194: Respond to GitHub review feedback
 
 Orbit consumes trusted GitHub requested-change decisions as bounded repair input, not as merge authority.
 

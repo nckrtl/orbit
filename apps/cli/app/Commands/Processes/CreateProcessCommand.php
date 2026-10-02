@@ -29,6 +29,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
         {--command=* : One command argument; repeat for each argv item}
         {--image= : Docker image}
         {--working-directory= : Runtime working directory}
+        {--user= : Existing non-root account for a Node systemd Process}
         {--environment=* : Docker NAME=VALUE; repeat as needed}
         {--port=* : Docker HOST:CONTAINER[/tcp|udp]; repeat as needed}
         {--volume=* : Docker SOURCE:TARGET[:ro]; repeat as needed}
@@ -58,6 +59,22 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 'process.name_invalid',
                 'Process name is invalid.',
             );
+        }
+
+        $user = $this->option('user');
+        if ($user !== null) {
+            if (
+                $this->option('node') === null
+                || $this->option('instance') !== null
+                || $this->option('project') !== null
+                || $this->option('preset') !== null
+                || $this->option('runtime') !== 'systemd'
+            ) {
+                return $this->renderGatewayFailure('process.option_invalid', 'The --user option requires a Node systemd Process without a preset.');
+            }
+            if ($user === 'root' || preg_match('/\A[a-z_][a-z0-9_-]{0,31}\z/D', $user) !== 1) {
+                return $this->renderGatewayFailure('process.user_invalid', 'Process user must be a valid non-root account name.');
+            }
         }
 
         $preset = $this->stringOption('preset');
@@ -223,6 +240,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 start: $this->option('start') === true,
                 keepAlive: $this->option('keep-alive') === true,
                 preset: $preset,
+                user: $user,
             ),
             ProcessResponse::class,
             ['Create Process', 'Creating Process', 'Created Process'],

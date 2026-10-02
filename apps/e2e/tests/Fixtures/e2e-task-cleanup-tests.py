@@ -36,6 +36,7 @@ def git(cwd, *args, check=True):
 class CleanupWorld:
     def __init__(self, root, task='task-727', origin=ORIGIN):
         self.root = Path(root)
+        self.helper = HELPER
         self.task = task
         self.origin = origin
         self.state = self.root / 'state'
@@ -133,7 +134,7 @@ class CleanupWorld:
         if self.fake_bin.is_dir():
             env['PATH'] = str(self.fake_bin) + os.pathsep + env.get('PATH', '')
         return subprocess.run(
-            [str(HELPER)],
+            [str(self.helper)],
             cwd=cwd or self.checkout,
             env=env,
             capture_output=True,
@@ -205,6 +206,50 @@ class TaskCleanupTest(unittest.TestCase):
         self.assertFalse(world.lists(world.bridge))
         self.assertFalse(world.has_ref(f'refs/heads/{world.task}-e2e'))
         self.assertFalse(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
+        self.assert_other_task_untouched()
+        self.assert_unchanged_caller_and_topology()
+
+    def test_shared_registration_accepts_the_checkout_owner_not_the_caller(self):
+        world = self.world
+        world.add_matching_bridge()
+        shared = world.root / 'shared-registry'
+        shared.mkdir()
+        link = world.register()
+        (shared / link.name).symlink_to(world.primary)
+        link.unlink()
+        # Substitute only the root-owned registry path and caller UID. The helper
+        # still checks the actual primary and checkout owners and real Git state.
+        world.helper = world.root / 'cleanup'
+        world.helper.write_text(HELPER.read_text().replace(
+            '/var/lib/orbit/e2e-primary-checkouts', str(shared)))
+        world.helper.chmod(0o755)
+        fake_id = world.fake_bin / 'id'
+        fake_id.write_text(f'#!/bin/sh\necho {os.getuid() + 1}\n')
+        fake_id.chmod(0o755)
+
+        result = world.cleanup()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(world.bridge.exists())
+        self.assertFalse(world.has_ref(f'refs/heads/{world.task}-e2e'))
+        self.assertFalse(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
+        self.assert_other_task_untouched()
+        self.assert_unchanged_caller_and_topology()
+
+    def test_home_registration_is_used_when_xdg_registration_is_invalid(self):
+        world = self.world
+        world.add_matching_bridge()
+        link = world.register()
+        home_link = world.home / '.local/state/orbit/e2e-primary-checkouts' / link.name
+        home_link.parent.mkdir(parents=True)
+        home_link.symlink_to(world.primary)
+        link.unlink()
+        link.symlink_to(world.root / 'missing')
+
+        result = world.cleanup()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(world.bridge.exists())
         self.assert_other_task_untouched()
         self.assert_unchanged_caller_and_topology()
 
@@ -289,6 +334,21 @@ class TaskCleanupTest(unittest.TestCase):
         self.assertTrue(world.lists(world.bridge))
         self.assertTrue(world.has_ref(f'refs/heads/{world.task}-e2e'))
         self.assertTrue(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
+
+    def test_primary_without_an_origin_is_explicitly_rejected(self):
+        world = self.world
+        world.add_matching_bridge()
+        git(world.primary, 'remote', 'remove', 'origin')
+
+        result = world.cleanup()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(world.bridge.is_dir())
+        self.assertTrue(world.lists(world.bridge))
+        self.assertTrue(world.has_ref(f'refs/heads/{world.task}-e2e'))
+        self.assertTrue(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
+        self.assert_other_task_untouched()
+        self.assert_unchanged_caller_and_topology()
 
     def test_primary_registered_under_the_wrong_origin_leaves_the_bridge(self):
         world = self.world
@@ -394,6 +454,92 @@ class TaskCleanupTest(unittest.TestCase):
         self.assertEqual(git(world.checkout, 'symbolic-ref', '--short', 'HEAD').stdout.strip(), 'wip')
         self.assertTrue(world.checkout.is_dir())
         self.assertTrue(world.caller_worktree.is_dir())
+
+    def test_primary_probe_failure_retains_shared_registration_and_task_resources(self):
+        world = self.world
+        world.add_matching_bridge()
+        shared = world.root / 'shared-registry'
+        shared.mkdir()
+        link = world.register()
+        (shared / link.name).symlink_to(world.primary)
+        link.unlink()
+        world.helper = world.root / 'cleanup'
+        world.helper.write_text(HELPER.read_text().replace(
+            '/var/lib/orbit/e2e-primary-checkouts', str(shared)))
+        world.helper.chmod(0o755)
+        real_git = shutil.which('git')
+        shim = world.fake_bin / 'git'
+        mutations = world.root / 'unexpected-mutation'
+
+        for probe in (
+            ['rev-parse', '--path-format=absolute', '--git-dir'],
+            ['rev-parse', '--path-format=absolute', '--git-common-dir'],
+            ['remote'],
+            ['remote', 'get-url', 'origin'],
+            ['config', '--path', '--get', 'orbit.worktreeRoot'],
+        ):
+            with self.subTest(probe=probe):
+                shim.write_text(
+                    f'#!{sys.executable}\n'
+                    'import os, sys\n'
+                    'from pathlib import Path\n'
+                    'args = sys.argv[1:]\n'
+                    f'if args == ["-C", {str(world.primary)!r}, *{probe!r}]:\n'
+                    '    print("primary metadata probe failed", file=sys.stderr)\n'
+                    '    sys.exit(73)\n'
+                    'command = args[2:] if args[:1] == ["-C"] else args\n'
+                    'read_only = (command[:1] in (["rev-parse"], ["show-ref"])\n'
+                    '    or command == ["remote"]\n'
+                    '    or command[:2] in (["remote", "get-url"], ["worktree", "list"])\n'
+                    '    or command[:1] == ["config"] and "--get" in command)\n'
+                    'if not read_only:\n'
+                    f'    Path({str(mutations)!r}).write_text(repr(args))\n'
+                    '    sys.exit(99)\n'
+                    f'os.execv({real_git!r}, [{real_git!r}, *args])\n'
+                )
+                shim.chmod(0o755)
+
+                result = world.cleanup()
+
+                self.assertEqual(result.returncode, 73, result.stderr)
+                self.assertIn('primary metadata probe failed', result.stderr)
+                self.assertFalse(mutations.exists())
+                self.assertTrue(world.bridge.is_dir())
+                self.assertEqual((world.bridge / 'dirt.txt').read_text(), 'dirt\n')
+                self.assertTrue(world.lists(world.bridge))
+                self.assertTrue(world.has_ref(f'refs/heads/{world.task}-e2e'))
+                self.assertTrue(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
+                self.assertTrue((shared / link.name).is_symlink())
+                self.assert_other_task_untouched()
+                self.assert_unchanged_caller_and_topology()
+
+        shim.unlink()
+        retried = world.cleanup()
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertFalse(world.bridge.exists())
+        self.assertFalse(world.has_ref(f'refs/heads/{world.task}-e2e'))
+        self.assertFalse(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
+        self.assert_other_task_untouched()
+        self.assert_unchanged_caller_and_topology()
+
+    def test_missing_worktree_root_uses_the_default_without_hiding_probe_failures(self):
+        world = self.world
+        world.add_matching_bridge()
+        git(world.primary, 'config', '--unset', 'orbit.worktreeRoot')
+        # Keep the default root inside this disposable fixture.
+        world.helper = world.root / 'cleanup'
+        world.helper.write_text(HELPER.read_text().replace(
+            'root=/fast/worktrees/orbit', f'root={world.worktrees}'))
+        world.helper.chmod(0o755)
+
+        result = world.cleanup()
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(world.bridge.exists())
+        self.assertFalse(world.has_ref(f'refs/heads/{world.task}-e2e'))
+        self.assertFalse(world.has_ref(f'refs/orbit/e2e-bridge/{world.task}'))
+        self.assert_other_task_untouched()
+        self.assert_unchanged_caller_and_topology()
 
     def test_cleanup_command_failure_exits_nonzero_and_retry_succeeds(self):
         world = self.world

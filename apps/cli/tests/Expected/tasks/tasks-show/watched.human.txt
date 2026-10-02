@@ -1,0 +1,54 @@
+Loading task group...
+
+┌  Show task group
+│
+├  ● Loaded task group
+│
+└  Loaded task group.
+
+
+┌  Task group: ORB-1
+│
+├  ID                  1
+│
+├  Title               Add the tasks CLI
+│
+├  Project             orbit
+│
+├  Status              running
+│
+├  Assistance          no
+│
+├  Kind                —
+│
+├  Question            —
+│
+├  Reason              —
+│
+├  Instance            —
+│
+├  Pull request        —
+│
+├  Notify Coder        no
+│
+├  Implementer model   gpt-5.6-luna
+│
+├  Reviewer model      gpt-5.6-luna
+│
+├  Tokens              —
+│
+├  Line diff           —
+│
+└  Duration            —
+
+Brief
+  Add tasks:* commands.
+  Accept when every route has a command.
+
+ ┌──────────┬────┬──────────────────┬────────┬──────────────┬────────┬───────────┬──────────┬──────┬────────────┐
+ │ POSITION │ ID │ TITLE            │ STATUS │ DELIVERABLES │ TOKENS │ LINE DIFF │ DURATION │ KIND │ ASSISTANCE │
+ ├──────────┼────┼──────────────────┼────────┼──────────────┼────────┼───────────┼──────────┼──────┼────────────┤
+ │ 1        │ 2  │ Add SDK requests │ todo   │ 2            │ —      │ —         │ —        │ —    │ —          │
+ │ 2        │ 3  │ Add CLI commands │ todo   │ 2            │ —      │ —         │ —        │ —    │ —          │
+ └──────────┴────┴──────────────────┴────────┴──────────────┴────────┴───────────┴──────────┴──────┴────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

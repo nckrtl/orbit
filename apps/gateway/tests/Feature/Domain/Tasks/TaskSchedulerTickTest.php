@@ -1704,13 +1704,16 @@ it('asks for assistance for a closed pull request and does not start an appended
     $todo = tick_appended_subtask($group);
     $agents = tick_running_agents();
     tick_watch_pulls([['merged' => false, 'state' => 'closed']]);
+    Http::fake(['https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([
+        ['number' => 42, 'html_url' => $group->pr_url, 'state' => 'closed', 'merged_at' => null],
+    ])]);
 
     app(TaskScheduler::class)->tick();
 
     expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
         ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
         ->and($group->fresh()?->assistance_question)->toBeNull()
-        ->and($group->fresh()?->assistance_reason)->toBe('The expected pull request closed without merging.')
+        ->and($group->fresh()?->assistance_reason)->toBe('Watched pull request ended: '.$group->pr_url.' is closed. Open subtasks: #'.$todo->id.' '.$todo->title.'.')
         ->and($todo->fresh()?->status)->toBe(TaskStatus::Todo)
         ->and($agents->spawned)->toBe([]);
 });
@@ -1719,12 +1722,16 @@ it('does not start an appended subtask when the pull request merges', function (
     $group = tick_settling_group();
     $todo = tick_appended_subtask($group);
     $agents = tick_running_agents();
-    mock(InstanceRemover::class)->shouldReceive('execute')->once()->andReturn(new InstanceRemoval);
+    mock(InstanceRemover::class)->shouldReceive('execute')->never();
     tick_watch_pulls([['merged' => true, 'state' => 'closed']]);
+    Http::fake(['https://api.github.com/repos/acme/orbit/pulls?*' => Http::response([
+        ['number' => 42, 'html_url' => $group->pr_url, 'state' => 'closed', 'merged_at' => '2026-10-08T10:00:00Z'],
+    ])]);
 
     app(TaskScheduler::class)->tick();
 
-    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Completed)
+    expect($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->fresh()?->assistance_reason)->toBe('Watched pull request ended: '.$group->pr_url.' is merged. Open subtasks: #'.$todo->id.' '.$todo->title.'.')
         ->and($todo->fresh()?->status)->toBe(TaskStatus::Todo)
         ->and($agents->spawned)->toBe([]);
 });

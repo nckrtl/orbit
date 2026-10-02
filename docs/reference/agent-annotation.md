@@ -12,7 +12,7 @@ covers:
 
 # Agent annotation package
 
-`@nckrtl/annotate` in `packages/agent-annotation` is a browser overlay. You click an element, write or speak a comment, and the overlay saves an annotation with the element, page context, and a screenshot. It runs in its own Shadow DOM and needs neither Orbit nor Laravel. The Orbit web app uses it.
+`@nckrtl/annotator` in `packages/agent-annotation` is a browser overlay. You click an element, write or speak a comment, and the overlay saves an annotation with the element, page context, and a screenshot. It runs in its own Shadow DOM and needs neither Orbit nor Laravel. The Orbit web app uses it.
 
 An annotation goes to one of two places:
 
@@ -24,7 +24,7 @@ An annotation goes to one of two places:
 In `packages/agent-annotation`, run `bun install`, `bun run build`, and `npm pack`. Install the archive in the target project. The bundle includes React and its styles, so the host needs neither.
 
 ```ts
-import { mountAnnotation } from "@nckrtl/annotate";
+import { mountAnnotation } from "@nckrtl/annotator";
 
 const annotation = mountAnnotation({
     dictation: { wsUrl: "wss://speech.example.com/v1/audio/stream" },
@@ -44,6 +44,20 @@ A second `mountAnnotation` call updates the options and adds no second overlay. 
 | `thread` | `{ id, discoveryUrl }`: a fixed T3 thread ID, or a URL that detects one. |
 | `dictation` | Speech input. See [Speech](#speech). |
 | `getToolbarData` | A callback that returns `primary_color`, `primary_text_color`, `font_size`, and `request.controller_action` and `request.route_name`. Laravel hosts use it to add request context. |
+| `floatingControl` | `false` hides the floating controls. The overlay and the shortcuts keep working, so a host can show its own controls. |
+
+### Host controls
+
+A host with its own toolbar reads and changes the overlay through these functions. They share storage and transport with the floating controls.
+
+| Function | What it does |
+| --- | --- |
+| `getAnnotationState()`, `subscribeAnnotationState(listener)` | A stable snapshot for `useSyncExternalStore` or another framework: mode, count, page count, delivery mode, connection, removal error, Orbit availability, and thread. |
+| `getAnnotationSettings()`, `saveAnnotationSettings(settings)` | Read and save the delivery mode, server URL, and thread ID for the tab. An empty `threadId` clears the thread. |
+| `checkAnnotationServer(url, signal)`, `checkOrbit()` | Check a local server URL, or the Orbit support of the host. |
+| `toggleAnnotationMode()`, `clearAllAnnotations()`, `clearPageAnnotations()` | Turn annotation mode on or off, remove every annotation, or remove those of the current page. |
+
+Mark the host toolbar with `data-feedback-toolbar`, so a click in it does not pick an element. Mount one annotation integration per page.
 
 ## Use the overlay
 
@@ -81,10 +95,14 @@ The gear button opens the settings. **Delivery mode** is **Local server** or **O
 Run the server from a project that has the package installed:
 
 ```bash
-npx @nckrtl/annotate serve [--port PORT] [--host IP] [--store DIRECTORY]
+npx @nckrtl/annotator serve [--port PORT] [--host [IP]] [--store DIRECTORY] [--state FILE]
 ```
 
-It binds `127.0.0.1` on a random port, creates a temporary store, and prints both, for example `http://127.0.0.1:52817/annotations`. Paste that URL into **Annotation server URL**. The overlay checks the URL when you press Enter or leave the field. `--port` fixes the port. `--store` reuses a store, so numbering and records continue. Only one server can use a store at a time. Each server has its own URL and store, so several can run at once.
+It binds `127.0.0.1` on a random port, creates a temporary store, and prints both, for example `http://127.0.0.1:52817/annotations`. Paste that URL into **Annotation server URL**. The overlay checks the URL when you press Enter or leave the field. `--port` fixes the port. `--host` without an IP binds `0.0.0.0` and prints the machine's first network address. `--store` reuses a store, so numbering and records continue. Only one server can use a store at a time. Each server has its own URL and store, so several can run at once.
+
+To run the server in the background, use `start --state FILE` with the same options. It returns when the server answers and prints JSON with the PID, port, URL, skill URL, and store. `status --state FILE` reports whether that server runs and removes the state file of a crashed one. `stop --state FILE` stops it with SIGTERM, so the store closes cleanly. It never signals a process that does not answer as an annotation server. The server writes its output to a `.log` file next to the state file. `serve --state FILE` writes the same state file for a server in the foreground.
+
+The server also prints a **Skill URL**, `http://127.0.0.1:<port>/skill`. It serves a short Markdown skill with the server's annotation URL and the project folder, which tells an agent how to watch, claim, complete, and release annotations. `GET /annotations` returns it as `meta.skillUrl`. Reading the skill changes no work.
 
 The server writes each annotation to `<store>/todo/`, `<store>/in-progress/`, or `<store>/done/` as `<id>.json`, before it answers. The folder decides the status: `todo`, `in_progress`, or `done`. A record with status `cancelled` also lives in `done/`. The server reads the folders on every request. Edit a file by replacing it atomically.
 
@@ -102,6 +120,10 @@ Append the operation to the printed URL.
 | `POST /annotations/complete` | Takes `id` and an optional `summary`, and moves an `in_progress` annotation to `done`. |
 | `POST /annotations/release` | Takes `id` and moves an `in_progress` annotation back to `todo`. |
 | `GET /annotations/events` | A server-sent event stream. Each event tells the client to fetch again. |
+| `DELETE /annotations/{id}` | Removes one annotation. |
+| `DELETE /annotations` | Removes every annotation, or with `?pathname=/page` those of one page. |
+
+A removed annotation stays removed: the server records it, so a late submission of the same ID gets `410` and does not bring it back. Numbering continues. Connected browsers receive the removal, also after they reconnect.
 
 An unknown ID returns `404`. Completing or releasing an annotation that is not `in_progress` returns `409`, unless it already has the target status. Two agents that claim at once get different annotations. A claim has no timeout: an `in_progress` annotation stays so across restarts until an agent completes or releases it. The server only stores work. It starts no agent and sends nothing to T3.
 
@@ -109,7 +131,7 @@ An unknown ID returns `404`. Completing or releasing an annotation that is not `
 
 A browser on another machine cannot reach `127.0.0.1` on the server machine. Start the server with `--host <private-IP>`. An HTTPS page also needs an HTTPS endpoint, such as a reverse proxy in front of the server.
 
-A Vite host can add the `annotationServerProxy()` plugin from `@nckrtl/annotate/vite` instead. During development it forwards `/__annotate/local/<port>/annotations` to that port on the development machine. The overlay then sends a loopback server URL through the page origin, so a remote browser and an HTTPS page both work. The plugin forwards only to a port that answers as an annotation server. The Orbit web app enables it.
+A Vite host can add the `annotationServerProxy()` plugin from `@nckrtl/annotator/vite` instead. During development it forwards `/__annotate/local/<port>/annotations` to that port on the development machine. The overlay then sends a loopback server URL through the page origin, so a remote browser and an HTTPS page both work. The plugin forwards only to a port that answers as an annotation server. The Orbit web app enables it.
 
 ## Orbit delivery
 

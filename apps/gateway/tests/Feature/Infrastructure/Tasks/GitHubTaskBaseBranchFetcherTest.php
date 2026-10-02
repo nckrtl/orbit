@@ -16,11 +16,13 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TaskWorkerSshExecutor;
 use Tests\Support\TestOrbitHome;
 
 /** @param  list<string>  $arguments */
@@ -96,6 +98,54 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
+describe('TaskCheckWorkerUser', function (): void {
+    it('updates the checkout with worker filter UIDs and without the fetch credential environment', function (string $operation): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $root = sys_get_temp_dir().'/orbit-worker-fast-forward-'.bin2hex(random_bytes(6));
+        $checkout = $root.'/checkout';
+        (new Process(['git', 'init', '-q', '--bare', $root.'/origin.git']))->mustRun();
+        (new Process(['git', 'init', '-q', '-b', 'task-7', $checkout]))->mustRun();
+        $group = fetcher_group($checkout);
+        $branch = 'task-'.$group->id;
+        file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
+        file_put_contents($checkout.'/readme', 'approved');
+        fetcher_git($checkout, ['add', '.']);
+        fetcher_git($checkout, ['commit', '-qm', 'approved']);
+        $approved = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+        file_put_contents($checkout.'/readme', 'upstream');
+        fetcher_git($checkout, ['commit', '-qam', 'upstream']);
+        $upstream = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+        fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
+        fetcher_git($checkout, ['push', '-q', 'origin', 'HEAD:refs/heads/'.$branch, 'HEAD:refs/heads/main']);
+        fetcher_git($checkout, ['reset', '--hard', '-q', $approved]);
+        foreach (['clean', 'smudge'] as $filter) {
+            fetcher_git($checkout, ['config', 'filter.uid.'.$filter, 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> .git/filter-users; cat']);
+        }
+        $transport = TaskWorkerSshExecutor::forCheckout($checkout);
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $root]))->mustRun();
+
+        try {
+            $bases = fetcher($transport);
+            $bases->fetchForTurn($group);
+            fetcher_git($checkout, ['remote', 'set-url', 'origin', $root.'/unreachable.git']);
+            if ($operation === 'fast-forward') {
+                $bases->fastForward($group);
+            } else {
+                expect($bases->resetToDefault($group))->toBe($upstream);
+            }
+
+            expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($upstream);
+            $users = file($checkout.'/.git/filter-users', FILE_IGNORE_NEW_LINES) ?: [];
+            expect($users)->not->toBeEmpty();
+            foreach ($users as $user) {
+                expect($user)->toBe('65534:absent');
+            }
+        } finally {
+            File::deleteDirectory($root);
+        }
+    })->with(['fast-forward', 'baseline-reset']);
+});
+
 it('fetches the base ref into the remote-tracking ref and leaves the task branch', function (): void {
     $root = TestOrbitHome::scratch('orbit-fetch');
     (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
@@ -126,7 +176,7 @@ it('passes the base ref as one argument and the token only on standard input', f
     expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main'])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_fetch'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -C "$checkout" fetch --quiet origin "$base"');
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"');
 });
 
 it('reports one failure when the base name is invalid or the fetch fails', function (string $base, bool $ssh): void {

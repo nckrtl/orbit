@@ -9540,6 +9540,128 @@
         ]
       }
     },
+    "/api/v1/instances/{instance}/rename": {
+      "post": {
+        "operationId": "instance-rename",
+        "summary": "instance:rename",
+        "tags": [
+          "Instances"
+        ],
+        "parameters": [
+          {
+            "name": "instance",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Instance ID."
+          }
+        ],
+        "description": "Record a development branch rename and move its Route.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "branch": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Branch already checked out on the Node"
+                  },
+                  "domain": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "New domain for the Instance Route"
+                  }
+                },
+                "minProperties": 1,
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/Instance"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/instances/12/rename\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"branch\": \"main\", \"domain\": \"app.example.test\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Instances\\RenameInstanceRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RenameInstanceRequest(instanceId: 4, branch: 't3code/login-redirect'))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/instances/{instance}/rollback": {
       "post": {
         "operationId": "instance-rollback",
@@ -13517,6 +13639,12 @@
                   "preset": {
                     "type": "string",
                     "description": "Process preset: vp-dev, agentation-mcp, or antigravity-watch"
+                  },
+                  "user": {
+                    "type": "string",
+                    "pattern": "^[a-z_][a-z0-9_-]{0,31}$(?![\\s\\S])",
+                    "maxLength": 32,
+                    "description": "Existing non-root account for a Node systemd Process"
                   },
                   "runtime": {
                     "type": "string",
@@ -21807,7 +21935,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.",
+        "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
         "requestBody": {
           "required": false,
           "content": {
@@ -21863,7 +21991,17 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "description": "The tasks extension is disabled (`extension.disabled`) or the Task group is not ready to complete (`tasks.not_settling`). Running or reviewing groups need an ended watched pull request or a stored completion receipt. A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open.",
             "content": {
               "application/json": {
                 "schema": {
@@ -25707,6 +25845,12 @@
               "integer",
               "null"
             ]
+          },
+          "user": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -26103,6 +26247,24 @@
             ]
           },
           "pr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "watched_pr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "watched_pr_number": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "watched_pr_state": {
             "type": [
               "string",
               "null"

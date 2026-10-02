@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\GitHub;
 
+use Illuminate\Support\Facades\Cache;
+
 /**
  * Mints the token that pushes a task branch and opens or watches its pull request
  * ([ADR 0121](/decisions/0121-end-agent-turns-with-a-run-receipt)). Unlike a read, a publish has
@@ -30,6 +32,39 @@ final readonly class RepositoryPullRequestAccess
         [$credentials, $installation] = $this->installation($repository);
 
         return $this->github->repositoryReviewsToken($credentials, $installation, $repository);
+    }
+
+    /** The branch watch caches only the installation id, never its read-only token. */
+    public function cachedReadToken(GitHubRepository $repository): string
+    {
+        $credentials = $this->store->credentials();
+        if (! $credentials instanceof GitHubAppCredentials) {
+            throw new GitHubApiException('The Gateway GitHub App is not registered.');
+        }
+        $key = 'github:pull-request-installation:'.$credentials->appId.':'.strtolower($repository->owner.'/'.$repository->name);
+        $installation = Cache::get($key);
+        if (! is_int($installation)) {
+            $installation = $this->resolveInstallation($credentials, $repository);
+            Cache::forever($key, $installation);
+        }
+        try {
+            return $this->github->repositoryPullRequestReadToken($credentials, $installation, $repository);
+        } catch (GitHubApiException $exception) {
+            if (! $exception->isTokenRefusal()) {
+                throw $exception;
+            }
+            Cache::forget($key);
+            $installation = $this->resolveInstallation($credentials, $repository);
+            Cache::forever($key, $installation);
+            try {
+                return $this->github->repositoryPullRequestReadToken($credentials, $installation, $repository);
+            } catch (GitHubApiException $retry) {
+                if ($retry->isTokenRefusal()) {
+                    Cache::forget($key);
+                }
+                throw $retry;
+            }
+        }
     }
 
     /**
@@ -59,11 +94,13 @@ final readonly class RepositoryPullRequestAccess
         if (! $credentials instanceof GitHubAppCredentials) {
             throw new GitHubApiException('The Gateway GitHub App is not registered.');
         }
-        $installation = $this->github->repositoryInstallation($credentials, $repository);
-        if ($installation === null) {
-            throw new GitHubApiException('The Gateway GitHub App is not installed on '.$repository->owner.'/'.$repository->name.'.');
-        }
 
-        return [$credentials, $installation];
+        return [$credentials, $this->resolveInstallation($credentials, $repository)];
+    }
+
+    private function resolveInstallation(GitHubAppCredentials $credentials, GitHubRepository $repository): int
+    {
+        return $this->github->repositoryInstallation($credentials, $repository)
+            ?? throw new GitHubApiException('The Gateway GitHub App is not installed on '.$repository->owner.'/'.$repository->name.'.');
     }
 }

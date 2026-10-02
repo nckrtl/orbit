@@ -88,6 +88,37 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
+describe('TaskGitHardening', function (): void {
+    it('publishes turn metadata without writing through planted final or temporary links', function (string $name): void {
+        $checkout = turn_receipt_checkout();
+        File::ensureDirectoryExists($checkout.'/.git/orbit');
+        $target = TestOrbitHome::scratch('private-turn-target');
+        file_put_contents($target, 'private Node file');
+        chmod($target, 0600);
+        symlink($target, $checkout.'/.git/orbit/'.$name);
+
+        turn_receipts(new LocalShellSshExecutor)->prepare(turn_receipt_instance($checkout), TaskThreadRole::Implementer, threadId: 17, context: 'Task context');
+
+        expect(file_get_contents($target))->toBe('private Node file')
+            ->and(file_get_contents($checkout.'/.git/orbit/context.md'))->toBe('Task context');
+    })->with(['turn.new', 'turn.json.new', 'context.md.new', 'turn', 'turn.json', 'context.md', 'receipt.json']);
+
+    it('refuses to read a turn or receipt link into a private Node file', function (string $name): void {
+        $checkout = turn_receipt_checkout();
+        $instance = turn_receipt_instance($checkout);
+        $receipts = turn_receipts(new LocalShellSshExecutor);
+        $receipts->prepare($instance, TaskThreadRole::Implementer);
+        file_put_contents($checkout.'/.git/orbit/receipt.json', '{}');
+        $target = TestOrbitHome::scratch('private-read-target');
+        file_put_contents($target, 'private Node file');
+        unlink($checkout.'/.git/orbit/'.$name);
+        symlink($target, $checkout.'/.git/orbit/'.$name);
+
+        expect(fn () => $receipts->read($instance))->toThrow(TaskTurnReceiptException::class)
+            ->and(file_get_contents($target))->toBe('private Node file');
+    })->with(['turn.json', 'receipt.json']);
+});
+
 it('installs the turn command outside the tracked tree and reads the receipt it writes', function (): void {
     $checkout = turn_receipt_checkout();
     $instance = turn_receipt_instance($checkout);
@@ -101,6 +132,7 @@ it('installs the turn command outside the tracked tree and reads the receipt it 
     expect($written->getExitCode())->toBe(0)
         ->and($written->getOutput())->toBe("Orbit recorded the turn receipt (ready_for_review). End your turn now.\n")
         ->and(is_executable($checkout.'/.git/orbit/turn'))->toBeTrue()
+        ->and(fileperms($checkout.'/.git/orbit') & 0777)->toBe(0775)
         ->and(is_file($checkout.'/.git/orbit/run'))->toBeFalse()
         ->and(is_file($checkout.'/.git/orbit/run.json'))->toBeFalse()
         ->and(json_decode((string) file_get_contents($checkout.'/.git/orbit/turn.json'), true))->toBe(['role' => 'implementer', 'final' => false, 'deliverables' => []])
@@ -641,9 +673,9 @@ it('reports an unreachable workspace when the review context cannot be written',
         context: "# Task context\n",
     ))->toThrow(TaskTurnReceiptException::class, 'The task workspace could not be reached for the turn receipt.');
 
-    expect($transport->commands[0]->input)->toContain('turn.json.new')
-        ->and($transport->commands[0]->input)->toContain('context.md.new')
-        ->and($transport->commands[0]->input)->toContain('mv -fT -- "$dir/context.md.new" "$dir/context.md"');
+    expect($transport->commands[0]->input)->toContain('python3 -I -c')
+        ->and($transport->commands[0]->input)->toContain('| workspace_metadata \'turn\'')
+        ->and($transport->commands[0]->input)->not->toContain('context.md.new');
 });
 
 it('replaces a context path that is a symlink to a directory instead of writing inside it', function (): void {

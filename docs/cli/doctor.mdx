@@ -61,6 +61,8 @@ The Gateway observes each Node once over SSH before it runs the family probes. T
 
 A failed SSH command makes the Node unreachable, and the `node` family reports `node.ssh_unreachable`. A malformed or truncated observation makes the `node` family report `node.inspection_failed` instead. In both cases the other families treat the Node as unreachable. Database-only checks still run: Node and role lifecycle, role conflicts, Route status, and database connections. Each other family with resources on that Node reports one `*.node_unreachable` issue instead of its checks. The `role` family does this only when the Node has an active role. The `route` family does this only when the Node serves a custom proxy Route. The tool family does this only when the Node has a Tool row. An unreachable Node does not run the inventory scan, so it has no `tool.inventory_scan` issue. With no Tool rows the tool family reports nothing.
 
+Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git. Doctor does not use a checkout's hooks or custom filesystem monitor while checking repository identity and source metadata. It leaves the stored Git configuration unchanged.
+
 Checks that read root-owned files run through passwordless `sudo` on the Node. Every check that reads the live Caddyfile is one of them, because Orbit publishes each Caddyfile version under `/etc/caddy/orbit-versions` as `root:caddy` with mode `0750`.
 
 Families run in this order, whatever filter you pass: `node`, `role`, `project`, `instance`, `schedule`, `tool`, `process`, `firewall`, `database_connection`, `route`. Nodes sort by name and then ID. Resources sort by ID. So two runs against the same state produce the same report.

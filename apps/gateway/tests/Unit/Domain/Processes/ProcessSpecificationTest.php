@@ -8,8 +8,9 @@ use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetType;
 use App\Models\Node;
+use App\Models\Process;
 
-function process_specification_data(array $environment): AddProcessData
+function process_specification_data(array $environment, ?string $user = null): AddProcessData
 {
     return new AddProcessData(
         targetType: ProcessTargetType::Node,
@@ -24,8 +25,21 @@ function process_specification_data(array $environment): AddProcessData
         volumes: [],
         restartPolicy: 'unless-stopped',
         start: true,
+        user: $user,
     );
 }
+
+describe('ProcessUser', function (): void {
+    it('distinguishes explicit and derived accounts even with the same directory', function (): void {
+        $target = new ProcessTarget(node: new Node(['name' => 'beast']), user: 'orbit', checkoutPath: '/home/orbit');
+        $specification = new ProcessSpecification;
+        $attributes = $specification->attributes(process_specification_data([], 'orbit-worker'), $target);
+        $process = new Process($attributes);
+        expect($specification->matches($process, $attributes))->toBeTrue()
+            ->and($specification->matches($process, $specification->attributes(process_specification_data([], 'other-worker'), $target)))->toBeFalse()
+            ->and($specification->matches($process, $specification->attributes(process_specification_data([]), $target)))->toBeFalse();
+    });
+});
 
 it('persists a systemd environment map in canonical key order', function (): void {
     $target = new ProcessTarget(

@@ -21,7 +21,7 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:create`](#orbit-taskscreate) | Create a task in Backlog or Todo. |
 | [`tasks:update`](#orbit-tasksupdate) | Change a task's title, brief, or status. |
 | [`tasks:cancel`](#orbit-taskscancel) | Cancel a task and remove its Instance. |
-| [`tasks:complete`](#orbit-taskscomplete) | Complete a settling task and remove its Instance. |
+| [`tasks:complete`](#orbit-taskscomplete) | Complete a settling task, or a running or reviewing task whose watched pull request ended, and remove its Instance. |
 | [`tasks:subtask:create`](#orbit-taskssubtaskcreate) | Append a subtask to a task. |
 | [`tasks:subtask:update`](#orbit-taskssubtaskupdate) | Change a subtask's title, brief, position, or deliverables. |
 | [`tasks:subtask:destroy`](#orbit-taskssubtaskdestroy) | Delete a subtask. |
@@ -86,6 +86,8 @@ orbit tasks:show [group] [--json]
 ```
 
 The tree shows the ID, title, Project, status, whether the task is asking for assistance, the assistance kind, the question, the reason, Instance, pull request, Coder notification, models, tokens, line diff, and duration. The subtask table shows the position, ID, title, status, deliverables, tokens, line diff, duration, assistance kind, and the question or reason of each subtask. A direction request shows its question in that last column. A failure shows its reason. A subtask or task that is not asking shows an em dash in the kind, question, and reason columns, even when an old value is still stored. JSON includes `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason` on the task and each subtask, and `fails_on_base` on every command deliverable. When that value is true, the detail names the deliverable under Fails on the start commit. Showing an active task refreshes its metrics, as the [tasks reference](/reference/tasks#tokens-and-line-diff) describes.
+
+On the task, `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` report the pull request found on `task-{id}` while subtasks are open. Those fields do not change `pr_url`, which remains the reviewed pull request Orbit opened.
 
 ## orbit tasks:create
 
@@ -166,7 +168,9 @@ In a terminal, the task list leaves out `settling` and `completed` tasks. Before
 
 ## orbit tasks:complete
 
-Complete a `settling` task after its pull request is reviewed and merged. The Gateway marks the task `completed` and removes its shared Instance. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal.
+Complete a `settling` task after its pull request is reviewed and merged. Also complete a `running` or `reviewing` task whose watched pull request has merged or closed. The Gateway marks the task `completed` and removes its shared Instance.
+
+On the `running` or `reviewing` path it stores the ended state, stops the running implementer or reviewer and any running check, then cancels each open subtask and marks the task `completed` in one transaction. A failed stop returns `tasks.subtask_interrupt_failed`, keeps the task and its subtasks open, and leaves the stored completion for retry. The [tasks reference](/reference/tasks#complete-and-cleanup) defines how a crash resumes without another GitHub read. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal. There is no `tasks:continue` command.
 
 ```bash
 orbit tasks:complete [group] [--yes] [--json]
@@ -176,7 +180,7 @@ orbit tasks:complete [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the task list shows only `settling` tasks. The question names the task and its Instance and defaults to No. Consent failures match `tasks:cancel`. Any other status fails with `tasks.not_settling`. When removal fails, the task is still marked `completed`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
+In a terminal, the task list shows only `settling` tasks. Pass the task id to complete a `running` or `reviewing` task whose watched pull request has ended. The question names the task and its Instance and defaults to No. Consent failures match `tasks:cancel`. A task that is not one of those ready cases fails with `tasks.not_settling`. That includes a `running` or `reviewing` task whose watched pull request is missing, open, or unreadable, unless completion was already recorded. When removal fails, the task is still marked `completed`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#complete-and-cleanup) describes.
 
 ## orbit tasks:subtask:create
 

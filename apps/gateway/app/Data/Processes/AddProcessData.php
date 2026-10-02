@@ -32,5 +32,6 @@ final readonly class AddProcessData
         public bool $start,
         public bool $keepAlive = false,
         public ?string $preset = null,
+        public ?string $user = null,
     ) {}
 }

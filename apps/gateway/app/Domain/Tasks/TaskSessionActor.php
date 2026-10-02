@@ -17,6 +17,11 @@ final readonly class TaskSessionActor
 
     public function execute(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
     {
+        TaskExecutionHold::run($group, fn () => $this->executeAdmitted($group, $observation, $decision));
+    }
+
+    private function executeAdmitted(Task $group, TaskSessionObservation $observation, TaskSessionDecision $decision): void
+    {
         if ($decision->action === TaskSessionNextAction::EscalateCoder) {
             $this->coder->escalate($group, $observation, $decision);
 
@@ -72,13 +77,15 @@ final readonly class TaskSessionActor
     public function relayReviewBody(Task $group, TaskThreadObservation $observed, string $body): void
     {
         $thread = $this->thread($group, $observed);
-        $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply('Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body));
+        TaskExecutionHold::run($group, fn () => $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply('Relay from the reviewer. Address these findings verbatim. '.TaskTurnInstructions::implementer(check: $group->project->taskCheckCommand(), threadId: $thread->id)."\n\n".$body)));
     }
 
     public function remindRubric(Task $group, TaskThreadObservation $observed, string $message): void
     {
-        $thread = $this->thread($group, $observed);
-        $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message));
+        TaskExecutionHold::run($group, function () use ($group, $observed, $message): void {
+            $thread = $this->thread($group, $observed);
+            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message));
+        });
     }
 
     /**
@@ -87,8 +94,10 @@ final readonly class TaskSessionActor
      */
     public function resumeInterruptedTurn(Task $group, TaskThreadObservation $observed, string $message, string $key): void
     {
-        $thread = $this->thread($group, $observed);
-        $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message), $key);
+        TaskExecutionHold::run($group, function () use ($group, $observed, $message, $key): void {
+            $thread = $this->thread($group, $observed);
+            $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($message), $key);
+        });
     }
 
     private function thread(Task $group, TaskThreadObservation $observed): AgentThread

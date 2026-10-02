@@ -143,6 +143,10 @@ The Gateway applies `slug`, `repository_url`, `default_branch`, and `root` as on
 
 A failure before `publishing` rolls back: Orbit restores origins, branches, and Routes and ends in `rolled_back`. A rollback that fails stays `rolling_back`, and an identical retry continues it. A failure after `publishing` starts stays in place, and an identical retry continues forward. A different update while one is incomplete returns `project.update_in_progress`.
 
+When updating source, the Gateway passes `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git during preflight, origin changes, fetches, branch changes, and rollback. The Gateway does not run checkout hooks or a custom filesystem monitor for those operations. The overrides do not change the stored Git configuration.
+
+Branch switch and rollback checkout commands run as the managed user without a credential environment, so the managed user owns the files they write. A filter can only come from `.git/config`, which the worker cannot write.
+
 Run [Doctor](/cli/doctor) to inspect any projection that needs attention.
 
 ### Repository changes

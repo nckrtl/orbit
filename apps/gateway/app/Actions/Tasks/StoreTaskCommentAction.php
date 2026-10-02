@@ -11,6 +11,7 @@ use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
@@ -59,16 +60,17 @@ final readonly class StoreTaskCommentAction
             $rawType = $comment->getRawOriginal('type');
             $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
-            if ($type === TaskCommentType::AssistanceRequested) {
+            $group = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
+            $endedPullRequest = TaskExecutionHold::active($group)
+                || RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
+                || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason);
+            if ($type === TaskCommentType::AssistanceRequested && ! $endedPullRequest) {
                 TaskAssistance::apply($task, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
-                $parent = $task->parent()->lockForUpdate()->first();
-                if ($parent instanceof Task) {
-                    TaskAssistance::apply($parent, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
-                }
+                TaskAssistance::apply($group, AssistanceKind::Direction, $comment->body, $comment->body, replaceDirection: true);
                 TaskQuestions::recordOperator($task, $comment);
                 $this->log($task, $comment, 'assistance requested');
             }
-            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested) {
+            if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
                 $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
                 $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
                 $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
@@ -78,33 +80,35 @@ final readonly class StoreTaskCommentAction
         });
 
         if ($deliverDirection) {
-            $this->deliverDirection($task, $comment);
+            TaskExecutionHold::run($task->parent, fn () => $this->deliverDirection($task, $comment));
         }
 
         if ($deliverResolution) {
-            $task->loadMissing('implementerThread');
-            // A reviewing subtask is blocked on its own reviewer. The group pointer can still name an older thread.
-            $reviewing = $task->status === TaskStatus::Reviewing;
-            try {
-                $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
-                if ($retryBaselineQueued) {
-                    $this->log($task, $comment, 'resolution queued baseline retry');
-                    $this->retryBaseline->recover($task);
-                } elseif ($reviewing && $thread === null) {
-                    $this->holdResolutionForFreshReviewer($task, $comment);
-                } else {
-                    if ($thread === null) {
-                        throw new AgentDriverException('Blocked AgentThread is unavailable.');
+            TaskExecutionHold::run($task->parent, function () use ($task, $comment, $retryBaselineQueued): void {
+                $task->loadMissing('implementerThread');
+                // A reviewing subtask is blocked on its own reviewer. The group pointer can still name an older thread.
+                $reviewing = $task->status === TaskStatus::Reviewing;
+                try {
+                    $thread = $reviewing ? $this->subtaskReviewer($task) : $task->implementerThread;
+                    if ($retryBaselineQueued) {
+                        $this->log($task, $comment, 'resolution queued baseline retry');
+                        $this->retryBaseline->recover($task);
+                    } elseif ($reviewing && $thread === null) {
+                        $this->holdResolutionForFreshReviewer($task, $comment);
+                    } else {
+                        if ($thread === null) {
+                            throw new AgentDriverException('Blocked AgentThread is unavailable.');
+                        }
+                        $this->turnFetcher->beforeTurn($task->parent()->with(['project', 'taskable'])->firstOrFail());
+                        $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($comment->body));
+                        $this->recordResolutionDelivered($task, $comment, $reviewing);
                     }
-                    $this->turnFetcher->beforeTurn($task->parent()->with(['project', 'taskable'])->firstOrFail());
-                    $this->drivers->get($thread->driver)->send($thread, $this->fetchNotice->apply($comment->body));
-                    $this->recordResolutionDelivered($task, $comment, $reviewing);
+                } catch (AgentDriverException) {
+                    DB::transaction(function () use ($task, $comment): void {
+                        $this->log($task, $comment, 'resolution delivery failed');
+                    });
                 }
-            } catch (AgentDriverException) {
-                DB::transaction(function () use ($task, $comment): void {
-                    $this->log($task, $comment, 'resolution delivery failed');
-                });
-            }
+            });
         }
 
         $rawType = $comment->getRawOriginal('type');
@@ -229,7 +233,10 @@ final readonly class StoreTaskCommentAction
     {
         DB::transaction(function () use ($task, $comment): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            if (! $locked->assistance_requested
+                || RequestEndedPullRequestAssistanceAction::isReason($locked->assistance_reason)
+                || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
             $comment->update(['review_attempt' => $locked->review_attempt]);
@@ -272,7 +279,10 @@ final readonly class StoreTaskCommentAction
     {
         DB::transaction(function () use ($task, $comment, $reviewing): void {
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-            if (! $locked->assistance_requested) {
+            $parent = $locked->parent()->lockForUpdate()->firstOrFail();
+            if (! $locked->assistance_requested
+                || RequestEndedPullRequestAssistanceAction::isReason($locked->assistance_reason)
+                || RequestEndedPullRequestAssistanceAction::isReason($parent->assistance_reason)) {
                 return;
             }
             // The resolution is the reviewer's next request, so the tick must not send another.
@@ -280,7 +290,7 @@ final readonly class StoreTaskCommentAction
                 ? ['review_attempt' => $locked->review_attempt + 1, 'review_notified_attempt' => $locked->review_attempt + 1]
                 : ['completion_attempt' => $locked->completion_attempt + 1, 'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null];
             $locked->update([...$attempt, ...TaskAssistance::cleared(), 'communication_failures' => 0, 'review_reminder_attempt' => null, 'review_reminder_input_id' => null, 'resolution_delivered_comment_id' => $comment->id]);
-            $locked->parent()->update(TaskAssistance::cleared());
+            $parent->update(TaskAssistance::cleared());
             TaskQuestions::attachResolution($locked, $comment);
             $this->log($locked, $comment, 'resolution delivered');
         });

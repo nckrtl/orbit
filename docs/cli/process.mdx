@@ -5,6 +5,7 @@ covers:
   - apps/cli/app/Commands/Processes/**
   - apps/cli/app/Commands/Concerns/{FollowsLogs,SelectsAppDefinitionTarget}.php
   - apps/cli/app/Support/Logs/**
+  - packages/php-sdk/src/Requests/Processes/CreateProcessRequest.php
 ---
 
 A Process is one systemd service or Docker container that the Gateway manages for an Instance or a managed Node. The `process` family installs it, changes its desired state, reads its log, and removes it. It also records Project process definitions.
@@ -18,7 +19,7 @@ A Process is one systemd service or Docker container that the Gateway manages fo
 | Selector | Owner | Result |
 | --- | --- | --- |
 | `--instance=ID` | Instance | The Gateway derives the Node and the runtime user from the Instance. |
-| `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed user, for shared services such as a Docker database. |
+| `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed user. A systemd Process can set `--user`. Shared services such as a Docker database use this owner. |
 | `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Process. |
 
 `process:show`, `process:update`, and `process:destroy` with `--project` select a definition by name. `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without `--project` take the numeric Process ID from `process:list`.
@@ -37,7 +38,7 @@ A Process is one systemd service or Docker container that the Gateway manages fo
 | [`process:logs`](#orbit-processlogs) | Return a log tail, or follow new lines. |
 | [`process:destroy`](#orbit-processdestroy) | Remove one Process and its unit or container, or one definition. |
 
-Every command accepts `--json`, and every result includes the request ID. Lists and details show the lifecycle status, failed step, and error code. JSON lists also carry `cpu` and `memory_bytes`, which are null when no sample exists. Definition lists omit the command. Environment values show as `[REDACTED]`. `process:destroy` asks for confirmation, and the default is No.
+Every command accepts `--json`, and every result includes the request ID. Lists and details show the lifecycle status, failed step, and error code. JSON lists also carry `cpu` and `memory_bytes`, which are null when no sample exists. JSON also carries `user`, null when the Process uses the derived account. Definition lists omit the command. Environment values show as `[REDACTED]`. `process:destroy` asks for confirmation, and the default is No.
 
 ## orbit process:create
 
@@ -55,6 +56,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | --- | --- | --- |
 | `--instance=ID-or-domain` | none | Positive Instance ID or the exact Route domain of a development Instance. |
 | `--node=ID-or-name` | none | Node ID or registered Node name. The CLI resolves a name through the Node list. |
+| `--user=NAME` | managed user | Systemd account for a Node Process. One letter or underscore, then at most 31 letters, digits, underscores, or hyphens. |
 | `--project=ID` | none | Numeric Project ID for a definition. |
 | `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
 | `--preset=PRESET` | none | Configure a development Instance Process. Supported values are `vp-dev`, `agentation-mcp`, and `antigravity-watch`. Refused with `--project`. |
@@ -69,7 +71,9 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--keep-alive` | off | Keep the Process running through app-dev idle hibernation. |
 | `--start` | off | Start the Process after it installs. Not accepted for a definition. |
 
-A preset owns the runtime, command, working directory, and environment, and refuses those options. It refuses `--keep-alive` for the two Agentation presets.
+A preset owns the runtime, command, working directory, and environment, and refuses those options. It refuses `--keep-alive` for the two Agentation presets. It also refuses `--user`.
+
+`--user` is accepted only with `--node` and a systemd runtime. An Instance, Docker, a preset, or a Project definition returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API field is `user`, and `CreateProcessRequest` takes the same argument. `root` is refused as `process.user_invalid`. The Gateway checks the named account with `getent passwd` over SSH and returns `process.user_unavailable` when it is absent or its home is invalid. The default working directory is that account's home; `--working-directory` overrides it. [Processes and schedules](/reference/processes-and-schedules#owners) describes the option.
 
 ```bash
 orbit process:create assets --instance=commander.test --preset=vp-dev --start

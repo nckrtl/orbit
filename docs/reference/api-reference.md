@@ -41,15 +41,17 @@ One input still reads outside the checkout. `php artisan route:list` loads the G
 
 The generator reads every command class, including commands the CLI hides at runtime. It does not run `orbit list`, and it does not load `apps/cli/vendor`.
 
-`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the annotation record and the deployment event stream. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `tasks:create`, and `tasks:update`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
+`bin/docs-openapi` also contains fixed schema text that it does not parse from the rows above, such as the annotation record and the deployment event stream. It also stores operation summaries and descriptions, including `tool:scan`, `tool:adopt`, `tasks:create`, `tasks:update`, and `tasks:complete`. Those descriptions stay in the script so the API and MCP keep the operation contracts rather than only the short CLI summaries. That text is part of the checkout. Editing the script changes the document in the same way on every machine.
 
-The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, deliverable, and Coder notification requirements.
+The `tasks:create` and `tasks:update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks): a task belongs to a Project, and an external ADE plans the work. The descriptions keep the status, subtask, deliverable, and Coder notification requirements. The completion description includes the ended watched pull request path, its durable receipt, and the `tasks.not_settling` and `tasks.subtask_interrupt_failed` errors.
 
 The script marks `instance:deploy` and `instance:rollback` with `x-orbit-task-action: true`. A [task definition](/reference/tasks#subtask-definitions) action may name only a marked operation. A form-request rule `present` marks that property required, as `required` does. The task definition response lists the fields the Gateway always returns, and its parameters, phases, and subtasks use the same item schemas as the write.
 
 Requests that inspect raw JSON also declare their body fields in `rules()`. The generated bodies include the Instance branch, deploy-step fields, database connection patches, and Node settings. A keyed array rule such as `array:path` publishes a closed JSON object, and nullable objects and members keep their null type. The generator resolves the shared database rules' regex constants and translates their whole-string anchors for JSON Schema, so invalid connection fields remain invalid in OpenAPI and MCP. The raw JSON checks still enforce object shape and the domain rules at runtime.
 
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.
+
+The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.
 
 ### Feedback fixups keep the Tasks schema
 
@@ -71,4 +73,4 @@ A request field the API validates as a boolean is a JSON `boolean` in `docs/open
 
 Command text does not. `orbit list` hides `tasks` and `proxycli` commands unless the active Gateway profile reports those extensions as enabled, and the command fails when `apps/cli/vendor` is absent. A machine with the extensions on would add request-field descriptions such as the task title and the proxycli cache connection, and continuous integration would leave them out. Reading the command classes keeps those descriptions in the document on every machine. Framework options such as `--version` are not part of the signature, so they are not copied onto a request field.
 
-The web app builds its TypeScript API types from `docs/openapi.json`. A stable document keeps those types stable until an input changes. [Web app](/reference/web-app) describes that generation.
+After changing an operation description or response, run `bin/mcp-tools` to refresh the Gateway MCP manifest and `bun run types` from `apps/web` to refresh its TypeScript API types. The web app builds its TypeScript API types from `docs/openapi.json`. A stable document keeps those types stable until an input changes. [Web app](/reference/web-app) describes that generation.

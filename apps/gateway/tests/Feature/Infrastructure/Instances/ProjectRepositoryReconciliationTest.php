@@ -17,12 +17,56 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Instance;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\Orb101ProjectUpdateFixture;
+use Tests\Support\TaskWorkerSshExecutor;
 
 beforeEach(function (): void {
     $this->fixture = Orb101ProjectUpdateFixture::bind($this);
+});
+
+describe('TaskCheckWorkerUser', function (): void {
+    it('switches and restores Project branches as the managed user with no credential environment', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = sys_get_temp_dir().'/orbit-project-worker-'.bin2hex(random_bytes(6));
+        $git = static fn (array $args): string => (new Process(['git', '-C', $checkout, '-c', 'user.name=t', '-c', 'user.email=t@t', ...$args]))->mustRun()->getOutput();
+        (new Process(['git', 'init', '-q', '-b', 'main', $checkout]))->mustRun();
+        file_put_contents($checkout.'/.gitattributes', "readme filter=uid\n");
+        file_put_contents($checkout.'/readme', 'main');
+        $git(['add', '.']);
+        $git(['commit', '-qm', 'main']);
+        $git(['checkout', '-qb', 'other']);
+        file_put_contents($checkout.'/readme', 'other');
+        $git(['commit', '-qam', 'other']);
+        $git(['remote', 'add', 'origin', $checkout]);
+        $git(['update-ref', 'refs/remotes/origin/other', 'HEAD']);
+        $git(['checkout', '-q', 'main']);
+        foreach (['clean', 'smudge'] as $filter) {
+            $git(['config', 'filter.uid.'.$filter, 'printf "%s:%s\\n" "$(id -u)" "${GIT_CONFIG_VALUE_0-absent}" >> .git/filter-users; cat']);
+        }
+        $transport = TaskWorkerSshExecutor::forCheckout($checkout);
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $checkout]))->mustRun();
+        $this->fixture->defaultInstance->update(['checkout_path' => $checkout]);
+        $this->app->instance(SshExecutor::class, $transport);
+        $mutator = $this->app->make(RemoteProjectUpdateSourceMutator::class);
+
+        try {
+            $mutator->switchDefaultBranch($this->fixture->defaultInstance, 'other');
+            expect(file_get_contents($checkout.'/readme'))->toBe('other');
+            $mutator->restoreDefaultBranch($this->fixture->defaultInstance, 'main');
+            expect(file_get_contents($checkout.'/readme'))->toBe('main');
+            $users = file($checkout.'/.git/filter-users', FILE_IGNORE_NEW_LINES) ?: [];
+            expect($users)->not->toBeEmpty();
+            foreach ($users as $user) {
+                expect($user)->toBe(posix_geteuid().':absent');
+            }
+            expect(fileowner($checkout.'/readme'))->toBe(posix_geteuid());
+        } finally {
+            new Filesystem()->deleteDirectory($checkout);
+        }
+    });
 });
 
 function orb101_repository_data(string $url): UpdateProjectData

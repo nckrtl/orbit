@@ -116,8 +116,8 @@ function renderNotice(input: NoticeInput, preview: string[]): string {
 
 function writeMeasuredText(request: OffloadRequest): string {
     const git = join(request.cwd, ".git");
-    const orbit = ensureChildDirectory(git, "orbit");
-    const directory = ensureChildDirectory(orbit, "tool-output");
+    const orbit = ensureChildDirectory(git, "orbit", 0o775);
+    const directory = ensureChildDirectory(orbit, "tool-output", 0o770);
     assertInside(git, directory);
     const base = sanitizeName(`${request.toolName}-${request.sessionId}-${request.toolCallId}`);
     for (let suffix = 1; suffix < 10_000; suffix++) {
@@ -127,14 +127,14 @@ function writeMeasuredText(request: OffloadRequest): string {
         }
         const path = join(directory, name);
         try {
-            writeFileSync(path, request.text, { encoding: "utf-8", mode: 0o600, flag: "wx" });
+            writeFileSync(path, request.text, { encoding: "utf-8", mode: 0o660, flag: "wx" });
         } catch (error) {
             if (isErrno(error, "EEXIST")) {
                 continue;
             }
             throw error;
         }
-        chmodSync(path, 0o600);
+        chmodSync(path, 0o660);
         try {
             assertInside(directory, path);
         } catch (error) {
@@ -146,22 +146,22 @@ function writeMeasuredText(request: OffloadRequest): string {
     throw new Error("could not choose a new tool output file name");
 }
 
-/** Create `name` under `parent` as a real directory with mode 0700, never following a symlink. */
-function ensureChildDirectory(parent: string, name: string): string {
+/** Create a real directory with shared ACL-compatible bits; never chmod an existing directory. */
+function ensureChildDirectory(parent: string, name: string, mode: number): string {
     const path = join(parent, name);
     if (!isRealDirectory(path)) {
         try {
             if (exists(path)) {
                 throw new Error(`${name} is not a directory`);
             }
-            mkdirSync(path, { mode: 0o700 });
+            mkdirSync(path, { mode });
+            chmodSync(path, mode);
         } catch (error) {
             if (!isErrno(error, "EEXIST") || !isRealDirectory(path)) {
                 throw error;
             }
         }
     }
-    chmodSync(path, 0o700);
     if (!isRealDirectory(path)) {
         throw new Error(`${name} is not a directory`);
     }

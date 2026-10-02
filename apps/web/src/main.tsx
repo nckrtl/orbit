@@ -5,7 +5,7 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { queryClient } from "./api/queryClient";
-import { mountAnnotation } from "@nckrtl/annotate";
+import { mountAnnotation } from "@nckrtl/annotator";
 import { createAppRouter } from "./router";
 import "./styles.css";
 

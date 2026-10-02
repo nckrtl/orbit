@@ -31,6 +31,7 @@ final readonly class ProcessResponse
         public ?float $cpu = null,
         /** Resident memory in bytes, null when unavailable — never zero for "not running". */
         public ?int $memoryBytes = null,
+        public ?string $user = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -62,6 +63,7 @@ final readonly class ProcessResponse
             requestId: $requestId,
             cpu: is_numeric($data['cpu'] ?? null) ? (float) $data['cpu'] : null,
             memoryBytes: is_int($data['memory_bytes'] ?? null) ? $data['memory_bytes'] : null,
+            user: is_string($data['user'] ?? null) ? $data['user'] : null,
         );
     }
 
@@ -85,6 +87,7 @@ final readonly class ProcessResponse
             'error_code' => $this->errorCode,
             'cpu' => $this->cpu,
             'memory_bytes' => $this->memoryBytes,
+            'user' => $this->user,
             'request_id' => $this->requestId,
         ];
     }

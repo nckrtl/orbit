@@ -10,8 +10,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
-beforeEach(fn () => restore_app_era_instance_leftovers_for_migration_test());
-afterEach(fn () => drop_app_era_instance_leftovers_for_migration_test());
+beforeEach(function (): void {
+    owned_interrupted_creation_removal_migration()->down();
+    restore_app_era_instance_leftovers_for_migration_test();
+});
+afterEach(function (): void {
+    drop_app_era_instance_leftovers_for_migration_test();
+    owned_interrupted_creation_removal_migration()->up();
+});
 
 it('refuses to discard base registration evidence while an operation is incomplete', function (): void {
     $instance = orb105_registration_migration_instance('reserved');

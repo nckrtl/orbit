@@ -8,6 +8,7 @@ use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\DestroyInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ListInstancesRequest;
 use Orbit\Sdk\Requests\Instances\RegisterInstanceRequest;
+use Orbit\Sdk\Requests\Instances\RenameInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Responses\Instances\InstanceRegistrationResponse;
 use Orbit\Sdk\Responses\Instances\InstanceRemovalResponse;
@@ -16,6 +17,25 @@ use Orbit\Sdk\Responses\Instances\InstancesResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+
+describe('Instance rename requests', function (): void {
+    it('transports optional branch and domain and maps the Instance response', function (?string $branch, ?string $domain, array $body): void {
+        $request = new RenameInstanceRequest(3, $branch, $domain);
+        $response = instance_gateway_connector(new MockClient([
+            RenameInstanceRequest::class => MockResponse::make(instance_envelope()),
+        ]))->send($request)->dto();
+        expect($request->getMethod())->toBe(Method::POST)
+            ->and($request->resolveEndpoint())->toBe('/api/v1/instances/3/rename')
+            ->and($request->body()->all())->toBe($body)
+            ->and($response)->toBeInstanceOf(InstanceResponse::class)
+            ->and($response->requestId)->toBe(instance_request_id());
+    })->with([
+        'branch only' => ['t3code/login', null, ['branch' => 't3code/login']],
+        'domain only' => [null, 'Login.Example.Test', ['domain' => 'Login.Example.Test']],
+        'both' => ['t3code/login', 'login.example.test', ['branch' => 't3code/login', 'domain' => 'login.example.test']],
+        'preserves empty input for Gateway validation' => ['', '', ['branch' => '', 'domain' => '']],
+    ]);
+});
 
 describe('Instance requests', function (): void {
     it('creates an Instance with inherited root and maps the typed response', function (): void {

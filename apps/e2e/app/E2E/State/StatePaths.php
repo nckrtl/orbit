@@ -6,6 +6,7 @@ namespace App\E2E\State;
 
 use InvalidArgumentException;
 use RuntimeException;
+use Symfony\Component\Process\Process;
 
 final readonly class StatePaths
 {
@@ -27,7 +28,7 @@ final readonly class StatePaths
             throw new RuntimeException('The state root must be a real directory.');
         }
 
-        chmod($resolved, 0700);
+        $this->makePrivate($resolved);
         $this->root = rtrim($resolved, '/');
     }
 
@@ -106,7 +107,7 @@ final readonly class StatePaths
                 throw new RuntimeException('A state directory cannot be a symbolic link.');
             }
 
-            chmod($cursor, 0700);
+            $this->makePrivate($cursor);
 
             if ($cursor === $this->root) {
                 break;
@@ -116,6 +117,44 @@ final readonly class StatePaths
         }
 
         return $this->path($relative);
+    }
+
+    public function makeFilePrivate(string $relative): void
+    {
+        $this->makePrivate($this->path($relative), 0600);
+    }
+
+    /** Make a file that already lies inside the state root private. */
+    public function makePathPrivate(string $path): void
+    {
+        if (! $this->isInsideRoot($path)) {
+            throw new InvalidArgumentException('The state path is outside the state root.');
+        }
+
+        $this->makePrivate($path, 0600);
+    }
+
+    /**
+     * Close state to the owning group and others. With named-user ACL entries, such as the task worker's, the mask is
+     * recalculated from those entries: a mode such as 0600 would otherwise set the mask to none and cancel them.
+     */
+    private function makePrivate(string $path, int $mode = 0700): void
+    {
+        clearstatcache(true, $path);
+        $acl = new Process(['getfacl', '--omit-header', '--numeric', '--no-effective', '--', $path]);
+        $acl->mustRun();
+
+        if (preg_match('/^user:[^:]+:/m', $acl->getOutput()) === 1) {
+            $owner = $mode === 0700 ? 'rwx' : 'rw-';
+            // Without --no-mask, setfacl recalculates the mask as the union of the named entries.
+            new Process(['setfacl', '--modify', 'user::'.$owner.',group::---,other::---', '--', $path])->mustRun();
+
+            return;
+        }
+
+        if ((fileperms($path) & 0777) !== $mode && ! chmod($path, $mode)) {
+            throw new RuntimeException('Cannot make the state path private.');
+        }
     }
 
     private function isInsideRoot(string $path): bool

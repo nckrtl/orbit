@@ -116,6 +116,9 @@ it('atomically reconciles only Laravel URL values and preserves later operator c
                 'name' => 'Acme',
                 'url' => 'http://old.test',
             ],
+            'filesystems' => [
+                'disks' => ['public' => ['url' => 'https://files.example.test/storage']],
+            ],
             'token' => 'unchanged',
         ];
         PHP;

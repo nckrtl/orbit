@@ -6,6 +6,7 @@ namespace App\Infrastructure\GitHub;
 
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 
 /**
  * A Bash script that reads a repository, with the `git_read` preamble in front. A script that
@@ -21,7 +22,7 @@ final readonly class GitReadScript
 
     public static function for(GitReadEnvironment $environment, string $script): self
     {
-        $script = $environment->bashPreamble().$script;
+        $script = WorkspaceGit::bashPreamble().$environment->bashPreamble().$script;
 
         return $environment->isEmpty()
             ? new self($script, null)

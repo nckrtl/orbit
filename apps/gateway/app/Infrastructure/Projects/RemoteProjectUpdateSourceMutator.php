@@ -11,7 +11,9 @@ use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
+use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Models\Instance;
 
 final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSourceMutator
@@ -40,7 +42,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                     origin=$(git -C "$path" config --get remote.origin.url)
                     test "$origin" = "$current"
                     git -C "$path" rev-parse --verify --quiet HEAD >/dev/null
-                    git_read git -C "$path" ls-remote --heads -- "$proposed" >/dev/null
+                    git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$path" ls-remote --heads -- "$proposed" >/dev/null
                     BASH,
                 'app-update-repository-preflight',
                 'project.repository_preflight_failed',
@@ -129,7 +131,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
                 branch=$2
                 test -d "$path"
                 git -C "$path" rev-parse --is-inside-work-tree >/dev/null
-                git_read git -C "$path" fetch --prune -- origin
+                git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$path" fetch --prune -- origin
                 git -C "$path" show-ref --verify --quiet "refs/remotes/origin/$branch"
                 BASH,
             'app-update-default-branch-preflight',
@@ -164,7 +166,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
             <<<'BASH'
                 path=$1
                 branch=$2
-                git -C "$path" checkout -- "$branch"
+                git -C "$path" checkout "$branch" --
                 BASH,
             'app-update-default-branch-restore',
             'project.source_switch_failed',
@@ -195,6 +197,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         string $errorCode,
         ?GitReadEnvironment $read = null,
     ): void {
+        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).$script;
         $readScript = $read instanceof GitReadEnvironment
             ? GitReadScript::for($read, $script)
             : null;

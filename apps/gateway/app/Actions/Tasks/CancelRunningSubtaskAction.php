@@ -4,17 +4,8 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\AgentDriverException;
-use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\TaskCheckException;
-use App\Domain\Tasks\TaskCheckRunner;
-use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskScheduler;
-use App\Models\AgentThread;
-use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskCheck;
 
 /**
  * Cancels a todo subtask directly, or stops a running subtask's implementer and running check before
@@ -25,8 +16,7 @@ final readonly class CancelRunningSubtaskAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
-        private AgentDriverRegistry $drivers,
-        private TaskCheckRunner $checks,
+        private StopTaskSubtaskAction $stop,
         private TaskScheduler $scheduler,
     ) {}
 
@@ -36,61 +26,9 @@ final readonly class CancelRunningSubtaskAction
         $this->requireExtension->execute();
 
         $this->scheduler->cancelRunningSubtask($group, $task, function (Task $running) use ($group): void {
-            $this->interruptImplementer($running);
-            $this->stopCheck($group, $running);
+            $this->stop->execute($group, $running);
         });
 
         return $task->fresh() ?? $task;
-    }
-
-    private function interruptImplementer(Task $task): void
-    {
-        $thread = $task->implementerThread ?? AgentThread::query()
-            ->where('task_id', $task->id)
-            ->where('role', 'implementer')
-            ->first();
-
-        if (! $thread instanceof AgentThread) {
-            return;
-        }
-
-        try {
-            $this->drivers->get($thread->driver)->interrupt($thread);
-        } catch (AgentDriverException $exception) {
-            throw $this->stopFailed($exception->getMessage());
-        }
-    }
-
-    /**
-     * A subtask without an implementer is in its baseline check, and one that handed off may be in
-     * its handoff check. Either check stops with the subtask. The scheduler marks it cancelled once the
-     * stop succeeded, so a failed stop leaves it running.
-     */
-    private function stopCheck(Task $group, Task $task): void
-    {
-        $check = $task->checks()->where('status', TaskCheckStatus::Running->value)->latest('id')->first();
-        if (! $check instanceof TaskCheck) {
-            return;
-        }
-
-        $instance = $group->fresh()?->taskable;
-        if (! $instance instanceof Instance) {
-            return;
-        }
-
-        try {
-            $this->checks->cancel($instance, $check->process());
-        } catch (TaskCheckException $exception) {
-            throw $this->stopFailed($exception->getMessage());
-        }
-    }
-
-    private function stopFailed(string $reason): ResourceOperationException
-    {
-        return new ResourceOperationException(
-            errorCode: 'tasks.subtask_interrupt_failed',
-            message: __('The subtask remains running because its implementer or check could not be stopped: :reason', ['reason' => $reason]),
-            status: 502,
-        );
     }
 }

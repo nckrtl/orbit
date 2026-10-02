@@ -12,6 +12,7 @@ use App\Support\ValidatedData;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Validator;
+use JsonException;
 use SensitiveParameter;
 
 final class StoreProcessRequest extends FormRequest
@@ -29,6 +30,17 @@ final class StoreProcessRequest extends FormRequest
                 'regex:/\A[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\z/D',
             ],
             'preset' => ['sometimes', Rule::in(ProcessPresets::names())],
+            'user' => [
+                'sometimes',
+                'required',
+                'missing_unless:target_type,node',
+                'missing_unless:runtime,systemd',
+                'missing_with:preset',
+                'string',
+                'max:32',
+                'regex:/\A[a-z_][a-z0-9_-]{0,31}\z/D',
+                Rule::notIn(['root']),
+            ],
             'runtime' => [$this->has('preset') ? 'missing' : 'required', Rule::enum(ProcessRuntime::class)],
             'command' => [$this->has('preset') ? 'missing' : 'required', 'array', 'min:1', 'max:64'],
             'command.*' => ['string', 'max:4096', 'not_regex:/[\x00\r\n]/'],
@@ -76,6 +88,25 @@ final class StoreProcessRequest extends FormRequest
             'start' => ['sometimes', 'boolean'],
             'keep_alive' => ['sometimes', 'boolean'],
         ];
+    }
+
+    /** @return array<array-key, mixed> */
+    public function validationData(): array
+    {
+        $data = parent::validationData();
+        if (! $this->isJson()) {
+            return $data;
+        }
+        try {
+            $payload = json_decode($this->getContent(), associative: true, flags: JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return $data;
+        }
+        if (is_array($payload) && array_key_exists('user', $payload)) {
+            $data['user'] = $payload['user'];
+        }
+
+        return $data;
     }
 
     /** @return list<callable(Validator): void> */
@@ -138,6 +169,7 @@ final class StoreProcessRequest extends FormRequest
             start: ($validated['start'] ?? false) === true,
             keepAlive: ($validated['keep_alive'] ?? false) === true,
             preset: isset($validated['preset']) ? $this->string('preset')->toString() : null,
+            user: is_string($validated['user'] ?? null) ? $validated['user'] : null,
         );
     }
 

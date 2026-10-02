@@ -41,6 +41,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class CreateInstanceAction
@@ -129,6 +130,7 @@ final readonly class CreateInstanceAction
                 'name' => $data->name,
                 'source_layout' => InstanceSourceLayout::Checkout,
                 'checkout_path' => $checkout->value,
+                'source_prepare_id' => (string) Str::uuid(),
                 'root' => $root,
                 'branch_override' => $data->branch,
                 'status' => InstanceState::Reserved,
@@ -136,54 +138,86 @@ final readonly class CreateInstanceAction
             $created = true;
         }
 
-        $result = ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run(
-            [$instance->id],
-            fn (): Instance => $this->sourceLock->synchronized(
-                $instance->node_id,
-                function () use ($instance, $created, $data, $clonePlan): Instance {
-                    $wasActive = $instance->refresh()->status === InstanceState::Active;
-                    // An interrupted create left the copy unfinished, so this retry finishes it and runs setup.
-                    $resumesClone = $wasActive
-                        && $instance->failed_step === 'setup'
-                        && $clonePlan instanceof InstanceDatabaseClonePlan
-                        && ! $this->databaseCloner()->isComplete($instance);
+        try {
+            $result = ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run(
+                [$instance->id],
+                fn (): Instance => $this->sourceLock->synchronized(
+                    $instance->node_id,
+                    function () use ($instance, $created, $data, $clonePlan): Instance {
+                        $wasActive = $instance->refresh()->status === InstanceState::Active;
+                        // An interrupted create left the copy unfinished, so this retry finishes it and runs setup.
+                        $resumesClone = $wasActive
+                            && $instance->failed_step === 'setup'
+                            && $clonePlan instanceof InstanceDatabaseClonePlan
+                            && ! $this->databaseCloner()->isComplete($instance);
 
-                    if ($wasActive && $instance->failed_step === 'setup' && ! $resumesClone) {
-                        throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
-                    }
-
-                    try {
-                        $this->provisioner->reserve($instance, $data->domain);
-                        $resolved = $this->resumeSource($instance, ! $created);
-
-                        $result = $this->provisioner->complete(
-                            $resolved,
-                            $data->domain,
-                            setupPending: ! $wasActive,
-                        );
-
-                    } catch (Throwable $exception) {
-                        $this->recordFailure($instance, $exception);
-
-                        throw $exception;
-                    }
-
-                    if (! $wasActive || $resumesClone) {
-                        ($this->dependencies ?? app(CopyInstanceDependenciesAction::class))->execute($result);
-
-                        if ($clonePlan instanceof InstanceDatabaseClonePlan) {
-                            $this->cloneDatabase($result, $clonePlan);
+                        if ($wasActive && $instance->failed_step === 'setup' && ! $resumesClone) {
+                            throw new ResourceOperationException('instance.setup_step_failed', 'Setup is incomplete. Run instance:setup before using this Instance.', 409);
                         }
 
-                        $this->finishSetup($result);
-                    }
+                        try {
+                            $this->provisioner->reserve($instance, $data->domain);
+                            $resolved = $this->resumeSource($instance, ! $created);
 
-                    return $result;
-                },
-            ),
-        );
+                            $result = $this->provisioner->complete(
+                                $resolved,
+                                $data->domain,
+                                setupPending: ! $wasActive,
+                            );
+
+                        } catch (Throwable $exception) {
+                            $this->recordFailure($instance, $exception);
+                            if (! $wasActive && $instance->refresh()->status !== InstanceState::Active) {
+                                $this->cleanupFailedCreate($instance, $exception);
+                            }
+
+                            throw $exception;
+                        }
+
+                        if (! $wasActive || $resumesClone) {
+                            ($this->dependencies ?? app(CopyInstanceDependenciesAction::class))->execute($result);
+
+                            if ($clonePlan instanceof InstanceDatabaseClonePlan) {
+                                $this->cloneDatabase($result, $clonePlan);
+                            }
+
+                            $this->finishSetup($result);
+                        }
+
+                        return $result;
+                    },
+                ),
+            );
+        } catch (Throwable $exception) {
+            $remaining = Instance::query()->find($instance->id);
+            if ($created && $remaining?->status === InstanceState::Reserved && ! ($exception instanceof ResourceOperationException && ($exception->details['cleanup'] ?? null) === 'incomplete')) {
+                $this->cleanupFailedCreate($remaining, $exception);
+            }
+            throw $exception;
+        }
 
         return $this->announceCreated(['instance' => $result, 'created' => $created]);
+    }
+
+    private function cleanupFailedCreate(Instance $instance, Throwable $failure): void
+    {
+        $code = property_exists($failure, 'errorCode') && is_string($failure->errorCode)
+            ? $failure->errorCode : 'instance.provisioning_failed';
+        try {
+            if ($instance->status === InstanceState::Reserved && $instance->source_prepare_id === null) {
+                throw new ResourceOperationException('instance.source_ownership_mismatch', 'Unconfirmed source has no preparation ownership evidence.', 409);
+            }
+            ($this->remover ?? app(RemoveInstanceAction::class))->execute($instance, force: true, runTeardown: false, allowCascade: false, requirePreActivation: true);
+        } catch (Throwable) {
+            throw new ResourceOperationException(
+                errorCode: $code,
+                message: 'Instance creation failed and cleanup is incomplete. Finish removal with '
+                    ."`orbit instance:destroy {$instance->id} --force`.",
+                status: $failure instanceof ResourceOperationException ? $failure->status : 502,
+                previous: $failure,
+                details: [...($failure instanceof ResourceOperationException ? $failure->details : []), 'cleanup' => 'incomplete', 'instance_id' => (string) $instance->id],
+            );
+        }
     }
 
     /**
@@ -331,7 +365,7 @@ final readonly class CreateInstanceAction
             $this->assertPersistedOwnership($instance);
 
             if ($instance->status === InstanceState::Reserved) {
-                $this->source->prepare($instance, $allowPreparedSource);
+                $this->source->prepare($instance, $allowPreparedSource && $instance->source_prepare_id !== null);
                 $this->transition($instance, InstanceState::Reserved, [
                     'status' => InstanceState::CheckoutPrepared,
                 ]);

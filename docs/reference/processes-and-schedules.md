@@ -4,7 +4,7 @@ description: "How Orbit runs Processes for an Instance or a Node, and how a Proj
 covers:
   - apps/gateway/app/Actions/Processes/**
   - apps/gateway/app/Domain/Processes/**
-  - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease}.php
+  - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver}.php
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
   - apps/gateway/app/Actions/ProjectDefinitions/**
   - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
@@ -20,7 +20,15 @@ A Process is one long-running systemd service or Docker container that Orbit man
 
 An Instance Process serves one Instance. The Gateway derives its Node, user, and default working directory from the Instance. [Instance removal](/reference/instance-removal) removes it.
 
-A Node Process serves the Node itself, for example a shared Docker database. It runs as the Node's managed user, with `/home/{user}` as its default working directory. It reads no Instance environment file. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
+A Node Process serves the Node itself, for example a shared Docker database. It runs as the Node's managed user, with `/home/{managed user}` as its default working directory, unless `user` names another account. It reads no Instance environment file.
+
+### Node account
+
+A Node systemd Process accepts `user`. The CLI flag is `--user`, and the API field is `user`. The name is one letter or underscore, then at most 31 letters, digits, underscores, or hyphens. The unit's `User=` is that name. When `user` is omitted, `User=` stays the derived account. `user` is part of the specification: a second create with the same name and a different account returns `process.name_taken`.
+
+The Gateway checks the named account over SSH with `getent passwd` and defaults the working directory to that account's home. An explicit working directory overrides this default. JSON includes `user`, and it is null when the Process uses the derived account. The Gateway does not create the account. It refuses `root` and accounts with UID zero. An absent account or an invalid account home fails create with `process.user_unavailable` (HTTP 422).
+
+Instance Processes, Docker Processes, presets, and Project definitions reject `user`. The API returns HTTP 422 and names the field `user`. [`process:create`](/cli/process#orbit-processcreate) returns `process.option_invalid` for a rejected combination and `process.user_invalid` for a name that fails the pattern, and it sends no request. `pi-server` uses `--user=orbit-worker`. [Pi server](/reference/pi-server#install-on-a-node) is that install. The Node must be an active Linux Node with a WireGuard address. macOS returns `process.platform_unsupported` (HTTP 422) before SSH. A Node Process stays when an Instance is removed. The Gateway refuses to remove a Node that still owns a Process with `node.has_processes`. [Offline removal](/reference/node-provisioning#remove-a-node) of an unreachable Node deletes its Process records without remote cleanup.
 
 `process:create` and `process:list` take exactly one owner: `--instance`, `--node`, or `--project` for a definition. The API sends `target_type` as `instance` or `node` with a positive `target_id`. Start, stop, restart, logs, and destroy take the Process ID and use that record's owner.
 
@@ -30,7 +38,7 @@ A Process uses one of two runtimes. Each runtime takes a complete specification.
 
 | Runtime | Required | Optional | Default working directory |
 | --- | --- | --- | --- |
-| systemd | Name, and an absolute executable with its arguments | Working directory, restart policy, keep-alive, initial start | The Instance checkout on `app-dev`, `<production-home>/current` on `app-prod`, or `/home/{user}` for a Node |
+| systemd | Name, and an absolute executable with its arguments | Working directory, restart policy, keep-alive, initial start, and `user` on a Node | The Instance checkout on `app-dev`, `<production-home>/current` on `app-prod`, or the selected account's home for a Node (`/home/{managed user}` when `user` is omitted) |
 | Docker | Name, image, and command arguments | Working directory, environment, published ports, volumes, restart policy, keep-alive, initial start | `/app` |
 
 The command has at most 64 arguments of 4,096 bytes each. The restart policy is `never` (the default), `on-failure`, `always`, or `unless-stopped`. The API accepts `environment` only for Docker.
@@ -153,3 +161,7 @@ A copied worker or Schedule can run before the new Instance's data is ready, for
 A Node Process has no Instance `.env` file, but Gateway-owned Processes need secrets. Values on `ExecStart`, for example through `/usr/bin/env`, would put secrets in the process list. So the unit carries the stored map as `Environment=` directives. The cost is that the values sit in the mode-`0644` unit file. A separate mode-`0600` environment file is a possible later change and is not built.
 
 The `vp-dev`, `agentation-mcp`, and `antigravity-watch` presets apply only to development Instance Processes. Runtime definitions are copied only to production Instances.
+
+### A Node Process can name its account
+
+The systemd `User=` of a Node Process can be an account other than the managed user. `pi-server` uses this to run as `orbit-worker`. The owner stays the Node. An Instance Process keeps the account derived from the Instance, because a chosen account would leave the production home and the development checkout. Docker rejects `user` because the image has its own user. The Gateway does not create the account. The Gateway checks the account with `getent passwd` over SSH before create and fails with `process.user_unavailable` when the account or its home is unavailable.

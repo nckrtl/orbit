@@ -21,7 +21,7 @@ Group start and impact base: `7fbf9ca2876d4598664559ab94cbe3c8c727d9b5`, the mer
 
 ## ADR allocation
 
-ADR 0193 is the next unused number. Planning fetched remote refs read-only and checked decision paths in all 616 local/remote branch refs plus the retired-slug registry. The highest allocated number was 0192, including active work. Allocation evidence is `.orbit-artifacts/feedback/adr-allocation.json`. Recheck for concurrent collisions before implementation merges. The final contract task absorbs 0193 into `docs/reference/tasks.md#trusted-reviews-are-input-not-merge-authority`, removes the live record, registers its retired slug, adds its redirect/overview row, and updates inbound links.
+Planning originally allocated ADR 0193 after checking all 616 local/remote branch refs and the retired-slug registry; the highest allocated number was 0192. Allocation evidence is `.orbit-artifacts/feedback/adr-allocation.json`. The operator-directed merge of main found that concurrent work had retired number 0193. The unchanged review-feedback decision is now ADR 0194, allocated after checking all 874 available refs and the retired-slug registry without fetching. Reallocation evidence is `.orbit-artifacts/lifecycle/relay-adr-allocation.json`. Recheck for concurrent collisions before implementation merges. The final contract task absorbs 0194 into `docs/reference/tasks.md#trusted-reviews-are-input-not-merge-authority`, removes the live record, registers its retired slug, adds its redirect/overview row, and updates inbound links.
 
 ## Open choices for operator approval
 
@@ -43,7 +43,7 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Goal:** Let the operator review a complete trust, review-consumption, and bounded repair proposal before any product work.
 
-**Contract:** `docs/reference/tasks.md#settling`, `#trusted-github-feedback`, `#fix-a-settling-pull-request`; `docs/reference/implementation-loop.md#final-review-of-an-orbit-task-pull-request`; `docs/reference/github-app.md#how-orbit-watches-a-task-pull-request`; ADR 0193.
+**Contract:** `docs/reference/tasks.md#settling`, `#trusted-github-feedback`, `#fix-a-settling-pull-request`; `docs/reference/implementation-loop.md#final-review-of-an-orbit-task-pull-request`; `docs/reference/github-app.md#how-orbit-watches-a-task-pull-request`; ADR 0194.
 
 **Builds on:** ORB-677's formal approval decision, already present at the group base.
 
@@ -55,7 +55,7 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Goal:** Supply trustworthy typed review and inline-finding data through the existing App without broad credentials or partial success.
 
-**Contract:** ADR 0193 "Retrieve complete bounded findings and revalidate"; Tasks `#retrieve-the-findings`; GitHub App `#read-review-records`.
+**Contract:** ADR 0194 "Retrieve complete bounded findings and revalidate"; Tasks `#retrieve-the-findings`; GitHub App `#read-review-records`.
 
 **Builds on:** Approved ORB-860 contract and operator-approved breakdown.
 
@@ -67,7 +67,7 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Goal:** Let the watcher identify eligible requested changes deterministically, with safe default-empty trust and informational approval/comment observations.
 
-**Contract:** ADR 0193 "Trust is explicit repair authority" and "Select the latest decisive record before testing its head"; Tasks `#trusted-github-feedback` and `#retrieve-the-findings`.
+**Contract:** ADR 0194 "Trust is explicit repair authority" and "Select the latest decisive record before testing its head"; Tasks `#trusted-github-feedback` and `#retrieve-the-findings`.
 
 **Builds on:** Task 2 for typed bounded reads.
 
@@ -79,7 +79,7 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Goal:** Let an operator inspect durable approval evidence and distinguish current, historical, and unverified records without treating them as merge consent.
 
-**Contract:** ADR 0193 "Persist inspectable approval evidence"; Tasks `#inspect-approval-observations`; implementation-loop final-review boundary.
+**Contract:** ADR 0194 "Persist inspectable approval evidence"; Tasks `#inspect-approval-observations`; implementation-loop final-review boundary.
 
 **Builds on:** Task 3's trusted effective review results and uncached complete scans.
 
@@ -91,7 +91,7 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Goal:** Give each internal implementer/reviewer a complete immutable source scope, without treating review prose as authority.
 
-**Contract:** ADR 0193 retrieval/consumption/lifecycle sections; Tasks `#retrieve-the-findings` and `#review-fixup-lifecycle`.
+**Contract:** ADR 0194 retrieval/consumption/lifecycle sections; Tasks `#retrieve-the-findings` and `#review-fixup-lifecycle`.
 
 **Builds on:** Task 3 for the trusted selected source.
 
@@ -103,7 +103,7 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Goal:** Turn an eligible review into one recoverable checked fixup on the same PR, without duplicate work or a larger automatic repair budget.
 
-**Contract:** ADR 0193 "Couple durable consumption to the existing fixup lifecycle" and "Re-review stays external"; Tasks `#consume-once-and-recover`, `#review-fixup-lifecycle`, and existing fixup guards.
+**Contract:** ADR 0194 "Couple durable consumption to the existing fixup lifecycle" and "Re-review stays external"; Tasks `#consume-once-and-recover`, `#review-fixup-lifecycle`, and existing fixup guards.
 
 **Builds on:** Tasks 3, 4, and 5 for revalidated selection, durable approval observations, and complete fixup plans; Task 2 is transitive.
 
@@ -127,7 +127,7 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Goal:** Show that interrupted consumption and repeated feedback cannot duplicate work, erase assistance, or evade the repair budget.
 
-**Contract:** Tasks `#consume-once-and-recover`, `#review-fixup-lifecycle`, and `#trusted-reviews-are-input-not-merge-authority`; ADR 0193 consequences.
+**Contract:** Tasks `#consume-once-and-recover`, `#review-fixup-lifecycle`, and `#trusted-reviews-are-input-not-merge-authority`; ADR 0194 consequences.
 
 **Builds on:** Task 6 and Task 7's checked-in owned-fixture transport helper. This is a separate scenario and independent judgment, not a repetition of Task 7's happy-path proof.
 
@@ -143,9 +143,9 @@ Every task has at most five typed deliverables. Local plan keys in the JSON are 
 
 **Builds on:** Tasks 7 and 8 with independent findings resolved, plus Task 6's completed behavior.
 
-**Deliverables:** Gateway-recorded review-fixup fixture and SDK replay tests; generated-contract command; Tasks rationale absorbs ADR 0193 with retirement/redirect/inbound-link updates; whole-PR independent review/evidence/limitations; root candidate gate.
+**Deliverables:** Gateway-recorded review-fixup fixture and SDK replay tests; generated-contract command; Tasks rationale absorbs ADR 0194 with retirement/redirect/inbound-link updates; whole-PR independent review/evidence/limitations; root candidate gate.
 
-**Acceptance:** Record fixtures from real Gateway output, not invented JSON. Prove existing `fixup_problem`, `brief`, and deliverables carry the feature with no public trust/merge input or response shape change. Run `bin/docs-openapi`/`--check`, `bin/api-fixtures --check`, `bin/mcp-tools`/`--check`, `bun run types` in `apps/web`, exact generated-type comparison, and docs build/lint/site checks. Commit changed generated outputs; unchanged output is explicit evidence. Absorb and delete ADR 0193, add its redirect and retired-slug/overview row, update every inbound link, and regenerate context. Run affected tests/checks in changed projects and root `composer check`. Submit a complete PR with proof commits/environments/results/limitations and all findings decided. Request the external final review; do not approve through the author's identity, merge, change rules, or add runtime merge enforcement.
+**Acceptance:** Record fixtures from real Gateway output, not invented JSON. Prove existing `fixup_problem`, `brief`, and deliverables carry the feature with no public trust/merge input or response shape change. Run `bin/docs-openapi`/`--check`, `bin/api-fixtures --check`, `bin/mcp-tools`/`--check`, `bun run types` in `apps/web`, exact generated-type comparison, and docs build/lint/site checks. Commit changed generated outputs; unchanged output is explicit evidence. Absorb and delete ADR 0194, add its redirect and retired-slug/overview row, update every inbound link, and regenerate context. Run affected tests/checks in changed projects and root `composer check`. Submit a complete PR with proof commits/environments/results/limitations and all findings decided. Request the external final review; do not approve through the author's identity, merge, change rules, or add runtime merge enforcement.
 
 ## Impact and checks
 

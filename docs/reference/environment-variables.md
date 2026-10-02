@@ -49,6 +49,8 @@ The Gateway derives the file location and the user from the Instance's placement
 
 On `app-prod`, every release links its own `.env` to the production home's file. See [Production release layout](/reference/deployments).
 
+`ORBIT_TASKS_WORKER_USER` is a setting in the Gateway's own environment, not in an Instance's `.env`. It selects the worker account for [checkout ACLs](/reference/instance-setup#checkout-access), normally `orbit-worker`. An unset setting leaves checkout access unchanged. It does not change the Instance's placement, the user that imports or synchronizes its environment, or the mode `0600` used for a synchronized `.env` file. Setting an Instance key with that name does not configure the Gateway.
+
 ## Import
 
 Import reads the Instance's `.env`. It never reads `.env.example`. Before it reads the contents, the Gateway checks SSH access, the user, the path, the file type, the owner, and the size. A missing, unsafe, or oversized file stops the import.
@@ -109,6 +111,8 @@ Other operations also change stored keys, and never the file itself:
 A [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step.
 
 ## Synchronize during a domain change
+
+A development [Instance rename](/cli/instance#orbit-instancerename) updates Laravel `.env` and cached `app.url` through Route convergence, and records the stored APP_URL only after that operation succeeds. If a failed replacement remains, requesting the original domain is not a rollback or a no-op: it returns `route.domain_change_conflict` without another branch or environment mutation. Retry the pending destination to finish the replacement.
 
 A domain change of a production Route rewrites the production `.env` inside the Route operation. It uses the same checks and writer as synchronization. It resolves `{{instance.domain}}` against the new Route, although the public operations refuse an Instance while its Route changes. Stored values stay the same, so a placeholder `APP_URL` changes and a literal `APP_KEY` does not.
 

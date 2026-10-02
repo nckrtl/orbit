@@ -699,7 +699,7 @@ DESCRIPTIONS = {
     'tasks:show': 'Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:cancel': 'Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.',
     'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.',
-    'tasks:complete': 'Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.',
+    'tasks:complete': 'Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.',
     'tasks:definition:list': 'Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:show': 'Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:create': 'Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.',
@@ -1085,6 +1085,8 @@ def rules_to_schema(rules_text, route_name=None):
                         for drop in ('items', 'maxItems', 'minItems'):
                             child.pop(drop, None)
                     node = child
+    if route_name == 'instance:rename':
+        root['minProperties'] = 1
     return clean_schema(root), body_required
 
 
@@ -1268,6 +1270,8 @@ def php_sample(sdkreq, stream, tag):
             continue
         t, name, has_default = m.group(1), m.group(2), m.group(3)
         if has_default:
+            if sdkreq['class'] == 'RenameInstanceRequest' and name == 'branch':
+                args.append("branch: 't3code/login-redirect'")
             continue
         if 'Target' in t:
             first = t.split('|')[0]
@@ -1743,7 +1747,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the subtask is not running (`tasks.subtask_not_running`).')
         responses['502'] = error_response('The implementer or the running check could not be stopped (`tasks.subtask_interrupt_failed`). The subtask stays running.')
     if route['name'] == 'tasks:complete':
-        responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`).')
+        responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the Task group is not ready to complete (`tasks.not_settling`). Running or reviewing groups need an ended watched pull request or a stored completion receipt.')
+        responses['502'] = error_response('A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open.')
     if op.get('x-orbit-extension'):
         extension_error = 'A disabled extension returns HTTP 409 (`extension.disabled`).'
         if '409' in responses:

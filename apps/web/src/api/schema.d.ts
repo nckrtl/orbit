@@ -1329,6 +1329,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/instances/{instance}/rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * instance:rename
+         * @description Record a development branch rename and move its Route.
+         */
+        post: operations["instance-rename"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/instances/{instance}/rollback": {
         parameters: {
             query?: never;
@@ -2880,7 +2900,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a Task group
-         * @description Marks a settling Task group completed and removes its shared Instance and any visitable Routes. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off and `tasks.not_settling` when the group is not settling.
+         * @description Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.
          */
         post: operations["tasks-complete"];
         delete?: never;
@@ -3644,6 +3664,7 @@ export interface components {
             error_code?: string | null;
             cpu?: number | null;
             memory_bytes?: number | null;
+            user?: string | null;
         };
         ProjectRuntimeDefinition: {
             id?: string;
@@ -3752,6 +3773,9 @@ export interface components {
             status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
+            watched_pr_url?: string | null;
+            watched_pr_number?: number | null;
+            watched_pr_state?: string | null;
             notify_coder?: boolean;
             assistance_requested?: boolean;
             /** @enum {string|null} */
@@ -8942,6 +8966,77 @@ export interface operations {
             };
         };
     };
+    "instance-rename": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Instance ID. */
+                instance: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Branch already checked out on the Node */
+                    branch?: string;
+                    /** @description New domain for the Instance Route */
+                    domain?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["Instance"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "instance-rollback": {
         parameters: {
             query?: never;
@@ -11090,6 +11185,8 @@ export interface operations {
                     name: string;
                     /** @description Process preset: vp-dev, agentation-mcp, or antigravity-watch */
                     preset?: string;
+                    /** @description Existing non-root account for a Node systemd Process */
+                    user?: string;
                     /**
                      * @description systemd or docker
                      * @enum {string}
@@ -15512,7 +15609,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`extension.disabled`) or the Task group is not settling (`tasks.not_settling`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`) or the Task group is not ready to complete (`tasks.not_settling`). Running or reviewing groups need an ended watched pull request or a stored completion receipt. A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -15523,6 +15620,15 @@ export interface operations {
             };
             /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A running agent or check could not be stopped (`tasks.subtask_interrupt_failed`). The completion receipt is kept for retry; the group and its open subtasks remain open. */
+            502: {
                 headers: {
                     [name: string]: unknown;
                 };

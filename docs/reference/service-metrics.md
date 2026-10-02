@@ -77,6 +77,8 @@ Role and preference changes converge the services first, and then publish the ne
 
 Production clone completion and production Instance creation or removal also reconcile service metrics.
 
+If a Node's service-metrics snapshot or convergence fails, the Gateway records that Node as degraded with the failing step and error code. It skips that Node and continues reconciling the others. The operation that triggered the reconcile, such as an Instance removal on another Node, continues. A later reconcile retries the Node and clears its degradation when it succeeds. Inspect the affected Node's exporter row in `metrics:status` as described under [Exporter degradation](/reference/metrics#exporter-degradation).
+
 Removing Metrics, or disabling a Node's exporter, removes the owned listeners, firewall rules, exporter unit, binary, and pool status lines. It keeps the application runtimes and local tuning. The small recovery directory `/etc/orbit/service-metrics` stays.
 
 When the Metrics Node changes, the scrape access moves to the new Node. When a Node is unreachable, removal tries to clean up and drops its targets even if cleanup fails. `metrics:status` has no per-service fields.
@@ -85,7 +87,11 @@ When the Metrics Node changes, the scrape access moves to the new Node. When a N
 
 FPM updates validate a candidate file. When the reload fails, Orbit restores the earlier pool file. The scrape site renders from stored state in the [Node Caddy build](/reference/caddy-configuration#node-caddy-build), which owns validation and rollback. Service metrics never reads or writes Caddy files on a Node. It asks for a build of each `ingress` Node. When its own lifecycle fails, it restores the exporter and pool state and builds that Node again.
 
-Exporter and firewall updates keep a recovery journal, and a retry recovers an interrupted update. A failed fleet convergence restores the touched services in reverse order. This also happens when Prometheus publication fails. An ownership conflict stops all changes. A failed recovery returns `metrics.service_rollback_failed`.
+Exporter and firewall updates keep a recovery journal, and a retry recovers an interrupted update. When convergence fails on one Node, Orbit tries to restore that Node's exporter and pool state before continuing on the other Nodes. If that recovery fails, the Node's degradation records the `restore` step and `metrics.service_rollback_failed`. An ownership conflict degrades the affected Node without changing unmanaged state.
+
+A Prometheus publication failure still fails the reconcile and restores the changed services in reverse order. If that recovery fails, the reconcile returns `metrics.service_rollback_failed`. A service failure stays recorded until that Node's service reconciliation and publication succeed; successful exporter or cAdvisor snapshots do not clear it. Recording and clearing its step and error code are atomic.
+
+If the operation loses a Node lock, reconciliation stops and reports `node.lock_lost`. This failure affects the whole operation, not only service metrics on one Node. Orbit stops further remote work, including recovery, after detecting the lost lock.
 
 ### Doctor
 

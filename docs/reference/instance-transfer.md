@@ -41,11 +41,17 @@ The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses
 
 The destination gets an independent checkout, even when the source is a worktree. It holds the branch, commits, detached state, tracked changes, untracked files, and file modes of the source. Orbit does not fetch, reset, clean, or push the source. The common repository, sibling worktrees, and local branches of a source worktree stay unchanged.
 
+Gateway Git commands that capture the source and prepare the destination pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false`. Checkout hooks and custom filesystem monitors are not transfer steps. The overrides apply to those commands without changing the stored Git configuration. When a worker is configured, checkout commands that can start clean, smudge, or process filters run as that worker without a credential environment; privileged file placement stays under the managed account.
+
 Every transfer runs in this order:
 
 1. Orbit stops the source Processes and timers, with or without SQLite.
 2. It copies the source checkout to the destination.
-3. When you select a SQLite file, it takes one consistent snapshot and installs it at the destination.
+3. When you select a SQLite file, it takes one consistent snapshot and installs it at the selected path on the destination.
+
+The Gateway stages the transfer archive on disk, not in a size-limited `/tmp`. A checkout of any size that fits the Gateway's disk can move. If staging fails, the Gateway records and logs the failing step.
+
+When the request selects a SQLite file, the checkout archive excludes that file and its `-wal` and `-shm` files. The SQLite step installs the consistent snapshot at the selected path, so the database contents come from the snapshot rather than an inconsistent archive copy.
 
 Stopping Processes before the final checkout copy prevents their writes from being missed. Orbit copies no other database or data path.
 
@@ -68,7 +74,15 @@ Cutover is the moment the destination becomes authoritative.
 - Keys imported into the stored environment are removed; keys that were already stored before the transfer remain.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
-A failed or unfinished transfer stays open. Only the identical request resumes it, and it is the only way to close it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node. If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then retry the identical transfer request.
+Before rollback changes the Nodes, the Gateway records the failure and sets `rollback_pending` in recovery evidence. The marker keeps the transfer open if the Gateway stops during rollback. An identical retry finishes that rollback before pausing and capturing the source again; it never resumes the old forward checkpoint. The Gateway clears the marker and resets the checkpoint in one write only after rollback finishes. Recovery uses the same Instance and Node locks as transfer. It also clears the transfer's reference to a replacement Route if rollback already deleted that Route.
+
+Rollback abandons the transfer's SQLite seed before it restarts the source. It removes the owned source snapshot, unfinished destination incoming and candidate files, and seed records. A retry takes a fresh snapshot after pausing the source again, so writes committed after restoration reach the destination. If seed cleanup fails or its response is lost, the Gateway records `sqlite-seed` as incomplete recovery evidence and keeps the transfer open. An identical retry must confirm that cleanup before it captures the source again. Cleanup checks the recorded operation and file identities; it never removes a file that belongs to another operation.
+
+A transfer that fails before cutover is closed once rollback finishes. A new transfer request with any input, or `instance:destroy`, proceeds without a conflict from that closed transfer. Normal eligibility checks still apply.
+
+An unfinished transfer, including a failed transfer whose rollback is incomplete, stays open. A transfer that fails after cutover also stays open. Only the identical request resumes an open transfer and closes it: a different transfer returns `instance.transfer_retry_conflict`, and removal returns `instance.transfer_incomplete`. For a pending transfer, the CLI offers the retry and names the original source Node.
+
+If a Schedule targets the Instance before reservation or is added before cutover, transfer returns `schedule.target_in_use`. Remove the Schedule or retarget it away from the Instance, then send a new transfer request if rollback has finished, or retry the identical request if the transfer is still open.
 
 Orbit records the source Cluster's Router on the transfer before cutover, and cleanup uses that record.
 
@@ -82,7 +96,7 @@ The Gateway returns these codes before or during a transfer.
 | --- | --- |
 | `instance.confirmation_required` | The call has no consent. |
 | `instance.lifecycle_conflict` | The Instance is not active, or its Route is not ready. |
-| `schedule.target_in_use` | A Schedule targets the Instance. Remove it or retarget it away from the Instance before retrying the identical transfer request. |
+| `schedule.target_in_use` | A Schedule targets the Instance. Remove it or retarget it away from the Instance before trying the transfer again. |
 | `instance.production_refused` | The Instance is a production Instance. |
 | `instance.removal_conflict` | The Instance is being removed. |
 | `instance.same_node` | The destination is the current Node. |
@@ -93,7 +107,7 @@ The Gateway returns these codes before or during a transfer.
 | `instance.identity_conflict` | Another Instance of the Project has the name. |
 | `instance.destination_exists` | The destination path is occupied or unsafe. |
 | `route.domain_conflict` | Another Route owns the destination domain. |
-| `instance.transfer_retry_conflict` | A different request tried to resume a transfer. |
+| `instance.transfer_retry_conflict` | A different request tried to resume an open transfer. |
 | `instance.transfer_failed` | The transfer failed before cutover and the source is authoritative. |
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative, and cleanup needs the identical retry. |
 | `instance.transfer_source_router_unknown` | The source Route has no Router, so Orbit cannot record one for the transfer. |
