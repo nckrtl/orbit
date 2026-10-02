@@ -1113,16 +1113,22 @@ it('checks local HEAD before rename without contacting origin or changing Git so
     }
 });
 
-it('inspects unresolved prepared repositories and absent reserved paths without force', function (bool $prepared): void {
+it('inspects unresolved prepared repositories and absent reserved paths without force', function (string $sourceState): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'stuck');
     $this->files->ensureDirectoryExists($this->appsRoot);
     $instance->update(['failed_step' => 'source-prepare', 'error_code' => 'instance.clone_failed']);
-    if ($prepared) {
+    $expectedCommit = str_repeat('0', 40);
+    if ($sourceState !== 'absent') {
+        $head = $sourceState === 'prepared with valid HEAD' ? 'main' : 'unborn';
+        orb76_run(['git', '--git-dir='.$this->repository, 'symbolic-ref', 'HEAD', 'refs/heads/'.$head]);
+        if ($head === 'main') {
+            $expectedCommit = trim(orb76_run(['git', '--git-dir='.$this->repository, 'rev-parse', 'refs/heads/main'])->stdout);
+        }
         $this->source->prepare($instance, false);
         $instance->update(['status' => InstanceState::CheckoutPrepared]);
     }
     $inventory = $this->removal->inspect($instance, false);
-    expect($inventory->startingCommit)->toBe(str_repeat('0', 40))
+    expect($inventory->startingCommit)->toBe($expectedCommit)
         ->and($inventory->branch)->toBeNull()
         ->and($inventory->linkedWorktreePaths)->toBe([$instance->checkout_path]);
     $member = orb180_record_source($this->removal, $instance, false, activate: false);
@@ -1132,7 +1138,7 @@ it('inspects unresolved prepared repositories and absent reserved paths without 
     expect(is_dir($instance->checkout_path))->toBeFalse()
         ->and($this->removal->revalidate($member))->toBe(InstanceSourceRevalidationState::Completed)
         ->and($this->removal->finalize($member))->toBe($receipt);
-})->with([false, true]);
+})->with(['absent', 'prepared with valid HEAD', 'prepared with unborn HEAD']);
 
 it('makes preparation idempotent and uses only fixed source-control commands', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
