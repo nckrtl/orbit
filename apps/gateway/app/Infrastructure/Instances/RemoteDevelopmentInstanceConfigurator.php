@@ -26,6 +26,12 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
     public function inspect(Instance $instance): DevelopmentSourceProfile
     {
         $instance->loadMissing(['project', 'node']);
+
+        // An unrouted monorepo is a source checkout, not a single PHP application.
+        if ($instance->project->type === ProjectType::Monorepo && ! $instance->routes()->exists()) {
+            return new DevelopmentSourceProfile(null, false);
+        }
+
         $account = $this->accounts->resolve($instance->node);
         $result = $this->ssh->execute(
             $instance->node,

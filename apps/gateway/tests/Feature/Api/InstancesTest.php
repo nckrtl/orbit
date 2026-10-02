@@ -55,6 +55,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
+use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
@@ -2868,6 +2869,62 @@ final class RecoveredSourceProfileEnvironmentAccess implements InstanceEnvironme
         return InstanceEnvironmentWriteResult::changed();
     }
 }
+
+it('creates or resumes an unrouted monorepo default and runs setup once', function (bool $resume): void {
+    $this->orbitApp->update(['type' => ProjectType::Monorepo, 'slug' => 'orbit']);
+    app()->bind(DevelopmentInstanceConfigurator::class, RemoteDevelopmentInstanceConfigurator::class);
+    ProjectLifecycleStep::query()->create([
+        'project_id' => $this->orbitApp->id,
+        'phase' => 'setup',
+        'name' => 'gateway-dependencies',
+        'command' => 'composer install --working-dir=apps/gateway',
+        'timeout_seconds' => 30,
+        'position' => 0,
+    ]);
+    $transport = new LifecycleSshExecutor;
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+
+    if ($resume) {
+        Instance::query()->create([
+            'project_id' => $this->orbitApp->id,
+            'node_id' => $this->node->id,
+            'name' => 'default',
+            'checkout_path' => '/srv/orbit/apps/orbit/default',
+            'source_layout' => InstanceSourceLayout::Checkout,
+            'branch_override' => 'dev',
+            'branch' => 'dev',
+            'starting_commit' => str_repeat('a', 40),
+            'status' => InstanceState::SourceResolved,
+            'failed_step' => 'source-classification',
+            'error_code' => 'app-dev.source_metadata_unsafe',
+        ]);
+    }
+
+    $input = ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'default', 'branch' => 'dev'];
+    $response = $this->postJson('/api/v1/instances', $input);
+    $resume ? $response->assertOk() : $response->assertCreated();
+
+    $instance = Instance::query()->sole();
+    expect($instance->status)->toBe(InstanceState::Active)
+        ->and($instance->failed_step)->toBeNull()
+        ->and($instance->error_code)->toBeNull()
+        ->and($instance->selected_php_version)->toBeNull()
+        ->and($instance->source_is_laravel)->toBeFalse()
+        ->and($instance->routes()->count())->toBe(0)
+        ->and($this->projection->convergences)->toBe(0)
+        ->and(array_column($transport->inputs, 'command'))->toBe(['composer install --working-dir=apps/gateway']);
+
+    if ($resume) {
+        expect($this->source->calls)->toBe(['inspect-prepared:source_resolved', 'inspect-resolved:source_resolved']);
+    }
+
+    $this->postJson('/api/v1/instances', $input)->assertOk();
+    expect($transport->inputs)->toHaveCount(1)
+        ->and(Instance::query()->sole()->id)->toBe($instance->id);
+
+    $this->postJson('/api/v1/instances/'.$instance->id.'/setup')->assertOk();
+    expect($transport->inputs)->toHaveCount(2);
+})->with(['new checkout' => false, 'stuck source classification' => true]);
 
 it('runs setup once on create and skips it for an already active instance', function (): void {
     ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'install', 'timeout_seconds' => 30, 'position' => 0]);

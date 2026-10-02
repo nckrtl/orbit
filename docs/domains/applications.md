@@ -162,7 +162,7 @@ After the source is ready, the Gateway continues in this order:
 4. It marks the Instance and Route active.
 5. It runs the Project [setup steps](/reference/instance-setup).
 
-An Instance without a Route skips steps 2 and 3.
+An Instance without a Route skips steps 2 and 3. A `monorepo` Instance without a Route also skips application metadata inspection: its checkout can contain several Composer projects, so Orbit records no PHP version and a false Laravel flag rather than treating the repository root as one application. It becomes `active`, runs setup, and stays healthy without a visitable endpoint. This includes the Orbit Project's `default` Instance. An identical retry of a create stopped at `source-classification` resumes from the resolved source.
 
 For an Instance with a Route, a retry after step 1 inspects the source again. If the PHP version or the Laravel flag changed, the retry returns `app-dev.source_evidence_changed`. For an Instance without a Route, a retry records the new profile.
 
