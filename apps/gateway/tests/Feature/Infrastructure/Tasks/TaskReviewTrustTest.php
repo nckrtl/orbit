@@ -73,3 +73,13 @@ it('keeps absent and revoked trust valid but empty and isolates repository accou
     expect(TaskReviewTrust::fromConfig($repository, ['acme/orbit' => []])->valid)->toBeTrue();
     expect(TaskReviewTrust::fromConfig($repository, ['other/orbit' => ['invalid'], 'acme/orbit' => [42]])->accountIds)->toBe([42]);
 });
+
+it('reads trusted reviewers from the operator env value and fails closed on a malformed id', function (): void {
+    $repository = GitHubRepository::fromOrigin('https://github.com/nckrtl/orbit.git');
+
+    expect(TaskReviewTrust::parseEnv(null))->toBe([])
+        ->and(TaskReviewTrust::parseEnv(' Nckrtl/Orbit : 18613261, 42 ; other/repo:7'))->toBe(['nckrtl/orbit' => [18613261, 42], 'other/repo' => [7]])
+        ->and(TaskReviewTrust::fromConfig($repository, TaskReviewTrust::parseEnv('nckrtl/orbit:18613261'))->accountIds)->toBe([18613261])
+        ->and(TaskReviewTrust::fromConfig($repository, TaskReviewTrust::parseEnv('nckrtl/orbit:nckrtl'))->valid)->toBeFalse()
+        ->and(TaskReviewTrust::fromConfig($repository, TaskReviewTrust::parseEnv('nckrtl/orbit:'))->valid)->toBeFalse();
+});

@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use App\Domain\Tasks\TaskReviewTrust;
 
 $implementerEffort = env('ORBIT_TASKS_IMPLEMENTER_EFFORT');
 $reviewerEffort = env('ORBIT_TASKS_REVIEWER_EFFORT');
@@ -58,9 +59,10 @@ return [
         'provider' => env('ORBIT_PI_PROVIDER'),
     ],
     'tasks' => [
-        // Operator-owned repair trust: lower-case github.com owner/repository => list of positive integer account IDs.
-        // Empty disables review feedback. No logins, wildcards, roles, or branch-provided settings.
-        'github_reviewers' => [],
+        // Operator-owned repair trust: lower-case github.com owner/repository => list of positive integer account IDs,
+        // from `owner/repo:id,id;owner/repo:id`. Empty disables review feedback. No logins, wildcards, roles, or
+        // branch-provided settings.
+        'github_reviewers' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_GITHUB_REVIEWERS')),
         'worker_user' => env('ORBIT_TASKS_WORKER_USER'),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),

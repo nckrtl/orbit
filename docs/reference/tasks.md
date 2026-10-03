@@ -1007,7 +1007,7 @@ A `settling` task without `pr_url` and without a `todo` subtask asks for assista
 
 #### Trusted GitHub feedback
 
-The Gateway operator configures `orbit.tasks.github_reviewers` in the Gateway's `config/orbit.php`. It maps a lower-case `github.com` repository name, `owner/repository`, to a list of positive GitHub numeric account IDs. For example, `['acme/widgets' => [123456]]` trusts that account for that repository only. The default is `[]`: GitHub feedback creates no work until the operator opts in. This is Gateway configuration, not a Project input, environment variable, task definition, CLI option, or repository file read from the task branch. Reload the Gateway's configuration and scheduler after a change.
+The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. Each entry maps a `github.com` repository name, `owner/repository`, to a comma-separated list of positive GitHub numeric account IDs. Semicolons separate entries. For example, `ORBIT_TASKS_GITHUB_REVIEWERS=acme/widgets:123456,789012;acme/api:123456` trusts those accounts for those repositories only. The Gateway lower-cases repository names. Unset or empty creates no work from GitHub feedback until the operator opts in. The value is Gateway configuration, `orbit.tasks.github_reviewers`, not a Project input, Instance environment variable, task definition, CLI option, or repository file read from the task branch. Rebuild the Gateway's configuration cache and reload the Gateway and scheduler after a change.
 
 Review requests, logins, repository roles, `author_association`, and App ownership confer no trust.
 
@@ -1280,7 +1280,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
 | `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
-| `orbit.tasks.github_reviewers` | Gateway config map from repository names to trusted account IDs, default `[]`; see [Trusted GitHub feedback](#trusted-github-feedback). No environment-variable or Project input counterpart |
+| `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
 | `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
