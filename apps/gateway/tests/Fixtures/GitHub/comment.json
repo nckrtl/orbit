@@ -1,0 +1,18 @@
+{
+  "id": 201,
+  "pull_request_review_id": 101,
+  "body": "Inline finding.",
+  "html_url": "https://github.com/acme/widgets/pull/7#discussion_r201",
+  "path": "src/example.php",
+  "diff_hunk": "@@ -1 +1 @@\n-old\n+new",
+  "position": 1,
+  "original_position": 334,
+  "commit_id": "89b4c98ac63c572b0d14868f2d9cf4c7097d6d2c",
+  "original_commit_id": "89b4c98ac63c572b0d14868f2d9cf4c7097d6d2c",
+  "created_at": "2026-09-02T22:13:42Z",
+  "updated_at": "2026-09-02T22:13:42Z",
+  "user": {
+    "id": 42,
+    "login": "reviewer-renamed"
+  }
+}

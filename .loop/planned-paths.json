@@ -1,8 +1,0 @@
-[
-  "docs/contributor-guide.md",
-  "docs/reference/implementation-loop.md",
-  "docs/reference/tasks.md",
-  ".agents/skills/merging-pull-requests/SKILL.md",
-  ".agents/skills/reviewing-pull-requests/SKILL.md",
-  "docs/generated/context.json"
-]

@@ -1,0 +1,12 @@
+{
+  "id": 101,
+  "state": "COMMENTED",
+  "body": "Review body\nwith a complete finding.",
+  "html_url": "https://github.com/acme/widgets/pull/7#pullrequestreview-101",
+  "submitted_at": "2026-09-02T22:13:41Z",
+  "commit_id": "89b4c98ac63c572b0d14868f2d9cf4c7097d6d2c",
+  "user": {
+    "id": 42,
+    "login": "reviewer-renamed"
+  }
+}

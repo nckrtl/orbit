@@ -1363,6 +1363,10 @@
       "destination": "/reference/tasks#task-agents-run-on-pi"
     },
     {
+      "source": "/decisions/0194-respond-to-github-review-feedback",
+      "destination": "/reference/tasks#trusted-reviews-are-input-not-merge-authority"
+    },
+    {
       "source": "/decisions/0193-record-development-branch-renames",
       "destination": "/domains/applications#development-branch-reconciliation"
     },

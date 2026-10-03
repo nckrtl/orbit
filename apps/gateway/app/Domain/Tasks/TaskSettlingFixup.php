@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 /**
- * One fixup subtask for a conflict or a failed check on a settling pull request (ADR 0164).
+ * One fixup subtask for a conflict, failed check, or trusted review on a settling pull request.
  */
 final readonly class TaskSettlingFixup
 {
@@ -66,6 +66,26 @@ final readonly class TaskSettlingFixup
         }
 
         return $plans;
+    }
+
+    /** A per-account cap identity; source review IDs do not reset that identity. */
+    public static function reviewPlan(?string $taskCheck, TaskReviewFindingsPacket $packet): self
+    {
+        $deliverables = [[
+            'id' => 'review-findings',
+            'type' => TaskDeliverableType::Review->value,
+            'description' => 'Read the complete immutable findings in .git/orbit/context.md and confirm every snapshotted finding was addressed or explicitly resolved within the existing feature contract. Scope conflicts and product decisions require operator assistance. Internal approval does not replace GitHub re-review.',
+        ]];
+        if (is_string($taskCheck) && trim($taskCheck) !== '') {
+            $deliverables = [...$deliverables, ...self::deliverables($taskCheck)];
+        }
+
+        return new self(
+            identity: 'review:'.$packet->reviewerId,
+            title: 'Address GitHub review findings from account '.$packet->reviewerId,
+            brief: $packet->brief,
+            deliverables: $deliverables,
+        );
     }
 
     /**

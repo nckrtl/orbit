@@ -14,6 +14,7 @@ use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\GitHubReview;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -25,6 +26,8 @@ final readonly class HttpGitHubApi implements GitHubApi
     private const string BASE_URL = 'https://api.github.com';
 
     private const float TIMEOUT = 10.0;
+
+    public function __construct(private HttpGitHubReviewReader $reviewReader) {}
 
     /**
      * Laravel's `post($url)` JSON-encodes an omitted payload as `[]`. GitHub's
@@ -192,6 +195,29 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->repositoryToken($credentials, $installationId, $repository, ['checks' => 'read']);
     }
 
+    public function repositoryReviewsToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['pull_requests' => 'read']);
+    }
+
+    public function reviews(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): array
+    {
+        return $this->reviewReader->reviews($token, $repository, $number);
+    }
+
+    public function review(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): GitHubReview
+    {
+        return $this->reviewReader->review($token, $repository, $number, $reviewId);
+    }
+
+    public function reviewComments(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): array
+    {
+        return $this->reviewReader->comments($token, $repository, $number, $reviewId);
+    }
+
     public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string
     {
         $path = $this->repositoryPath($repository).'/pulls';
@@ -284,7 +310,7 @@ final readonly class HttpGitHubApi implements GitHubApi
         array $permissions,
     ): string {
         $response = $this->send(
-            fn (): Response => $this->asApp($credentials)->post("/app/installations/{$installationId}/access_tokens", [
+            fn (): Response => $this->asApp($credentials)->withoutRedirecting()->post("/app/installations/{$installationId}/access_tokens", [
                 'repositories' => [$repository->name],
                 'permissions' => $permissions,
             ]),

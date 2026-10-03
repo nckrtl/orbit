@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Domain\Tasks\TaskPullRequestCheck;
+use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskSettlingFixup;
+use Tests\Support\ReviewFindings;
 
 it('orders a conflict before failed checks in GitHub order for any Project check', function (?string $taskCheck): void {
     $checks = [
@@ -90,3 +92,24 @@ it('asks for a review when the Project has no check', function (?string $taskChe
     'null' => [null],
     'blank' => ['   '],
 ]);
+
+it('plans per-reviewer fixups with mandatory findings review and an optional snapshotted check', function (?string $command): void {
+    $packet = TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate());
+    $plan = TaskSettlingFixup::reviewPlan($command, $packet);
+    expect($plan->identity)->toBe('review:42')->and($plan->brief)->toBe($packet->brief)
+        ->and($plan->conflictBase())->toBeNull()
+        ->and($plan->deliverables[0]['id'])->toBe('review-findings')
+        ->and($plan->deliverables[0]['type'])->toBe('review')
+        ->and($plan->deliverables[0]['description'])->toContain('every snapshotted finding')->toContain('.git/orbit/context.md')
+        ->and($plan->deliverables)->toHaveCount(trim($command ?? '') === '' ? 1 : 2);
+    if (trim($command ?? '') !== '') {
+        expect($plan->deliverables[1])->toBe([
+            'id' => 'project-check', 'type' => 'command', 'description' => 'Run the Project task check',
+            'command' => trim($command), 'directory' => '.',
+        ]);
+    }
+    $later = TaskSettlingFixup::reviewPlan('changed check', TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate(reviewId: 102)));
+    expect($later->identity)->toBe($plan->identity)
+        ->and($plan->brief)->toBe($packet->brief)
+        ->and($plan->deliverables)->not->toBe($later->deliverables);
+})->with([null, '   ', '  composer check  ']);

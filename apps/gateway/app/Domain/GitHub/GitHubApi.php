@@ -81,6 +81,40 @@ interface GitHubApi
     ): string;
 
     /**
+     * A token that only reads pull requests/reviews in this one repository.
+     *
+     * @throws GitHubApiException
+     */
+    public function repositoryReviewsToken(
+        GitHubAppCredentials $credentials,
+        int $installationId,
+        GitHubRepository $repository,
+    ): string;
+
+    /**
+     * Complete review records, at most 10 pages of 100; malformed/incomplete/overflow reads fail.
+     *
+     * @return list<GitHubReview>
+     *
+     * @throws GitHubApiException
+     * @throws GitHubReviewOverflowException
+     */
+    public function reviews(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): array;
+
+    /** @throws GitHubApiException */
+    public function review(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): GitHubReview;
+
+    /**
+     * Complete selected-review comments, at most 5 pages of 100. No author/reply filtering here.
+     *
+     * @return list<GitHubReviewComment>
+     *
+     * @throws GitHubApiException
+     * @throws GitHubReviewOverflowException
+     */
+    public function reviewComments(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, int $reviewId): array;
+
+    /**
      * Opens the pull request, or returns the open one that already has this head.
      *
      * @return string the pull request's web URL

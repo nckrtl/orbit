@@ -10,9 +10,11 @@ use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewContext;
+use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskReviewPacket;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnMode;
@@ -26,6 +28,7 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
+use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -36,6 +39,7 @@ use Symfony\Component\Process\Process;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ReviewFindings;
 use Tests\Support\TestOrbitHome;
 
 afterEach(function (): void {
@@ -67,6 +71,68 @@ it('writes the uncut task context before the opening review', function (): void 
         ->and($turn['message'])->toContain(TaskReviewContext::Path.' holds the full resolution.')
         ->and(mb_strlen($turn['message']))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
         ->and(is_file($case['checkout'].'/'.TaskReviewContext::Path.'.new'))->toBeFalse();
+});
+
+it('writes full findings for a fresh feedback implementer and its reviewer without scheduler dispatch', function (bool $reserved, bool $stale): void {
+    $case = review_context_opening();
+    $plan = TaskSettlingFixup::reviewPlan(null,
+        TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate(
+            str_repeat('Complete finding. ', 1500).'FINAL-FINDING',
+            [ReviewFindings::comment()],
+        )));
+    $task = $case['task'];
+    $task->update(['brief' => $plan->brief, 'fixup_problem' => $plan->identity, 'deliverables' => $plan->deliverables]);
+    $path = $case['checkout'].'/'.TaskReviewContext::Path;
+    if ($stale) {
+        file_put_contents($path, 'Stale findings from another turn.');
+    } else {
+        unlink($path);
+    }
+    $spawner = app(AgentSpawner::class);
+    $threadId = $reserved ? $spawner->reserveImplementer($task) : null;
+    $started = $spawner->spawnImplementer($task);
+    expect($started)->not->toBeNull();
+    if ($reserved) {
+        expect($started)->toBe($threadId);
+    }
+    $implementer = $case['log']->turns[1];
+    expect($implementer['context'])->toContain($plan->brief)->toContain('FINAL-FINDING')->toContain($case['taskBrief'])
+        ->not->toContain('Stale findings from another turn.')
+        ->and($implementer['message'])->toContain($plan->brief);
+
+    app(AgentSpawner::class)->requestReview($task);
+    $reviewer = $case['log']->turns[2];
+    expect($reviewer['context'])->toContain($plan->brief)->toContain('FINAL-FINDING')
+        ->and($reviewer['message'])->not->toContain('FINAL-FINDING')
+        ->toContain(TaskReviewContext::Path.' holds the full brief.');
+})->with([false, true])->with([false, true]);
+
+it('fails closed when reserved feedback context installation fails and installs current context on retry', function (): void {
+    $case = review_context_opening();
+    $task = $case['task'];
+    $plan = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate()));
+    $task->update(['brief' => $plan->brief, 'fixup_problem' => $plan->identity, 'deliverables' => $plan->deliverables]);
+    $path = $case['checkout'].'/'.TaskReviewContext::Path;
+    unlink($path);
+    mkdir($path);
+    $spawner = app(AgentSpawner::class);
+    $reserved = $spawner->reserveImplementer($task);
+    expect($reserved)->not->toBeNull();
+
+    expect(fn () => $spawner->spawnImplementer($task))->toThrow(TaskTurnReceiptException::class);
+    expect($case['log']->turns)->toHaveCount(1)
+        ->and(AgentThread::query()->find($reserved))->toBeNull();
+
+    rmdir($path);
+    // A new reservation can also be interrupted before startup. Retry must not
+    // assume that reserving the row installed its receipt or its current context.
+    $replacement = $spawner->reserveImplementer($task);
+    $current = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate('Current findings after interrupted startup.')));
+    $task->update(['brief' => $current->brief]);
+    expect($spawner->spawnImplementer($task))->toBe($replacement)
+        ->and($case['log']->turns)->toHaveCount(2)
+        ->and($case['log']->turns[1]['context'])->toContain($current->brief)->toContain($case['taskBrief'])
+        ->and($case['log']->turns[1]['message'])->toContain($current->brief);
 });
 
 it('writes the uncut task context before a continued review', function (): void {
