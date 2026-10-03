@@ -112,12 +112,16 @@ def register(root, force=False):
 
 
 def bridge_primary(clone):
-    """The registered primary a clone bridges through, or None when the command runs in place."""
-    if os.environ.get('ORBIT_E2E_BRIDGE', '1') == '0' or is_linked_worktree(clone):
+    """The registered primary a checkout bridges through, or None when the command runs in place.
+
+    The primary and its linked worktrees run in place. A clone, or a linked worktree of another repository such as
+    the default Instance that task workspaces start from, bridges through the registered primary.
+    """
+    if os.environ.get('ORBIT_E2E_BRIDGE', '1') == '0':
         return None
     key = origin_key(clone)
     primary = registered_primary(key, clone) if key else None
-    return None if primary is None or primary == clone else primary
+    return None if primary is None or primary == primary_of(clone) else primary
 
 
 def copy_entry(source, destination):
@@ -218,7 +222,7 @@ def rewrite(arguments, clone, bridge, cwd):
 
 def route(root, action, arguments):
     clone = toplevel(root)
-    if is_linked_worktree(clone) or is_snapshot_primary(clone):
+    if is_snapshot_primary(primary_of(clone)):
         # The primary and its linked worktrees run in place and keep the primary registered.
         try:
             register(clone)
