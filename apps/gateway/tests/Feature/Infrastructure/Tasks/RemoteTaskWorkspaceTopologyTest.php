@@ -68,12 +68,12 @@ it('acquires only when the group holds no topology and releases only one it hold
     try {
         $topology->{$operation}($instance, 42);
 
-        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe($calls);
+        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(str_replace('{checkout}', (string) realpath($checkout), $calls));
     } finally {
         new Filesystem()->deleteDirectory($checkout);
     }
 })->with([
-    'acquire a missing topology' => ['acquire', false, ['status TASK-42', 'acquire TASK-42 .']],
+    'acquire a missing topology' => ['acquire', false, ['status TASK-42', 'acquire TASK-42 {checkout}']],
     'keep a held topology' => ['acquire', true, ['status TASK-42']],
     'release a held topology' => ['release', true, ['status TASK-42', 'release TASK-42']],
     'skip release without one' => ['release', false, ['status TASK-42']],
@@ -86,7 +86,7 @@ it('treats a harness whose status exits non-zero as holding no topology', functi
         $topology->acquire($instance, 42);
         $topology->release($instance, 42);
 
-        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['status TASK-42', 'acquire TASK-42 .', 'status TASK-42']);
+        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['status TASK-42', 'acquire TASK-42 '.realpath($checkout), 'status TASK-42']);
     } finally {
         new Filesystem()->deleteDirectory($checkout);
     }

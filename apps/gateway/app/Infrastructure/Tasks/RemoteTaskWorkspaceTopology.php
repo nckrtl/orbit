@@ -21,7 +21,7 @@ final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopolog
         # `status` prints `absent` when the group holds no topology; older harnesses exit non-zero instead.
         state=$(bin/e2e-topology status "$2" 2>/dev/null | tail -n 1) || state=absent
         if [ "$3" = acquire ]; then
-            case "$state" in absent | '') exec bin/e2e-topology acquire "$2" . ;; esac
+            case "$state" in absent | '') exec bin/e2e-topology acquire "$2" "$(pwd -P)" ;; esac
             exit 0
         fi
         case "$state" in absent | '') exit 0 ;; esac

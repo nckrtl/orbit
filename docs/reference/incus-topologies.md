@@ -167,7 +167,7 @@ A migration error makes `acquire` or `sync` exit nonzero. A failed `acquire` rem
 
 ## Task workspace clones
 
-A task workspace is an independent clone, not a linked worktree. It holds neither the topology snapshot nor its locks. So `bin/e2e-topology` in such a clone runs the command through a bridge worktree of the primary checkout.
+A task workspace is not a linked worktree of the primary checkout. It is a linked worktree of Orbit's default Instance, or an independent clone. It holds neither the topology snapshot nor its locks. So `bin/e2e-topology` runs the command in place only in the primary checkout and its linked worktrees. In any other checkout, it runs the command through a bridge worktree of the primary checkout. The table calls that checkout the clone.
 
 | Step | What happens |
 | --- | --- |
