@@ -80,7 +80,7 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 
 ## Collection
 
-`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, over SSH. A fixed Python program runs as the Node's user in development and as the production user in production. It reads the root manifests, lockfiles, and manager signals only.
+`CollectInstanceDependencyFilesAction` reads the recorded checkout, or `current` of a production Instance, over SSH. A fixed Python program runs as the Node's user in development and as the production user in production. For a Laravel Instance, it reads manifests, lockfiles, and manager signals only in the [application directory](/reference/projects#application-directory) derived from the effective web root. Root `apps/site/public` selects `apps/site` inside the checkout or selected release, not the repository-root manifests. Non-Laravel Instances keep repository-root collection. Collection never recursively discovers or combines dependency trees.
 
 | Limit | Value |
 | --- | --- |
@@ -89,9 +89,11 @@ No signal at all means pnpm, which still needs `pnpm-lock.yaml`.
 | All files | 32 MiB |
 | SSH run | 30 seconds, 48 MiB of output |
 
-Symlinks, non-regular files, and paths that are not canonical fail. The program reads twice and compares the directory, release, file metadata, and hashes. A difference returns `dependencies.source_changed`.
+Symlinks, non-regular files, and paths that are not canonical fail. Production collection validates and pins the selected release before opening its application directory. The program reads twice and compares the repository or release identity, application directory, file metadata, and hashes. A difference returns `dependencies.source_changed`.
 
-`ScanInstanceDependenciesAction` holds the Instance operation lock, and for development the Node source lock, from collection through publication. It checks the Instance again inside each publication transaction.
+`ScanInstanceDependenciesAction` holds the Instance operation lock, and for development the Node source lock, from collection through publication. It checks the Instance again inside each publication transaction. Its source snapshot retains the effective root and Laravel classification, so directory selection does not fall back to the repository root when the Instance is copied into a snapshot.
+
+Development updates use the same directory for manager-presence inspection, source-safety checks, package commands, and the final scan. Collection receipt validation accepts only the derived directory within the recorded checkout or selected release, not an arbitrary caller-supplied path. Git identity and CLI directory-to-Instance resolution still use the whole repository. Reader rules, package-manager refusals, and collection limits stay unchanged; a nested Laravel app does not enable workspace or multi-importer support.
 
 ## Stored inventory
 
@@ -111,7 +113,7 @@ The Gateway stores the inventory in five tables.
 
 A scan or read returns `data` with `instance_id`, `succeeded`, `composer`, and `javascript`. `succeeded` is null until both ecosystems have attempts.
 
-Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, and `snapshot`. The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`, and a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
+Each ecosystem has `ecosystem`, `state`, `succeeded`, `attempted_at`, `error_code`, and `snapshot`. The state is `unknown` before the first success, and stale after a later failure. A snapshot has `observed_at`, a `source` with `project_root`, `reference`, `file_hashes`, and `format`. `project_root` is the absolute directory whose manifests were read; for Laravel root `apps/site/public`, it ends in `/apps/site`. The production `reference` still identifies the selected release. The snapshot also has a `graph`. A null graph means the ecosystem is absent. An empty graph means a project with no packages.
 
 An update returns `instance_id`, `succeeded`, `error_code`, `may_have_mutated`, a `composer` and a `javascript` step, and `inventory`. A step has `ecosystem`, `status` (`succeeded`, `absent`, `failed`, or `not_run`), `may_have_mutated`, and `error_code`. A refused update has both steps `not_run` and no inventory.
 

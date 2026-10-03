@@ -25,7 +25,7 @@ Each production Instance has a home, `/home/<production-user>`, with these paths
 | Path | Purpose |
 | --- | --- |
 | `releases/<name>/` | One retained release: a Git checkout of the deployed branch. |
-| `.env` | The environment file. Each release holds a `.env` link to it. |
+| `.env` | The durable environment file. Each release's application directory holds a `.env` link to it. |
 | `database.sqlite` | An optional SQLite database. Orbit keeps the path but does not create the file. |
 | `current` | A link to the selected release. It is absent until the first deployment. |
 
@@ -33,7 +33,7 @@ A clone leaves the home prepared, with no `current` link. The application must p
 
 The Gateway lists retained releases as the production user from a directory that user can access. A private SSH home does not prevent reading the first clone's empty selection. Failed scans and invalid release receipts still stop the operation.
 
-The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
+The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. A nested root such as `apps/site/public` serves `<home>/current/apps/site/public`; its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). Root `public` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
 ## Development defaults
 
@@ -57,9 +57,11 @@ Orbit reports the failed step's exit status and names it in a warning. The outpu
 
 After a deployment Orbit prunes managed releases, retaining `current`, its previous selection, and releases recorded as seeds by other Instances on that Node. The seed fields on an Instance are a durable lease: asynchronous setup and interrupted retries can still read that immutable release after later deployments. The lease lasts until the consuming Instance is removed. Pruning reads these leases under the same Node source lock used for seed selection and validates every retained release marker.
 
-A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The root `.env` and any `.env.testing` are copied from the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
+A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The application-directory `.env` and any `.env.testing` are copied from the same relative directory in the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
 
 ## Deploy steps
+
+All development and production deploy steps run at the release's repository root, not at a nested application's directory. For root `apps/site/public`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.
 
 A deploy step is a named command that runs during a deployment. Each production Instance stores its own steps. A Project stores a separate ordered development deploy list, shared by its development deployments and independent of setup and teardown. Storing a step does not start a deployment.
 

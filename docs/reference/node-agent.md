@@ -102,7 +102,7 @@ The agent checks each source itself and runs no program for any of them.
 
 | Type | Fields | What it reads | What it refuses |
 | --- | --- | --- | --- |
-| `laravel` | `path`: the Instance checkout | `storage/logs/laravel.log`, or the newest `laravel-*.log`. It follows a daily file to the next day's file. | A path that is not normalized and absolute. A link at `storage/logs` or at the file. A file that is not regular, or that `root` owns. |
+| `laravel` | `path`: the Instance's [application directory](/reference/projects#application-directory) | `storage/logs/laravel.log`, or the newest `laravel-*.log`. It follows a daily file to the next day's file. | A path that is not normalized and absolute. A link at `storage/logs` or at the file. A file that is not regular, or that `root` owns. |
 | `journal` | `unit` | The journal files in `/var/log/journal` and `/run/log/journal`, for the unit and systemd's messages about it. | A unit that is not `orbit-process-{id}-{name}.service`. |
 | `docker` | `container`, `process_id` | The container's output through the Docker Engine API. | A name that is not `orbit-process-{id}-{name}`, and a container without the labels `orbit.managed=true` and `orbit.process.id` equal to `process_id`. |
 
@@ -295,7 +295,9 @@ The Instance root is the Node's [apps root](/reference/node-settings#derive-the-
 | The Instance root | Read-only. Without capabilities, root reads only files that other users may read: the tracked files and `.git`, not an Instance `.env`. |
 | Everything else | Read-only |
 
-The Instance root and each checkout must stay world-traversable, mode `0755` as Orbit creates them. Otherwise the agent leaves the checkout out. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after a registration moves a checkout, after a transfer, and for every checkout in the Instance root on each agent converge. A converge that cannot close a `.env` logs a warning and continues.
+The Instance root and each checkout must stay world-traversable, mode `0755` as Orbit creates them. Otherwise the agent leaves the checkout out. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after registration or transfer, and on each agent converge. Agent converge independently closes environment permissions for the Instances under the Node's apps root; it does not rely on registration or transfer having run.
+
+For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. A converge that cannot close a `.env` logs a warning and continues.
 
 The Gateway converges the agent at these points.
 

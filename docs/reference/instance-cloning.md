@@ -60,7 +60,7 @@ A checkout's hooks and custom filesystem monitor do not run during that check. T
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 
-Orbit inspects the destination checkout as its production user from a directory that user can access. A private SSH account home does not prevent source classification. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
+Orbit inspects the destination checkout as its production user from a directory that user can access. A private SSH account home does not prevent source classification. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
 
 ## What the clone gets
 
@@ -74,7 +74,7 @@ The new Instance gets its own copy of each part below.
 | PHP | A [dedicated PHP-FPM service](/reference/php-runtime#production-runtime) with Orbit defaults, when the source uses PHP. |
 | Route | For `laravel-app`, one private preview Route. Other types get no Route. |
 
-Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{instance.domain}}` resolve against the new Instance.
+Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment links that file from the release's application directory, including a nested path such as `apps/site/.env`. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{instance.domain}}` resolve against the new Instance.
 
 ## Preview domain
 

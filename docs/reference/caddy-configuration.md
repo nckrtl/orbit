@@ -11,6 +11,8 @@ covers:
 
 # Caddy configuration
 
+For a Laravel root of `apps/site/public`, Caddy serves that nested web root, not the application directory or repository root. Development access grants validate `apps/site/public/storage` against `apps/site/storage/app/public`, using the shared [application directory](/reference/projects#application-directory). They grant access to the paths that serving needs without making `.git` public. Root `public` keeps Laravel's storage link at `public/storage` in the repository root.
+
 Orbit owns `/etc/caddy/Caddyfile` on every Node that serves sites through Caddy. The Gateway builds that whole file for one Node from its database and pushes it in one step. No role writes Caddy files on a Node. Doctor compares the live Caddyfile with a fresh Node Caddy build. This page describes what a build contains, when it runs, how it reaches the Node, and how to fix a Node whose build fails. [Node provisioning](/reference/node-provisioning#package-sources) describes how Orbit installs Caddy.
 
 ## Published layout
