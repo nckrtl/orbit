@@ -281,6 +281,17 @@ it('does not mark an Instance asleep when every desired-running Process is keep-
         ->toBe([]);
 });
 
+it('keeps the annotator port while its Process halts and wakes', function (): void {
+    $this->instance->update(['annotator_port' => 4848]);
+    $process = hibernation_action_process($this->instance, 'annotator', DesiredProcessState::Running);
+    $process->update(['runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/local/bin/node']]]);
+    $this->markers->activity[RuntimeHibernation::key($this->instance->id)] = Carbon::now()->subSeconds(3_601)->getTimestamp();
+    expect(app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now())->halted)->toBe(1);
+    expect($this->instance->refresh()->annotator_port)->toBe(4848)->and($this->runtime->stopped)->toBe([$process->id]);
+    app(ActivateInstanceRuntimeAction::class)->execute($this->instance);
+    expect($this->runtime->started)->toBe([$process->id])->and($this->readiness->processIds)->toBe([$process->id])->and($this->instance->refresh()->annotator_port)->toBe(4848);
+});
+
 it('stops and starts an Antigravity watcher with Instance hibernation', function (): void {
     $http = hibernation_action_process($this->instance, 'agentation', DesiredProcessState::Running);
     $http->forceFill([

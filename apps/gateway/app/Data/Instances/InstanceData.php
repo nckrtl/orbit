@@ -7,6 +7,7 @@ namespace App\Data\Instances;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
+use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\Instances\Deployment\InstanceDeployStepStore;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -45,6 +46,8 @@ final class InstanceData extends Data
         /** @var list<DeploymentStepData> */
         public array $deploySteps = [],
         public ?int $vitePort = null,
+        public ?int $annotatorPort = null,
+        public ?string $annotatorUrl = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
@@ -66,6 +69,8 @@ final class InstanceData extends Data
             project: ProjectIdentityData::fromModel($instance->project),
             node: NodeIdentityData::fromModel($instance->node),
             vitePort: $instance->vite_port,
+            annotatorPort: $instance->annotator_port,
+            annotatorUrl: $instance->annotator_port !== null && $route instanceof Route ? AnnotatorEndpoint::origin($route->domain) : null,
             name: $instance->name,
             sourceLayout: $instance->source_layout,
             checkoutPath: $instance->checkout_path,

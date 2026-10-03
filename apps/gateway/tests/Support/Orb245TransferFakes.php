@@ -241,6 +241,7 @@ final class Orb245TransferRuntime implements InstanceTransferRuntime
     public function activate(Instance $instance): void
     {
         $this->calls[] = 'activate';
+        ($this->onCall)?->__invoke('activate');
     }
 
     public function cleanupSourceArtifacts(Instance $instance, Node $sourceNode, string $sourcePath): void

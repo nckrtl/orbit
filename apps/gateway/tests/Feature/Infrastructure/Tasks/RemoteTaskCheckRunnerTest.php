@@ -220,6 +220,10 @@ describe('TaskCheckWorkerUser', function (): void {
     it('fails the check when it cannot take over the worker files', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
+        // Install once: status polls must not rewrite an executable the background check may be running.
+        File::ensureDirectoryExists($checkout.'/.git/no-sudo');
+        file_put_contents($checkout.'/.git/no-sudo/sudo', "#!/bin/sh\nexit 1\n");
+        chmod($checkout.'/.git/no-sudo/sudo', 0755);
         $runner = check_runner(new class implements SshExecutor
         {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -227,8 +231,7 @@ describe('TaskCheckWorkerUser', function (): void {
                 // The managed user has no sudo rule for the worker.
                 return new LocalShellSshExecutor()->execute($connection, new RemoteCommand(
                     arguments: $command->arguments,
-                    input: "mkdir -p \"\$1/.git/no-sudo\" && printf '#!/bin/sh\\nexit 1\\n' > \"\$1/.git/no-sudo/sudo\"\n"
-                        ."chmod +x \"\$1/.git/no-sudo/sudo\" && export PATH=\"\$1/.git/no-sudo:\$PATH\"\n".$command->input,
+                    input: "export PATH=\"\$1/.git/no-sudo:\$PATH\"\n".$command->input,
                     maxOutputBytes: $command->maxOutputBytes,
                 ));
             }
@@ -276,6 +279,9 @@ describe('TaskCheckWorkerUser', function (): void {
     it('fails the check when it cannot share its files with the worker', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
+        File::ensureDirectoryExists($checkout.'/.git/no-acl');
+        file_put_contents($checkout.'/.git/no-acl/setfacl', "#!/bin/sh\nexit 1\n");
+        chmod($checkout.'/.git/no-acl/setfacl', 0755);
         $runner = check_runner(new class implements SshExecutor
         {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
@@ -283,8 +289,7 @@ describe('TaskCheckWorkerUser', function (): void {
                 // A Node without the acl package has no setfacl.
                 return new LocalShellSshExecutor()->execute($connection, new RemoteCommand(
                     arguments: $command->arguments,
-                    input: "mkdir -p \"\$1/.git/no-acl\" && printf '#!/bin/sh\\nexit 1\\n' > \"\$1/.git/no-acl/setfacl\"\n"
-                        ."chmod +x \"\$1/.git/no-acl/setfacl\" && export PATH=\"\$1/.git/no-acl:\$PATH\"\n".$command->input,
+                    input: "export PATH=\"\$1/.git/no-acl:\$PATH\"\n".$command->input,
                     maxOutputBytes: $command->maxOutputBytes,
                 ));
             }

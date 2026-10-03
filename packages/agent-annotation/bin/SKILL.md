@@ -29,6 +29,8 @@ Keep watching until the user tells you to stop. Without a request to watch, clai
 3. Make the change. Run quick checks that cover it, such as the related tests, linting, or a look in the browser. Then call `/complete` right away with the ID and a short summary of the change and the checks. The user watches the page, and the pin stays until you complete it. Do not wait for slow full test suites; run them afterwards if needed.
 4. If you cannot finish, tell the user why and call `/release` with the ID and a summary of the blocker. This returns the annotation to todo. Do not claim the same blocked annotation again. Never complete work that is not done.
 
+If clarification is needed, release with `question: true` and the question as `summary`, then ask the user in the thread. Automatic claims skip question annotations: never re-send them in Watch mode. After the user answers, claim by id with `{"id":"CLAIMED_ID"}`; this clears the question marker and summary. Refer to annotations by number (#3), never by id outside API requests.
+
 Handle one annotation at a time. Claims do not expire.
 
 ```sh

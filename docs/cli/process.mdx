@@ -59,7 +59,7 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--user=NAME` | managed user | Systemd account for a Node Process. One letter or underscore, then at most 31 letters, digits, underscores, or hyphens. |
 | `--project=ID` | none | Numeric Project ID for a definition. |
 | `--for=production` | none | Definition environments. Required with `--project`. Only definitions for `production` are copied. |
-| `--preset=PRESET` | none | Configure a development Instance Process. Supported values are `vp-dev`, `agentation-mcp`, and `antigravity-watch`. Refused with `--project`. |
+| `--preset=PRESET` | none | Configure a development Instance Process. Supported values are `vp-dev`, `annotator`, `agentation-mcp`, and `antigravity-watch`. Refused with `--project`. |
 | `--runtime=RUNTIME` | `systemd` | `systemd` or `docker`. |
 | `--command=ARG` | none | One argument. Repeat it for each argument, at most 64 of 4,096 bytes each. A systemd command starts with an absolute executable. |
 | `--image=IMAGE` | none | Docker image. |
@@ -71,15 +71,18 @@ orbit process:create <name> (--instance=ID-or-domain | --node=ID-or-name | --pro
 | `--keep-alive` | off | Keep the Process running through app-dev idle hibernation. |
 | `--start` | off | Start the Process after it installs. Not accepted for a definition. |
 
-A preset owns the runtime, command, working directory, and environment, and refuses those options. It refuses `--keep-alive` for the two Agentation presets. It also refuses `--user`.
+A preset owns the runtime, command, working directory, and environment, and refuses those options. It refuses `--keep-alive` for `annotator` and the two Agentation presets. It also refuses `--user`.
 
 `--user` is accepted only with `--node` and a systemd runtime. An Instance, Docker, a preset, or a Project definition returns `process.option_invalid` and sends no request. A name that fails the pattern returns `process.user_invalid` and sends no request. The API field is `user`, and `CreateProcessRequest` takes the same argument. `root` is refused as `process.user_invalid`. The Gateway checks the named account with `getent passwd` over SSH and returns `process.user_unavailable` when it is absent or its home is invalid. The default working directory is that account's home; `--working-directory` overrides it. [Processes and schedules](/reference/processes-and-schedules#owners) describes the option.
 
 ```bash
 orbit process:create assets --instance=commander.test --preset=vp-dev --start
+orbit process:create annotator --instance=commander.test --preset=annotator --start
 orbit process:create agentation --instance=commander.test --preset=agentation-mcp --start
 orbit process:create agentation-watch --instance=commander.test --preset=antigravity-watch --start
 ```
+
+The `annotator` preset installs the Gateway's annotation server on the Node, runs it through systemd with restart on failure, and publishes `/__orbit/annotator` on the Instance Route. An identical create returns the existing Process and keeps its desired state. Another name for the same preset fails with `process.preset_exists`. [Annotator Process](/reference/agentation#annotator-process) describes its port, private store, environment, and wake behavior.
 
 Install a Vite development server on an Instance and start it:
 

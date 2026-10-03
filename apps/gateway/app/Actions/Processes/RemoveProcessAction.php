@@ -11,6 +11,9 @@ use App\Domain\AppDev\AgentationUrlProjection;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\DatabaseServers\DatabaseServerProcessOwnership;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
@@ -80,7 +83,7 @@ final readonly class RemoveProcessAction
             }
 
             $this->targets->forRemoval($fresh);
-            $fresh->update(['status' => LifecycleStatus::Removing]);
+            $fresh->update(['status' => LifecycleStatus::Removing, 'desired_state' => DesiredProcessState::Stopped]);
 
             try {
                 $this->runtime->remove($fresh);
@@ -90,10 +93,22 @@ final readonly class RemoveProcessAction
                 throw $exception;
             }
 
-            if ($fresh->isAgentationMcp() && $fresh->owner instanceof Instance) {
-                $this->agentationPorts->release($fresh->owner);
-                $this->agentationUrls->forget($fresh->owner);
-                $this->agentationSites->project($fresh->owner);
+            if (($fresh->isAgentationMcp() || $fresh->isAnnotator()) && $fresh->owner instanceof Instance) {
+                // The persisted intent removes the proxy from every subsequent Caddy render,
+                // but the port remains reserved until projection confirms withdrawal.
+                if ($fresh->endpoint_withdrawal_started_at === null) {
+                    $fresh->update(['endpoint_withdrawal_started_at' => now()]);
+                }
+                if ($fresh->endpoint_withdrawn_at === null) {
+                    $this->agentationSites->project($fresh->owner);
+                    $fresh->update(['endpoint_withdrawn_at' => now()]);
+                }
+                $annotator = $fresh->isAnnotator();
+                $this->agentationPorts->release($fresh->owner, $annotator ? 'annotator_port' : 'agentation_port');
+                $this->agentationUrls->forget($fresh->owner, annotator: $annotator);
+                if ($annotator && $fresh->owner->status === InstanceState::Active) {
+                    app(ProcessEnvironmentProjection::class)->project($fresh->owner, $fresh->id);
+                }
             }
 
             $fresh->delete();

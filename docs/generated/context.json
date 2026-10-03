@@ -1241,6 +1241,7 @@
                 "Doctor",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
@@ -1914,6 +1915,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Role",
                 "Tool"

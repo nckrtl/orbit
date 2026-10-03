@@ -251,7 +251,7 @@ orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --y
 
 ## orbit instance:list
 
-List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress.
+List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress. JSON also includes `annotator_port` and `annotator_url`; both are null when no annotator port is assigned, and the URL is null without a Route.
 
 ```bash
 orbit instance:list [--json]
@@ -259,7 +259,9 @@ orbit instance:list [--json]
 
 ## orbit instance:show
 
-Show one Instance. Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
+Show one Instance. When the `annotator` Process has an assigned port, human output includes `Annotator port` and `Annotator URL`. The URL uses the Instance's Route, for example `https://commander.test/__orbit/annotator`; without a Route, the display is an em dash. JSON keeps the `annotator_port` and `annotator_url` fields even when they are null. See [Annotator Process](/reference/agentation#annotator-process).
+
+Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
 
 ```bash
 orbit instance:show <instance> [--json]

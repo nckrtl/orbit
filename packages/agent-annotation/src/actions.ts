@@ -304,6 +304,8 @@ export function applyCreatedAnnotations(incoming: Annotation[]): void {
             existing &&
             existing.revision === annotation.revision &&
             existing.number === annotation.number &&
+            existing.question === annotation.question &&
+            existing.summary === annotation.summary &&
             existing.syncError === annotation.syncError &&
             existing.delivery === annotation.delivery &&
             existing.comment === annotation.comment &&
@@ -314,7 +316,20 @@ export function applyCreatedAnnotations(incoming: Annotation[]): void {
             continue;
         }
 
-        next.set(annotation.id, existing ? { ...existing, ...annotation } : annotation);
+        next.set(
+            annotation.id,
+            existing
+                ? {
+                      ...existing,
+                      ...annotation,
+                      // Server snapshots omit optional fields when a transition clears them.
+                      question: annotation.question,
+                      summary: annotation.summary,
+                      syncError: annotation.syncError,
+                      delivery: annotation.delivery,
+                  }
+                : annotation,
+        );
         changed = true;
     }
 

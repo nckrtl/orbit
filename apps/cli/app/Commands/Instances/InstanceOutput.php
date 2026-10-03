@@ -28,6 +28,11 @@ trait InstanceOutput
             'URL' => $instance->url,
         ];
 
+        if ($instance->annotatorPort !== null) {
+            $fields['Annotator port'] = $instance->annotatorPort;
+            $fields['Annotator URL'] = $instance->annotatorUrl;
+        }
+
         if ($instance->productionUser !== null) {
             $fields['Production user'] = $instance->productionUser;
             $fields['Production home'] = $instance->productionHome;
