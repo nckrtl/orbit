@@ -58,12 +58,14 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
+use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -72,6 +74,7 @@ use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use App\Models\TaskQuestion;
 use Illuminate\Support\Facades\Exceptions;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
@@ -79,6 +82,7 @@ use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\FakeTaskWorkspaceTopology;
 use Tests\Support\NullAgentSnapshotReader;
 
 use function Pest\Laravel\mock;
@@ -2367,6 +2371,74 @@ function scheduler_review(array $receipts, bool $notified = true): array
 
     return [$group->fresh(['tasks', 'taskable']) ?? $group, $task->fresh() ?? $task, $receipts, $signer, $checks, $dispatcher, $reader];
 }
+
+it('resumes a reviewer topology request with ready or the failure reason without advancing review or asking for assistance', function (bool $fails): void {
+    [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([
+        FakeTaskTurnReceipts::contents('topology_requested', 'Discovery needs Nodes.'),
+        FakeTaskTurnReceipts::contents('approved', 'Checked with available discovery.'),
+    ]);
+    $topology = new FakeTaskWorkspaceTopology;
+    $topology->fails = $fails;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($topology->calls)->toBe([['acquire', $group->taskable_id, $group->id]])
+        ->and($task->fresh()->status)->toBe(TaskStatus::Reviewing)
+        ->and($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($signer->messages)->toBe([])
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and(json_encode($dispatcher->commands))->toContain($fails ? 'acquisition failed: The topology could not be acquired.' : 'is ready.')
+        ->and(json_encode($dispatcher->commands))->toContain('reviewer-')
+        ->and(TaskQuestion::query()->count())->toBe(0);
+
+    $reader->turnId = 'review-after-topology-request';
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->status)->toBe(TaskStatus::Completed)
+        ->and($task->fresh()->assistance_requested)->toBeFalse();
+})->with([false, true]);
+
+it('reuses the recorded topology reply after receipt removal fails', function (): void {
+    [$group, $task, , , , $dispatcher] = scheduler_review([]);
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    $receipt = TaskTurnReceipt::parse(FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes.'))->withThread($group->reviewer_agent_thread_id);
+    $receipts = mock(TaskTurnReceipts::class);
+    $receipts->shouldReceive('hasLegacyTurn')->andReturn(false);
+    $receipts->shouldReceive('read')->twice()->andReturn($receipt);
+    $receipts->shouldReceive('clear')->once()->andThrow(new TaskTurnReceiptException('Receipt removal interrupted.'));
+    $receipts->shouldReceive('clear')->once();
+    $receipts->shouldReceive('prepare')->once();
+
+    app(TaskScheduler::class)->tick();
+    expect($dispatcher->commands)->toBe([]);
+    app(TaskScheduler::class)->tick();
+
+    expect($topology->calls)->toHaveCount(1)
+        ->and($dispatcher->commands)->toHaveCount(1)
+        ->and(json_encode($dispatcher->commands))->toContain('is ready.')
+        ->and($task->comments()->count())->toBe(1);
+});
+
+it('answers a second reviewer topology request with already held', function (): void {
+    [$group, $task, , , , $dispatcher, $reader] = scheduler_review([
+        FakeTaskTurnReceipts::contents('topology_requested', 'First request.'),
+        FakeTaskTurnReceipts::contents('topology_requested', 'Second request.'),
+    ]);
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    app(TaskScheduler::class)->tick();
+    // The previous stopped turn may still be visible while the resume is being delivered.
+    app(TaskScheduler::class)->tick();
+    expect($dispatcher->commands)->toHaveCount(1);
+    $reader->turnId = 'second-request-turn';
+    app(TaskScheduler::class)->tick();
+
+    expect($topology->held)->toBe([$group->id])
+        ->and($dispatcher->commands)->toHaveCount(2)
+        ->and(json_encode($dispatcher->commands[1]))->toContain('is already held.')
+        ->and($task->fresh()->status)->toBe(TaskStatus::Reviewing);
+});
 
 it('approves a review when the workspace is unchanged since the review request', function (): void {
     [$group, $task, , $signer, $checks, $dispatcher, $reader] = scheduler_review([

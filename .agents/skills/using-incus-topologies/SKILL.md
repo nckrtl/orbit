@@ -9,7 +9,9 @@ A task group's topology is a disposable three-Node fleet: `gateway`, `app-dev`, 
 
 ## Use the allocated topology
 
-Orbit acquires the group's topology, `TASK-<group>`, when it provisions an Orbit task workspace, and releases it when it removes the workspace. The implementer and the reviewer share it. Check it with `bin/e2e-topology status TASK-<group>`. Agents and reviewers never acquire or release topologies, receive no sudo, and do not touch the host firewall. When `status` shows no topology, acquiring failed; ask the operator instead of running `acquire`.
+A new task workspace has no topology. When discovery needs one, the reviewer ends its turn with `"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why discovery needs a topology"`. Do not pass `--question`, `--cause`, or pull request flags. Orbit acquires the group's one `TASK-<group>` as the managed user and resumes the same reviewer with ready, already held, or the failure reason. The review, consult, or relay context stays unchanged. A consult stays open and the implementer stays paused until the reviewer answers normally.
+
+An implementer asks the reviewer through a `blocked` consult, not a topology request or a direct operator request. Acquisition failure does not ask for operator assistance. A missing topology does not block approval; continue with tests and code review and record the discovery limitation. The implementer and reviewer share any acquired topology. Check it with `bin/e2e-topology status TASK-<group>`. Agents never acquire or release topologies, receive no sudo, and do not touch the host firewall. Orbit releases the topology before removing the workspace.
 
 Run commands from the task workspace. The issue must appear in the branch name, so branch `task-58` uses `TASK-58`. A task workspace clone runs through its [bridge worktree](../../../docs/reference/incus-topologies.md#task-workspace-clones).
 

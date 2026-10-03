@@ -38,6 +38,10 @@ final readonly class TaskTurnReceipt
             return new self($hash, null, '');
         }
         $outcome = TaskTurnOutcome::tryFrom($data['outcome']);
+        if ($outcome === TaskTurnOutcome::TopologyRequested
+            && (isset($data['question']) || isset($data['cause']) || isset($data['pull_request']))) {
+            return new self($hash, null, '');
+        }
         $question = null;
         if ($outcome === TaskTurnOutcome::Blocked) {
             $question = is_string($data['question'] ?? null) ? trim($data['question']) : '';

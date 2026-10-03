@@ -15,12 +15,21 @@ final class FakeTaskWorkspaceTopology implements TaskWorkspaceTopology
 
     public bool $fails = false;
 
-    public function acquire(Instance $workspace, int $groupId): void
+    /** @var list<int> */
+    public array $held = [];
+
+    public function acquire(Instance $workspace, int $groupId): bool
     {
         $this->calls[] = ['acquire', $workspace->id, $groupId];
         if ($this->fails) {
             throw new RuntimeException('The topology could not be acquired.');
         }
+        if (in_array($groupId, $this->held, true)) {
+            return false;
+        }
+        $this->held[] = $groupId;
+
+        return true;
     }
 
     public function release(Instance $workspace, int $groupId): void

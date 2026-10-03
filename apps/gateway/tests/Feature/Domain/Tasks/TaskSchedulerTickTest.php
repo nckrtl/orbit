@@ -68,6 +68,7 @@ use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -99,6 +100,7 @@ use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\FakeTaskWorkspaceTopology;
 
 use function Pest\Laravel\mock;
 
@@ -312,7 +314,7 @@ function tick_relay_runtime(FakeTaskTurnReceipts $receipts, AgentCommandDispatch
 
             return ['thread' => [
                 'session' => ['status' => $reviewer],
-                'latestTurn' => ['id' => 'relay-turn', 'state' => 'done'],
+                'latestTurn' => ['id' => $this->state->reviewerTurnId ?? 'relay-turn', 'state' => 'done'],
             ]];
         }
     };
@@ -366,6 +368,11 @@ function tick_consult_exchange(bool $loseResponse, ?array $receiptContents = nul
             if (($command['type'] ?? null) === 'send' && ($command['threadId'] ?? null) === 'implementer-thread') {
                 $this->state->turnId = (string) ($command['commandId'] ?? '');
                 $this->state->messageId = (string) ($command['commandId'] ?? '');
+                if (($this->state->loseImplementerResponse ?? false) === true) {
+                    $this->state->loseImplementerResponse = false;
+
+                    throw new AgentDriverException('implementer response lost');
+                }
             }
 
             return ['sequence' => count($this->commands), 'thread_id' => (string) ($command['threadId'] ?? '')];
@@ -2995,6 +3002,188 @@ it('uses observation grace for an unavailable consult reviewer, then asks for a 
         ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open);
 });
 
+it('recovers a stopped receiptless topology resume after lost Pi responses or a post-send marker failure', function (bool $writeFails, bool $superseded): void {
+    [$group, $task, , $dispatcher] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('blocked', 'Need Nodes.', 'Can you request a topology?'),
+        FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes to answer.'),
+        null, // Accepted resume stops without a usable receipt.
+        null, // The normal missing-receipt reminder must still run.
+        FakeTaskTurnReceipts::contents('answered', 'Continue with the contract.', cause: 'environment'),
+    ]);
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    app(TaskScheduler::class)->tick();
+    $consultId = $task->fresh()->consult_comment_id;
+    $reviewer = AgentThread::query()->where('task_id', $task->id)->where('role', 'reviewer')->sole();
+    $reviewer->update(['driver' => 'pi']);
+    $group->taskable->node->update([
+        'settings' => ['pi' => ['token' => 'pi-node-token-with-more-than-32-characters', 'url' => 'http://10.44.0.212:3774']],
+    ]);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([app(PiDriver::class)]));
+    $source = 'original-topology-request-turn';
+    $pi = (object) ['turnId' => $source, 'keys' => [], 'messages' => [], 'implementerKeys' => [], 'implementerTurnId' => ''];
+    Http::fake(function (Request $request) use ($pi, $writeFails): mixed {
+        if ($request->method() === 'POST' && str_contains($request->url(), '/messages')) {
+            $key = (string) $request['key'];
+            if (str_contains($request->url(), '/implementer-thread/')) {
+                $pi->implementerKeys[] = $key;
+                $pi->implementerTurnId = $key;
+
+                return Http::response(['key' => $key, 'status' => 'accepted'], 202);
+            }
+            $pi->keys[] = $key;
+            $pi->messages[] = (string) $request['text'];
+            $pi->turnId = $key; // Pi accepts even when both replies are lost.
+            if (! $writeFails && str_starts_with($key, 'topology-request-')) {
+                throw new ConnectionException('accepted response lost');
+            }
+
+            return Http::response(['key' => $key, 'status' => 'accepted'], 202);
+        }
+        if ($request->method() === 'GET') {
+            return Http::response([
+                'kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 2,
+                'session' => ['id' => basename(rtrim($request->url(), '/'))],
+                'state' => 'done',
+                'turnId' => str_ends_with($request->url(), '/implementer-thread') ? $pi->implementerTurnId : $pi->turnId,
+                'entries' => [],
+            ]);
+        }
+
+        return Http::response([], 404);
+    });
+    $inject = $writeFails;
+    DB::beforeExecuting(function (string $sql) use (&$inject, $pi): void {
+        if ($inject && $pi->keys !== [] && str_starts_with(strtolower(ltrim($sql)), 'update') && str_contains($sql, 'review_handled_comment_id')) {
+            $inject = false;
+
+            throw new RuntimeException('injected post-send topology marker failure');
+        }
+    });
+    if ($writeFails) {
+        expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'injected post-send topology marker failure');
+    } else {
+        app(TaskScheduler::class)->tick();
+    }
+    $request = $task->comments()->where('type', 'topology_requested')->sole();
+    expect($request->topology_resume)->toBe(['source_turn_id' => $source])
+        ->and($pi->keys)->toHaveCount($writeFails ? 1 : 2)
+        ->and(array_unique($pi->keys))->toBe(['topology-request-'.$request->id]);
+    if ($superseded) {
+        $pi->turnId = 'later-stopped-turn';
+    }
+
+    app(TaskScheduler::class)->tick(); // Reconcile, without resending or rebasing onto the resumed turn.
+    expect($task->fresh()->review_notified_turn_id)->toBe($source)
+        ->and($pi->keys)->toHaveCount($writeFails ? 1 : 2)
+        ->and($task->fresh()->consult_comment_id)->toBe($consultId)
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and($task->fresh()->assistance_requested)->toBeFalse();
+
+    app(TaskScheduler::class)->tick();
+    expect(end($pi->messages))->toContain('No turn receipt was found.')
+        ->and(end($pi->messages))->toContain('--outcome=answered')
+        ->and($task->fresh()->consult_comment_id)->toBe($consultId)
+        ->and($topology->calls)->toHaveCount(1);
+
+    app(TaskScheduler::class)->tick();
+    expect(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and($task->fresh()->consult_comment_id)->toBeNull()
+        ->and($group->fresh()->reviewer_agent_thread_id)->toBe($reviewer->id)
+        ->and($pi->implementerKeys)->toHaveCount(1);
+})->with([
+    'lost replies, accepted turn' => [false, false],
+    'lost replies, superseding turn' => [false, true],
+    'post-send write failure, accepted turn' => [true, false],
+    'post-send write failure, superseding turn' => [true, true],
+]);
+
+it('preserves the implementer source turn after an ambiguous refusal resume and recovers through a consult', function (bool $writeFails): void {
+    [$group, $task, , $dispatcher, $state] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes.'),
+        null,
+        null,
+        FakeTaskTurnReceipts::contents('blocked', 'Need Nodes.', 'Can the reviewer request a topology?'),
+    ]);
+    $source = 'implementer-resource-request';
+    $state->turnId = $source;
+    $state->loseImplementerResponse = ! $writeFails;
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    $inject = $writeFails;
+    DB::beforeExecuting(function (string $sql) use (&$inject, $dispatcher): void {
+        if ($inject && $dispatcher->commands !== [] && str_starts_with(strtolower(ltrim($sql)), 'update') && str_contains($sql, 'completion_handoff_comment_id')) {
+            $inject = false;
+
+            throw new RuntimeException('injected refusal marker failure');
+        }
+    });
+    if ($writeFails) {
+        expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'injected refusal marker failure');
+    } else {
+        app(TaskScheduler::class)->tick();
+    }
+    $request = $task->comments()->where('type', 'topology_requested')->sole();
+    expect($request->topology_resume)->toBe(['source_turn_id' => $source]);
+
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->completion_handoff_turn_id)->toBe($source)
+        ->and($dispatcher->commands)->toHaveCount(1);
+    app(TaskScheduler::class)->tick();
+    expect(json_encode($dispatcher->commands[1]))->toContain('No turn receipt was found.')
+        ->and($topology->calls)->toBe([]);
+    app(TaskScheduler::class)->tick();
+    expect($task->fresh()->consult_comment_id)->not->toBeNull()
+        ->and(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and($task->fresh()->assistance_requested)->toBeFalse();
+})->with([false, true]);
+
+it('keeps a consult open and the implementer paused through a topology request, including acquisition failure', function (bool $fails): void {
+    [$group, $task, $receipts, $dispatcher, $state] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('blocked', 'Discovery needs a topology.', 'Can you request one?'),
+        FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes to answer.'),
+        FakeTaskTurnReceipts::contents('answered', 'Continue with the contract.', cause: 'environment'),
+    ]);
+    $topology = new FakeTaskWorkspaceTopology;
+    $topology->fails = $fails;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    app(TaskScheduler::class)->tick();
+    $state->reviewerTurnId = 'topology-request-turn';
+    $consultId = $task->fresh()->consult_comment_id;
+    $reviewerId = $group->fresh()->reviewer_agent_thread_id;
+    app(TaskScheduler::class)->tick();
+
+    expect(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Open)
+        ->and(TaskQuestion::query()->sole()->cause)->toBeNull()
+        ->and($task->fresh()->consult_comment_id)->toBe($consultId)
+        ->and($task->fresh()->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->fresh()->reviewer_agent_thread_id)->toBe($reviewerId)
+        ->and(end($receipts->modes))->toBe('consult')
+        ->and(json_encode($dispatcher->commands))->toContain($fails ? 'acquisition failed:' : 'is ready.');
+    $implementerSends = collect($dispatcher->commands)->filter(fn (array $command): bool => ($command['threadId'] ?? null) === 'implementer-thread');
+    expect($implementerSends)->toHaveCount(0);
+
+    app(TaskScheduler::class)->tick();
+    expect(TaskQuestion::query()->sole()->status)->toBe(QuestionStatus::Answered)
+        ->and($task->fresh()->consult_comment_id)->toBeNull();
+})->with([false, true]);
+
+it('refuses a handwritten implementer topology request and asks it to consult the reviewer', function (): void {
+    [$group, $task, , $dispatcher] = tick_consult_exchange(false, [
+        FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes.'),
+    ]);
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    app(TaskScheduler::class)->tick();
+
+    expect($topology->calls)->toBe([])
+        ->and($task->fresh()->status)->toBe(TaskStatus::Running)
+        ->and($task->fresh()->assistance_requested)->toBeFalse()
+        ->and(TaskQuestion::query()->count())->toBe(0)
+        ->and(json_encode($dispatcher->commands))->toContain('Topology request refused. Ask the reviewer through a blocked consult');
+});
+
 it('answers a consult in the same attempt and records the reviewer cause', function (): void {
     $group = tick_group();
     $task = $group->tasks->sole();
@@ -4747,6 +4936,32 @@ it('starts a reviewer for a held direction resolution and answers from the relay
         ->and($task->fresh()?->completion_attempt)->toBe($completion)
         ->and($task->fresh()?->review_attempt)->toBe($review)
         ->and($delivered['message']['text'] ?? null)->toContain('Use the public mirror.');
+});
+
+it('keeps a direction relay and its question pending through a topology request', function (): void {
+    [$group, $task, $resolution, $question] = tick_held_relay();
+    $receipts = new FakeTaskTurnReceipts([
+        FakeTaskTurnReceipts::contents('topology_requested', 'Need Nodes to interpret direction.'),
+        FakeTaskTurnReceipts::contents('answered', 'Use the public mirror.', cause: 'scope'),
+    ]);
+    $dispatcher = tick_dispatcher();
+    $state = (object) ['implementer' => 'idle'];
+    tick_relay_runtime($receipts, $dispatcher, $state);
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    app(TaskScheduler::class)->tick();
+
+    expect($question->fresh()->status)->toBe(QuestionStatus::Escalated)
+        ->and($question->fresh()->cause)->toBeNull()
+        ->and($task->fresh()->direction_relay_comment_id)->toBe($resolution->id)
+        ->and($task->fresh()->assistance_requested)->toBeFalse()
+        ->and(end($receipts->modes))->toBe('relay')
+        ->and(json_encode($dispatcher->commands))->toContain('is ready.');
+
+    $state->reviewerTurnId = 'relay-after-topology-request';
+    app(TaskScheduler::class)->tick();
+    expect($question->fresh()->status)->toBe(QuestionStatus::Answered)
+        ->and($task->fresh()->direction_relay_comment_id)->toBeNull();
 });
 
 it('keeps a relay answer while the implementer is busy and delivers it once the implementer is free', function (): void {

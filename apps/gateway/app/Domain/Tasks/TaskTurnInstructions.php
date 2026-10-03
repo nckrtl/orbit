@@ -21,7 +21,7 @@ final readonly class TaskTurnInstructions
         $gate = $check === null ? '' : ' Orbit runs '.$check.' again at handoff with access you do not have, such as sudo. When it fails for you only because you lack that access, hand off anyway.';
         $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file and command deliverables against your diff and its own run.';
 
-        return self::origin().' '.self::autonomy().' When the brief is complete'.$passes.', end your turn with '.self::command($threadId, '--outcome=ready_for_review --summary="What you changed"').'.'.$gate.$confirm.' '.self::blocked($threadId);
+        return self::origin().' '.self::autonomy().' Workspaces start without a topology. If discovery needs one, ask the reviewer through a blocked consult. Never acquire or release a topology yourself. When the brief is complete'.$passes.', end your turn with '.self::command($threadId, '--outcome=ready_for_review --summary="What you changed"').'.'.$gate.$confirm.' '.self::blocked($threadId);
     }
 
     /**
@@ -39,19 +39,19 @@ final readonly class TaskTurnInstructions
             $approve .= ' The approval must confirm each review deliverable ('.self::ids($reviews).') with --deliverable=ID=evidence, where the evidence says what you checked.';
         }
 
-        return self::origin().' This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. When this review follows an operator direction, every outcome also needs --cause. '.self::blocked($threadId, true);
+        return self::origin().' '.self::topology($threadId).' This review is read-only. Do not create, edit, reset, or delete workspace files, including disposable fixtures. Request changes from the implementer instead. Do not commit; Orbit commits after you approve. Report a missing guarantee against injected failures, such as a lost response or a crash between two writes, as a finding when this subtask adds or changes that state transition, or when the brief, an ADR, or a deliverable names it; otherwise list it as a follow-up in your summary. '.$approve.' Otherwise end your turn with '.self::command($threadId, '--outcome=changes_requested --summary="The findings the implementer must address"').'. When this review follows an operator direction, every normal review outcome also needs --cause. '.self::blocked($threadId, true);
     }
 
     /** The reviewer answers an implementer's question from the contract, before the operator is asked. */
     public static function consult(?int $threadId = null): string
     {
-        return self::origin().' This is a consult, not a review. Answer from the brief, the ADRs, the documentation, the code, and the task history. End your turn with '.self::command($threadId, '--outcome=answered --summary="The answer for the implementer" --cause=CAUSE').', or '.self::command($threadId, '--outcome=blocked --summary="Why the contract cannot answer it" --question="One specific question" --cause=CAUSE').'. '.self::causes();
+        return self::origin().' '.self::topology($threadId).' This is a consult, not a review. Answer from the brief, the ADRs, the documentation, the code, and the task history. End your turn with '.self::command($threadId, '--outcome=answered --summary="The answer for the implementer" --cause=CAUSE').', or '.self::command($threadId, '--outcome=blocked --summary="Why the contract cannot answer it" --question="One specific question" --cause=CAUSE').'. '.self::causes();
     }
 
     /** The reviewer translates an operator's direction before the implementer continues. */
     public static function relay(?int $threadId = null): string
     {
-        return self::origin().' This is a relay of the operator\'s direction, not a review. End your turn with '.self::command($threadId, '--outcome=answered --summary="The answer for the implementer" --cause=CAUSE').', or '.self::command($threadId, '--outcome=blocked --summary="Why the contract cannot answer it" --question="One specific question" --cause=CAUSE').'. '.self::causes();
+        return self::origin().' '.self::topology($threadId).' This is a relay of the operator\'s direction, not a review. End your turn with '.self::command($threadId, '--outcome=answered --summary="The answer for the implementer" --cause=CAUSE').', or '.self::command($threadId, '--outcome=blocked --summary="Why the contract cannot answer it" --question="One specific question" --cause=CAUSE').'. '.self::causes();
     }
 
     /**
@@ -79,6 +79,11 @@ final readonly class TaskTurnInstructions
         }
 
         return 'The group started at '.$commit.".\n".'git diff --stat '.$commit.'..HEAD';
+    }
+
+    private static function topology(?int $threadId): string
+    {
+        return 'Workspaces start without a topology. When discovery needs one, end your turn with '.self::command($threadId, '--outcome=topology_requested --summary="Why discovery needs a topology"').'. Do not pass --question, --cause, or pull request flags. Orbit acquires TASK-<group> as the managed user and resumes this same thread with ready, already held, or the failure reason, in the same review, consult, or relay context. A consult stays open and its implementer stays paused until you answer normally. Acquisition failure does not ask the operator, and a missing topology does not block approval. Agents never acquire or release topologies.';
     }
 
     private static function origin(): string

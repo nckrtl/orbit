@@ -11,6 +11,7 @@ enum TaskCommentType: string
     case Approved = 'approved';
     case Blocked = 'blocked';
     case Answered = 'answered';
+    case TopologyRequested = 'topology_requested';
     case AssistanceRequested = 'assistance_requested';
     case Resolution = 'resolution';
 }

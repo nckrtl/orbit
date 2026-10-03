@@ -29,14 +29,11 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
-use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use Throwable;
 
 final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 {
@@ -51,35 +48,11 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
-        private ?TaskWorkspaceTopology $topology = null,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): ?Instance
     {
-        $workspace = $this->provisionWorkspace($intent);
-
-        if ($workspace instanceof Instance) {
-            $this->acquireTopology($workspace, $intent->group);
-        }
-
-        return $workspace;
-    }
-
-    /**
-     * Agents use the group's topology but cannot acquire one, because that changes host firewall rules. Acquiring is
-     * best effort: most groups never need a topology, so a failure is logged and does not stop the group.
-     */
-    private function acquireTopology(Instance $workspace, Task $group): void
-    {
-        try {
-            ($this->topology ?? app(TaskWorkspaceTopology::class))->acquire($workspace, $group->id);
-        } catch (Throwable $exception) {
-            Log::warning('The task topology could not be acquired; the group continues without it.', [
-                'task_group_id' => $group->id,
-                'instance_id' => $workspace->id,
-                'error' => $exception->getMessage(),
-            ]);
-        }
+        return $this->provisionWorkspace($intent);
     }
 
     private function provisionWorkspace(InstanceProvisionIntent $intent): ?Instance

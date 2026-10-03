@@ -16,6 +16,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon $posted_at
  * @property array<string, string>|null $deliverables the confirmations of a turn receipt, by deliverable ID
  * @property QuestionCause|null $cause
+ * @property array{source_turn_id: string|null}|null $topology_resume
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class TaskComment extends Model
@@ -23,7 +24,7 @@ final class TaskComment extends Model
     #[\Override]
     protected $fillable = [
         'task_group_id', 'task_id', 'agent_thread_id', 'completion_attempt', 'type', 'body', 'author',
-        'review_attempt', 'commit_sha', 'posted_at', 'receipt_hash', 'pull_request', 'deliverables', 'cause',
+        'review_attempt', 'commit_sha', 'posted_at', 'receipt_hash', 'pull_request', 'deliverables', 'cause', 'topology_resume',
     ];
 
     /**
@@ -50,6 +51,6 @@ final class TaskComment extends Model
 
     protected function casts(): array
     {
-        return ['completion_attempt' => 'integer', 'review_attempt' => 'integer', 'type' => TaskCommentType::class, 'posted_at' => 'immutable_datetime', 'pull_request' => 'array', 'deliverables' => 'array', 'cause' => QuestionCause::class];
+        return ['completion_attempt' => 'integer', 'review_attempt' => 'integer', 'type' => TaskCommentType::class, 'posted_at' => 'immutable_datetime', 'pull_request' => 'array', 'deliverables' => 'array', 'cause' => QuestionCause::class, 'topology_resume' => 'array'];
     }
 }

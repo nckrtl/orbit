@@ -15,7 +15,9 @@ Check correctness, regressions, test coverage, architectural decisions, and docu
 
 For command behavior, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) for real terminal checks. For a web UI change, open the phone and desktop screenshots from [verifying-web-ui](../verifying-web-ui/SKILL.md) and judge the layout on a phone. Do not stop at the diff.
 
-Reproduce the feature's user-visible behavior and important failure cases on the group's Incus topology. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. If access is unavailable, return the code findings and leave Incus review pending.
+When discovery needs an Incus topology, request it through the reviewer's turn command: `"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why discovery needs a topology"`. Workspaces start without one. Do not pass `--question`, `--cause`, or pull request flags. Orbit resumes the same reviewer with ready, already held, or the failure reason, in the same review, consult, or relay context. An implementer asks you through a blocked consult. A topology request leaves that consult open and the implementer paused until you answer normally. Agents never acquire or release topologies; Orbit owns acquisition and workspace-removal release.
+
+Use an available topology to reproduce the feature's user-visible behavior and important failure cases. Verify the running source commit. The [Incus topology reference](../../../docs/reference/incus-topologies.md) describes harness commands. Acquisition failure does not ask for operator assistance, and a missing topology does not block task approval. Return the code findings and record any discovery limitation. A required check on the running Gateway is an operator step after deploy, not a reason to acquire a topology manually.
 
 ## Report
 
