@@ -85,23 +85,6 @@ final class IncusHost implements GuestTransport
         return $instances;
     }
 
-    /** @return array<string, array<string, string>> */
-    public function harnessVmMetadata(): array
-    {
-        $instances = [];
-        foreach ($this->readJson(['list', "{$this->remote}:", '--format=json']) as $resource) {
-            if (! is_array($resource) || ($resource['type'] ?? null) !== 'virtual-machine' || ! is_string($resource['name'] ?? null)) {
-                continue;
-            }
-            $metadata = $this->metadata($resource);
-            if (($metadata['user.orbit.e2e.owner'] ?? null) === 'orbit-e2e') {
-                $instances[$resource['name']] = $metadata;
-            }
-        }
-
-        return $instances;
-    }
-
     /** @phpstan-impure */
     public function instance(string $name): ?IncusInstance
     {
@@ -346,13 +329,11 @@ final class IncusHost implements GuestTransport
                 }
             }
             [$remote, $selector] = $this->imageSelector($vm['image']);
-            $container = $vm['role'] === 'operator';
             $arguments = [
                 'init',
-                $container ? 'images:ubuntu/26.04' : $remote.$selector,
+                $remote.$selector,
                 $this->target($vm['name']),
-                ...($container ? [] : ['--vm']),
-                ...($container ? ['--config', 'security.nesting=true', '--config', 'security.syscalls.intercept.mknod=true', '--config', 'security.syscalls.intercept.setxattr=true'] : []),
+                '--vm',
                 '--storage',
                 $this->pool,
                 '--config',
@@ -1631,7 +1612,7 @@ final class IncusHost implements GuestTransport
     private function instanceFromResource(array $resource, ?string $requestedName = null): IncusInstance
     {
         $name = $resource['name'] ?? null;
-        if (! is_string($name) || ! in_array($resource['type'] ?? null, ['virtual-machine', 'container'], true)) {
+        if (! is_string($name) || ($resource['type'] ?? null) !== 'virtual-machine') {
             if ($requestedName !== null) {
                 throw new RuntimeException("Incus instance {$requestedName} is not a virtual machine.");
             }
@@ -1994,10 +1975,6 @@ final class IncusHost implements GuestTransport
             $configuration[] = "{$mount['device']},source={$mount['source']}";
             $configuration[] = '--device';
             $configuration[] = "{$mount['device']},path={$mount['path']}";
-            if ($role === 'operator') {
-                $configuration[] = '--device';
-                $configuration[] = "{$mount['device']},shift=true";
-            }
             $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
         }
 

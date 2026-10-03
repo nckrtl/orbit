@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-if ($argc !== 6) {
+if ($argc !== 5) {
     exit(64);
 }
 
 $database = $argv[1];
-$addresses = array_combine(['gateway', 'app-dev', 'app-prod', 'operator'], array_slice($argv, 2));
+$addresses = array_combine(['gateway', 'app-dev', 'app-prod'], array_slice($argv, 2));
 $pdo = null;
 
 try {
-    if (! is_file($database) || is_link($database) || count(array_unique($addresses)) !== 4) {
+    if (! is_file($database) || is_link($database) || count(array_unique($addresses)) !== 3) {
         throw new RuntimeException('Invalid clone inputs.');
     }
     foreach ($addresses as $address) {
@@ -22,7 +22,7 @@ try {
 
     $pdo = new PDO('sqlite:'.$database, options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     $pdo->beginTransaction();
-    $query = $pdo->prepare('SELECT id, name, status, public_ssh_host, wireguard_endpoint_override FROM nodes WHERE name IN (?, ?, ?, ?)');
+    $query = $pdo->prepare('SELECT id, name, status, public_ssh_host, wireguard_endpoint_override FROM nodes WHERE name IN (?, ?, ?)');
     $query->execute(array_keys($addresses));
     $nodes = [];
     foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $node) {
@@ -32,7 +32,7 @@ try {
         }
         $nodes[$node['name']] = $node;
     }
-    if (count($nodes) !== 4) {
+    if (count($nodes) !== 3) {
         throw new RuntimeException('Incomplete clone inventory.');
     }
     $role = $pdo->prepare('SELECT COUNT(*) FROM node_roles WHERE node_id = ? AND role = ? AND status = ?');
@@ -73,7 +73,7 @@ try {
     $endpoint = $retarget($settings['vpn.endpoint']['value'] ?? null);
     $overrides = [];
     $endpoints = [];
-    foreach (['app-dev', 'app-prod', 'operator'] as $name) {
+    foreach (['app-dev', 'app-prod'] as $name) {
         $overrides[$name] = $retarget($nodes[$name]['wireguard_endpoint_override']);
         $endpoints[$name] = $overrides[$name] ?? $endpoint ?? $addresses['gateway'].':'.$port;
     }

@@ -78,15 +78,10 @@ final readonly class TopologyConverger
                 'arguments' => ['gateway-authorize', $gatewayPublicKey],
             ];
         }
-        $authorize['operator'] = [
-            'instance' => $instances['operator'],
-            'script' => 'prepare-node.sh',
-            'arguments' => ['gateway-authorize', $gatewayPublicKey],
-        ];
         $this->runAll($authorize);
         $steps['authorize.gateway-ssh'] = true;
         $retarget = [];
-        foreach ([$target->recipe->node($appDevNode), ...$appProdNodes, $target->recipe->node('operator')] as $node) {
+        foreach ([$target->recipe->node($appDevNode), ...$appProdNodes] as $node) {
             $retarget[$node->key] = [
                 'instance' => $instances[$node->key],
                 'script' => 'retarget-vpn.sh',
@@ -95,7 +90,7 @@ final readonly class TopologyConverger
         }
         $this->runAll($retarget);
         $steps['retarget.vpn'] = true;
-        $architectureNodes = [$appDevNode, ...array_map(static fn ($node): string => $node->key, $appProdNodes), 'operator'];
+        $architectureNodes = [$appDevNode, ...array_map(static fn ($node): string => $node->key, $appProdNodes)];
         $architectures = $this->architectures(array_intersect_key($instances, array_flip($architectureNodes)));
         $appDevArchitecture = $architectures[$appDevNode] ?? null;
         if (! is_string($appDevArchitecture)) {
@@ -127,14 +122,6 @@ final readonly class TopologyConverger
                 ],
             ]);
         }
-        $this->run($instances[$gatewayNode], 'converge-operator.sh', [
-            $addresses['operator'],
-            $architectures['operator'] ?? throw new RuntimeException('Operator architecture is absent.'),
-            $target->recipe->node('operator')->wireGuardAddress(),
-        ]);
-        $this->run($instances[$gatewayNode], 'converge-sample-app.sh', ['grant-operator', 'operator', $gatewayNode]);
-        $this->run($instances['operator'], 'converge-sample-app.sh', ['configure-cli', '10.44.0.1']);
-        $steps['prepare.operator'] = true;
         $steps['provision.app-dev'] = true;
         $steps['provision.app-prod'] = true;
         $this->run(

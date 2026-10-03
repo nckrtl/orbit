@@ -194,7 +194,7 @@ final readonly class DiscoveryGuestPreparer
         } catch (JsonException) {
             throw new RuntimeException('Gateway clone identity preparation returned invalid endpoints.');
         }
-        if (! is_array($endpoints) || array_keys($endpoints) !== ['app-dev', 'app-prod', 'operator']) {
+        if (! is_array($endpoints) || array_keys($endpoints) !== ['app-dev', 'app-prod']) {
             throw new RuntimeException('Gateway clone identity preparation returned incomplete endpoints.');
         }
         foreach ($endpoints as $endpoint) {

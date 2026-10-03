@@ -87,10 +87,6 @@ final readonly class ColdTopologyConstructor
             $slot = $this->phase('create-resources', fn (): int => $this->createResources($plan), $observePhase);
             $instances = array_map($plan->target->instance(...), $plan->target->recipe->nodeKeys());
             $this->phase('start-instances', fn () => $this->host->startAll($instances), $observePhase);
-            $bootstrap = file_get_contents(__DIR__.'/../../resources/guest/bootstrap-operator.sh');
-            if (! is_string($bootstrap) || ! $this->host->exec($plan->target->instance('operator'), new \App\E2E\Value\GuestCommand(['bash', '-s'], 900, $bootstrap))->successful()) {
-                throw new RuntimeException('Operator container bootstrap failed.');
-            }
             $this->phase('prepare-host-state', fn () => $this->host->prepareClonedHostStates($instances), $observePhase);
 
             $source = $this->phase('synchronize-source', function () use ($plan): SourceState {
@@ -214,7 +210,7 @@ final readonly class ColdTopologyConstructor
 
         try {
             $slot = $plan->isDisposable()
-                ? $this->capacity->reserveSlot($plan->target->recipe->vmCount())
+                ? $this->capacity->reserveSlot(count($plan->target->recipe->nodes))
                 : $plan->fixedSlot ?? throw new RuntimeException('Persistent cold topology slot is absent.');
             $lastAddress = max(array_map(
                 static fn (TopologyNode $node): int => $node->address,

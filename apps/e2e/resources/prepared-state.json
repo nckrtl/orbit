@@ -86,8 +86,6 @@
         "apps/e2e/app/E2E/WorktreeSynchronizer.php",
         "apps/e2e/resources/guest/converge-app-dev.sh",
         "apps/e2e/resources/guest/converge-app-prod.sh",
-        "apps/e2e/resources/guest/bootstrap-operator.sh",
-        "apps/e2e/resources/guest/converge-operator.sh",
         "apps/e2e/resources/guest/converge-gateway.sh",
         "apps/e2e/resources/guest/converge-sample-app.sh",
         "apps/e2e/resources/guest/converge-sample-fixtures.sh",
@@ -576,7 +574,7 @@
         "base_image": 1,
         "gateway_provisioning": 1,
         "laravel_release": 1,
-        "node_convergence": 2,
+        "node_convergence": 1,
         "php_toolchain": 1
     },
     "topology": {
@@ -584,13 +582,11 @@
         "roles": [
             "gateway",
             "app-dev",
-            "app-prod",
-            "operator"
+            "app-prod"
         ],
         "checkout_roles": [
             "gateway",
-            "app-dev",
-            "operator"
+            "app-dev"
         ],
         "assignments": {
             "gateway": [
@@ -607,8 +603,7 @@
             "app-prod": [
                 "app-prod",
                 "ingress"
-            ],
-            "operator": []
+            ]
         }
     }
 }

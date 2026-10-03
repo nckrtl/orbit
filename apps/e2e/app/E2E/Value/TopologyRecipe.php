@@ -48,7 +48,6 @@ final readonly class TopologyRecipe
                 false,
                 TopologyProfile::ASSIGNMENTS['app-prod'],
             ),
-            new TopologyNode('operator', $image, TopologyNodePurpose::Operator, 14, true, []),
         ]);
     }
 
@@ -73,10 +72,9 @@ final readonly class TopologyRecipe
     {
         return new self('cold-acceptance', [
             new TopologyNode('gateway', $image, TopologyNodePurpose::Gateway, 10, true, ['gateway', 'vpn']),
-            new TopologyNode('app-dev', $image, TopologyNodePurpose::Workload, 11, true, ['app-dev', 'metrics']),
+            new TopologyNode('operator', $image, TopologyNodePurpose::Operator, 11, true, ['app-dev', 'metrics']),
             new TopologyNode('app-prod', $image, TopologyNodePurpose::Workload, 12, false, ['app-prod']),
             new TopologyNode('extra', $image, TopologyNodePurpose::Extension, 13, false, []),
-            new TopologyNode('operator', $image, TopologyNodePurpose::Operator, 14, true, []),
         ]);
     }
 
@@ -148,12 +146,6 @@ final readonly class TopologyRecipe
     public function nodeKeys(): array
     {
         return array_keys($this->nodesByKey);
-    }
-
-    /** @return list<string> */
-    public function vmCount(): int
-    {
-        return count(array_filter($this->nodes, static fn (TopologyNode $node): bool => $node->purpose !== TopologyNodePurpose::Operator));
     }
 
     /** @return list<string> */
