@@ -8,9 +8,9 @@ final readonly class TopologyProfile
 {
     public const string NAME = 'gateway_app-dev_app-prod';
 
-    public const array ROLES = ['gateway', 'app-dev', 'app-prod'];
+    public const array ROLES = ['gateway', 'app-dev', 'app-prod', 'operator'];
 
-    public const array CHECKOUT_ROLES = ['gateway', 'app-dev'];
+    public const array CHECKOUT_ROLES = ['gateway', 'app-dev', 'operator'];
 
     /** Kept readable so a saved generation can be inspected and explicitly refreshed. */
     public const array PREVIOUS_ASSIGNMENTS = [
@@ -23,5 +23,6 @@ final readonly class TopologyProfile
         'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
         'app-dev' => ['app-dev', 'metrics', 'database'],
         'app-prod' => ['app-prod', 'ingress'],
+        'operator' => [],
     ];
 }
