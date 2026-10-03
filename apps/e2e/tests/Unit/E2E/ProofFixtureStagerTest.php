@@ -178,7 +178,7 @@ describe('ProofFixtureStager', function (): void {
                 'guest_directory' => '/var/lib/orbit-e2e/proof',
                 'files' => $files,
                 'digest' => $digest,
-                'roles' => ['gateway' => $digest, 'app-dev' => $digest, 'app-prod' => $digest],
+                'roles' => ['gateway' => $digest, 'app-dev' => $digest, 'app-prod' => $digest, 'operator' => $digest],
             ])
             ->and(array_keys($guest->installed))
             ->toBe(array_map($target->instance(...), TopologyProfile::ROLES))
@@ -186,7 +186,7 @@ describe('ProofFixtureStager', function (): void {
             ->each
             ->toStartWith('/var/lib/orbit-e2e/proof-staging/'.str_repeat('a', 32).'/')
             ->and(count($guest->pushes))
-            ->toBe(6)
+            ->toBe(8)
             ->and(array_map(static fn (array $labels): string => explode('.', $labels[0])[0], $guest->batches))
             ->toBe([
                 'fixture-prepare',
@@ -228,7 +228,7 @@ describe('ProofFixtureStager', function (): void {
             ->stage($target, $repository, $commit);
 
         expect(array_keys($fixtures->roles))
-            ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'operator', 'app-prod-2'])
             ->and(array_keys($guest->installed))
             ->toBe(array_map($target->instance(...), $target->recipe->nodeKeys()))
             ->and($guest->reset)
@@ -246,7 +246,7 @@ describe('ProofFixtureStager', function (): void {
         new ProofFixtureStager($guest, new OperationId(str_repeat('c', 32)))->stage($target, $repository, $commit);
 
         expect($guest->reset)
-            ->toHaveCount(3)
+            ->toHaveCount(4)
             ->and($guest->installed['orbit-e2e-tst-100-bbbbbbbb-gateway'])
             ->toHaveKeys(['check.sh'])
             ->and($guest->installed['orbit-e2e-tst-100-bbbbbbbb-gateway'])

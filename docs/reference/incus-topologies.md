@@ -114,7 +114,9 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 
 Every `incus` call carries the configured project. The harness reserves the recipe's VMs, three or four, before it creates a network or a VM. It refuses `acquire` when the budget cannot hold them, and it names the count and the limit. At the default VM budget, seven standard topologies fit beside the snapshot. Each also needs one operator system container; that container is not a fourth VM.
 
-Memory limits apply when the harness creates or clones a VM. The registered three-Node profile has a 4.5 GiB configured budget. `ORBIT_E2E_INCUS_MEMORY=2GiB` overrides every Node's limit for a run. The cold recipe's workload development Node and `extra` Node keep the 2 GiB default. The roleless operator is a separate small system container, not part of these VM memory totals. These limits do not change the CPU allocation or reduce the application's CPU work. See the [ZFS efficiency measurements](/solutions/incus-zfs-efficiency) for the evidence and workload limits.
+Memory limits apply when the harness creates or clones a guest. The three workload VMs have a 4.5 GiB configured budget. The operator adds a separate 512 MiB container limit, for 5 GiB across all four guests.
+
+`ORBIT_E2E_INCUS_MEMORY=2GiB` overrides every Node's limit for a run. The cold recipe's workload development Node and `extra` Node keep the 2 GiB default. The roleless operator is a separate small system container, not part of these VM memory totals. These limits do not change the CPU allocation or reduce the application's CPU work. See the [ZFS efficiency measurements](/solutions/incus-zfs-efficiency) for the evidence and workload limits.
 
 ### Locks
 
@@ -269,7 +271,9 @@ The checkout must be clean. An optional SHA must be the full lowercase `HEAD`. B
 
 Each worker gets its own attempt, network, workload VMs, operator container, state path, and Pest process. One Pest test is one independent flow, and a flow stops at its first failed step. Admission holds the `topology-create` lock while it counts the recipe's VMs against the shared budget and picks a network slot. After that, `run` workers go on in parallel. A failure in one worker does not cancel another.
 
-The cold flow starts from the unchanged VM runtime base and a separately prepared local Ubuntu 26.04 operator container base, and installs no PCOV before construction. It checks both image types and fingerprints before resource creation, records both fingerprints in cold evidence, and refuses changed, missing, or wrong-type images without an upstream fetch or remote fallback. See [operator base preparation](/reference/topology-snapshot#prepare-the-operator-base-on-beast). Fresh development Nodes get the sample TLD `beast`. Each fresh production Node gets its own name as its TLD through the provision command. The unique production TLD lets the sample Instance clone create its preview route. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs or operator container, or its manifest.
+The cold flow starts from the unchanged VM runtime base and a separately prepared local Ubuntu 26.04 operator container base, and installs no PCOV before construction. It checks both image types and fingerprints before resource creation, records both fingerprints in cold evidence, and refuses changed, missing, or wrong-type images without an upstream fetch or remote fallback. See [operator base preparation](/reference/topology-snapshot#prepare-the-operator-base-on-beast).
+
+Fresh development Nodes get the sample TLD `beast`. Each fresh production Node gets its own name as its TLD through the provision command. The unique production TLD lets the sample Instance clone create its preview route. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs or operator container, or its manifest.
 
 A snapshot flow mounts no worktree. It clones the three workload VMs and the operator container, and builds `app-prod-2` for the extension. Before dependency installation, it repairs the cloned Gateway addresses and WireGuard endpoints, so DNS can use the new Gateway. It synchronizes the exact candidate commit from Git into the checkout Nodes and checks the guest commit. It converges the whole topology, checks the commit again, and runs the readiness probes. Then it runs the exercise and a final verification.
 
@@ -280,10 +284,10 @@ The cold acceptance recipe has four workload VMs and one operator system contain
 | Node key | Address | Checkout | Roles |
 | --- | --- | --- | --- |
 | `gateway` | `.10` | yes | `gateway`, `vpn` |
-| Workload development Node | `.11` | yes | `app-dev`, `metrics` |
+| `app-dev` workload Node | `.11` | yes | `app-dev`, `metrics` |
 | `app-prod` | `.12` | no | `app-prod` |
 | `extra` | `.13` | no | none |
-| `operator` system container | Own non-conflicting address | yes | none; Gateway access grant and WireGuard peer |
+| `operator` system container | `.14` | yes | none; Gateway access grant and WireGuard peer |
 
 The roleless operator is distinct from the cold recipe's development workload Node. It has the same topology-pinned configuration and web-session contract as the operator in a snapshot topology.
 

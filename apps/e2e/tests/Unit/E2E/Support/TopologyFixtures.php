@@ -357,7 +357,7 @@ function pinnedWorktreeGuestCommandResult(array $guest): ProcessResult
     if (is_int($script) && ($guest[$script + 1] ?? null) === '/home/orbit/.orbit/gateway.sqlite') {
         $endpoint = $guest[$script + 2].':51820';
 
-        return Process::result(json_encode(['app-dev' => $endpoint, 'app-prod' => $endpoint], JSON_THROW_ON_ERROR));
+        return Process::result(json_encode(['app-dev' => $endpoint, 'app-prod' => $endpoint, 'operator' => $endpoint], JSON_THROW_ON_ERROR));
     }
     if (array_slice($guest, 0, 6) === ['runuser', '-u', 'orbit', '--', 'env', 'HOME=/home/orbit']) {
         $guest = array_slice($guest, 6);

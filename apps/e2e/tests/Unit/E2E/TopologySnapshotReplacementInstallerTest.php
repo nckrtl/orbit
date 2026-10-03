@@ -520,7 +520,7 @@ final class ReplacementInstallerIncusFake
 
         return [
             'name' => $name,
-            'type' => 'virtual-machine',
+            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
             'status' => $instance['running'] ? 'Running' : 'Stopped',
             'status_code' => $instance['running'] ? 103 : 102,
             'config' => $instance['metadata'],

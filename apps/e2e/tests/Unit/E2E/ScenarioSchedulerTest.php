@@ -217,7 +217,7 @@ it('bounds mixed-lane workers and preserves selection order across out-of-order 
     expect(array_unique(array_column($identities, 'attempt')))->toHaveCount(3);
     expect(array_unique(array_column($identities, 'operation')))->toHaveCount(3);
     expect(array_unique(array_column($identities, 'network')))->toHaveCount(3);
-    expect(array_column($identities, 'vms'))->toBe([4, 3, 3]);
+    expect(array_column($identities, 'vms'))->toBe([5, 4, 4]);
 });
 
 it('continues after product failure and cleanup refusal before writing every outcome', function (): void {
@@ -381,6 +381,6 @@ it('records a refused parent recovery and continues another worker', function ()
     expect(array_column($aggregate->toArray()['results'], 'status'))
         ->toBe(['infrastructure-error', 'passed']);
     expect($aggregate->results[0]->cleanup['refused'])->toBe(['exact cleanup ownership changed']);
-    expect($aggregate->results[0]->cleanup['remaining'])->toHaveCount(4);
+    expect($aggregate->results[0]->cleanup['remaining'])->toHaveCount(5);
     expect($aggregate->results[0]->diagnostics)->toContain('exact cleanup ownership changed');
 });

@@ -16,7 +16,7 @@ describe('TopologyEndState', function (): void {
             ->and($endState->declaresAbsence())
             ->toBeFalse()
             ->and($endState->peers())
-            ->toBe(['app-dev', 'app-prod']);
+            ->toBe(['app-dev', 'app-prod', 'operator']);
     });
 
     it('reads a declared set and names what it leaves out', function (): void {
@@ -27,7 +27,7 @@ describe('TopologyEndState', function (): void {
             ->and($endState->absent())
             ->toBe(['app-prod'])
             ->and($endState->peers())
-            ->toBe(['app-dev'])
+            ->toBe(['app-dev', 'operator'])
             ->and($endState->declaresAbsence())
             ->toBeTrue()
             ->and($endState->keeps('app-dev'))
@@ -39,9 +39,9 @@ describe('TopologyEndState', function (): void {
     });
 
     it('records the declared set in profile order however the plan wrote it', function (): void {
-        expect(TopologyEndState::fromArray(['nodes' => ['app-prod', 'app-dev', 'gateway']])->nodes)
+        expect(TopologyEndState::fromArray(['nodes' => ['app-prod', 'operator', 'app-dev', 'gateway']])->nodes)
             ->toBe(TopologyProfile::ROLES)
-            ->and(TopologyEndState::fromArray(['nodes' => ['app-dev', 'gateway']])->nodes)
+            ->and(TopologyEndState::fromArray(['nodes' => ['app-dev', 'operator', 'gateway']])->nodes)
             ->toBe(['gateway', 'app-dev', 'operator']);
     });
 
@@ -49,7 +49,7 @@ describe('TopologyEndState', function (): void {
         $endState = TopologyEndState::fromArray(['nodes' => ['gateway']]);
 
         expect($endState->absent())
-            ->toBe(['app-dev', 'app-prod'])
+            ->toBe(['app-dev', 'app-prod', 'operator'])
             ->and($endState->peers())
             ->toBe([]);
     });
@@ -86,7 +86,7 @@ describe('TopologyEndState', function (): void {
         expect(fn (): TopologyEndState => TopologyEndState::fromArray(['nodes' => ['gateway', $node]]))
             ->toThrow(
                 InvalidArgumentException::class,
-                'The proof plan key ends_with.nodes must name nodes from gateway, app-dev, app-prod.',
+                'The proof plan key ends_with.nodes must name nodes from gateway, app-dev, app-prod, operator.',
             );
     })->with([
         'an unknown role' => ['app-staging'],

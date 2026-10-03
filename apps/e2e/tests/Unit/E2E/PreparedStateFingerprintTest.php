@@ -63,6 +63,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['gateway', 'vpn'],
                     'app-dev' => ['app-dev', 'metrics'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]);
@@ -79,6 +80,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['gateway', 'vpn'],
                     'app-dev' => ['app-dev', 'metrics'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
             'declared_epochs' => ['base_image' => 2, 'php' => 1],
@@ -116,6 +118,7 @@ describe('PreparedStateFingerprint', function (): void {
                 'gateway' => ['gateway', 'vpn'],
                 'app-dev' => ['app-dev', 'metrics'],
                 'app-prod' => ['app-prod'],
+                'operator' => [],
             ]);
     });
 
@@ -178,7 +181,7 @@ describe('PreparedStateFingerprint', function (): void {
         'extra root key' => [['unexpected' => true]],
         'invalid cold epoch' => [['cold_epoch' => 'ubuntu-26.04-amd64-v0']],
         'invalid base image alias' => [['base_image_alias' => 'ubuntu:26.04']],
-        'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
+        'invalid operator base image alias' => [['operator_base_image_alias' => 'images:ubuntu/26.04']],
         'invalid declared epoch' => [['declared_epochs' => ['php' => '1']]],
         'extra Laravel pin key' => [['laravel_pin' => ['tag' => 'v13.0.0', 'commit' => str_repeat('a', 40)]]],
         'invalid profile' => [['topology' => ['profile' => 'other']]],
@@ -192,6 +195,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['gateway', 'vpn'],
                     'app-dev' => ['app-dev', 'vpn'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]],
@@ -201,6 +205,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['gateway', 'vpn', 'metrics'],
                     'app-dev' => ['app-dev'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]],
@@ -210,6 +215,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['vpn', 'gateway'],
                     'app-dev' => ['app-dev', 'metrics'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]],
@@ -536,6 +542,7 @@ function preparedManifest(): array
                 'gateway' => ['gateway', 'vpn'],
                 'app-dev' => ['app-dev', 'metrics'],
                 'app-prod' => ['app-prod'],
+                'operator' => [],
             ],
         ],
     ];

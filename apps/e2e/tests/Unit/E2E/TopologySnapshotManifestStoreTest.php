@@ -32,7 +32,6 @@ describe('TopologySnapshotManifestStore', function () {
                 'gateway' => 'main-g1-gateway',
                 'app-dev' => 'main-g1-app-dev',
                 'app-prod' => 'main-g1-app-prod', 'operator' => 'main-g1-operator',
-                'operator' => 'main-g1-operator', 'operator' => 'main-g1-operator',
             ],
             str_repeat('b', 64),
             str_repeat('c', 64),
@@ -49,6 +48,7 @@ describe('TopologySnapshotManifestStore', function () {
                 'gateway' => ['gateway', 'vpn'],
                 'app-dev' => ['app-dev', 'metrics'],
                 'app-prod' => ['app-prod'],
+                'operator' => [],
             ], operatorBaseImageFingerprint: str_repeat('b', 64),
         );
         $store->record($generation);
@@ -60,14 +60,14 @@ describe('TopologySnapshotManifestStore', function () {
             ->toEqual([$generation])
             ->and(new AtomicJsonStore($paths)->read('topology-snapshot/promoted.json'))
             ->toMatchArray([
-                'schema' => 5,
+                'schema' => 6,
                 'prepared_fingerprint' => str_repeat('b', 64),
                 'base_image_fingerprint' => str_repeat('c', 64),
                 'structural_fingerprint' => str_repeat('d', 64),
                 'prepared_schema' => 2,
                 'cold_epoch' => 'ubuntu-26.04-amd64-v1',
                 'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
-                'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
+                'operator_base_image' => ['alias' => TopologyRecipe::OPERATOR_IMAGE, 'fingerprint' => str_repeat('b', 64)],
                 'topology' => [
                     'profile' => 'gateway_app-dev_app-prod',
                     'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
@@ -76,6 +76,7 @@ describe('TopologySnapshotManifestStore', function () {
                         'gateway' => ['gateway', 'vpn'],
                         'app-dev' => ['app-dev', 'metrics'],
                         'app-prod' => ['app-prod'],
+                        'operator' => [],
                     ],
                 ],
                 'previous_generation_id' => null,
@@ -122,6 +123,7 @@ describe('TopologySnapshotManifestStore', function () {
         $generation = topologySnapshotPruneGeneration('legacy1');
         $legacy = $generation->toArray();
         $legacy['schema'] = 4;
+        unset($legacy['operator_base_image']);
         $legacy['prepared_schema'] = 1;
         unset($legacy['topology']['assignments']);
         $json->write('topology-snapshot/promoted.json', $legacy);

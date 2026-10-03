@@ -146,7 +146,7 @@ it('rejects unknown, repeated, and duplicate catalog IDs before execution', func
     $catalog = new ScenarioCatalog($repository);
 
     expect($catalog->definitions($candidate)[0]->expectedEndState->toArray())
-        ->toBe(['nodes' => ['gateway', 'operator', 'app-prod']]);
+        ->toBe(['nodes' => ['gateway', 'app-dev', 'app-prod', 'operator']]);
 
     expect(fn () => $catalog->select($candidate, ['unknown-scenario']))
         ->toThrow(InvalidArgumentException::class, 'is unknown');

@@ -352,7 +352,7 @@ final class IncusHost implements GuestTransport
                 $remote.$selector,
                 $this->target($vm['name']),
                 ...($container ? [] : ['--vm']),
-                ...($container ? ['--config', 'security.nesting=true'] : []),
+                ...($container ? ['--config', 'security.privileged=false', '--config', 'security.nesting=true'] : []),
                 '--storage',
                 $this->pool,
                 '--config',
@@ -618,6 +618,10 @@ final class IncusHost implements GuestTransport
             $resource = $resources[$instance] ?? null;
             if ($resource === null) {
                 throw new RuntimeException("Incus instance {$instance} does not exist.");
+            }
+            $expectedType = $node->key === 'operator' ? 'container' : 'virtual-machine';
+            if (($resource['type'] ?? null) !== $expectedType) {
+                throw new RuntimeException("Incus instance {$instance} type does not match topology.");
             }
             $vm = $this->instanceFromResource($resource);
             $this->assertOwned($vm->metadata, "instance {$instance}");

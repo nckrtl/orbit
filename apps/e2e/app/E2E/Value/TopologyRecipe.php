@@ -37,7 +37,7 @@ final readonly class TopologyRecipe
             new TopologyNode(
                 'app-dev',
                 $image,
-                TopologyNodePurpose::Operator,
+                TopologyNodePurpose::Workload,
                 11,
                 true,
                 TopologyProfile::ASSIGNMENTS['app-dev'],

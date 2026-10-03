@@ -25,6 +25,7 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
         ? [
             'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
             'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
+            'operator' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
         ]
         : [];
     $generation = new TopologySnapshotGeneration(
@@ -66,6 +67,7 @@ describe('feature topology mounts', function () {
             ->toBe([
                 'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
                 'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
+                'operator' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
             ])
             ->and($topology->toArray()['source']['mounted'])
             ->toBeTrue()
@@ -101,6 +103,7 @@ describe('feature topology mounts', function () {
             ->and(fn () => mountedTopologyFixture(false, [
                 'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
                 'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
+                'operator' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
             ]))
             ->toThrow(InvalidArgumentException::class, 'do not match the source state')
             ->and(fn () => mountedTopologyFixture(true, [
@@ -111,21 +114,25 @@ describe('feature topology mounts', function () {
             ->and(fn () => mountedTopologyFixture(true, [
                 'gateway' => ['device' => 'orbit-source', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
                 'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/other', 'path' => '/home/orbit/orbit'],
+                'operator' => ['device' => 'orbit-source', 'source' => '/srv/other', 'path' => '/home/orbit/orbit'],
             ]))
             ->toThrow(InvalidArgumentException::class, 'share one source')
             ->and(fn () => mountedTopologyFixture(true, [
                 'gateway' => ['device' => 'other', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
                 'app-dev' => ['device' => 'other', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
+                'operator' => ['device' => 'other', 'source' => '/srv/wt', 'path' => '/home/orbit/orbit'],
             ]))
             ->toThrow(InvalidArgumentException::class, 'mount is invalid')
             ->and(fn () => mountedTopologyFixture(true, [
                 'gateway' => ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],
                 'app-dev' => ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],
+                'operator' => ['device' => 'orbit-source', 'source' => 'relative', 'path' => '/home/orbit/orbit'],
             ]))
             ->toThrow(InvalidArgumentException::class, 'mount is invalid')
             ->and(fn () => mountedTopologyFixture(true, [
                 'gateway' => ['device' => 'orbit-source', 'source' => '/srv/a,b', 'path' => '/home/orbit/orbit'],
                 'app-dev' => ['device' => 'orbit-source', 'source' => '/srv/a,b', 'path' => '/home/orbit/orbit'],
+                'operator' => ['device' => 'orbit-source', 'source' => '/srv/a,b', 'path' => '/home/orbit/orbit'],
             ]))
             ->toThrow(InvalidArgumentException::class, 'mount is invalid');
     });
@@ -209,19 +216,26 @@ it('round-trips a cold replacement with exact generic-base inputs for every regi
         ->and($construction->sourceGeneration)
         ->toBe(TopologyConstructionInputs::GENERIC_BASE)
         ->and(array_column($construction->nodes, 'source'))
-        ->toBe(['image', 'image', 'image'])
+        ->toBe(['image', 'image', 'image', 'image'])
         ->and($construction->imageAlias)
         ->toBe($generation->baseImageAlias)
         ->and($construction->imageFingerprint)
         ->toBe($generation->baseImageFingerprint)
+        ->and($construction->operatorBaseImageFingerprint)
+        ->toBe($generation->operatorBaseImageFingerprint)
         ->and(FeatureTopology::fromArray($topology->toArray())->toArray())
         ->toBe($topology->toArray());
+
+    $changed = $topology->toArray();
+    $changed['construction']['operator_base_image']['fingerprint'] = str_repeat('f', 64);
+    expect(fn () => FeatureTopology::fromArray($changed))
+        ->toThrow(InvalidArgumentException::class, 'The topology construction inputs do not match the target.');
 });
 
 it('reads legacy snapshot construction inputs without replacement authority', function (): void {
     $value = mountedTopologyFixture(false)->construction->toArray();
     $value['schema'] = TopologyConstructionInputs::LEGACY_SCHEMA;
-    unset($value['snapshot_replacement']);
+    unset($value['snapshot_replacement'], $value['operator_base_image']);
 
     $construction = TopologyConstructionInputs::fromArray($value);
 
@@ -230,7 +244,7 @@ it('reads legacy snapshot construction inputs without replacement authority', fu
         ->and($construction->sourceGeneration)
         ->toBe('g1')
         ->and(array_column($construction->nodes, 'source'))
-        ->toBe(['snapshot', 'snapshot', 'snapshot'])
+        ->toBe(['snapshot', 'snapshot', 'snapshot', 'snapshot'])
         ->and($construction->toArray())
         ->toBe($value);
 });

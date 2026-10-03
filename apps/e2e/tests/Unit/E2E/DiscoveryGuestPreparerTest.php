@@ -56,7 +56,7 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
             return Process::result(json_encode(array_map(
                 static fn (string $role): array => [
                     'name' => preparerTarget()->instance($role),
-                    'type' => 'virtual-machine',
+                    'type' => $role === 'operator' ? 'container' : 'virtual-machine',
                     'status' => 'Running',
                     'status_code' => 103,
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
@@ -98,9 +98,9 @@ describe('mount.source', function () {
         expect($batches)
             ->toHaveCount(1)
             ->and($batches[0]['labels'])
-            ->toBe(['mountpoint.gateway', 'mountpoint.app-dev'])
+            ->toBe(['mountpoint.gateway', 'mountpoint.app-dev', 'mountpoint.operator'])
             ->and($batches[0]['instances'])
-            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')])
+            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev'), 'local:'.$target->instance('operator')])
             ->and($batches[0]['argv'])
             ->each
             ->toBe(['mountpoint', '-q', '--', '/home/orbit/orbit'])
@@ -216,9 +216,9 @@ describe('mount.source', function () {
         expect($batches)
             ->toHaveCount(1)
             ->and($batches[0]['labels'])
-            ->toBe(['orbit-cli.gateway', 'orbit-cli.app-dev'])
+            ->toBe(['orbit-cli.gateway', 'orbit-cli.app-dev', 'orbit-cli.operator'])
             ->and($batches[0]['instances'])
-            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')])
+            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev'), 'local:'.$target->instance('operator')])
             ->and($batches[0]['argv'])
             ->each
             ->toBe(['ln', '-sfn', '/home/orbit/orbit/apps/cli/orbit', '/usr/local/bin/orbit'])
@@ -310,23 +310,24 @@ describe('repair.identity', function () {
             ->toBe([
                 ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ['retarget-gateway'],
-                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
+                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod', 'retarget-vpn.operator'],
                 ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
             ])
             ->and($batches[1]['instances'])->toBe(['local:'.$target->instance('gateway')])
             ->and($batches[1]['argv'])->toBe([[
                 ...GuestCommand::ORBIT_USER_PREFIX,
-                'php', '/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', '/home/orbit/.orbit/gateway.sqlite', '10.44.0.11', '10.44.0.12', '10.44.0.13',
+                'php', '/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', '/home/orbit/.orbit/gateway.sqlite', '10.44.0.11', '10.44.0.12', '10.44.0.13', '10.44.0.14',
             ]])
             ->and($batches[1]['stdin'])->toBe([null])
             ->and($batches[2]['instances'])
-            ->toBe(['local:'.$target->instance('app-dev'), 'local:'.$target->instance('app-prod')])
+            ->toBe(['local:'.$target->instance('app-dev'), 'local:'.$target->instance('app-prod'), 'local:'.$target->instance('operator')])
             ->and($batches[2]['argv'])
             ->each->toBe(['bash', '-s', '--', '10.44.0.11', '10.44.0.11:51820'])
             ->and($batches[2]['stdin'])->each->toBe(file_get_contents(dirname(__DIR__, 3).'/resources/guest/retarget-vpn.sh'))
             ->and($batches[3]['instances'])->toBe([
                 'local:'.$target->instance('gateway'),
                 'local:'.$target->instance('app-dev'),
+                'local:'.$target->instance('operator'),
             ])->and($batches[3]['argv'])
             ->each->toBe(['systemctl', 'restart', 'php8.5-fpm'])->and($execs)->toBe([]);
     });
@@ -343,7 +344,7 @@ describe('repair.identity', function () {
             ->toBe([
                 ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ['retarget-gateway'],
-                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
+                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod', 'retarget-vpn.operator'],
                 ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
             ])
             ->and(collect($batches)->flatMap(fn (array $batch): array => $batch['instances'])->all())

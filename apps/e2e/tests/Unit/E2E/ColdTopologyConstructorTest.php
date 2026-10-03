@@ -259,9 +259,10 @@ describe('ColdTopologyConstructor cleanup', function () {
         expect($state->instances)->toBe([]);
         expect($state->networkExists)->toBeFalse();
         expect($state->deleted)->toBe([
+            $target->instance('operator'),
             $target->instance('extra'),
             $target->instance('app-prod'),
-            $target->instance('operator'),
+            $target->instance('app-dev'),
             $target->instance('gateway'),
             $target->network(),
         ]);
@@ -272,9 +273,10 @@ describe('ColdTopologyConstructor cleanup', function () {
         expect($phases['synchronize-source']['error'])->toBe('The Git command failed.');
         expect($observedCleanup?->toArray())->toBe([
             'removed' => [
+                $target->instance('operator'),
                 $target->instance('extra'),
                 $target->instance('app-prod'),
-                $target->instance('operator'),
+                $target->instance('app-dev'),
                 $target->instance('gateway'),
                 $target->network(),
             ],
@@ -340,21 +342,19 @@ describe('ColdTopologyConstructor cleanup', function () {
         expect($result->successful())->toBeTrue();
         expect($result->refused)->toBe([]);
         expect($result->removed)->toBe([
+            $target->instance('operator'),
             $target->instance('extra'),
             $target->instance('app-prod'),
-            $target->instance('operator'),
+            $target->instance('app-dev'),
             $target->instance('gateway'),
             $target->network(),
         ]);
         expect($state->mutations)->toBe([
-            "stop:{$target->instance('extra')}",
-            "delete:{$target->instance('extra')}",
-            "stop:{$target->instance('app-prod')}",
-            "delete:{$target->instance('app-prod')}",
-            "stop:{$target->instance('operator')}",
-            "delete:{$target->instance('operator')}",
-            "stop:{$target->instance('gateway')}",
-            "delete:{$target->instance('gateway')}",
+            "stop:{$target->instance('operator')}", "delete:{$target->instance('operator')}",
+            "stop:{$target->instance('extra')}", "delete:{$target->instance('extra')}",
+            "stop:{$target->instance('app-prod')}", "delete:{$target->instance('app-prod')}",
+            "stop:{$target->instance('app-dev')}", "delete:{$target->instance('app-dev')}",
+            "stop:{$target->instance('gateway')}", "delete:{$target->instance('gateway')}",
             "delete:{$target->network()}",
         ]);
     });
@@ -395,4 +395,39 @@ describe('ColdTopologyConstructor cleanup', function () {
         expect($result->refused[0])->toContain('belongs to another operation');
         expect($result->remaining)->toBe([...$instances, $target->network()]);
     });
+
+    it('refuses missing, wrong-type, or changed required local bases before creating resources', function (string $alias, string $failure, int $changeAt): void {
+        $operation = new OperationId(str_repeat('d', 32));
+        $target = TopologyTarget::disposableCold('AUX-106', attemptId(), TopologyRecipe::coldAcceptance());
+        $state = new ColdConstructorProcessState($target, $operation->value);
+        $reads = 0;
+        Process::fake(function (PendingProcess $process) use ($state, $alias, $failure, $changeAt, &$reads): ProcessResult {
+            $command = $process->command;
+            if (($command[3] ?? null) === 'image' && ($command[6] ?? null) === $alias && ++$reads >= $changeAt) {
+                $type = $alias === TopologyRecipe::OPERATOR_IMAGE ? 'container' : 'virtual-machine';
+                $images = $failure === 'missing' ? [] : [[
+                    'type' => $failure === 'wrong-type' ? ($type === 'container' ? 'virtual-machine' : 'container') : $type,
+                    'fingerprint' => str_repeat('c', 64),
+                    'aliases' => [['name' => $alias]],
+                ]];
+
+                return Process::result(json_encode($images, JSON_THROW_ON_ERROR));
+            }
+
+            return $state->result($process);
+        });
+        expect(fn () => cold_constructing_service(new IncusHost(pool: 'orbit-e2e'), new StatePaths(temporaryPath('operator-image-', 4)))
+            ->construct(cold_constructing_plan($target, $operation)))->toThrow(RuntimeException::class);
+        expect($state->mutations)->toBe([])->and($state->instances)->toBe([])->and($state->networkExists)->toBeFalse();
+        Process::assertNotRan(fn (PendingProcess $process): bool => in_array('images:', $process->command, true));
+    })->with([
+        'missing VM' => [TopologyRecipe::BASE_IMAGE, 'missing', 1],
+        'wrong-type VM' => [TopologyRecipe::BASE_IMAGE, 'wrong-type', 1],
+        'changed VM' => [TopologyRecipe::BASE_IMAGE, 'changed', 1],
+        'changed VM under creation lock' => [TopologyRecipe::BASE_IMAGE, 'changed', 2],
+        'missing operator' => [TopologyRecipe::OPERATOR_IMAGE, 'missing', 1],
+        'wrong-type operator' => [TopologyRecipe::OPERATOR_IMAGE, 'wrong-type', 1],
+        'changed operator' => [TopologyRecipe::OPERATOR_IMAGE, 'changed', 1],
+        'changed operator under creation lock' => [TopologyRecipe::OPERATOR_IMAGE, 'changed', 2],
+    ]);
 });

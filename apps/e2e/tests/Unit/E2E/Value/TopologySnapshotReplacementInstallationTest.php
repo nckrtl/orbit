@@ -18,7 +18,6 @@ function replacementInstallationValueFixture(): TopologySnapshotReplacementInsta
             'gateway' => 'main-old-gateway',
             'app-dev' => 'main-old-app-dev',
             'app-prod' => 'main-old-app-prod', 'operator' => 'main-old-operator',
-            'operator' => 'main-old-operator', 'operator' => 'main-old-operator',
         ],
         str_repeat('2', 64),
         str_repeat('3', 64),
@@ -38,7 +37,6 @@ function replacementInstallationValueFixture(): TopologySnapshotReplacementInsta
             'gateway' => 'main-new-gateway',
             'app-dev' => 'main-new-app-dev',
             'app-prod' => 'main-new-app-prod', 'operator' => 'main-new-operator',
-            'operator' => 'main-new-operator', 'operator' => 'main-new-operator',
         ],
         str_repeat('7', 64),
         str_repeat('8', 64),
@@ -73,25 +71,21 @@ function replacementInstallationValueFixture(): TopologySnapshotReplacementInsta
             'gateway' => 'replacement-gateway',
             'app-dev' => 'replacement-app-dev',
             'app-prod' => 'replacement-app-prod', 'operator' => 'replacement-operator',
-            'operator' => 'replacement-operator', 'operator' => 'replacement-operator',
         ],
         [
             'gateway' => 'snapshot-gateway',
             'app-dev' => 'snapshot-app-dev',
             'app-prod' => 'snapshot-app-prod', 'operator' => 'snapshot-operator',
-            'operator' => 'snapshot-operator', 'operator' => 'snapshot-operator',
         ],
         [
             'gateway' => 'snapshot-gateway-next',
             'app-dev' => 'snapshot-app-dev-next',
             'app-prod' => 'snapshot-app-prod-next', 'operator' => 'snapshot-operator-next',
-            'operator' => 'snapshot-operator-next', 'operator' => 'snapshot-operator-next',
         ],
         [
             'gateway' => 'snapshot-gateway-old',
             'app-dev' => 'snapshot-app-dev-old',
             'app-prod' => 'snapshot-app-prod-old', 'operator' => 'snapshot-operator-old',
-            'operator' => 'snapshot-operator-old', 'operator' => 'snapshot-operator-old',
         ],
     );
 }

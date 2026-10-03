@@ -1179,7 +1179,7 @@ function commandInstanceFixture(FeatureTopology $topology, string $role): array
 {
     return [
         'name' => $topology->target->instance($role),
-        'type' => 'virtual-machine',
+        'type' => $role === 'operator' ? 'container' : 'virtual-machine',
         'status' => 'Running',
         'status_code' => 103,
         'config' => [

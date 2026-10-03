@@ -91,7 +91,6 @@ function legacyAcquisitionGeneration(): TopologySnapshotGeneration
             'gateway' => 'main-legacy-gateway',
             'app-dev' => 'main-legacy-app-dev',
             'app-prod' => 'main-legacy-app-prod', 'operator' => 'main-legacy-operator',
-            'operator' => 'main-legacy-operator', 'operator' => 'main-legacy-operator',
         ],
         str_repeat('b', 64),
         str_repeat('c', 64),
@@ -351,7 +350,7 @@ it('constructs an extended discovery without adopting proof resources or sharing
         ->and($leaseAtNetworkCreation['attempt_id'] ?? null)
         ->toBe($discoveryTarget->requireAttempt()->value)
         ->and($topology->target->recipe->nodeKeys())
-        ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+        ->toBe(['gateway', 'app-dev', 'app-prod', 'operator', 'app-prod-2'])
         ->and(array_keys($topology->instances))
         ->toBe($topology->target->recipe->nodeKeys())
         ->and($topology->construction->extension?->value)
@@ -482,7 +481,12 @@ it('prepares the mounted Gateway schema before standard discovery readiness with
         ' -- /usr/local/bin/verify-topology.sh ',
     ));
 
-    expect($topology->source->mounted)
+    expect($topology->target->recipe->node('operator')->roles)->toBe([])
+        ->and($topology->instances['operator'])->toBe($target->instance('operator'))
+        ->and($topology->mounts['operator'])->toBe(['device' => 'orbit-source', 'source' => $worktree, 'path' => '/home/orbit/orbit'])
+        ->and($topology->generation->snapshots)->toHaveKey('operator')
+        ->and(implode("\n", $commands))->toContain('orbit-source,shift=true', 'operator.container', 'retarget-vpn.sh')
+        ->and($topology->source->mounted)
         ->toBeTrue()
         ->and($sourceMarker)
         ->toBeInt()

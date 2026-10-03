@@ -30,6 +30,9 @@ final readonly class ColdTopologyPlan
         if (count($requiredNodes) !== count(array_unique($requiredNodes))) {
             throw new InvalidArgumentException('Each required topology role must resolve to a distinct physical Node.');
         }
+        if (! $target->recipe->hasNode('operator') || $target->recipe->node('operator')->roles !== [] || $target->recipe->node('operator')->purpose !== TopologyNodePurpose::Operator || $target->recipe->node('operator')->image !== TopologyRecipe::OPERATOR_IMAGE) {
+            throw new InvalidArgumentException('Every cold topology requires the roleless operator container base.');
+        }
         if ($sourceWorktree === '' || ! str_starts_with($sourceWorktree, '/')) {
             throw new InvalidArgumentException('The cold topology source worktree must be absolute.');
         }

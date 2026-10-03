@@ -161,7 +161,7 @@ function fakeProofReviewHost(array &$commands, ?string $wrongOwner = null): void
 
             return Process::result(json_encode([[
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'status' => 'Running',
                 'status_code' => 103,
                 'config' => [
@@ -203,7 +203,7 @@ it('records an incomplete action before exec and then stores a redacted bounded 
         if (($command[3] ?? null) === 'list') {
             return Process::result(json_encode([[
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'status' => 'Running',
                 'status_code' => 103,
                 'config' => [
@@ -306,7 +306,7 @@ it('reports an exploratory failure separately without blocking readiness', funct
         if (($command[3] ?? null) === 'list') {
             return Process::result(json_encode([[
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'status' => 'Running',
                 'status_code' => 103,
                 'config' => [

@@ -523,7 +523,7 @@ function fakePromotionHost(
 
         return [
             'name' => $name,
-            'type' => 'virtual-machine',
+            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
             'status' => $instance['status'],
             'status_code' => $instance['status'] === 'Running' ? 103 : 102,
             'config' => $instance['config'],
@@ -802,7 +802,7 @@ describe('TopologySnapshotPromoter', function (): void {
         $legacy = $current->toArray();
         $legacy['schema'] = 4;
         $legacy['prepared_schema'] = 1;
-        unset($legacy['topology']['assignments']);
+        unset($legacy['topology']['assignments'], $legacy['operator_base_image']);
         $fixture['manifests']->promote(TopologySnapshotGeneration::fromArray($legacy));
         $events = [];
         fakePromotionHost($fixture['target'], $events);
@@ -921,7 +921,7 @@ describe('TopologySnapshotPromoter', function (): void {
             $guestEvents,
             static fn (array $event): bool => in_array('rm', $event, true),
         ));
-        expect($removals)->toHaveCount(3)->and($removals[0])->toContain(ProofFixtures::GUEST_DIRECTORY);
+        expect($removals)->toHaveCount(4)->and($removals[0])->toContain(ProofFixtures::GUEST_DIRECTORY);
 
         expect($events)->toBe($expected);
     });

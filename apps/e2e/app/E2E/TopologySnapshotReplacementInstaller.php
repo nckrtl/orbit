@@ -410,7 +410,10 @@ final readonly class TopologySnapshotReplacementInstaller
             $target,
             $this->mainWorktree,
             $installation->mainSha,
-            [$installation->genericImageAlias => $installation->genericImageFingerprint],
+            [
+                $installation->genericImageAlias => $installation->genericImageFingerprint,
+                TopologyRecipe::OPERATOR_IMAGE => $installation->newGeneration->operatorBaseImageFingerprint ?? throw new RuntimeException('Replacement operator image provenance is absent.'),
+            ],
             $installation->newGeneration->laravel,
             $installation->resourceOperation,
             [
@@ -776,6 +779,7 @@ final readonly class TopologySnapshotReplacementInstaller
             || $construction->target->recipe->nodeKeys() !== TopologyProfile::ROLES
             || $construction->imageAlias === null
             || $construction->imageFingerprint === null
+            || $construction->operatorBaseImageFingerprint === null
         ) {
             throw new RuntimeException('Captured proof does not authorize a clean registered snapshot replacement.');
         }

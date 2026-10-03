@@ -173,7 +173,7 @@ describe('TopologySnapshotBuilder', function () {
                     return Process::result(json_encode(array_map(
                         static fn (string $name): array => [
                             'name' => $name,
-                            'type' => 'virtual-machine',
+                            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                             'status' => 'Stopped',
                             'status_code' => 102,
                             'config' => [
@@ -191,7 +191,7 @@ describe('TopologySnapshotBuilder', function () {
                     in_array($name, $initialized, true)
                         ? json_encode([[
                             'name' => $name,
-                            'type' => 'virtual-machine',
+                            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                             'status' => 'Stopped',
                             'status_code' => 102,
                             'config' => [
@@ -250,24 +250,30 @@ describe('TopologySnapshotBuilder', function () {
                 'local:orbit-e2e-topology-snapshot-gateway',
                 'local:orbit-e2e-topology-snapshot-app-dev',
                 'local:orbit-e2e-topology-snapshot-app-prod',
+                'local:orbit-e2e-topology-snapshot-operator',
             ])
             ->and($events)
             ->toBe([
                 'start:local:orbit-e2e-topology-snapshot-gateway',
                 'start:local:orbit-e2e-topology-snapshot-app-dev',
                 'start:local:orbit-e2e-topology-snapshot-app-prod',
+                'start:local:orbit-e2e-topology-snapshot-operator',
                 'wait:local:orbit-e2e-topology-snapshot-gateway',
                 'wait:local:orbit-e2e-topology-snapshot-app-dev',
                 'wait:local:orbit-e2e-topology-snapshot-app-prod',
+                'wait:local:orbit-e2e-topology-snapshot-operator',
                 'pre-reset-ipv4:local:orbit-e2e-topology-snapshot-gateway',
                 'pre-reset-ipv4:local:orbit-e2e-topology-snapshot-app-dev',
                 'pre-reset-ipv4:local:orbit-e2e-topology-snapshot-app-prod',
+                'pre-reset-ipv4:local:orbit-e2e-topology-snapshot-operator',
                 'reset:local:orbit-e2e-topology-snapshot-gateway',
                 'reset:local:orbit-e2e-topology-snapshot-app-dev',
                 'reset:local:orbit-e2e-topology-snapshot-app-prod',
+                'reset:local:orbit-e2e-topology-snapshot-operator',
                 'post-reset-ipv4:local:orbit-e2e-topology-snapshot-gateway',
                 'post-reset-ipv4:local:orbit-e2e-topology-snapshot-app-dev',
                 'post-reset-ipv4:local:orbit-e2e-topology-snapshot-app-prod',
+                'post-reset-ipv4:local:orbit-e2e-topology-snapshot-operator',
             ]);
     });
 
@@ -279,6 +285,7 @@ describe('TopologySnapshotBuilder', function () {
             'orbit-e2e-topology-snapshot-gateway',
             'orbit-e2e-topology-snapshot-app-dev',
             'orbit-e2e-topology-snapshot-app-prod',
+            'orbit-e2e-topology-snapshot-operator',
         ];
         $networkExists = false;
         $deleted = [];
@@ -289,7 +296,7 @@ describe('TopologySnapshotBuilder', function () {
                 return $firewall;
             }
             if (
-                $command === topology_snapshot_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')
+                in_array($command, [topology_snapshot_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json'), topology_snapshot_incus_command('image', 'list', 'local:', TopologyRecipe::OPERATOR_IMAGE, '--format=json')], true)
             ) {
                 return Process::result(json_encode([[
                     'type' => 'virtual-machine',
@@ -321,7 +328,7 @@ describe('TopologySnapshotBuilder', function () {
                     'local:oe-topo-snap',
                     'ipv4.address=10.232.1.1/24',
                     'ipv4.nat=true',
-                    'ipv4.dhcp.ranges=10.232.1.10-10.232.1.12',
+                    'ipv4.dhcp.ranges=10.232.1.10-10.232.1.14',
                     'ipv6.address=none',
                     'raw.dnsmasq='.topology_snapshot_dnsmasq(),
                     'user.orbit.e2e.operation=dddddddddddddddddddddddddddddddd',
@@ -336,7 +343,7 @@ describe('TopologySnapshotBuilder', function () {
                 return Process::result(json_encode(array_map(
                     static fn (string $name): array => [
                         'name' => $name,
-                        'type' => 'virtual-machine',
+                        'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                         'status' => 'Stopped',
                         'status_code' => 102,
                         'config' => [
@@ -362,7 +369,7 @@ describe('TopologySnapshotBuilder', function () {
                     in_array($name, $existing, true)
                         ? [[
                             'name' => $name,
-                            'type' => 'virtual-machine',
+                            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                             'status' => 'Stopped',
                             'status_code' => 102,
                             'config' => [
@@ -377,33 +384,9 @@ describe('TopologySnapshotBuilder', function () {
                     JSON_THROW_ON_ERROR,
                 ));
             }
-            if (
-                $command === topology_snapshot_incus_command(
-                    'init',
-                    'local:orbit-base',
-                    'local:orbit-e2e-topology-snapshot-gateway',
-                    '--vm',
-                    '--storage',
-                    'orbit-e2e',
-                    '--config',
-                    'limits.cpu=1',
-                    '--config',
-                    'limits.memory=2GiB',
-                    '--device',
-                    'root,pool=orbit-e2e',
-                    '--device',
-                    'root,size=16GiB',
-                    '--device',
-                    'eth0,network=oe-topo-snap',
-                    '--device',
-                    'eth0,ipv4.address=10.232.1.10',
-                    '--device',
-                    'eth0,hwaddr=00:16:3e:a2:a9:9b',
-                    '--config',
-                    'user.orbit.e2e.owner=orbit-e2e',
-                    '--config',
-                    'user.orbit.e2e.operation=dddddddddddddddddddddddddddddddd',
-                )
+            if (in_array('init', $command, true)
+                && in_array('local:orbit-e2e-topology-snapshot-gateway', $command, true)
+                && in_array('local:'.str_repeat('f', 64), $command, true)
             ) {
                 $existing[] = 'orbit-e2e-topology-snapshot-gateway';
 
@@ -454,6 +437,7 @@ describe('TopologySnapshotBuilder', function () {
             'orbit-e2e-topology-snapshot-gateway',
             'orbit-e2e-topology-snapshot-app-dev',
             'orbit-e2e-topology-snapshot-app-prod',
+            'orbit-e2e-topology-snapshot-operator',
         ];
         Process::fake(function (PendingProcess $process) use (&$observed, $instances) {
             $command = $process->command;
@@ -462,7 +446,7 @@ describe('TopologySnapshotBuilder', function () {
                 return $firewall;
             }
             if (
-                $command === topology_snapshot_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json')
+                in_array($command, [topology_snapshot_incus_command('image', 'list', 'local:', 'orbit-base', '--format=json'), topology_snapshot_incus_command('image', 'list', 'local:', TopologyRecipe::OPERATOR_IMAGE, '--format=json')], true)
             ) {
                 return Process::result(json_encode([[
                     'type' => 'virtual-machine',
@@ -510,7 +494,7 @@ describe('TopologySnapshotBuilder', function () {
 
                 return Process::result(json_encode([[
                     'name' => $name,
-                    'type' => 'virtual-machine',
+                    'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                     'status' => 'Stopped',
                     'status_code' => 102,
                     'config' => [
@@ -552,7 +536,7 @@ describe('TopologySnapshotBuilder', function () {
                             'local:oe-topo-snap',
                             'ipv4.address=10.232.1.1/24',
                             'ipv4.nat=true',
-                            'ipv4.dhcp.ranges=10.232.1.10-10.232.1.12',
+                            'ipv4.dhcp.ranges=10.232.1.10-10.232.1.14',
                             'ipv6.address=none',
                             'raw.dnsmasq='.topology_snapshot_dnsmasq(),
                             'user.orbit.e2e.owner=orbit-e2e',
@@ -585,6 +569,7 @@ describe('TopologySnapshotBuilder', function () {
                             'init',
                             'local:orbit-base',
                             'local:orbit-e2e-topology-snapshot-app-prod',
+                            'local:orbit-e2e-topology-snapshot-operator',
                             '--vm',
                             '--storage',
                             'orbit-e2e',

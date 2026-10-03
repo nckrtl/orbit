@@ -72,7 +72,19 @@ final class WorktreeSynchronizerGuestFake implements GuestTransport
         private array $guestStatuses = [],
         /** @var array<string, string> */
         private array $guestTrees = [],
-    ) {}
+    ) {
+        foreach (['sha', 'guestTrees', 'evidenceShas', 'guestStatuses'] as $property) {
+            if (! is_array($this->{$property})) {
+                continue;
+            }
+            foreach ($this->{$property} as $instance => $value) {
+                if (str_ends_with($instance, '-app-dev')) {
+                    $operator = substr($instance, 0, -7).'operator';
+                    $this->{$property}[$operator] ??= $value;
+                }
+            }
+        }
+    }
 
     public function exec(string $instance, GuestCommand $command): GuestCommandResult
     {
@@ -551,7 +563,7 @@ describe('WorktreeSynchronizer', function () {
                 ->and($guest->execBatches)
                 ->toHaveCount(1)
                 ->and($guest->execBatches[0])
-                ->toHaveCount(14)
+                ->toHaveCount(20)
                 ->and($guest->pushBatches)
                 ->toBeEmpty()
                 ->and($guest->pushes)
@@ -676,8 +688,8 @@ describe('WorktreeSynchronizer', function () {
             new WorktreeSynchronizer($guest, $root, new OperationId(str_repeat('a', 32)))
                 ->sync($target, $worktree);
 
-            expect(array_unique(array_column($guest->pushes, 'instance')))
-                ->toBe([$target->instance('app-dev')])
+            expect(array_values(array_unique(array_column($guest->pushes, 'instance'))))
+                ->toBe([$target->instance('app-dev'), $target->instance('operator')])
                 ->and(array_values(array_unique(array_column(array_filter(
                     $guest->execs,
                     static fn (array $exec): bool => (
@@ -685,7 +697,7 @@ describe('WorktreeSynchronizer', function () {
                         && in_array('/usr/local/bin/receive-source.sh', $exec['command']->command, true)
                     ),
                 ), 'instance'))))
-                ->toBe([$target->instance('app-dev')]);
+                ->toBe([$target->instance('app-dev'), $target->instance('operator')]);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -789,7 +801,7 @@ describe('WorktreeSynchronizer', function () {
                     $guest->pushes,
                     fn (array $push): bool => str_contains($push['destination'], '/source/'),
                 )))
-                ->toHaveCount(6);
+                ->toHaveCount(9);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -831,18 +843,24 @@ describe('WorktreeSynchronizer', function () {
                         'guest-marker.app-dev',
                         'guest-status.app-dev',
                         'guest-hydration.app-dev',
+                        'guest-sha.operator',
+                        'guest-marker.operator',
+                        'guest-status.operator',
+                        'guest-hydration.operator',
                         'script-marker.gateway',
                         'script-content.gateway',
                         'script-marker.app-dev',
                         'script-content.app-dev',
                         'script-marker.app-prod',
                         'script-content.app-prod',
+                        'script-marker.operator',
+                        'script-content.operator',
                     ],
-                    ['source-prepare.gateway', 'source-prepare.app-dev'],
-                    ['source-ownership.gateway', 'source-ownership.app-dev'],
+                    ['source-prepare.gateway', 'source-prepare.app-dev', 'source-prepare.operator'],
+                    ['source-ownership.gateway', 'source-ownership.app-dev', 'source-ownership.operator'],
                     ['source-receive.gateway', 'source-receive.app-dev', 'source-receive.operator'],
                     ['source-hydrate.gateway', 'source-hydrate.app-dev', 'source-hydrate.operator'],
-                    ['source-orbit-cli.gateway', 'source-orbit-cli.app-dev'],
+                    ['source-orbit-cli.gateway', 'source-orbit-cli.app-dev', 'source-orbit-cli.operator'],
                     ['source-preserve-env.gateway'],
                     ['source-cleanup.gateway', 'source-cleanup.app-dev', 'source-cleanup.operator'],
                 ])
@@ -854,6 +872,9 @@ describe('WorktreeSynchronizer', function () {
                     'source-push.app-dev.archive',
                     'source-push.app-dev.manifest',
                     'source-push.app-dev.deletions',
+                    'source-push.operator.archive',
+                    'source-push.operator.manifest',
+                    'source-push.operator.deletions',
                 ]])
                 ->and($guest->directExecs)
                 ->toBeEmpty()
@@ -898,7 +919,7 @@ describe('WorktreeSynchronizer', function () {
                 ->and($guest->bundlePushes[1]['header'])
                 ->toContain("-{$later} ")
                 ->and(array_unique(array_column($guest->bundlePushes, 'destination')))
-                ->toHaveCount(3);
+                ->toHaveCount(2);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -930,6 +951,7 @@ describe('WorktreeSynchronizer', function () {
                 ->toBe([
                     'orbit-e2e-tst-133-aaaaaaaa-gateway',
                     'orbit-e2e-tst-133-aaaaaaaa-app-dev',
+                    'orbit-e2e-tst-133-aaaaaaaa-operator',
                 ])
                 ->and($state->guestSha)
                 ->toBe($state->hostSha);
@@ -974,7 +996,7 @@ describe('WorktreeSynchronizer', function () {
                 ->not
                 ->toContain("\n-")
                 ->and(array_unique(array_column($guest->bundlePushes, 'destination')))
-                ->toHaveCount(3);
+                ->toHaveCount(2);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -1104,6 +1126,7 @@ describe('WorktreeSynchronizer', function () {
                 ->toHaveKeys([
                     $target->instance('gateway'),
                     $target->instance('app-dev'),
+                    $target->instance('operator'),
                 ])
                 ->and($guest->hydratedShas)
                 ->toBeEmpty();
@@ -1126,9 +1149,9 @@ describe('WorktreeSynchronizer', function () {
             ));
 
             expect($receiveCount)
-                ->toBe(4)
+                ->toBe(6)
                 ->and($hydrateCount)
-                ->toBe(4)
+                ->toBe(6)
                 ->and($guest->hydratedShas)
                 ->toBe([
                     $target->instance('gateway') => $sha,
@@ -1145,7 +1168,7 @@ describe('WorktreeSynchronizer', function () {
                     && in_array('/usr/local/bin/receive-source.sh', $exec['command']->command, true)
                 ),
             ))
-                ->toHaveCount(4)
+                ->toHaveCount(6)
                 ->and(array_filter(
                     $guest->execs,
                     static fn (array $exec): bool => (
@@ -1153,7 +1176,7 @@ describe('WorktreeSynchronizer', function () {
                         && in_array('/usr/local/bin/hydrate-orbit.sh', $exec['command']->command, true)
                     ),
                 ))
-                ->toHaveCount(4);
+                ->toHaveCount(6);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -1184,7 +1207,7 @@ describe('WorktreeSynchronizer', function () {
                 featureTarget('TST-126'),
                 $worktree,
             );
-            expect(synchronizerInstalledScripts($guest))->toHaveCount(33);
+            expect(synchronizerInstalledScripts($guest))->toHaveCount(52);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -1214,14 +1237,15 @@ describe('WorktreeSynchronizer', function () {
 
             expect(array_slice($guest->execBatches, 1, 4))
                 ->toBe([
-                    ['script-prepare.gateway', 'script-prepare.app-dev', 'script-prepare.app-prod'],
+                    ['script-prepare.gateway', 'script-prepare.app-dev', 'script-prepare.app-prod', 'script-prepare.operator'],
                     $installLabels,
                     [
                         'script-marker-install.gateway',
                         'script-marker-install.app-dev',
                         'script-marker-install.app-prod',
+                        'script-marker-install.operator',
                     ],
-                    ['script-cleanup.gateway', 'script-cleanup.app-dev', 'script-cleanup.app-prod'],
+                    ['script-cleanup.gateway', 'script-cleanup.app-dev', 'script-cleanup.app-prod', 'script-cleanup.operator'],
                 ])
                 ->and($guest->pushBatches[0])
                 ->toBe($pushLabels)
@@ -1251,7 +1275,7 @@ describe('WorktreeSynchronizer', function () {
                 ->toThrow(
                     RuntimeException::class,
                     'Guest script installation failed. Failed operations: '
-                    .'script-install.app-dev.converge-app-dev.sh',
+                    .'script-install.app-dev.bootstrap-operator.sh',
                 );
 
             expect(array_filter(
@@ -1260,7 +1284,7 @@ describe('WorktreeSynchronizer', function () {
             ))
                 ->toBeEmpty()
                 ->and($guest->execBatches[array_key_last($guest->execBatches)])
-                ->toBe(['script-cleanup.gateway', 'script-cleanup.app-dev', 'script-cleanup.app-prod'])
+                ->toBe(['script-cleanup.gateway', 'script-cleanup.app-dev', 'script-cleanup.app-prod', 'script-cleanup.operator'])
                 ->and(array_filter(
                     $guest->execBatches,
                     fn (array $batch): bool => str_starts_with($batch[0] ?? '', 'source-'),
@@ -1291,7 +1315,7 @@ describe('WorktreeSynchronizer', function () {
                 expect($exception->getMessage())
                     ->toContain(
                         'Primary operation failed: Guest script installation failed. Failed operations: '
-                        .'script-install.app-dev.converge-app-dev.sh',
+                        .'script-install.app-dev.bootstrap-operator.sh',
                     )
                     ->toContain('cleanup also failed: Guest script staging cleanup failed. Failed operations: '
                     .'script-cleanup.app-prod.');
@@ -1329,7 +1353,7 @@ describe('WorktreeSynchronizer', function () {
                 ),
             ));
             expect($scriptInstalls)
-                ->toHaveCount(33)
+                ->toHaveCount(52)
                 ->and(array_column($scriptInstalls, 'path'))
                 ->each
                 ->toStartWith('/usr/local/bin/')
@@ -1342,12 +1366,12 @@ describe('WorktreeSynchronizer', function () {
                         && ! str_ends_with($push['destination'], '/guest-scripts.sha256')
                     ),
                 ))
-                ->toHaveCount(33)
+                ->toHaveCount(52)
                 ->and(array_filter(
                     $guest->execs,
                     fn (array $exec): bool => ($exec['command']->command[0] ?? null) === 'rm',
                 ))
-                ->toHaveCount(5)
+                ->toHaveCount(7)
                 ->and($state->guestSha)
                 ->toBe($sha);
         } finally {
@@ -1431,6 +1455,7 @@ describe('WorktreeSynchronizer', function () {
                 ->toBe([
                     'orbit-e2e-tst-128-aaaaaaaa-gateway',
                     'orbit-e2e-tst-128-aaaaaaaa-app-dev',
+                    'orbit-e2e-tst-128-aaaaaaaa-operator',
                 ])
                 ->and(array_map(
                     fn (array $cleanup): mixed => $cleanup['command']->command[array_key_last(
@@ -1495,7 +1520,7 @@ describe('WorktreeSynchronizer', function () {
             ));
             expect($sourceBatches)
                 ->toBe([
-                    ['source-prepare.gateway', 'source-prepare.app-dev'],
+                    ['source-prepare.gateway', 'source-prepare.app-dev', 'source-prepare.operator'],
                     ['source-cleanup.gateway', 'source-cleanup.app-dev', 'source-cleanup.operator'],
                 ])
                 ->and(array_filter(
@@ -1825,6 +1850,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                     'script-prepare.gateway',
                     'script-prepare.app-dev',
                     'script-prepare.app-prod',
+                    'script-prepare.operator',
                     ...($extended ? ['script-prepare.app-prod-2'] : []),
                 ])
                 ->and(array_values(array_unique(array_column($guest->pushes, 'instance'))))
@@ -1832,6 +1858,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                     $target->instance('gateway'),
                     $target->instance('app-dev'),
                     $target->instance('app-prod'),
+                    $target->instance('operator'),
                     ...($extended ? [$target->instance('app-prod-2')] : []),
                 ])
                 ->and($guest->execBatches[array_key_last($guest->execBatches)])
@@ -1856,7 +1883,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                 ->syncCommit($target, $worktree, $candidate);
 
             expect(array_column($guest->bundlePushes, 'instance'))
-                ->toBe([$target->instance('gateway'), $target->instance('operator')])
+                ->toBe([$target->instance('gateway'), $target->instance('app-dev'), $target->instance('operator')])
                 ->and($guest->execBatches[0])
                 ->toContain(
                     'guest-sha.operator',
@@ -1864,7 +1891,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                     'script-marker.extra',
                     'script-content.extra',
                 )
-                ->not->toContain('guest-sha.app-dev');
+                ->not->toContain('guest-sha.extra');
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -1909,10 +1936,11 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                     $push['destination'],
                 ), $guest->pushes))->toContain("{$emptyFile}.tar", "{$emptyFile}.paths", "{$emptyFile}.deletions")->and(
                     $receives,
-                )->toHaveCount(3)->and(array_column($receives, 8))->toBe([$candidate, $candidate])->and(array_map(
+                )->toHaveCount(3)->and(array_column($receives, 8))->toBe([$candidate, $candidate, $candidate])->and(array_map(
                     static fn (array $argv): string => (string) end($argv),
                     $receives,
                 ))->toBe([
+                    $treeHash,
                     $treeHash,
                     $treeHash,
                 ])->and($guest->sourceMarkers)->toBe([])->and($guest->directExecs)->toBe([]);
@@ -1972,17 +2000,23 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                         'guest-marker.app-dev',
                         'guest-status.app-dev',
                         'guest-hydration.app-dev',
+                        'guest-sha.operator',
+                        'guest-marker.operator',
+                        'guest-status.operator',
+                        'guest-hydration.operator',
                         'script-marker.gateway',
                         'script-content.gateway',
                         'script-marker.app-dev',
                         'script-content.app-dev',
                         'script-marker.app-prod',
                         'script-content.app-prod',
+                        'script-marker.operator',
+                        'script-content.operator',
                     ],
-                    ['source-prepare.gateway', 'source-prepare.app-dev'],
-                    ['source-ownership.gateway', 'source-ownership.app-dev'],
+                    ['source-prepare.gateway', 'source-prepare.app-dev', 'source-prepare.operator'],
+                    ['source-ownership.gateway', 'source-ownership.app-dev', 'source-ownership.operator'],
                     ['source-receive.gateway', 'source-receive.app-dev', 'source-receive.operator'],
-                    ['source-detach.gateway', 'source-detach.app-dev'],
+                    ['source-detach.gateway', 'source-detach.app-dev', 'source-detach.operator'],
                     [
                         'source-head.gateway',
                         'source-tree.gateway',
@@ -1990,9 +2024,12 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                         'source-head.app-dev',
                         'source-tree.app-dev',
                         'source-status.app-dev',
+                        'source-head.operator',
+                        'source-tree.operator',
+                        'source-status.operator',
                     ],
                     ['source-hydrate.gateway', 'source-hydrate.app-dev', 'source-hydrate.operator'],
-                    ['source-orbit-cli.gateway', 'source-orbit-cli.app-dev'],
+                    ['source-orbit-cli.gateway', 'source-orbit-cli.app-dev', 'source-orbit-cli.operator'],
                     ['source-preserve-env.gateway'],
                     ['source-cleanup.gateway', 'source-cleanup.app-dev', 'source-cleanup.operator'],
                 ]);
@@ -2037,9 +2074,9 @@ describe('WorktreeSynchronizer::syncCommit', function () {
             expect($state->guestScriptHash)
                 ->toBe(synchronizerCandidateScriptMarker($candidateScripts))
                 ->and($guest->execBatches[1])
-                ->toBe(['script-prepare.gateway', 'script-prepare.app-dev', 'script-prepare.app-prod'])
+                ->toBe(['script-prepare.gateway', 'script-prepare.app-dev', 'script-prepare.app-prod', 'script-prepare.operator'])
                 ->and($pushedScripts)
-                ->toHaveCount(3)
+                ->toHaveCount(4)
                 ->and(array_unique($pushedScripts))
                 ->toBe([$candidateScripts['receive-source.sh']])
                 ->and($pushedScripts[0])
@@ -2049,7 +2086,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
             $matching = candidateGuestFake($target, $worktree, $candidate, $fixture['candidateTree']);
             new WorktreeSynchronizer($matching, $root, new OperationId(str_repeat('a', 32)))
                 ->syncCommit($target, $worktree, $candidate);
-            expect($matching->execBatches[1])->toBe(['source-prepare.gateway', 'source-prepare.app-dev']);
+            expect($matching->execBatches[1])->toBe(['source-prepare.gateway', 'source-prepare.app-dev', 'source-prepare.operator']);
         } finally {
             destroySynchronizerRepositoryFixture($root, $worktree);
         }
@@ -2106,7 +2143,7 @@ describe('WorktreeSynchronizer::syncCommit', function () {
                 ->and($guest->bundlePushes[0]['header'])
                 ->toContain("-{$ancestor} ")
                 ->and(array_column($receives, 9))
-                ->toBe([$guest->bundlePushes[0]['destination'], '-'])
+                ->toBe([$guest->bundlePushes[0]['destination'], '-', '-'])
                 ->and($guest->receivedShas)
                 ->toBe([$target->instance('gateway') => $candidate, $target->instance('app-dev') => $candidate, $target->instance('operator') => $candidate]);
         } finally {

@@ -102,6 +102,7 @@ describe('StatePaths', function () {
                 'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
                 'app-dev' => ['app-dev', 'metrics', 'database'],
                 'app-prod' => ['app-prod', 'ingress'],
+                'operator' => [],
             ])
             ->and($target->network())
             ->toBe('oe-9498fa889742')

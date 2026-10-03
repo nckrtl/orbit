@@ -41,7 +41,6 @@ final readonly class IssueTopologyConstructor
         array $mounts = [],
         ?TopologyExtension $extension = null,
     ): TopologyConstructionInputs {
-        $this->assertBaseImages($generation);
         $expectedRecipe = $extension?->recipe() ?? TopologyRecipe::registered();
         if ($target->recipe->nodeKeys() !== $expectedRecipe->nodeKeys()) {
             throw new RuntimeException('The issue topology recipe does not match its extension declaration.');
@@ -53,6 +52,7 @@ final readonly class IssueTopologyConstructor
         if ($this->host->instances($instanceNames) !== []) {
             throw new RuntimeException('An issue topology VM already exists and cannot be adopted.');
         }
+        $this->assertBaseImages($generation);
         $imageFingerprint = $extension === null
             ? null
             : $this->host->imageFingerprint(TopologyRecipe::BASE_IMAGE);

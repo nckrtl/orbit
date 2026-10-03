@@ -204,7 +204,6 @@ function proofEquivalenceGeneration(string $main): TopologySnapshotGeneration
             'gateway' => 'main-equivalence-gateway',
             'app-dev' => 'main-equivalence-app-dev',
             'app-prod' => 'main-equivalence-app-prod', 'operator' => 'main-equivalence-operator',
-            'operator' => 'main-equivalence-operator', 'operator' => 'main-equivalence-operator',
         ],
         str_repeat('d', 64),
         str_repeat('e', 64),

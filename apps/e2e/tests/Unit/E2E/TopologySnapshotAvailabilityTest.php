@@ -89,7 +89,7 @@ function availabilityInventoryJson(array $instances): string
     return json_encode(array_map(
         static fn (string $name): array => [
             'name' => $name,
-            'type' => 'virtual-machine',
+            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
             'status' => 'Stopped',
             'status_code' => 102,
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],

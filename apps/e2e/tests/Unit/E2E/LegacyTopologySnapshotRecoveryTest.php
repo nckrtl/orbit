@@ -88,6 +88,7 @@ function legacyRecoveryGeneration(int $schema = TopologySnapshotGeneration::SCHE
 
     $legacy = $generation->toArray();
     $legacy['schema'] = TopologySnapshotGeneration::LEGACY_SCHEMA;
+    unset($legacy['operator_base_image']);
     $legacy['prepared_schema'] = 1;
     unset($legacy['topology']['assignments']);
 
@@ -161,7 +162,7 @@ function fakeLegacyRecoveryHost(
                 $role = str_replace([$identity->instancePrefix(), '-next'], '', $name);
                 $resources[] = [
                     'name' => $name,
-                    'type' => 'virtual-machine',
+                    'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                     'status' => 'Stopped',
                     'status_code' => 102,
                     'config' => $state->metadata[$name] ?? [
@@ -300,6 +301,7 @@ it('authorizes exact schema 4 and 5 topology snapshot resources without mutation
         'orbit-e2e-topology-snapshot-app-dev',
         'orbit-e2e-topology-snapshot-app-prod',
         'orbit-e2e-topology-snapshot-gateway',
+        'orbit-e2e-topology-snapshot-operator',
     ]);
     expect($inventory->toArray()['scope'])->toBe([
         'remote' => 'local',
@@ -341,6 +343,7 @@ it('authorizes the retired physical identity and its isolated manifest for migra
             'orbit-e2e-standby-app-dev',
             'orbit-e2e-standby-app-prod',
             'orbit-e2e-standby-gateway',
+            'orbit-e2e-standby-operator',
         ])
         ->and($store->read('standby/promoted.json'))
         ->not

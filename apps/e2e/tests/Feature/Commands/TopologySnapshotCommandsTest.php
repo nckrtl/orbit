@@ -490,7 +490,7 @@ describe('topology snapshot commands', function () {
         expect($instanceInventories)
             ->toBe(2)
             ->and($snapshotInventories)
-            ->toBe(3);
+            ->toBe(4);
     });
 });
 
@@ -519,6 +519,7 @@ function topologySnapshotCommandFingerprintRepository(bool $changePreparedInput)
                         'gateway' => ['gateway', 'vpn'],
                         'app-dev' => ['app-dev', 'metrics'],
                         'app-prod' => ['app-prod'],
+                        'operator' => [],
                     ],
                 ],
             ],

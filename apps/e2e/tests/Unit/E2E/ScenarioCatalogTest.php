@@ -131,7 +131,7 @@ it('declares the committed snapshot scenarios with their lane recipes and action
     ))->toBe([
         ['gateway', 'app-dev', 'app-prod', 'operator'],
         ['gateway', 'app-dev', 'app-prod', 'operator'],
-        ['gateway', 'app-dev', 'app-prod', 'app-prod-2'],
+        ['gateway', 'app-dev', 'app-prod', 'operator', 'app-prod-2'],
     ]);
     expect(array_map(
         static fn (ScenarioDefinition $definition): array => array_column($definition->normalized()['actions'], 'name'),

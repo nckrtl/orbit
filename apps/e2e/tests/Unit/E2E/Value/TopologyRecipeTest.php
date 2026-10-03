@@ -7,7 +7,7 @@ use App\E2E\Value\TopologyNodePurpose;
 use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologyRecipe;
 
-it('preserves the registered three-Node profile', function () {
+it('preserves the registered three-VM and operator profile', function () {
     $recipe = TopologyRecipe::registered();
 
     expect($recipe->id)->toBe(TopologyProfile::NAME);
@@ -19,7 +19,7 @@ it('preserves the registered three-Node profile', function () {
     expect($recipe->nodeForRole('database')->key)->toBe('app-dev');
     expect($recipe->nodeForRole('ingress')->key)->toBe('app-prod');
     expect(array_map(static fn (TopologyNode $node): int => $node->address, $recipe->nodes))
-        ->toBe([10, 11, 12]);
+        ->toBe([10, 11, 12, 14]);
 });
 
 it('declares exactly one temporary app-prod Node with fixed physical addresses', function () {
@@ -28,7 +28,7 @@ it('declares exactly one temporary app-prod Node with fixed physical addresses',
     expect($recipe->node('app-prod-2')->roles)->toBe(['app-prod']);
     expect($recipe->nodeForRole('ingress')->key)->toBe('app-prod');
     expect($recipe->nodeKeys())
-        ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+        ->toBe(['gateway', 'app-dev', 'app-prod', 'operator', 'app-prod-2'])
         ->and($recipe->checkoutNodeKeys())
         ->toBe(['gateway', 'app-dev', 'operator'])
         ->and($recipe->node('app-prod-2')->address)
@@ -42,10 +42,10 @@ it('declares exactly one temporary app-prod Node with fixed physical addresses',
 it('maps product roles onto separate physical Node keys', function () {
     $recipe = TopologyRecipe::coldAcceptance();
 
-    expect($recipe->nodeKeys())->toBe(['gateway', 'operator', 'app-prod', 'extra']);
-    expect($recipe->nodeForRole('app-dev')->key)->toBe('operator');
+    expect($recipe->nodeKeys())->toBe(['gateway', 'app-dev', 'app-prod', 'extra', 'operator']);
+    expect($recipe->nodeForRole('app-dev')->key)->toBe('app-dev');
     expect($recipe->node('extra')->roles)->toBe([]);
-    expect($recipe->checkoutNodeKeys())->toBe(['gateway', 'operator']);
+    expect($recipe->checkoutNodeKeys())->toBe(['gateway', 'app-dev', 'operator']);
 });
 
 it('round trips and fingerprints the normalized variable-size recipe', function () {

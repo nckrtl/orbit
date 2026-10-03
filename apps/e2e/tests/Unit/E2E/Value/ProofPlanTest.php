@@ -340,7 +340,7 @@ describe('ProofPlan', function (): void {
         })))
             ->toThrow(
                 InvalidArgumentException::class,
-                'Proof action [create-workspace] must name a node from gateway, app-dev, app-prod.',
+                'Proof action [create-workspace] must name a node from gateway, app-dev, app-prod, operator.',
             );
     })->with([
         'unknown role' => ['db'],
@@ -477,7 +477,7 @@ describe('ProofPlan ends_with', function (): void {
 
     it('treats a declaration of the whole profile as no declaration at all', function (): void {
         $plan = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
-            $plan['ends_with'] = ['nodes' => ['app-prod', 'gateway', 'app-dev']];
+            $plan['ends_with'] = ['nodes' => ['app-prod', 'operator', 'gateway', 'app-dev']];
 
             return $plan;
         }));
@@ -510,7 +510,7 @@ describe('ProofPlan ends_with', function (): void {
         ],
         'an unknown node' => [
             ['nodes' => ['gateway', 'app-staging']],
-            'The proof plan key ends_with.nodes must name nodes from gateway, app-dev, app-prod.',
+            'The proof plan key ends_with.nodes must name nodes from gateway, app-dev, app-prod, operator.',
         ],
         'no gateway' => [
             ['nodes' => ['app-dev']],
@@ -533,7 +533,7 @@ describe('ProofPlan app-prod extension', function (): void {
             ->and($extended->mutates)
             ->toBeTrue()
             ->and($extended->recipe()->nodeKeys())
-            ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'operator', 'app-prod-2'])
             ->and($extended->toArray()['extension'] ?? null)
             ->toBe('app-prod');
     });

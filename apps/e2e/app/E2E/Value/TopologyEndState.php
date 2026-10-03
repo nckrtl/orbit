@@ -21,9 +21,9 @@ use InvalidArgumentException;
  * The gateway holds the registry every other probe reads, so it can never be
  * declared absent.
  *
- * The declaration speaks about Orbit's node registry only. The Incus instances
- * of all three roles still exist and are still checked for network identity;
- * `release` remains the only thing that removes a VM.
+ * The declaration speaks about Orbit's node registry only. The Incus guests
+ * still exist and are checked for network identity;
+ * `release` remains the only thing that removes a guest.
  */
 final readonly class TopologyEndState
 {

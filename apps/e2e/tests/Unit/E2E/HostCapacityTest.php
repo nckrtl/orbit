@@ -120,6 +120,22 @@ describe('HostCapacity', function () {
             ->toThrow(RuntimeException::class, 'cannot fit');
     });
 
+    it('counts operator guests in the harness inventory without charging them as workload VMs', function (): void {
+        $names = [];
+        foreach (['snapshot', 'discovery', 'proof'] as $topology) {
+            foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $node) {
+                $names[] = "orbit-e2e-{$topology}-{$node}";
+            }
+        }
+        fakeCapacityHost($names, []);
+        $host = new IncusHost;
+        expect($host->harnessInstanceMetadata())->toHaveCount(12)
+            ->and($host->harnessVmMetadata())->toHaveCount(9);
+        expect(fn () => new HostCapacity($host, 9)->reserveSlot(1))->toThrow(RuntimeException::class, 'capacity is exhausted: 9 harness VMs');
+        fakeCapacityHost(array_slice($names, 0, 8), []);
+        expect(new HostCapacity(new IncusHost, 9)->reserveSlot(3))->toBe(2);
+    });
+
     it('ships a default budget of seven feature topologies beside the persistent snapshot', function () {
         // Read the shipped literal rather than the resolved value: an operator who
         // exported ORBIT_E2E_INCUS_MAX_VMS for one run must still be able to run the suite.

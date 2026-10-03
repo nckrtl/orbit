@@ -196,7 +196,7 @@ describe('legacy Incus revalidation', function (): void {
 
             return liveIncusResult([
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'status' => $name === 'old-vm' ? 'STOPPED' : 'RUNNING',
                 'config' => [],
                 'devices' => [],

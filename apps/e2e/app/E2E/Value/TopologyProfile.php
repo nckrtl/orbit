@@ -17,6 +17,7 @@ final readonly class TopologyProfile
         'gateway' => ['gateway', 'vpn'],
         'app-dev' => ['app-dev', 'metrics'],
         'app-prod' => ['app-prod'],
+        'operator' => [],
     ];
 
     public const array ASSIGNMENTS = [
