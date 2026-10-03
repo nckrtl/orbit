@@ -317,6 +317,8 @@ describe('TopologySnapshotRebuilder', function () {
             'user.orbit.e2e.operation' => str_repeat('a', 32),
             'user.orbit.e2e.issue' => 'AUX-92',
             'user.orbit.e2e.attempt' => str_repeat('b', 32),
+            'user.orbit.e2e.base-image' => 'orbit-base-ubuntu-26.04-runtime',
+            'user.orbit.e2e.base-image-fingerprint' => str_repeat('d', 64),
         ];
         $state->networks = [$identity->network()];
         fakeRebuildHost($state);

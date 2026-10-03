@@ -11,6 +11,7 @@ use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use Closure;
@@ -95,15 +96,16 @@ final readonly class TopologySnapshotRebuilder
             $networkMayBeAbsent,
             $manifestsMayBeAbsent,
         );
+        $generation = TopologySnapshotGeneration::fromArray($authorization->promotedManifest);
         $authorizedInstances = array_keys($authorization->instances);
         $present = $this->host->instances($this->topologySnapshotInstanceNames());
         sort($authorizedInstances, SORT_STRING);
         foreach ($present as $name => $instance) {
-            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true);
+            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true, generation: $generation);
         }
 
         $record('instances_pending', ['instances' => $authorizedInstances]);
-        $instancesDeleted = $this->deleteInstances(allowPromotionCopy: true);
+        $instancesDeleted = $this->deleteInstances(allowPromotionCopy: true, generation: $generation);
         $record('instances_verified', ['instances_deleted' => $instancesDeleted]);
 
         $authorizedNetwork = $authorization->network['name'] ?? null;
@@ -135,12 +137,12 @@ final readonly class TopologySnapshotRebuilder
     }
 
     /** @return list<string> */
-    private function deleteInstances(bool $allowPromotionCopy = false): array
+    private function deleteInstances(bool $allowPromotionCopy = false, ?TopologySnapshotGeneration $generation = null): array
     {
         $names = $this->topologySnapshotInstanceNames();
         $present = $this->host->instances($names);
         foreach ($present as $name => $instance) {
-            $this->assertHarnessOwned($instance, $name, $allowPromotionCopy);
+            $this->assertHarnessOwned($instance, $name, $allowPromotionCopy, $generation);
         }
         if ($present === []) {
             return [];
@@ -215,6 +217,7 @@ final readonly class TopologySnapshotRebuilder
         IncusInstance $instance,
         string $name,
         bool $allowPromotionCopy = false,
+        ?TopologySnapshotGeneration $generation = null,
     ): void {
         if (($instance->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
             throw new RuntimeException(
@@ -238,6 +241,7 @@ final readonly class TopologySnapshotRebuilder
                     'user.orbit.e2e.operation' => $operation,
                     'user.orbit.e2e.issue' => $issue,
                     'user.orbit.e2e.attempt' => $attempt,
+                    ...($generation?->baseImageMetadata(substr($name, strlen($this->identity->instancePrefix()), -strlen(self::COPY_SUFFIX))) ?? []),
                 ];
                 $metadata = $instance->metadata;
                 ksort($expected, SORT_STRING);
@@ -271,6 +275,7 @@ final readonly class TopologySnapshotRebuilder
         bool $networkMayBeAbsent,
         bool $manifestsMayBeAbsent,
     ): void {
+        $generation = TopologySnapshotGeneration::fromArray($authorization->promotedManifest);
         $present = $this->host->instances($this->topologySnapshotInstanceNames());
         $authorizedNames = array_keys($authorization->instances);
         $presentNames = array_keys($present);
@@ -280,7 +285,7 @@ final readonly class TopologySnapshotRebuilder
             throw new RuntimeException('The exact topology snapshot instance inventory changed after authorization.');
         }
         foreach ($present as $name => $instance) {
-            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true);
+            $this->assertHarnessOwned($instance, $name, allowPromotionCopy: true, generation: $generation);
             $authorized = $authorization->instances[$name] ?? null;
             if (! is_array($authorized)) {
                 throw new RuntimeException(

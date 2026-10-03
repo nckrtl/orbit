@@ -221,6 +221,22 @@ final readonly class TopologySnapshotGeneration
         );
     }
 
+    /** @return array<string, string> */
+    public function baseImageMetadata(string $role): array
+    {
+        if (! in_array($role, $this->topologyRoles, true)) {
+            throw new InvalidArgumentException('The snapshot guest role is invalid.');
+        }
+        if ($this->isLegacy()) {
+            return [];
+        }
+
+        return [
+            'user.orbit.e2e.base-image' => $role === 'operator' ? TopologyRecipe::OPERATOR_IMAGE : $this->baseImageAlias,
+            'user.orbit.e2e.base-image-fingerprint' => $role === 'operator' ? (string) $this->operatorBaseImageFingerprint : $this->baseImageFingerprint,
+        ];
+    }
+
     public function isLegacy(): bool
     {
         return $this->manifestSchema !== self::SCHEMA;

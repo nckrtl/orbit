@@ -165,7 +165,11 @@ A manifest that names snapshots or guests that the host does not hold is stale, 
 
 ### Recover
 
-`recover-legacy` handles a snapshot whose resources are still present. It accepts readable promoted manifests from schemas 4, 5, and 6. Schema 5 is the previous three-VM snapshot format; its original inventory remains valid for bounded recovery without an operator. It authorizes the snapshot guests, their `-next` copies, and the snapshot network. Each guest must carry the owner and operation metadata, the snapshot network and MAC, no extra disk, and the promoted snapshot. The network may have only those guests as users. Any other evidence fails closed, and a name, prefix, glob, or age never authorizes deletion.
+`recover-legacy` handles a snapshot whose resources are still present. It accepts readable promoted manifests from schemas 4, 5, and 6. Schema 5 is the previous three-VM snapshot format; its original inventory remains valid for bounded recovery without an operator. It authorizes the snapshot guests, their `-next` copies, and the snapshot network. Each guest must carry the owner and operation metadata, the snapshot network and MAC, no extra disk, and the promoted snapshot.
+
+Schema-6 guests must also carry the per-guest base alias and fingerprint recorded by construction. Recovery compares these values to the promoted manifest, not to a changed local alias. The network DHCP range ends at `.14` for schema 6 and `.12` for schemas 4 and 5. Unknown fields or mismatched provenance refuse recovery before mutation.
+
+The network may have only those guests as users. Any other evidence fails closed, and a name, prefix, glob, or age never authorizes deletion.
 
 Recovery writes the journal `topology-snapshot/recovery.json` before it changes anything. The journal holds the inventory, its SHA-256 digest, the requested SHA, and the phase history, from `authorized` to `construction_verified` or `failed`. Recovery deletes the guests, the network, and the manifests, and verifies each step in the journal. Then it runs a cold build and verifies the new generation. A retry with the same SHA resumes from the journal when the digest still matches the host. A new recovery archives a finished journal to `topology-snapshot/recoveries/<operation-id>.json`.
 

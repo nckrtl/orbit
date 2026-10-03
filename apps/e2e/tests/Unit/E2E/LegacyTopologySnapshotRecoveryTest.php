@@ -24,6 +24,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -57,6 +58,11 @@ final class LegacyRecoveryHost
     public string $networkOwner = 'orbit-e2e';
 
     public string $networkAddress = '10.232.1.1/24';
+
+    public string $networkDhcpRange = '10.232.1.10-10.232.1.12';
+
+    /** @var array<string, string> */
+    public array $networkExtraConfig = [];
 
     /** @var list<string> */
     public array $networkUsers = [];
@@ -130,9 +136,10 @@ function fakeLegacyRecoveryHost(
                         'user.orbit.e2e.operation' => str_repeat('a', 32),
                         'ipv4.address' => $state->networkAddress,
                         'ipv4.nat' => 'true',
-                        'ipv4.dhcp.ranges' => '10.232.1.10-10.232.1.12',
+                        'ipv4.dhcp.ranges' => $state->networkDhcpRange,
                         'ipv6.address' => 'none',
                         'raw.dnsmasq' => 'port=0',
+                        ...$state->networkExtraConfig,
                     ],
                     'used_by' => $state->networkUsers,
                 ]] : [];
@@ -165,7 +172,7 @@ function fakeLegacyRecoveryHost(
                 $role = str_replace([$identity->instancePrefix(), '-next'], '', $name);
                 $resources[] = [
                     'name' => $name,
-                    'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
+                    'type' => $role === 'operator' ? 'container' : 'virtual-machine',
                     'status' => 'Stopped',
                     'status_code' => 102,
                     'config' => $state->metadata[$name] ?? [
@@ -213,7 +220,17 @@ function legacyRecoveryService(
     $target = TopologyTarget::topologySnapshot($identity);
     $hostState = new LegacyRecoveryHost;
     $hostState->instances = array_map($target->instance(...), $generation->topologyRoles);
-    foreach ($hostState->instances as $name) {
+    $hostState->networkDhcpRange = $schema === 6 ? '10.232.1.10-10.232.1.14' : '10.232.1.10-10.232.1.12';
+    foreach ($generation->topologyRoles as $role) {
+        $name = $target->instance($role);
+        if ($schema === 6) {
+            $hostState->metadata[$name] = [
+                'user.orbit.e2e.owner' => 'orbit-e2e',
+                'user.orbit.e2e.operation' => str_repeat('a', 32),
+                'user.orbit.e2e.base-image' => $role === 'operator' ? TopologyRecipe::OPERATOR_IMAGE : $generation->baseImageAlias,
+                'user.orbit.e2e.base-image-fingerprint' => $role === 'operator' ? $generation->operatorBaseImageFingerprint : $generation->baseImageFingerprint,
+            ];
+        }
         $hostState->snapshots[$name] = ['main-legacy-generation'];
         $hostState->networkUsers[] = "/1.0/instances/{$name}?project=default";
     }
@@ -331,6 +348,89 @@ it('authorizes a literal schema-5 three-VM manifest and inventory for recovery',
         ->and($store->read('topology-snapshot/recovery.json'))->toBeNull();
 });
 
+it('recovers the current constructor-shaped snapshot and provenance-bearing operator copy', function (): void {
+    [$recovery, $store, $state, $paths] = legacyRecoveryService(6);
+    $copy = 'orbit-e2e-topology-snapshot-operator-next';
+    $state->instances[] = $copy;
+    $state->metadata[$copy] = [
+        ...$state->metadata['orbit-e2e-topology-snapshot-operator'],
+        'user.orbit.e2e.issue' => 'AUX-92',
+        'user.orbit.e2e.attempt' => str_repeat('b', 32),
+    ];
+    $state->networkUsers[] = "/1.0/instances/{$copy}?project=default";
+    $inventory = $recovery->authorize();
+    expect($inventory->instances['orbit-e2e-topology-snapshot-gateway']['metadata']['user.orbit.e2e.base-image-fingerprint'])->toBe(str_repeat('d', 64))
+        ->and($inventory->instances[$copy]['metadata']['user.orbit.e2e.base-image'])->toBe(TopologyRecipe::OPERATOR_IMAGE)
+        ->and($inventory->instances[$copy]['metadata']['user.orbit.e2e.base-image-fingerprint'])->toBe(str_repeat('b', 64))
+        ->and($inventory->network['config']['ipv4.dhcp.ranges'])->toBe('10.232.1.10-10.232.1.14');
+    $host = new IncusHost(project: 'default', pool: 'orbit-e2e');
+    $rebuilder = new TopologySnapshotRebuilder(
+        $host, new IncusNetworkLifecycle($host), new TopologySnapshotManifestStore($store, $paths, $host),
+        new OperationLock($paths), new OperationId(str_repeat('c', 32)), TopologySnapshotIdentity::primary(),
+    );
+    $result = $rebuilder->recover($inventory, static function (): void {});
+    expect($result['instances_deleted'])->toHaveCount(5)->toContain($copy)
+        ->and($result['networks_deleted'])->toBe(['oe-topo-snap'])
+        ->and($state->instances)->toBe([])->and($state->networkPresent)->toBeFalse()
+        ->and($store->read('topology-snapshot/promoted.json'))->toBeNull();
+});
+
+it('refuses provenance changed after authorization before teardown mutates guests', function (): void {
+    [$recovery, $store, $state, $paths] = legacyRecoveryService(6);
+    $inventory = $recovery->authorize();
+    $state->metadata['orbit-e2e-topology-snapshot-operator']['user.orbit.e2e.base-image-fingerprint'] = str_repeat('e', 64);
+    $host = new IncusHost(project: 'default', pool: 'orbit-e2e');
+    $rebuilder = new TopologySnapshotRebuilder(
+        $host, new IncusNetworkLifecycle($host), new TopologySnapshotManifestStore($store, $paths, $host),
+        new OperationLock($paths), new OperationId(str_repeat('c', 32)), TopologySnapshotIdentity::primary(),
+    );
+    expect(fn () => $rebuilder->recover($inventory, static function (): void {}))
+        ->toThrow(RuntimeException::class, 'inventory changed after authorization');
+    expect($state->instances)->toHaveCount(4)->and($state->networkPresent)->toBeTrue();
+    Process::assertDidntRun(fn (PendingProcess $process): bool => is_array($process->command)
+        && (in_array('delete', $process->command, true) || in_array('stop', $process->command, true)));
+});
+
+it('refuses current snapshot provenance or network mismatches before mutation', function (Closure $mutate): void {
+    [$recovery, $store, $state] = legacyRecoveryService(6);
+    $before = $store->read('topology-snapshot/promoted.json');
+    $mutate($state);
+    expect(fn () => $recovery->authorize())->toThrow(RuntimeException::class);
+    expect($state->instances)->toHaveCount(4)->and($state->networkPresent)->toBeTrue()
+        ->and($store->read('topology-snapshot/recovery.json'))->toBeNull()
+        ->and($store->read('topology-snapshot/promoted.json'))->toBe($before);
+    Process::assertDidntRun(fn (PendingProcess $process): bool => is_array($process->command)
+        && (in_array('delete', $process->command, true) || in_array('stop', $process->command, true)));
+})->with([
+    'VM alias mismatch' => [static function (LegacyRecoveryHost $state): void {
+        $state->metadata['orbit-e2e-topology-snapshot-gateway']['user.orbit.e2e.base-image'] = TopologyRecipe::OPERATOR_IMAGE;
+    }],
+    'VM fingerprint mismatch' => [static function (LegacyRecoveryHost $state): void {
+        $state->metadata['orbit-e2e-topology-snapshot-gateway']['user.orbit.e2e.base-image-fingerprint'] = str_repeat('e', 64);
+    }],
+    'operator alias mismatch' => [static function (LegacyRecoveryHost $state): void {
+        $state->metadata['orbit-e2e-topology-snapshot-operator']['user.orbit.e2e.base-image'] = TopologyRecipe::BASE_IMAGE;
+    }],
+    'operator fingerprint mismatch' => [static function (LegacyRecoveryHost $state): void {
+        $state->metadata['orbit-e2e-topology-snapshot-operator']['user.orbit.e2e.base-image-fingerprint'] = str_repeat('e', 64);
+    }],
+    'missing operator provenance' => [static function (LegacyRecoveryHost $state): void {
+        unset($state->metadata['orbit-e2e-topology-snapshot-operator']['user.orbit.e2e.base-image-fingerprint']);
+    }],
+    'unknown guest metadata' => [static function (LegacyRecoveryHost $state): void {
+        $state->metadata['orbit-e2e-topology-snapshot-operator']['user.orbit.e2e.unknown'] = 'value';
+    }],
+    'foreign operator owner' => [static function (LegacyRecoveryHost $state): void {
+        $state->metadata['orbit-e2e-topology-snapshot-operator']['user.orbit.e2e.owner'] = 'foreign';
+    }],
+    'previous DHCP range' => [static function (LegacyRecoveryHost $state): void {
+        $state->networkDhcpRange = '10.232.1.10-10.232.1.12';
+    }],
+    'unknown network field' => [static function (LegacyRecoveryHost $state): void {
+        $state->networkExtraConfig['user.orbit.e2e.unknown'] = 'value';
+    }],
+]);
+
 it('reads retained schema 1 evidence only for the former unnamespaced snapshot', function (): void {
     [$recovery] = legacyRecoveryService();
     $value = $recovery->authorize()->toArray();
@@ -398,6 +498,8 @@ it('authorizes an exact promotion copy with complete attempt identity', function
         'user.orbit.e2e.operation' => str_repeat('a', 32),
         'user.orbit.e2e.issue' => 'AUX-92',
         'user.orbit.e2e.attempt' => str_repeat('b', 32),
+        'user.orbit.e2e.base-image' => TopologyRecipe::BASE_IMAGE,
+        'user.orbit.e2e.base-image-fingerprint' => str_repeat('d', 64),
     ];
     $host->networkUsers[] = "/1.0/instances/{$copy}?project=default";
 
@@ -673,15 +775,23 @@ it('keeps one refresh lock through teardown and the construction boundary', func
     );
     $identity = TopologySnapshotIdentity::primary();
     $hostState = new LegacyRecoveryHost;
+    $generation = legacyRecoveryGeneration();
     $hostState->instances = $identity->instances();
-    foreach ($identity->instances() as $name) {
+    $hostState->networkDhcpRange = '10.232.1.10-10.232.1.14';
+    foreach ($generation->topologyRoles as $role) {
+        $name = $identity->instance($role);
+        $hostState->metadata[$name] = [
+            'user.orbit.e2e.owner' => 'orbit-e2e',
+            'user.orbit.e2e.operation' => str_repeat('a', 32),
+            'user.orbit.e2e.base-image' => $role === 'operator' ? TopologyRecipe::OPERATOR_IMAGE : $generation->baseImageAlias,
+            'user.orbit.e2e.base-image-fingerprint' => $role === 'operator' ? $generation->operatorBaseImageFingerprint : $generation->baseImageFingerprint,
+        ];
         $hostState->snapshots[$name] = ['main-legacy-generation'];
         $hostState->networkUsers[] = "/1.0/instances/{$name}?project=default";
     }
     fakeLegacyRecoveryHost($hostState);
     $host = new IncusHost(project: 'default', pool: 'orbit-e2e');
     $manifests = new TopologySnapshotManifestStore($store, $paths, $host);
-    $generation = legacyRecoveryGeneration();
     $manifests->promote($generation);
     $manifests->record($generation);
     $recovery = new LegacyTopologySnapshotRecovery($host, $manifests, $store, $operation, $identity);
