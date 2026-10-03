@@ -142,6 +142,7 @@
             "group": "Solutions",
             "pages": [
               "solutions/doctor-incus-proof",
+              "solutions/incus-zfs-efficiency",
               "solutions/remote-file-writes-on-uutils-coreutils",
               "solutions/migrate-unmanaged-executor-hostname",
               "solutions/sqlite-wal-default",
@@ -1360,6 +1361,10 @@
     {
       "source": "/decisions/0192-run-task-agents-on-pi-only",
       "destination": "/reference/tasks#task-agents-run-on-pi"
+    },
+    {
+      "source": "/decisions/0194-respond-to-github-review-feedback",
+      "destination": "/reference/tasks#trusted-reviews-are-input-not-merge-authority"
     },
     {
       "source": "/decisions/0193-record-development-branch-renames",

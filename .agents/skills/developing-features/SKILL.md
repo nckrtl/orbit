@@ -19,7 +19,7 @@ Implement the documented behavior using the affected project's conventions. Add 
 
 For command changes, use [designing-cli-commands](../designing-cli-commands/SKILL.md) and the [CLI standard](../../../docs/reference/cli-ux.md). Use [verifying-cli-output](../verifying-cli-output/SKILL.md) when interaction or rendering needs a real terminal. When a change affects web app layout, use [verifying-web-ui](../verifying-web-ui/SKILL.md) and attach the phone and desktop screenshots.
 
-When the feature must be proved on an Incus topology, use [proving-on-incus](../proving-on-incus/SKILL.md).
+To explore or check behavior on real Nodes, use the group's Incus topology with [using-incus-topologies](../using-incus-topologies/SKILL.md). Do not write proof scripts.
 
 Run `composer test:affected` and `composer check` in each changed project. Confirm that the tests covering the feature ran. Keep the documentation and ADRs aligned with the result and run the documentation checks.
 

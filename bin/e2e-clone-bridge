@@ -12,6 +12,7 @@ from pathlib import Path
 NOT_BRIDGED = 79
 VENDOR_PATTERNS = ('vendor', '*/vendor', '*/*/vendor')
 DEFAULT_WORKTREE_ROOT = '/fast/worktrees/orbit'
+SHARED_REGISTRY = Path('/var/lib/orbit/e2e-primary-checkouts')
 
 
 class BridgeFailure(Exception):
@@ -61,22 +62,24 @@ def is_snapshot_primary(root):
     return (Path(root) / '.e2e/topology-snapshot/promoted.json').is_file() and not is_linked_worktree(root)
 
 
-def registered_primary(key):
-    """The live primary registered for an origin, or None when the link is missing, dangling, or no longer valid."""
-    try:
-        target = registry_path(key).resolve(strict=True)
-    except (OSError, RuntimeError):
-        return None
-    try:
-        valid = (
-            target.is_dir()
-            and target.stat().st_uid == os.geteuid()
-            and is_snapshot_primary(target)
-            and origin_key(target) == key
-        )
-    except (OSError, BridgeFailure):
-        return None
-    return target if valid else None
+def registered_primary(key, checkout=None):
+    """The first live primary owned by the caller or the invoking checkout's owner."""
+    owners = {os.geteuid()}
+    if checkout is not None:
+        owners.add(Path(checkout).stat().st_uid)
+    links = [registry_path(key), Path.home() / '.local/state/orbit/e2e-primary-checkouts' / key,
+             SHARED_REGISTRY / key]
+    for link in dict.fromkeys(links):
+        try:
+            if not link.is_symlink():
+                continue
+            target = link.resolve(strict=True)
+            if (target.is_dir() and target.stat().st_uid in owners
+                    and is_snapshot_primary(target) and origin_key(target) == key):
+                return target
+        except (OSError, RuntimeError, BridgeFailure):
+            continue
+    return None
 
 
 def primary_of(root):
@@ -96,7 +99,7 @@ def register(root, force=False):
     key = origin_key(root)
     if key is None:
         raise BridgeFailure(f'{root} has no origin remote.')
-    current = registered_primary(key)
+    current = registered_primary(key, root)
     if current == root or (current is not None and not force):
         return False
     link = registry_path(key)
@@ -113,7 +116,7 @@ def bridge_primary(clone):
     if os.environ.get('ORBIT_E2E_BRIDGE', '1') == '0' or is_linked_worktree(clone):
         return None
     key = origin_key(clone)
-    primary = registered_primary(key) if key else None
+    primary = registered_primary(key, clone) if key else None
     return None if primary is None or primary == clone else primary
 
 
@@ -144,7 +147,10 @@ def mirror_vendor(clone, bridge, relative):
     source, destination = clone / relative, bridge / relative
     destination.mkdir(parents=True, exist_ok=True)
     if shutil.which('rsync'):
-        result = subprocess.run(['rsync', '-a', '--delete', f'{source}/', f'{destination}/'], capture_output=True, text=True)
+        result = subprocess.run(
+            ['rsync', '-a', '--no-owner', '--no-group', '--no-perms', '--omit-dir-times', '--delete', f'{source}/', f'{destination}/'],
+            capture_output=True, text=True,
+        )
         if result.returncode:
             raise BridgeFailure(f'Mirroring {relative} failed: {result.stderr.strip()}')
         return
@@ -177,7 +183,10 @@ def prepare(clone, primary):
     # Untracked files the clone no longer has; ignored files such as .e2e/ and .env stay.
     git(bridge, 'clean', '-fdq')
 
-    for relative in git_z(clone, 'ls-files', '-z', '-m', '-o', '--exclude-standard'):
+    # Everything that differs from HEAD, staged or not, plus untracked files; the checkout above reset the rest.
+    changed = git_z(clone, 'diff', '-z', '--name-only', '--no-renames', 'HEAD')
+    untracked = git_z(clone, 'ls-files', '-z', '-o', '--exclude-standard')
+    for relative in dict.fromkeys(changed + untracked):
         source, destination = clone / relative, bridge / relative
         if source.exists() or source.is_symlink():
             copy_entry(source, destination)

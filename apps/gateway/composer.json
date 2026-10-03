@@ -50,7 +50,7 @@
         ]
     },
     "scripts": {
-        "test:affected": "../../bin/pest-plain vendor/bin/pest --parallel --processes=2 --tia --compact --colors=never",
+        "test:affected": "../../bin/pest-plain vendor/bin/pest --parallel --processes=4 --tia --compact --colors=never",
         "setup": [
             "composer install",
             "@php -r \"file_exists('.env') || copy('.env.example', '.env');\"",
@@ -73,7 +73,7 @@
         "annotator:check": "python3 ../../bin/annotator-build --check",
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",
-        "guidance:check": "ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact",
+        "guidance:check": "../../bin/guidance-check",
         "guidance:update": [
             "@guidance:check",
             "@php artisan boost:update --no-discover --no-interaction",

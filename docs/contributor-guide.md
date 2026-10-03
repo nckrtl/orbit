@@ -52,7 +52,7 @@ The start commit is the merge base with `origin/main`; repeat `--paths` for ever
 
 At every subtask handoff, Orbit's own task check runs the impact check against the candidate diff from the group's start commit. An impacted page missing from that diff fails with the list of pages.
 
-A reviewer-confirmed waiver needs a matching `page: reason` line in `docs/.docs-unaffected` that the branch under check adds against its base commit. Lines already in the base do not count, even when they match an impacted page, so lines left on `main` are inert. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
+A reviewer-confirmed waiver is a `page: reason` line in `.git/orbit/docs-unaffected/<branch>.txt`, named after the checked-out branch. Linked worktrees use the primary checkout's `.git`. The gate reads only the current branch's file, and a detached HEAD has none. The file is never committed, so a waiver never reaches `main` or another branch. The gate's log lists the waivers it accepted under `exceptions`, and the reviewer confirms each one. Required generator checks still apply. This policy runs through Orbit's `composer check` and `bin/review-check`; the generic Gateway task engine does not know about docs-first or documentation conventions. Jev is out of scope for this version.
 
 Run from the repository root:
 
@@ -133,7 +133,7 @@ The skills in the repository guide an agent through the work.
 | Review a proposal or a completed pull request | [reviewing-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/SKILL.md) |
 | Merge an approved pull request and clean up | [merging-pull-requests](https://github.com/nckrtl/orbit/blob/main/.agents/skills/merging-pull-requests/SKILL.md) |
 
-For focused work, use [writing-documentation](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [proving-on-incus](https://github.com/nckrtl/orbit/blob/main/.agents/skills/proving-on-incus/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
+For focused work, use [writing-documentation](https://github.com/nckrtl/orbit/blob/main/.agents/skills/writing-documentation/SKILL.md), [verifying-cli-output](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-cli-output/SKILL.md), [verifying-web-ui](https://github.com/nckrtl/orbit/blob/main/.agents/skills/verifying-web-ui/SKILL.md), or [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md). CLI work follows the [CLI design standard](/reference/cli-ux) and the [command vocabulary](/reference/cli-command-vocabulary). A web UI change follows [web verification](/reference/web-verification).
 
 An independent reviewer can review the proposed ADRs and documentation before coding, on request.
 
@@ -164,6 +164,8 @@ All maintained documentation lives under the root `docs/` directory, for humans 
 The Gateway Tasks engine stores work, deliverables, and lifecycle state. Each Project supplies its own task check and repository policy. Orbit keeps `bin/docs-impact` and its extraction logic in the repository, and enforces the result through `composer check` and `bin/review-check`. Putting docs-first rules in the Gateway is rejected, because it would couple a generic engine to Orbit's documentation, ADRs, and tooling.
 
 A deterministic report makes the docs-first decision repeatable. It combines changed paths with planned paths, maps public and operational surfaces to owning pages or existing generators, and reports impacted pages, reasons, generator status, and errors as stable JSON. Unknown or unowned changed surfaces are errors, not guesses. Relying only on agent or reviewer judgment is rejected, because it makes the no-change path slow and inconsistent. Reviewers still confirm the report and any page-specific waiver; the task check repeats the analysis at every handoff so later work cannot silently leave a page unchanged.
+
+A waiver lives in the Git directory, not in a tracked file, because it matters only to one branch and nothing reads it after the merge. A shared tracked file is rejected: concurrent branches appended to the same lines, so most merges of `main` into a task branch conflicted.
 
 Page ownership belongs beside the documentation, in `covers:` frontmatter and the extractor's surface mappings. Listing owners in every task brief is rejected, because duplicate lists go stale and miss new surfaces. Running only existing generators is also rejected: generated API, CLI, and MCP contracts do not find every hand-written page affected by configuration, errors, migrations, or schedules. Current generator output needs no duplicate prose, but stale or missing output still requires an update.
 

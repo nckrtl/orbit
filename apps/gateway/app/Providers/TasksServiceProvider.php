@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
@@ -28,6 +29,7 @@ use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
@@ -43,6 +45,7 @@ use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
+use App\Infrastructure\Tasks\RemoteTaskWorkspaceTopology;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\T3\HttpT3ThreadReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -60,6 +63,7 @@ final class TasksServiceProvider extends ServiceProvider
     /** @var array<class-string, class-string> */
     public array $bindings = [
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
+        TaskWorkspaceTopology::class => RemoteTaskWorkspaceTopology::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,
@@ -77,6 +81,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         CoderSettleNotifier::class => HttpCoderSettleNotifier::class,
         TaskPullRequestWatcher::class => HttpTaskPullRequestWatcher::class,
+        TaskPullRequestReviewWatcher::class => HttpTaskPullRequestWatcher::class,
     ];
 
     #[\Override]

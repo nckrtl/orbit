@@ -18,6 +18,10 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 
+Reviewer trust is not an Instance environment setting. The Gateway operator sets `orbit.tasks.github_reviewers` in Gateway configuration, with no environment-variable counterpart. A task workspace's `.env`, task definition, or branch cannot grant [GitHub feedback authority](/reference/tasks#trusted-github-feedback).
+
+The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overrides the memory limit for every VM it creates or clones, for example `2GiB`. When unset, the harness uses the [per-Node defaults](/reference/incus-topologies#capacity). It does not read this setting from an Instance's `.env`.
+
 ## Operations
 
 The import and update endpoints accept either a positive numeric Instance ID or an exact Route domain in `{instance}`. A selector that matches no Instance returns HTTP 404. A Route domain that has multiple Instance targets returns HTTP 409 with `env.target_ambiguous`. The Instance's recorded placement owns its environment: the owning Node is the Instance's `node_id`, not a Route. An Instance without a Route can still have its environment synchronized. Changing the Project's [task workspace routing setting](/reference/projects#task-workspace-routing) does not change an existing Instance's environment target.

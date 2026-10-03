@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\OperationId;
+use Symfony\Component\Process\Process;
 
 describe('OperationLock', function () {
     it('allows shared generation pins and bounds an exclusive waiter', function () {
@@ -26,6 +27,24 @@ describe('OperationLock', function () {
 
         $first->release();
         $second->release();
+    });
+
+    it('keeps named-user grants when pinning an existing shared lock', function (): void {
+        $paths = new StatePaths(temporaryPath('orbit-lock-acl-', 4));
+        $file = $paths->ensureParent('locks/generation.lock');
+        file_put_contents($file, '');
+        chmod($file, 0600);
+        (new Process(['setfacl', '--modify', 'user:'.(posix_geteuid() + 1).':rw-,mask::rw-', $file]))->mustRun();
+        $acl = new Process(['getfacl', '--omit-header', '--numeric', '--no-effective', $file]);
+        $acl->mustRun();
+        $before = $acl->getOutput();
+        $lock = new OperationLock($paths);
+
+        expect($lock->acquire('generation', new OperationId(str_repeat('e', 32)), false, 0.05))->toBeTrue();
+        $lock->release();
+
+        $acl->mustRun();
+        expect($acl->getOutput())->toBe($before)->toContain('mask::rw-');
     });
 
     it('persists caller ownership in the lock file', function () {

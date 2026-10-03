@@ -13,7 +13,7 @@ covers:
 
 # Incus topology registry
 
-This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness leases one topology per issue, and `bin/e2e-topology` controls it. `bin/e2e-scenarios` runs regression scenarios on demand. The guest convergence fixtures establish the sample application's current state and are fingerprinted in the prepared topology data. Every topology starts from the shared [topology snapshot](/reference/topology-snapshot). The [proving-on-incus](https://github.com/nckrtl/orbit/blob/main/.agents/skills/proving-on-incus/SKILL.md) skill covers the working habits.
+This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness leases one topology per issue, and `bin/e2e-topology` controls it. `bin/e2e-scenarios` runs regression scenarios on demand. The guest convergence fixtures establish the sample application's current state and are fingerprinted in the prepared topology data. Every topology starts from the shared [topology snapshot](/reference/topology-snapshot). The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
 ## Registered profile
 
@@ -55,7 +55,9 @@ CI checks those calls and the JSON fields the scripts read against the current C
 
 An issue holds one discovery topology at a time. `acquire` creates it and `release` removes it. Its state lives under `<worktree>/.e2e/`, in `attempt.json` and `topology.json`, and it dies with the worktree.
 
-A lease names the issue, the attempt ID, the purpose, the operation ID, and the acquisition time. There is no reaper. A topology lives until someone releases it.
+A lease names the issue, the attempt ID, the purpose, the operation ID, and the acquisition time. There is no reaper. A topology lives until the operator or Orbit releases it.
+
+Task agents and reviewers use only the topology allocated to their task. They never acquire or release a topology, receive no sudo, and do not touch the host firewall. Acquisition and teardown belong to Orbit or the operator. Use `exec`, `spawn`, `logs`, and `kill` from the task workspace to work on the allocated topology. Clean up processes you spawn, but leave the topology allocated for teardown.
 
 ### The app-prod-2 extension
 
@@ -88,12 +90,14 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 
 | Setting | Value |
 | --- | --- |
-| VM size | 1 vCPU, 2 GiB memory, 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.memory`, `e2e.incus.root_size`) |
+| VM size | 1 vCPU and 16 GiB root disk (`e2e.incus.cpu`, `e2e.incus.root_size`). Memory defaults to 1.5 GiB for `gateway`, 1 GiB for `app-prod` and `app-prod-2`, and 2 GiB for other Nodes (`e2e.incus.memory`). |
 | VM budget | `e2e.incus.max_vms`, default 24, minimum 9. `ORBIT_E2E_INCUS_MAX_VMS` sets it for one run. |
 | Network slots | Slot 1 belongs to the topology snapshot. Disposable topologies take slots 2 to 200. |
 | Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
 
 Every `incus` call carries the configured project. The harness reserves the recipe's VMs, three or four, before it creates a network or a VM. It refuses `acquire` when the budget cannot hold them, and it names the count and the limit. At the default budget, seven topologies fit beside the snapshot.
+
+Memory limits apply when the harness creates or clones a VM. The registered three-Node profile has a 4.5 GiB configured budget. `ORBIT_E2E_INCUS_MEMORY=2GiB` overrides every Node's limit for a run. The cold recipe's `operator` and `extra` Nodes keep the 2 GiB default. These limits do not change the CPU allocation or reduce the application's CPU work. See the [ZFS efficiency measurements](/solutions/incus-zfs-efficiency) for the evidence and workload limits.
 
 ### Locks
 
@@ -167,22 +171,32 @@ A task workspace is an independent clone, not a linked worktree. It holds neithe
 
 | Step | What happens |
 | --- | --- |
-| Find the primary | Reads the invoking user's registry, then `/var/lib/orbit/e2e-primary-checkouts/{origin key}`. The primary owner is the invoking user or the owner of the invoking checkout. Without a live registration, the command runs in the clone. |
+| Find the primary | Reads `$XDG_STATE_HOME/orbit/e2e-primary-checkouts/{origin key}` when set, then `$HOME/.local/state/orbit/e2e-primary-checkouts/{origin key}`, then `/var/lib/orbit/e2e-primary-checkouts/{origin key}`. The primary owner is the invoking user or the owner of the invoking checkout. Without a live registration, the command runs in the clone. |
 | Update the bridge | Checks out the clone's HEAD in `<worktree root>/<clone directory>-e2e`, on branch `<clone branch>-e2e`. The worktree root is the primary's `orbit.worktreeRoot`, default `/fast/worktrees/orbit`. |
-| Mirror the work | Copies the clone's modified and untracked files, removes its deleted tracked files, and mirrors each `vendor/` directory |
+| Mirror the work | Copies the clone's modified and untracked files, removes its deleted tracked files, and mirrors each `vendor/` directory without preserving source owners or groups |
 | Run | Runs the bridge's `bin/e2e-topology`, with each clone path replaced by the bridge path and `--worktree` set to the bridge |
 
-The origin key is the SHA-256 of the origin URL's lowercase host and its path, so every clone of one repository finds the same primary.
+The origin key is the SHA-256 of the origin URL's lowercase host and its path, so every clone of one repository finds the same primary. The cleanup helper uses the same lookup order and owner rule.
+
+Missing or dangling links and explicitly rejected registrations are successful no-ops. Once an eligible primary has a promoted marker, operational failures while probing its Git directories, origin, or worktree-root setting are cleanup failures, not an absent registration. An unset worktree-root key still uses the default. The helper returns nonzero before changing task or bridge resources, so teardown retains the task checkout for retry. [Primary registration](/reference/instance-setup#primary-registration) describes the shared registry and the worker's access grants.
+
+State directories and operation locks allow access only to their owner and ACL-named users. The harness keeps existing ACL masks, including the managed user's grant to `orbit-worker`, when it opens the state root, ensures a parent directory, or acquires a lock. It removes access for the owning group and other users without recalculating those masks. An already-private owner-owned directory or lock needs no permission change when the worker uses it.
 
 The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-snapshot` never bridges, because snapshot operations belong to the primary checkout.
 
-In a task workspace on branch `task-58`, run `bin/e2e-topology acquire TASK-58 .`, then the other commands with `TASK-58`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Release the topology before the task ends, because bridge removal does not release it.
+In a task workspace on branch `task-58`, use the allocated topology with commands such as `bin/e2e-topology exec TASK-58 gateway --argv='["orbit","node:list","--json"]'`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Orbit or the operator must release the topology during teardown, because bridge removal does not release it.
+
+Vendor mirroring keeps content, symbolic links, file timestamps, and deletion of stale entries. With rsync, it disables owner, group, and permission preservation after archive mode and omits directory timestamps. Existing destination permissions and ACL grants stay in place; new files use source permissions subject to the destination's defaults and the caller's umask, including executable permissions. This lets `orbit-worker` update a managed-user-owned bridge without trying to change its ownership, chmod owner-owned entries, or set timestamps on directories the worker does not own.
+
+A managed-user run that creates a directory with explicit mode `0700` can mask inherited named-user ACL grants and cancel worker access despite default ACLs. Keeping an existing ACL mask does not repair that inaccessible directory owned by another user. The operator must restore its effective grants and keep state owning-group/other access closed. The task lifecycle must preserve effective worker access on state and bridge directories it creates.
 
 The helper checks the checkout identity and origin, the promoted snapshot marker, and the repository identity. It reads the same registration paths as the bridge, including the shared directory, and it accepts a primary owned by the checkout owner. A primary registered by the managed user is found after teardown runs as `orbit-worker`. The worker also needs to traverse and write the primary's `.git` and the bridge worktree root. [Primary registration](/reference/instance-setup#primary-registration) records the copy and that grant.
 
 It targets `task-{id}-e2e` under that primary's worktree root. It removes a registered worktree only when both its path and branch match. A bridge checked out on another branch stays. It deletes the task bridge branch only when no worktree has it checked out, and deletes only `refs/orbit/e2e-bridge/task-{id}`. It never removes another task's bridge or releases a topology.
 
 An absent bridge, or a checkout with no registration, is success. A registration that exists is not that case. A cleanup command failure exits nonzero and makes teardown retain the task checkout and Instance for retry. Removal of a matching bridge, its unused branch, and its staging ref is idempotent. The helper does not alter the checkout that runs it or that checkout's worktrees.
+
+Orbit acquires a task group's topology, `TASK-<group>`, as the managed user when it provisions the group's workspace, and releases it before it removes the workspace. Acquiring changes host firewall rules, which the task worker cannot do; agents and reviewers only use the topology. Acquiring is best effort: a failure is logged and the group continues without a topology. A failed release keeps the workspace so a later removal retries it. Both steps first run `status`, which prints `absent` when the group holds no topology, so they do nothing when there is nothing to do, and a workspace without `bin/e2e-topology` has no topology.
 
 ## Release
 
@@ -225,9 +239,9 @@ The checkout must be clean. An optional SHA must be the full lowercase `HEAD`. B
 
 Each worker gets its own attempt, network, VMs, state path, and Pest process. One Pest test is one independent flow, and a flow stops at its first failed step. Admission holds the `topology-create` lock while it counts the recipe's VMs against the shared budget and picks a network slot. After that, `run` workers go on in parallel. A failure in one worker does not cancel another.
 
-The cold flow starts from the unchanged base image and installs no PCOV before construction. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs, or its manifest.
+The cold flow starts from the unchanged base image and installs no PCOV before construction. Fresh development Nodes get the sample TLD `beast`. Each fresh production Node gets its own name as its TLD through the provision command. The unique production TLD lets the sample Instance clone create its preview route. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs, or its manifest.
 
-A snapshot flow mounts no worktree. It clones the three Nodes, and builds `app-prod-2` for the extension. It synchronizes the exact candidate commit from Git into the checkout Nodes and checks the guest commit. It converges the whole topology, checks the commit again, and runs the readiness probes. Then it runs the exercise and a final verification.
+A snapshot flow mounts no worktree. It clones the three Nodes, and builds `app-prod-2` for the extension. Before dependency installation, it repairs the cloned Gateway addresses and WireGuard endpoints, so DNS can use the new Gateway. It synchronizes the exact candidate commit from Git into the checkout Nodes and checks the guest commit. It converges the whole topology, checks the commit again, and runs the readiness probes. Then it runs the exercise and a final verification.
 
 Scenario resources carry the issue `SCN-1` and the extra metadata `user.orbit.e2e.run`, `user.orbit.e2e.scenario`, and `user.orbit.e2e.recipe`. VM names are `orbit-e2e-scn-<run>-<scenario>-<attempt>-<node>`, with 8 characters of the run ID, 6 hex characters of the SHA-256 of the scenario ID, and 8 characters of the attempt ID. The network is `oe-` plus 12 hex characters of the SHA-256 of `<run>:<scenario>:<attempt>`. These VMs count against the same budget as issue topologies.
 

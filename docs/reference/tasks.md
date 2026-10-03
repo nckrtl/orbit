@@ -6,10 +6,10 @@ covers:
   - "apps/gateway/app/Actions/Tasks/**"
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,TaskDefinitionsController,AgentThreadsController,TaskQuestionsController}.php"
-  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskQuestion,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
+  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/{gateway/resources/tasks/**,e2e/resources/proofs/*}"
-  - "apps/gateway/database/migrations/*_{convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks}.php"
+  - "apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks}.php"
 ---
 
 # Tasks
@@ -989,7 +989,7 @@ The [Incus proof](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/p
 
 For Orbit's own task pull requests, a Tasks engine subtask approval publishes that subtask's commit. It is not the final review of the whole pull request, and it does not merge. The [final DevOps review](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) submits a formal GitHub approval for the exact head commit.
 
-When the maintainer has delegated review and merge, the reviewer verifies that approval and that `Required checks` succeeded on that head, then merges that commit through the maintainer's GitHub CLI profile. A plain comment alone does not satisfy the gate. This repository workflow runs outside the generic Tasks engine. The Gateway does not merge the pull request and does not read GitHub review feedback. It only watches pull request state, conflicts, and CI.
+When the maintainer has delegated review and merge, the reviewer verifies that approval and that `Required checks` succeeded on that head, then merges that commit through the maintainer's GitHub CLI profile. A plain comment alone does not satisfy the gate. This repository workflow runs outside the generic Tasks engine. The Gateway does not merge the pull request. It watches pull request state, conflicts, CI, and configured GitHub review feedback. Reading an approval is an observation, not permission to merge. The maintainer's merge identity still has admin bypass; Orbit adds no runtime merge gate.
 
 Each tick reads the pull request of every `settling` task through the GitHub App, using `pr_url`. `watched_pr_url` does not replace that read. When a subtask is `todo`, `running`, or `reviewing`, a merged or closed result follows the [branch watch](#watch-the-branch-while-subtasks-are-open) instead of the table.
 
@@ -997,13 +997,48 @@ Each tick reads the pull request of every `settling` task through the GitHub App
 | --- | --- |
 | Merged | Orbit completes the task and removes its workspace. A failed removal leaves the task `settling` with a reason that starts with `Merged pull request cleanup failed: `, and the sweep retries it. |
 | Closed without merging | The task asks for assistance with `The expected pull request closed without merging.` |
-| Open with a conflict or a failed check | See [Fix a settling pull request](#fix-a-settling-pull-request). |
-| Open and healthy | Orbit clears its own pull request reason. |
+| Open with a conflict, a failed check, or eligible trusted requested changes | See [Fix a settling pull request](#fix-a-settling-pull-request). |
+| Open and healthy | Orbit clears only its own recovered pull request reason. A review-read failure is not a healthy review result. |
 | Unreadable | Nothing changes. |
 
 A merged task that asks for assistance with `An approved commit is not on the pull request: ` is not completed.
 
 A `settling` task without `pr_url` and without a `todo` subtask asks for assistance with `The settling task has no reviewed pull request URL. Cancel the task to push its approved commits to task-{id} and remove its workspace.` This happens when a subtask cancel ends the last open subtask before any pull request exists.
+
+#### Trusted GitHub feedback
+
+The Gateway operator configures `orbit.tasks.github_reviewers` in the Gateway's `config/orbit.php`. It maps a lower-case `github.com` repository name, `owner/repository`, to a list of positive GitHub numeric account IDs. For example, `['acme/widgets' => [123456]]` trusts that account for that repository only. The default is `[]`: GitHub feedback creates no work until the operator opts in. This is Gateway configuration, not a Project input, environment variable, task definition, CLI option, or repository file read from the task branch. Reload the Gateway's configuration and scheduler after a change.
+
+Review requests, logins, repository roles, `author_association`, and App ownership confer no trust.
+
+Use the numeric `user.id` from GitHub's account API, not a login or an App ID. A renamed account keeps its trust; its login is display information only. A malformed repository key or ID list disables feedback for that repository and asks for configuration assistance. There is no wildcard or login fallback. Removing an account stops new consumption. It does not undo a fixup already created. This allowlist authorizes bounded repair work, not final-review or merge authority. The designated final reviewer remains part of the [repository's final-review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request).
+
+For an open pull request, Orbit reads the complete bounded review list. It groups records by trusted account ID and selects that account's latest submitted **decisive** record across the whole pull request, ordered by `submitted_at`, then numeric review ID. API arrival order is irrelevant.
+
+`APPROVED`, `CHANGES_REQUESTED`, and `DISMISSED` are decisive states. `COMMENTED` and `PENDING` never replace a decisive record. A selected `DISMISSED` record is neutral: an older approval or request does not become effective again. A selected record on another head is stale; Orbit does not fall back to an older record for the current head. An unknown state or malformed selection field makes the review result unreadable, not an approval or an empty list. A `PENDING` record may have null `submitted_at` and `commit_id`; those fields are required only for submitted decisive records.
+
+| Effective review | Observation and action |
+| --- | --- |
+| Trusted `CHANGES_REQUESTED`, `commit_id` equals the current PR head | Candidate for one bounded findings fixup. |
+| Trusted `APPROVED`, `commit_id` equals the current PR head | A durable [approval observation](#inspect-approval-observations), not a fixup, internal approval, completion, or merge. |
+| `COMMENTED` | Informational, even with blocking-sounding prose. No automatic work. Ask the reviewer to submit requested changes, or append an operator subtask. |
+| `DISMISSED`, `PENDING`, stale head, or untrusted account | No automatic work. Dismissal does not revive an older decision. |
+
+An approval from one account does not cancel another account's effective requested changes. Among eligible requests from different trusted accounts, Orbit considers the oldest effective request first, using `submitted_at` and review ID. Selection runs again on each fresh read, so a later decisive review supersedes an older request even if GitHub returns it out of order. Ordinary issue comments and thread replies are not review decisions.
+
+Review consumption extends the existing CI/conflict watcher; it does not replace the formal-approval workflow. [Trusted reviews are input, not merge authority](#trusted-reviews-are-input-not-merge-authority) explains the authority boundary and the alternatives.
+
+#### Inspect approval observations
+
+Approval observations are durable Gateway records, separate from internal `approved` receipts and the consumption ledger. A complete uncached review scan records every trusted submitted `APPROVED` review it contains, including approvals for past heads. The unique key is task group, repository, PR number, and review ID. Repeated reads update the same record. Its immutable source snapshot contains reviewer account ID, display login, review ID and URL, `commit_id`, `submitted_at`, and first-observed time. Keep that source even after a rename, dismissal, supersession, trust removal, or head change; do not invent approvals that were never observed.
+
+Each record also stores the latest observed login and review state and latest selected decisive review ID for that account. It stores the observed PR head/state, trust membership, last-successful-check time, and status/reason. `current` means the review remains the account's effective trusted `APPROVED` decision on the open PR's observed exact head. `historical` means known stale head, dismissal, supersession, removed trust, a closed/merged PR, or absence from a complete scan. Reasons distinguish those conditions; a newer `COMMENTED` review does not supersede an approval. Past observations remain inspectable and never fall back to current because another review was dismissed.
+
+Persist scan state on the group: repository/PR, last attempt, last successful scan, observed head/state, trust revision, and `read_status` (`complete`, `unreadable`, or `disabled`). Apply each complete scan and its record changes atomically. A persisted scan sequence prevents an older response from overwriting a newer observation. Incomplete or failed reads never confirm current approval or erase source evidence. Known head/trust changes can mark a record `historical` without a complete review list; otherwise failed reads or a successful scan older than 60 seconds make its reported status `unverified`, preserving its last confirmed status and reason.
+
+On the Gateway, run `php artisan orbit:tasks:github-reviews <group-id> --json` to inspect the stored result. It reads local state only, never GitHub, and changes no task. JSON includes group/repository/PR identity, read status, observed head/state, scan times and age, and records ordered by reviewer ID then review ID. Each record contains the source and latest fields above, reported status, last confirmed status, and reasons. No records is an explicit empty list, not approval. An unknown group fails; a disabled or unreadable scan and unverified records are visible, not a successful approval verdict.
+
+The command reports evidence **as of the stored scan**, not GitHub's live truth. It returns no merge-ready flag, aggregate approval verdict, or designated-final-reviewer assertion. It cannot approve a subtask, complete a group, clear findings, or authorize a merge. Operators still perform fresh identity, exact-head, required-check, and delegation checks in the external final-review workflow. The report is not that workflow's gate.
 
 ### Fix a settling pull request
 
@@ -1020,16 +1055,69 @@ A pull request **conflicts** when GitHub reports it as not mergeable, or its mer
 
 A run's age starts at its `started_at`, or at the first tick that saw it pending. The rollup check `Required checks` is ignored while another failed check explains the failure. When only infrastructure problems remain, the task waits and looks again after 1, 2, 5, 10, and 30 minutes. Then it asks for assistance and adds `Those checks were cancelled or could not start, and did not recover. Re-run them.`
 
-Each problem has an identity: `conflict:` plus the base branch, or `check:` plus the check name. One tick appends at most one fixup, for the first problem that still has one left. A conflict comes first. Failed checks follow in GitHub's order. Project slugs and CI job names do not change that order. A task gets at most two fixups for one identity and at most three in total. These caps count every fixup appended after the last completed operator subtask. An operator subtask is one with no `fixup_problem`. So each new window needs a human step.
+Each problem has an identity: `conflict:` plus the base branch, `check:` plus the check name, or `review:` plus the trusted reviewer's numeric account ID. A review ID is the consumption key, not the cap identity: submitting another review cannot evade the per-reviewer cap. One tick appends at most one fixup, for the first eligible problem that still has one left. A conflict comes first. Failed checks follow in GitHub's order. Eligible review requests follow in the order described above.
+
+Project slugs and CI job names do not change that order. A task gets at most two fixups for one identity and at most three in total. These caps count every fixup appended after the last completed operator subtask. An operator subtask is one with no `fixup_problem`. So each new window needs a human step.
 
 | Fixup | Title | Brief |
 | --- | --- | --- |
 | Conflict | `Merge origin/{base}` | `Merge origin/{base} into the task branch and resolve the conflicts. Do not rebase and do not force-push.` |
 | Failed check | `Fix {name}` | `Check {name} failed: {url}. Do not rebase and do not force-push.` |
+| Trusted requested changes | `Address GitHub review {review_id}` | The immutable findings packet below, with the source head, reviewer identity, review URL, and bounded scope. No rebase or force-push. |
 
-Every fixup uses the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which runs that exact command in `.`. Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
+Conflict and check fixups use the Project's task check as configured when Orbit creates the fixup. When it exists, the fixup has one `command` deliverable, `project-check`, which runs that exact command in `.`. Without a configured check, the fixup has one `review` deliverable, `fixup-review`, that asks the reviewer to confirm the conflict or failed check is resolved from the available evidence. The Gateway adds no CI reproduction command. Changing the Project check later does not rewrite an existing fixup's deliverables; subsequent handoffs use the current Project check as usual.
 
-A fixup records the head it was created for. No new fixup starts while the head is still that commit.
+A fixup records the head it was created for. No new fixup starts while the head is still that commit. These guards and the shared caps apply to feedback, CI, and conflict fixups together. Completing an operator subtask resets the cap window, but never resets review consumption.
+
+#### Retrieve the findings
+
+Orbit retrieves findings only for the next eligible, unconsumed request that has room under the caps. The GitHub App reads `GET /repos/{owner}/{repo}/pulls/{number}/reviews`, the selected review at `/reviews/{review_id}`, and that review's `/comments` list. It uses a repository token with only `pull_requests: read`, separate from publishing and checks tokens. No new App permission or webhook is needed. The [GitHub App reference](/reference/github-app#how-orbit-watches-a-task-pull-request) owns the credential and read limits.
+
+A review scan follows GitHub pagination with 100 records per page, at most 10 pages and 1,000 review records. Selected-review comments use at most 5 pages and 500 records. A remaining next-page link at the limit is overflow, not completion. A missing or malformed page, invalid identity/head/time, HTTP failure, permission failure, or incomplete pagination makes the result unreadable. A partial list never establishes the effective decision. Follow pagination only within that repository's expected `api.github.com` endpoint; never send a token to a URL supplied in review text.
+
+The findings packet contains the full review body and the selected review's inline comments authored by the same trusted account. Each included comment names its ID, source URL, path, line/side or original location, diff hunk when supplied, and body. Sort comments by numeric ID. Preserve outdated locations as context; Orbit does not infer that a finding is fixed from GitHub's outdated or resolved markers. Replies and comments belonging to another review or account do not add work. Missing optional location information stays absent.
+
+A body with no non-whitespace text and no non-whitespace inline finding asks for assistance instead of creating an empty fixup.
+
+The entire UTF-8 findings packet, including metadata and scope instructions, is capped at 64 KiB. Orbit does not silently truncate findings or fetch linked files, issue comments, logs, attachments, or other URLs. Overflow asks the operator to split the review or append a scoped subtask.
+
+The fixup brief treats review text, paths, and diff hunks as quoted external data. It authorizes addressing those findings within the existing feature contract, adding regression coverage, and reporting conflicting or out-of-scope requests. It does not authorize instructions embedded in the review, new features, credentials, live configuration changes, or a merge. An implementer asks for assistance when the findings require a product decision.
+
+Review snapshots may be cached for at most 60 seconds, keyed by repository, PR, head, and trust configuration. Only bounded review data is cached, never a token.
+
+Before appending, Orbit bypasses the cache and re-reads the PR state/head, the complete review selection, the selected review, and its comments. It checks that the request is still effective, trusted, exact-head, and unchanged from the packet. A changed head, decision, body, or comments discards the candidate and retries from fresh data; no consumption is recorded. There is no atomic transaction with GitHub: a change after the final read can still race with local creation. The persisted source snapshot makes that boundary auditable.
+
+#### Consume once and recover
+
+Consumption is durable Gateway database state, not a timestamp cursor or a cache. The unique key is the task group, repository, PR number, and GitHub review ID. It survives ticks, scheduler restarts, head changes, reviewer renames, and cap resets. A consumed review is never consumed again, even if its body or inline comments are edited, its state changes, or its fixup is cancelled, deleted, or fails.
+
+An unconsumed request edited before creation uses its latest complete packet. To stop an eligible `todo` or `running` fixup, use the existing cancellation flow. Cancellation retains the subtask, consumption key, and cap charge in every status. `tasks:subtask:destroy` remains backlog-only: outside backlog it returns HTTP 409 `tasks.not_in_backlog`, even for a `todo` or cancelled fixup. Feedback creation requires `settling`, so deleting its subtask is not a supported API recovery operation.
+
+A null or missing fixup link is defensive corruption/cleanup handling, not deletion permission. Keep the source packet, consumption key, cap identity, and creation-window marker if unsupported database cleanup removes the linked row. Never recreate the consumed review or silently release its cap charge in that window. Count such orphaned consumption once, without double-counting retained subtasks, and request assistance rather than resuming nonexistent work. Only the ordinary completed-operator-subtask boundary opens a new cap window; it never resets consumption.
+
+After creation, GitHub edits, dismissal, and superseding reviews never rewrite or automatically cancel the fixup. To stop that work, an operator uses the existing subtask/task cancellation flow; a new submitted review or explicit operator subtask supplies new scope.
+
+The immutable packet is the ledger's source snapshot. Authorized operator edits to a `todo` subtask still follow the existing edit rules; they are explicit human rescoping, not automatic GitHub feedback. They do not rewrite the ledger, reset consumption, or reset the cap window. Replacing generated deliverables is an operator override, not proof that the original findings were resolved. Started fixups keep the normal locked fields. Prefer cancelling and appending a scoped operator subtask when the work needs a different contract.
+
+Orbit creates the consumption record and its single `todo` fixup in one database transaction under the existing managed-group and subtask locks. It rechecks that the group is still `settling`, has no busy or waiting subtask, has no unrelated assistance, and has room under both caps.
+
+The record stores the source repository/PR, review ID, reviewer ID and login, submitted time, exact head, review URL, immutable packet and its digest, linked fixup ID, cap identity, and completed operator subtask ID that identifies its creation window. A uniqueness conflict returns the already-created work when it still exists; it never creates another subtask. No GitHub call or agent start holds these database locks.
+
+A crash before commit leaves neither consumption nor work. A crash after commit leaves both; the next tick resumes the existing fixup through the ordinary waiting/stranded-subtask path. A failed workspace preparation, agent start, check, review, or push retries that same fixup rather than creating another one. Once-only means at most one automatic fixup per review, not guaranteed resolution or delivery. No ledger entry is committed for stale, superseded, untrusted, incomplete, empty, over-cap, or unreadable candidates.
+
+Review-read failures retry after 1, 2, 5, 10, and 30 minutes and then request review-read assistance. A successful complete read resets the failure count and clears only that cause. Deterministic overflow, empty findings, and invalid trust configuration request assistance immediately. Reasons name the repository/PR and review ID when known, never credentials or raw remote errors. These reasons are separate from CI/conflict assistance and unrelated operator assistance, so a healthy CI read cannot clear a review-read problem. Review-read failure leaves existing consumption and work unchanged and does not disable ordinary CI/conflict repair.
+
+#### Review fixup lifecycle
+
+Feedback fixups wait while CI has young pending checks. They also wait while infrastructure checks use their existing recovery backoff or request assistance; a requested review does not justify a speculative source repair of broken CI infrastructure. A conflict can still proceed immediately. Genuine failed checks retain priority over feedback. Capped identities can be skipped for another eligible problem, but every automatic fixup shares the two-per-identity and three-per-window limits. Cap assistance names any unhandled effective request and its review URL without consuming it.
+
+A feedback fixup always has a `review` deliverable, `review-findings`, requiring the fresh internal reviewer to confirm that every snapshotted finding was addressed or explicitly resolved within the contract. When a Project task check is configured, it also has the `project-check` command deliverable with that command snapshotted in `.`. Without one, only `review-findings` remains. Internal approval does not stand in for GitHub re-review. The reviewer reads the complete packet in `.git/orbit/context.md` when the compact review prompt cuts the brief.
+
+In Gateway API and MCP results, the existing `fixup_problem` carries `review:{reviewer_id}`. The generated `brief` carries source provenance and findings through API, SDK, CLI, and MCP results. The SDK and CLI keep their existing brief/deliverable fields; they need no new fixup-identity property. There is no new Gateway API field, input, endpoint, or merge command. Response fixtures and generated contracts must still verify the Gateway identity, preserved packet, and unchanged schema.
+
+The fresh implementer, Project check, fresh internal reviewer, commit, and push run through the existing lifecycle on the same branch and pull request. After the push, the group returns to `settling`. The old request is consumed and now stale; Orbit does not treat it as an approval and does not post a GitHub review, comment, dismissal, or re-review request. The external reviewer reads the new head and submits a new formal decision.
+
+Only a fresh exact-head request can create another automatic fixup, subject to the same caps. Only the designated final reviewer's fresh exact-head approval can satisfy Orbit's repository merge workflow, which still runs outside the Gateway.
 
 When the last fixup changed nothing, the task asks for assistance and adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When no problem can get a fixup, the task asks for assistance with a reason that starts with `The pull request needs attention: ` and has one sentence per problem. The reason names the cap that applied: `Orbit reached the cap of 2 fixups for {identity} in the current window ({n} counted).`, or `Orbit already appended 3 fixups to this task.` Coder is notified only when that reason changes.
 
@@ -1192,6 +1280,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
 | `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
+| `orbit.tasks.github_reviewers` | Gateway config map from repository names to trusted account IDs, default `[]`; see [Trusted GitHub feedback](#trusted-github-feedback). No environment-variable or Project input counterpart |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
 | `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
@@ -1212,7 +1301,7 @@ Task create accepts no planner. There is no `plan` field, no planner thread, and
 
 ### Routing and cleanup
 
-[Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
+[Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. Orbit acquires the group's [Incus topology](/reference/incus-topologies#task-workspace-clones) when it provisions an Orbit workspace and releases it before it removes the workspace. Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
 
 ### The base-run limit
 
@@ -1369,6 +1458,22 @@ When an ordinary turn's fetch fails, the turn still starts. The message says the
 A resumed fixup reuses this fetch instead of a second one. It needs `origin/task-{id}` and the pull request base, and those refs are already in the set. The preparation still fast-forwards a workspace that is strictly behind, and it never forces. A failed preparation keeps the subtask `todo`, retries on the same backoff, and asks for assistance on the fifth failure. The subtask has not started, so a stale base would make the fixup merge the wrong commits. That wait does not apply to an ordinary turn.
 
 An agent holds no GitHub token and never fetches or pushes. A token in the agent environment would land in the transcript or the workspace. The Gateway fetches with the read token, and it pushes an approved commit with the write token.
+
+### Trusted reviews are input, not merge authority
+
+GitHub review prose does not grant authority. The operator lists numeric accounts for each repository, granting only bounded repair work. Logins can change, repository roles are too broad, and a plain comment does not express a requested-change decision. Selecting the latest decisive record across heads prevents dismissal or out-of-order results from reviving obsolete work. Approval observations remain separate from the final reviewer's merge responsibility and the maintainer profile's admin bypass.
+
+The ledger couples one review to one fixup in a local transaction. A cursor misses edits and out-of-order results; a cache loses deduplication on restart. A digest and immutable findings packet keep the scope that the internal reviewer actually checked. Reading complete bounded lists and refusing overflow costs operator intervention on unusually large reviews, but partial findings cannot safely define repair scope. Review IDs identify consumption, while reviewer IDs identify the cap, so repeated submissions do not buy unlimited automatic work.
+
+Trust belongs in Gateway configuration, not a task definition or branch: the work being reviewed must not authorize its own instruction source. Trusting all collaborators, associations, or the App would exceed the operator's consent. Comments remain informational because prose alone cannot distinguish advice from a formal requested-change decision. Filtering by head before selecting the latest decisive review would revive superseded decisions.
+
+Consumption and fixup creation commit together because either order in separate transactions can lose work or duplicate it after a crash. Consumed scope stays immutable even if GitHub edits or dismisses the source; rewriting or cancelling active work would need a separate interruption protocol. The operator can cancel through the existing lifecycle, but cancellation retains consumption and cap charges. The API still permits deletion only in Backlog; a missing link is corruption or unsupported cleanup, not permission to recreate work.
+
+Polling uses bounded read-only GitHub App access, so private Gateways need no webhook ingress or new permission. The final uncached validation reduces stale creation, but GitHub endpoints and the Gateway cannot share an atomic snapshot. A remote edit can still race with creation. Stored source provenance makes that limitation inspectable; it is not a guarantee of live resolution.
+
+Durable approval observations are separate from internal receipts and consumption. Their local report shows stored provenance, latest confirmed status, and freshness, not an aggregate verdict or live merge gate. Failed reads retain evidence without confirming approval. An approval marked `historical` never becomes `current` merely because GitHub dismissed a newer decision.
+
+A fixup uses the ordinary implementer, reviewer, Project check, and publication flow. Existing identity, brief, and deliverables carry the findings without new public trust or merge fields. Internal approval neither posts a GitHub decision nor requests re-review. Automatically requesting review or enforcing or performing merge would add unnecessary write authority. The external final reviewer must repeat affected verification and formally approve the new exact head; the authorized maintainer retains delegated merge consent and admin bypass. Orbit observes a merge rather than promising or performing one.
 
 ### Fixups are bounded
 
