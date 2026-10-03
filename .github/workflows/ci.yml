@@ -61,6 +61,13 @@ jobs:
           tools: composer:v2
           ini-values: zend.exception_ignore_args=0
 
+      # Sabre's own node shim lives in a home directory the runner user cannot read. GitHub-hosted runners ship Node.
+      - name: Set up Node
+        if: runner.environment == 'self-hosted'
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+
       - name: Set up Homebrew
         if: matrix.directory == 'apps/gateway' && runner.environment == 'github-hosted'
         uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478 # 2026.09.28.1
