@@ -183,7 +183,10 @@ def prepare(clone, primary):
     # Untracked files the clone no longer has; ignored files such as .e2e/ and .env stay.
     git(bridge, 'clean', '-fdq')
 
-    for relative in git_z(clone, 'ls-files', '-z', '-m', '-o', '--exclude-standard'):
+    # Everything that differs from HEAD, staged or not, plus untracked files; the checkout above reset the rest.
+    changed = git_z(clone, 'diff', '-z', '--name-only', '--no-renames', 'HEAD')
+    untracked = git_z(clone, 'ls-files', '-z', '-o', '--exclude-standard')
+    for relative in dict.fromkeys(changed + untracked):
         source, destination = clone / relative, bridge / relative
         if source.exists() or source.is_symlink():
             copy_entry(source, destination)

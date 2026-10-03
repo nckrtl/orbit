@@ -225,6 +225,19 @@ class CloneBridgeTest(unittest.TestCase):
         # Other ignored files belong to the bridge and its guests, not to the clone.
         self.assertFalse((self.bridge / '.env').exists())
 
+    def test_mirrors_staged_work_and_a_staged_deletion(self):
+        bridge.register(self.primary)
+        (self.clone / 'edited.php').write_text('staged')
+        (self.clone / 'staged-new.php').write_text('staged new')
+        git(self.clone, 'add', 'edited.php', 'staged-new.php')
+        git(self.clone, 'rm', '-q', 'removed.php')
+
+        bridge.prepare(self.clone, self.primary)
+
+        self.assertEqual((self.bridge / 'edited.php').read_text(), 'staged')
+        self.assertEqual((self.bridge / 'staged-new.php').read_text(), 'staged new')
+        self.assertFalse((self.bridge / 'removed.php').exists())
+
     def test_a_later_prepare_follows_the_clone_and_keeps_bridge_owned_ignored_files(self):
         bridge.register(self.primary)
         (self.clone / 'scripts').mkdir()
