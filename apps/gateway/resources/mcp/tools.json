@@ -2328,7 +2328,7 @@
       "name": "instance-deploy",
       "extension": null,
       "title": "Deploy an Instance",
-      "description": "Deploy the configured branch of a production Instance.",
+      "description": "Deploy a production Instance or an app-dev default Instance.",
       "method": "POST",
       "path": "/api/v1/instances/{instance}/deploy",
       "path_inputs": [
@@ -2531,7 +2531,7 @@
       "name": "instance-deployment-list",
       "extension": null,
       "title": "instance:deployment:list",
-      "description": "List recorded deployment history for a production Instance, newest first.",
+      "description": "List recorded Instance deployment history, newest first.",
       "method": "GET",
       "path": "/api/v1/instances/{instance}/deployments",
       "path_inputs": [

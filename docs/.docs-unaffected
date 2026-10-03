@@ -121,3 +121,4 @@ docs/reference/tools.md: The existing tool and tool-manager migrations store pac
 unowned: Unchanged migration files in the planned migrations directory have no covers owner and no model page. The extractor lists those surfaces and raises no error because this branch adds or removes none of them. Ended-task assistance does not add a page for them.
 docs/reference/database-connections.md: The SQLite clone now takes a reflink on the same Node; this page links to the Database clone section, which describes it, and its connection and ownership rules are unchanged.
 docs/reference/tools.md: The service provider only binds the new dependency copier; Tool management is unchanged.
+docs/reference/tools.md: Binding the development deployment service and scheduling its tick do not change the closed Tool registry, package installation, or adoption rules.

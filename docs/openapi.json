@@ -7582,7 +7582,7 @@
           }
         ],
         "x-orbit-task-action": true,
-        "description": "Deploy the configured branch of a production Instance.",
+        "description": "Deploy a production Instance or an app-dev default Instance.",
         "requestBody": {
           "required": true,
           "content": {
@@ -8285,7 +8285,7 @@
             "description": "Numeric Instance ID."
           }
         ],
-        "description": "List recorded deployment history for a production Instance, newest first.",
+        "description": "List recorded Instance deployment history, newest first.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -15285,30 +15285,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "array",
-                      "items": {
-                        "type": "object",
-                        "properties": {
-                          "name": {
-                            "type": "string"
-                          },
-                          "command": {
-                            "type": "string"
-                          },
-                          "timeout_seconds": {
-                            "type": "integer"
-                          },
-                          "required": {
-                            "type": "boolean"
-                          }
-                        },
-                        "required": [
-                          "name",
-                          "command",
-                          "timeout_seconds",
-                          "required"
-                        ]
-                      }
+                      "$ref": "#/components/schemas/DevelopmentDeploySteps"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15432,27 +15409,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string"
-                        },
-                        "command": {
-                          "type": "string"
-                        },
-                        "timeout_seconds": {
-                          "type": "integer"
-                        },
-                        "required": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "command",
-                        "timeout_seconds",
-                        "required"
-                      ]
+                      "$ref": "#/components/schemas/DevelopmentDeployStep"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15560,27 +15517,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string"
-                        },
-                        "command": {
-                          "type": "string"
-                        },
-                        "timeout_seconds": {
-                          "type": "integer"
-                        },
-                        "required": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "command",
-                        "timeout_seconds",
-                        "required"
-                      ]
+                      "$ref": "#/components/schemas/DevelopmentDeployStep"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -15712,27 +15649,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "type": "object",
-                      "properties": {
-                        "name": {
-                          "type": "string"
-                        },
-                        "command": {
-                          "type": "string"
-                        },
-                        "timeout_seconds": {
-                          "type": "integer"
-                        },
-                        "required": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "name",
-                        "command",
-                        "timeout_seconds",
-                        "required"
-                      ]
+                      "$ref": "#/components/schemas/DevelopmentDeployStep"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -24611,6 +24528,35 @@
         "required": [
           "error"
         ]
+      },
+      "DevelopmentDeployStep": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "command": {
+            "type": "string"
+          },
+          "timeout_seconds": {
+            "type": "integer"
+          },
+          "required": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "command",
+          "timeout_seconds",
+          "required"
+        ]
+      },
+      "DevelopmentDeploySteps": {
+        "type": "array",
+        "items": {
+          "$ref": "#/components/schemas/DevelopmentDeployStep"
+        }
       },
       "Activity": {
         "type": "object",

@@ -546,7 +546,7 @@ orbit instance:deploy-step:destroy <instance> <name> [--yes] [--json]
 
 ## orbit instance:deploy
 
-Deploy the configured branch of a production Instance. The Gateway creates a fresh release, fetches the branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps.
+Deploy a production Instance or an app-dev `default` Instance. For production, the Gateway creates a fresh release, fetches the configured branch, synchronizes stored environment values, runs the `before_activation` steps, atomically replaces `current`, refreshes the PHP runtime cache, and runs the `after_activation` steps. For a development default, it reflinks the current release, resets tracked code to the Project's default branch, runs the Project's development deploy steps, and switches when every required step passed. A best-effort failure restores that step's snapshot and reports a warning without blocking the switch. See [Instance releases](/reference/deployments#development-defaults).
 
 ```bash
 orbit instance:deploy <instance> [--json]
@@ -585,7 +585,7 @@ orbit instance:deploy 15 --json > deploy.ndjson
 A failure during release fetch, environment synchronization, or a `before_activation` step leaves the prior `current` selected. A failure during the PHP cache refresh or an `after_activation` step leaves the fresh release selected. Deployment, rollback, deploy-step changes, environment changes, and removal share one operation owner per Instance, so a competing request waits or returns a busy refusal.
 
 <Note>
-A development Instance cannot be deployed. With `--json` the stream ends with a failed `result` whose `error_code` is `deployment_config.unavailable`.
+Only `default` can be deployed on an app-dev Node. Other development Instances still return `deployment_config.unavailable`. Rollback and per-Instance deploy-step operations remain production-only.
 </Note>
 
 ## orbit instance:release:list

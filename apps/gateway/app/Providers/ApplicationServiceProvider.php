@@ -72,6 +72,7 @@ use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
 use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
+use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
@@ -257,6 +258,7 @@ use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceContentRetention;
+use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
@@ -414,6 +416,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionInstanceProvisioner::class => NativeProductionInstanceProvisioner::class,
         ProductionDeployment::class => RemoteProductionDeployment::class,
+        DevelopmentDeployment::class => RemoteDevelopmentDeployment::class,
         DeploymentStreamConnection::class => NativeDeploymentStreamConnection::class,
         ProductionInstanceSourceLifecycle::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionReleaseLayout::class => RemoteProductionInstanceSourceLifecycle::class,

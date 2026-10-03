@@ -1429,11 +1429,15 @@ def error_response(desc):
     return {'description': desc, 'content': {'application/json': {'schema': {'$ref': '#/components/schemas/Error'}}}}
 
 
-DEVELOPMENT_DEPLOY_STEP_SCHEMA = sdk_schema('DevelopmentDeployStepResponse')
-DEVELOPMENT_DEPLOY_STEP_SCHEMA['required'] = ['name', 'command', 'timeout_seconds', 'required']
+development_deploy_step = sdk_schema('DevelopmentDeployStepResponse')
+development_deploy_step['required'] = ['name', 'command', 'timeout_seconds', 'required']
+# Named components let docs-impact map both SDK response classes to their API owners.
+components['DevelopmentDeployStep'] = development_deploy_step
+components['DevelopmentDeploySteps'] = {'type': 'array', 'items': {'$ref': '#/components/schemas/DevelopmentDeployStep'}}
+DEVELOPMENT_DEPLOY_STEP_SCHEMA = {'$ref': '#/components/schemas/DevelopmentDeployStep'}
 
 RESPONSE_OVERRIDES = {
-    'ProjectDevelopmentDeployStepsController@index': {'type': 'array', 'items': DEVELOPMENT_DEPLOY_STEP_SCHEMA},
+    'ProjectDevelopmentDeployStepsController@index': {'$ref': '#/components/schemas/DevelopmentDeploySteps'},
     'ProjectDevelopmentDeployStepsController@store': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
     'ProjectDevelopmentDeployStepsController@update': DEVELOPMENT_DEPLOY_STEP_SCHEMA,
     'ProjectDevelopmentDeployStepsController@destroy': DEVELOPMENT_DEPLOY_STEP_SCHEMA,

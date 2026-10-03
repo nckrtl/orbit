@@ -302,7 +302,7 @@ final readonly class DevelopmentCaddyConfigRenderer
 
     private function phpHandler(DevelopmentSite $site): string
     {
-        if ($site->environment !== 'production') {
+        if ($site->environment !== 'production' && ! str_ends_with($site->checkoutPath, '/current')) {
             return "php_fastcgi unix/{$site->socketPath()}";
         }
 

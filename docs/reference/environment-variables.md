@@ -106,7 +106,7 @@ Other operations also change stored keys, and never the file itself:
 - [`instance:database:add` and `instance:database:remove`](/reference/database-connections#add-a-connection-on-an-instance) write or clear the keys of one database prefix.
 - Creating an `agentation-mcp` Process stores `AGENTATION_URL` as `https://{{instance.domain}}/__orbit/agentation`. See [Agentation](/reference/agentation).
 
-A [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step.
+A production [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step. A development default keeps its configured environment files at the stable checkout home. Explicit synchronization writes there; its next development deployment copies `.env` and any `.env.testing` into the candidate without changing the live seed. Deploy the default by hand when these file changes need to take effect before the next push.
 
 ## Synchronize during a domain change
 

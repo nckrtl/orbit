@@ -353,6 +353,19 @@ it('docs impact maps scheduled commands and schedule timing', function (): void 
         ->toContain('docs/reference/tasks.md', 'docs/reference/schedules.md');
 });
 
+it('docs impact owns the scheduled development-default deployment command and its cadence', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");
+    file_put_contents($root.'/docs/reference/deployments.md', "---\ntitle: Instance releases\n---\nDevelopment defaults\n");
+    $path = 'apps/gateway/app/Console/Kernel.php';
+    file_put_contents($root.'/'.$path, "<?php Schedule::command('orbit:deploy-development-defaults')->everyMinute()->withoutOverlapping(90);\n");
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/reference/deployments.md', 'docs/reference/schedules.md')
+        ->and(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('orbit:deploy-development-defaults', 'everyMinute', 'withoutOverlapping');
+});
+
 it('docs impact reports MCP tool ownership and generator status', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/mcp.mdx', "---\ntitle: MCP\n---\nMCP\n");

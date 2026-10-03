@@ -11,6 +11,7 @@ final readonly class DeploymentEvent
         public DeploymentOutputStream $stream,
         #[\SensitiveParameter]
         public string $value,
+        public bool $important = false,
     ) {}
 
     /** @return array{step: string, stream: string, value: string} */

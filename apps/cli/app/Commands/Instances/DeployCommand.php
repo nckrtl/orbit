@@ -17,7 +17,7 @@ final class DeployCommand extends DeploymentCommand
         {--json : Return machine-readable NDJSON}';
 
     #[\Override]
-    protected $description = 'Deploy the configured branch of a production Instance.';
+    protected $description = 'Deploy a production Instance or an app-dev default Instance.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {

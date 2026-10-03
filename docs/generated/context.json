@@ -1107,7 +1107,7 @@
         },
         {
             "path": "docs/reference/deployments.md",
-            "title": "Production release layout",
+            "title": "Instance releases",
             "kind": "reference",
             "components": [
                 "apps/gateway",
@@ -1124,7 +1124,9 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },

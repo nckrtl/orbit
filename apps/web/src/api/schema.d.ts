@@ -1091,7 +1091,7 @@ export interface paths {
         put?: never;
         /**
          * Deploy an Instance
-         * @description Deploy the configured branch of a production Instance.
+         * @description Deploy a production Instance or an app-dev default Instance.
          */
         post: operations["instance-deploy"];
         delete?: never;
@@ -1157,7 +1157,7 @@ export interface paths {
         };
         /**
          * instance:deployment:list
-         * @description List recorded deployment history for a production Instance, newest first.
+         * @description List recorded Instance deployment history, newest first.
          */
         get: operations["instance-deployment-list"];
         put?: never;
@@ -3255,6 +3255,13 @@ export interface components {
                 request_id?: string;
             };
         };
+        DevelopmentDeployStep: {
+            name: string;
+            command: string;
+            timeout_seconds: number;
+            required: boolean;
+        };
+        DevelopmentDeploySteps: components["schemas"]["DevelopmentDeployStep"][];
         Activity: {
             id?: number;
             request_id?: string;
@@ -12124,12 +12131,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: {
-                            name: string;
-                            command: string;
-                            timeout_seconds: number;
-                            required: boolean;
-                        }[];
+                        data: components["schemas"]["DevelopmentDeploySteps"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12196,12 +12198,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: {
-                            name: string;
-                            command: string;
-                            timeout_seconds: number;
-                            required: boolean;
-                        };
+                        data: components["schemas"]["DevelopmentDeployStep"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12265,12 +12262,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: {
-                            name: string;
-                            command: string;
-                            timeout_seconds: number;
-                            required: boolean;
-                        };
+                        data: components["schemas"]["DevelopmentDeployStep"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -12340,12 +12332,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: {
-                            name: string;
-                            command: string;
-                            timeout_seconds: number;
-                            required: boolean;
-                        };
+                        data: components["schemas"]["DevelopmentDeployStep"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
