@@ -2038,6 +2038,22 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/solutions/incus-zfs-efficiency.md",
+            "title": "Reduce Incus VM costs on ZFS",
+            "kind": "solution",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Task"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/solutions/migrate-unmanaged-executor-hostname.md",
             "title": "Migrate an unmanaged Executor hostname",
             "kind": "solution",

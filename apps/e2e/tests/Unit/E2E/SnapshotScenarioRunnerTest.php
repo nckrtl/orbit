@@ -100,6 +100,7 @@ function snapshotRunnerFixture(
     bool $failExercise = false,
     bool $realRecovery = false,
     ?string $foreignResource = null,
+    bool $failIdentityRepair = false,
 ): array {
     $root = preparedTopologyRepository();
     $repository = pinnedFeatureWorktree($root, $scenario);
@@ -184,7 +185,10 @@ function snapshotRunnerFixture(
             fakePinnedWorktreeProcesses(
                 $target,
                 $events,
-                guestOverride: static function (array $guest) use ($candidate, $candidateTree, $failExercise) {
+                guestOverride: static function (array $guest) use ($candidate, $candidateTree, $failExercise, $failIdentityRepair) {
+                    if ($failIdentityRepair && in_array('/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', $guest, true)) {
+                        return Process::result('', 'injected identity repair failure', 1);
+                    }
                     if ($guest === ['git', '-C', '/home/orbit/orbit', 'rev-parse', '--verify', 'HEAD^{commit}']) {
                         return Process::result($candidate."\n");
                     }
@@ -205,7 +209,7 @@ function snapshotRunnerFixture(
         }
     }
 
-    return compact(
+    $fixture = compact(
         'runner',
         'runs',
         'repository',
@@ -218,6 +222,9 @@ function snapshotRunnerFixture(
         'manifests',
         'events',
     );
+    $fixture['events'] = &$events;
+
+    return $fixture;
 }
 
 /** @param list<array<array-key, mixed>> $events */
@@ -333,6 +340,7 @@ it('clones the recorded generation and converges the exact candidate before exer
         'construct',
         'start-instances',
         'prepare-host-state',
+        'repair-clone-identity',
         'synchronize-candidate',
         'candidate-identity',
         'converge',
@@ -346,6 +354,29 @@ it('clones the recorded generation and converges the exact candidate before exer
     expect($state['construction_inputs']['construction']['source_generation'])
         ->toBe($promotion['id']);
     expect($fixture['manifests']->promoted()?->toArray())->toBe($promotion);
+    $identityRepair = array_find_key($fixture['events'], static fn (array $command): bool => in_array(
+        '/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', $command, true,
+    ));
+    $hydration = array_find_key($fixture['events'], static fn (array $command): bool => in_array(
+        '/usr/local/bin/hydrate-orbit.sh', $command, true,
+    ));
+    expect($identityRepair)->not->toBeNull();
+    expect($hydration)->not->toBeNull()->toBeGreaterThan($identityRepair);
+});
+
+it('cleans the attempt and skips hydration when clone identity repair fails', function (): void {
+    $fixture = snapshotRunnerFixture(failIdentityRepair: true);
+
+    $result = executeSnapshotRunner($fixture);
+
+    expect($result->status)->toBe(ScenarioStatus::InfrastructureError);
+    expect($result->diagnostics[0])->toContain('Gateway clone identity preparation failed');
+    expect(array_column($result->actions, 'phase'))->toBe(['setup']);
+    expect($result->cleanup['removed'])->not->toBeEmpty();
+    expect($result->cleanup['remaining'])->toBe([]);
+    expect(array_any($fixture['events'], static fn (array $command): bool => in_array(
+        '/usr/local/bin/hydrate-orbit.sh', $command, true,
+    )))->toBeFalse();
 });
 
 it('skips exercise and records infrastructure diagnostics when no generation is promoted', function (): void {

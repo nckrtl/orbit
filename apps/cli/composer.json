@@ -63,7 +63,7 @@
         ],
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",
-        "guidance:check": "ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact",
+        "guidance:check": "../../bin/guidance-check",
         "guidance:generate": "@php orbit boost:update --no-discover --no-interaction",
         "lint": "@format:check",
         "rector": "vendor/bin/rector process --dry-run --no-progress-bar",

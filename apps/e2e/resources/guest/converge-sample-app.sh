@@ -570,7 +570,7 @@ PHP
       # The Node Caddy build serves the site with the Orbit CA leaf the Gateway publishes.
       ca=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt
       if [[ $# -eq 4 ]]; then
-        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve "$production_domain:443:10.44.0.1" "https://$production_domain/" >/dev/null
+        curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" "https://$production_domain/" >/dev/null
       else
         curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert "$ca" --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
       fi

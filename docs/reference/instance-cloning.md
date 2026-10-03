@@ -56,7 +56,11 @@ Every Git invocation in the candidate inspection, including calls through `sudo`
 
 A checkout's hooks and custom filesystem monitor do not run during that check. These overrides leave the candidate's stored Git configuration unchanged; they do not relax the clean-source rules.
 
+### Destination checks
+
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
+
+Orbit inspects the destination checkout as its production user from a directory that user can access. A private SSH account home does not prevent source classification. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
 
 ## What the clone gets
 

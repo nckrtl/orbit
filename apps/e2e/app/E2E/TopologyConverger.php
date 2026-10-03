@@ -232,6 +232,21 @@ final readonly class TopologyConverger
 
         $steps['normalize.permissions'] = true;
 
+        $storageCommands = [];
+        foreach ($nodes as $node => $instance) {
+            $keepImages = array_intersect(
+                $target->recipe->node($node)->roles,
+                ['app-dev', 'database', 'metrics'],
+            ) !== [];
+            $storageCommands[$node] = [
+                'instance' => $instance,
+                'script' => 'prepare-node.sh',
+                'arguments' => ['compact-storage', $keepImages ? 'keep-images' : 'prune-images'],
+            ];
+        }
+        $this->runAll($storageCommands);
+        $steps['compact.storage'] = true;
+
         return ConvergenceReport::successful($steps);
     }
 

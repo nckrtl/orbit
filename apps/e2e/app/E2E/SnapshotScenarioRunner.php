@@ -160,6 +160,14 @@ final readonly class SnapshotScenarioRunner
                 fn () => $this->host->prepareClonedHostStates($instances),
                 $phaseTimings,
             );
+            $this->phase(
+                $run,
+                $definition,
+                $attempt,
+                'repair-clone-identity',
+                fn () => new DiscoveryGuestPreparer($this->host)->repairCloneIdentity($target),
+                $phaseTimings,
+            );
             $sync = $this->phase(
                 $run,
                 $definition,

@@ -24,9 +24,11 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\Support\LinuxHost;
 
 it('prepares a fresh branch-pinned release without changing current', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
@@ -279,6 +281,69 @@ it('reports a nullable current selection while retaining present releases', func
         ->and($ssh->commands)
         ->toHaveCount(1);
 });
+
+it('reads retained releases from a private SSH working directory', function (bool $selected): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([
+        new CommandResult(0, "SELECTED\t\nRELEASE\tinitial\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+    $deployment->releases($instance);
+    $sandbox = sys_get_temp_dir().'/orbit-private-release-list-'.Str::uuid();
+    mkdir($sandbox, 0o755);
+    chmod($sandbox, 0o755);
+    mkdir("$sandbox/ssh-home", 0o700);
+    $home = "$sandbox/home";
+    $release = "$home/releases/initial";
+    $repository = 'https://example.test/deployment.git';
+
+    try {
+        mkdir("$release/public", 0o700, true);
+        mkdir("$sandbox/state", 0o700);
+        file_put_contents("$home/.env", "APP_ENV=production\n");
+        file_put_contents("$release/public/index.php", "<?php\n");
+        symlink('../../.env', "$release/.env");
+        if ($selected) {
+            symlink('releases/initial', "$home/current");
+        }
+        file_put_contents("$sandbox/state/release-layout", $repository."\0caddy\0".$home."\0initial\0");
+        chmod("$sandbox/state/release-layout", 0o600);
+        new Process(['sudo', 'chown', '--', 'root:root', "$sandbox/state/release-layout"])->mustRun();
+        foreach ([
+            ['git', 'init', '--quiet', $release],
+            ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
+            ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
+            ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
+            ['git', '-C', $release, 'add', 'public/index.php'],
+            ['git', '-C', $release, 'commit', '--quiet', '-m', 'fixture'],
+        ] as $arguments) {
+            new Process($arguments)->mustRun();
+        }
+        $commit = trim(new Process(['git', '-C', $release, 'rev-parse', 'HEAD'])->mustRun()->getOutput());
+        new Process(['sudo', 'chown', '-R', '--', 'caddy:caddy', $home])->mustRun();
+        $script = str_replace(
+            ['state_directory="/var/lib/orbit/app-instance-sources/$instance"', 'test "$home" = "/home/$user"'],
+            ['state_directory="$6"', 'test -d "$home"'],
+            $ssh->commands[0]->input ?? '',
+        );
+
+        $process = new Process(
+            ['bash', '-seu', '--', $repository, 'caddy', $home, 'fixture-instance', 'public', "$sandbox/state"],
+            "$sandbox/ssh-home",
+            input: $script,
+        );
+        $process->mustRun();
+
+        $selection = $selected ? 'initial' : '';
+        expect($process->getOutput())->toBe("SELECTED\t$selection\nRELEASE\tinitial\t$commit\n");
+        expect($process->getErrorOutput())->toBe('');
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'test', '-x', "$sandbox/ssh-home"])->run())->toBe(1);
+    } finally {
+        new Process(['sudo', 'rm', '-r', '--', $sandbox])->mustRun();
+    }
+})->with(['first clone' => false, 'selected release' => true]);
 
 it('skips partial directories while executing the retained release listing', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([

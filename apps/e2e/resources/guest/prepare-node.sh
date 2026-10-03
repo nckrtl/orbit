@@ -3,6 +3,21 @@ set -euo pipefail
 umask 077
 mode=${1-}
 case "$mode" in
+  compact-storage)
+    [[ $# -eq 2 ]] || exit 64
+    case "$2" in
+      keep-images) ;;
+      prune-images)
+        if command -v docker >/dev/null 2>&1; then
+          docker image prune --all --force
+        fi
+        ;;
+      *) exit 64 ;;
+    esac
+    apt-get clean
+    sync -f /
+    fstrim --quiet-unsupported /
+    ;;
   gateway-authorize)
     [[ $# -eq 2 && "$2" =~ ^ssh-ed25519\ [A-Za-z0-9+/]+={0,2}$ ]] || exit 64
     printf '%s\n' "$2" | ssh-keygen -lf - -E sha256 >/dev/null
