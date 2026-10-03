@@ -156,7 +156,7 @@ final readonly class ScheduleTargetResolver
         if ($instance->placedOnAppDev()) {
             $account = $this->account($instance->node, $instance->node->user);
             $this->assertAccount($account, $instance->node);
-            $workingDirectory = $instance->checkout_path;
+            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path;
             $loginShell = true;
         } elseif ($instance->placedOnAppProd()) {
             $user = $instance->production_user;
@@ -177,7 +177,7 @@ final readonly class ScheduleTargetResolver
             }
 
             $account = new ScheduleRuntimeAccount($user, $account->group, $home, '/bin/bash');
-            $workingDirectory = "{$home}/current";
+            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : "{$home}/current";
             $loginShell = false;
         } else {
             $this->unavailable();

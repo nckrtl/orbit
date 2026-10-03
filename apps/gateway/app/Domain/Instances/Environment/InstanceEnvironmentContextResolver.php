@@ -248,7 +248,7 @@ final readonly class InstanceEnvironmentContextResolver
     private function placement(Instance $instance, Node $node): array
     {
         if ($instance->placementEnvironment() === 'development') {
-            $path = $instance->getAttribute('checkout_path');
+            $path = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->getAttribute('checkout_path');
             $executionUser = $node->user;
         } else {
             $path = $instance->getAttribute('production_home');

@@ -119,6 +119,25 @@ it('imports by exact Route domain and applies conflict and replacement semantics
     expect(Activity::query()->latest('id')->value('command'))->toBe('env:import');
 });
 
+it('imports and syncs the Laravel environment in its application directory', function (string $root, string $suffix): void {
+    $this->instance->update(['root' => $root, 'source_is_laravel' => true]);
+    $this->access->contents = "APP_KEY=nested-key\n";
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/import", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk();
+    expect($this->access->readPaths)->toBe([$this->instance->checkout_path.$suffix]);
+    expect($this->instance->environmentValues()->where('env_key', 'APP_KEY')->sole()->env_value)->toBe('nested-key');
+
+    $this->withServerVariables(['REMOTE_ADDR' => $this->caller->wireguard_ip])
+        ->call('POST', "/api/v1/instances/{$this->instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+        ->assertOk();
+    expect($this->access->writePaths)->toBe([$this->instance->checkout_path.$suffix]);
+})->with([
+    'nested' => ['server/web/public', '/server/web'],
+    'root public' => ['public', ''],
+]);
+
 it('normalizes Laravel APP_URL while preserving literal APP_KEY', function (): void {
     $this->instance->update(['source_is_laravel' => true]);
     $this->access->contents = "APP_KEY=base64:synthetic\nAPP_URL=http://old.test\n";
@@ -451,6 +470,8 @@ it('keeps a release-layout production environment at the persistent home', funct
         'checkout_path' => "{$home}/releases/initial",
         'production_user' => 'orbit-app-216',
         'production_home' => $home,
+        'root' => 'server/web/public',
+        'source_is_laravel' => true,
     ]);
     $this->instance
         ->environmentValues()
@@ -719,6 +740,12 @@ final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceE
     /** @var list<string> */
     public array $paths = [];
 
+    /** @var list<string> */
+    public array $readPaths = [];
+
+    /** @var list<string> */
+    public array $writePaths = [];
+
     public bool $refuseWritePreflight = false;
 
     public InstanceEnvironmentWriteResult $writeResult;
@@ -755,6 +782,7 @@ final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceE
     public function read(InstanceEnvironmentContext $context): string
     {
         $this->reads++;
+        $this->readPaths[] = $context->path;
 
         return $this->contents;
     }
@@ -765,6 +793,7 @@ final class EnvironmentApiAccess implements InstanceEnvironmentReader, InstanceE
         string $contents,
     ): InstanceEnvironmentWriteResult {
         $this->writes[] = $contents;
+        $this->writePaths[] = $context->path;
 
         return $this->writeResult;
     }

@@ -38,6 +38,8 @@ orbit process:create vite --instance=commander.test --preset=vp-dev --start
 
 The preset needs `/usr/local/bin/vp`, a readable `package.json`, and an installed `node_modules`. It installs no dependencies and edits no application code. It sets the command, the working directory, and restart on failure. A custom command, runtime, or Docker option conflicts with the preset and is refused. An Instance has at most one preset Process. Naming a plain Process `vp-dev` has no effect. The [Processes](/reference/processes-and-schedules#presets) page lists every preset.
 
+For a Laravel Instance, preparation checks `package.json` and `node_modules` in its [application directory](/reference/projects#application-directory), and the Process runs from that same directory. With root `server/web/public`, both prerequisites live in `<checkout>/server/web`, and Laravel's Vite plugin writes `<checkout>/server/web/public/hot`. Root `public` keeps these paths at the checkout root. Non-Laravel Instances keep checkout-root prerequisite checks and working directories. Orbit does not install missing dependencies during preparation.
+
 The preset runs Vite on loopback with strict binding:
 
 ```ini
