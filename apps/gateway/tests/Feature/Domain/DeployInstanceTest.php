@@ -81,6 +81,30 @@ it('captures one configuration and preserves the complete deployment order', fun
         ->toContain('[OUTPUT]');
 });
 
+it('reconciles PHP after deployment and rollback select the release and before cache refresh', function (string $root): void {
+    $instance = orb219_deployment_instance([], php: true);
+    $instance->update(['root' => $root]);
+    $trace = new Orb219DeploymentTrace(firstDeployment: true);
+    [$deploy, $rollback] = orb219_actions($trace);
+
+    expect($deploy->execute($instance)->succeeded)->toBeTrue();
+    expect($rollback->execute($instance, 'retained')->succeeded)->toBeTrue();
+    expect($trace->runtimeEvents)->toBe(['converge:fresh', 'cache:fresh', 'converge:retained', 'cache:retained']);
+})->with(['root public' => 'public', 'nested Laravel' => 'server/web/public']);
+
+it('reports a failed PHP reconciliation without refreshing the cache after selection', function (bool $rollback, string $release): void {
+    $instance = orb219_deployment_instance([], php: true);
+    $trace = new Orb219DeploymentTrace(failAt: 'converge:'.$release);
+    [$deploy, $rollbackAction] = orb219_actions($trace);
+
+    $result = $rollback ? $rollbackAction->execute($instance, 'retained') : $deploy->execute($instance);
+
+    expect($result->succeeded)->toBeFalse()
+        ->and($result->failure?->boundary)->toBe(DeploymentFailureBoundary::CacheRefresh)
+        ->and($result->selectedRelease?->name)->toBe($release)
+        ->and($trace->runtimeEvents)->toBe(['converge:'.$release]);
+})->with(['deployment' => [false, 'fresh'], 'rollback' => [true, 'retained']]);
+
 it('installs captured runtime definitions only after deployment selects the release', function (): void {
     $instance = orb219_deployment_instance([]);
     $definition = $instance->project->processDefinitions()->create([
@@ -483,6 +507,9 @@ final class Orb219DeploymentTrace
     /** @var list<string> */
     public array $entries = [];
 
+    /** @var list<string> */
+    public array $runtimeEvents = [];
+
     public bool $cancelled = false;
 
     public ?string $remoteSelection = null;
@@ -632,13 +659,21 @@ final readonly class Orb219PhpRuntime implements ProductionPhpRuntimeManager
 {
     public function __construct(private Orb219DeploymentTrace $trace) {}
 
-    public function converge(Instance $instance): void {}
+    public function converge(Instance $instance): void
+    {
+        $entry = 'converge:'.basename($instance->checkout_path);
+        $this->trace->runtimeEvents[] = $entry;
+        if ($this->trace->failAt === $entry) {
+            throw new ResourceOperationException('app-prod.php_runtime_convergence_failed', 'Injected runtime convergence failure.', 409);
+        }
+    }
 
     public function convergeMonitoring(Instance $instance, bool $enabled): void {}
 
     public function refreshCache(Instance $instance): void
     {
         $entry = 'cache:'.basename($instance->checkout_path);
+        $this->trace->runtimeEvents[] = $entry;
         $this->trace->entries[] = $entry;
 
         if ($this->trace->failAt === $entry) {

@@ -15,6 +15,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -154,6 +155,50 @@ it('passes an explicit branch without changing production identity', function ()
         ->and($instance->name)
         ->toBe('matching-remote-name');
 });
+
+it('links the initial release environment in the application directory', function (string $webRoot, string $suffix, string $target): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, "main\t".str_repeat('a', 40)."\n", '', 1, false),
+    ]);
+    $instance->update(['root' => $webRoot]);
+    $source->resolve($instance);
+    $program = $ssh->commands[0]->input;
+    expect($program)->toContain('ln -s '.$target.' "$release_environment"');
+
+    $start = strpos($program, 'test "$(sudo -u "$user" -H realpath -e -- "$release');
+    $end = strpos($program, 'commit=$(sudo');
+    expect($start)->toBeInt()->and($end)->toBeInt();
+    $linkProgram = substr($program, $start, $end - $start);
+    $root = sys_get_temp_dir().'/orbit-production-env-'.Str::uuid();
+    $release = $root.'/releases/initial';
+    mkdir($release.$suffix, 0700, true);
+    file_put_contents($root.'/.env', "APP_KEY=production-secret\n");
+
+    try {
+        $setup = 'release='.escapeshellarg($release)."\n"
+            .'environment='.escapeshellarg($root.'/.env')."\n"
+            .'release_environment='.escapeshellarg($release.$suffix.'/.env')."\n"
+            .'application_suffix='.escapeshellarg($suffix)."\n"
+            ."user=unused\nclone_target=0\nsudo() { shift 3; \"\$@\"; }\n";
+        new Process(['bash', '-seu'], input: $setup.$linkProgram)->mustRun();
+        expect(readlink($release.$suffix.'/.env'))->toBe($target)
+            ->and(file_get_contents($release.$suffix.'/.env'))->toBe("APP_KEY=production-secret\n");
+        if ($suffix !== '') {
+            expect(file_exists($release.'/.env'))->toBeFalse();
+            unlink($release.$suffix.'/.env');
+            rename($release.$suffix, $root.'/foreign');
+            file_put_contents($root.'/foreign/.env', "FOREIGN=untouched\n");
+            symlink($root.'/foreign', $release.$suffix);
+            expect(new Process(['bash', '-seu'], input: $setup.$linkProgram)->run())->not->toBe(0)
+                ->and(file_get_contents($root.'/foreign/.env'))->toBe("FOREIGN=untouched\n");
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with([
+    'root public' => ['public', '', '../../.env'],
+    'nested Laravel' => ['server/web/public', '/server/web', '../../../../.env'],
+]);
 
 it('permits an unresolved root and revalidates complete ownership immediately before ACL mutation', function (): void {
     [$source, $ssh, $instance] = production_source_lifecycle([
@@ -295,12 +340,12 @@ it('inspects the recorded production checkout when classifying the source', func
     $profile = $source->inspectProfile($instance);
 
     expect($ssh->commands[0]->arguments)
-        ->toBe(['bash', '-seu', '--', 'orbit-app-1', 'public', $checkoutPath])
+        ->toBe(['bash', '-seu', '--', 'orbit-app-1', 'public', $checkoutPath, $checkoutPath])
         ->and($ssh->commands[0]->input)
         ->toContain(
             'checkout=$3',
-            'composer="$checkout/composer.json"',
-            'artisan="$checkout/artisan"',
+            'composer="$application/composer.json"',
+            'artisan="$application/artisan"',
             'candidate="$checkout/$relative_root"',
             'case "$resolved" in',
             '"$checkout"/*) ;;',
@@ -319,17 +364,17 @@ it('inspects the recorded production checkout when classifying the source', func
     'selected release' => '/home/orbit-app-1/releases/20260913120000',
 ]);
 
-it('classifies production source when its runtime user cannot enter the SSH working directory', function (): void {
+it('classifies production source when its runtime user cannot enter the SSH working directory', function (string $webRoot, string $suffix): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
 
-    [$root, $program] = production_source_shell_fixture();
+    [$root, $program] = production_source_shell_fixture($webRoot, $suffix);
 
     try {
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'test', '-x', "$root/ssh-home"])->run())->toBe(1);
 
-        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source"], "$root/ssh-home", input: $program);
+        $process = new Process(['bash', '-seu', '--', 'caddy', $webRoot, "$root/source", "$root/source$suffix"], "$root/ssh-home", input: $program);
         $process->mustRun();
 
         expect($process->getOutput())->toBe("COMPOSER\tregular\teyJyZXF1aXJlIjp7InBocCI6Il44LjUiLCJsYXJhdmVsL2ZyYW1ld29yayI6Il4xMy4wIn19\n");
@@ -337,7 +382,7 @@ it('classifies production source when its runtime user cannot enter the SSH work
     } finally {
         new Process(['sudo', 'rm', '-r', '--', $root])->mustRun();
     }
-});
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
 it('rejects foreign source ownership from a private SSH working directory', function (string $owner): void {
     if (LinuxHost::delegate($this)) {
@@ -349,7 +394,7 @@ it('rejects foreign source ownership from a private SSH working directory', func
     try {
         new Process(['sudo', 'chown', '--', $owner, "$root/source/artisan"])->mustRun();
 
-        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source"], "$root/ssh-home", input: $program);
+        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source", "$root/source"], "$root/ssh-home", input: $program);
         $process->mustRun();
 
         expect($process->getOutput())->toBe("UNSAFE\n");
@@ -371,7 +416,7 @@ it('propagates an unreadable source directory instead of classifying it as clean
     try {
         new Process(['sudo', '-u', 'caddy', 'mkdir', '-m', '000', '--', "$root/source/unreadable"])->mustRun();
 
-        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source"], "$root/ssh-home", input: $program);
+        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source", "$root/source"], "$root/ssh-home", input: $program);
         $process->run();
 
         expect($process->getExitCode())->not->toBe(0);
@@ -383,19 +428,23 @@ it('propagates an unreadable source directory instead of classifying it as clean
 });
 
 /** @return array{string, string} */
-function production_source_shell_fixture(): array
+function production_source_shell_fixture(string $webRoot = 'public', string $suffix = ''): array
 {
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, "NONE\n", '', 1, false),
     ]);
+    $instance->update(['root' => $webRoot]);
     $source->inspectProfile($instance);
     $root = sys_get_temp_dir().'/orbit-production-source-'.Str::uuid();
     mkdir($root, 0o755);
     chmod($root, 0o755);
     mkdir("$root/ssh-home", 0o700);
-    mkdir("$root/source/public", 0o700, true);
-    file_put_contents("$root/source/composer.json", '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}');
-    file_put_contents("$root/source/artisan", '');
+    mkdir("$root/source/$webRoot", 0o700, true);
+    file_put_contents("$root/source$suffix/composer.json", '{"require":{"php":"^8.5","laravel/framework":"^13.0"}}');
+    file_put_contents("$root/source$suffix/artisan", '');
+    if ($suffix !== '') {
+        file_put_contents("$root/source/composer.json", '{"require":{"php":"^8.4"}}');
+    }
     new Process(['sudo', 'chown', '-R', '--', 'caddy:caddy', "$root/source"])->mustRun();
 
     return [$root, $ssh->commands[0]->input];

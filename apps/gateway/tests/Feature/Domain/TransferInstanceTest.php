@@ -219,7 +219,8 @@ it('rechecks Schedules created after reserve before transfer cutover', function 
         ->and(InstanceTransfer::query()->whereNull('cutover_at')->exists())->toBeTrue();
 });
 
-it('transfers a development Instance to another app-dev Node in the same Cluster', function (): void {
+it('transfers a development Instance to another app-dev Node in the same Cluster', function (string $webRoot, string $suffix): void {
+    $this->instance->update(['root' => $webRoot]);
     $this->destinationNode->update([
         'cluster_id' => $this->sourceCluster->id,
         'tld' => null,
@@ -249,11 +250,11 @@ it('transfers a development Instance to another app-dev Node in the same Cluster
         ->and($this->process->refresh()->id)->toBe($this->process->id)
         ->and($this->process->desired_state)->toBe(DesiredProcessState::Running)
         ->and($this->process->working_directory)->toBe('/srv/orbit/apps/shop/web')
-        ->and($this->writer->path)->toBe('/srv/orbit/apps/shop/web')
+        ->and($this->writer->path)->toBe('/srv/orbit/apps/shop/web'.$suffix)
         ->and($this->writer->domain)->toBe('web.shop.dev.orbit')
         ->and($this->writer->contents)
         ->toBe("APP_KEY=\"base64:stored-app-key\"\nAPP_URL=\"https://web.shop.dev.orbit/development\"\nNEW_FROM_ENV=\"imported\"\n");
-});
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
 it('transfers a development Instance across Clusters and replaces a generated domain', function (): void {
     $this->destinationCluster->update(['tld' => 'other.orbit']);

@@ -79,15 +79,15 @@ it('keeps a reserved assignment when projection fails and retries from that assi
     expect(app(VitePortAllocator::class)->assign($instance->refresh()))->toBe(5173);
 });
 
-it('relocates the preset environment with its working directory', function (): void {
+it('relocates the preset environment with its working directory', function (string $webRoot, string $suffix): void {
     $node = Node::query()->create(['name' => 'relocate', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);
     orbit_test_set_app_placement_role($node, false);
     $project = Project::query()->create(['name' => 'Relocate', 'slug' => 'relocate', 'repository_url' => 'git@example.test:relocate.git']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/old']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/apps/old', 'root' => $webRoot, 'source_is_laravel' => true]);
     $process = Process::query()->create(['owner_type' => Instance::MorphAlias, 'owner_id' => $instance->id, 'name' => 'assets', 'runtime' => 'systemd', 'runtime_config' => ['preset' => 'vp-dev', 'command' => VpDevPreset::command(), 'environment_file' => '/apps/old/.env'], 'working_directory' => '/apps/old', 'restart_policy' => 'on-failure', 'desired_state' => 'running', 'status' => 'active']);
     app(NativeInstanceTransferRuntime::class)->relocate($instance, $node, '/apps/old', '/apps/new');
-    expect($process->refresh()->working_directory)->toBe('/apps/new')->and($process->runtime_config['environment_file'])->toBe('/apps/new/.env')->and($process->desired_state->value)->toBe('running');
-});
+    expect($process->refresh()->working_directory)->toBe('/apps/new')->and($process->runtime_config['environment_file'])->toBe('/apps/new'.$suffix.'/.env')->and($process->desired_state->value)->toBe('running');
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
 it('does not remove the destination service during cleanup when both nodes use the same checkout path', function (): void {
     $source = Node::query()->create(['name' => 'source-cleanup', 'platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.10']);

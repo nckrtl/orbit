@@ -4,7 +4,7 @@ description: "How development defaults and production Instances build releases, 
 covers:
   - apps/gateway/app/Domain/{Instances/Deployment/**,Projects/*DeployStep*.php}
   - apps/gateway/app/Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,RollbackInstanceAction,InstanceDeploymentConfigResolver,UpdateInstanceAction,ListInstanceReleasesAction,ListInstanceDeploymentsAction,*InstanceDeployStep*Action}.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentReleaseProgram}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionDeployment,RemoteDevelopmentDeployment,DevelopmentReleaseProgram,ProductionApplicationPaths}.php
   - apps/gateway/app/Console/Commands/DeployDevelopmentDefaultsCommand.php
   - apps/gateway/app/Http/Streaming/**
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
@@ -34,6 +34,8 @@ A clone leaves the home prepared, with no `current` link. The application must p
 The Gateway lists retained releases as the production user from a directory that user can access. A private SSH home does not prevent reading the first clone's empty selection. Failed scans and invalid release receipts still stop the operation.
 
 The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. A nested root such as `apps/site/public` serves `<home>/current/apps/site/public`; its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). Root `public` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
+
+With root `server/web/public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing, rollback validation, and [Doctor](/cli/doctor) check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
 
 ## Development defaults
 
@@ -129,10 +131,12 @@ A deployment reads the branch and the steps once, when it starts. Then it runs t
 2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
 3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
-5. **PHP refresh.** For a PHP Instance, the Gateway refreshes the Instance's PHP-FPM pool and waits until it finishes.
+5. **PHP refresh.** The Gateway reconciles and confirms the dedicated FPM runtime, then resets that service's OPcache and waits for completion.
 6. **After activation.** The Gateway runs each `after_activation` step in order.
 
-Orbit adds no command of its own: no migration, cache clear, dependency install, asset build, health check, or restart. With no steps, a deployment runs no application command. A request during the switch gets either the old release or the new one.
+Orbit skips this phase for an Instance that does not serve PHP. A changed resolved release restarts the dedicated service so its workers enter the new application directory.
+
+Orbit runs no migration, Laravel cache clear, dependency install, asset build, or application health check of its own. With no steps, a deployment runs no application command. The `current` switch is atomic, but the dedicated FPM restart is not zero-downtime: requests can fail briefly while its socket and workers are unavailable, and in-flight requests can be interrupted. Other Instances keep their own PHP services. A confirmed no-op reconciliation does not restart FPM.
 
 Each step has its own timeout. A timeout stops the step's process group and every later step. The whole deployment has a deadline of the step timeouts plus 900 seconds. It never exceeds the request's 570-second command deadline. When a deadline stops the run, the error code is `deployment.deadline_exceeded`.
 
@@ -150,7 +154,7 @@ Orbit never undoes the effects of a step, of the environment sync, or of data ch
 
 ## Roll back
 
-A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current` and refreshes PHP-FPM, as a deployment does. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
+A rollback selects one retained release through `current`. The Gateway checks that the release is inside `releases/` and that the web root stays inside it. It then switches `current`, reconciles the dedicated FPM runtime, and resets its cache, as a deployment does. A changed resolved release restarts that service with the same brief serving interruption. A rollback fetches nothing, writes no environment, runs no step, and changes no database file.
 
 ## History
 

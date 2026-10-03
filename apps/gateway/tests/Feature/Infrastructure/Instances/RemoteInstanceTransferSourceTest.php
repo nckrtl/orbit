@@ -19,7 +19,8 @@ it('transfers the private annotator store through the source archive and deletes
     [$sandbox, $capture, $source, $destination] = remote_transfer_archive();
     $transport = new LocalInstanceTransferTransport($sandbox);
     $project = Project::query()->create(['name' => 'Annotations', 'slug' => 'annotations', 'repository_url' => 'git@example.test:annotations.git']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $source->id, 'name' => 'main', 'checkout_path' => $sandbox.'/source', 'source_layout' => 'checkout', 'annotator_port' => 4848]);
+    $instance = Instance::query()->findOrFail($capture->instanceId);
+    $instance->update(['project_id' => $project->id, 'name' => 'main', 'annotator_port' => 4848]);
     new Filesystem()->ensureDirectoryExists($sandbox.'/annotator-store', 0700);
     file_put_contents($sandbox.'/annotator-store/annotations.json', 'durable annotations');
     $captured = null;
@@ -99,8 +100,10 @@ function remote_transfer_archive(): array
     ]);
     $source = $node('staging-source');
     $destination = $node('staging-destination');
+    $project = Project::query()->create(['name' => 'Transfer', 'slug' => 'transfer', 'repository_url' => 'https://example.test/transfer.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $source->id, 'name' => 'source', 'checkout_path' => $sandbox.'/source']);
     $capture = new TransferSourceCapture(
-        instanceId: random_int(1000000, 2000000), nodeId: $source->id, layout: InstanceSourceLayout::Checkout,
+        instanceId: $instance->id, nodeId: $source->id, layout: InstanceSourceLayout::Checkout,
         sourcePath: $sandbox.'/source', commonRepositoryPath: null, head: $head, branch: 'main', detached: false,
         archiveIdentity: $sandbox.'/archive.tar', refs: ['main'],
     );
