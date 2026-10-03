@@ -574,8 +574,7 @@
             "pages": [
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
-              "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
-              "decisions/0194-respond-to-github-review-feedback"
+              "decisions/0191-clone-the-default-instance-database-for-each-new-instance"
             ]
           }
         ]
@@ -1361,6 +1360,10 @@
     {
       "source": "/decisions/0192-run-task-agents-on-pi-only",
       "destination": "/reference/tasks#task-agents-run-on-pi"
+    },
+    {
+      "source": "/decisions/0194-respond-to-github-review-feedback",
+      "destination": "/reference/tasks#trusted-reviews-are-input-not-merge-authority"
     },
     {
       "source": "/decisions/0193-record-development-branch-renames",

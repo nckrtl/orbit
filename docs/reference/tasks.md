@@ -1026,7 +1026,7 @@ For an open pull request, Orbit reads the complete bounded review list. It group
 
 An approval from one account does not cancel another account's effective requested changes. Among eligible requests from different trusted accounts, Orbit considers the oldest effective request first, using `submitted_at` and review ID. Selection runs again on each fresh read, so a later decisive review supersedes an older request even if GitHub returns it out of order. Ordinary issue comments and thread replies are not review decisions.
 
-The new review-consumption contract is [ADR 0194](/decisions/0194-respond-to-github-review-feedback). Implementation and dispatch wait for contract and breakdown approval. It extends the existing CI/conflict watcher; it does not replace the formal-approval workflow.
+Review consumption extends the existing CI/conflict watcher; it does not replace the formal-approval workflow. [Trusted reviews are input, not merge authority](#trusted-reviews-are-input-not-merge-authority) explains the authority boundary and the alternatives.
 
 #### Inspect approval observations
 
@@ -1464,6 +1464,16 @@ An agent holds no GitHub token and never fetches or pushes. A token in the agent
 GitHub review prose does not grant authority. The operator lists numeric accounts for each repository, granting only bounded repair work. Logins can change, repository roles are too broad, and a plain comment does not express a requested-change decision. Selecting the latest decisive record across heads prevents dismissal or out-of-order results from reviving obsolete work. Approval observations remain separate from the final reviewer's merge responsibility and the maintainer profile's admin bypass.
 
 The ledger couples one review to one fixup in a local transaction. A cursor misses edits and out-of-order results; a cache loses deduplication on restart. A digest and immutable findings packet keep the scope that the internal reviewer actually checked. Reading complete bounded lists and refusing overflow costs operator intervention on unusually large reviews, but partial findings cannot safely define repair scope. Review IDs identify consumption, while reviewer IDs identify the cap, so repeated submissions do not buy unlimited automatic work.
+
+Trust belongs in Gateway configuration, not a task definition or branch: the work being reviewed must not authorize its own instruction source. Trusting all collaborators, associations, or the App would exceed the operator's consent. Comments remain informational because prose alone cannot distinguish advice from a formal requested-change decision. Filtering by head before selecting the latest decisive review would revive superseded decisions.
+
+Consumption and fixup creation commit together because either order in separate transactions can lose work or duplicate it after a crash. Consumed scope stays immutable even if GitHub edits or dismisses the source; rewriting or cancelling active work would need a separate interruption protocol. The operator can cancel through the existing lifecycle, but cancellation retains consumption and cap charges. The API still permits deletion only in Backlog; a missing link is corruption or unsupported cleanup, not permission to recreate work.
+
+Polling uses bounded read-only GitHub App access, so private Gateways need no webhook ingress or new permission. The final uncached validation reduces stale creation, but GitHub endpoints and the Gateway cannot share an atomic snapshot. A remote edit can still race with creation. Stored source provenance makes that limitation inspectable; it is not a guarantee of live resolution.
+
+Durable approval observations are separate from internal receipts and consumption. Their local report shows stored provenance, latest confirmed status, and freshness, not an aggregate verdict or live merge gate. Failed reads retain evidence without confirming approval. An approval marked `historical` never becomes `current` merely because GitHub dismissed a newer decision.
+
+A fixup uses the ordinary implementer, reviewer, Project check, and publication flow. Existing identity, brief, and deliverables carry the findings without new public trust or merge fields. Internal approval neither posts a GitHub decision nor requests re-review. Automatically requesting review or enforcing or performing merge would add unnecessary write authority. The external final reviewer must repeat affected verification and formally approve the new exact head; the authorized maintainer retains delegated merge consent and admin bypass. Orbit observes a merge rather than promising or performing one.
 
 ### Fixups are bounded
 

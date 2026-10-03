@@ -367,6 +367,31 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($unwatched->watchedPrState)->toBeNull();
     });
 
+    it('replays the complete recorded review fixup through existing brief and deliverables', function (): void {
+        $group = task_fixture_send('tasks-show/review-fixup', new ShowTaskGroupRequest(1));
+        assert($group instanceof TaskGroupResponse);
+        $fixup = $group->tasks[2];
+        $lines = array_filter(explode("\n", $fixup->brief), static fn (string $line): bool => str_starts_with($line, '> '));
+        $source = json_decode(implode("\n", array_map(static fn (string $line): string => substr($line, 2), $lines)), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($fixup->title)->toBe('Address GitHub review findings from account 42')
+            ->and($source['review']['reviewer_id'])->toBe(42)
+            ->and($source['review']['id'])->toBe(101)
+            ->and($source['review']['state'])->toBe('CHANGES_REQUESTED')
+            ->and($source['review']['body'])->not->toBeEmpty()
+            ->and($source['comments'])->toHaveCount(1)
+            ->and($source['comments'][0]['body'])->not->toBeEmpty()
+            ->and($source['comments'][0]['diff_hunk'])->not->toBeEmpty()
+            ->and($fixup->brief)->toContain('Internal approval is not GitHub re-review.')
+            ->and($fixup->deliverables[0]['id'])->toBe('review-findings')
+            ->and($fixup->deliverables[0]['type'])->toBe('review')
+            ->and($fixup->deliverables[1])->toMatchArray([
+                'id' => 'project-check', 'type' => 'command', 'command' => 'composer check', 'directory' => '.',
+            ])
+            ->and($fixup->toArray()['brief'])->toBe($fixup->brief)
+            ->and($fixup->toArray()['deliverables'])->toBe($fixup->deliverables);
+    });
+
     it('keeps fails_on_base on a test deliverable', function (): void {
         $mockClient = new MockClient([CreateSubtaskRequest::class => MockResponse::make([
             'data' => [

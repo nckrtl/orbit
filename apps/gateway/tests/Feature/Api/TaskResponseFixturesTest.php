@@ -9,6 +9,8 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskReviewFindingsPacket;
+use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -34,6 +36,7 @@ use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\FakeAgentDriver;
+use Tests\Support\ReviewFindings;
 
 /**
  * Records the tasks family responses that the SDK and the CLI replay. Data is deterministic:
@@ -142,6 +145,38 @@ describe('task response fixtures', function (): void {
 
         record_fixture($this->getJson('/api/v1/task-groups')->assertOk(), 'tasks/tasks-list/default', ListTaskGroupsRequest::class, 'GET /api/v1/task-groups');
         record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk(), 'tasks/tasks-show/default', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
+    });
+
+    it('records a review fixup without extending the public response schema', function (): void {
+        $this->project->update(['repository_url' => 'https://github.com/acme/widgets.git']);
+        $group = task_fixture_group($this->project);
+        $group->update(['status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/acme/widgets/pull/7']);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+        $plan = TaskSettlingFixup::reviewPlan('composer check', TaskReviewFindingsPacket::fromCandidate(
+            ReviewFindings::candidate(comments: [ReviewFindings::comment()]),
+        ));
+        $fixup = Task::query()->create([
+            'parent_id' => $group->id,
+            'position' => 3,
+            'title' => $plan->title,
+            'brief' => $plan->brief,
+            'deliverables' => $plan->deliverables,
+            'status' => TaskStatus::Todo,
+            'fixup_problem' => $plan->identity,
+        ]);
+
+        $response = $this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
+            ->assertJsonPath('data.tasks.2.fixup_problem', $plan->identity)
+            ->assertJsonPath('data.tasks.2.brief', $plan->brief)
+            ->assertJsonPath('data.tasks.2.deliverables', $plan->deliverables);
+        record_fixture($response, 'tasks/tasks-show/review-fixup', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
+
+        $this->deleteJson("/api/v1/task-groups/{$group->id}/tasks/{$fixup->id}")
+            ->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+        $fixup->update(['status' => TaskStatus::Cancelled]);
+        $this->deleteJson("/api/v1/task-groups/{$group->id}/tasks/{$fixup->id}")
+            ->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+        expect($fixup->fresh())->not->toBeNull();
     });
 
     it('records a watched pull request opened outside Orbit on a running group', function (): void {
