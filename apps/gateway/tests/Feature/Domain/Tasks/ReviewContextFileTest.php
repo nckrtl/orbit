@@ -70,7 +70,7 @@ it('writes the uncut task context before the opening review', function (): void 
         ->and($turn['message'])->toContain(TaskReviewContext::Path.' holds the full brief.')
         ->and($turn['message'])->toContain(TaskReviewContext::Path.' holds the full resolution.')
         ->and(mb_strlen($turn['message']))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
-        ->and(is_file($case['checkout'].'/'.TaskReviewContext::Path.'.new'))->toBeFalse();
+        ->and(is_file(review_context_file_path($case['checkout']).'.new'))->toBeFalse();
 });
 
 it('writes full findings for a fresh feedback implementer and its reviewer without scheduler dispatch', function (bool $reserved, bool $stale): void {
@@ -82,7 +82,7 @@ it('writes full findings for a fresh feedback implementer and its reviewer witho
         )));
     $task = $case['task'];
     $task->update(['brief' => $plan->brief, 'fixup_problem' => $plan->identity, 'deliverables' => $plan->deliverables]);
-    $path = $case['checkout'].'/'.TaskReviewContext::Path;
+    $path = review_context_file_path($case['checkout']);
     if ($stale) {
         file_put_contents($path, 'Stale findings from another turn.');
     } else {
@@ -112,7 +112,7 @@ it('fails closed when reserved feedback context installation fails and installs 
     $task = $case['task'];
     $plan = TaskSettlingFixup::reviewPlan(null, TaskReviewFindingsPacket::fromCandidate(ReviewFindings::candidate()));
     $task->update(['brief' => $plan->brief, 'fixup_problem' => $plan->identity, 'deliverables' => $plan->deliverables]);
-    $path = $case['checkout'].'/'.TaskReviewContext::Path;
+    $path = review_context_file_path($case['checkout']);
     unlink($path);
     mkdir($path);
     $spawner = app(AgentSpawner::class);
@@ -262,8 +262,8 @@ it('does not send the review when the context path is a directory', function ():
     Exceptions::fake();
     $checkout = TestOrbitHome::scratch('context-directory');
     (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
-    $orbit = $checkout.'/.git/orbit';
-    mkdir($orbit.'/context.md', 0755, true);
+    $path = review_context_file_path($checkout);
+    mkdir($path, 0755, true);
     $project = Project::query()->create([
         'name' => 'context-directory',
         'slug' => 'context-directory',
@@ -317,9 +317,9 @@ it('does not send the review when the context path is a directory', function ():
         ->and($task->fresh()?->communication_failures)->toBe(1)
         ->and($task->fresh()?->review_notified_attempt)->toBeNull()
         ->and($task->fresh()?->assistance_requested)->toBeFalse()
-        ->and(is_dir($orbit.'/context.md'))->toBeTrue()
-        ->and(is_file($orbit.'/context.md'))->toBeFalse()
-        ->and(glob($orbit.'/context.md/*'))->toBe([]);
+        ->and(is_dir($path))->toBeTrue()
+        ->and(is_file($path))->toBeFalse()
+        ->and(glob($path.'/*'))->toBe([]);
     Exceptions::assertReported(TaskTurnReceiptException::class);
 });
 
@@ -428,7 +428,7 @@ function review_context_opening(): array
         public array $turns = [];
     };
     $driver->beforeTurn = function (string $message) use ($log, $checkout): void {
-        $path = $checkout.'/.git/orbit/context.md';
+        $path = review_context_file_path($checkout);
         $log->turns[] = [
             'message' => $message,
             'context' => is_file($path) ? (string) file_get_contents($path) : null,
@@ -458,6 +458,15 @@ function review_context_opening(): array
         'approval' => $approval,
         'resolution' => $resolution,
     ];
+}
+
+function review_context_file_path(string $checkout): string
+{
+    $process = new Process(['git', '-C', $checkout, 'rev-parse', '--git-path', 'orbit']);
+    $process->mustRun();
+    $orbit = trim($process->getOutput());
+
+    return (str_starts_with($orbit, '/') ? $orbit : $checkout.'/'.$orbit).'/context.md';
 }
 
 function review_context_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
