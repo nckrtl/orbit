@@ -61,8 +61,10 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 | Target | User | Working directory | Shell |
 | --- | --- | --- | --- |
 | Node | The Node's managed user | That user's home | The user's login shell, with `-lc` |
-| Instance on `app-dev` | The Node's managed user | The Instance checkout | The user's login shell, with `-lc` |
-| Instance on `app-prod` | The Instance's production user | `<production-home>/current` | `/bin/bash -c`, without a login |
+| Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with `-lc` |
+| Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -c`, without a login |
+
+For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` on `app-prod`, so `php artisan schedule:run` finds that app's `artisan` and `.env`. Root `public` keeps the checkout or release root. Node Schedule working directories do not change. Instances that are not Laravel apps keep their checkout or release root.
 
 The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance needs a selected release before it can install a Schedule, even with a disabled timer.
 

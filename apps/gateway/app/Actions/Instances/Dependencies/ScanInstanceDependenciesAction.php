@@ -137,6 +137,9 @@ final readonly class ScanInstanceDependenciesAction
     {
         return [
             ...$instance->only(['project_id', 'node_id', 'environment', 'source_layout', 'checkout_path', 'production_user', 'production_home']),
+            'root' => $instance->root ?? $instance->project->root,
+            'source_is_laravel' => $instance->source_is_laravel,
+            'project_type' => $instance->project->type,
             'node' => $instance->node->only(['wireguard_ip', 'user', 'status']),
         ];
     }

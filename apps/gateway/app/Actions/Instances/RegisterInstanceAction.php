@@ -101,7 +101,7 @@ final readonly class RegisterInstanceAction
                 ? $facts[0]
                 : $this->primaryFacts($facts, $data->sourcePath);
             $project = $this->resolveProject($primaryFacts, $data);
-            $this->preflightSources($caller, $project, $facts, $retainedPrimary, $data->sourcePath);
+            $this->preflightSources($caller, $project, $facts, $retainedPrimary, $data->sourcePath, $data->root);
             [$members, $instances] = $this->projectionLock->run(function () use (
                 $caller,
                 $project,
@@ -265,6 +265,7 @@ final readonly class RegisterInstanceAction
         array $facts,
         ?Instance $retainedPrimary,
         string $submittedPath,
+        ?string $requestedRoot,
     ): void {
         foreach ($facts as $fact) {
             $instance = Instance::query()
@@ -292,6 +293,7 @@ final readonly class RegisterInstanceAction
                 'project_id' => $project->id,
                 'node_id' => $node->id,
                 'checkout_path' => $path,
+                'root' => $instance instanceof Instance ? $instance->root : $requestedRoot,
             ]);
             $candidate->setRelation('project', $project);
             $candidate->setRelation('node', $node);

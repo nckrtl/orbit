@@ -48,6 +48,7 @@ use App\Domain\Schedules\ScheduleTargetUseGuard;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
@@ -641,7 +642,9 @@ final readonly class TransferInstanceAction
             projectId: $instance->project_id,
             nodeId: $destination->id,
             environment: 'development',
-            path: $transfer->destination_path,
+            path: $instance->source_is_laravel === true
+                ? ApplicationDirectory::resolve($transfer->destination_path, $instance->root ?? $instance->project->root)
+                : $transfer->destination_path,
             executionUser: $destination->user,
             laravel: $instance->source_is_laravel === true,
             routeId: $route->id,

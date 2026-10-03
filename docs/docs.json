@@ -579,7 +579,8 @@
             "pages": [
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
-              "decisions/0191-clone-the-default-instance-database-for-each-new-instance"
+              "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
+              "decisions/0195-derive-application-directory-from-web-root"
             ]
           }
         ]

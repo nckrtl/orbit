@@ -108,6 +108,7 @@ final readonly class DeployInstanceAction
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
                 $request->emitPhase(DeploymentProgressPhase::PhpRefresh);
                 $this->assertNotCancelled($request);
+                $this->runtime->converge($instance);
                 $this->runtime->refreshCache($instance);
             }
 

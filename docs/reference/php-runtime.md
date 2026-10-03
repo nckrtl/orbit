@@ -3,7 +3,7 @@ title: "PHP runtimes"
 description: "How Orbit selects a PHP version for an Instance, runs shared development and dedicated production PHP-FPM services, and refreshes production OPcache."
 covers:
   - apps/gateway/app/Domain/Instances/{InstancePhpVersionCatalog,ComposerSourceClassifier,ProductionPhpRuntimeIdentity,ProductionPhpRuntimeManager}.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionPhpRuntimeManager,RemoteProductionInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration}.php
+  - apps/gateway/app/Infrastructure/Instances/{RemoteProductionPhpRuntimeManager,RemoteProductionInstanceSourceLifecycle,ProductionPhpRuntimeConfigRenderer,ProductionPhpRuntimeConfiguration,ProductionRuntimeGenerationProgram}.php
   - apps/gateway/app/Infrastructure/AppProd/{RemoteAppProdPhpFpmManager,RemoteAppProdSourceManager}.php
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
@@ -16,7 +16,19 @@ Orbit installs PHP from the pinned Sury apt source and serves each site through 
 
 ## Select the PHP version
 
-The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows.
+The Gateway reads the source's `composer.json` once, before it publishes the runtime or DNS. For a routed Laravel app, source inspection reads `composer.json` and `artisan` from the [application directory](/reference/projects#application-directory), not from an unrelated repository-root Composer project. It tries PHP 8.5, then PHP 8.4, and picks the first version that the `require.php` constraint allows.
+
+With root `apps/site/public`, the working directory for PHP-FPM is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production; Caddy's document root remains the corresponding `apps/site/public`. Root `public` keeps the checkout or release root as the application working directory.
+
+Before the first production deployment, `current` is absent, so the dedicated pool starts in the application's directory under `releases/initial`. Once a deployment or rollback selects a release, Orbit reconciles the pool to the application's directory under `current` before refreshing its PHP cache. It validates the selected directory before starting or restarting FPM.
+
+The generated pool records the resolved release as a comment. A release switch changes those bytes and restarts that Instance's dedicated service, so existing workers cannot keep the previous release as their working directory. A confirmed no-op reconciliation does not restart the service.
+
+Before publishing a changed pool, Orbit durably records a pending generation. After it starts and verifies the master, it durably records the applied generation with the boot ID, master PID, and process start time, then clears the pending receipt. A retry restarts FPM when the published bytes match but acknowledgment is missing.
+
+Doctor rejects a pending generation or a receipt that does not match the desired release and running master. After an external service restart or host reboot, runtime convergence renews that confirmation.
+
+Doctor accepts the application's directory in the initial release only while `current` is absent. After selection it expects the application's directory under `current`.
 
 | Source | Result |
 | --- | --- |

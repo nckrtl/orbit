@@ -11,6 +11,9 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Instances\ProductionApplicationPaths;
+use App\Infrastructure\Instances\ProductionRuntimeGenerationProgram;
+use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -210,7 +213,8 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
     {
         $runtime = $expectation->runtime;
         $configuration = $expectation->runtimeConfiguration;
-        $runtimeExpected = $runtime !== null && $configuration !== null;
+        $initialConfiguration = $expectation->initialRuntimeConfiguration;
+        $runtimeExpected = $runtime !== null && $configuration !== null && $initialConfiguration !== null;
         $runtimeValues = [
             'version' => '',
             'service' => '',
@@ -223,6 +227,9 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             'marker_path' => '',
             'main' => '',
             'pool_configuration' => '',
+            'initial_pool_configuration' => '',
+            'application' => '',
+            'initial_application' => '',
             'master_ini' => '',
             'unit' => '',
             'marker' => '',
@@ -240,6 +247,9 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 'marker_path' => $runtime->markerPath,
                 'main' => base64_encode($configuration->main),
                 'pool_configuration' => base64_encode($configuration->pool),
+                'initial_pool_configuration' => base64_encode($initialConfiguration->pool),
+                'application' => $runtime->applicationDirectory(),
+                'initial_application' => $runtime->applicationDirectory(initialRelease: true),
                 'master_ini' => base64_encode($configuration->masterIni),
                 'unit' => base64_encode($configuration->unit),
                 'marker' => base64_encode($runtime->marker()),
@@ -260,10 +270,13 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             ->map(static fn (string $value, string $key): string => $key.'='.escapeshellarg($value))
             ->implode("\n");
 
-        return <<<BASH
+        $applicationPoolSelection = RemoteProductionPhpRuntimeManager::applicationPoolSelectionFunction()."\n".ProductionRuntimeGenerationProgram::functions();
+
+        return ProductionApplicationPaths::render(<<<BASH
             set -u
             {$assignments}
             proc_root=/proc
+            {$applicationPoolSelection}
 
             emit() {
                 "\$@"
@@ -320,8 +333,8 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 current="\$home/current"
                 if test ! -e "\$current" && test ! -L "\$current"; then return 0; fi
                 selected_release || return 1
-                test -L "\$selected/.env" || return 1
-                test "\$(realpath -e -- "\$selected/.env" 2>/dev/null)" = "\$home/.env"
+                test -L "\$selected__APPLICATION_SUFFIX__/.env" || return 1
+                test "\$(realpath -e -- "\$selected__APPLICATION_SUFFIX__/.env" 2>/dev/null)" = "\$home/.env"
             }
             local_tuning_matches() {
                 test -f "\$local_tuning" && test ! -L "\$local_tuning" || return 1
@@ -464,6 +477,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 test -d "\$generated_directory" && test ! -L "\$generated_directory" || return 1
                 test "\$(stat -c '%U:%G:%a' -- "\$generated_directory" 2>/dev/null)" = root:root:755 || return 1
                 exact_file "\$generated_directory/php-fpm.conf" "\$main" root:root 644 || return 1
+                select_application_pool || return 1
                 exact_file "\$generated_directory/pool.conf" "\$pool_configuration" root:root 644 || return 1
                 exact_file "\$generated_directory/master.ini" "\$master_ini" root:root 644 || return 1
                 exact_file "\$unit_path" "\$unit" root:root 644 || return 1
@@ -486,6 +500,7 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
                 socket_service_matches || return \$?
                 current_main_pid=\$(systemctl show --property=MainPID --value "\$service" 2>/dev/null) || return 2
                 test "\$current_main_pid" = "\$main_pid" || return 2
+                runtime_generation_applied
             }
             caddy_matches() {
                 source=\$(readlink -f -- /etc/caddy/Caddyfile 2>/dev/null) || return 1
@@ -507,6 +522,6 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             emit environment_matches
             emit php_fpm_matches
             emit caddy_matches
-            BASH;
+            BASH, $expectation->root);
     }
 }

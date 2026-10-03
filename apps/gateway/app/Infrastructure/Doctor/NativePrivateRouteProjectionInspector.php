@@ -203,7 +203,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
         };
         $environment = $instance->usesProductionReleaseLayout()
             ? (string) $instance->production_home
-            : $instance->checkout_path;
+            : $instance->applicationDirectory();
         $dnsAddress = $this->expectedDnsAddress($instance, $route) ?? '';
 
         return new RemoteCommand(

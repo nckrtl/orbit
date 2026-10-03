@@ -153,12 +153,13 @@ it('uses the current-release root instead of a flat production home', function (
         ->not->toContain('root * /home/orbit-app-218/public');
 });
 
-it('authenticates a selected release before publication and clears only its serving link', function (): void {
+it('authenticates a selected release before publication and clears only its serving link', function (string $webRoot, string $environmentPath, string $target): void {
     [$layout, $ssh, $instance] = orb216_release_layout_lifecycle([
         new CommandResult(0, '', '', 1, false),
         new CommandResult(0, '', '', 1, false),
     ]);
 
+    $instance->update(['root' => $webRoot]);
     $layout->validateCurrent($instance);
     $layout->clearCurrent($instance);
 
@@ -173,7 +174,7 @@ it('authenticates a selected release before publication and clears only its serv
             'orbit-app-216',
             '/home/orbit-app-216',
             (string) $instance->id,
-            'public',
+            $webRoot,
             '0',
         ])
         ->and($ssh->commands[0]->input)
@@ -183,13 +184,18 @@ it('authenticates a selected release before publication and clears only its serv
             'case "$selected" in "$releases"/*)',
             'realpath -e -- "$selected_environment"',
             'case "$resolved_root" in "$selected"|"$selected"/*)',
+            $environmentPath,
+            'readlink -- "$release_environment")" = '.$target,
         )
         ->and($ssh->commands[1]->arguments[8])
         ->toBe('1')
         ->and($ssh->commands[1]->input)
         ->toContain('sudo -u "$user" -H rm -- "$current"')
         ->not->toContain('rm -rf', 'rm -- "$releases"', 'rm -- "$environment"');
-});
+})->with([
+    'root public' => ['public', 'selected_environment="$selected/.env"', '../../.env'],
+    'nested Laravel' => ['server/web/public', 'selected_environment="$selected${application_suffix}/.env"', '../../../../.env'],
+]);
 
 it('leaves legacy flat production layouts outside release validation and cleanup', function (): void {
     [$layout, $ssh, $instance] = orb216_release_layout_lifecycle([]);

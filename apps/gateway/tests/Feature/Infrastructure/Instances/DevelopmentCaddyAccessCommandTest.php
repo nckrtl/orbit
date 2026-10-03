@@ -123,7 +123,7 @@ it('refuses unsafe Web root links before changing file access', function (string
     }
 })->with(['root', 'descendant']);
 
-it('permits only Laravel public storage without exposing private storage', function (): void {
+it('permits only Laravel public storage without exposing private storage', function (string $relative): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -131,22 +131,23 @@ it('permits only Laravel public storage without exposing private storage', funct
     $root = development_caddy_access_fixture();
 
     try {
-        mkdir("$root/checkout/public");
-        mkdir("$root/checkout/storage/app/public", 0o700, true);
-        file_put_contents("$root/checkout/storage/app/public/photo.txt", 'public photo');
-        file_put_contents("$root/checkout/storage/app/private.txt", 'private photo');
-        symlink('../storage/app/public', "$root/checkout/public/storage");
-        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", 'public')]));
+        $application = "$root/checkout".$relative;
+        mkdir("$application/public", 0o700, true);
+        mkdir("$application/storage/app/public", 0o700, true);
+        file_put_contents("$application/storage/app/public/photo.txt", 'public photo');
+        file_put_contents("$application/storage/app/private.txt", 'private photo');
+        symlink('../storage/app/public', "$application/public/storage");
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site("$root/checkout", ltrim($relative.'/public', '/'))]));
         new Process($command->arguments)->setInput($command->input)->mustRun();
 
-        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/public/storage/photo.txt"])->mustRun()->getOutput())
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$application/public/storage/photo.txt"])->mustRun()->getOutput())
             ->toBe('public photo');
-        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/storage/app/private.txt"])->run())
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$application/storage/app/private.txt"])->run())
             ->toBe(1);
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-});
+})->with(['root public' => '', 'nested Laravel' => '/server/web']);
 
 it('keeps both Web roots readable when a Git worktree is nested inside another checkout', function (): void {
     if (LinuxHost::delegate($this)) {

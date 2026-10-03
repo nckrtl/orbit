@@ -284,6 +284,162 @@ it('rejects an unavailable marker from the non-nullable development observation'
     )->inspect($instance))->toThrow(DoctorInspectionException::class, '');
 });
 
+it('checks the selected release environment in its application directory', function (string $webRoot, string $suffix, string $target): void {
+    $home = sys_get_temp_dir().'/orbit-doctor-release-env-'.bin2hex(random_bytes(8));
+    $release = $home.'/releases/initial';
+    mkdir($release.$suffix, 0700, true);
+    file_put_contents($home.'/.env', "APP_KEY=secret\n");
+    chmod($home.'/.env', 0600);
+    symlink('releases/initial', $home.'/current');
+    symlink($target, $release.$suffix.'/.env');
+    $setup = 'home='.escapeshellarg($home)."\n"
+        .'user='.escapeshellarg(posix_getpwuid(posix_geteuid())['name'])."\n"
+        .'environment='.escapeshellarg(base64_encode("APP_KEY=secret\n"));
+
+    try {
+        $program = application_production_observation_program('environment_matches', $setup, $webRoot);
+        expect(application_run(['bash', '-s'], $program)->stdout)->toBe("1\n");
+        unlink($release.$suffix.'/.env');
+        file_put_contents($release.$suffix.'/.env', "APP_KEY=secret\n");
+        expect(application_run(['bash', '-s'], $program)->stdout)->toBe("0\n");
+        if ($suffix !== '') {
+            symlink('../../.env', $release.'/.env');
+            expect(application_run(['bash', '-s'], $program)->stdout)->toBe("0\n");
+        }
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with([
+    'root public' => ['public', '', '../../.env'],
+    'nested Laravel' => ['server/web/public', '/server/web', '../../../../.env'],
+]);
+
+it('accepts the initial pool only before selection and rejects the old production-home working directory', function (string $root, string $suffix): void {
+    $home = sys_get_temp_dir().'/orbit-doctor-fpm-app-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($home.'/runtime/generated');
+    $files->ensureDirectoryExists($home.'/releases/initial'.$suffix);
+    $files->ensureDirectoryExists($home.'/releases/fresh'.$suffix);
+    $setup = 'runtime_directory='.escapeshellarg($home.'/runtime')."\n"
+        .'generated_directory='.escapeshellarg($home.'/runtime/generated')."\n"
+        .'application='.escapeshellarg($home.'/current'.$suffix)."\n"
+        .'initial_application='.escapeshellarg($home.'/releases/initial'.$suffix)."\n"
+        .'observed_pool="$initial_pool_configuration"'."\n"
+        .'home='.escapeshellarg($home)."\n".<<<'BASH'
+            exact_file() {
+                case "$1" in
+                    */pool.conf)
+                        expected_chdir=$(printf '%s' "$2" | base64 --decode | grep '^chdir = ')
+                        observed_chdir=$(printf '%s' "$observed_pool" | base64 --decode | grep '^chdir = ')
+                        test "$expected_chdir" = "$observed_chdir"
+                        ;;
+                    *) return 0 ;;
+                esac
+            }
+            stat() { printf 'root:root:755\n'; }
+            local_tuning_matches() { return 0; }
+            loaded_service_matches() { return 0; }
+            process_runtime_matches() { return 0; }
+            worker_identity_matches() { return 0; }
+            socket_service_matches() { return 0; }
+            runtime_generation_applied() { return 0; }
+            systemctl() {
+                case "$2" in
+                    --property=ActiveState) printf 'active\n' ;;
+                    --property=User) printf '\n' ;;
+                    --property=MainPID) printf '620\n' ;;
+                    *) return 1 ;;
+                esac
+            }
+            BASH;
+
+    try {
+        $initial = application_production_observation_program('php_fpm_matches', $setup, $root);
+        expect(application_run(['bash'], $initial)->stdout)->toBe("1\n");
+        symlink('releases/fresh', $home.'/current');
+        expect(application_run(['bash'], $initial)->stdout)->toBe("0\n");
+        $selected = application_production_observation_program('php_fpm_matches', $setup."\n".'observed_pool="$pool_configuration"', $root);
+        expect(application_run(['bash'], $selected)->stdout)->toBe("1\n");
+        unlink($home.'/current');
+        symlink('releases/initial', $home.'/current');
+        expect(application_run(['bash'], $selected)->stdout)->toBe("1\n");
+        $oldHome = application_production_observation_program('php_fpm_matches', $setup."\n".<<<'BASH'
+            observed_pool=$(printf '%s' "$pool_configuration" | base64 --decode | sed 's,^chdir = .*current.*,chdir = /home/obsolete,' | base64 --wrap=0)
+            BASH, $root);
+        expect(application_run(['bash'], $oldHome)->stdout)->toBe("0\n");
+    } finally {
+        $files->deleteDirectory($home);
+    }
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
+
+it('rejects pending or unacknowledged FPM generations even when the desired files match', function (string $root, string $suffix): void {
+    $directory = sys_get_temp_dir().'/orbit-doctor-generation-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory.'/runtime/generated');
+    $files->ensureDirectoryExists($directory.'/home/releases/fresh'.$suffix);
+    $files->ensureDirectoryExists($directory.'/proc/sys/kernel/random');
+    $files->ensureDirectoryExists($directory.'/proc/620');
+    file_put_contents($directory.'/boot', file_get_contents('/proc/sys/kernel/random/boot_id'));
+    file_put_contents($directory.'/proc/620/stat', file_get_contents('/proc/self/stat'));
+    symlink('releases/fresh', $directory.'/home/current');
+    $setup = 'fixture='.escapeshellarg($directory)."\n"
+        .'application='.escapeshellarg($directory.'/home/current'.$suffix)."\n"
+        .'initial_application='.escapeshellarg($directory.'/home/releases/initial'.$suffix)."\n".<<<'BASH'
+            runtime_directory="$fixture/runtime"
+            generated_directory="$runtime_directory/generated"
+            proc_root="$fixture/proc"
+            home="$fixture/home"
+            cp "$fixture/boot" "$proc_root/sys/kernel/random/boot_id"
+            chown() { :; }
+            stat() { printf 'root:root:%s\n' "$(command stat -c %a -- "${!#}")"; }
+            exact_file() { return 0; }
+            local_tuning_matches() { return 0; }
+            loaded_service_matches() { return 0; }
+            process_runtime_matches() { return 0; }
+            worker_identity_matches() { return 0; }
+            socket_service_matches() { return 0; }
+            systemctl() {
+                case "$2" in
+                    --property=ActiveState) printf 'active\n' ;;
+                    --property=User) printf '\n' ;;
+                    --property=MainPID|--property) printf '620\n' ;;
+                    *) return 1 ;;
+                esac
+            }
+            original_pool="$pool_configuration"
+            select_application_pool
+            confirm_runtime_generation
+            case "${1:-}" in
+                pending) begin_runtime_generation ;;
+                missing) rm "$runtime_directory/.runtime-generation.applied" ;;
+                stale-master) printf '00000000-0000-0000-0000-000000000000\n' > "$proc_root/sys/kernel/random/boot_id" ;;
+                recovered) begin_runtime_generation; confirm_runtime_generation ;;
+            esac
+            pool_configuration="$original_pool"
+            BASH;
+
+    try {
+        $program = application_production_observation_program('php_fpm_matches', $setup, $root);
+        foreach (['applied' => '1', 'pending' => '0', 'missing' => '0', 'stale-master' => '0', 'recovered' => '1'] as $state => $expected) {
+            expect(application_run(['bash', '-s', '--', $state], $program)->stdout)->toBe($expected."\n", $state);
+        }
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
+
+it('expects the actual production renderer application directory for selected and initial releases', function (string $root, string $suffix): void {
+    $instance = application_production_app_instance(application_inspector_app(), application_inspector_node(), 'private-production-value');
+    $instance->update(['root' => $root]);
+
+    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance);
+
+    expect($expectation->runtimeConfiguration?->pool)
+        ->toContain('chdir = '.$instance->production_home.'/current'.$suffix."\n")
+        ->and($expectation->initialRuntimeConfiguration?->pool)
+        ->toContain('chdir = '.$instance->production_home.'/releases/initial'.$suffix."\n");
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
+
 it('observes production projections through fixed arguments and protected input', function (): void {
     $secret = 'doctor-production-secret';
     $instance = application_production_app_instance(
@@ -522,11 +678,13 @@ it('executes active service and main PID outcomes from the production program', 
         generated_directory={$generated}
         counter={$counter}
         exact_file() { return 0; }
+        select_application_pool() { return 0; }
         local_tuning_matches() { return 0; }
         loaded_service_matches() { return 0; }
         process_runtime_matches() { return 0; }
         worker_identity_matches() { return 0; }
         socket_service_matches() { return 0; }
+        runtime_generation_applied() { return 0; }
         stat() { printf 'root:root:755\n'; }
         systemctl() {
             case "\$2" in
@@ -1233,13 +1391,14 @@ function application_instance_remote_script(Instance $instance): string
     return $ssh->commands[0]->input;
 }
 
-function application_production_observation_program(string $observation, string $setup): string
+function application_production_observation_program(string $observation, string $setup, string $webRoot = 'public'): string
 {
     $instance = application_production_app_instance(
         application_inspector_app(),
         application_inspector_node(),
         'private-production-value',
     );
+    $instance->update(['root' => $webRoot]);
     $ssh = new AppDevFakeSshExecutor([app_inspector_result("1\n1\n1\n1\n1\n1\n")]);
     application_instance_inspector($ssh)->inspect($instance);
     $protected = $ssh->commands[0]->protectedInput;

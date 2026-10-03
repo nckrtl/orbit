@@ -51,6 +51,8 @@ Dedicated production pools have no slowlog threshold by default. So a zero slow-
 
 Each production master has its own OPcache. Deployment and rollback reset that cache through the master's application socket. Monitoring never resets the cache.
 
+A nested Laravel [application directory](/reference/projects#application-directory) changes the PHP-FPM working directory, not the Instance's pool identity, sockets, or exporter selection. Metrics still belong to that production Instance.
+
 Status monitoring uses a separate local socket, `<socket>.status`. So busy application workers do not block status collection. Cbox's OPcache helpers run through that socket, outside the web root.
 
 The Gateway renders the PHP-FPM status lines into each production Instance's `pool.conf` and sends that configuration to the Node. The Node-side metrics script does not edit `pool.conf`. When monitoring adds or removes its status lines, Orbit reloads only a changed master that runs. The reload can warm its cache again. A stopped master stays stopped. Orbit never changes `local.conf`. When an operator's own status directive conflicts with monitoring, convergence fails and keeps the directive.

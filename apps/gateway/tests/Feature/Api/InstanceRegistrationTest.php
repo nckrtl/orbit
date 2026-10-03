@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\InstanceDestinationGuard;
+use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Registration\RegistrationSourceFacts;
@@ -1392,6 +1394,67 @@ it('adopts an unregistered source already at its calculated managed destination'
 
     expect($this->destinationGuard->paths)->toBe([]);
 });
+
+it('preflights the requested and retained application root instead of unrelated repository metadata', function (string $root, string $relative, string $conflictingComposer, string $conflictingArtisan): void {
+    $project = Project::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://github.com/acme/acme.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $source = '/work/acme';
+    $destination = '/srv/orbit/apps/acme/default';
+    $metadata = [];
+    foreach ([$source, $destination] as $checkout) {
+        $metadata[$checkout] = ['composer' => $conflictingComposer, 'artisan' => $conflictingArtisan];
+        $metadata[$checkout.'/server/web'] = ['composer' => $conflictingComposer, 'artisan' => $conflictingArtisan];
+        $metadata[$checkout.$relative] = ['composer' => '{"require":{"php":"~8.4.0","laravel/framework":"^13.0"}}', 'artisan' => 'regular'];
+    }
+    $configuration = new class($metadata) implements DevelopmentInstanceConfigurator
+    {
+        /** @var list<string> */
+        public array $inspected = [];
+
+        /** @param array<string, array{composer: string, artisan: string}> $metadata */
+        public function __construct(private readonly array $metadata) {}
+
+        public function inspect(Instance $instance): DevelopmentSourceProfile
+        {
+            $directory = $instance->applicationDirectory();
+            $this->inspected[] = $directory;
+            $metadata = $this->metadata[$directory];
+
+            return new ComposerSourceClassifier(new InstancePhpVersionCatalog)->classify(
+                $metadata['composer'], $instance->project->type, $metadata['artisan'],
+            );
+        }
+
+        public function configureLaravelUrl(Instance $instance, string $url): void {}
+    };
+    app()->instance(DevelopmentInstanceConfigurator::class, $configuration);
+    $payload = ['source_path' => $source, 'project_id' => $project->id, 'root' => $root];
+
+    $first = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+    $omitted = $this->postJson('/api/v1/instances/register', [
+        'source_path' => $source, 'project_id' => $project->id,
+    ])->assertOk();
+    $identical = $this->postJson('/api/v1/instances/register', $payload)->assertOk();
+    $this->postJson('/api/v1/instances/register', [
+        ...$payload, 'root' => $root === 'public' ? 'server/web/public' : 'public',
+    ])->assertConflict()->assertJsonPath('error.code', 'instance.registration_conflict');
+
+    expect($omitted->json('data.instance.id'))->toBe($first->json('data.instance.id'))
+        ->and($identical->json('data.instance.id'))->toBe($first->json('data.instance.id'))
+        ->and(array_values(array_unique($configuration->inspected)))->toBe([$source.$relative, $destination.$relative])
+        ->and(Instance::query()->sole()->root)->toBe($root === 'public' ? null : $root)
+        ->and(Instance::query()->sole()->selected_php_version)->toBe('8.4')
+        ->and(Route::query()->count())->toBe(1);
+})->with([
+    'nested app with unsupported repository PHP' => ['server/web/public', '/server/web', '{"require":{"php":">8.5"}}', 'absent'],
+    'nested app with partial repository Laravel' => ['server/web/public', '/server/web', '{"require":{"laravel/framework":"^13.0"}}', 'absent'],
+    'root public ignores nested metadata' => ['public', '', '{"require":{"php":">8.5"}}', 'absent'],
+]);
 
 it('preflights every member source profile before reservation or relocation', function (): void {
     $project = Project::query()->create([

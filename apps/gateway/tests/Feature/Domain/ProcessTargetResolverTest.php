@@ -2,14 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Data\Processes\AddProcessData;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Processes\ProcessSpecification;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Processes\ProcessTargetType;
+use App\Domain\Processes\VpDevPreset;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -38,6 +44,51 @@ it('derives development placement from the Instance', function (): void {
         ->and($target->routeDomain)
         ->toBeNull();
 });
+
+it('uses the Laravel application directory for Instance process defaults and environment', function (string $root, bool $laravel, string $suffix, string $placement): void {
+    $changes = ['root' => $root, 'source_is_laravel' => $laravel];
+    if ($placement === 'production') {
+        $changes += ['checkout_path' => '/home/orbit-docs/releases/initial', 'production_home' => '/home/orbit-docs', 'production_user' => 'orbit-docs'];
+    }
+    $instance = process_target_instance($placement, $changes);
+    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Instance, $instance->id);
+    $base = $placement === 'production' ? '/home/orbit-docs/current' : '/srv/orbit/docs/main';
+    $env = $placement === 'production' ? '/home/orbit-docs/.env' : $base.$suffix.'/.env';
+
+    expect($target->defaultWorkingDirectory)->toBe($base.$suffix)
+        ->and($target->environmentFile)->toBe($env);
+})->with([
+    'nested development' => ['server/web/public', true, '/server/web', 'development'],
+    'root public development' => ['public', true, '', 'development'],
+    'non Laravel development' => ['server/web/public', false, '', 'development'],
+    'nested production' => ['server/web/public', true, '/server/web', 'production'],
+    'root public production' => ['public', true, '', 'production'],
+    'non Laravel production' => ['server/web/public', false, '', 'production'],
+]);
+
+it('renders vp dev queue and Horizon units in the nested app while retaining explicit overrides', function (array $command, ?string $preset, ?string $directory, string $expectedDirectory, string $expectedCommand): void {
+    $instance = process_target_instance('development', ['root' => 'server/web/public', 'source_is_laravel' => true]);
+    $target = app(ProcessTargetResolver::class)->resolve(ProcessTargetType::Instance, $instance->id);
+    $data = new AddProcessData(
+        targetType: ProcessTargetType::Instance, targetId: $instance->id, name: 'worker',
+        runtime: ProcessRuntime::Systemd, command: $command,
+        image: null, workingDirectory: $directory, environment: [], ports: [], volumes: [],
+        restartPolicy: 'on-failure', start: false, preset: $preset,
+    );
+    $process = new Process(['name' => 'worker', ...new ProcessSpecification()->attributes($data, $target)]);
+    $process->id = 123;
+
+    $unit = new SystemdProcessRenderer()->render($process, $target, new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+
+    expect($unit)->toContain('WorkingDirectory='.$expectedDirectory)
+        ->toContain('EnvironmentFile=-/srv/orbit/docs/main/server/web/.env')
+        ->toContain($expectedCommand);
+})->with([
+    'vp dev' => [VpDevPreset::command(), 'vp-dev', null, '/srv/orbit/docs/main/server/web', '"/usr/local/bin/vp" "dev"'],
+    'queue' => [['/usr/bin/php', 'artisan', 'queue:work'], null, null, '/srv/orbit/docs/main/server/web', '"artisan" "queue:work"'],
+    'Horizon' => [['/usr/bin/php', 'artisan', 'horizon'], null, null, '/srv/orbit/docs/main/server/web', '"artisan" "horizon"'],
+    'explicit directory' => [['/usr/bin/php', 'artisan', 'queue:work'], null, '/srv/custom', '/srv/custom', '"artisan" "queue:work"'],
+]);
 
 it('derives the development-server origin hostname from the Instance Route', function (): void {
     $instance = process_target_instance();

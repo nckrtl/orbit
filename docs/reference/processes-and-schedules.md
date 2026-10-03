@@ -38,7 +38,7 @@ A Process uses one of two runtimes. Each runtime takes a complete specification.
 
 | Runtime | Required | Optional | Default working directory |
 | --- | --- | --- | --- |
-| systemd | Name, and an absolute executable with its arguments | Working directory, restart policy, keep-alive, initial start, and `user` on a Node | The Instance checkout on `app-dev`, `<production-home>/current` on `app-prod`, or the selected account's home for a Node (`/home/{managed user}` when `user` is omitted) |
+| systemd | Name, and an absolute executable with its arguments | Working directory, restart policy, keep-alive, initial start, and `user` on a Node | The Instance's application directory in its checkout on `app-dev`, or under `<production-home>/current` on `app-prod`, or the selected account's home for a Node (`/home/{managed user}` when `user` is omitted) |
 | Docker | Name, image, and command arguments | Working directory, environment, published ports, volumes, restart policy, keep-alive, initial start | `/app` |
 
 The command has at most 64 arguments of 4,096 bytes each. The restart policy is `never` (the default), `on-failure`, `always`, or `unless-stopped`. The API accepts `environment` only for Docker.
@@ -47,7 +47,7 @@ The systemd unit is `orbit-process-{id}-{name}.service`, and the Docker containe
 
 ## Environment of a systemd Process
 
-The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the checkout on `app-dev`, or in the production home on `app-prod`.
+The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the [application directory](/reference/projects#application-directory) of the checkout on `app-dev`, or in the production home on `app-prod`. With root `apps/site/public`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. Root `public` keeps the checkout or release root. An explicit working directory overrides this default; Docker's `/app` default and Node Process defaults stay unchanged. Instances that are not Laravel apps keep their checkout or release root as the default working directory.
 
 A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the proxycli collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [proxycli](/reference/proxycli) collector. The public create API does not accept one for systemd. The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the Agentation keys.
 

@@ -45,6 +45,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
 
         $runtime = null;
         $runtimeConfiguration = null;
+        $initialRuntimeConfiguration = null;
         $associationMatches = ProductionPhpRuntimeIdentity::isAbsent($instance);
 
         if (! $associationMatches) {
@@ -64,10 +65,9 @@ final readonly class ProductionInstanceInspectionExpectationFactory
                 $instance->production_php_service === $runtime->service
                 && $instance->production_php_pool === $runtime->pool
                 && $instance->production_php_socket === $runtime->socket;
-            $runtimeConfiguration = $this->runtimeRenderer->render(
-                $runtime,
-                $this->serviceMetrics?->enabled($instance->node) ?? false,
-            );
+            $metrics = $this->serviceMetrics?->enabled($instance->node) ?? false;
+            $runtimeConfiguration = $this->runtimeRenderer->render($runtime, $metrics);
+            $initialRuntimeConfiguration = $this->runtimeRenderer->render($runtime, $metrics, initialRelease: true);
         }
 
         return new ProductionInstanceInspectionExpectation(
@@ -81,6 +81,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             associationMatches: $associationMatches,
             runtime: $runtime,
             runtimeConfiguration: $runtimeConfiguration,
+            initialRuntimeConfiguration: $initialRuntimeConfiguration,
         );
     }
 }

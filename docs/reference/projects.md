@@ -28,9 +28,17 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `repository_url` | HTTPS or SSH Git URL that Orbit uses to fetch. |
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
-| `root` | Repository-relative path that Instances inherit. |
+| `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
+
+## Application directory
+
+For a Laravel Instance, the application directory is the effective web root without its trailing `/public` segment. The effective root is the Instance's override when present, otherwise the Project's root. `public` means the checkout root in development, or the release root in production. `apps/site/public` means `apps/site` inside that checkout or release. One shared helper derives the directory for Laravel source inspection and runtime consumers; Orbit does not store a second directory setting.
+
+The application directory contains `composer.json`, `artisan`, development [environment files](/reference/environment-variables#where-the-file-lives), and Laravel [logs](/reference/instance-logs#know-which-file-the-gateway-reads). PHP-FPM, default systemd Instance Processes, and Instance Schedules use it as their application working directory. Production resolves it through `current`. Setup, teardown, deploy steps, and task-check commands still run from the repository root; a nested Artisan step must change directory explicitly.
+
+Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. This group keeps one effective root and the existing type rules. The [application-directory decision](/decisions/0195-derive-application-directory-from-web-root#target-model-for-the-follow-up-multi-app-group) records the follow-up target: one or more named apps per Project, each with a path and web root, and each Instance serving every app under its own Route. That target is not today's API.
 
 ## Development deploy steps
 
@@ -80,7 +88,7 @@ The Gateway derives a repository identity from the host and path of the URL. Equ
 
 ## Registration needs a Project
 
-[`instance:register`](/domains/applications#register-an-existing-checkout) adopts a checkout only for an existing Project. It finds the Project by repository identity, or uses `--project`. When no Project owns the repository, it fails with `instance.project_missing` and changes nothing. Create the Project with `project:create` first.
+[`instance:register`](/domains/applications#register-an-existing-checkout) adopts a checkout only for an existing Project. It finds the Project by repository identity, or uses `--project`. When no Project owns the repository, it fails with `instance.project_missing` and changes nothing. Create the Project with `project:create` first. Registration inherits its root unless an explicit Instance override is sent; it does not search the checkout for nested apps.
 
 SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, source access, default branch, root, task check, and `task_workspace_routed`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 

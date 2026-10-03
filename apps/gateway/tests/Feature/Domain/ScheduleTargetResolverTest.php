@@ -75,6 +75,25 @@ it('derives the stable production current context with fixed non-login bash', fu
         ->and($target->loginShell)->toBeFalse();
 });
 
+it('runs Instance schedules in the application directory', function (string $root, bool $laravel, string $suffix, bool $production): void {
+    $this->instance->update(['root' => $root, 'source_is_laravel' => $laravel]);
+    if ($production) {
+        $this->node->roles()->where('role', 'app-dev')->delete();
+        $this->node->roles()->create(['role' => 'app-prod', 'status' => LifecycleStatus::Active]);
+        $this->instance->update(['checkout_path' => '/home/docs/releases/initial', 'production_user' => 'docs', 'production_home' => '/home/docs']);
+    }
+
+    $target = $this->resolver->resolve(ScheduleTargetType::Instance, $this->instance->id);
+
+    expect($target->workingDirectory)->toBe(($production ? '/home/docs/current' : '/srv/apps/docs').$suffix);
+})->with([
+    'nested development' => ['server/web/public', true, '/server/web', false],
+    'root public development' => ['public', true, '', false],
+    'non Laravel development' => ['server/web/public', false, '', false],
+    'nested production' => ['server/web/public', true, '/server/web', true],
+    'root public production' => ['public', true, '', true],
+]);
+
 it('maps unavailable targets and account inspection to the stable catalog', function (): void {
     $this->accounts->unavailable = true;
 

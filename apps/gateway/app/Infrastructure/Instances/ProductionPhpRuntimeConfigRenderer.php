@@ -9,8 +9,9 @@ use App\Infrastructure\Nodes\PhpFpmRuntimeIniRenderer;
 
 final readonly class ProductionPhpRuntimeConfigRenderer
 {
-    public function render(ProductionPhpRuntimeIdentity $identity, bool $metrics = false): ProductionPhpRuntimeConfiguration
+    public function render(ProductionPhpRuntimeIdentity $identity, bool $metrics = false, bool $initialRelease = false): ProductionPhpRuntimeConfiguration
     {
+        $applicationDirectory = $identity->applicationDirectory($initialRelease);
         $main = <<<FPM
             [global]
             pid = /run/php/{$identity->user}.pid
@@ -28,7 +29,7 @@ final readonly class ProductionPhpRuntimeConfigRenderer
             listen.owner = {$identity->user}
             listen.group = caddy
             listen.mode = 0660
-            chdir = {$identity->home}
+            chdir = {$applicationDirectory}
             clear_env = yes
             env[HOME] = {$identity->home}
             env[USER] = {$identity->user}

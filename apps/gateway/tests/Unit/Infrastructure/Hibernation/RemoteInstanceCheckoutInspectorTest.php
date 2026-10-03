@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Hibernation\LocalRuntimeDependencies;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\RoleName;
 use App\Infrastructure\Hibernation\RemoteInstanceCheckoutInspector;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -12,7 +13,14 @@ use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\NodeRole;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
+use Tests\TestCase;
+
+uses(TestCase::class);
 
 it('classifies reconstructable vendor and node_modules from the remote checkout facts', function (): void {
     $stdout = implode("\n", [
@@ -40,7 +48,7 @@ it('classifies reconstructable vendor and node_modules from the remote checkout 
         ->and($state->sourceTreeLastActivityUnix)
         ->toBe(100)
         ->and($ssh->commands[0]->arguments)
-        ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/apps/docs']);
+        ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/apps/docs', '/home/orbit/apps/docs']);
 });
 
 it('prunes only reconstructable dependency directories and leaves lockfiles', function (): void {
@@ -113,6 +121,69 @@ it('restores missing vendor with Composer and missing node_modules with frozen v
         ->toBe(1_800.0);
 });
 
+it('inspects and prunes only the application dependencies while tracking repository-wide edits', function (string $root, string $suffix): void {
+    $repository = sys_get_temp_dir().'/orbit-hibernation-'.Str::uuid();
+    $application = $repository.$suffix;
+    mkdir($application, 0o700, true);
+    foreach (['composer.json', 'composer.lock', 'package.json', 'pnpm-lock.yaml'] as $file) {
+        file_put_contents($application.'/'.$file, '{}');
+        touch($application.'/'.$file, 100);
+    }
+    mkdir($application.'/vendor');
+    mkdir($application.'/node_modules');
+    mkdir($repository.'/sibling');
+    file_put_contents($repository.'/sibling/edited.php', 'edited');
+    touch($repository.'/sibling/edited.php', 200);
+    mkdir($repository.'/sibling/vendor');
+    if ($suffix !== '') {
+        mkdir($repository.'/vendor');
+        mkdir($repository.'/node_modules');
+    }
+    $instance = checkout_instance();
+    $instance->forceFill(['root' => $root, 'checkout_path' => $repository]);
+    $ssh = new AppDevFakeSshExecutor;
+    $inspector = checkout_inspector($ssh);
+
+    try {
+        $inspector->inspect($instance);
+        $command = $ssh->commands[0];
+        $process = new Process(array_slice($command->arguments, 1));
+        $process->setInput($command->input);
+        $process->mustRun();
+        $state = checkout_inspector(new AppDevFakeSshExecutor([
+            new CommandResult(0, $process->getOutput(), '', 1, false),
+        ]))->inspect($instance);
+
+        expect($state->prunableVendor())->toBeTrue();
+        expect($state->prunableNodeModules())->toBeTrue();
+        expect($state->sourceTreeLastActivityUnix)->toBe(200);
+        $inspector->prune($instance, $state);
+        $command = $ssh->commands[1];
+        $process = new Process(array_slice($command->arguments, 1));
+        $process->setInput($command->input);
+        $process->mustRun();
+
+        expect(is_dir($application.'/vendor'))->toBeFalse();
+        expect(is_dir($application.'/node_modules'))->toBeFalse();
+        expect(is_dir($repository.'/sibling/vendor'))->toBeTrue();
+        expect(is_file($application.'/composer.lock'))->toBeTrue();
+        if ($suffix !== '') {
+            expect(is_dir($repository.'/vendor'))->toBeTrue();
+            expect(is_dir($repository.'/node_modules'))->toBeTrue();
+        }
+
+        $cold = LocalRuntimeDependencies::inspect(true, true, false, false, true, ['pnpm-lock.yaml'], false, false);
+        $inspector->restore($instance, $cold);
+        expect($ssh->commands[2]->arguments)->toContain('--working-dir='.$application);
+        expect($ssh->commands[3]->arguments)->toContain($application);
+    } finally {
+        new Filesystem()->deleteDirectory($repository);
+    }
+})->with([
+    'root public' => ['public', ''],
+    'nested app' => ['apps/site/public', '/apps/site'],
+]);
+
 function checkout_inspector(AppDevFakeSshExecutor $ssh, int $timeout = 1_800): RemoteInstanceCheckoutInspector
 {
     return new RemoteInstanceCheckoutInspector(
@@ -131,7 +202,10 @@ function checkout_instance(): Instance
         'user' => 'orbit',
         'wireguard_ip' => '10.44.0.3',
     ]);
+    $node->setRelation('roles', collect([new NodeRole(['role' => RoleName::AppDev])]));
     $instance = new Instance([
+        'root' => 'public',
+        'source_is_laravel' => true,
         'name' => 'main',
         'environment' => 'development',
         'checkout_path' => '/home/orbit/apps/docs',

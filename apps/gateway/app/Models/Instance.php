@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -361,6 +362,27 @@ final class Instance extends Model
         }
 
         return $root;
+    }
+
+    public function applicationDirectory(): string
+    {
+        $root = $this->root ?? $this->project->root;
+        $base = $this->placementEnvironment() === 'production' && is_string($this->production_home)
+            ? "{$this->production_home}/current"
+            : $this->checkout_path;
+
+        return ApplicationDirectory::resolve($base, $root);
+    }
+
+    public function dependencyDirectory(): string
+    {
+        if ($this->source_is_laravel === true || $this->project->type === ProjectType::LaravelApp) {
+            return $this->applicationDirectory();
+        }
+
+        return $this->placementEnvironment() === 'production' && is_string($this->production_home)
+            ? "{$this->production_home}/current"
+            : $this->checkout_path;
     }
 
     public function placementEnvironment(): ?string

@@ -33,6 +33,7 @@ function bun_update_instance(bool $production = false, string $path = '/home/orb
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
         'root' => 'public',
+        'source_is_laravel' => true,
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);
@@ -139,6 +140,18 @@ function bun_update_probe_present(string $version = '0.3.0', string $vpPath = BU
 }
 
 describe('bounded Vite+ bun dependency updates', function (): void {
+    it('probes and updates the configured application directory', function (string $root, string $suffix): void {
+        $instance = bun_update_instance();
+        $instance->root = $root;
+        $path = '/home/orbit/project'.$suffix;
+        bun_update_ssh([
+            [fn (SshConnection $connection, RemoteCommand $command): bool => bun_update_probe_command($command, $path), bun_update_probe_present()],
+            [fn (SshConnection $connection, RemoteCommand $command): bool => bun_update_update_command($command, path: $path), new CommandResult(0, '', '', 1, false)],
+        ]);
+
+        expect(app(UpdateBunDependenciesAction::class)->execute($instance)->status)->toBe(DependencyUpdateStepStatus::Succeeded);
+    })->with(['root public' => ['public', ''], 'nested app' => ['apps/site/public', '/apps/site']]);
+
     it('reuses the shared Vite+ supervisor and runs the verified bun pass-through within declared constraints', function (): void {
         bun_update_ssh([
             [

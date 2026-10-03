@@ -47,6 +47,7 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         failed=0
         for checkout in "$@"; do
           [ -d "$checkout" ] && [ ! -L "$checkout" ] || continue
+          [ "$(realpath -e -- "$checkout")" = "$checkout" ] || continue
           if ! find "$checkout" -maxdepth 1 -name .env -type f -exec chmod o-rwx {} + 2>/dev/null; then
             printf '%s\n' "$checkout" >&2
             failed=1
@@ -120,8 +121,10 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $checkouts = Instance::query()
             ->where('node_id', $node->getKey())
             ->orderBy('id')
-            ->pluck('checkout_path')
-            ->filter(static fn (mixed $path): bool => is_string($path) && str_starts_with($path, $root.'/') && ! str_contains($path, '/..'))
+            ->with(['project', 'node.roles'])
+            ->get()
+            ->map(static fn (Instance $instance): string => $instance->applicationDirectory())
+            ->filter(static fn (string $path): bool => str_starts_with($path, $root.'/') && ! str_contains($path, '/..'))
             ->values()
             ->all();
 

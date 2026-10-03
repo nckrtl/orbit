@@ -36,10 +36,14 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $account->user],
+                arguments: ['bash', '-seu', '--', $instance->applicationDirectory(), $account->user],
                 input: <<<'BASH'
                     checkout=$1
                     managed_user=$2
+                    if [ -d "$checkout" ] && [ "$(realpath -e -- "$checkout")" != "$checkout" ]; then
+                        printf 'UNSAFE\n'
+                        exit 0
+                    fi
                     composer="$checkout/composer.json"
                     artisan="$checkout/artisan"
 
@@ -82,6 +86,8 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                         root = pathlib.Path(sys.argv[1])
                         owner = sys.argv[2]
                         url = sys.stdin.read()
+                        if root.resolve(strict=True) != root:
+                            raise SystemExit(42)
 
                         def safe_regular(path, required=False):
                             if path.is_symlink() or (path.exists() and not path.is_file()):
@@ -160,7 +166,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                             match = matches[0]
                             updated = original[:match.start()] + b"'" + escaped + b"'" + original[match.end():]
                             if updated != original: atomic(cache, updated, cache.stat().st_mode & 0o777)
-                        PYTHON, $instance->checkout_path, $account->user],
+                        PYTHON, $instance->applicationDirectory(), $account->user],
                 protectedInput: ProtectedInput::fromString($url),
             ),
             step: 'laravel-url',

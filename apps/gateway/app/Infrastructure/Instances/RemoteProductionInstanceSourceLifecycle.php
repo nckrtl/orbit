@@ -12,6 +12,7 @@ use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Projects\ProjectType;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -199,7 +200,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
             throw $this->failure('production-source-resolve', 'instance.branch_resolution_failed');
         }
 
-        $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), <<<'BASH'
+        $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), ProductionApplicationPaths::render(<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -208,7 +209,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     clone_target=$6
                     release="$home/releases/initial"
                     environment="$home/.env"
-                    release_environment="$release/.env"
+                    release_environment="$release__APPLICATION_SUFFIX__/.env"
                     layout_marker="/var/lib/orbit/app-instance-sources/$instance/release-layout"
                     actual_layout=$(sudo base64 --wrap=0 -- "$layout_marker")
                     expected_layout=$(printf '%s\0%s\0%s\0%s\0' "$repository" "$user" "$home" initial | base64 --wrap=0)
@@ -222,24 +223,25 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
                     sudo -u "$user" -H git -C "$release" checkout --quiet -B "$branch" "$source_ref"
                     sudo -u "$user" -H git -C "$release" branch --quiet --set-upstream-to="origin/$branch" "$branch"
+                    test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
                     if sudo -u "$user" -H test -L "$release_environment"; then
                         sudo -u "$user" -H test -L "$release_environment"
-                        test "$(sudo -u "$user" -H readlink -- "$release_environment")" = ../../.env
+                        test "$(sudo -u "$user" -H readlink -- "$release_environment")" = __ENVIRONMENT_TARGET__
                     elif sudo -u "$user" -H test -e "$release_environment"; then
                         test "$clone_target" = 1
                         sudo -u "$user" -H test -f "$release_environment"
-                        sudo -u "$user" -H git -C "$release" ls-files --error-unmatch -- .env >/dev/null
-                        sudo -u "$user" -H git -C "$release" diff --quiet -- .env
-                        sudo -u "$user" -H git -C "$release" diff --cached --quiet -- .env
+                        sudo -u "$user" -H git -C "$release" ls-files --error-unmatch -- __ENVIRONMENT_PATH__ >/dev/null
+                        sudo -u "$user" -H git -C "$release" diff --quiet -- __ENVIRONMENT_PATH__
+                        sudo -u "$user" -H git -C "$release" diff --cached --quiet -- __ENVIRONMENT_PATH__
                         sudo -u "$user" -H rm -- "$release_environment"
-                        sudo -u "$user" -H ln -s ../../.env "$release_environment"
+                        sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     else
-                        sudo -u "$user" -H ln -s ../../.env "$release_environment"
+                        sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     fi
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$branch" "$commit"
-                    BASH);
+                    BASH, $instance->root ?? $instance->project->root));
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
@@ -283,15 +285,19 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $root, $checkout],
+                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolve($checkout, $root)],
                 input: <<<'BASH'
                     # find must restore its working directory after sudo changes users.
                     cd /
                     user=$1
                     relative_root=$2
                     checkout=$3
-                    composer="$checkout/composer.json"
-                    artisan="$checkout/artisan"
+                    application=$4
+                    application_real=$(sudo -u "$user" -H realpath -m -- "$application")
+                    test "$application_real" = "$application" || { printf 'UNSAFE\n'; exit 0; }
+                    case "$application_real" in "$checkout"|"$checkout"/*) ;; *) printf 'UNSAFE\n'; exit 0 ;; esac
+                    composer="$application/composer.json"
+                    artisan="$application/artisan"
                     candidate="$checkout/$relative_root"
                     resolved=$(sudo -u "$user" -H realpath -m -- "$candidate")
 
@@ -465,7 +471,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     $root,
                     $clearCurrent ? '1' : '0',
                 ],
-                input: <<<'BASH'
+                input: ProductionApplicationPaths::render(<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -477,7 +483,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     releases="$home/releases"
                     release="$releases/initial"
                     environment="$home/.env"
-                    release_environment="$release/.env"
+                    release_environment="$release__APPLICATION_SUFFIX__/.env"
                     current="$home/current"
 
                     sudo test -d "$state_directory"
@@ -504,7 +510,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     sudo -u "$user" -H test ! -L "$environment"
                     test "$(sudo -u "$user" -H stat -c %a -- "$environment")" = 600
                     sudo -u "$user" -H test -L "$release_environment"
-                    test "$(sudo -u "$user" -H readlink -- "$release_environment")" = ../../.env
+                    test "$(sudo -u "$user" -H readlink -- "$release_environment")" = __ENVIRONMENT_TARGET__
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
                     unexpected_user=$(sudo find -P "$home" -xdev ! -user "$user" -print -quit)
                     test -z "$unexpected_user"
@@ -522,7 +528,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     selected=$(sudo -u "$user" -H realpath -e -- "$current")
                     case "$selected" in "$releases"/*) ;; *) exit 1 ;; esac
                     sudo -u "$user" -H test -d "$selected"
-                    selected_environment="$selected/.env"
+                    selected_environment="$selected__APPLICATION_SUFFIX__/.env"
                     sudo -u "$user" -H test -L "$selected_environment"
                     test "$(sudo -u "$user" -H realpath -e -- "$selected_environment")" = "$environment"
                     resolved_root=$(sudo -u "$user" -H realpath -m -- "$current/$relative_root")
@@ -531,7 +537,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     if [ "$clear_current" = 1 ]; then
                         sudo -u "$user" -H rm -- "$current"
                     fi
-                    BASH,
+                    BASH, $root),
             ),
             step: 'production-release-layout',
             errorCode: 'app-prod.source_metadata_unsafe',

@@ -14,6 +14,7 @@ use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
 use App\Infrastructure\Instances\ProductionPhpRuntimeConfigRenderer;
+use App\Infrastructure\Instances\ProductionRuntimeGenerationProgram;
 use App\Infrastructure\Instances\RemoteProductionPhpRuntimeManager;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -24,6 +25,7 @@ use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Schema;
+use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\HostBinary;
@@ -116,7 +118,7 @@ it('refuses a stored runtime association that differs from its production identi
         ->toThrow(ResourceOperationException::class);
 });
 
-it('renders generated identity separately from preserved local defaults', function (): void {
+it('renders generated identity separately from preserved local defaults', function (string $documentRoot, string $applicationDirectory, bool $initialRelease): void {
     $identity = new ProductionPhpRuntimeIdentity(
         user: 'orbit-app-9',
         home: '/home/orbit-app-9',
@@ -124,9 +126,10 @@ it('renders generated identity separately from preserved local defaults', functi
         service: 'orbit-orbit-app-9-php8.5-fpm.service',
         pool: 'orbit-orbit-app-9',
         socket: '/run/php/orbit-app-9.sock',
-        documentRoot: '/home/orbit-app-9/public',
+        documentRoot: $documentRoot,
     );
-    $rendered = new ProductionPhpRuntimeConfigRenderer()->render($identity);
+    $renderer = new ProductionPhpRuntimeConfigRenderer;
+    $rendered = $initialRelease ? $renderer->render($identity, initialRelease: true) : $renderer->render($identity);
 
     expect($rendered->main)
         ->toContain(
@@ -139,7 +142,7 @@ it('renders generated identity separately from preserved local defaults', functi
             '[orbit-orbit-app-9]',
             'user = orbit-app-9',
             'listen = /run/php/orbit-app-9.sock',
-            'chdir = /home/orbit-app-9',
+            'chdir = '.$applicationDirectory."\n",
             'env[HOME] = /home/orbit-app-9',
         )
         ->and($rendered->localDefaults)
@@ -165,7 +168,191 @@ it('renders generated identity separately from preserved local defaults', functi
             'ExecStart=/usr/sbin/php-fpm8.5 --nodaemonize --fpm-config /etc/orbit/php-fpm/orbit-app-9/generated/php-fpm.conf',
             'PIDFile=/run/php/orbit-app-9.pid',
         );
-});
+})->with([
+    'legacy public' => ['/home/orbit-app-9/public', '/home/orbit-app-9', false],
+    'root public selected' => ['/home/orbit-app-9/current/public', '/home/orbit-app-9/current', false],
+    'nested selected' => ['/home/orbit-app-9/current/server/web/public', '/home/orbit-app-9/current/server/web', false],
+    'root public initial clone' => ['/home/orbit-app-9/current/public', '/home/orbit-app-9/releases/initial', true],
+    'nested initial clone' => ['/home/orbit-app-9/current/server/web/public', '/home/orbit-app-9/releases/initial/server/web', true],
+]);
+
+it('selects an existing application directory for initial startup, deployment and rollback', function (string $root, string $suffix): void {
+    $home = sys_get_temp_dir().'/orbit-fpm-application-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $identity = new ProductionPhpRuntimeIdentity(
+        user: 'orbit-app-9', home: $home, version: '8.5',
+        service: 'orbit-orbit-app-9-php8.5-fpm.service', pool: 'orbit-orbit-app-9',
+        socket: '/run/php/orbit-app-9.sock', documentRoot: $home.'/current/'.$root,
+    );
+    $renderer = new ProductionPhpRuntimeConfigRenderer;
+    $selectedPool = $renderer->render($identity)->pool;
+    $initialPool = $renderer->render($identity, initialRelease: true)->pool;
+    $program = RemoteProductionPhpRuntimeManager::applicationPoolSelectionFunction()."\n"
+        .'home='.escapeshellarg($home)."\n"
+        .'application='.escapeshellarg($home.'/current'.$suffix)."\n"
+        .'initial_application='.escapeshellarg($home.'/releases/initial'.$suffix)."\n"
+        .'pool_configuration='.escapeshellarg(base64_encode($selectedPool))."\n"
+        .'initial_pool_configuration='.escapeshellarg(base64_encode($initialPool))."\n"
+        ."select_application_pool\nprintf '%s' \"\$pool_configuration\" | base64 --decode\n";
+
+    try {
+        $files->ensureDirectoryExists($home);
+        expect(new Process(['bash', '-seu'], input: $program)->run())->not->toBe(0);
+        $files->ensureDirectoryExists($home.'/releases/initial'.$suffix);
+        expect(new Process(['bash', '-seu'], input: $program)->mustRun()->getOutput())->toBe($initialPool."\n; Orbit application release: ".$home.'/releases/initial'.$suffix."\n");
+        foreach (['fresh', 'initial'] as $release) {
+            $files->ensureDirectoryExists($home.'/releases/'.$release.$suffix);
+            symlink('releases/'.$release, $home.'/current');
+            expect(new Process(['bash', '-seu'], input: $program)->mustRun()->getOutput())->toBe($selectedPool."\n; Orbit application release: ".$home.'/releases/'.$release.$suffix."\n")
+                ->toContain('chdir = '.$home.'/current'.$suffix."\n");
+            unlink($home.'/current');
+        }
+        symlink('releases/missing', $home.'/current');
+        expect(new Process(['bash', '-seu'], input: $program)->run())->not->toBe(0);
+    } finally {
+        $files->deleteDirectory($home);
+    }
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
+
+it('recovers a killed release publication and keeps confirmed convergence a no-op', function (string $root, string $suffix, string $fault): void {
+    $files = new Filesystem;
+    $directory = sys_get_temp_dir().'/orbit-fpm-generation-'.bin2hex(random_bytes(8));
+    $files->ensureDirectoryExists($directory.'/runtime/generated');
+    $files->ensureDirectoryExists($directory.'/work');
+    $files->ensureDirectoryExists($directory.'/units');
+    $files->ensureDirectoryExists($directory.'/proc/sys/kernel/random');
+    $files->ensureDirectoryExists($directory.'/proc/620');
+    file_put_contents($directory.'/proc/sys/kernel/random/boot_id', file_get_contents('/proc/sys/kernel/random/boot_id'));
+    file_put_contents($directory.'/proc/620/stat', file_get_contents('/proc/self/stat'));
+    file_put_contents($directory.'/proc/620/exe', 'fixture executable');
+    file_put_contents($directory.'/pid', '620');
+    file_put_contents($directory.'/runtime/local.conf', 'preserved tuning');
+    $identity = new ProductionPhpRuntimeIdentity(
+        user: 'orbit-fixture', home: $directory.'/home', version: '8.5', service: 'orbit-fixture-php8.5-fpm.service',
+        pool: 'orbit-fixture', socket: $directory.'/socket', documentRoot: $directory.'/home/current/'.$root,
+    );
+    $configuration = new ProductionPhpRuntimeConfigRenderer()->render($identity);
+    $oldPool = $configuration->pool."\n; Orbit application release: ".$directory.'/home/releases/initial'.$suffix."\n";
+    $newPool = $configuration->pool."\n; Orbit application release: ".$directory.'/home/releases/fresh'.$suffix."\n";
+    $desiredFiles = ['php-fpm.conf' => $configuration->main, 'pool.conf' => $newPool, 'master.ini' => $configuration->masterIni, 'unit' => $configuration->unit];
+    foreach ($desiredFiles as $name => $content) {
+        file_put_contents($directory.'/work/'.$name, $content);
+        file_put_contents($name === 'unit' ? $directory.'/units/fpm.service' : $directory.'/runtime/generated/'.$name, $name === 'pool.conf' ? $oldPool : $content);
+    }
+    $localHash = hash_file('sha256', $directory.'/runtime/local.conf');
+    file_put_contents($directory.'/work/local.sha256', $localHash."\n");
+    file_put_contents($directory.'/runtime/generated/local.sha256', $localHash."\n");
+    $socket = stream_socket_server('unix://'.$directory.'/socket');
+    fclose($socket);
+    $program = orb304_production_shared_directory_program();
+    $start = strpos($program, 'runtime_changed=0');
+    expect($start)->toBeInt();
+    $transition = substr($program, $start);
+    $setup = 'fixture='.escapeshellarg($directory)."\n"
+        .'main_configuration='.escapeshellarg(base64_encode($configuration->main))."\n"
+        .'master_ini='.escapeshellarg(base64_encode($configuration->masterIni))."\n"
+        .'unit_configuration='.escapeshellarg(base64_encode($configuration->unit))."\n".<<<'BASH'
+            operation=converge
+            user=orbit-fixture
+            version=8.5
+            service=orbit-fixture-php8.5-fpm.service
+            runtime_directory="$fixture/runtime"
+            generated_directory="$runtime_directory/generated"
+            work_directory="$fixture/work"
+            unit_path="$fixture/units/fpm.service"
+            local_tuning="$runtime_directory/local.conf"
+            expected_marker="$fixture/marker"
+            socket="$fixture/socket"
+            proc_root="$fixture/proc"
+            was_active=1
+            was_enabled=1
+            had_generated=1
+            had_unit=1
+            local_before=$(sha256sum "$local_tuning" | awk '{print $1}')
+            rm -rf -- "$work_directory/generated.backup"
+            cp -a "$generated_directory" "$work_directory/generated.backup"
+            cp -a "$unit_path" "$work_directory/unit.backup"
+            stat() {
+                case "${!#}" in
+                    */socket) printf '%s:caddy:660\n' "$user" ;;
+                    *) printf 'root:root:%s\n' "$(command stat -c %a -- "${!#}")" ;;
+                esac
+            }
+            chown() { :; }
+            install() {
+                local args=()
+                while [ "$#" -gt 0 ]; do
+                    case "$1" in
+                        -o|-g) shift 2 ;;
+                        *) args+=("$1"); shift ;;
+                    esac
+                done
+                command install "${args[@]}"
+            }
+            readlink() { printf '/usr/sbin/php-fpm8.5\n'; }
+            mv() {
+                command mv "$@"
+                if [ "${fault:-}" = after-pool ] && [ "${!#}" = "$generated_directory/pool.conf" ]; then kill -KILL "$BASHPID"; fi
+            }
+            systemctl() {
+                case "$1" in
+                    is-active|is-enabled) return 0 ;;
+                    show) cat "$fixture/pid" ;;
+                    restart)
+                        if [ "${fault:-}" = before-restart ]; then kill -KILL "$BASHPID"; fi
+                        printf 'restart\n' >> "$fixture/calls"
+                        next=$(($(cat "$fixture/pid") + 1))
+                        mkdir -p "$proc_root/$next"
+                        cp "$proc_root/620/stat" "$proc_root/$next/stat"
+                        touch "$proc_root/$next/exe"
+                        printf '%s' "$next" > "$fixture/pid"
+                        ;;
+                    *) printf '%s\n' "$1" >> "$fixture/calls" ;;
+                esac
+            }
+            BASH;
+    $functions = ProductionRuntimeGenerationProgram::functions()."\n";
+
+    try {
+        new Process(['bash', '-seu'], input: $functions.$setup."\npool_configuration=".escapeshellarg(base64_encode($oldPool))."\nconfirm_runtime_generation\n")->mustRun();
+        $run = $functions.$setup."\npool_configuration=".escapeshellarg(base64_encode($newPool))."\n";
+        $interrupted = new Process(['bash', '-seu'], input: $run.'fault='.escapeshellarg($fault)."\n".$transition);
+        expect(fn (): int => $interrupted->run())->toThrow(ProcessSignaledException::class);
+        expect($interrupted->getTermSignal())->toBe(SIGKILL, $interrupted->getErrorOutput())
+            ->and(file_get_contents($directory.'/pid'))->toBe('620')
+            ->and(is_file($directory.'/runtime/.runtime-generation.pending'))->toBeTrue()
+            ->and(file_get_contents($directory.'/runtime/generated/pool.conf'))->toBe($newPool);
+        foreach ($desiredFiles as $name => $content) {
+            expect(file_get_contents($name === 'unit' ? $directory.'/units/fpm.service' : $directory.'/runtime/generated/'.$name))->toBe($content);
+        }
+        new Process(['bash', '-seu'], input: $run.$transition)->mustRun();
+        expect(file_get_contents($directory.'/pid'))->toBe('621')
+            ->and(file_exists($directory.'/runtime/.runtime-generation.pending'))->toBeFalse()
+            ->and(substr_count(file_get_contents($directory.'/calls'), 'restart'))->toBe(1);
+        $applied = file_get_contents($directory.'/runtime/.runtime-generation.applied');
+        $appliedInode = fileinode($directory.'/runtime/.runtime-generation.applied');
+        expect(explode("\n", trim($applied)))->toHaveCount(4);
+        expect(explode("\n", trim($applied))[2])->toBe('621');
+        $files->ensureDirectoryExists($directory.'/work');
+        foreach ($desiredFiles as $name => $content) {
+            file_put_contents($directory.'/work/'.$name, $content);
+        }
+        file_put_contents($directory.'/work/local.sha256', $localHash."\n");
+        new Process(['bash', '-seu'], input: $run.$transition)->mustRun();
+        clearstatcache(true, $directory.'/runtime/.runtime-generation.applied');
+        expect(file_get_contents($directory.'/runtime/.runtime-generation.applied'))->toBe($applied)
+            ->and(fileinode($directory.'/runtime/.runtime-generation.applied'))->toBe($appliedInode)
+            ->and(fileperms($directory.'/runtime/.runtime-generation.applied') & 0777)->toBe(0600)
+            ->and(substr_count(file_get_contents($directory.'/calls'), 'restart'))->toBe(1);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+})->with([
+    'root after pool publication' => ['public', '', 'after-pool'],
+    'root before restart' => ['public', '', 'before-restart'],
+    'nested after pool publication' => ['server/web/public', '/server/web', 'after-pool'],
+    'nested before restart' => ['server/web/public', '/server/web', 'before-restart'],
+]);
 
 it('gives pool.conf one pool owner when service metrics toggle', function (): void {
     [$instance] = orb214_runtime_instance();
@@ -208,7 +395,9 @@ it('gives pool.conf one pool owner when service metrics toggle', function (): vo
         ->and($enabledPool)->toContain('pm.status_listen = '.$identity->socket.'.status')
         ->and($disabledPool)->not->toContain('pm.status_path')
         ->and($disabledPool)->not->toContain('pm.status_listen')
-        ->and($enabledCommand->input)->toContain('converge_monitoring_pool')
+        ->and($enabledCommand->input)->toContain('converge_monitoring_pool', "\nselect_application_pool\n")
+        ->and($enabledCommand->arguments[24])->toBe($instance->production_home.'/current')
+        ->and($enabledCommand->arguments[25])->toBe($instance->production_home.'/releases/initial')
         ->and($candidateCleanup)->toBeInt()->toBeLessThan($generatedAllowlist)
         ->and($monitorIdentityGuard)->toBeInt()->toBeLessThan($sharedDirectoryConvergence)
         ->and($enabledCommand->input)->toContain('! test -f "$marker_path"', '! test -d "$generated_directory"')
