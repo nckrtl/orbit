@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
@@ -36,8 +37,12 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function prepare(Instance $instance, bool $allowExisting): void
     {
+        app(SelectInstanceSeedAction::class)->execute($instance);
+        if ($instance->seed_commit !== null) {
+            $instance->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
+        }
         $context = $this->context($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -45,6 +50,8 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     managed_group=$5
                     allow_existing=$6
                     worker_user=$7
+                    seed_repository=$8
+                    seed_commit=$9
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -59,9 +66,16 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     fi
 
                     mkdir -m 0755 -- "$checkout"
-                    git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
+                    if [ -n "$seed_repository" ]; then
+                        test ! -L "$seed_repository"
+                        test "$(git -C "$seed_repository" config --get remote.origin.url)" = "$repository"
+                        git -c core.hooksPath=/dev/null -C "$seed_repository" worktree add --detach -- "$checkout" "$seed_commit"
+                    else
+                        git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false clone --no-checkout --origin origin -- "$repository" "$checkout"
+                    fi
+                    git_directory=$(git -C "$checkout" rev-parse --absolute-git-dir)
                     if [ -n "$prepare_id" ]; then
-                        (umask 077; set -C; printf '%s:%s\n' "$prepare_id" "$(stat -c '%d:%i' "$checkout")" > "$checkout/.git/orbit-source-prepare")
+                        (umask 077; set -C; printf '%s:%s\n' "$prepare_id" "$(stat -c '%d:%i' "$checkout")" > "$git_directory/orbit-source-prepare")
                     fi
                     inspect_prepared_repository
                     share_checkout
@@ -69,7 +83,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser()],
+                arguments: [...$this->arguments($instance, $context), $allowExisting ? '1' : '0', $this->workerUser(), $instance->seed_repository ?? '', $instance->seed_commit ?? ''],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
             ),
@@ -85,7 +99,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->node,
             new RemoteCommand(
                 arguments: [...$this->arguments($instance, $context), $this->workerUser()],
-                input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
+                input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -108,7 +122,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
-        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
+        $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -117,6 +131,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     instance_name=$6
                     default_branch=$7
                     branch_override=$8
+                    seed_commit=$9
                     checkout_parent=$(dirname "$checkout")
 
                     guard_parent_chain "$checkout_parent" "$allowed_root"
@@ -124,7 +139,9 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --prune -- origin
 
                     branch=${branch_override:-$instance_name}
-                    if [ "$instance_name" = default ] && [ -z "$branch_override" ]; then
+                    if [ -n "$seed_commit" ]; then
+                        source_ref=$seed_commit
+                    elif [ "$instance_name" = default ] && [ -z "$branch_override" ]; then
                         branch=$default_branch
                         source_ref="refs/remotes/origin/$branch"
                         git -C "$checkout" show-ref --verify --quiet "$source_ref"
@@ -149,6 +166,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     $instance->name,
                     $defaultBranch,
                     $instance->branch_override ?? '',
+                    $instance->seed_commit ?? '',
                 ],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
@@ -168,7 +186,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 $instance->node,
                 new RemoteCommand(
                     arguments: [...$this->arguments($instance, $context), $branch ?? ''],
-                    input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
+                    input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                         repository=$1
                         checkout=$2
                         allowed_root=$3
@@ -234,7 +252,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
             $instance->node,
             new RemoteCommand(
                 arguments: $this->arguments($instance, $context),
-                input: self::preparedRepositoryGuard($instance->source_prepare_id).<<<'BASH'
+                input: self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
                     repository=$1
                     checkout=$2
                     allowed_root=$3
@@ -311,7 +329,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
     {
         $instance->loadMissing(['project', 'node']);
 
-        if ($instance->source_layout !== InstanceSourceLayout::Checkout->value) {
+        if ($instance->source_layout !== InstanceSourceLayout::Checkout->value && ! ($instance->source_layout === InstanceSourceLayout::Worktree->value && $instance->seed_repository !== null)) {
             throw new RuntimeConvergenceException(
                 step: 'app-instance-source-layout',
                 errorCode: 'instance.source_layout_conflict',
@@ -368,9 +386,9 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
         return $branch;
     }
 
-    private static function preparedRepositoryGuard(?string $prepareId = null): string
+    private static function preparedRepositoryGuard(?string $prepareId = null, ?string $seedRepository = null): string
     {
-        return 'prepare_id='.escapeshellarg($prepareId ?? '')."\n".WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
+        return 'expected_common='.escapeshellarg($seedRepository === null ? '' : $seedRepository.'/.git')."\n".'prepare_id='.escapeshellarg($prepareId ?? '')."\n".WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             guard_parent_chain() {
                 parent=$1
                 root=$2
@@ -412,7 +430,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 test "$(id -u "$worker_user")" != 0
                 test "$worker_user" != "$managed_user"
                 test "$(stat -c '%U:%G' "$checkout/.git")" = "$managed_user:$managed_group"
-                orbit="$checkout/.git/orbit"
+                orbit="$git_directory/orbit"
                 if [ -e "$orbit" ] || [ -L "$orbit" ]; then
                     test ! -L "$orbit"
                     test -d "$orbit"
@@ -420,10 +438,10 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 else
                     install -d -m 0775 -- "$orbit"
                 fi
-                test -f "$checkout/.git/config"
-                test ! -L "$checkout/.git/config"
-                test "$(stat -c '%U' "$checkout/.git/config")" = "$managed_user"
-                test ! -L "$checkout/.git/hooks"
+                test -f "$common_directory/config"
+                test ! -L "$common_directory/config"
+                test "$(stat -c '%U' "$common_directory/config")" = "$managed_user"
+                test ! -L "$common_directory/hooks"
                 # setfacl writes access before defaults in a combined call. Finish inheritance first.
                 default_grant="d:u:$worker_user:rwX,d:u:$managed_user:rwX"
                 find -P "$checkout" -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} +
@@ -434,10 +452,13 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                     # Worker-owned files already inherit access; only their owner can change their ACL.
                     find -P "$checkout" -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} +
                 fi
-                setfacl -m "u:$worker_user:r--" -- "$checkout/.git/config"
-                if [ -d "$checkout/.git/hooks" ]; then
-                    find -P "$checkout/.git/hooks" -user "$managed_user" -type d -exec setfacl -m "u:$worker_user:r-X,d:u:$worker_user:r-X" -- {} +
-                    find -P "$checkout/.git/hooks" -user "$managed_user" ! -type d ! -type l -exec setfacl -m "u:$worker_user:r-X" -- {} +
+                # Linked worktrees need their own administration and the shared refs/objects.
+                find -P "$common_directory" -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} +
+                find -P "$common_directory" -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} +
+                setfacl -m "u:$worker_user:r--" -- "$common_directory/config"
+                if [ -d "$common_directory/hooks" ]; then
+                    find -P "$common_directory/hooks" -user "$managed_user" -type d -exec setfacl -m "u:$worker_user:r-X,d:u:$worker_user:r-X" -- {} +
+                    find -P "$common_directory/hooks" -user "$managed_user" ! -type d ! -type l -exec setfacl -m "u:$worker_user:r-X" -- {} +
                 fi
                 chmod 0775 -- "$orbit"
                 if sudo -n -u "$worker_user" -H -- git config --global --fixed-value --get-all safe.directory "$checkout" >/dev/null; then
@@ -453,19 +474,33 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 test ! -L "$checkout"
                 test "$(realpath -e "$checkout")" = "$checkout"
                 test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
-                test -d "$checkout/.git"
                 test ! -L "$checkout/.git"
                 test "$(git -C "$checkout" rev-parse --show-toplevel)" = "$checkout"
-                test "$(git -C "$checkout" rev-parse --absolute-git-dir)" = "$checkout/.git"
-                test "$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)" = "$checkout/.git"
+                git_directory=$(git -C "$checkout" rev-parse --absolute-git-dir)
+                common_directory=$(git -C "$checkout" rev-parse --path-format=absolute --git-common-dir)
+                test -d "$git_directory" && test ! -L "$git_directory"
+                test -d "$common_directory" && test ! -L "$common_directory"
+                if [ -n "$expected_common" ]; then
+                    test "$common_directory" = "$expected_common"
+                fi
+                test "$(stat -c '%U:%G' "$git_directory")" = "$managed_user:$managed_group"
+                test "$(stat -c '%U:%G' "$common_directory")" = "$managed_user:$managed_group"
+                if [ -f "$checkout/.git" ]; then
+                    test -n "$expected_common"
+                    case "$git_directory" in "$common_directory/worktrees/"*) ;; *) return 1 ;; esac
+                    test "$(cat "$git_directory/gitdir")" = "$checkout/.git"
+                else
+                    test "$git_directory" = "$checkout/.git"
+                    test "$common_directory" = "$checkout/.git"
+                fi
                 if [ "${1:-verify}" = verify ]; then
                     test "$(git -C "$checkout" config --get remote.origin.url)" = "$repository"
                 fi
                 if [ -n "$prepare_id" ]; then
-                    test -f "$checkout/.git/orbit-source-prepare"
-                    test ! -L "$checkout/.git/orbit-source-prepare"
-                    test "$(stat -c '%U:%G' "$checkout/.git/orbit-source-prepare")" = "$managed_user:$managed_group"
-                    test "$(cat "$checkout/.git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
+                    test -f "$git_directory/orbit-source-prepare"
+                    test ! -L "$git_directory/orbit-source-prepare"
+                    test "$(stat -c '%U:%G' "$git_directory/orbit-source-prepare")" = "$managed_user:$managed_group"
+                    test "$(cat "$git_directory/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
                 fi
             }
 

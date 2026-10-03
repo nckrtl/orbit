@@ -655,6 +655,7 @@ final readonly class RegisterInstanceAction
                             'registration_route_provenance' => $proposal['routeProvenance'],
                         ]);
                     }
+                    app(SelectInstanceSeedAction::class)->execute($instance);
                     $instance->name = $proposal['name'];
                     $instance->checkout_path = $proposal['destination']->value;
                     $reserved[] = [
@@ -688,6 +689,7 @@ final readonly class RegisterInstanceAction
                     ),
                     'status' => InstanceState::Reserved,
                 ]);
+                app(SelectInstanceSeedAction::class)->execute($instance);
                 $reserved[] = [
                     'instance' => $instance,
                     'facts' => $fact,

@@ -18,6 +18,7 @@ use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Doctor\PublicRouteEdgeObservation;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
@@ -361,6 +362,27 @@ it('reports only stuck provisioning instead of inspecting an unsettled Instance'
         ->and($report->issues)->toHaveCount(1)
         ->and($report->issues[0]->code)->toBe('instance.provisioning_stuck')
         ->and($report->issues[0]->resourceId)->toBe($instance->id);
+});
+
+it('accepts an active monorepo default without a Route or PHP runtime', function (): void {
+    $node = instance_probe_node();
+    $project = instance_probe_orbit_app();
+    $project->update(['type' => ProjectType::Monorepo]);
+    $instance = instance_probe_instance($project, $node);
+    $instance->routes()->detach();
+    $instance->update([
+        'name' => 'default',
+        'selected_php_version' => null,
+        'source_is_laravel' => false,
+        'provisioning_step' => 'active',
+    ]);
+
+    $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
+
+    expect($instance->requiresRoute())->toBeFalse()
+        ->and($instance->servesPhp())->toBeFalse()
+        ->and($report->checked)->toBe(1)
+        ->and($report->issues)->toBe([]);
 });
 
 it('accepts source_resolved for a task workspace that is not visitable', function (): void {

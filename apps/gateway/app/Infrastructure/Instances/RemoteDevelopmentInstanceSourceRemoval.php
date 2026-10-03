@@ -1890,12 +1890,12 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test "$(stat -c '%U:%G' "$checkout")" = "$managed_user:$managed_group"
             test "$(stat -c '%U:%G' "$(dirname "$checkout")")" = "$managed_user:$managed_group"
             if [ -n "$prepare_id" ]; then
-                test -d "$checkout/.git"
                 test ! -L "$checkout/.git"
-                test -f "$checkout/.git/orbit-source-prepare"
-                test ! -L "$checkout/.git/orbit-source-prepare"
-                test "$(stat -c '%U:%G' "$checkout/.git/orbit-source-prepare")" = "$managed_user:$managed_group"
-                test "$(cat "$checkout/.git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
+                prepare_git=$(git -C "$checkout" rev-parse --absolute-git-dir)
+                test -f "$prepare_git/orbit-source-prepare"
+                test ! -L "$prepare_git/orbit-source-prepare"
+                test "$(stat -c '%U:%G' "$prepare_git/orbit-source-prepare")" = "$managed_user:$managed_group"
+                test "$(cat "$prepare_git/orbit-source-prepare")" = "$prepare_id:$(stat -c '%d:%i' "$checkout")"
             fi
             failure=12
             top=$(git -C "$checkout" rev-parse --show-toplevel)

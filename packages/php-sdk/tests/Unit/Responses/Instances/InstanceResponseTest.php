@@ -24,6 +24,8 @@ describe(InstanceResponse::class, function (): void {
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
             'detached' => false,
             'status' => 'active',
+            'seed_path' => '/fast/apps/orbit/default/releases/initial',
+            'seed_commit' => str_repeat('b', 40),
         ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 
         expect($response->toArray())->toBe([
@@ -45,6 +47,8 @@ describe(InstanceResponse::class, function (): void {
             'selected_branch' => 'main',
             'branch_override' => 'main',
             'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            'seed_path' => '/fast/apps/orbit/default/releases/initial',
+            'seed_commit' => str_repeat('b', 40),
             'detached' => false,
             'status' => 'active',
             'route' => null,
@@ -61,12 +65,16 @@ describe(InstanceResponse::class, function (): void {
         $response = InstanceResponse::fromGatewayData([
             'id' => 'invalid',
             'root' => ['invalid'],
+            'seed_path' => ['invalid'],
+            'seed_commit' => false,
         ], 'request-id');
 
         expect($response->id)
             ->toBe(0)
             ->and($response->root)
-            ->toBeNull();
+            ->toBeNull()
+            ->and($response->seedPath)->toBeNull()
+            ->and($response->seedCommit)->toBeNull();
     });
 
     it('maps bounded removal progress and rejects an unsafe error code', function (): void {

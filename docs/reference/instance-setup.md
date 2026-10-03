@@ -14,7 +14,9 @@ covers:
 
 # Instance setup and teardown
 
-A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list after it activates a new development Instance, and the teardown list before it removes an active development Instance. Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps).
+A Project stores two ordered lists of named commands: setup steps and teardown steps. Orbit runs the setup list after it activates a new development Instance, and the teardown list before it removes an active development Instance. Setup does not require a Route: an unrouted monorepo `default` becomes `active` and runs the same list. Its setup commands can install dependencies in each subproject without application metadata inspection at the repository root.
+
+Production Instances run neither list. They use [deploy steps](/reference/deployments#deploy-steps). A Project's [development deploy steps](/reference/deployments#development-deploy-steps) are a third, independent list. Setup and teardown do not run that list.
 
 Each step is one database row with a name, a command string, a timeout, and a position. Orbit writes no script into the checkout. The lists belong to the Project, and no Instance keeps a copy. The next run uses the lists as they are at that moment.
 
@@ -57,7 +59,7 @@ The Gateway prepares a development checkout as the Node's managed user. The chec
 
 When `ORBIT_TASKS_WORKER_USER` names an account on the Node, normally `orbit-worker`, prepare grants recursive access and default ACLs on the checkout, including `.git`. Both ACLs name the worker and the managed user with `rwX`. Prepare and inspect finish the default ACLs before granting worker write access. A partial access grant then still lets the managed user write and remove entries the worker creates. Execute is granted on directories and on files that already have it. Other write stays off.
 
-Inspection and retries repair entries the managed user owns; entries the worker owns keep their inherited ACLs. The Gateway creates `.git/orbit` during prepare with mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker. See the [beast checkout grant](/reference/pi-server#roll-out-orbit-worker-on-beast).
+Inspection and retries repair entries the managed user owns; entries the worker owns keep their inherited ACLs. Linked worktrees also grant access to their administration directory and the shared repository's refs and objects, while its configuration and hooks remain read-only for the worker. The Gateway creates `.git/orbit` during prepare with mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker. See the [beast checkout grant](/reference/pi-server#roll-out-orbit-worker-on-beast).
 
 `git add`, `git checkout`, and `git commit` create `index.lock` in `.git` and rename it to `index`. They also create `HEAD.lock`, `packed-refs.lock`, `ORIG_HEAD`, `FETCH_HEAD`, and `COMMIT_EDITMSG` there. The `.git` directory has to be writable. The checkout root is writable too, so `orbit-worker` can rename `.git` and replace it. An ACL that skips `.git/config` or `.git/hooks` does not keep those files.
 
@@ -65,7 +67,7 @@ Git 2.55 also refuses the checkout because the managed user owns it. The ACL doe
 
 If deletion finishes before Git trust cleanup, completion revalidation authenticates the removal journal and receipt, then retries that exact-path cleanup before reporting success. A config write failure keeps removal incomplete until the retry succeeds.
 
-The ACL is not applied to the apps root or to either home. New files in the checkout stay readable and deletable by the other user. When the setting is unset or the account does not exist, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout. The managed user writes under `.git/orbit` only when `.git` and `.git/orbit` are directories it owns and not symbolic links.
+The ACL is not applied to the apps root or to either home. New files in the checkout stay readable and deletable by the other user. When the setting is unset or the account does not exist, prepare sets no ACL and succeeds. When `setfacl` fails, prepare fails with `instance.clone_failed` and inspect fails with `instance.source_identity_invalid`. Neither records a new checkout. The managed user writes task metadata under `$(git rev-parse --git-path orbit)`. In a linked worktree this is its private administration directory, not a directory under the `.git` pointer file. The Gateway validates both the pointer and its return path, and pins owned directories before publishing metadata.
 
 [Tasks](/reference/tasks#shared-instance) uses this ACL so task agents can write the workspace. [Host setup](/reference/pi-server#host-setup) creates the account. [Instance removal](/reference/instance-removal#checks-before-removal) still requires the managed user to own the directory.
 
@@ -73,7 +75,9 @@ The ACL is not applied to the apps root or to either home. New files in the chec
 
 A create that fails before activation cleans up its owned resources without running setup or teardown, and keeps the original failure code. If cleanup cannot finish or the process is interrupted, removal accepts the pre-activation states `reserved`, `checkout_prepared`, and `source_resolved` and skips teardown. See [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
-`instance:create` runs the setup list after the Instance and its Route are active, and after the [dependency copy](/domains/applications#dependency-copy) and the [database clone](/domains/applications#database-clone) when they apply. So setup steps such as migrations run against the Instance's own copy. When the dependency copy fails, the Gateway log gets a warning with `instance.dependency_copy_failed`, and the setup steps install the dependencies in full. Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
+`instance:create` runs the setup list after the Instance and its Route are active, and after the [database clone](/domains/applications#database-clone) when it applies. Setup steps receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, naming the successful default release selected on the same Node. Project steps own the [dependency copy](/domains/applications#dependency-copy), including nested monorepo folders. When the Project has no release at source preparation, Orbit records an empty seed decision and setup installs from lock files. Retries keep that decision. Registration records a seed only when the adopted source commit matches the selected default release; it never pairs an older source with newer seed dependencies.
+
+Activation records `failed_step: setup` in the same transaction, so a Gateway interruption before or during setup cannot make an identical create retry report success without setup. Orbit clears the marker only after setup completes.
 
 Each command runs with `bash -eu` in the checkout, on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
 
@@ -138,6 +142,32 @@ orbit instance:setup-step:create bootstrap --project=PROJECT_ID --command='bin/b
 ```
 
 Task workspaces are not created with `instance:create`, so this create-time run does not happen for them. The task baseline check runs the Project setup steps before the task check instead. See [Project check](/reference/tasks#project-check) and [Implementation loop](/reference/implementation-loop).
+
+## Beast setup changes after deployment
+
+These are operator steps on shared beast, not task fixtures. Re-read Projects 33 (`orbit-website`) and 46 (`orbit`) and their ordered setup and development deploy lists before changing them. Preserve their Instance-specific environment, key and database setup. Finish initializing Orbit's default Instance 303 without a Route, and deploy the default of each Project successfully before using it as a seed.
+
+### Project 33
+
+Record ordered [development deploy steps](/reference/deployments#development-deploy-steps) for the website's locked Composer and Bun installs, migrations, and asset build. Keep installs, migrations, and builds required. Do not put Instance-only environment, key, or database-copy setup in this list. Read the default Instance's ID from `orbit project:show 33 --json`, then run `orbit instance:deploy ID --json` and check its final result before enabling seed copies.
+
+Add a first setup step that copies the website's `vendor` and `node_modules` from `ORBIT_SEED_PATH` when it is nonempty. Use `cp -a --reflink=auto` into absent destinations. Keep the locked incremental install afterward. An install that deletes the destination first discards the copy.
+
+### Project 46
+
+Record ordered development deploy steps for every locked dependency tree: the repository root, `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, `apps/e2e`, and `packages/agent-annotation`. Run the Gateway migrations and the builds required by the deployed applications after their installs. Keep these steps required, and put cache warm-up last. Preserve Instance-only setup in the setup list. Retry `orbit instance:create 46 9 default --json` to finish the existing SourceResolved Instance 303 without a Route; confirm its identity and active status, then run `orbit instance:deploy 303 --json` and check the final result.
+
+Add a first setup step that copies present `vendor` and `node_modules` folders at the repository root and under `apps/cli`, `apps/gateway`, `apps/docs`, `apps/web`, `packages/php-sdk`, `apps/e2e`, and `packages/agent-annotation`. Include each Composer project's `.orbit-tia`. Pint's `vendor/pint.cache` and PHPStan's `vendor/phpstan/cache` travel with `vendor`. Keep locked installs for every dependency tree as the empty-seed fallback. Never copy `.env`, databases, logs, build runtime files or symlinks that point outside the seed.
+
+### Cache ownership
+
+Register Orbit's stable default store with `bin/tia-cache register --repository=/fast/apps/orbit/default --development-instance=303`. Add `bin/tia-cache warm` as the final Project 46 development deploy step, with an explicit timeout and required or best-effort policy. Provision Gateway access for the managed user's `orbit instance:deploy 303 --json`, which the cache worker uses for background refresh.
+
+Deploy 303 again. Inspect all five cache publications and create a disposable new Instance to check nested dependency copies. Test the empty-seed fallback separately. Point any `ORBIT_MAIN_CACHE_STORE` override at `/fast/apps/orbit/default/.git/orbit-tia/v1`.
+
+Stop the old ext4 cache worker before retiring `/home/nckrtl/orbit/.git/orbit-tia/v1/checkout` and its separate `repository`. Preserve unresolved failure logs. Do not remove the old main repository or any unrelated linked worktree.
+
+A setup copy step must be retryable: keep an existing destination, stage a missing directory, then rename it into place only when `cp` succeeds. A copy failure fails that step rather than leaving a partial dependency tree. On ZFS, `--reflink=always` can enforce shared blocks; `--reflink=auto` provides the ordinary-copy fallback. Verify shared blocks on beast and write isolation by changing a copied dependency or cache in a disposable Instance and checking that the selected seed stays unchanged. Remove only that disposable Instance after the check.
 
 ## Configure Orbit's task policy
 

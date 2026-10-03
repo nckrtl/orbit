@@ -12,6 +12,8 @@ covers:
 
 The Gateway serves a Model Context Protocol (MCP) server, so an agent can operate Orbit without the CLI. Every Gateway API operation is one tool. A tool call runs the same API request that the matching CLI command sends. Identity, access grants, validation, redaction, and [Activity](/cli/activity) therefore apply to it in the same way.
 
+The Project's [development deploy steps](/reference/deployments#development-deploy-steps) are available as `project-dev-deploy-step-list`, `project-dev-deploy-step-create`, `project-dev-deploy-step-update`, and `project-dev-deploy-step-destroy`. Supply the numeric `project`; updates and removal also take the step name as `step`. Create and update accept `required` as a JSON boolean, so `false` stays false through MCP dispatch.
+
 ## Endpoints
 
 Both endpoints speak MCP over streamable HTTP and offer the same catalogue.

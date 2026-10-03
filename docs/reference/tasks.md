@@ -325,7 +325,7 @@ A `command` deliverable with `fails_on_base: true` proves that the command fails
 | Base | The start commit, or its fallback base, plus the files in `paths` from the working tree | The command exits nonzero |
 | Working tree | The implementer's tree | The command exits 0 |
 
-The base run extracts an archive of the start commit into a directory under the workspace's `.git/orbit/bases/`. It copies installed `vendor` and `node_modules` directories from the workspace, and no other dependency directory, then copies each file in `paths`, including an uncommitted or untracked file. It runs the command there with `bash -lc`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
+The base run extracts an archive of the start commit into a directory under the workspace's `$(git rev-parse --git-path orbit)/bases/`. It copies installed `vendor` and `node_modules` directories from the workspace, and no other dependency directory, then copies each file in `paths`, including an uncommitted or untracked file. It runs the command there with `bash -lc`. It does not change the workspace and registers no Git worktree. The check removes the directory when the run ends, and the next check removes a directory that a killed run left behind.
 
 A command that needs another installed tree, such as a Python virtualenv or a Rust `target` directory, can fail on that base tree only because the tree is missing. That nonzero exit satisfies `fails_on_base` and is not evidence that the command reproduced a bug. This copy is retained. A follow-up has to widen it or stop counting a missing dependency as reproduction evidence.
 
@@ -337,7 +337,7 @@ The Orbit Project's [task policy skill](https://github.com/nckrtl/orbit/blob/mai
 
 ### Confirm deliverables
 
-The Gateway writes the subtask's deliverables into `.git/orbit/turn.json` before each turn. The agent confirms each one in its [turn receipt](#turn-receipt) with `--deliverable=ID=evidence`, where the evidence says where or how the deliverable is met.
+The Gateway writes the subtask's deliverables into `$(git rev-parse --git-path orbit)/turn.json` before each turn. The agent confirms each one in its [turn receipt](#turn-receipt) with `--deliverable=ID=evidence`, where the evidence says where or how the deliverable is met.
 
 | Turn | Needs |
 | --- | --- |
@@ -580,9 +580,9 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 ## Shared Instance
 
-The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Like any new development Instance, it gets a [dependency copy](/domains/applications#dependency-copy) from the Project's `default` Instance on the same Node.
+The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Its Project setup steps [copy dependencies](/domains/applications#dependency-copy) from the successful `default` release on the same Node.
 
-The copy preserves the source directories' modes and ACLs, which may predate worker access. Before returning the workspace or activating its Route, Orbit inspects the checkout again and restores the default-first worker and managed-user ACLs. This inspection also runs after a logged copy failure, because an earlier directory may already have been copied. An inspection failure leaves the workspace unexposed and the claim fails.
+Before returning the workspace or activating its Route, Orbit inspects its source and repairs worker and managed-user ACLs. A linked worktree also needs access to its private Git administration directory and the shared refs and objects. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies; the [task check](#project-check) runs as the managed user and shares entries it creates with the worker before returning.
 
 The checkout directory stays owned by the Node's managed user and group. `ORBIT_TASKS_WORKER_USER` selects the worker account, normally `orbit-worker`. When it is unset or that account is absent, prepare leaves checkout access unchanged. Otherwise, prepare and inspect grant both users `rwX` access and default ACLs on the checkout, including `.git`.
 
@@ -597,7 +597,7 @@ Default ACLs are installed before worker write access, so a partial grant cannot
 
 The setting defaults to true and does not depend on the Project slug. Provisioning records the selected mode on the workspace. Changing the Project setting affects future workspaces; it neither creates nor removes Routes on an existing workspace. Doctor uses the recorded mode when it checks that workspace. See [Task workspace routing](/reference/projects#task-workspace-routing).
 
-[Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one.
+[Doctor](/cli/doctor) treats `source_resolved` as the healthy state of a workspace that is not visitable, and `active` for a visitable one. An ordinary development Instance, including a monorepo `default` without a Route, settles at `active` instead. It runs the Project's create-time setup list and can supply dependencies to task workspaces without serving an endpoint. See [Provision the application endpoint](/domains/applications#provision-the-application-endpoint).
 
 Orbit writes an untracked `.mcp.json` into the workspace before a reviewer starts, unless the workspace already has one, tracked or not. It points at `{gateway origin}/mcp/search`, which lists only `search_tools` and `execute_tools`. The file is excluded from Git. The [MCP server](/reference/mcp) describes both endpoints.
 
@@ -662,15 +662,15 @@ When the fetch fails, the turn still starts. Its message says the fetch failed a
 
 ### Turn receipt
 
-An agent ends each turn with the command `.git/orbit/turn`:
+An agent ends each turn with the command `"$(git rev-parse --git-path orbit)/turn"`:
 
 ```bash
-.git/orbit/turn --thread=ID --outcome=OUTCOME --summary="What was done, or what stops the work"
+"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=OUTCOME --summary="What was done, or what stops the work"
 ```
 
-Before each turn, the Gateway installs that command, writes `.git/orbit/turn.json` with the role, the deliverables, and the acting thread's Orbit id, and removes any earlier turn receipt. `ID` is that Orbit thread id. Git never tracks `.git/orbit/`. The command and the [task check](#project-check) both need `python3` on the Node. `.git/orbit/turn.json` is the turn input. It is not the receipt.
+Before each turn, the Gateway installs that command, writes `$(git rev-parse --git-path orbit)/turn.json` with the role, the deliverables, and the acting thread's Orbit id, and removes any earlier turn receipt. `ID` is that Orbit thread id. Git never tracks `$(git rev-parse --git-path orbit)/`. The command and the [task check](#project-check) both need `python3` on the Node. `$(git rev-parse --git-path orbit)/turn.json` is the turn input. It is not the receipt.
 
-Before each review turn, opening or continued, the Gateway also writes `.git/orbit/context.md` in that directory. The file holds the full task brief, the subtask brief, the deliverables, the earlier approval bodies, and the held resolution. It is the same file on every driver. The [review packet](#review-packet) names it in every cut note. The file replaces the `tasks-show` and `tasks-comment-list` references.
+Before each review turn, opening or continued, the Gateway also writes `$(git rev-parse --git-path orbit)/context.md` in that directory. The file holds the full task brief, the subtask brief, the deliverables, the earlier approval bodies, and the held resolution. It is the same file on every driver. The [review packet](#review-packet) names it in every cut note. The file replaces the `tasks-show` and `tasks-comment-list` references.
 
 | Role | Outcomes |
 | --- | --- |
@@ -685,9 +685,9 @@ The command refuses an outcome of the other role, an empty summary, a repeated f
 
 A blocked relay creates no second question record. The same direction record stays `escalated`. Its `question` becomes the reviewer's `--question`, and its `cause` becomes that turn's `--cause`. That receipt sets `assistance_requested`, `assistance_kind` `direction`, and `assistance_question` on the subtask and the task. The subtask asks for direction again.
 
-The approval of the subtask that opens the pull request also needs `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. `none` cannot be combined with another `--pr-breaking`. The command refuses the three pull request flags on every other turn. On success it writes the turn receipt to `.git/orbit/receipt.json` atomically. A second call overwrites that file. The command stays in place.
+The approval of the subtask that opens the pull request also needs `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. `none` cannot be combined with another `--pr-breaking`. The command refuses the three pull request flags on every other turn. On success it writes the turn receipt to `$(git rev-parse --git-path orbit)/receipt.json` atomically. A second call overwrites that file. The command stays in place.
 
-When the acting thread stops, the tick reads `.git/orbit/receipt.json` over SSH. It applies the receipt only when its `thread` is the acting thread. It stores the receipt as a comment with its content hash, then removes the receipt file. It does not remove `.git/orbit/turn`. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried without the file.
+When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/receipt.json` over SSH. It applies the receipt only when its `thread` is the acting thread. It stores the receipt as a comment with its content hash, then removes the receipt file. It does not remove `"$(git rev-parse --git-path orbit)/turn"`. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried without the file.
 
 ### Rubric and reminders
 
@@ -831,11 +831,11 @@ A Pi thread whose turn id is the key has accepted the reservation. A thread that
 
 Each Project stores one task check command in `task_check`. Orbit runs it on the fresh workspace before the first implementer starts, and after each `ready_for_review` receipt whose other items pass. Change it with `orbit project:update <project> --task-check=COMMAND`, or clear it with `--clear-task-check`. A new Project stores no task check until one is configured, for every type. Existing stored checks remain unchanged.
 
-The Gateway installs `.git/orbit/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace root, writes the output to `.git/orbit/check.log`, and writes `.git/orbit/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
+The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace root, writes the output to `$(git rev-parse --git-path orbit)/check.log`, and writes `$(git rev-parse --git-path orbit)/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
-The check process runs as the Node's managed user, the account the Gateway connects as. A Project check can need that account's passwordless sudo, ACL tools, or access to the `caddy` account. The Gateway writes `.git/orbit/check` only when `.git` and `.git/orbit` are directories that the managed user owns and not symbolic links. Status, cancel, and the workspace snapshot run as the same user. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) explains the choice and its cost.
+The check process runs as the Node's managed user, the account the Gateway connects as. A Project check can need that account's passwordless sudo, ACL tools, or access to the `caddy` account. The Gateway writes metadata only into administration directories owned by the managed user, without following symbolic links. It validates a linked worktree's `.git` pointer and its return pointer before opening that worktree's private administration directory. Status, cancel, and the workspace snapshot run as the same user. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) explains the choice and its cost.
 
-When `ORBIT_TASKS_WORKER_USER` names an account on the Node, normally `orbit-worker`, the check shares what it created with that worker before it writes `.git/orbit/check.json`. It grants the worker and the managed user `rwX` on every checkout entry the managed user owns, with default ACLs on directories first, as [workspace inspection](/reference/instance-setup#checkout-access) does. `.git/config` and `.git/hooks` keep their read-only worker access. The grant skips directories that the managed user cannot enter, such as private directories that the worker created. Their owner already has access.
+When `ORBIT_TASKS_WORKER_USER` names an account on the Node, normally `orbit-worker`, the check shares what it created with that worker before it writes `$(git rev-parse --git-path orbit)/check.json`. It grants the worker and the managed user `rwX` on every checkout entry the managed user owns, with default ACLs on directories first, as [workspace inspection](/reference/instance-setup#checkout-access) does. `.git/config` and `.git/hooks` keep their read-only worker access. The grant skips directories that the managed user cannot enter, such as private directories that the worker created. Their owner already has access.
 
 Before setup and the command, the check does the reverse. It runs `find` and `setfacl` as the worker with `sudo -n -u orbit-worker -H`, because only an entry's owner can change its ACL. It grants the managed user `rwX` on every checkout entry the worker owns, with default ACLs on directories first, and skips `.git/config`, `.git/hooks`, and directories the worker cannot enter. A package manager that the agent ran can leave directories with mode `0755`, whose ACL mask hides the managed user's write. After this grant, the check can replace them.
 
@@ -891,19 +891,19 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 | Part | Cap | When it does not fit |
 | --- | --- | --- |
 | Retrieval block | 1,000, reserved first | Never cut |
-| Held resolution | 2,000 | The end is cut. `.git/orbit/context.md` holds the full resolution |
-| Task brief | 2,000 | The end is cut. `.git/orbit/context.md` holds the full brief |
-| Subtask brief | 2,000 | The end is cut. `.git/orbit/context.md` holds the full brief |
-| Deliverables | 2,000 | One line each, at most 240 characters, with the description cut to 160. `.git/orbit/context.md` holds every field |
-| Earlier approvals | 1,500 | One line each, at most 200 characters. The oldest lines drop. `.git/orbit/context.md` holds each approval body |
-| Answered consults | 2,000 | Opening packet only: one line each, at most 400 characters. The oldest lines drop. `.git/orbit/context.md` holds every question and answer |
-| Diff stat | 1,500 | A summary line with every file, insertion, and deletion, then paths until the cap. The stat command prints the rest. The cut note names `.git/orbit/context.md` |
-| Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `.git/orbit/check.log` holds the rest. The cut note names `.git/orbit/context.md` |
-| Diff body | The rest, and at most 16,384 bytes | Cut from the end. The diff command prints the rest. The cut note names `.git/orbit/context.md` |
+| Held resolution | 2,000 | The end is cut. `$(git rev-parse --git-path orbit)/context.md` holds the full resolution |
+| Task brief | 2,000 | The end is cut. `$(git rev-parse --git-path orbit)/context.md` holds the full brief |
+| Subtask brief | 2,000 | The end is cut. `$(git rev-parse --git-path orbit)/context.md` holds the full brief |
+| Deliverables | 2,000 | One line each, at most 240 characters, with the description cut to 160. `$(git rev-parse --git-path orbit)/context.md` holds every field |
+| Earlier approvals | 1,500 | One line each, at most 200 characters. The oldest lines drop. `$(git rev-parse --git-path orbit)/context.md` holds each approval body |
+| Answered consults | 2,000 | Opening packet only: one line each, at most 400 characters. The oldest lines drop. `$(git rev-parse --git-path orbit)/context.md` holds every question and answer |
+| Diff stat | 1,500 | A summary line with every file, insertion, and deletion, then paths until the cap. The stat command prints the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
+| Handoff result | 2,000 | One line per command the check ran, with the command cut to 160 characters. `$(git rev-parse --git-path orbit)/check.log` holds the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
+| Diff body | The rest, and at most 16,384 bytes | Cut from the end. The diff command prints the rest. The cut note names `$(git rev-parse --git-path orbit)/context.md` |
 
-Before each review turn, opening or continued, Orbit writes `.git/orbit/context.md` with the full task brief, subtask brief, deliverables, earlier approval bodies, held resolution, and answered consults. Every cut note names that file. The file replaces the `tasks-show` and `tasks-comment-list` references, and it works on every driver.
+Before each review turn, opening or continued, Orbit writes `$(git rev-parse --git-path orbit)/context.md` with the full task brief, subtask brief, deliverables, earlier approval bodies, held resolution, and answered consults. Every cut note names that file. The file replaces the `tasks-show` and `tasks-comment-list` references, and it works on every driver.
 
-Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, the held resolution, and the answered consults. `.git/orbit/context.md` still holds those parts.
+Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, the held resolution, and the answered consults. `$(git rev-parse --git-path orbit)/context.md` still holds those parts.
 
 The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
 
@@ -1299,6 +1299,14 @@ The engine knows the configured check, lifecycle steps, workspace routing, and t
 
 Task create accepts no planner. There is no `plan` field, no planner thread, and no stored planner state. An external ADE plans and steers the work. Orbit runs the assigned work.
 
+### Starting from the default release
+
+A new task workspace is a linked worktree of the Project's `default` repository on the selected Node. Its task branch starts at the current successful release's commit, not a newer fetched default branch. Orbit reads the authoritative `current` selection under the Node source lock, records `seed_path` and `seed_commit` on the new Instance before preparing its source, and preserves that selection on retries. An empty selection is recorded too: a later default deployment does not reseed a clone that already started without a release.
+
+The default Instance API also reads that selection, so an interrupted release switch cannot expose stale database fields. Both explicit Instance setup and asynchronous task baseline setup receive the recorded `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`; the Project copies its own dependency and cache folders from that release with reflinks. The workspace never writes back to the seed.
+
+When the Project has no development release on that Node, Orbit creates an independent clone and resolves its branch as before. The seed variables are empty and setup must install dependencies from its lock files. There is no automatic root-only dependency copy. External `instance:register` callers read `seed_path` and `seed_commit` from the `default` Instance API, create a branch and linked worktree at that commit, then register it and run setup.
+
 ### Routing and cleanup
 
 [Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. Orbit acquires the group's [Incus topology](/reference/incus-topologies#task-workspace-clones) when it provisions an Orbit workspace and releases it before it removes the workspace. Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
@@ -1379,7 +1387,7 @@ A task and its subtasks share a lifecycle and most of their fields, so both are 
 
 ### The turn receipt ends a turn
 
-An agent states its outcome with `.git/orbit/turn`, the same command for every driver. The command writes the turn receipt to `.git/orbit/receipt.json` and stays in place, so a second call overwrites the receipt and the tick can remove that file without deleting the command. The Gateway does not infer outcomes from transcripts, and agents need no Gateway access or ids of their own. The receipt only marks the end of a turn. Code checks decide whether the work moves on. A hand-written JSON file would need extra turns to fix.
+An agent states its outcome with `"$(git rev-parse --git-path orbit)/turn"`, the same command for every driver. The command writes the turn receipt to `$(git rev-parse --git-path orbit)/receipt.json` and stays in place, so a second call overwrites the receipt and the tick can remove that file without deleting the command. The Gateway does not infer outcomes from transcripts, and agents need no Gateway access or ids of their own. The receipt only marks the end of a turn. Code checks decide whether the work moves on. A hand-written JSON file would need extra turns to fix.
 
 ### The Gateway runs the check
 
@@ -1393,7 +1401,7 @@ Orbit cannot check prose, so a subtask names typed items. The check script runs 
 
 A command that only passes on the fixed code does not prove it covers the bug. So a base run uses the start commit and adds only the files named in `paths`. It also copies installed `vendor` and `node_modules` directories so a Composer or JavaScript command can run, and it copies nothing else. A missing Python or Rust dependency tree is not proof that the bug existed on the start commit.
 
-The base tree is an extracted archive inside `.git/orbit/bases/`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. Exit 126 or 127 is not that proof: the command did not run.
+The base tree is an extracted archive inside `$(git rev-parse --git-path orbit)/bases/`, not a registered worktree, because a killed run would leave a registered worktree that blocks removal of the clone. Exit 126 or 127 is not that proof: the command did not run.
 
 ### One reminder, then a person
 
@@ -1423,7 +1431,7 @@ If any working thread paused a subtask, an operator who talks to the reviewer wo
 
 ### A fresh reviewer for each subtask
 
-A long-lived reviewer would carry the context of every earlier review into each new one, and that inherited context would be most of its tokens. A fresh thread with a capped packet reviews only this subtask. The retrieval commands print the diff the caps cut, and every cut note names `.git/orbit/context.md`, which holds the full task brief, subtask brief, deliverables, earlier approval bodies, and held resolution. The file is in the workspace, so it works on every driver. A re-review continues the same thread, so the reviewer keeps its own findings.
+A long-lived reviewer would carry the context of every earlier review into each new one, and that inherited context would be most of its tokens. A fresh thread with a capped packet reviews only this subtask. The retrieval commands print the diff the caps cut, and every cut note names `$(git rev-parse --git-path orbit)/context.md`, which holds the full task brief, subtask brief, deliverables, earlier approval bodies, and held resolution. The file is in the workspace, so it works on every driver. A re-review continues the same thread, so the reviewer keeps its own findings.
 
 ### The reviewer does not edit
 

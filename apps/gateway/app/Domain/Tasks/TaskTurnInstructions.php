@@ -93,7 +93,7 @@ final readonly class TaskTurnInstructions
 
     private static function command(?int $threadId, string $arguments): string
     {
-        return '.git/orbit/turn '.($threadId === null ? '' : '--thread='.$threadId.' ').$arguments;
+        return '"$(git rev-parse --git-path orbit)/turn" '.($threadId === null ? '' : '--thread='.$threadId.' ').$arguments;
     }
 
     private static function causes(): string

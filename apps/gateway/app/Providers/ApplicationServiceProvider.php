@@ -71,7 +71,7 @@ use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
-use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
+use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
@@ -258,11 +258,11 @@ use App\Infrastructure\Instances\NativeProductionInstanceProvisioner;
 use App\Infrastructure\Instances\NativeProductionRouteProjector;
 use App\Infrastructure\Instances\ProtectedSqliteSnapshotTransfer;
 use App\Infrastructure\Instances\RecordedProductionInstanceContentRetention;
+use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
 use App\Infrastructure\Instances\RemoteInstanceCloneCandidateInspector;
-use App\Infrastructure\Instances\RemoteInstanceDependencyCopier;
 use App\Infrastructure\Instances\RemoteInstanceDestinationGuard;
 use App\Infrastructure\Instances\RemoteInstanceEnvironmentAccess;
 use App\Infrastructure\Instances\RemoteInstanceLogReader;
@@ -389,7 +389,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         InstanceEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceTestEnvironmentWriter::class => RemoteInstanceEnvironmentAccess::class,
         InstanceSqliteCloner::class => RemoteInstanceSqliteCloner::class,
-        InstanceDependencyCopier::class => RemoteInstanceDependencyCopier::class,
         InstanceOperationPreflight::class => RemoteInstanceEnvironmentAccess::class,
         InstanceSqliteSeeder::class => RemoteInstanceSqliteSeeder::class,
         InstanceTransferSource::class => RemoteInstanceTransferSource::class,
@@ -415,6 +414,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         DevelopmentRouteProjector::class => NativeDevelopmentRouteProjector::class,
         ProductionInstanceProvisioner::class => NativeProductionInstanceProvisioner::class,
         ProductionDeployment::class => RemoteProductionDeployment::class,
+        DevelopmentDeployment::class => RemoteDevelopmentDeployment::class,
         DeploymentStreamConnection::class => NativeDeploymentStreamConnection::class,
         ProductionInstanceSourceLifecycle::class => RemoteProductionInstanceSourceLifecycle::class,
         ProductionReleaseLayout::class => RemoteProductionInstanceSourceLifecycle::class,

@@ -69,6 +69,8 @@
             "transfer": null,
             "deploy_steps": [],
             "vite_port": 5173,
+            "seed_path": null,
+            "seed_commit": null,
             "annotator_port": null,
             "annotator_url": null
         },

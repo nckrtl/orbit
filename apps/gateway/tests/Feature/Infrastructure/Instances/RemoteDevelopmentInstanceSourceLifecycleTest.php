@@ -9,7 +9,8 @@ use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubCliToken;
 use App\Domain\GitHub\RepositoryReadAccess;
-use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
+use App\Domain\Instances\Deployment\DeploymentRelease;
+use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
@@ -27,8 +28,6 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
-use App\Domain\Processes\DesiredProcessState;
-use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteProvenance;
@@ -36,14 +35,11 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\InstanceProvisionIntent;
-use App\Domain\Tasks\TaskWorkspaceName;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceLifecycle;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceSourceRemoval;
-use App\Infrastructure\Instances\RemoteInstanceDependencyCopier;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -54,7 +50,6 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -62,7 +57,6 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
-use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -221,6 +215,28 @@ it('retains an interrupted prepare without a receipt and cleans a lost response 
     }
 })->with(['interrupted before receipt' => 'before receipt', 'lost completed response' => 'lost response']);
 
+it('starts a linked workspace from the recorded release instead of newer origin main', function (): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $seed = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'default');
+    $this->source->prepare($seed, false);
+    $resolution = $this->source->resolve($seed);
+    $path = $seed->checkout_path.'/releases/initial';
+    orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $path, $resolution->startingCommit]);
+    $seed->update(['development_release_layout' => true, 'seed_path' => '/stale/selection', 'seed_commit' => str_repeat('b', 40)]);
+    app()->instance(DevelopmentDeployment::class, Mockery::mock(DevelopmentDeployment::class)->shouldReceive('selected')->andReturn(new DeploymentRelease('initial', $path, $resolution->startingCommit))->getMock());
+    orb178_advance_remote($this->sandbox, 'main');
+    $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-seeded', 'task-seeded');
+    $workspace->update(['source_prepare_id' => (string) Str::uuid()]);
+    $this->source->prepare($workspace, false);
+    $resolved = $this->source->resolve($workspace);
+    $this->source->inspectPrepared($workspace);
+    expect($resolved->startingCommit)->toBe($resolution->startingCommit)
+        ->and($workspace->refresh()->seed_path)->toBe($path)
+        ->and($workspace->source_layout)->toBe('worktree')
+        ->and(is_file($workspace->checkout_path.'/.git'))->toBeTrue()
+        ->and(trim(orb76_run(['git', '-C', $workspace->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout))->toBe($seed->checkout_path.'/.git');
+});
+
 it('does not transfer an attempt receipt to a replacement directory even with force', function (bool $failureRecord): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'owned');
     $instance->update(['source_prepare_id' => (string) Str::uuid(), 'failed_step' => $failureRecord ? 'source-prepare' : null, 'error_code' => $failureRecord ? 'instance.clone_failed' : null]);
@@ -234,129 +250,6 @@ it('does not transfer an attempt receipt to a replacement directory even with fo
 })->with([false, true]);
 
 describe('TaskCheckWorkerUser', function (): void {
-    it('restores copied dependency access before exposing a task workspace and refuses a failed ACL repair', function (bool $visitable, string $copyResult): void {
-        config()->set('orbit.tasks.worker_user', null);
-        $default = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'default');
-        $route = Route::query()->create([
-            'project_id' => $default->project_id,
-            'node_id' => $default->node_id,
-            'generation_basis_node_id' => $default->node_id,
-            'domain' => 'default.acme.test',
-            'provenance' => RouteProvenance::Generated,
-            'publication' => RoutePublication::Private,
-            'status' => RouteStatus::Pending,
-        ]);
-        $route->targets()->create(['instance_id' => $default->id, 'position' => 0]);
-        $route->update(['status' => RouteStatus::Active]);
-        $default->update(['status' => InstanceState::Active]);
-        foreach (['vendor', 'node_modules'] as $directory) {
-            $path = $default->checkout_path.'/'.$directory;
-            mkdir($path.'/package', 0o700, true);
-            file_put_contents($path.'/package/installed', 'original');
-            chmod($path.'/package/installed', 0o600);
-            orb76_run(['setfacl', '-R', '-b', '-k', '--', $path]);
-            expect(orb178_run_allow_failure(['sudo', '-n', '-u', 'nobody', '-H', '--', 'sh', '-c', 'test -r "$1"', 'sh', $path.'/package/installed'])->succeeded())->toBeFalse();
-        }
-        $this->node->update(['settings' => ['apps' => ['path' => $this->appsRoot]]]);
-        $this->node->processes()->create([
-            'name' => 'pi-server',
-            'runtime' => ProcessRuntime::Systemd,
-            'working_directory' => $this->sandbox,
-            'runtime_config' => ['command' => ['pi-server', 'serve']],
-            'restart_policy' => 'always',
-            'keep_alive' => true,
-            'desired_state' => DesiredProcessState::Running,
-            'status' => LifecycleStatus::Active,
-        ]);
-        $group = Task::topLevel()->create([
-            'project_id' => $this->orbitApp->id,
-            'title' => 'Copy dependencies',
-            'brief' => 'Use a default Instance predating worker rollout.',
-            'status' => 'reserved',
-            'implementer_agent_driver' => 'pi',
-            'reviewer_agent_driver' => 'pi',
-        ]);
-        $workspace = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, TaskWorkspaceName::for($group), TaskWorkspaceName::for($group));
-        $workspace->update(['task_workspace_routed' => $visitable, 'root' => $visitable ? 'public' : null]);
-        config()->set('orbit.tasks.worker_user', 'nobody');
-        if ($copyResult !== 'complete') {
-            $bin = $this->sandbox.'/bin';
-            mkdir($bin);
-            if ($copyResult === 'partial') {
-                file_put_contents($bin.'/cp', "#!/bin/sh\nfor argument; do case \"\$argument\" in */node_modules) exit 73;; esac; done\nexec /usr/bin/cp \"\$@\"\n");
-                chmod($bin.'/cp', 0o755);
-            } else {
-                file_put_contents($bin.'/setfacl', '#!/bin/sh'."\n".'[ ! -d '.escapeshellarg($workspace->checkout_path.'/vendor').' ] || exit 73'."\n".'exec /usr/bin/setfacl "$@"'."\n");
-                chmod($bin.'/setfacl', 0o755);
-            }
-            $this->transport->environment = ['PATH' => $bin.':'.getenv('PATH')];
-        }
-        $verifyAccess = static function (Instance $instance) use ($copyResult): void {
-            foreach ($copyResult === 'partial' ? ['vendor'] : ['vendor', 'node_modules'] as $directory) {
-                $path = $instance->checkout_path.'/'.$directory;
-                $access = orb178_run_allow_failure(['sudo', '-n', '-u', 'nobody', '-H', '--', 'sh', '-c', 'test -w "$1"', 'sh', $path.'/package/installed']);
-                expect($access->succeeded())->toBeTrue(orb76_run(['getfacl', '-p', $instance->checkout_path, $path, $path.'/package', $path.'/package/installed'])->stdout);
-            }
-        };
-        $development = new class($verifyAccess) implements DevelopmentInstanceProvisioner
-        {
-            public int $reserves = 0;
-
-            public function __construct(private readonly Closure $verifyAccess) {}
-
-            public function reserve(Instance $instance, ?string $domain): void
-            {
-                ($this->verifyAccess)($instance);
-                $this->reserves++;
-            }
-
-            public function complete(Instance $instance, ?string $domain, bool $setupPending = false): Instance
-            {
-                return $instance;
-            }
-        };
-        app()->instance(ManagedUserAccountResolver::class, $this->accounts);
-        app()->instance(AppDevSourceOperationLock::class, $this->sourceLock);
-        app()->instance(DevelopmentInstanceSourceLifecycle::class, $this->source);
-        app()->instance(DevelopmentInstanceProvisioner::class, $development);
-        app()->instance(InstanceDependencyCopier::class, new RemoteInstanceDependencyCopier($this->transport, app(SshKeyProvider::class), app(KnownHostsStore::class)));
-
-        $result = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, $visitable));
-
-        if ($copyResult === 'acl-refused') {
-            expect($result)->toBeNull()
-                ->and($development->reserves)->toBe(0)
-                ->and(file_get_contents($workspace->checkout_path.'/vendor/package/installed'))->toBe('original');
-
-            return;
-        }
-        expect($result)->toBeInstanceOf(Instance::class)
-            ->and($result?->id)->toBe($workspace->id)
-            ->and($development->reserves)->toBe($visitable ? 1 : 0)
-            ->and(is_dir($workspace->checkout_path.'/node_modules'))->toBe($copyResult === 'complete');
-        $verifyAccess($workspace);
-        foreach ($copyResult === 'partial' ? ['vendor'] : ['vendor', 'node_modules'] as $directory) {
-            $path = $workspace->checkout_path.'/'.$directory;
-            $acl = orb76_run(['getfacl', '-cp', $path.'/package'])->stdout;
-            expect($acl)->toContain('default:user:nobody:rwx', 'default:user:'.$this->node->user.':rwx');
-            orb76_run(['sudo', '-n', '-u', 'nobody', '-H', '--', 'sh', '-eu', '-c', 'printf updated > "$1/package/installed"; mkdir -p "$1/new/deep"; printf created > "$1/new/deep/file"', 'sh', $path]);
-            expect(file_get_contents($path.'/package/installed'))->toBe('updated')
-                ->and(fileowner($path.'/new/deep/file'))->toBe(65534)
-                ->and(fileowner($path))->toBe(posix_geteuid());
-            file_put_contents($path.'/new/deep/file', 'managed update');
-            expect(file_get_contents($path.'/new/deep/file'))->toBe('managed update');
-        }
-        $this->files->deleteDirectory($workspace->checkout_path);
-        expect(is_dir($workspace->checkout_path))->toBeFalse();
-    })->with([
-        'non-visitable complete copy' => [false, 'complete'],
-        'visitable complete copy' => [true, 'complete'],
-        'non-visitable partial copy' => [false, 'partial'],
-        'visitable partial copy' => [true, 'partial'],
-        'non-visitable ACL failure' => [false, 'acl-refused'],
-        'visitable ACL failure' => [true, 'acl-refused'],
-    ]);
-
     it('keeps removal content filters on the worker while the managed account validates and deletes the tree', function (): void {
         config()->set('orbit.tasks.worker_user', null);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-removal');

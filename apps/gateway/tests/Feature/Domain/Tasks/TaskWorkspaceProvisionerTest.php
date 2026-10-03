@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
-use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -176,7 +175,7 @@ function bind_task_workspace_fakes(): object
     return (object) ['source' => $source, 'development' => $development];
 }
 
-it('copies the dependencies of the default Instance on the same Node into a new workspace', function (): void {
+it('provisions a workspace without an automatic root dependency copy', function (): void {
     $project = provisioner_app('acme');
     $node = provisioner_node('acme-dev', '10.44.0.111');
     Instance::query()->create([
@@ -194,8 +193,7 @@ it('copies the dependencies of the default Instance on the same Node into a new 
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
 
-    expect($instance?->status)->toBe(InstanceState::SourceResolved)
-        ->and(app(InstanceDependencyCopier::class)->copies)->toBe([['source' => 'default', 'target' => TaskWorkspaceName::for($group)]]);
+    expect($instance?->status)->toBe(InstanceState::SourceResolved);
 });
 
 it('acquires the group topology for a new and a reused workspace, and continues when acquiring fails', function (): void {

@@ -38,6 +38,8 @@ A normal test run asserts that the response still equals the recorded file. A ru
 cd apps/gateway && ORBIT_FIXTURES=record vendor/bin/pest --filter=Fixtures
 ```
 
+Instance fixtures include nullable `seed_path` and `seed_commit` fields. These name the successful default development release or the release selected for a new workspace. Re-record create, list, and show responses together, then update the CLI's JSON expectations; human tables keep their existing columns.
+
 The recorded file holds the request class, the route, the status, and the body. It holds no secrets, because fixture tests use example values. Project fixtures include source defaults and task settings such as `task_check`; update the corresponding CLI expectations when those response fields change. Task fixtures share one id sequence with their subtasks. A subtask id is greater than its task id, and creating another task does not reuse a subtask id.
 
 The `tasks/tasks-show/watched` fixture records a running task whose branch pull request was opened outside Orbit. It has `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`, while `pr_url` remains null. The default task fixtures keep the watched fields null. The SDK and CLI replay both cases so a watched pull request cannot become the reviewed pull request by accident. When these fields change, re-record every response that includes a task and update its CLI JSON expectation. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns their meaning.

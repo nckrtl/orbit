@@ -1091,7 +1091,7 @@ export interface paths {
         put?: never;
         /**
          * Deploy an Instance
-         * @description Deploy the configured branch of a production Instance.
+         * @description Deploy a production Instance or an app-dev default Instance.
          */
         post: operations["instance-deploy"];
         delete?: never;
@@ -1157,7 +1157,7 @@ export interface paths {
         };
         /**
          * instance:deployment:list
-         * @description List recorded deployment history for a production Instance, newest first.
+         * @description List recorded Instance deployment history, newest first.
          */
         get: operations["instance-deployment-list"];
         put?: never;
@@ -2118,6 +2118,54 @@ export interface paths {
          * @description Update a project.
          */
         patch: operations["project-update"];
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/dev-deploy-steps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List development deploy steps
+         * @description List a Project's development deploy steps.
+         */
+        get: operations["project-dev-deploy-step-list"];
+        put?: never;
+        /**
+         * Create a development deploy step
+         * @description Record one named development deploy step on a Project.
+         */
+        post: operations["project-dev-deploy-step-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/projects/{project}/dev-deploy-steps/{step}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a development deploy step
+         * @description Remove one named development deploy step.
+         */
+        delete: operations["project-dev-deploy-step-destroy"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a development deploy step
+         * @description Change one named development deploy step.
+         */
+        patch: operations["project-dev-deploy-step-update"];
         trace?: never;
     };
     "/api/v1/projects/{project}/excluded-nodes": {
@@ -3207,6 +3255,13 @@ export interface components {
                 request_id?: string;
             };
         };
+        DevelopmentDeployStep: {
+            name: string;
+            command: string;
+            timeout_seconds: number;
+            required: boolean;
+        };
+        DevelopmentDeploySteps: components["schemas"]["DevelopmentDeployStep"][];
         Activity: {
             id?: number;
             request_id?: string;
@@ -3365,6 +3420,8 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            seed_path?: string | null;
+            seed_commit?: string | null;
             annotator_port?: number | null;
             annotator_url?: string | null;
         };
@@ -12017,6 +12074,269 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["Project"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-dev-deploy-step-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentDeploySteps"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-dev-deploy-step-create": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Step name */
+                    name: string;
+                    /** @description Nonempty UTF-8 shell command, at most 16 KiB, without NUL bytes. */
+                    command: string;
+                    /**
+                     * @description Step timeout in seconds.
+                     * @default 300
+                     */
+                    timeout_seconds?: number;
+                    /**
+                     * @description true for required or false for best effort
+                     * @default true
+                     */
+                    required?: boolean;
+                    /** @description Place before this step */
+                    before?: string;
+                    /** @description Place after this step */
+                    after?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentDeployStep"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-dev-deploy-step-destroy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Deploy step name. */
+                step: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentDeployStep"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "project-dev-deploy-step-update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Project ID. */
+                project: number;
+                /** @description Deploy step name. */
+                step: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Nonempty UTF-8 shell command, at most 16 KiB, without NUL bytes. */
+                    command?: string;
+                    /** @description Step timeout in seconds. */
+                    timeout_seconds?: number;
+                    /** @description true for required or false for best effort */
+                    required?: boolean;
+                    /** @description Place before this step */
+                    before?: string;
+                    /** @description Place after this step */
+                    after?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DevelopmentDeployStep"];
                         meta: components["schemas"]["Meta"];
                     };
                 };

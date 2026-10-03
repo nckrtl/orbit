@@ -23,6 +23,7 @@ final readonly class DocsImpact
         'tasks:tick' => 'docs/reference/tasks.md',
         'annotations:dispatch' => 'docs/reference/agent-annotation.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity.mdx',
+        'orbit:deploy-development-defaults' => 'docs/reference/deployments.md',
         'orbit:agent-view' => 'docs/reference/node-agent.md',
         'orbit:caddy-build' => 'docs/reference/gateway-trust.md',
         'orbit:tasks:jev-report' => 'docs/reference/tasks.md',

@@ -64,6 +64,39 @@ it('serves a nested Web root while protecting source and preserving shared paren
     }
 });
 
+it('grants a default release access without exposing shared Git metadata or the environment', function (bool $selected): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+    $root = development_caddy_access_fixture();
+    try {
+        $home = "$root/checkout";
+        new Process(['git', '-C', $home, 'add', '.'])->mustRun();
+        new Process(['git', '-C', $home, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'initial'])->mustRun();
+        new Process(['git', '-C', $home, 'worktree', 'add', '--detach', "$home/releases/initial", 'HEAD'])->mustRun();
+        mkdir("$home/.git/orbit-development-releases", 0700);
+        file_put_contents("$home/.git/orbit-development-releases/identity", 'fixture');
+        file_put_contents("$home/.git/orbit-development-releases/release-initial", 'fixture:initial');
+        symlink('releases/initial', "$home/current");
+        $checkout = $selected ? "$home/current" : "$home/releases/initial";
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([development_caddy_access_site($checkout, 'web/site')]));
+        $gitMode = fileperms("$home/.git") & 0o777;
+        new Process($command->arguments)->setInput($command->input)->mustRun();
+        new Process($command->arguments)->setInput($command->input)->mustRun();
+
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$home/current/web/site/index.html"])->mustRun()->getOutput())->toBe('first page');
+        foreach (["$home/.git/config", "$home/.git/worktrees/initial/HEAD", "$home/current/.env", "$home/current/source.txt"] as $private) {
+            expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', $private])->run())->not->toBe(0);
+        }
+        clearstatcache();
+        expect(fileperms("$home/.git") & 0o777)->toBe($gitMode);
+        // Denying Caddy traversal must not deny the Node user its shared repository.
+        expect(new Process(['git', '-C', "$home/current", 'rev-parse', '--git-common-dir'])->mustRun()->getOutput())->not->toBe('');
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with(['selected current' => true, 'candidate before activation' => false]);
+
 it('refuses unsafe Web root links before changing file access', function (string $kind): void {
     if (LinuxHost::delegate($this)) {
         return;
@@ -144,7 +177,7 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
     }
 });
 
-it('restores prior ACLs or retains its snapshot when recovery also fails', function (bool $failRecovery): void {
+it('restores checkout and shared Git ACLs or retains its snapshot when recovery also fails', function (bool $failRecovery, bool $linked): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -152,6 +185,13 @@ it('restores prior ACLs or retains its snapshot when recovery also fails', funct
     $root = development_caddy_access_fixture();
 
     try {
+        $checkout = "$root/checkout";
+        if ($linked) {
+            new Process(['git', '-C', $checkout, 'add', '.'])->mustRun();
+            new Process(['git', '-C', $checkout, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'initial'])->mustRun();
+            $checkout = "$root/checkout/releases/initial";
+            new Process(['git', '-C', "$root/checkout", 'worktree', 'add', '--detach', $checkout, 'HEAD'])->mustRun();
+        }
         mkdir("$root/bin");
         file_put_contents("$root/bin/setfacl", <<<'BASH'
             #!/bin/bash
@@ -173,7 +213,7 @@ it('restores prior ACLs or retains its snapshot when recovery also fails', funct
         }
         $before = new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput();
         $command = new DevelopmentCaddyAccessCommand()->command(collect([
-            development_caddy_access_site("$root/checkout", 'web/site'),
+            development_caddy_access_site($checkout, 'web/site'),
         ]));
 
         expect(new Process($command->arguments, env: ['PATH' => "$root/bin:".getenv('PATH'), 'TMPDIR' => $root])
@@ -189,7 +229,12 @@ it('restores prior ACLs or retains its snapshot when recovery also fails', funct
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-})->with([false, true]);
+})->with([
+    'checkout recovery' => [false, false],
+    'checkout failed recovery' => [true, false],
+    'shared Git recovery' => [false, true],
+    'shared Git failed recovery' => [true, true],
+]);
 
 function development_caddy_access_fixture(): string
 {

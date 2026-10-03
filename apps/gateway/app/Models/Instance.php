@@ -66,6 +66,10 @@ use Illuminate\Support\Carbon;
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
  * @property Carbon|null $registration_completed_at
+ * @property bool $seed_selected
+ * @property string|null $seed_path
+ * @property string|null $seed_commit
+ * @property string|null $seed_repository
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
  * @property bool|null $source_is_laravel
@@ -73,6 +77,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $failed_step
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
+ * @property bool $development_release_layout
  * @property bool|null $task_workspace_routed
  * @property InstanceState $status
  * @property Carbon|null $created_at
@@ -153,6 +158,10 @@ final class Instance extends Model
         'registration_source_inode',
         'registration_completed_at',
         'starting_commit',
+        'seed_selected',
+        'seed_path',
+        'seed_commit',
+        'seed_repository',
         'selected_php_version',
         'source_is_laravel',
         'provisioning_step',
@@ -161,6 +170,7 @@ final class Instance extends Model
         'status',
         'error_code',
         'task_workspace_routed',
+        'development_release_layout',
     ];
 
     public const string MorphAlias = 'instance';
@@ -394,6 +404,8 @@ final class Instance extends Model
             'runtime_definitions_captured_at' => 'immutable_datetime',
             'source_is_laravel' => 'boolean',
             'task_workspace_routed' => 'boolean',
+            'development_release_layout' => 'boolean',
+            'seed_selected' => 'boolean',
             'status' => InstanceState::class,
         ];
     }

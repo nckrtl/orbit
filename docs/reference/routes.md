@@ -25,6 +25,8 @@ A Route has one of three kinds. The kind never changes.
 
 Each active Instance of a web-serving Project has exactly one Route. An Instance can be without a Route only while Orbit creates it, after a failed activation, or while Orbit removes it.
 
+A visitable development `default` serves its web root through `<checkout>/current` after release migration. Caddy resolves that link for PHP requests, so a deployment selects new code without changing the Route domain. Defaults without a Route are also kept current. [Development defaults](/reference/deployments#development-defaults) describes migration, atomic activation, and failure retention.
+
 ## Route record
 
 The Gateway stores these fields for each Route. `route:show` returns them.

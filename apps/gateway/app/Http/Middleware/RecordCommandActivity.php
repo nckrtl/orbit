@@ -589,6 +589,9 @@ final readonly class RecordCommandActivity
 
         if (
             in_array($command, [
+                'project:dev-deploy-step:create',
+                'project:dev-deploy-step:update',
+                'project:dev-deploy-step:destroy',
                 'instance:deploy-step:create',
                 'instance:deploy-step:update',
                 'instance:deploy-step:destroy',

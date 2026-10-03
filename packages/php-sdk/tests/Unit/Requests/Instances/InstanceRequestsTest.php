@@ -406,6 +406,8 @@ function instance_gateway_data(): array
         'selected_branch' => 'main',
         'branch_override' => null,
         'starting_commit' => 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        'seed_path' => null,
+        'seed_commit' => null,
         'detached' => false,
         'status' => 'active',
         'route' => instance_gateway_route_data(),

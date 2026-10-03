@@ -28,6 +28,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
+        $instance->refresh();
         $script = file_get_contents(resource_path('tasks/check'));
         if ($script === false) {
             throw new TaskCheckException('The check script is missing from the Gateway.');
@@ -138,10 +139,10 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             // The check runs as the managed user, so host-dependent tests keep its sudo, ACL and caddy access.
             // It shares what it creates with the task worker before it reports a result.
             $worker = TaskWorkerUser::name() ?? '';
-            $prefix = "checkout=\$1\nworker=".escapeshellarg($worker)."\n".<<<'BASH'
-                dir="$checkout/.git/orbit"
+            $prefix = "checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->seed_path ?? '')."\nseed_commit=".escapeshellarg($instance->seed_commit ?? '')."\n".<<<'BASH'
+                dir="$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir)/orbit"
                 check_python() {
-                    ORBIT_TASK_WORKER_USER="$worker" python3 "$@"
+                    ORBIT_TASK_WORKER_USER="$worker" ORBIT_SEED_PATH="$seed_path" ORBIT_SEED_COMMIT="$seed_commit" python3 "$@"
                 }
 
                 BASH;

@@ -35,11 +35,19 @@ final readonly class DeployInstanceAction
         private ProductionPhpRuntimeManager $runtime,
         private InstantiateProjectRuntimeDefinitionsAction $definitions,
         private CommandDeadline $deadline,
+        private ?DeployDefaultInstanceAction $development = null,
     ) {}
 
     public function execute(Instance $instance, ?DeploymentRequest $request = null): DeploymentResult
     {
         $request ??= DeploymentRequest::withoutOutput();
+        $instance->refresh();
+        if ($instance->placedOnAppDev()) {
+            $result = ($this->development ?? app(DeployDefaultInstanceAction::class))->execute($instance, $request);
+            assert($result instanceof DeploymentResult);
+
+            return $result;
+        }
 
         try {
             $config = $this->configs->resolve($instance->refresh());

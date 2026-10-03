@@ -470,7 +470,7 @@ final readonly class DevelopmentSiteRepository
     ): DevelopmentSite {
         $checkoutPath = $instance->placedOnAppProd()
             ? "{$instance->production_home}/current"
-            : $instance->checkout_path;
+            : ($instance->development_release_layout ? $instance->checkout_path.'/current' : $instance->checkout_path);
 
         return new DevelopmentSite(
             nodeId: $instance->node_id,
@@ -557,7 +557,7 @@ final readonly class DevelopmentSiteRepository
             scope: "route-{$route->id}-router",
             checkoutPath: $localInstance->placedOnAppProd()
                 ? "{$localInstance->production_home}/current"
-                : ($localInstance->checkout_path ?? ''),
+                : ($localInstance->development_release_layout ? $localInstance->checkout_path.'/current' : ($localInstance->checkout_path ?? '')),
             documentRoot: $localInstance->root ?? $localInstance->project->root ?? '',
             phpVersion: $localInstance->selected_php_version,
             domain: $route->domain,

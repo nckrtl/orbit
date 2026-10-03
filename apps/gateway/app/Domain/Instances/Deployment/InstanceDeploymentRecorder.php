@@ -29,7 +29,9 @@ final readonly class InstanceDeploymentRecorder
     {
         $deployment = InstanceDeployment::query()->create([
             'instance_id' => $instance->id,
-            'branch' => $instance->deployment_branch ?? $instance->branch,
+            'branch' => $instance->placedOnAppDev() && $instance->name === 'default'
+                ? $instance->project->default_branch
+                : ($instance->deployment_branch ?? $instance->branch),
             'started_at' => Carbon::now(),
             'status' => 'running',
             'triggered_by' => $triggeredBy,

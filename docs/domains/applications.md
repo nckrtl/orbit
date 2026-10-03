@@ -77,25 +77,11 @@ The Gateway refuses these requests before it changes anything:
 
 ### Dependency copy
 
-Installing dependencies is the slowest part of a new checkout. When the Project has an active Instance named `default` on the same Node, every other new development Instance gets a copy of that Instance's `vendor` and `node_modules` directories. Orbit makes the copy after the source is ready and before the database clone and the setup steps.
+New Instances start from the successful development release of `default` on the same Node. Orbit creates a linked worktree at that release's commit. The Instances API exposes `seed_path` and `seed_commit` on `default`, so external callers can create their own linked worktrees at the same commit before registration.
 
-Orbit copies with `cp -a --reflink=auto`. On a filesystem with block cloning, such as XFS, btrfs, or OpenZFS 2.2 or later with block cloning enabled, the copy shares the data blocks of the `default` Instance. It takes seconds and uses almost no extra disk space. A file gets its own blocks only when one of the two Instances changes it, so neither Instance sees the other's changes. On a filesystem without block cloning, such as ext4, `cp` makes a normal copy instead.
+The Project's [setup steps](/reference/instance-setup) own dependency copying. They receive `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT` and can reflink all their dependency and cache folders, including nested monorepo projects. Copy only disposable folders that do not hold Instance-specific configuration, absolute links or runtime state. Do not copy `.env`, logs, databases, `public/hot` or configuration caches. A linked worktree shares Git history, never the seed's working files.
 
-Orbit copies only these two directories. The rest of the checkout comes from the clone, so the new Instance never gets the `.env`, caches, logs, or runtime files of the `default` Instance. Symlinks inside the directories stay symlinks. Composer and npm write relative links, so a link to a package inside the repository points into the new checkout.
-
-Orbit skips a directory in these cases:
-
-- The `default` Instance does not have it, for example after the [dependency prune](/reference/app-dev-runtime-hibernation#dependency-prune).
-- It is a symlink in the `default` Instance.
-- The new checkout already has it, for example because the repository commits `vendor`.
-
-Orbit copies each directory to a staging path next to the checkout, `.orbit-copy.<instance>.<directory>`, and then renames it into place. So a directory in the new checkout is complete or absent. During the copy, Orbit holds the Process admission lock of the `default` Instance. The dependency prune and its restore wait for that lock for up to 30 seconds. Then they report `process.operation_busy`: the hibernation sweep tries again on its next pass, and waking the `default` Instance succeeds once the copy ends. The copy may take 120 seconds on the Node, and then `timeout` stops it.
-
-A failed or stopped copy removes its staging path, and creation continues without the missing directories. The Gateway log gets a warning with the code `instance.dependency_copy_failed`, both Instance IDs, the exit code, and the end of the error output.
-
-The [setup steps](/reference/instance-setup) still run. `composer install` and `npm install` compare the copied directories with the lock files of the new branch and change only what differs. A setup step that deletes the directory first, such as `npm ci`, discards the copy and installs everything again.
-
-[Task workspaces](/reference/tasks#shared-instance) get the same copy.
+Use `cp -a --reflink=auto` for an ordinary-copy fallback on filesystems without block cloning, or `--reflink=always` when a Project requires shared blocks. When no release exists, Orbit creates an independent clone; the seed variables are empty and setup installs from lock files. Project setup steps replace the automatic copy of root `vendor` and `node_modules`.
 
 ### Database clone
 
@@ -190,7 +176,7 @@ After the source is ready, the Gateway continues in this order:
 4. It marks the Instance and Route active.
 5. It runs the Project [setup steps](/reference/instance-setup).
 
-An Instance without a Route skips steps 2 and 3.
+An Instance without a Route skips steps 2 and 3. A `monorepo` Instance without a Route also skips application metadata inspection: its checkout can contain several Composer projects, so Orbit records no PHP version and a false Laravel flag rather than treating the repository root as one application. It becomes `active`, runs setup, and stays healthy without a visitable endpoint. This includes the Orbit Project's `default` Instance. An identical retry of a create stopped at `source-classification` resumes from the resolved source.
 
 For an Instance with a Route, a retry after step 1 inspects the source again. If the PHP version or the Laravel flag changed, the retry returns `app-dev.source_evidence_changed`. For an Instance without a Route, a retry records the new profile.
 
@@ -272,11 +258,7 @@ Laravel uses `APP_URL` to build links outside a request. When Orbit changes a do
 
 ### Copy dependencies, not the checkout
 
-A new Instance needs the slow part of the `default` Instance, its installed dependencies, and nothing that names the `default` Instance. A copy of the whole checkout would bring its `.env`, configuration cache, `public/hot`, logs, and absolute links. Each of those would need a rewrite before the copy is safe to run. The clone brings only tracked files, and the dependency directories hold relative paths, so nothing needs a rewrite. The setup steps run after the copy, so every Instance has one creation path, and the copy only makes the installs fast.
-
-An opt-in flag was rejected: the copy is always correct and always faster. A ZFS dataset clone per Instance was rejected: it works only on ZFS, needs a dataset and permissions per Instance, and saves only seconds over a reflink.
-
-A reflink of a SQLite file that the `default` Instance is writing could pair a database file and a WAL file from different moments. The write lock makes the pair consistent. Readers continue, and writers wait only while Orbit takes the reflink.
+A Project knows its own dependency and cache folders. Copying only the root missed the dependency trees of nested projects. Project setup steps can copy the matching folders from a known release and then install incrementally. Copying a whole checkout is rejected because it brings Instance-specific configuration and runtime state. A ZFS dataset clone per Instance is rejected because it needs per-Instance datasets and privileges; ordinary reflinks work within the existing storage layout.
 
 ### One application model
 

@@ -10,6 +10,9 @@ use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
@@ -21,6 +24,7 @@ use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -86,6 +90,69 @@ it('emits a source preflight that rejects foreign-owned Composer metadata', func
         $files->deleteDirectory($directory);
     }
 });
+
+it('does not classify application metadata for an unrouted monorepo default', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-monorepo-default-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    // A monorepo's root metadata need not belong to a single managed application.
+    file_put_contents($directory.'/composer.json', '{"scripts":{"check":"composer check --working-dir=apps/gateway"}}');
+
+    try {
+        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
+        $instance->project->update(['type' => ProjectType::Monorepo]);
+        $instance->update(['name' => 'default']);
+        try {
+            $profile = $configurator->inspect($instance);
+        } catch (RuntimeConvergenceException $exception) {
+            expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe')
+                ->and(orb127_run_laravel_command($ssh->commands[0])->getOutput())->toBe("UNSAFE\n");
+
+            throw $exception;
+        }
+
+        expect($profile->phpVersion)->toBeNull()
+            ->and($profile->laravel)->toBeFalse()
+            ->and($ssh->commands)->toBe([]);
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+});
+
+it('retains metadata safety checks for a monorepo with a Route', function (RouteStatus $status): void {
+    $directory = sys_get_temp_dir().'/orbit-monorepo-routed-'.Str::uuid();
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($directory);
+    file_put_contents($directory.'/composer.json', '{}');
+
+    try {
+        [$configurator, $ssh, $instance] = orb127_laravel_configurator($directory, 'nobody');
+        $instance->project->update(['type' => ProjectType::Monorepo]);
+        $route = Route::query()->create([
+            'project_id' => $instance->project_id,
+            'node_id' => $instance->node_id,
+            'domain' => 'monorepo.test',
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update([
+            'status' => $status,
+            'failed_step' => $status === RouteStatus::Failed ? 'source-classification' : null,
+            'error_code' => $status === RouteStatus::Failed ? 'app-dev.source_metadata_unsafe' : null,
+        ]);
+
+        expect(fn () => $configurator->inspect($instance))
+            ->toThrow(function (RuntimeConvergenceException $exception): void {
+                expect($exception->errorCode)->toBe('app-dev.source_metadata_unsafe');
+            });
+        expect($ssh->commands)->toHaveCount(1)
+            ->and(orb127_run_laravel_command($ssh->commands[0])->getOutput())->toBe("UNSAFE\n");
+    } finally {
+        $files->deleteDirectory($directory);
+    }
+})->with([RouteStatus::Pending, RouteStatus::Active, RouteStatus::Failed]);
 
 it('refuses malformed Composer metadata and conflicting Laravel declarations', function (): void {
     $classifier = new ComposerSourceClassifier(new InstancePhpVersionCatalog);

@@ -11,7 +11,7 @@ namespace App\Domain\Tasks;
  */
 final readonly class TaskReviewContext
 {
-    public const string Path = '.git/orbit/context.md';
+    public const string Path = '$(git rev-parse --git-path orbit)/context.md';
 
     /**
      * @param  list<TaskDeliverable>  $deliverables

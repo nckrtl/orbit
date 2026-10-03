@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks;
 
-use App\Actions\Instances\CopyInstanceDependenciesAction;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
@@ -52,7 +51,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
-        private ?CopyInstanceDependenciesAction $dependencies = null,
         private ?TaskWorkspaceTopology $topology = null,
     ) {}
 
@@ -168,8 +166,6 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             $instance->node_id,
             function () use ($instance, $visitable): Instance {
                 $resolved = $this->prepareSource($instance);
-                ($this->dependencies ?? app(CopyInstanceDependenciesAction::class))->execute($resolved);
-                // Archive copies retain source ACLs, including directories left by a failed copy.
                 $this->source->inspectPrepared($resolved);
 
                 if (! $visitable) {

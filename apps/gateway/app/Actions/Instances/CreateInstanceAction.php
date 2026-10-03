@@ -72,7 +72,6 @@ final readonly class CreateInstanceAction
         private ?CommandDeadline $deadline = null,
         private ?InstanceDatabaseClonePlanner $clonePlanner = null,
         private ?CloneInstanceDatabaseAction $databaseClone = null,
-        private ?CopyInstanceDependenciesAction $dependencies = null,
     ) {}
 
     /** @return array{instance: Instance, created: bool} */
@@ -175,8 +174,6 @@ final readonly class CreateInstanceAction
                         }
 
                         if (! $wasActive || $resumesClone) {
-                            ($this->dependencies ?? app(CopyInstanceDependenciesAction::class))->execute($result);
-
                             if ($clonePlan instanceof InstanceDatabaseClonePlan) {
                                 $this->cloneDatabase($result, $clonePlan);
                             }
@@ -462,7 +459,7 @@ final readonly class CreateInstanceAction
 
         if (
             $requestedNode->id !== $recordedNode->id
-            || $instance->source_layout !== InstanceSourceLayout::Checkout->value
+            || ! ($instance->source_layout === InstanceSourceLayout::Checkout->value || ($instance->source_layout === InstanceSourceLayout::Worktree->value && $instance->seed_repository !== null))
             || $instance->root !== $root
             || $instance->branch_override !== $branchOverride
         ) {
@@ -492,7 +489,7 @@ final readonly class CreateInstanceAction
 
     private function assertPersistedOwnership(Instance $instance): void
     {
-        if ($instance->source_layout !== InstanceSourceLayout::Checkout->value) {
+        if (! ($instance->source_layout === InstanceSourceLayout::Checkout->value || ($instance->source_layout === InstanceSourceLayout::Worktree->value && $instance->seed_repository !== null))) {
             throw $this->conflict('instance.source_layout_conflict', 'Instance source ownership is invalid.');
         }
     }

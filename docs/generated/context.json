@@ -760,11 +760,9 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
                 "Route",
-                "Task",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1108,10 +1106,11 @@
         },
         {
             "path": "docs/reference/deployments.md",
-            "title": "Production release layout",
+            "title": "Instance releases",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",
@@ -1124,7 +1123,9 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1479,7 +1480,11 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",

@@ -21,12 +21,40 @@ class Metadata:
             raise ValueError('The checkout must be an absolute path without parent traversal.')
         self.stack = contextlib.ExitStack()
         self.anchors = []
+        self.pointer = None
         parent = self.keep(os.open('/', DIRECTORY_FLAGS))
         for component in filter(None, checkout.split('/')):
             parent = self.directory(parent, component, owned=False)
         self.checkout = parent
         self.require_owner(parent)
-        self.git = self.directory(parent, '.git')
+        details = os.stat('.git', dir_fd=parent, follow_symlinks=False)
+        if stat.S_ISREG(details.st_mode):
+            if details.st_uid != os.geteuid() or details.st_nlink != 1:
+                raise PermissionError('Unsafe linked worktree pointer owner.')
+            self.pointer = (parent, details.st_dev, details.st_ino)
+            pointer = self.read(parent, '.git').decode().strip()
+            if not pointer.startswith('gitdir: /'):
+                raise PermissionError('Unsafe linked worktree pointer.')
+            git_path = pointer[len('gitdir: '):]
+            if '..' in git_path.split('/'):
+                raise PermissionError('Unsafe linked worktree path.')
+            git_parent = self.keep(os.open('/', DIRECTORY_FLAGS))
+            for component in filter(None, git_path.split('/')):
+                git_parent = self.directory(git_parent, component, owned=False)
+            self.require_owner(git_parent)
+            if self.read(git_parent, 'gitdir') != (checkout + '/.git\n').encode():
+                raise PermissionError('Linked worktree does not point back to this checkout.')
+            self.git = git_parent
+            if '/worktrees/' not in git_path or self.read(git_parent, 'commondir') != b'../..\n':
+                raise PermissionError('Unsafe linked worktree common directory.')
+            common_path = git_path.rsplit('/worktrees/', 1)[0]
+            self.common = self.keep(os.open('/', DIRECTORY_FLAGS))
+            for component in filter(None, common_path.split('/')):
+                self.common = self.directory(self.common, component, owned=False)
+            self.require_owner(self.common)
+        else:
+            self.git = self.directory(parent, '.git')
+            self.common = self.git
 
     def keep(self, descriptor):
         self.stack.callback(os.close, descriptor)
@@ -50,6 +78,11 @@ class Metadata:
         return descriptor
 
     def verify(self):
+        if self.pointer is not None:
+            parent, device, inode = self.pointer
+            current = os.stat('.git', dir_fd=parent, follow_symlinks=False)
+            if not stat.S_ISREG(current.st_mode) or (current.st_dev, current.st_ino) != (device, inode):
+                raise PermissionError('The worktree pointer was replaced.')
         for parent, name, descriptor in self.anchors:
             current = os.stat(name, dir_fd=parent, follow_symlinks=False)
             pinned = os.fstat(descriptor)
@@ -134,7 +167,7 @@ def perform(checkout, operation, payload):
         if operation == 'mcp':
             if metadata.exists(metadata.checkout, '.mcp.json'):
                 return 'present\n'
-            info = metadata.directory(metadata.git, 'info', create=True)
+            info = metadata.directory(metadata.common, 'info', create=True)
             exclude = metadata.read(info, 'exclude') or b''
             if b'/.mcp.json' not in exclude.splitlines():
                 exclude += (b'\n' if exclude and not exclude.endswith(b'\n') else b'') + b'/.mcp.json\n'

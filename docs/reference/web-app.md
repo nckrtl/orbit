@@ -14,6 +14,8 @@ covers:
 
 The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app.
 
+The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
+
 The generated Instance response includes nullable `annotator_port` and `annotator_url` fields. The URL points to `/__orbit/annotator` on the Instance Route when a port and Route exist. The generated Process create description also lists the `annotator` preset. These API schema fields add no web UI control; see [Annotator Process](/reference/agentation#annotator-process).
 
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) use the existing subtask `fixup_problem` and `brief` fields. Regenerating the API types confirms that feedback consumption adds no response field or web merge control. Source provenance is task data, not a rendered GitHub instruction or permission to merge.

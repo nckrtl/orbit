@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Instances;
 
+use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Data\Nodes\NodeIdentityData;
 use App\Data\Projects\ProjectIdentityData;
 use App\Data\Routes\RouteData;
@@ -46,12 +47,17 @@ final class InstanceData extends Data
         /** @var list<DeploymentStepData> */
         public array $deploySteps = [],
         public ?int $vitePort = null,
+        public ?string $seedPath = null,
+        public ?string $seedCommit = null,
         public ?int $annotatorPort = null,
         public ?string $annotatorUrl = null,
     ) {}
 
     public static function fromModel(Instance $instance): self
     {
+        if ($instance->name === 'default' && $instance->development_release_layout) {
+            app(SelectInstanceSeedAction::class)->execute($instance);
+        }
         $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps']);
         $route = $instance->authoritativeRoute() ?? $instance->routes->first();
         $removal = InstanceRemoval::query()
@@ -69,6 +75,8 @@ final class InstanceData extends Data
             project: ProjectIdentityData::fromModel($instance->project),
             node: NodeIdentityData::fromModel($instance->node),
             vitePort: $instance->vite_port,
+            seedPath: $instance->seed_path,
+            seedCommit: $instance->seed_commit,
             annotatorPort: $instance->annotator_port,
             annotatorUrl: $instance->annotator_port !== null && $route instanceof Route ? AnnotatorEndpoint::origin($route->domain) : null,
             name: $instance->name,

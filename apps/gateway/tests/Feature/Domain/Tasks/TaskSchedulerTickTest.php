@@ -4511,7 +4511,7 @@ it('does not apply an unbound legacy receipt and reissues the bound turn command
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($receipts->preparedThreads)->toBe([$acting])
         ->and($text)->toContain('Orbit bound this turn to its thread.')
-        ->and($text)->toContain('.git/orbit/turn --thread='.$acting.' --outcome=');
+        ->and($text)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread='.$acting.' --outcome=');
 });
 
 it('applies a receipt that names the acting reviewer', function (): void {
