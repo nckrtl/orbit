@@ -1,6 +1,6 @@
 ---
 title: "Topology snapshot"
-description: "How the harness builds, refreshes, and recovers the shared three-Node topology snapshot."
+description: "How the harness builds, refreshes, and recovers the shared topology snapshot with three VMs and an operator container."
 covers:
   - bin/e2e-topology-snapshot
   - apps/e2e/resources/prepared-state.json
@@ -17,15 +17,24 @@ This page is for the operator who maintains Orbit's one topology snapshot. Every
 
 ## Identity
 
-A topology snapshot generation is a coordinated set of three Incus snapshots, one on each VM. The primary checkout owns it and keeps its VMs stopped. It records the generation under `<primary>/.e2e/topology-snapshot/`: `promoted.json`, `generations/<id>.json`, `corrupt.json` after a failed rollback, and the recovery journal. The Nodes carry the [registered profile](/reference/incus-topologies#registered-profile).
+A topology snapshot generation is a coordinated set of four Incus snapshots: one on each of the three workload VMs and one on the operator system container. The primary checkout owns it and keeps every guest stopped. It records the generation under `<primary>/.e2e/topology-snapshot/`: `promoted.json`, `generations/<id>.json`, `corrupt.json` after a failed rollback, and the recovery journal. The Nodes carry the [registered profile](/reference/incus-topologies#registered-profile).
 
 | Resource | Name |
 | --- | --- |
 | Network | `oe-topo-snap`, slot 1, `10.232.1.0/24` |
 | VMs | `orbit-e2e-topology-snapshot-gateway`, `-app-dev`, and `-app-prod` |
+| System container | `orbit-e2e-topology-snapshot-operator` |
 | Base image | `orbit-base-ubuntu-26.04-runtime` |
 | Generation ID | The first 12 characters of the main SHA, a hyphen, and the first 12 characters of the prepared fingerprint |
-| Snapshot | `main-<generation-id>` on every VM |
+| Snapshot | `main-<generation-id>` on every guest |
+
+### Operator container
+
+Every topology includes the small `operator` system container from the snapshot. It is a roleless Node registered with the topology's Gateway, with a Gateway access grant, its own WireGuard peer, and trust in the topology's Orbit CA. It has the tooling to run `vp dev` in `apps/web`. It hosts no workload Instance and receives no workload role.
+
+Discovery acquisition mounts the task worktree live in the operator at `/home/orbit/orbit`, as it does in gateway and app-dev. It aligns the operator's network identity and WireGuard endpoint with the acquired Gateway, and pins its Gateway URL and trusted CA to that topology. Missing operator configuration is a readiness failure, not permission to use the real fleet. [Web session](/reference/incus-topologies#web-session) defines the dev-server and publication lifecycle.
+
+After deployment of this change, the operator must rebuild the shared topology snapshot on beast to include this container. The new contract requires a generation containing all three VMs and the operator container. Use the ownership-checked [rebuild and recovery](#rebuild-and-recover) commands for the snapshot's actual state; do not manually delete shared resources. The task's disposable environment does not authorize this shared rebuild.
 
 ## Prepared fingerprint
 
@@ -39,10 +48,10 @@ Every command accepts `--json`. `--main-sha=SHA` must be the full SHA of the cle
 
 | Command | What it does |
 | --- | --- |
-| `status` | Prints the promoted generation, `missing`, or `stale` with a `recovery` command. It fails when a VM is not stopped. |
+| `status` | Prints the promoted generation, `missing`, or `stale` with a `recovery` command. It fails when a guest is not stopped. |
 | `fingerprint [--main-sha=SHA]` | Computes the prepared fingerprint of that commit. The default is `HEAD`. |
 | `refresh --main-sha=SHA [--allow-cold]` | Refreshes the generation in place when the fingerprint changed. `--allow-cold` permits only the first build. |
-| `restore` | Restores the promoted snapshots, leaves the VMs stopped, and clears `corrupt.json` |
+| `restore` | Restores the promoted snapshots, leaves every guest stopped, and clears `corrupt.json` |
 | `rebuild --main-sha=SHA` | Forgets stale manifests and builds from the base image, when every snapshot resource is absent |
 | `recover-legacy --main-sha=SHA` | Proves ownership of the present snapshot resources, deletes them, and builds again |
 | `register [--force]` | Registers the primary checkout for its origin, so task workspace clones can [bridge](/reference/incus-topologies#task-workspace-clones) to it. `--force` replaces a live registration. |
@@ -53,11 +62,11 @@ Every command accepts `--json`. `--main-sha=SHA` must be the full SHA of the cle
 
 `refresh` keeps the snapshot current with `main`. Run it from the primary checkout at the requested SHA, with a clean tree. The result is `unchanged`, `promoted`, or `failed`.
 
-When the fingerprint of that commit equals the promoted one, `refresh` checks that the snapshots exist and that the VMs are stopped. Then it reports `unchanged` and starts nothing. Otherwise it restores the promoted snapshots, starts the VMs, and synchronizes `main`. It converges and verifies, stops the VMs, takes the `main-<generation-id>` snapshots, and promotes the new generation. It keeps the preceding generation and every generation that a live topology still uses, and deletes older ones.
+When the fingerprint of that commit equals the promoted one, `refresh` checks that the snapshots exist and that every guest is stopped. Then it reports `unchanged` and starts nothing. Otherwise it restores the promoted snapshots, starts the guests, and synchronizes `main`. It converges and verifies, stops the guests, takes the `main-<generation-id>` snapshots, and promotes the new generation. It keeps the preceding generation and every generation that a live topology still uses, and deletes older ones.
 
-A failed refresh keeps the old generation promoted. It stops and restores the VMs and keeps the failure evidence. A failed rollback writes `corrupt.json`, and `restore` or `rebuild` must run next. A change to the cold epoch or the base image alias fails with a request for a cold rebuild.
+A failed refresh keeps the old generation promoted. It stops and restores every guest and keeps the failure evidence. A failed rollback writes `corrupt.json`, and `restore` or `rebuild` must run next. A change to the cold epoch or the base image alias fails with a request for a cold rebuild.
 
-`--allow-cold` permits a first build only when no promoted generation, `corrupt.json`, snapshot network, or snapshot VM exists. It never replaces a promoted generation.
+`--allow-cold` permits a first build only when no promoted generation, `corrupt.json`, snapshot network, or snapshot guest exists. It never replaces a promoted generation.
 
 ### Convergence
 
@@ -71,6 +80,7 @@ Convergence runs every Orbit step that a fresh topology needs, in this order. Th
 | `authorize.gateway-ssh`, `retarget.vpn` | Authorizes Gateway SSH on the workload Nodes and points their VPN at the Gateway |
 | `provision.app-dev`, `provision.app-prod` | Adds the workload Nodes and their roles through the Gateway |
 | `authorize.app-dev-operator`, `configure.app-dev-cli` | Grants app-dev access to the Gateway and configures its CLI |
+| Operator preparation | Registers the operator as a roleless Node, grants Gateway access, configures its WireGuard peer and topology CA trust, and prepares its CLI and web tooling |
 | `create.sample-resources` | Creates or reuses the sample Project, Instances, and Route |
 | `converge.metrics`, `reproject.product-state`, `refresh.metrics-publication` | Converges Metrics and runs `node:role:add --converge` for every app role, so every projection matches the checkout |
 | `await.instance-api-readiness` | Waits until `instance:list --json` answers on app-dev |
@@ -122,23 +132,25 @@ A list response may use its CLI collection name and the envelope fields `data`, 
 
 ### Readiness
 
-Verification runs a fixed set of probes on the Nodes. The Caddy probes read only the live Caddyfile and fail when no Node Caddy build wrote it. The production probe requires exactly one copy of each production site. The `metrics.orbit` probe requires the client guard that the build writes after the `bind` line. The guard allows the stored fleet VPN subnet, or `10.44.0.0/24` when none is stored. Each active Instance of a `laravel-app` Project must have exactly one Route, and every other active Instance none.
+Verification runs a fixed set of probes on the Nodes. It also checks that the operator container exists, remains roleless, has its Gateway access grant and WireGuard peer, trusts the topology CA, and can reach the selected Gateway through its own topology configuration.
+
+The Caddy probes read only the live Caddyfile and fail when no Node Caddy build wrote it. The production probe requires exactly one copy of each production site. The `metrics.orbit` probe requires the client guard that the build writes after the `bind` line. The guard allows the stored fleet VPN subnet, or `10.44.0.0/24` when none is stored. Each active Instance of a `laravel-app` Project must have exactly one Route, and every other active Instance none.
 
 ## Rebuild and recover
 
 ### Stale manifests
 
-A manifest that names snapshots or VMs that the host does not hold is stale, not corrupt. `status` reports `state: stale` with the recovery command. `refresh` and `restore` refuse before they change anything.
+A manifest that names snapshots or guests that the host does not hold is stale, not corrupt. `status` reports `state: stale` with the recovery command. `refresh` and `restore` refuse before they change anything.
 
 ### Rebuild
 
-`rebuild` handles a snapshot whose resources are all gone. It refuses while any snapshot VM, `-next` copy, or the network exists, and it names each present resource. When all are absent, it deletes every manifest and `corrupt.json` and runs a cold build at the SHA.
+`rebuild` handles a snapshot whose resources are all gone. It refuses while any snapshot guest, `-next` copy, or the network exists, and it names each present resource. When all are absent, it deletes every manifest and `corrupt.json` and runs a cold build at the SHA.
 
 ### Recover
 
-`recover-legacy` handles a snapshot whose resources are still present. It accepts only a readable promoted manifest. It authorizes the snapshot VMs, their `-next` copies, and the snapshot network. Each VM must carry the owner and operation metadata, the snapshot network and MAC, no extra disk, and the promoted snapshot. The network may have only those VMs as users. Any other evidence fails closed, and a name, prefix, glob, or age never authorizes deletion.
+`recover-legacy` handles a snapshot whose resources are still present. It accepts only a readable promoted manifest. It authorizes the snapshot guests, their `-next` copies, and the snapshot network. Each guest must carry the owner and operation metadata, the snapshot network and MAC, no extra disk, and the promoted snapshot. The network may have only those guests as users. Any other evidence fails closed, and a name, prefix, glob, or age never authorizes deletion.
 
-Recovery writes the journal `topology-snapshot/recovery.json` before it changes anything. The journal holds the inventory, its SHA-256 digest, the requested SHA, and the phase history, from `authorized` to `construction_verified` or `failed`. Recovery deletes the VMs, the network, and the manifests, and verifies each step in the journal. Then it runs a cold build and verifies the new generation. A retry with the same SHA resumes from the journal when the digest still matches the host. A new recovery archives a finished journal to `topology-snapshot/recoveries/<operation-id>.json`.
+Recovery writes the journal `topology-snapshot/recovery.json` before it changes anything. The journal holds the inventory, its SHA-256 digest, the requested SHA, and the phase history, from `authorized` to `construction_verified` or `failed`. Recovery deletes the guests, the network, and the manifests, and verifies each step in the journal. Then it runs a cold build and verifies the new generation. A retry with the same SHA resumes from the journal when the digest still matches the host. A new recovery archives a finished journal to `topology-snapshot/recoveries/<operation-id>.json`.
 
 Every recovery result includes `error`, `recovery_evidence`, `recovery_phase`, and `next_action`. Never run `incus delete`, remove a manifest, or edit the journal by hand. Recovery depends on that evidence to resume safely.
 
@@ -161,7 +173,7 @@ The snapshot only makes acquisition fast. Git stays the authority for source, an
 
 ### Refresh only when prepared state changes
 
-A merge that leaves the fingerprint unchanged does not start the VMs. A refresh rolls the promoted generation forward instead of building from the base image. A cold build after each merge is a rejected alternative, because it is slow and gains nothing.
+A merge that leaves the fingerprint unchanged does not start the guests. A refresh rolls the promoted generation forward instead of building from the base image. A cold build after each merge is a rejected alternative, because it is slow and gains nothing.
 
 ### Promotion only after every gate
 

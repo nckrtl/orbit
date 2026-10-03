@@ -240,6 +240,34 @@ bin/web-deploy --switch <release>
 
 `<release>` is the first 12 characters of the commit, as in `releases/`. The command exits with status 2 for any other value and refuses a release that is not retained. The Gateway serves the older release on the next request.
 
+## Run against a topology
+
+Use a disposable topology for web UI development that can change Processes, Schedules, databases, or firewall rules. Do not test those actions on the live fleet. Orbit groups have no topology by default; the [reviewer requests one](/reference/tasks#request-a-topology) through the turn command. An implementer asks the reviewer through the existing consult. The consulted reviewer may request the topology before answering; the consult stays open and Orbit resumes that same reviewer in its original context with the acquisition result or failure.
+
+From the task workspace on beast, run:
+
+```bash
+bin/e2e-topology web TASK-58
+```
+
+The command requires an already acquired topology and its configured `operator` guest. It never acquires a topology implicitly. The operator is a small Incus system container on the topology network, registered as a roleless Node with a Gateway grant and its own WireGuard peer. It trusts the topology's Orbit CA and mounts the worktree live at `/home/orbit/orbit`, so host edits are live in the dev server.
+
+`web` runs `vp dev` in the operator's `apps/web`, on guest TCP port `5173` with strict-port behavior. If that guest port is occupied, startup fails rather than selecting another port. The session pins the Gateway URL and trusted CA to the selected topology. Gateway, realtime, and metrics traffic stay in that topology; inherited endpoint overrides cannot redirect them to the live fleet. Missing topology or operator configuration fails clearly, with no fallback to a live profile, real Gateway, or another user's credentials.
+
+After readiness, the command prints the actual beast IPv4 loopback URL and host TCP port. The host port is an available OS-assigned ephemeral port, not necessarily `5173`. Only `127.0.0.1` is published. There is no new DNS or Caddy Route, and `topo-<issue>.orbit.test` is not part of this contract.
+
+### Open it from a Mac
+
+Keep `web` running on beast. When it prints host port `P`, open another terminal on the Mac and run this command, replacing `P` with the printed numeric port:
+
+```bash
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:5173:127.0.0.1:P beast
+```
+
+Then open `http://127.0.0.1:5173` on the Mac. Keep both the web command and SSH running. If Mac-local port `5173` is occupied, choose another free local port in the first part of `-L` and open that port instead. The destination port remains the printed beast port.
+
+`web` runs in the foreground and streams dev-server output. Ctrl-C, command termination, startup failure, and topology release stop the session's dev-server process and remove its loopback publication. Stop SSH separately with Ctrl-C. Stopping the web session does not release the topology. Only one web session may run per topology; a second invocation fails clearly without disturbing the first. [Incus topologies](/reference/incus-topologies#web-session) owns the full command contract.
+
 ## Browser tests
 
 Browser tests assert on the page, the URL, and the requests that the demo Gateway received. They never write tracked files, so a passing `bun run test` in `apps/web` leaves the working tree unchanged.
@@ -255,6 +283,12 @@ The web app is the only live fleet view, and the CLI has none. A terminal screen
 ### The Gateway origin
 
 The Gateway identifies a caller by its WireGuard address. A proxy in front of the API would replace the browser's address with its own. A separate hostname such as `app.orbit` would make every API call cross-origin. On the Gateway origin, the browser already trusts the certificate, and the Gateway already knows the caller. The app adds no authority, because every request it makes is an API request from the browser's own address.
+
+### Disposable UI work through an operator guest
+
+The development proxy runs inside the selected topology because the Gateway identifies callers by WireGuard address. Beast is already in the real fleet, and topologies reuse its WireGuard address range. Joining a topology tunnel in beast's network namespace would mix live and disposable traffic. A separate roleless operator container gives the proxy a topology identity without turning it into a workload host. Pinning both the URL and CA prevents an inherited live profile from sending destructive UI actions to the real fleet.
+
+Loopback publication plus SSH forwarding gives Mac access without a public listener or a new DNS/Caddy route. An ephemeral host port avoids collisions between groups; the strict guest port makes a conflicting server fail visibly. One foreground session per topology makes process and publication cleanup part of the same lifecycle.
 
 ### Releases outside the checkout
 

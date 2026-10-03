@@ -689,6 +689,34 @@
             ]
         },
         {
+            "path": "docs/decisions/0195-request-topologies-for-review-with-an-operator-container.md",
+            "title": "ADR 0195: Request topologies for review with an operator container",
+            "kind": "decision",
+            "components": [
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Access grant",
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Turn receipt"
+            ],
+            "governing_adrs": [
+                "0195"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -959,6 +987,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Access grant",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1325,9 +1354,11 @@
             "components": [
                 "apps/cli",
                 "apps/e2e",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Extension",
@@ -1340,7 +1371,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Turn receipt"
             ],
             "governing_adrs": []
         },
@@ -1932,9 +1964,11 @@
             "title": "Topology snapshot",
             "kind": "reference",
             "components": [
-                "apps/e2e"
+                "apps/e2e",
+                "apps/web"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Doctor",
@@ -1974,6 +2008,7 @@
                 "Subtask",
                 "Task",
                 "Task definition",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []
