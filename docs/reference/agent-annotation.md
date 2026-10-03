@@ -36,7 +36,7 @@ const annotation = mountAnnotation({
 annotation.destroy();
 ```
 
-A second `mountAnnotation` call updates the options and adds no second overlay. To inject the overlay as a script, set `window.__AGENT_ANNOTATION__` to the options and load `dist/inject.js`. The script mounts when the document is ready and sets `window.AgentAnnotation.mountAnnotation`.
+A second `mountAnnotation` call updates the options and adds no second overlay. Loading `inject.js` again, for example by a host such as T3 on a page whose toolbar already loaded it, does the same: the running overlay takes the new options and no second copy starts. To inject the overlay as a script, set `window.__AGENT_ANNOTATION__` to the options and load `dist/inject.js`. The script mounts when the document is ready and sets `window.AgentAnnotation.mountAnnotation`.
 
 | Option | Meaning |
 | --- | --- |

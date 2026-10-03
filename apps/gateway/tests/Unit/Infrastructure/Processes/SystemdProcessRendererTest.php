@@ -16,7 +16,7 @@ it('renders the annotator command and projects its concrete URL and port into ev
     $process = new Process(['name' => 'annotator', 'working_directory' => $target->checkoutPath, 'runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/bin/false']], 'restart_policy' => 'on-failure']);
     $process->id = 18;
     $unit = new SystemdProcessRenderer()->render($process, $target);
-    expect($unit)->toContain('"/usr/local/bin/node" "/opt/orbit/annotator/current/bin/serve.mjs" "serve" "--port" "4849" "--store" "/var/lib/orbit/annotator/instance-6" "--allow-origin" "https://site.test" "--allow-origin" "t3code://app"')
+    expect($unit)->toContain('"/usr/local/bin/node" "/opt/orbit/annotator/current/bin/serve.mjs" "serve" "--port" "4849" "--store" "/var/lib/orbit/annotator/instance-6" "--allow-origin" "https://site.test" "--allow-origin" "t3code://app" "--allow-origin" "t3code-dev://app"')
         ->toContain('Environment=ANNOTATOR_URL=https://site.test/__orbit/annotator/annotations')->toContain('Environment=ORBIT_ANNOTATOR_PORT=4849')->toContain('Restart=on-failure');
     $process->runtime_config = ['command' => ['/usr/bin/true'], 'environment' => ['ANNOTATOR_URL' => 'bad', 'ORBIT_ANNOTATOR_PORT' => '1']];
     expect(new SystemdProcessRenderer()->render($process, $target))->toContain('"ANNOTATOR_URL=https://site.test/__orbit/annotator/annotations"')->toContain('"ORBIT_ANNOTATOR_PORT=4849"')->not->toContain('ANNOTATOR_URL=bad');

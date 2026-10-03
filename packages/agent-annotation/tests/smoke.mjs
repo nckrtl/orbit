@@ -314,6 +314,42 @@ try {
         await page.close();
         console.log(`outside click ${scenario}: passed`);
     }
+    {
+        const page = await browser.newPage();
+        await page.route("https://annotation.test/**", async (route) => {
+            if (route.request().url().endsWith("inject.js")) {
+                await route.fulfill({
+                    contentType: "text/javascript; charset=utf-8",
+                    body: await readFile(new URL("../dist/inject.js", import.meta.url)),
+                });
+            } else {
+                await route.fulfill({
+                    contentType: "text/html; charset=utf-8",
+                    body: "<h1>Annotate this page</h1>",
+                });
+            }
+        });
+        await page.goto("https://annotation.test/");
+        await page.evaluate(() => {
+            window.__AGENT_ANNOTATION__ = { dictation: { provider: "none" } };
+        });
+        await page.addScriptTag({ url: "https://annotation.test/inject.js" });
+        await page.getByRole("button", { name: "Enter annotation mode", exact: true }).waitFor();
+        await page.addScriptTag({ url: "https://annotation.test/inject.js" });
+        assert.equal(await page.locator("#laravel-toolbar-annotation-host").count(), 1);
+        await page.keyboard.press("Meta+Shift+A");
+        await page.getByRole("heading").click();
+        const submit = page.locator("[data-annotation-submit]");
+        await submit.waitFor();
+        assert.equal(await submit.isDisabled(), true);
+        await page.locator("[data-annotation-field]").click();
+        await page.keyboard.type("Second load still annotates");
+        assert.equal(await submit.isDisabled(), false);
+        await page.close();
+        console.log(
+            "double load: one runtime, comment popup opens, send button visible and disabled until text",
+        );
+    }
     for (const control of ["button", "Meta", "Control"]) {
         const page = await browser.newPage();
         await page.route("https://annotation.test/**", async (route) => {

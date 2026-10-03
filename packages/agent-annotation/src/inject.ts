@@ -7,10 +7,18 @@ declare global {
     }
 }
 
-window.AgentAnnotation = { mountAnnotation };
-const start = () => mountAnnotation(window.__AGENT_ANNOTATION__);
-if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start, { once: true });
+// A page can load this script twice (its own toolbar plus a host such as T3). A second
+// runtime would take every click while the first renders, so only the first one runs and
+// a later load just passes its options on.
+const running = window.AgentAnnotation;
+if (running) {
+    running.mountAnnotation(window.__AGENT_ANNOTATION__);
 } else {
-    start();
+    window.AgentAnnotation = { mountAnnotation };
+    const start = () => mountAnnotation(window.__AGENT_ANNOTATION__);
+    if (document.readyState === "loading") {
+        document.addEventListener("DOMContentLoaded", start, { once: true });
+    } else {
+        start();
+    }
 }

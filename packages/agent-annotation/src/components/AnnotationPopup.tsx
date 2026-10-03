@@ -451,8 +451,9 @@ export default function AnnotationPopup({
             </Button>
         ) : null;
 
+    // Always visible, disabled until there is text, so the action never jumps into view.
     const sendButton =
-        dictationState !== "recording" && (canSubmit || isEditing) ? (
+        dictationState !== "recording" ? (
             <IconButton
                 label={isEditing ? "Save annotation" : "Add annotation"}
                 onClick={submit}

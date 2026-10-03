@@ -89,7 +89,7 @@ Creation stores `annotator_port` on the Instance, starting at `4848`, unique per
 
 Creation stores `ANNOTATOR_URL=https://{{instance.domain}}/__orbit/annotator/annotations` in the Instance environment. Every systemd Process receives the concrete URL and `ORBIT_ANNOTATOR_PORT`; derived values override caller values.
 
-The Instances API, CLI, MCP, and PHP SDK expose `annotator_url` and `annotator_port`. The API's `annotator_url` is the service base; `ANNOTATOR_URL` points to its annotation queue. Without a Route, the API URL is null. The server permits only the page HTTPS origin and `t3code://app`, including queue reads, SSE, deletion, and preflight; it does not accept arbitrary browser origins.
+The Instances API, CLI, MCP, and PHP SDK expose `annotator_url` and `annotator_port`. The API's `annotator_url` is the service base; `ANNOTATOR_URL` points to its annotation queue. Without a Route, the API URL is null. The server permits only the page HTTPS origin, `t3code://app`, and `t3code-dev://app`, including queue reads, SSE, deletion, and preflight; it does not accept arbitrary browser origins.
 
 ### Start and wake
 
