@@ -3,6 +3,8 @@ title: "Agent annotation package"
 description: "The browser annotation overlay, its speech input, and its two delivery modes: a local annotation server, or Orbit Tasks sent to a T3 thread."
 covers:
   - packages/agent-annotation/**
+  - apps/gateway/resources/annotator/**
+  - bin/annotator-build
   - apps/web/dev/annotation-thread.ts
   - apps/gateway/app/{Actions,Data,Http/Requests}/Annotations/**
   - apps/gateway/app/Http/Controllers/Api/AnnotationsController.php
@@ -231,7 +233,11 @@ An annotation ID and its T3 command ID never change. A retry then cannot create 
 
 ## Instance Process server and queue threads
 
-Orbit runs the annotator as an Instance Process and publishes it under the Instance Route at `/__orbit/annotator`. `GET /health` returns 200 without reading the annotation store. `GET /inject.js` serves the installed package's `dist/inject.js`; hosts can load the overlay from the same server and version rather than bundle a copy.
+Orbit runs the annotator as an Instance Process and publishes it under the Instance Route at `/__orbit/annotator`. Its `ANNOTATOR_URL` points to `/__orbit/annotator/annotations`, while the Instance API exposes the service base as `annotator_url`. The preset admits the page's HTTPS origin and the T3 renderer origin `t3code://app`; other supplied origins are refused for reads, SSE, deletion, and preflight. See [Annotator Process](/reference/agentation#annotator-process).
+
+`GET /health` returns 200 without reading the annotation store. `GET /inject.js` serves the installed package's `dist/inject.js`; hosts can load the overlay from the same server and version rather than bundle a copy.
+
+The Gateway ships that asset in its tracked resource distribution. Its source manifest covers the server and browser code, build configuration, and dependency lock. Run `bin/annotator-build` after changing the package sources and include both resource outputs. Installation refuses a missing or mismatched asset instead of starting a health-only server.
 
 Pass `--allow-origin ORIGIN` once for each allowed browser origin. Orbit uses the Instance origin, `t3code://app`, and `t3code-dev://app`. The allow-list applies to reads, writes, event streams, and DELETE, including preflight requests. Requests from other origins receive 403. Requests without an Origin header remain available to agents. Without the flag, the server keeps wildcard CORS for local use.
 

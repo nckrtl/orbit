@@ -12,6 +12,8 @@ covers:
 
 Several development Instances can run Vite on one Node. Orbit gives each development Instance its own Vite port on its Node. The `vp-dev` Process preset runs Vite on that port and connects it to Caddy and to [wake](/reference/app-dev-runtime-hibernation). Browsers never see the port: they load assets through the Route's HTTPS origin.
 
+The `annotator` Process uses a separate stored `annotator_port` and shares the Agentation allocator. Its reservation persists through pending proxy withdrawal and source retirement on transfer. Environment projection changes only existing unit files and does not activate a sleeping Vite Process. It does not change Vite's reservation and retry behavior. See [Annotator Process](/reference/agentation#annotator-process).
+
 ## Assignment
 
 Orbit assigns `vite_port` when it creates or registers a development Instance. Production Instances get none. An assignment creates or starts no Process. Caddy, wake, and the `vp-dev` preset use only that assigned port.

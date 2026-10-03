@@ -67,6 +67,8 @@ The same sweep deletes `vendor` and `node_modules` when all of these are true:
 
 Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
 
+The `annotator` preset also sleeps with its Instance and refuses keep-alive. Creating a stopped annotator or removing it rewrites the systemd units of its siblings without activation, so desired-running sleeping workers and Vite stay stopped and cold dependencies are not restored. Its port and store survive hibernation. Wake waits for `/health` on its assigned loopback port; a timeout reports `hibernation.annotator_not_ready`.
+
 ## Wake
 
 Caddy on the Instance's Node checks for the awake marker on every request. When the marker is missing, Caddy calls `GET /api/v1/runtime-activations/app-instance/{id}` on the Gateway over WireGuard, trusting the Orbit root certificate. The caller must be the Instance's Node, or a Node with an [access grant](/cli/node) to it.

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\Transfer\InstanceTransferSource;
@@ -43,7 +44,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? ''],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? '', ...($instance->annotator_port === null ? [] : [AnnotatorEndpoint::store($instance->id)])],
                 input: $this->captureScript(),
             ),
             step: 'app-instance-transfer-capture',
@@ -127,6 +128,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
                         $transfer->source_path,
                         $transfer->source_layout->value,
                         $common ?? '',
+                        ...(Instance::query()->whereKey($transfer->instance_id)->whereNotNull('annotator_port')->exists() ? [AnnotatorEndpoint::store($transfer->instance_id ?? throw $this->failed())] : []),
                     ],
                     input: $this->cleanupScript(),
                 ),
@@ -308,6 +310,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             source=$1
             layout=$2
             sqlite_source=$3
+            annotator_store=${4:-}
             archive="/tmp/orbit-transfer-$(basename "$source")-$$.tar"
             cd -- "$source"
             head=$(git rev-parse HEAD)
@@ -339,6 +342,10 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
               rm -f -- "$archive.bundle"
             else
               tar "${exclusions[@]}" -cf "$archive" .
+            fi
+            if [ -n "$annotator_store" ] && [ -d "$annotator_store" ]; then
+              test ! -e .orbit/annotator
+              tar --transform='s,^\./,./.orbit/annotator/,;s,^\.$,./.orbit/annotator,' -rf "$archive" -C "$annotator_store" .
             fi
             printf 'head=%s\nbranch=%s\ndetached=%s\narchive=%s\ncommon=%s\nrefs=%s\n' \
               "$head" "$branch" "$detached" "$archive" "$common" "$refs"
@@ -398,6 +405,10 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             source=$1
             layout=$2
             common=$3
+            annotator_store=${4:-}
+            if [ -n "$annotator_store" ]; then
+              sudo rm -rf -- "$annotator_store"
+            fi
             if [ ! -e "$source" ] && [ ! -L "$source" ]; then
               exit 0
             fi

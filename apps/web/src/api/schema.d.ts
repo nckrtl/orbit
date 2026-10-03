@@ -3365,6 +3365,8 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            annotator_port?: number | null;
+            annotator_url?: string | null;
         };
         ProjectIdentity: {
             id?: number;
@@ -11183,7 +11185,7 @@ export interface operations {
                     target_id: number;
                     /** @description Process name */
                     name: string;
-                    /** @description Process preset: vp-dev, agentation-mcp, or antigravity-watch */
+                    /** @description Process preset: vp-dev, annotator, agentation-mcp, or antigravity-watch */
                     preset?: string;
                     /** @description Existing non-root account for a Node systemd Process */
                     user?: string;

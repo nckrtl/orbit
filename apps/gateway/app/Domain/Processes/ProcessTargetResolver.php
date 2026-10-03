@@ -90,6 +90,10 @@ final readonly class ProcessTargetResolver
 
     public function forStart(#[SensitiveParameter] Process $process): ProcessTarget
     {
+        if ($process->endpoint_withdrawal_started_at !== null) {
+            throw new ResourceOperationException('process.removal_pending', 'Finish removing this Process before creating or starting it again.', 409);
+        }
+
         return $this->forAdmissionOwner($this->owner($process));
     }
 

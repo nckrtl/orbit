@@ -18,7 +18,7 @@ final readonly class RemoteAgentationSiteProjection implements AgentationSitePro
     public function project(Instance $instance): void
     {
         $this->projection->run(function () use ($instance): void {
-            $instance->loadMissing(['routes', 'node']);
+            $instance->load(['routes', 'node']);
 
             if ($instance->routes->isNotEmpty()) {
                 $this->caddy->build($instance->node);

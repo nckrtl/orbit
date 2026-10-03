@@ -67,8 +67,10 @@
             "@guidance:check",
             "@rector",
             "@format:check",
-            "@analyse"
+            "@analyse",
+            "@annotator:check"
         ],
+        "annotator:check": "python3 ../../bin/annotator-build --check",
         "format": "vendor/bin/pint",
         "format:check": "vendor/bin/pint --test",
         "guidance:check": "ORBIT_TIA_DIRECTORY=vendor/.orbit-guidance-tia vendor/bin/pest --configuration=phpunit.guidance.xml --tia --fresh --compact",

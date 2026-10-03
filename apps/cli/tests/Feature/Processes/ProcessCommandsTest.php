@@ -1605,7 +1605,7 @@ it('sends Agentation presets without synthesizing runtime configuration', functi
         'start' => true,
         'keep_alive' => false,
     ]);
-})->with(['agentation-mcp', 'antigravity-watch']);
+})->with(['annotator', 'agentation-mcp', 'antigravity-watch']);
 
 it('refuses Agentation keep-alive without sending a request', function (): void {
     $mock = MockClient::global([]);

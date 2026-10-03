@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AgentationEndpoint;
+use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Hibernation\RuntimeHibernation;
 use Illuminate\Support\Collection;
@@ -168,7 +169,7 @@ final readonly class DevelopmentCaddyConfigRenderer
             return $application;
         }
 
-        $handlers = $this->withDevelopmentServer($application, $site->vitePort, $site->agentationPort);
+        $handlers = $this->withDevelopmentServer($application, $site->vitePort, $site->agentationPort, $site->annotatorPort);
         $wake = $this->hibernationWake($site);
 
         return $wake === null ? $handlers : $wake.PHP_EOL.$handlers;
@@ -253,9 +254,10 @@ final readonly class DevelopmentCaddyConfigRenderer
             CADDY;
     }
 
-    private function withDevelopmentServer(string $applicationHandler, ?int $port, ?int $agentationPort): string
+    private function withDevelopmentServer(string $applicationHandler, ?int $port, ?int $agentationPort, ?int $annotatorPort): string
     {
-        $agentation = $this->agentationHandle($agentationPort);
+        $agentation = $this->annotationHandle($agentationPort, AgentationEndpoint::PATH, 'agentation');
+        $annotator = $this->annotationHandle($annotatorPort, AnnotatorEndpoint::PATH, 'annotator');
         $vite = '';
 
         if ($port !== null) {
@@ -272,27 +274,26 @@ final readonly class DevelopmentCaddyConfigRenderer
                 CADDY;
         }
 
-        return $vite.$agentation.<<<CADDY
+        return $vite.$agentation.$annotator.<<<CADDY
             handle {
                 {$applicationHandler}
             }
             CADDY;
     }
 
-    private function agentationHandle(?int $port): string
+    private function annotationHandle(?int $port, string $path, string $name): string
     {
         if ($port === null) {
             return '';
         }
 
-        $path = AgentationEndpoint::PATH;
         $upstream = AgentationEndpoint::upstream($port);
 
         return <<<CADDY
-            @orbit_agentation {
+            @orbit_{$name} {
                 path {$path} {$path}/*
             }
-            handle @orbit_agentation {
+            handle @orbit_{$name} {
                 uri strip_prefix {$path}
                 reverse_proxy {$upstream}
             }

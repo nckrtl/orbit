@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Domain\AppDev\AgentationEndpoint;
+use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\AppDev\DevelopmentServerEndpoint;
 use App\Domain\Nodes\LinuxUserName;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Processes\AgentationMcpPreset;
+use App\Domain\Processes\AnnotatorPreset;
 use App\Domain\Processes\AntigravityWatchPreset;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\VpDevPreset;
@@ -65,6 +67,8 @@ final readonly class SystemdProcessRenderer
         if ($process->isVpDev()) {
             $command = VpDevPreset::command();
             $environmentProjection['commandPrefix'] = array_values(array_filter($environmentProjection['commandPrefix'], static fn (string $value): bool => ! str_starts_with($value, 'ORBIT_DEV_SERVER_PORT=')));
+        } elseif ($process->isAnnotator()) {
+            $command = AnnotatorPreset::forTarget($target);
         } elseif ($process->isAgentationMcp()) {
             $command = AgentationMcpPreset::command();
         } elseif ($process->isAntigravityWatch()) {
@@ -144,6 +148,8 @@ final readonly class SystemdProcessRenderer
             'ORBIT_DEV_SERVER_HOST',
             'ORBIT_DEV_SERVER_PATH',
             'ORBIT_DEV_SERVER_PORT',
+            AnnotatorEndpoint::URL_KEY,
+            AnnotatorEndpoint::PORT_KEY,
             AgentationEndpoint::URL_KEY,
             AgentationEndpoint::PORT_KEY,
         ], true);
@@ -203,6 +209,12 @@ final readonly class SystemdProcessRenderer
                 $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) $port;
             }
 
+            if (is_int($target->instance?->annotator_port)) {
+                $annotatorOrigin = AnnotatorEndpoint::queue($target->routeDomain);
+                $directives[] = 'Environment='.AnnotatorEndpoint::URL_KEY.'='.$this->escapeDirectivePath($annotatorOrigin);
+                $commandValues[] = AnnotatorEndpoint::URL_KEY.'='.$annotatorOrigin;
+            }
+
             if (is_int($target->instance?->agentation_port)) {
                 $agentationOrigin = AgentationEndpoint::origin($target->routeDomain);
                 $directives[] = 'Environment='.AgentationEndpoint::URL_KEY.'='.$this->escapeDirectivePath($agentationOrigin);
@@ -210,6 +222,16 @@ final readonly class SystemdProcessRenderer
                 $commandValues[] = AgentationEndpoint::URL_KEY.'='.$agentationOrigin;
                 $commandValues[] = AgentationEndpoint::PORT_KEY.'='.(string) $target->instance->agentation_port;
             }
+        }
+
+        if (is_int($target->instance?->annotator_port)) {
+            $directives[] = 'Environment='.AnnotatorEndpoint::PORT_KEY.'='.(string) $target->instance->annotator_port;
+            $commandValues[] = AnnotatorEndpoint::PORT_KEY.'='.(string) $target->instance->annotator_port;
+            if ($target->routeDomain === null) {
+                $directives[] = 'UnsetEnvironment='.AnnotatorEndpoint::URL_KEY;
+            }
+        } elseif ($target->instance !== null) {
+            $directives[] = 'UnsetEnvironment='.AnnotatorEndpoint::URL_KEY.' '.AnnotatorEndpoint::PORT_KEY;
         }
 
         if ($certificates && $target->certificateScope !== null) {

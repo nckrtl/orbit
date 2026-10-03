@@ -13,6 +13,15 @@ final readonly class ProcessSpecification
     /** @return array{runtime: ProcessRuntime, working_directory: string, runtime_config: array<string, mixed>, restart_policy: string, keep_alive: bool} */
     public function attributes(#[SensitiveParameter] AddProcessData $data, ProcessTarget $target): array
     {
+        if ($data->preset === AnnotatorPreset::NAME) {
+            return [
+                'runtime' => ProcessRuntime::Systemd,
+                'working_directory' => $target->defaultWorkingDirectory,
+                'runtime_config' => ['command' => AnnotatorPreset::command(), 'environment_file' => $target->environmentFile, 'preset' => AnnotatorPreset::NAME],
+                'restart_policy' => 'on-failure',
+                'keep_alive' => false,
+            ];
+        }
         $workingDirectory =
             $data->workingDirectory
             ?? ($data->runtime === ProcessRuntime::Systemd ? $target->defaultWorkingDirectory : '/app');

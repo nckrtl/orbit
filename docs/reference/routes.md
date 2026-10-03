@@ -253,6 +253,10 @@ export default defineConfig({
 
 Vite adds its base to the HMR path, so set `hmr.path` to `hmr`. The `vp-dev` preset sets `--base=/__orbit/vite/`. Laravel's `@vite` directive reads `public/hot`. That file must contain `ORBIT_DEV_SERVER_ORIGIN`, so the browser loads `/__orbit/vite/@vite/client` from the Route domain.
 
+### Annotator endpoint
+
+An Instance with the `annotator` Process publishes `/__orbit/annotator` on its Route. Workload Caddy strips the prefix before proxying to `127.0.0.1:{annotator_port}`. Creating or removing the Process rebuilds Caddy when a Route exists. Removal keeps the port reserved until Caddy confirms proxy withdrawal. Transfer also retains its source reservation until source retirement, so a stale Route cannot reach a queue belonging to a new Instance. See [Annotator Process](/reference/agentation#annotator-process).
+
 ### Agentation endpoint
 
 The reserved path `/__orbit/agentation` publishes the Instance's Agentation HTTP Process on the Route's HTTPS domain. Workload Caddy proxies it to the assigned `agentation_port` on loopback and strips the prefix, so the Agentation API keeps `/health` and `/sessions` at its root. A site without an assignment has no Agentation handle. The Process gets `AGENTATION_URL` (`https://<route-domain>/__orbit/agentation`) and `ORBIT_AGENTATION_PORT`. See [Agentation](/reference/agentation).

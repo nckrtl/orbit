@@ -105,6 +105,11 @@ Other operations also change stored keys, and never the file itself:
 
 - [`instance:database:add` and `instance:database:remove`](/reference/database-connections#add-a-connection-on-an-instance) write or clear the keys of one database prefix.
 - Creating an `agentation-mcp` Process stores `AGENTATION_URL` as `https://{{instance.domain}}/__orbit/agentation`. See [Agentation](/reference/agentation).
+- Creating an `annotator` Process stores `ANNOTATOR_URL` as `https://{{instance.domain}}/__orbit/annotator/annotations`.
+
+Removing the annotator Process deletes that stored key. Synchronization renders the current Route domain. Without a Route, the domain placeholder returns `env.reference_unavailable`.
+
+The annotator also projects the concrete `ANNOTATOR_URL` and `ORBIT_ANNOTATOR_PORT` into every systemd Process of the Instance. These derived values override a stale `.env` value or a caller-supplied environment map. Process creation and removal rewrite the existing units of sibling Processes without changing their observed runtime state. Sleeping workers are not started, and cold dependencies are not restored. A running sibling reads the new values on its next start or restart. After removal, units unset both keys, even before the next environment synchronization. This runtime projection does not write `.env`; see [Annotator Process](/reference/agentation#annotator-process).
 
 A [deployment](/reference/deployments) synchronizes the stored configuration before it runs any deploy step.
 

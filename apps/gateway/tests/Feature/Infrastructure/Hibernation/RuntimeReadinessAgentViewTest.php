@@ -6,6 +6,7 @@ use App\Domain\AgentView\AgentProcessView;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\Hibernation\RemoteInstanceRuntimeReadiness;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
@@ -80,6 +81,22 @@ function agent_view_readiness(CountingStatusRuntimeManager $runtime, int $timeou
         agents: app(AgentProcessView::class),
     );
 }
+
+it('waits for annotator health on the retained port and reports an endpoint timeout', function (bool $healthy): void {
+    $node = agent_view_node();
+    $process = agent_view_instance_process($node, 'annotator');
+    $process->update(['runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/local/bin/node']]]);
+    $instance = Instance::query()->firstOrFail();
+    $instance->update(['annotator_port' => 4851]);
+    $ssh = new AppDevFakeSshExecutor([new CommandResult($healthy ? 0 : 1, $healthy ? 'ready' : 'waiting', '', 1, false)]);
+    $readiness = new RemoteInstanceRuntimeReadiness(new CountingStatusRuntimeManager, $ssh, new AgentViewReadinessKeys, new AgentViewReadinessKnownHosts, timeoutSeconds: 1);
+    if ($healthy) {
+        $readiness->waitUntilReady($instance, [$process]);
+    } else {
+        expect(fn () => $readiness->waitUntilReady($instance, [$process]))->toThrow(fn (HibernationException $exception) => expect($exception->errorCode)->toBe('hibernation.annotator_not_ready'));
+    }
+    expect($ssh->commands)->toHaveCount(1)->and($ssh->commands[0]->arguments[2])->toContain("'/health'")->and($ssh->commands[0]->arguments[3])->toBe('4851');
+})->with([true, false]);
 
 describe('wake readiness with a Gateway view of the Node agent', function (): void {
     it('reads a running Process from a fresh view without SSH', function (): void {

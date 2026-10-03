@@ -69,7 +69,7 @@ final readonly class NativeInstanceTransferRuntime implements InstanceTransferRu
         foreach ($instance->processes as $process) {
             $process->update([
                 'working_directory' => $this->relocatedPath($process->working_directory, $sourcePath, $workingDirectory),
-                ...($process->isVpDev() ? ['runtime_config' => [...$process->runtime_config, 'environment_file' => $workingDirectory.'/.env']] : []),
+                ...(($process->isVpDev() || $process->isAnnotator()) ? ['runtime_config' => [...$process->runtime_config, 'environment_file' => $workingDirectory.'/.env']] : []),
             ]);
         }
 
