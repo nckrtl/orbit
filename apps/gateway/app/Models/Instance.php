@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Relations\DualSafeMorphMany;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
@@ -370,15 +371,7 @@ final class Instance extends Model
             ? "{$this->production_home}/current"
             : $this->checkout_path;
 
-        if ($root === 'public') {
-            $root = null;
-        } elseif (is_string($root) && str_ends_with($root, '/public')) {
-            $root = substr($root, 0, -strlen('/public'));
-        }
-
-        return $root === null || $root === '.' || $root === ''
-            ? rtrim($base, '/')
-            : rtrim($base, '/').'/'.$root;
+        return ApplicationDirectory::resolve($base, $root);
     }
 
     public function placementEnvironment(): ?string

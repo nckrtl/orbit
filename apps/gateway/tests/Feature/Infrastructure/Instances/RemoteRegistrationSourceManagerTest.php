@@ -939,24 +939,25 @@ it('refuses cleanup when the original path was replaced after destination verifi
     }
 });
 
-it('restores Laravel URL files and the stable directory timestamps they touch', function (): void {
+it('restores Laravel URL files and the stable directory timestamps they touch', function (string $relative): void {
     $fixture = orb105_relocation_fixture();
 
     try {
         $files = new Filesystem;
-        $files->ensureDirectoryExists($fixture['source'].'/bootstrap/cache');
-        file_put_contents($fixture['source'].'/.env', "APP_URL=https://before.test\n");
-        file_put_contents($fixture['source'].'/bootstrap/cache/config.php', "<?php return ['url' => 'before'];\n");
-        $fixture['instance']->update(['checkout_path' => $fixture['source']]);
+        $application = $fixture['source'].$relative;
+        $files->ensureDirectoryExists($application.'/bootstrap/cache');
+        file_put_contents($application.'/.env', "APP_URL=https://before.test\n");
+        file_put_contents($application.'/bootstrap/cache/config.php', "<?php return ['url' => 'before'];\n");
+        $fixture['instance']->update(['checkout_path' => $fixture['source'], 'root' => ltrim($relative.'/public', '/')]);
         $before = orb105_complete_manifest($fixture['source']);
 
         $fixture['manager']->prepareLaravelRollback($fixture['instance']);
-        file_put_contents($fixture['source'].'/.env.next', "APP_URL=https://after.test\n");
-        rename($fixture['source'].'/.env.next', $fixture['source'].'/.env');
-        file_put_contents($fixture['source'].'/bootstrap/cache/config.php.next', "<?php return ['url' => 'after'];\n");
+        file_put_contents($application.'/.env.next', "APP_URL=https://after.test\n");
+        rename($application.'/.env.next', $application.'/.env');
+        file_put_contents($application.'/bootstrap/cache/config.php.next', "<?php return ['url' => 'after'];\n");
         rename(
-            $fixture['source'].'/bootstrap/cache/config.php.next',
-            $fixture['source'].'/bootstrap/cache/config.php',
+            $application.'/bootstrap/cache/config.php.next',
+            $application.'/bootstrap/cache/config.php',
         );
         $fixture['manager']->prepareLaravelRollback($fixture['instance']);
         $fixture['manager']->restoreLaravelConfiguration($fixture['instance']);
@@ -965,7 +966,7 @@ it('restores Laravel URL files and the stable directory timestamps they touch', 
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }
-});
+})->with(['root public' => '', 'nested Laravel' => '/server/web']);
 
 it('refuses an incomplete Laravel rollback receipt without replacing it', function (): void {
     $fixture = orb105_relocation_fixture();
@@ -1472,19 +1473,21 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
     }
 }
 
-it('closes a relocated Instance environment to other local users after the last verification', function (): void {
+it('closes a relocated Instance environment to other local users after the last verification', function (string $relative): void {
     $fixture = orb105_relocation_fixture();
 
     try {
-        file_put_contents($fixture['source'].'/.env', "APP_KEY=secret\n");
-        chmod($fixture['source'].'/.env', 0o664);
+        $fixture['instance']->update(['root' => ltrim($relative.'/public', '/')]);
+        new Filesystem()->ensureDirectoryExists($fixture['source'].$relative);
+        file_put_contents($fixture['source'].$relative.'/.env', "APP_KEY=secret\n");
+        chmod($fixture['source'].$relative.'/.env', 0o664);
         $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
 
         $fixture['manager']->relocate($fixture['instance'], $facts);
 
-        expect(fileperms($fixture['destination'].'/.env') & 0o777)->toBe(0o660)
+        expect(fileperms($fixture['destination'].$relative.'/.env') & 0o777)->toBe(0o660)
             ->and($fixture['instance']->refresh()->registration_relocation_state)->toBe('relocated');
     } finally {
         orb105_remove_relocation_fixture($fixture);
     }
-});
+})->with(['root public' => '', 'nested Laravel' => '/server/web']);

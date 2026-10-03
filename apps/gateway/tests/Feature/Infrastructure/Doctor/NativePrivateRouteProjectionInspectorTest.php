@@ -25,8 +25,9 @@ use App\Models\Project;
 use App\Models\Route;
 use Tests\Support\AppDevFakeSshExecutor;
 
-it('observes private Route projections without application HTTP checks', function (): void {
+it('observes private Route projections without application HTTP checks', function (string $root, string $relative): void {
     [$instance, $route] = private_route_inspector_standalone();
+    $instance->update(['root' => $root]);
     $ssh = new AppDevFakeSshExecutor([
         new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\n", '', 1, false),
     ]);
@@ -36,7 +37,7 @@ it('observes private Route projections without application HTTP checks', functio
     expect($observation)
         ->toEqual(new PrivateRouteProjectionObservation(true, true, true, true, true, true, true))
         ->and($ssh->commands[0]->arguments)
-        ->toContain($route->domain)
+        ->toContain($route->domain, $instance->checkout_path.$relative.'/.env')
         ->and(array_slice($ssh->commands[0]->arguments, 0, 3))->toBe(['sudo', 'bash', '-seu'])
         ->and($ssh->commands[0]->input)
         ->toContain('grep -qs -- "$domain" "$live"')
@@ -50,7 +51,7 @@ it('observes private Route projections without application HTTP checks', functio
         ->and(json_encode($observation, JSON_THROW_ON_ERROR))
         ->not->toContain($route->domain)
         ->not->toContain((string) $instance->checkout_path);
-});
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
 it('reports a bounded private projection mismatch from remote observations', function (): void {
     [$instance, $route] = private_route_inspector_standalone();

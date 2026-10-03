@@ -901,17 +901,17 @@ it('gets everything it needs to narrow the unit from the container', function ()
 });
 
 /** @return array{string, Node} A temporary managed home and a saved Node whose Instances live under its `apps`. */
-function agent_env_home(): array
+function agent_env_home(string $relative = ''): array
 {
     $home = sys_get_temp_dir().'/orbit-agent-env-'.bin2hex(random_bytes(4));
-    mkdir($home.'/apps/shop/dev', 0o755, true);
-    mkdir($home.'/apps/shop/linked', 0o755, true);
+    mkdir($home.'/apps/shop/dev'.$relative, 0o755, true);
+    mkdir($home.'/apps/shop/linked'.$relative, 0o755, true);
     mkdir($home.'/outside', 0o755, true);
     $node = Node::query()->create([
         'name' => 'agent-env', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'user' => 'orbit',
         'architecture' => 'x86_64', 'public_ssh_host' => '192.0.2.45', 'wireguard_ip' => '10.44.0.45',
     ]);
-    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main']);
+    $project = Project::query()->create(['name' => 'Shop', 'slug' => 'shop', 'repository_url' => 'git@example.test:shop.git', 'default_branch' => 'main', 'root' => ltrim($relative.'/public', '/')]);
     foreach (['dev' => $home.'/apps/shop/dev', 'linked' => $home.'/apps/shop/linked', 'outside' => $home.'/outside'] as $name => $path) {
         Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => $path, 'status' => 'source_resolved']);
     }
@@ -919,15 +919,15 @@ function agent_env_home(): array
     return [$home, $node];
 }
 
-it('closes the environment of every Instance checkout in the Instance root on converge', function (): void {
-    [$home, $node] = agent_env_home();
-    file_put_contents($home.'/apps/shop/dev/.env', "APP_KEY=secret\n");
-    chmod($home.'/apps/shop/dev/.env', 0o664);
+it('closes the environment of every Instance checkout in the Instance root on converge', function (string $relative): void {
+    [$home, $node] = agent_env_home($relative);
+    file_put_contents($home.'/apps/shop/dev'.$relative.'/.env', "APP_KEY=secret\n");
+    chmod($home.'/apps/shop/dev'.$relative.'/.env', 0o664);
     file_put_contents($home.'/outside/.env', "APP_KEY=secret\n");
     chmod($home.'/outside/.env', 0o664);
     file_put_contents($home.'/target.env', "APP_KEY=secret\n");
     chmod($home.'/target.env', 0o664);
-    symlink($home.'/target.env', $home.'/apps/shop/linked/.env');
+    symlink($home.'/target.env', $home.'/apps/shop/linked'.$relative.'/.env');
     $ssh = new AgentInstallSsh(null, runScriptsLocally: true);
 
     try {
@@ -936,14 +936,14 @@ it('closes the environment of every Instance checkout in the Instance root on co
 
         $script = array_values(array_filter($ssh->commands, static fn (RemoteCommand $command): bool => ($command->arguments[0] ?? null) === 'bash'));
         expect($script)->toHaveCount(1)
-            ->and($script[0]->arguments)->toBe(['bash', '-seu', '--', $home.'/apps/shop/dev', $home.'/apps/shop/linked'])
-            ->and(fileperms($home.'/apps/shop/dev/.env') & 0o777)->toBe(0o660)
+            ->and($script[0]->arguments)->toBe(['bash', '-seu', '--', $home.'/apps/shop/dev'.$relative, $home.'/apps/shop/linked'.$relative])
+            ->and(fileperms($home.'/apps/shop/dev'.$relative.'/.env') & 0o777)->toBe(0o660)
             ->and(fileperms($home.'/outside/.env') & 0o777)->toBe(0o664)
             ->and(fileperms($home.'/target.env') & 0o777)->toBe(0o664);
     } finally {
         (new Filesystem)->deleteDirectory($home);
     }
-});
+})->with(['root public' => '', 'nested Laravel' => '/server/web']);
 
 it('logs the checkouts whose environment it could not close and still converges', function (): void {
     [$home, $node] = agent_env_home();

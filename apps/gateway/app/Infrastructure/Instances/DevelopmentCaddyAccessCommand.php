@@ -22,6 +22,7 @@ final readonly class DevelopmentCaddyAccessCommand
             }
             $arguments[] = StoragePath::parse($site->checkoutPath)->value;
             $arguments[] = RelativeWebRoot::validate($site->documentRoot);
+            $arguments[] = $site->applicationDirectory();
         }
 
         return new RemoteCommand(
@@ -30,12 +31,14 @@ final readonly class DevelopmentCaddyAccessCommand
                 set -o pipefail
                 checkouts=()
                 roots=()
+                applications=()
                 storage=()
                 git_directories=()
                 while [ "$#" -gt 0 ]; do
                     checkout=$1
                     relative_root=$2
-                    shift 2
+                    application=$3
+                    shift 3
                     if [ -L "$checkout" ]; then
                         test "${checkout##*/}" = current
                         home=$(dirname -- "$checkout")
@@ -52,6 +55,7 @@ final readonly class DevelopmentCaddyAccessCommand
                         resolved=$(realpath -e -- "$checkout")
                         test "$resolved" = "$home/releases/$name"
                         test "$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$resolved" rev-parse --path-format=absolute --git-common-dir)" = "$home/.git"
+                        application="$resolved${application#"$checkout"}"
                         checkout=$resolved
                     fi
                     test -d "$checkout"
@@ -72,9 +76,9 @@ final readonly class DevelopmentCaddyAccessCommand
                     storage_target=
                     links=$(find -P "$document_root" -type l -print0 | base64 -w0)
                     while IFS= read -r -d '' link; do
-                        expected_target="$checkout/storage/app/public"
-                        test "$document_root" = "$checkout/public"
-                        test "$link" = "$checkout/public/storage"
+                        expected_target="$application/storage/app/public"
+                        test "$document_root" = "$application/public"
+                        test "$link" = "$document_root/storage"
                         test "$(realpath -e -- "$link")" = "$expected_target"
                         test -d "$expected_target"
                         test "$(realpath -e -- "$expected_target")" = "$expected_target"
@@ -84,6 +88,7 @@ final readonly class DevelopmentCaddyAccessCommand
                     done < <(printf '%s' "$links" | base64 --decode)
                     checkouts+=("$checkout")
                     roots+=("$document_root")
+                    applications+=("$application")
                     storage+=("$storage_target")
                 done
 
@@ -131,6 +136,7 @@ final readonly class DevelopmentCaddyAccessCommand
                 for index in "${!checkouts[@]}"; do
                     checkout=${checkouts[$index]}
                     document_root=${roots[$index]}
+                    application=${applications[$index]}
                     storage_target=${storage[$index]}
                     ancestor=$document_root
                     while [ "$ancestor" != / ]; do
@@ -151,7 +157,7 @@ final readonly class DevelopmentCaddyAccessCommand
                     setfacl -P -R -m u:caddy:r-X "$document_root"
                     find -P "$document_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
                     if [ -n "$storage_target" ]; then
-                        setfacl -m u:caddy:--x "$checkout/storage" "$checkout/storage/app"
+                        setfacl -m u:caddy:--x "$application/storage" "$application/storage/app"
                         setfacl -P -R -m u:caddy:r-X "$storage_target"
                         find -P "$storage_target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
                     fi

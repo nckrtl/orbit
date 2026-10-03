@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Domain\SourceControl\ApplicationDirectory;
+
 final readonly class DevelopmentSite
 {
     public function __construct(
@@ -56,6 +58,11 @@ final readonly class DevelopmentSite
     public function addressKey(): string
     {
         return $this->nodeId.'|'.$this->domain.'|'.($this->publicListener ? 'public' : 'private');
+    }
+
+    public function applicationDirectory(): string
+    {
+        return ApplicationDirectory::resolve($this->checkoutPath, $this->documentRoot);
     }
 
     public function poolName(): string
