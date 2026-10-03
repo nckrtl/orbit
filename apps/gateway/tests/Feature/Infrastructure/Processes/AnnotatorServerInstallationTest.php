@@ -72,12 +72,14 @@ it('serves the installed injection asset and admits only the rendered page and T
             import { readFile } from 'node:fs/promises';
             const origin = `http://127.0.0.1:${process.argv[1]}`;
             let ready = false;
-            for (let i = 0; i < 100; i++) {
-              try { ready = (await fetch(origin + '/health')).status === 200; } catch {}
+            // CI can delay process startup; bound readiness by elapsed time, not poll count.
+            const deadline = performance.now() + 15000;
+            while (performance.now() < deadline) {
+              try { ready = (await fetch(origin + '/health', {signal: AbortSignal.timeout(1000)})).status === 200; } catch {}
               if (ready) break;
-              await new Promise(resolve => setTimeout(resolve, 25));
+              await new Promise(resolve => setTimeout(resolve, 100));
             }
-            assert.equal(ready, true);
+            assert.equal(ready, true, 'annotator /health did not become ready within 15 seconds');
             for (const allowed of ['https://site.test', 't3code://app']) {
               for (const method of ['GET', 'DELETE', 'OPTIONS']) {
                 const response = await fetch(origin + '/annotations', {method, headers: {Origin: allowed, 'Access-Control-Request-Method': 'DELETE'}});
@@ -103,7 +105,7 @@ it('serves the installed injection asset and admits only the rendered page and T
             assert.match(injection.headers.get('content-type'), /javascript/);
             assert.equal(await injection.text(), await readFile(process.argv[2], 'utf8'));
             console.log('verified installed asset and preset origins');
-            JS, (string) $port, $root.'/current/dist/inject.js'], timeout: 15);
+            JS, (string) $port, $root.'/current/dist/inject.js'], timeout: 30);
         $check->mustRun();
         expect($check->getOutput())->toContain('verified installed asset and preset origins');
     } finally {
