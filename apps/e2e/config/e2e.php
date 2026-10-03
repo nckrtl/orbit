@@ -10,6 +10,7 @@ return [
         'cpu' => env('ORBIT_E2E_INCUS_CPU', '1'),
         'memory' => env('ORBIT_E2E_INCUS_MEMORY', [
             'gateway' => '1536MiB',
+            'operator' => '512MiB',
             'app-prod' => '1GiB',
             'app-prod-2' => '1GiB',
             'default' => '2GiB',

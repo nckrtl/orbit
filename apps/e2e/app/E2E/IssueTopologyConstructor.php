@@ -67,7 +67,7 @@ final readonly class IssueTopologyConstructor
             ) {
                 throw new RuntimeException('The issue topology base image changed before construction.');
             }
-            $slot = $this->capacity->reserveSlot(count($target->recipe->nodes));
+            $slot = $this->capacity->reserveSlot($target->recipe->vmCount());
             $lastAddress = max(array_map(
                 static fn (TopologyNode $node): int => $node->address,
                 $target->recipe->nodes,

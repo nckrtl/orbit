@@ -22,6 +22,7 @@ final readonly class WorktreeSynchronizer
     private const array REQUIRED_GUEST_SCRIPTS = [
         'converge-app-dev.sh',
         'converge-app-prod.sh',
+        'converge-operator.sh',
         'converge-gateway.sh',
         'converge-sample-app.sh',
         'converge-sample-fixtures.sh',
