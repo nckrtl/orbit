@@ -75,6 +75,7 @@ final readonly class DeployDefaultInstanceAction
                         $output->emitPhase(DeploymentProgressPhase::SourcePreparation);
                         $this->deployment->initialize($instance);
                         $selected = $this->deployment->selected($instance);
+                        $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
                         if (! $instance->development_release_layout) {
                             $instance->update(['development_release_layout' => true]);
                         }
@@ -111,6 +112,7 @@ final readonly class DeployDefaultInstanceAction
                         $boundary = DeploymentFailureBoundary::Activation;
                         $output->emitPhase(DeploymentProgressPhase::Activation);
                         $selected = $this->deployment->activate($instance, $release);
+                        $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
                         // checkout_path remains the repository home, never a disposable release.
                         $this->projectRoute($instance);
                         $this->deployment->prune($instance, $selected);
@@ -120,6 +122,7 @@ final readonly class DeployDefaultInstanceAction
                         if ($boundary === DeploymentFailureBoundary::Activation) {
                             try {
                                 $selected = $this->deployment->selected($instance);
+                                $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
                             } catch (Throwable) {
                                 // Preserve the last observed selection if SSH itself is unavailable.
                             }

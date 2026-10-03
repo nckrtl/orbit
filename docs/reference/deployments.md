@@ -53,7 +53,9 @@ Every required step must pass before Orbit atomically renames the new `current` 
 
 Orbit reports the failed step's exit status and names it in a warning. The output and stored events keep that warning even when the overall deployment succeeds or command output reached its storage limit.
 
-After a deployment Orbit prunes managed releases, retaining `current` and its previous selection. A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The root `.env` and any `.env.testing` are copied from the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
+After a deployment Orbit prunes managed releases, retaining `current`, its previous selection, and releases recorded as seeds by other Instances on that Node. The seed fields on an Instance are a durable lease: asynchronous setup and interrupted retries can still read that immutable release after later deployments. The lease lasts until the consuming Instance is removed. Pruning reads these leases under the same Node source lock used for seed selection and validates every retained release marker.
+
+A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The root `.env` and any `.env.testing` are copied from the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
 
 ## Deploy steps
 

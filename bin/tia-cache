@@ -24,6 +24,7 @@ QUALITY = {
 }
 COMMAND_LOG = None
 COMMAND_LOCK = None
+CACHE_BRANCH_LOCK = None
 COMMAND_TIMEOUT = 1800
 ISOLATED_ENVIRONMENT_PREFIXES = ('APP_', 'DB_', 'ORBIT_')
 ISOLATED_ENVIRONMENT_NAMES = frozenset((
@@ -66,7 +67,7 @@ def maintenance_environment():
 
 def run(root, *command, capture=True, tia_directory=None):
     options = {'cwd': root, 'text': True, 'start_new_session': True,
-               'pass_fds': () if COMMAND_LOCK is None else (COMMAND_LOCK,),
+               'pass_fds': tuple(fd for fd in (COMMAND_LOCK, CACHE_BRANCH_LOCK) if fd is not None),
                'env': maintenance_environment()}
     if tia_directory is not None:
         options['env']['ORBIT_TIA_DIRECTORY'] = str(tia_directory)
@@ -309,6 +310,91 @@ def request_refresh(root, store):
         start_background(common, store, lagging)
 
 
+def development_owner(store):
+    path = store / 'development-instance.json'
+    if not path.exists():
+        return None
+    owner = json.loads(path.read_text())
+    if not isinstance(owner.get('instance'), int) or owner['instance'] <= 0:
+        raise ValueError('Invalid development cache owner.')
+    return owner
+
+
+@contextmanager
+def cache_branch_journal(root, common, owner, commit, branch):
+    """Publish a locked, durable transition receipt before creating or attaching the private ref."""
+    global CACHE_BRANCH_LOCK
+    state = common / 'orbit-development-releases'
+    identity = base64.b64encode(f'{owner["instance"]}\0{common.parent}\0{git(common, "remote", "get-url", "origin")}\0'.encode()).decode()
+    for directory in (state, root):
+        if directory.is_symlink() or directory.stat().st_uid != os.geteuid():
+            raise ValueError('Cache candidate ownership differs.')
+    for path, value in ((state / 'identity', identity), (state / ('release-' + root.name), identity + ':' + root.name)):
+        if path.is_symlink() or path.stat().st_uid != os.geteuid() or path.read_text().strip() != value:
+            raise ValueError('Cache candidate release receipt differs.')
+    if git(root, 'for-each-ref', '--format=%(refname)', 'refs/heads/' + branch):
+        raise ValueError('The private cache branch already exists; retain it for diagnosis.')
+    journal = state / ('cache-branch-' + root.name)
+    descriptor, temporary = tempfile.mkstemp(prefix='.cache-branch-', dir=state)
+    lock_fd = None
+    try:
+        with os.fdopen(descriptor, 'wb') as stream:
+            stream.write(f'{identity}:{root.name}:{commit}:{branch}\n'.encode())
+            stream.flush()
+            os.fsync(stream.fileno())
+            # Children keep the lease alive without receiving a writable ownership receipt.
+            lock_fd = os.open(temporary, os.O_RDONLY | os.O_NOFOLLOW)
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            os.link(temporary, journal, follow_symlinks=False)
+            os.unlink(temporary)
+            with_directory = os.open(state, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(with_directory)
+            finally:
+                os.close(with_directory)
+            CACHE_BRANCH_LOCK = lock_fd
+            yield journal, identity
+    finally:
+        CACHE_BRANCH_LOCK = None
+        if lock_fd is not None:
+            os.close(lock_fd)
+        Path(temporary).unlink(missing_ok=True)
+
+
+def warm_release(root, common, store, projects):
+    owner = development_owner(store)
+    home = common.parent
+    if (owner is None or root.parent != home / 'releases'
+            or (home / 'current').resolve() == root
+            or common_directory(root) != common or git(root, 'status', '--porcelain')):
+        raise ValueError('Warm-up requires a clean, unselected default release candidate.')
+    commit = git(root, 'rev-parse', 'HEAD')
+    if not is_ancestor(root, commit, 'refs/remotes/origin/main'):
+        raise ValueError('Only default-branch commits may publish main caches.')
+    directory = Path(tempfile.mkdtemp(prefix='run-', dir=store))
+    failed = False
+    branch = 'orbit-cache-' + root.name
+    # Pest deliberately does not record detached HEADs. Use a disposable candidate
+    # branch, then detach again before the deployment validates or selects it.
+    with cache_branch_journal(root, common, owner, commit, branch) as (journal, identity):
+        receipt = f'orbit cache {identity}:{root.name}:{commit}'
+        git(root, 'update-ref', '--create-reflog', '-m', receipt, 'refs/heads/' + branch, commit, '0' * len(commit))
+        try:
+            git(root, 'symbolic-ref', 'HEAD', 'refs/heads/' + branch)
+            for project in projects:
+                outcome = project_checks(root, store, project, commit, directory)
+                with queue_lock(store):
+                    state = load_requests(store)
+                    record_outcome(state, project, outcome)
+                    save_requests(store, state)
+                failed |= not outcome['success']
+        finally:
+            git(root, '-c', 'core.hooksPath=/dev/null', 'checkout', '--quiet', '--detach', '--force', commit)
+            git(root, 'branch', '-D', branch)
+            journal.unlink()
+    return int(failed)
+
+
 def prepare_checkout(common, store):
     # This private repository can use branch main while the user's main is dirty.
     # A .git file gives Pest a cache key distinct from other checkouts of this origin.
@@ -375,6 +461,21 @@ def refresh_project(root, store, project, commit, installed=False, recover=False
     if git(root, 'status', '--porcelain') or git(root, 'rev-parse', 'HEAD') != commit:
         raise RuntimeError('Cache checkout changed during testing; publication refused.')
     graph = graph_path.read_text()
+    if development_owner(store) is not None:
+        branch = git(root, 'branch', '--show-current')
+        recorded = json.loads(graph)
+        baselines = recorded['baselines']
+        if not branch.startswith('orbit-cache-') or set(baselines) - {'main', branch}:
+            raise ValueError('Only the candidate cache branch may publish.')
+        if branch in baselines:
+            own = baselines.pop(branch)
+            if own.get('sha') != commit or own.get('complete') is not True or own.get('tree') not in ({}, []):
+                raise ValueError('Candidate baseline is not complete and clean.')
+            results = baselines.get('main', {}).get('results', {})
+            covered = {result.get('file') for result in own['results'].values()}
+            results = {key: value for key, value in results.items() if value.get('file') not in covered}
+            baselines['main'] = {**own, 'results': {**results, **own['results']}}
+        graph = json.dumps(recorded)
     anchor = validate_graph(root, graph, info, commit)
     if recover and anchor != commit:
         raise RecoveryNotExecuted(
@@ -474,6 +575,9 @@ def publish_snapshot(root, path, snapshot):
 
 
 def publish_bootstrap(root, store, projects, commit):
+    if development_owner(store) is not None:
+        print('Development deployment owns main cache publication; bootstrap caches stay private.', flush=True)
+        return
     if (os.environ.get('ORBIT_MAIN_CACHE_STORE')
             or os.environ.get('ORBIT_TIA_DIRECTORY', '.orbit-tia') != '.orbit-tia'):
         raise ValueError('Imported or custom caches stay private.')
@@ -698,11 +802,24 @@ def drain(common, store, lock):
             commit = known_main(common)
             outcomes = {}
             try:
-                git(common, 'fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main')
-                checkout = prepare_checkout(common, store)
-                commit = git(checkout, 'rev-parse', 'HEAD')
+                owner = development_owner(store)
+                if owner is not None:
+                    # Deployment owns candidate creation, warm-up, switching and pruning.
+                    # Never install or run checks in the immutable selected release.
+                    run(common, 'orbit', 'instance:deploy', str(owner['instance']), '--json', capture=False)
+                    commit = git(common.parent / 'current', 'rev-parse', 'HEAD')
+                    results = load_requests(store)['results']
+                    for project in batch:
+                        previous = results.get(project, {})
+                        if previous.get('commit') != commit or not publications_current(store, project, commit):
+                            raise RuntimeError(f'Development deployment did not warm {project} at {commit}.')
+                        outcomes[project] = previous
+                else:
+                    git(common, 'fetch', 'origin', 'refs/heads/main:refs/remotes/origin/main')
+                    checkout = prepare_checkout(common, store)
+                    commit = git(checkout, 'rev-parse', 'HEAD')
                 key = worker_key(common)
-                for project in batch:
+                for project in (() if owner is not None else batch):
                     previous = state['results'].get(project, {})
                     if (previous.get('success') and previous.get('worker_key') == key
                             and not state.get('correctness_failures', {}).get(project)
@@ -815,15 +932,18 @@ def status(common, store, remote=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish', 'register'))
+    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish', 'register', 'warm'))
     parser.add_argument('--repository', default='.')
     parser.add_argument('--project', action='append', choices=PROJECTS)
     parser.add_argument('--background', action='store_true')
+    parser.add_argument('--development-instance', type=int, help='Default Instance that owns cache deployments (register only)')
     parser.add_argument('--json', action='store_true', help='Print machine-readable maintenance status')
     parser.add_argument('--remote', action='store_true', help='Read authoritative remote main for status')
     parser.add_argument('--worker-fd', type=int, help=argparse.SUPPRESS)
     parser.add_argument('--commit', help=argparse.SUPPRESS)
     args = parser.parse_args()
+    if args.development_instance is not None and (args.action != 'register' or args.development_instance <= 0):
+        parser.error('--development-instance requires register and a positive Instance ID')
     if args.background and args.action != 'refresh':
         parser.error('--background requires refresh')
     if (args.json or args.remote) and args.action != 'status':
@@ -841,13 +961,20 @@ def main():
         if registered:
             print(f'Seeding from the main cache store registered for this origin: {store}', flush=True)
         seed(root, store, projects)
-        if registered:
+        if registered or development_owner(store) is not None:
             try:
                 request_refresh(root, store)
             except (RuntimeError, OSError, ValueError, KeyError, TypeError) as error:
                 print(f'Main cache refresh not requested: {error}', flush=True)
+    elif args.action == 'warm':
+        root = Path(git(args.repository, 'rev-parse', '--show-toplevel')).resolve()
+        return warm_release(root, common, store, projects)
     elif args.action == 'register':
-        if not has_publications(store):
+        if args.development_instance is not None:
+            if not (common.parent / '.git/orbit-development-releases-owner').is_file():
+                raise ValueError('Development cache owner requires an initialized default repository.')
+            atomic_write(store / 'development-instance.json', json.dumps({'instance': args.development_instance}).encode())
+        if not has_publications(store) and args.development_instance is None:
             raise ValueError(f'{store} has no main publications to register.')
         register_store(common_directory(args.repository), store, force=True)
         print(f'Registered {store} for clones of this origin: {registry_path(common_directory(args.repository))}')

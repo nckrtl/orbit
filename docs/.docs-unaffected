@@ -122,3 +122,5 @@ unowned: Unchanged migration files in the planned migrations directory have no c
 docs/reference/database-connections.md: The SQLite clone now takes a reflink on the same Node; this page links to the Database clone section, which describes it, and its connection and ownership rules are unchanged.
 docs/reference/tools.md: The service provider only binds the new dependency copier; Tool management is unchanged.
 docs/reference/tools.md: Binding the development deployment service and scheduling its tick do not change the closed Tool registry, package installation, or adoption rules.
+docs/reference/cli-ux.md: The Instance JSON expectations add nullable seed fields. Human layouts, prompts, consent, streaming, and the CLI design standard stay unchanged; the fields are documented in /cli/instance.
+docs/reference/web-app.md: Regenerated Instance API types add nullable seed fields. No web screen or interaction changes; the release seed contract is documented in /reference/tasks.

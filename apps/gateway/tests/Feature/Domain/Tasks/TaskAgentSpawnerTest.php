@@ -446,7 +446,7 @@ it('leaves run commands in the diff unchanged and keeps the driver prompt within
     expect($id)->toBeInt()
         ->and(mb_strlen($prompt))->toBeLessThanOrEqual(TaskReviewPacket::Limit)
         ->and($prompt)->toContain($command)
-        ->and($prompt)->toContain('.git/orbit/turn --thread='.$id.' --outcome=approved');
+        ->and($prompt)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread='.$id.' --outcome=approved');
 });
 
 it('writes the search endpoint file before it starts a reviewer', function (): void {

@@ -102,7 +102,7 @@ A non-active state alone does not prove source ownership. Removal holds the same
 
 ### Worktree sets
 
-A worktree Instance is removed alone. A linked worktree whose directory is gone, which Git calls prunable, does not count.
+A task workspace seeded from `default` is a worktree Instance. Removal checks its creation receipt in the worktree's private Git administration directory, not under its `.git` pointer file. A worktree Instance is removed alone; its seed repository and other Instances remain. A linked worktree whose directory is gone, which Git calls prunable, does not count.
 
 A checkout with registered worktrees needs `--force`. Then Orbit removes every worktree first, sorted by path, and the checkout last. Each worktree must be an active Instance of the same Project on the same Node. An unregistered worktree refuses both modes. After the Gateway accepts the set, it refuses new Processes and Schedules for its members.
 

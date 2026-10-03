@@ -191,7 +191,19 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
     public function prune(Instance $instance, DeploymentRelease $selected): void
     {
         $this->assertRelease($instance, $selected);
-        $this->run($instance, DevelopmentReleaseProgram::prune(), 'prune', [$selected->name]);
+        $retained = [];
+        foreach (Instance::query()->where('node_id', $instance->node_id)->where('project_id', $instance->project_id)
+            ->where('id', '!=', $instance->id)->where('seed_repository', $instance->checkout_path)->whereNotNull('seed_path')->pluck('seed_path') as $path) {
+            if (! is_string($path) || ! str_starts_with($path, $instance->checkout_path.'/releases/')) {
+                throw $this->invalidReceipt();
+            }
+            $name = substr($path, strlen($instance->checkout_path.'/releases/'));
+            if (! DeploymentRelease::isValidName($name)) {
+                throw $this->invalidReceipt();
+            }
+            $retained[] = $name;
+        }
+        $this->run($instance, DevelopmentReleaseProgram::prune(), 'prune', [$selected->name, ...array_unique($retained)]);
     }
 
     /** @return non-empty-list<string> */

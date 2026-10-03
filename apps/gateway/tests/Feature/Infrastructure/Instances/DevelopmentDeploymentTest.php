@@ -3,16 +3,23 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\DeployDefaultInstanceAction;
+use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\DevelopmentReleaseProgram;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Models\Instance;
 use App\Models\Route;
 use Symfony\Component\Process\Process;
 use Tests\Support\DevelopmentDeploymentFixture;
+use Tests\Support\LocalShellSshExecutor;
 
 beforeEach(function (): void {
     $this->fixture = new DevelopmentDeploymentFixture;
@@ -241,6 +248,71 @@ describe('real development release programs', function (): void {
             ->and($result?->commands[0]->result->exitCode)->not->toBe(0)
             ->and(microtime(true) - $started)->toBeLessThan(8)
             ->and(file_get_contents($selected->path.'/.cache/warm'))->toBe('previous-cache');
+    });
+
+    it('retains a leased seed through deployments while asynchronous setup is pending and on retry', function (): void {
+        dev935_require_reflinks($this->fixture);
+        config()->set('orbit.tasks.worker_user', null);
+        $default = $this->fixture->instance;
+        $this->fixture->deployment->initialize($default);
+        $default->update(['development_release_layout' => true]);
+        $seed = $this->fixture->deployment->selected($default);
+        $path = $this->fixture->sandbox.'/apps/dev935/task-pending-setup';
+        $consumer = Instance::query()->create([
+            'project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => 'task-pending-setup',
+            'checkout_path' => $path, 'status' => 'reserved',
+        ]);
+        app(SelectInstanceSeedAction::class)->execute($consumer);
+        DevelopmentDeploymentFixture::command(['git', '-C', $this->fixture->home, 'worktree', 'add', '-b', 'task-pending-setup', $path, $seed->commit]);
+        $consumer->update(['starting_commit' => $seed->commit, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
+        $keys = Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock();
+        $hosts = Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock();
+        $runner = new RemoteTaskCheckRunner(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts));
+        $setup = [[
+            'name' => 'copy from seed',
+            'command' => 'touch setup-started; while [ ! -f allow-setup ]; do sleep 0.05; done; cat "$ORBIT_SEED_PATH/.cache/warm" > copied-cache',
+            'timeout_seconds' => 30,
+        ]];
+        $process = $runner->start($consumer, 'true', $setup);
+        try {
+            for ($i = 0; $i < 100 && ! file_exists($path.'/setup-started'); $i++) {
+                usleep(50_000);
+            }
+            expect(file_exists($path.'/setup-started'))->toBeTrue();
+            foreach (['advance once', 'advance twice'] as $message) {
+                $commit = $this->fixture->push($message);
+                $this->fixture->deployment->target($default);
+                $candidate = $this->fixture->deployment->prepare($default, $commit);
+                $selected = $this->fixture->deployment->activate($default, $candidate);
+                $this->fixture->deployment->prune($default, $selected);
+            }
+            expect(is_dir($seed->path))->toBeTrue();
+            touch($path.'/allow-setup');
+            for ($i = 0; $i < 150; $i++) {
+                $reading = $runner->read($consumer, $process);
+                if ($reading->state === 'finished') {
+                    break;
+                }
+                usleep(50_000);
+            }
+            expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(0)
+                ->and(file_get_contents($path.'/copied-cache'))->toBe('previous-cache');
+            $process = $runner->start($consumer, 'true', $setup);
+            for ($i = 0; $i < 150; $i++) {
+                $reading = $runner->read($consumer, $process);
+                if ($reading->state === 'finished') {
+                    break;
+                }
+                usleep(50_000);
+            }
+            expect($reading->exitCode)->toBe(0)->and($consumer->refresh()->seed_commit)->toBe($seed->commit);
+        } finally {
+            $runner->cancel($consumer, $process);
+        }
+        DevelopmentDeploymentFixture::command(['git', '-C', $this->fixture->home, 'worktree', 'remove', '--force', $path]);
+        $consumer->delete();
+        $this->fixture->deployment->prune($default, $selected);
+        expect(is_dir($seed->path))->toBeFalse();
     });
 
     it('prunes only managed releases keeping live and previous while unrelated linked worktrees remain', function (): void {

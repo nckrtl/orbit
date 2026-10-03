@@ -65,6 +65,10 @@ use Illuminate\Support\Carbon;
  * @property int|null $registration_source_device
  * @property int|null $registration_source_inode
  * @property Carbon|null $registration_completed_at
+ * @property bool $seed_selected
+ * @property string|null $seed_path
+ * @property string|null $seed_commit
+ * @property string|null $seed_repository
  * @property string|null $starting_commit
  * @property string|null $selected_php_version
  * @property bool|null $source_is_laravel
@@ -152,6 +156,10 @@ final class Instance extends Model
         'registration_source_inode',
         'registration_completed_at',
         'starting_commit',
+        'seed_selected',
+        'seed_path',
+        'seed_commit',
+        'seed_repository',
         'selected_php_version',
         'source_is_laravel',
         'provisioning_step',
@@ -394,6 +402,7 @@ final class Instance extends Model
             'source_is_laravel' => 'boolean',
             'task_workspace_routed' => 'boolean',
             'development_release_layout' => 'boolean',
+            'seed_selected' => 'boolean',
             'status' => InstanceState::class,
         ];
     }

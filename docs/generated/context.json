@@ -759,11 +759,9 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Role",
                 "Route",
-                "Task",
                 "Tool"
             ],
             "governing_adrs": []
@@ -1241,6 +1239,7 @@
                 "Doctor",
                 "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
                 "Project",
@@ -1478,7 +1477,11 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
             ],
             "concepts": [
                 "Access grant",

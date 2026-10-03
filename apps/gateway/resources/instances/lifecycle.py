@@ -48,6 +48,7 @@ try:
     child = subprocess.Popen(
         ['/usr/bin/bash', '-eu', command_path],
         cwd=checkout,
+        env={**os.environ, **payload.get('environment', {})},
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,

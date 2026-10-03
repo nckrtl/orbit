@@ -69,7 +69,9 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173
+                "vite_port": 5173,
+                "seed_path": null,
+                "seed_commit": null
             },
             {
                 "id": 4,
@@ -135,7 +137,9 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5176
+                "vite_port": 5176,
+                "seed_path": null,
+                "seed_commit": null
             },
             {
                 "id": 3,
@@ -201,7 +205,9 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5175
+                "vite_port": 5175,
+                "seed_path": null,
+                "seed_commit": null
             },
             {
                 "id": 2,
@@ -267,7 +273,9 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5174
+                "vite_port": 5174,
+                "seed_path": null,
+                "seed_commit": null
             }
         ],
         "meta": {

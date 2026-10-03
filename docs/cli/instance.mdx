@@ -17,6 +17,8 @@ An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a
 
 ## Commands
 
+Instance JSON includes nullable `seed_path` and `seed_commit`. On `default`, these identify its successful development release. Read them before creating a linked worktree for `instance:register`; use that commit rather than a newer `origin/main`. Human tables keep their existing columns.
+
 Every command accepts `--json`. Machine output never supplies consent. Human list commands use tables, with labeled records when the terminal is too narrow; detail commands show a tree and slow requests show progress. `instance:deploy` and `instance:rollback` return newline-delimited JSON (NDJSON) instead of one document.
 
 Placement commands create, adopt, inspect, and remove an Instance on one Node.

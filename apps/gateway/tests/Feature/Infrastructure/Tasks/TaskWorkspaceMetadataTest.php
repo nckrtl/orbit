@@ -24,6 +24,27 @@ describe('TaskGitHardening', function (): void {
         }
     });
 
+    it('stores linked worktree metadata in its private administration directory', function (): void {
+        $root = sys_get_temp_dir().'/orbit-metadata-worktree-'.bin2hex(random_bytes(6));
+        $repository = $root.'/default';
+        $checkout = $root.'/task';
+        (new Process(['git', 'init', '--quiet', $repository]))->mustRun();
+        (new Process(['git', '-C', $repository, '-c', 'user.name=Orbit', '-c', 'user.email=orbit@example.test', 'commit', '--allow-empty', '-m', 'seed']))->mustRun();
+        (new Process(['git', '-C', $repository, 'worktree', 'add', '--detach', $checkout]))->mustRun();
+        $program = "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode('trusted check')]);
+        try {
+            (new Process(['bash', '-seu', '--', $checkout], cwd: $checkout, input: $program))->mustRun();
+            $directory = trim((new Process(['git', '-C', $checkout, 'rev-parse', '--absolute-git-dir']))->mustRun()->getOutput());
+            expect(file_get_contents($directory.'/orbit/check'))->toBe('trusted check')
+                ->and(is_dir($repository.'/.git/orbit'))->toBeFalse();
+            $mcp = "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().TaskWorkspaceMetadata::operation('mcp', ['config' => '{}']);
+            (new Process(['bash', '-seu', '--', $checkout], cwd: $checkout, input: $mcp))->mustRun();
+            expect(trim((new Process(['git', '-C', $checkout, 'status', '--porcelain']))->mustRun()->getOutput()))->toBe('');
+        } finally {
+            File::deleteDirectory($root);
+        }
+    });
+
     it('pins metadata descriptors against deterministic worker substitution', function (string $operation, string $substitution): void {
         $root = sys_get_temp_dir().'/orbit-metadata-race-'.bin2hex(random_bytes(6));
         $checkout = $root.'/checkout';

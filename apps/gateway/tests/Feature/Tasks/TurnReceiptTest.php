@@ -616,24 +616,24 @@ it('names the turn command in the prompts and the reminder', function (): void {
         new TaskRubricItem('turn_receipt', false, 'No turn receipt was found.'),
     ], threadId: 17);
 
-    expect($prompt)->toContain('.git/orbit/turn --thread=17 --outcome=ready_for_review')
-        ->and($prompt)->toContain('.git/orbit/turn --thread=17 --outcome=blocked')
+    expect($prompt)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=ready_for_review')
+        ->and($prompt)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=blocked')
         ->and($prompt)->toContain('consult')
         ->and($prompt)->toContain('answered')
         ->and($prompt)->toContain('brief_unclear, contract_gap, scope, environment, or missed_contract')
         ->and($prompt)->not->toContain('.git/orbit/run')
-        ->and($reviewer)->toContain('.git/orbit/turn --thread=19 --outcome=approved')
-        ->and($reviewer)->toContain('.git/orbit/turn --thread=19 --outcome=changes_requested')
+        ->and($reviewer)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=approved')
+        ->and($reviewer)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=changes_requested')
         ->and($reviewer)->not->toContain('This is a consult')
         ->and($reviewer)->not->toContain('--outcome=answered')
-        ->and(TaskTurnInstructions::consult(19))->toContain('.git/orbit/turn --thread=19 --outcome=answered')
+        ->and(TaskTurnInstructions::consult(19))->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=answered')
         ->and(TaskTurnInstructions::consult(19))->toContain('This is a consult, not a review.')
         ->and(TaskTurnInstructions::consult(19))->toContain('brief_unclear, contract_gap, scope, environment, or missed_contract')
         ->and(TaskTurnInstructions::relay(19))->toContain("This is a relay of the operator's direction, not a review.")
-        ->and(TaskTurnInstructions::relay(19))->toContain('.git/orbit/turn --thread=19 --outcome=answered')
+        ->and(TaskTurnInstructions::relay(19))->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=19 --outcome=answered')
         ->and($reviewer)->not->toContain('.git/orbit/run')
         ->and($reminder)->toContain('No turn receipt was found.')
-        ->and($reminder)->toContain('.git/orbit/turn --thread=17 --outcome=ready_for_review')
+        ->and($reminder)->toContain('"$(git rev-parse --git-path orbit)/turn" --thread=17 --outcome=ready_for_review')
         ->and($reminder)->not->toContain('.git/orbit/run');
 });
 

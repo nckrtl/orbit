@@ -66,6 +66,10 @@ final readonly class ProjectLifecycleRunner
                 $input = ProtectedInput::fromString(json_encode([
                     'checkout' => $checkout,
                     'command' => $step->command,
+                    'environment' => [
+                        'ORBIT_SEED_PATH' => $phase === LifecyclePhase::Setup ? ($instance->seed_path ?? '') : '',
+                        'ORBIT_SEED_COMMIT' => $phase === LifecyclePhase::Setup ? ($instance->seed_commit ?? '') : '',
+                    ],
                     'timeout' => $timeout - 5.0,
                 ], JSON_THROW_ON_ERROR));
                 $this->ssh->execute(

@@ -508,6 +508,32 @@ it('reports an unreachable workspace when the review tree cannot be read', funct
     'invalid output' => [new CommandResult(0, 'not json', '', 1, false), 'The workspace tree could not be read.'],
 ]);
 
+it('passes the persisted seed decision to asynchronous baseline setup', function (bool $seeded): void {
+    config()->set('orbit.tasks.worker_user', null);
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $path = $seeded ? $this->directory."/seed with 'quote" : null;
+    $commit = $seeded ? str_repeat('a', 40) : null;
+    $instance->update(['seed_selected' => true, 'seed_path' => $path, 'seed_commit' => $commit]);
+    $runner = check_runner(new class implements SshExecutor
+    {
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $process = new Process($command->arguments, null, [
+                'ORBIT_SEED_PATH' => 'inherited-unrelated-seed', 'ORBIT_SEED_COMMIT' => 'inherited-unrelated-commit',
+            ], $command->input);
+            $process->run();
+
+            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
+        }
+    });
+    $process = $runner->start($instance, 'true', [[
+        'name' => 'read seed', 'command' => 'printf "path=<%s> commit=<%s>" "$ORBIT_SEED_PATH" "$ORBIT_SEED_COMMIT" > seed-observed', 'timeout_seconds' => 10,
+    ]]);
+    expect(check_runner_wait($runner, $instance, $process)->exitCode)->toBe(0)
+        ->and(file_get_contents($checkout.'/seed-observed'))->toBe('path=<'.($path ?? '').'> commit=<'.($commit ?? '').'>');
+})->with(['seeded' => true, 'empty fallback' => false]);
+
 it('runs setup steps in order before composer check, and records the tree after setup', function (): void {
     $checkout = check_runner_checkout('test -f ignored/installed && echo checked');
     $instance = check_runner_instance($checkout);

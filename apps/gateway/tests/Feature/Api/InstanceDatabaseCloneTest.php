@@ -3,12 +3,10 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\CloneInstanceDatabaseAction;
-use App\Actions\Instances\CopyInstanceDependenciesAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Domain\DatabaseServers\DatabaseServerAdmin;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
-use App\Domain\Instances\DependencyCopy\InstanceDependencyCopier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentRouteProjector;
@@ -47,7 +45,6 @@ use App\Models\Process;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
-use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeDatabaseServerAdmin;
 use Tests\Support\LifecycleSshExecutor;
 
@@ -567,80 +564,21 @@ describe('instance:destroy owned databases', function (): void {
     });
 });
 
-describe('instance:create dependency copy', function (): void {
-    it('copies the default Instance dependencies before the database clone and the setup steps', function (): void {
-        database_clone_source($this->default, [
-            'driver' => 'sqlite',
-            'node_id' => $this->node->id,
-            'path' => '/srv/orbit/apps/acme/default/database/database.sqlite',
-        ]);
-        ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 30, 'position' => 0]);
-        $copier = app(InstanceDependencyCopier::class);
-        $clonesAtCopy = null;
-        $copier->onCopy = function () use (&$clonesAtCopy): void {
-            $clonesAtCopy = count($this->sqlite->copies);
-        };
-        $copiesAtSetup = null;
-        $transport = new LifecycleSshExecutor(result: function () use ($copier, &$copiesAtSetup): int {
-            $copiesAtSetup = count($copier->copies);
-
-            return 0;
-        });
-        app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-
-        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
-
-        expect($copier->copies)->toBe([['source' => 'default', 'target' => 'feature-x']])
-            ->and($clonesAtCopy)->toBe(0)
-            ->and($this->sqlite->copies)->toHaveCount(1)
-            ->and($copiesAtSetup)->toBe(1);
-    });
-
-    it('copies nothing from a default Instance that is not active on the same Node', function (Closure $change): void {
-        $change($this->default);
-
-        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
-
-        expect(app(InstanceDependencyCopier::class)->copies)->toBe([]);
-    })->with([
-        'on another Node' => [function (Instance $default): void {
-            $other = Node::query()->create(['name' => 'other-dev', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '192.0.2.11', 'wireguard_ip' => '10.44.0.4', 'user' => 'orbit']);
-            $default->update(['node_id' => $other->id]);
-        }],
-        'not active' => [function (Instance $default): void {
-            $default->update(['status' => InstanceState::SourceResolved]);
-        }],
+it('runs Project setup after the database clone without an automatic dependency copy', function (): void {
+    database_clone_source($this->default, [
+        'driver' => 'sqlite', 'node_id' => $this->node->id,
+        'path' => '/srv/orbit/apps/acme/default/database/database.sqlite',
     ]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 30, 'position' => 0]);
+    $clonesAtSetup = null;
+    $transport = new LifecycleSshExecutor(result: function () use (&$clonesAtSetup): int {
+        $clonesAtSetup = count($this->sqlite->copies);
 
-    it('copies nothing into the default Instance itself', function (): void {
-        app(CopyInstanceDependenciesAction::class)->execute($this->default);
-
-        expect(app(InstanceDependencyCopier::class)->copies)->toBe([]);
+        return 0;
     });
-
-    it('creates the Instance, logs the failure, and runs setup when the copy fails', function (): void {
-        ProjectLifecycleStep::query()->create(['project_id' => $this->project->id, 'phase' => 'setup', 'name' => 'install', 'command' => 'composer install', 'timeout_seconds' => 30, 'position' => 0]);
-        app(InstanceDependencyCopier::class)->fails = true;
-        Log::spy();
-        $setupRuns = 0;
-        $transport = new LifecycleSshExecutor(result: function () use (&$setupRuns): int {
-            $setupRuns++;
-
-            return 0;
-        });
-        app()->instance(ProjectLifecycleRunner::class, $transport->runner());
-
-        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
-
-        $instance = Instance::query()->where('name', 'feature-x')->sole();
-
-        expect($instance->status)->toBe(InstanceState::Active)
-            ->and($instance->failed_step)->toBeNull()
-            ->and($setupRuns)->toBe(1);
-        Log::shouldHaveReceived('warning')->once()->withArgs(fn (string $message, array $context): bool => $context['error_code'] === 'instance.dependency_copy_failed'
-            && $context['source_instance_id'] === $this->default->id
-            && $context['target_instance_id'] === $instance->id);
-    });
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+    $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
+    expect($clonesAtSetup)->toBe(1);
 });
 
 final class DatabaseCloneSqliteFake implements InstanceSqliteCloner

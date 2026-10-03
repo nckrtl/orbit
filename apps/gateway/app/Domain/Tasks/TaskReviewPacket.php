@@ -140,7 +140,7 @@ final readonly class TaskReviewPacket
             $shown = mb_substr($this->taskCheck, 0, self::CommandLimit);
             $rule .= ' The Project task check is `'.$shown.'`.';
             if (mb_strlen($this->taskCheck) > self::CommandLimit) {
-                $rule .= ' .git/orbit/check.log holds the rest. '.TaskReviewContext::Path.' holds the full task context.';
+                $rule .= ' $(git rev-parse --git-path orbit)/check.log holds the rest. '.TaskReviewContext::Path.' holds the full task context.';
             }
         }
         $rule .= ' Run another command only when you need evidence the handoff result does not give, and say why in the approved or changes_requested summary.';
@@ -405,7 +405,7 @@ final readonly class TaskReviewPacket
             default => '',
         };
 
-        return trim($dropped.' .git/orbit/check.log holds the command text and any cut tail. .git/orbit/check.json stores the exit codes. '.TaskReviewContext::Path.' holds the full task context.');
+        return trim($dropped.' $(git rev-parse --git-path orbit)/check.log holds the command text and any cut tail. $(git rev-parse --git-path orbit)/check.json stores the exit codes. '.TaskReviewContext::Path.' holds the full task context.');
     }
 
     /** The Project task check, then each deliverable command, including its base run when requested.

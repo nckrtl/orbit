@@ -25211,6 +25211,18 @@
               "integer",
               "null"
             ]
+          },
+          "seed_path": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "seed_commit": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

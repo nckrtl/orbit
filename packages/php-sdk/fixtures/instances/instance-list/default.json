@@ -69,7 +69,9 @@
                 "removal": null,
                 "transfer": null,
                 "deploy_steps": [],
-                "vite_port": 5173
+                "vite_port": 5173,
+                "seed_path": null,
+                "seed_commit": null
             }
         ],
         "meta": {

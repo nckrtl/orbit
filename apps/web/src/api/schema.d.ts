@@ -3420,6 +3420,8 @@ export interface components {
             transfer?: components["schemas"]["InstanceTransfer"] | null;
             deploy_steps?: components["schemas"]["DeploymentStep"][];
             vite_port?: number | null;
+            seed_path?: string | null;
+            seed_commit?: string | null;
         };
         ProjectIdentity: {
             id?: number;

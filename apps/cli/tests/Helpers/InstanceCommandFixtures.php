@@ -24,6 +24,8 @@ function instance_payload(?array $removal = null): array
         'selected_branch' => 'dev',
         'branch_override' => null,
         'starting_commit' => str_repeat('a', times: 40),
+        'seed_path' => null,
+        'seed_commit' => null,
         'detached' => false,
         'status' => $removal === null ? 'active' : 'removing',
         'route' => instance_route_payload(),
