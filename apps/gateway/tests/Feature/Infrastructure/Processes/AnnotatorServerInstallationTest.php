@@ -80,7 +80,7 @@ it('serves the installed injection asset and admits only the rendered page and T
               await new Promise(resolve => setTimeout(resolve, 100));
             }
             assert.equal(ready, true, 'annotator /health did not become ready within 15 seconds');
-            for (const allowed of ['https://site.test', 't3code://app']) {
+            for (const allowed of ['https://site.test', 't3code://app', 't3code-dev://app']) {
               for (const method of ['GET', 'DELETE', 'OPTIONS']) {
                 const response = await fetch(origin + '/annotations', {method, headers: {Origin: allowed, 'Access-Control-Request-Method': 'DELETE'}});
                 assert.equal(response.status, method === 'OPTIONS' ? 204 : 200);

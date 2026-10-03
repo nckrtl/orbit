@@ -25,6 +25,6 @@ final readonly class AnnotatorPreset
             throw new \InvalidArgumentException('The annotator requires an assigned port.');
         }
 
-        return [...self::command(), '--port', (string) $target->instance->annotator_port, '--store', AnnotatorEndpoint::store($target->instance->id), '--allow-origin', 'https://'.($target->routeDomain ?? 'unrouted.invalid'), '--allow-origin', 't3code://app'];
+        return [...self::command(), '--port', (string) $target->instance->annotator_port, '--store', AnnotatorEndpoint::store($target->instance->id), '--allow-origin', 'https://'.($target->routeDomain ?? 'unrouted.invalid'), '--allow-origin', 't3code://app', '--allow-origin', 't3code-dev://app'];
     }
 }
