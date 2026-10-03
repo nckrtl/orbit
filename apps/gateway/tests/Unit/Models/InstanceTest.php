@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Projects\ProjectType;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -10,6 +11,23 @@ use App\Models\Project;
 use Tests\TestCase;
 
 uses(TestCase::class);
+
+it('keeps non-Laravel dependency trees at repository scope and uses the effective Laravel root', function (ProjectType $type, ?bool $laravel, ?string $override, string $expected): void {
+    $project = new Project(['type' => $type, 'root' => 'apps/site/public']);
+    $node = new Node;
+    $node->setRelation('roles', collect([new NodeRole(['role' => RoleName::AppDev])]));
+    $instance = new Instance(['checkout_path' => '/srv/repository', 'root' => $override, 'source_is_laravel' => $laravel]);
+    $instance->setRelation('project', $project);
+    $instance->setRelation('node', $node);
+
+    expect($instance->dependencyDirectory())->toBe($expected);
+})->with([
+    'Laravel inherited' => [ProjectType::LaravelApp, null, null, '/srv/repository/apps/site'],
+    'Laravel override public' => [ProjectType::LaravelApp, true, 'public', '/srv/repository'],
+    'Laravel monorepo' => [ProjectType::Monorepo, true, null, '/srv/repository/apps/site'],
+    'unclassified monorepo' => [ProjectType::Monorepo, null, null, '/srv/repository'],
+    'package' => [ProjectType::LaravelPackage, false, null, '/srv/repository'],
+]);
 
 it('resolves the application directory from the inherited web root', function (?string $root, string $suffix): void {
     $project = new Project(['root' => $root]);

@@ -374,6 +374,17 @@ final class Instance extends Model
         return ApplicationDirectory::resolve($base, $root);
     }
 
+    public function dependencyDirectory(): string
+    {
+        if ($this->source_is_laravel === true || $this->project->type === ProjectType::LaravelApp) {
+            return $this->applicationDirectory();
+        }
+
+        return $this->placementEnvironment() === 'production' && is_string($this->production_home)
+            ? "{$this->production_home}/current"
+            : $this->checkout_path;
+    }
+
     public function placementEnvironment(): ?string
     {
         $this->loadMissing('node.roles');

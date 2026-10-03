@@ -254,7 +254,10 @@ describe('coordinated instance dependency scans', function (): void {
 
         expect($result->succeeded())->toBeFalse();
         $this->assertDatabaseCount('instance_dependency_observations', 0);
-    })->with([['checkout_path', '/home/orbit/other'], ['status', 'reserved']]);
+    })->with([
+        ['checkout_path', '/home/orbit/other'], ['status', 'reserved'],
+        ['root', 'apps/other/public'], ['source_is_laravel', true],
+    ]);
 
     it('does not resurrect usage when removal deletes the instance during collection', function (): void {
         $instance = dependency_scan_instance();
