@@ -232,10 +232,12 @@ it('round-trips a cold replacement with exact generic-base inputs for every regi
         ->toThrow(InvalidArgumentException::class, 'The topology construction inputs do not match the target.');
 });
 
-it('reads legacy snapshot construction inputs without replacement authority', function (): void {
-    $value = mountedTopologyFixture(false)->construction->toArray();
-    $value['schema'] = TopologyConstructionInputs::LEGACY_SCHEMA;
-    unset($value['snapshot_replacement'], $value['operator_base_image']);
+it('reads exact pre-operator construction inputs without expanding cleanup authority', function (int $schema): void {
+    $value = preOperatorTopologyRecord()['construction'];
+    if ($schema === 1) {
+        $value['schema'] = 1;
+        unset($value['snapshot_replacement']);
+    }
 
     $construction = TopologyConstructionInputs::fromArray($value);
 
@@ -244,9 +246,21 @@ it('reads legacy snapshot construction inputs without replacement authority', fu
         ->and($construction->sourceGeneration)
         ->toBe('g1')
         ->and(array_column($construction->nodes, 'source'))
-        ->toBe(['snapshot', 'snapshot', 'snapshot', 'snapshot'])
+        ->toBe(['snapshot', 'snapshot', 'snapshot'])
+        ->and($construction->target->recipe->nodeKeys())
+        ->toBe(['gateway', 'app-dev', 'app-prod'])
         ->and($construction->toArray())
         ->toBe($value);
+})->with([1, 2]);
+
+it('requires the operator for new construction records and rejects forged historical identities', function (): void {
+    $old = preOperatorTopologyRecord()['construction'];
+    $target = TopologyConstructionInputs::fromArray($old)->target;
+    expect(fn () => TopologyConstructionInputs::forGeneration($target, 'g1', 2))
+        ->toThrow(InvalidArgumentException::class, 'recipe does not match its schema');
+    $old['nodes']['gateway']['instance'] = 'another-task-gateway';
+    expect(fn () => TopologyConstructionInputs::fromArray($old))
+        ->toThrow(InvalidArgumentException::class, 'Node [gateway] is invalid');
 });
 
 describe('mount paths', function () {

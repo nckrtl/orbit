@@ -8,7 +8,9 @@ use InvalidArgumentException;
 
 final readonly class TopologyConstructionInputs
 {
-    public const int SCHEMA = 2;
+    public const int SCHEMA = 3;
+
+    public const int PRE_OPERATOR_SCHEMA = 2;
 
     public const int LEGACY_SCHEMA = 1;
 
@@ -29,10 +31,10 @@ final readonly class TopologyConstructionInputs
         public int $schema,
         public ?string $operatorBaseImageFingerprint = null,
     ) {
-        if (! in_array($schema, [self::LEGACY_SCHEMA, self::SCHEMA], true)) {
+        if (! in_array($schema, [self::LEGACY_SCHEMA, self::PRE_OPERATOR_SCHEMA, self::SCHEMA], true)) {
             throw new InvalidArgumentException('The topology construction input schema is invalid.');
         }
-        if ($snapshotReplacement && $schema !== self::SCHEMA) {
+        if ($snapshotReplacement && $schema === self::LEGACY_SCHEMA) {
             throw new InvalidArgumentException('Legacy construction inputs cannot declare snapshot replacement.');
         }
         if (preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $sourceGeneration) !== 1) {
@@ -41,7 +43,7 @@ final readonly class TopologyConstructionInputs
         if ($slot < 1 || $slot > 200) {
             throw new InvalidArgumentException('The topology construction slot is invalid.');
         }
-        if ($snapshotReplacement && preg_match('/\A[a-f0-9]{64}\z/D', $operatorBaseImageFingerprint ?? '') !== 1) {
+        if ($schema === self::SCHEMA && $snapshotReplacement && preg_match('/\A[a-f0-9]{64}\z/D', $operatorBaseImageFingerprint ?? '') !== 1) {
             throw new InvalidArgumentException('The operator base image fingerprint is invalid.');
         }
         $usesBaseImage = $extension !== null || $snapshotReplacement;
@@ -66,7 +68,7 @@ final readonly class TopologyConstructionInputs
             && ($extension !== null
             || $sourceGeneration !== self::GENERIC_BASE
             || $target->recipe->id !== TopologyProfile::NAME
-            || $target->recipe->nodeKeys() !== TopologyProfile::ROLES
+            || $target->recipe->nodeKeys() !== ($schema === self::SCHEMA ? TopologyProfile::ROLES : ['gateway', 'app-dev', 'app-prod'])
             || ! array_all(
                 $target->recipe->nodes,
                 static fn (TopologyNode $node): bool => $node->image === ($node->key === 'operator' ? TopologyRecipe::OPERATOR_IMAGE : $imageAlias),
@@ -76,6 +78,13 @@ final readonly class TopologyConstructionInputs
         }
         if (! $snapshotReplacement && $sourceGeneration === self::GENERIC_BASE) {
             throw new InvalidArgumentException('Generic-base construction requires a snapshot replacement declaration.');
+        }
+        $expectedKeys = ($extension?->recipe() ?? TopologyRecipe::registered())->nodeKeys();
+        if ($schema !== self::SCHEMA) {
+            $expectedKeys = array_values(array_diff($expectedKeys, ['operator']));
+        }
+        if ($target->recipe->nodeKeys() !== $expectedKeys) {
+            throw new InvalidArgumentException('The topology construction recipe does not match its schema.');
         }
         $this->assertNodes($target, $slot, $nodes);
     }
@@ -169,7 +178,7 @@ final readonly class TopologyConstructionInputs
             'attempt_id' => $this->target->requireAttempt()->value,
             'extension' => $this->extension?->value,
         ];
-        if ($this->schema === self::SCHEMA) {
+        if ($this->schema !== self::LEGACY_SCHEMA) {
             $value['snapshot_replacement'] = $this->snapshotReplacement;
         }
 
@@ -210,17 +219,17 @@ final readonly class TopologyConstructionInputs
                 'slot',
                 'image_alias',
                 'image_fingerprint',
-                'operator_base_image',
+                ...($schema === self::SCHEMA ? ['operator_base_image'] : []),
                 'nodes',
             ];
         if (
             array_keys($value) !== $expectedKeys
-            || ! in_array($schema, [self::LEGACY_SCHEMA, self::SCHEMA], true)
+            || ! in_array($schema, [self::LEGACY_SCHEMA, self::PRE_OPERATOR_SCHEMA, self::SCHEMA], true)
             || ! is_string($value['issue'])
             || ! is_string($value['attempt_id'])
             || $value['extension'] !== null
             && ! is_string($value['extension'])
-            || $schema === self::SCHEMA
+            || $schema !== self::LEGACY_SCHEMA
             && ! is_bool($value['snapshot_replacement'])
             || ! is_string($value['source_generation'])
             || ! is_int($value['slot'])
@@ -240,11 +249,22 @@ final readonly class TopologyConstructionInputs
         if ($value['extension'] !== null && $extension === null) {
             throw new InvalidArgumentException('The topology construction extension is invalid.');
         }
-        $snapshotReplacement = $schema === self::SCHEMA && $value['snapshot_replacement'];
+        $snapshotReplacement = $schema !== self::LEGACY_SCHEMA && $value['snapshot_replacement'];
         $recipe = $extension?->recipe()
             ?? ($snapshotReplacement && is_string($value['image_alias'])
                 ? TopologyRecipe::registered($value['image_alias'])
                 : TopologyRecipe::registered());
+        if ($schema !== self::SCHEMA) {
+            // Historical records authorize only their exact pre-operator inventory.
+            $recipeNodes = array_values(array_filter(
+                $recipe->nodes,
+                static fn (TopologyNode $node): bool => $node->key !== 'operator',
+            ));
+            if ($recipeNodes === []) {
+                throw new InvalidArgumentException('The topology construction recipe is empty.');
+            }
+            $recipe = new TopologyRecipe($recipe->id, $recipeNodes);
+        }
         $target = TopologyTarget::feature(
             $value['issue'],
             new AttemptId($value['attempt_id']),

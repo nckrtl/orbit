@@ -1,0 +1,117 @@
+{
+    "schema": 4,
+    "issue": "TST-321",
+    "attempt_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "purpose": "discovery",
+    "profile": "gateway_app-dev_app-prod",
+    "construction": {
+        "schema": 2,
+        "issue": "TST-321",
+        "attempt_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "extension": null,
+        "snapshot_replacement": false,
+        "source_generation": "g1",
+        "slot": 2,
+        "image_alias": null,
+        "image_fingerprint": null,
+        "nodes": {
+            "gateway": {
+                "source": "snapshot",
+                "instance": "orbit-e2e-tst-321-aaaaaaaa-gateway",
+                "incus_address": "10.232.2.10",
+                "wireguard_address": "10.44.0.1"
+            },
+            "app-dev": {
+                "source": "snapshot",
+                "instance": "orbit-e2e-tst-321-aaaaaaaa-app-dev",
+                "incus_address": "10.232.2.11",
+                "wireguard_address": "10.44.0.2"
+            },
+            "app-prod": {
+                "source": "snapshot",
+                "instance": "orbit-e2e-tst-321-aaaaaaaa-app-prod",
+                "incus_address": "10.232.2.12",
+                "wireguard_address": "10.44.0.3"
+            }
+        }
+    },
+    "generation": {
+        "schema": 5,
+        "id": "g1",
+        "main_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "snapshots": {
+            "gateway": "main-gateway",
+            "app-dev": "main-app-dev",
+            "app-prod": "main-app-prod"
+        },
+        "prepared_fingerprint": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "base_image_fingerprint": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "structural_fingerprint": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "prepared_schema": 2,
+        "cold_epoch": "ubuntu-26.04-amd64-v1",
+        "base_image_alias": "orbit-base-ubuntu-26.04-runtime",
+        "topology": {
+            "profile": "gateway_app-dev_app-prod",
+            "roles": [
+                "gateway",
+                "app-dev",
+                "app-prod"
+            ],
+            "checkout_roles": [
+                "gateway",
+                "app-dev"
+            ],
+            "assignments": {
+                "gateway": [
+                    "gateway",
+                    "vpn",
+                    "websocket",
+                    "router"
+                ],
+                "app-dev": [
+                    "app-dev",
+                    "metrics",
+                    "database"
+                ],
+                "app-prod": [
+                    "app-prod",
+                    "ingress"
+                ]
+            }
+        },
+        "laravel_pin": {
+            "tag": "v13.10.1",
+            "commit": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+        },
+        "previous_generation_id": null
+    },
+    "network": "oe-9498fa889742",
+    "instances": {
+        "gateway": "orbit-e2e-tst-321-aaaaaaaa-gateway",
+        "app-dev": "orbit-e2e-tst-321-aaaaaaaa-app-dev",
+        "app-prod": "orbit-e2e-tst-321-aaaaaaaa-app-prod"
+    },
+    "mounts": [],
+    "source": {
+        "host_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "guest_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "dirty": false,
+        "tree_hash": null,
+        "overlay_paths": [],
+        "operation_id": null,
+        "mounted": false,
+        "git_pointer_sha256": null
+    },
+    "verification": {
+        "passed": true,
+        "probes": {
+            "fixture": {
+                "passed": true,
+                "checked_at": "2026-08-29T12:34:56+00:00",
+                "expected": "healthy",
+                "observed": "healthy",
+                "evidence_ref": "incus://orbit-e2e-fixture/fixture"
+            }
+        }
+    }
+}

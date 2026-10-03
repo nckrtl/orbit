@@ -232,6 +232,8 @@ Orbit provisions the group's workspace without acquiring a topology. Only the [r
 
 `release` checks every recorded guest against the attempt's ownership metadata, including each workload VM, any extension VM, and the operator system container. It stops the owned web session's dev-server process and removes its loopback publication. It force-stops any running recorded guests, deletes them, and verifies that every recorded guest is absent, including the operator. It checks the network's ownership just before deleting it.
 
+New construction records use schema 3 and require the operator. Release also reads schema 1 and 2 records with their exact three-VM inventory, or four VMs when an extension was recorded. These records authorize only ownership-checked cleanup of those guests; they do not authorize a new acquisition or snapshot replacement. Release does not infer an operator or enlarge the recorded inventory.
+
 Only after web-session cleanup succeeds, every recorded guest is absent, and the network is removed does release drop the lease and topology record. It never drops topology state while a recorded guest remains. The output lists `released`, `already_absent`, and `networks_reaped`.
 
 An ownership mismatch or cleanup failure stops release and keeps every unrelated resource. The lease and attempt record stay for diagnosis and retry. A retry continues from the same exact target and handles already-absent owned guests without selecting new resources.

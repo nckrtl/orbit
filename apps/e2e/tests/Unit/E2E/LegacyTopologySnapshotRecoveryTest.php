@@ -86,11 +86,14 @@ function legacyRecoveryGeneration(int $schema = TopologySnapshotGeneration::SCHE
         return $generation;
     }
 
-    $legacy = $generation->toArray();
-    $legacy['schema'] = TopologySnapshotGeneration::LEGACY_SCHEMA;
-    unset($legacy['operator_base_image']);
-    $legacy['prepared_schema'] = 1;
-    unset($legacy['topology']['assignments']);
+    $legacy = preOperatorTopologyRecord()['generation'];
+    $legacy['id'] = 'legacy-generation';
+    $legacy['snapshots'] = array_fill_keys(['gateway', 'app-dev', 'app-prod'], 'main-legacy-generation');
+    if ($schema === 4) {
+        $legacy['schema'] = 4;
+        $legacy['prepared_schema'] = 1;
+        unset($legacy['topology']['assignments']);
+    }
 
     return TopologySnapshotGeneration::fromArray($legacy);
 }
@@ -206,9 +209,11 @@ function legacyRecoveryService(
     string $stateDirectory = 'topology-snapshot',
 ): array {
     $identity ??= TopologySnapshotIdentity::primary();
+    $generation = legacyRecoveryGeneration($schema);
+    $target = TopologyTarget::topologySnapshot($identity);
     $hostState = new LegacyRecoveryHost;
-    $hostState->instances = $identity->instances();
-    foreach ($identity->instances() as $name) {
+    $hostState->instances = array_map($target->instance(...), $generation->topologyRoles);
+    foreach ($hostState->instances as $name) {
         $hostState->snapshots[$name] = ['main-legacy-generation'];
         $hostState->networkUsers[] = "/1.0/instances/{$name}?project=default";
     }
@@ -217,7 +222,6 @@ function legacyRecoveryService(
     $store = new AtomicJsonStore($paths);
     $host = new IncusHost(project: 'default', pool: 'orbit-e2e');
     $manifests = new TopologySnapshotManifestStore($store, $paths, $host, $stateDirectory);
-    $generation = legacyRecoveryGeneration($schema);
     $manifests->promote($generation);
     $manifests->record($generation);
 
@@ -301,7 +305,6 @@ it('authorizes exact schema 4 and 5 topology snapshot resources without mutation
         'orbit-e2e-topology-snapshot-app-dev',
         'orbit-e2e-topology-snapshot-app-prod',
         'orbit-e2e-topology-snapshot-gateway',
-        'orbit-e2e-topology-snapshot-operator',
     ]);
     expect($inventory->toArray()['scope'])->toBe([
         'remote' => 'local',
@@ -312,9 +315,21 @@ it('authorizes exact schema 4 and 5 topology snapshot resources without mutation
     expect($inventory->sha256())->toMatch('/\A[a-f0-9]{64}\z/');
     expect($store->read('topology-snapshot/recovery.json'))->toBeNull();
 })->with([
-    'schema 4' => TopologySnapshotGeneration::LEGACY_SCHEMA,
-    'schema 5' => TopologySnapshotGeneration::SCHEMA,
+    'schema 4' => 4,
+    'schema 5' => 5,
 ]);
+
+it('authorizes a literal schema-5 three-VM manifest and inventory for recovery', function (): void {
+    [$recovery, $store] = legacyRecoveryService(5);
+    $inventory = $recovery->authorize();
+
+    expect($inventory->promotedManifest['schema'])->toBe(5)
+        ->and($inventory->promotedManifest['topology']['roles'])->toBe(['gateway', 'app-dev', 'app-prod'])
+        ->and($inventory->promotedManifest)->not->toHaveKey('operator_base_image')
+        ->and($inventory->instances)->toHaveCount(3)
+        ->and(LegacyTopologySnapshotInventory::fromArray($inventory->toArray())->toArray())->toBe($inventory->toArray())
+        ->and($store->read('topology-snapshot/recovery.json'))->toBeNull();
+});
 
 it('reads retained schema 1 evidence only for the former unnamespaced snapshot', function (): void {
     [$recovery] = legacyRecoveryService();

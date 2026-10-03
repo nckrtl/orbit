@@ -577,6 +577,80 @@ describe('TopologyReleaser', function () {
             ->toBe('diagnosis');
     });
 
+    it('releases a persisted pre-operator inventory without querying an operator', function (int $schema): void {
+        $record = preOperatorTopologyRecord();
+        if ($schema === 1) {
+            $record['construction']['schema'] = 1;
+            unset($record['construction']['snapshot_replacement']);
+        }
+        $worktree = temporaryPath('orbit-release-historical-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('TST-321', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        new AtomicJsonStore(StatePaths::forWorktree($worktree))->write(IssueState::TOPOLOGY, $record);
+        $target = TopologyConstructionInputs::fromArray($record['construction'])->target;
+        $commands = [];
+        fakeReleaseHost($target, ['user.orbit.e2e.issue' => 'TST-321', 'user.orbit.e2e.attempt' => $attempt->value], $commands);
+
+        $result = releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->release(new TopologyRequest('TST-321', $worktree));
+
+        expect($result['released'])->toHaveCount(7)
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))->toBeFalse()
+            ->and(implode("\n", $commands))->not->toContain('-operator');
+    })->with([1, 2]);
+
+    it('refuses foreign ownership before mutating a historical inventory', function (): void {
+        $record = preOperatorTopologyRecord();
+        $worktree = temporaryPath('orbit-release-historical-foreign-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('TST-321', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $store = new AtomicJsonStore(StatePaths::forWorktree($worktree));
+        $store->write(IssueState::TOPOLOGY, $record);
+        $target = TopologyConstructionInputs::fromArray($record['construction'])->target;
+        $commands = [];
+        fakeReleaseHost($target, ['user.orbit.e2e.issue' => 'TST-321', 'user.orbit.e2e.attempt' => $attempt->value], $commands, foreignInstance: $target->instance('gateway'));
+
+        expect(fn () => releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->release(new TopologyRequest('TST-321', $worktree)))
+            ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt');
+        expect(array_filter($commands, static fn (string $command): bool => preg_match('/^(stop|delete|network delete) /', $command) === 1))->toBe([])
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))->toBeTrue()
+            ->and($store->read(IssueState::TOPOLOGY))->toBe($record);
+    });
+
+    it('retains a historical inventory after partial deletion and retries only its remaining guests', function (): void {
+        $record = preOperatorTopologyRecord();
+        $worktree = temporaryPath('orbit-release-historical-retry-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('TST-321', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $store = new AtomicJsonStore(StatePaths::forWorktree($worktree));
+        $store->write(IssueState::TOPOLOGY, $record);
+        $target = TopologyConstructionInputs::fromArray($record['construction'])->target;
+        $metadata = ['user.orbit.e2e.issue' => 'TST-321', 'user.orbit.e2e.attempt' => $attempt->value];
+        $commands = [];
+        fakeReleaseHost($target, $metadata, $commands, failCommandContaining: 'delete local:'.$target->instance('gateway'));
+        $releaser = releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)));
+        $request = new TopologyRequest('TST-321', $worktree);
+
+        expect(fn () => $releaser->release($request))->toThrow(RuntimeException::class, 'injected cleanup failure');
+        expect($state->hasAttempt(AttemptPurpose::Discovery))->toBeTrue()
+            ->and($store->read(IssueState::TOPOLOGY))->toBe($record);
+        $commands = [];
+        fakeReleaseHost($target, $metadata, $commands, presentNames: [$target->instance('gateway')]);
+        $result = $releaser->release($request);
+
+        expect($result['released'])->toBe(['stopped:'.$target->instance('gateway'), 'deleted:'.$target->instance('gateway'), 'deleted:'.$target->network()])
+            ->and($result['already_absent'])->toBe([$target->instance('app-prod'), $target->instance('app-dev')])
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))->toBeFalse()
+            ->and(implode("\n", $commands))->not->toContain('-operator');
+    });
+
     it('releases the exact persisted four-Node inventory without changing the shared generation', function (): void {
         $worktree = temporaryPath('orbit-release-extended-', 4);
         mkdir($worktree, 0700);

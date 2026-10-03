@@ -10,7 +10,6 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -55,7 +54,7 @@ final readonly class LegacyTopologySnapshotRecovery
         }
         if (! in_array(
             $promoted->manifestSchema,
-            [TopologySnapshotGeneration::LEGACY_SCHEMA, TopologySnapshotGeneration::SCHEMA],
+            [TopologySnapshotGeneration::LEGACY_SCHEMA, 5, TopologySnapshotGeneration::SCHEMA],
             true,
         )) {
             throw new RuntimeException(
@@ -67,7 +66,7 @@ final readonly class LegacyTopologySnapshotRecovery
         $recorded = $this->manifests->recorded();
         $target = TopologyTarget::topologySnapshot($this->identity);
         $roles = [];
-        foreach (TopologyProfile::ROLES as $role) {
+        foreach ($promoted->topologyRoles as $role) {
             $roles[$target->instance($role)] = ['role' => $role, 'copy' => false];
             $roles[$target->instance($role).'-next'] = ['role' => $role, 'copy' => true];
         }
