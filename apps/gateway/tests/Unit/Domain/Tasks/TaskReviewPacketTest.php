@@ -848,6 +848,6 @@ it('keeps full immutable findings in fresh task context when the compact reviewe
     $compact = review_packet(['subtaskBrief' => $plan->brief, 'deliverables' => $deliverables]);
     $context = new TaskReviewContext('Existing feature contract', $plan->brief, $deliverables, [], '');
     expect($compact)->not->toContain('FINAL-FINDING')
-        ->toContain('.git/orbit/context.md holds the full brief.')
+        ->toContain('$(git rev-parse --git-path orbit)/context.md holds the full brief.')
         ->and($context->render())->toContain($plan->brief)->toContain('FINAL-FINDING')->toContain('every snapshotted finding');
 });
