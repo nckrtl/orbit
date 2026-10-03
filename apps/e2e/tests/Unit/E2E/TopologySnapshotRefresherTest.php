@@ -24,6 +24,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\RefreshResult;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologySnapshotReplacementInstallation;
@@ -98,7 +99,7 @@ function refresherReplacementInstallation(): TopologySnapshotReplacementInstalla
     $new = new TopologySnapshotGeneration(
         'replacement-generation',
         str_repeat('6', 40),
-        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod'],
+        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod', 'operator' => 'main-replacement-operator'],
         str_repeat('7', 64),
         $old->baseImageFingerprint,
         $old->laravel,
@@ -109,7 +110,7 @@ function refresherReplacementInstallation(): TopologySnapshotReplacementInstalla
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
-        $old->id,
+        $old->id, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new TopologySnapshotReplacementInstallation(
@@ -128,10 +129,10 @@ function refresherReplacementInstallation(): TopologySnapshotReplacementInstalla
         $new->baseImageAlias,
         $new->baseImageFingerprint,
         'oe-replacement',
-        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
-        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
-        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
-        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod', 'operator' => 'replacement-operator'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod', 'operator' => 'snapshot-operator'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next', 'operator' => 'snapshot-operator-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old', 'operator' => 'snapshot-operator-old'],
     );
 }
 
@@ -174,7 +175,7 @@ function topologySnapshotRestoreGeneration(): TopologySnapshotGeneration
     return new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -183,8 +184,8 @@ function topologySnapshotRestoreGeneration(): TopologySnapshotGeneration
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
-        ['gateway', 'app-dev', 'app-prod'],
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 
@@ -214,6 +215,10 @@ function fakeTopologySnapshotRestoreProcesses(?int $failRestore = null, bool $fa
                 'type' => 'virtual-machine',
                 'fingerprint' => str_repeat('b', 64),
                 'aliases' => [['name' => 'orbit-base-ubuntu-26.04-runtime']],
+            ], [
+                'type' => 'container',
+                'fingerprint' => str_repeat('b', 64),
+                'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
             ]], JSON_THROW_ON_ERROR));
         }
         if (in_array('list', $command, true) && in_array('snapshot', $command, true)) {
@@ -457,6 +462,10 @@ function refreshProcess(
             'type' => 'virtual-machine',
             'fingerprint' => str_repeat('d', 64),
             'aliases' => [['name' => 'orbit-base-ubuntu-26.04-runtime']],
+        ], [
+            'type' => 'container',
+            'fingerprint' => str_repeat('b', 64),
+            'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
         ]], JSON_THROW_ON_ERROR));
     }
 
@@ -735,7 +744,8 @@ function refreshFixture(): array
         [
             'gateway' => "main-{$snapshotPrefix}-gateway",
             'app-dev' => "main-{$snapshotPrefix}-app-dev",
-            'app-prod' => "main-{$snapshotPrefix}-app-prod",
+            'app-prod' => "main-{$snapshotPrefix}-app-prod", 'operator' => "main-{$snapshotPrefix}-operator",
+            'operator' => "main-{$snapshotPrefix}-operator", 'operator' => "main-{$snapshotPrefix}-operator",
         ],
         $oldFingerprint->value,
         str_repeat('d', 64),
@@ -747,7 +757,7 @@ function refreshFixture(): array
         $oldStructuralFingerprint->manifest['topology']['profile'],
         $oldStructuralFingerprint->manifest['topology']['roles'],
         $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
-        $previous,
+        $previous, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $manifests->promote($generation('old-generation', 'old', 'rollback-generation'));
     $manifests->record($generation('rollback-generation', 'rollback'));
@@ -844,6 +854,10 @@ function staleManifestProcess(PendingProcess $process, ProcessFactory $real, arr
             'type' => 'virtual-machine',
             'fingerprint' => str_repeat('b', 64),
             'aliases' => [['name' => 'orbit-base-ubuntu-26.04-runtime']],
+        ], [
+            'type' => 'container',
+            'fingerprint' => str_repeat('b', 64),
+            'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
         ]], JSON_THROW_ON_ERROR));
     }
     if (in_array('snapshot', $command, true) && in_array('list', $command, true)) {
@@ -1007,6 +1021,10 @@ describe('TopologySnapshotRefresher contracts', function () {
                         'type' => 'virtual-machine',
                         'fingerprint' => str_repeat('d', 64),
                         'aliases' => [['name' => 'orbit-base-ubuntu-26.04-runtime']],
+                    ], [
+                        'type' => 'container',
+                        'fingerprint' => str_repeat('b', 64),
+                        'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
                     ]], JSON_THROW_ON_ERROR));
                 }
 
@@ -1275,7 +1293,7 @@ describe('TopologySnapshotRefresher contracts', function () {
             $manifests->promote(new TopologySnapshotGeneration(
                 'stopped-test',
                 $mainSha,
-                ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+                ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
                 $prepared->value,
                 str_repeat('b', 64),
                 $release,
@@ -1285,7 +1303,7 @@ describe('TopologySnapshotRefresher contracts', function () {
                 $structural->manifest['base_image_alias'],
                 $structural->manifest['topology']['profile'],
                 $structural->manifest['topology']['roles'],
-                $structural->manifest['topology']['checkout_roles'],
+                $structural->manifest['topology']['checkout_roles'], operatorBaseImageFingerprint: str_repeat('b', 64),
             ));
             fakeTopologySnapshotRestoreProcesses();
 
@@ -1400,7 +1418,7 @@ describe('TopologySnapshotRefresher contracts', function () {
             $generation = new TopologySnapshotGeneration(
                 'old-generation',
                 $oldSha,
-                ['gateway' => 'main-old-gateway', 'app-dev' => 'main-old-app-dev', 'app-prod' => 'main-old-app-prod'],
+                ['gateway' => 'main-old-gateway', 'app-dev' => 'main-old-app-dev', 'app-prod' => 'main-old-app-prod', 'operator' => 'main-old-operator'],
                 $oldFingerprint->value,
                 str_repeat('d', 64),
                 $release,
@@ -1410,7 +1428,7 @@ describe('TopologySnapshotRefresher contracts', function () {
                 $oldStructuralFingerprint->manifest['base_image_alias'],
                 $oldStructuralFingerprint->manifest['topology']['profile'],
                 $oldStructuralFingerprint->manifest['topology']['roles'],
-                $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
+                $oldStructuralFingerprint->manifest['topology']['checkout_roles'], operatorBaseImageFingerprint: str_repeat('b', 64),
             );
             $manifests->promote($generation);
             $refresher = topologySnapshotRefresherForPowerTests(
@@ -1453,10 +1471,11 @@ describe('TopologySnapshotRefresher contracts', function () {
             'schema' => 2,
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+            'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
             'topology' => [
                 'profile' => 'gateway_app-dev_app-prod',
-                'roles' => ['gateway', 'app-dev', 'app-prod'],
-                'checkout_roles' => ['gateway', 'app-dev'],
+                'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
+                'checkout_roles' => ['gateway', 'app-dev', 'operator'],
                 'assignments' => TopologyProfile::ASSIGNMENTS,
             ],
         ];
@@ -1549,10 +1568,11 @@ describe('TopologySnapshotRefresher contracts', function () {
             'schema' => 2,
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+            'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
             'topology' => [
                 'profile' => 'gateway_app-dev_app-prod',
-                'roles' => ['gateway', 'app-dev', 'app-prod'],
-                'checkout_roles' => ['gateway', 'app-dev'],
+                'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
+                'checkout_roles' => ['gateway', 'app-dev', 'operator'],
                 'assignments' => TopologyProfile::ASSIGNMENTS,
             ],
         ];
@@ -1578,7 +1598,7 @@ describe('TopologySnapshotRefresher contracts', function () {
         $generation = new TopologySnapshotGeneration(
             'g-'.str_repeat('a', 12),
             str_repeat('b', 40),
-            ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+            ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
             str_repeat('c', 64),
             str_repeat('d', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -1587,8 +1607,8 @@ describe('TopologySnapshotRefresher contracts', function () {
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
-            ['gateway', 'app-dev', 'app-prod'],
-            ['gateway', 'app-dev'],
+            ['gateway', 'app-dev', 'app-prod', 'operator'],
+            ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
         );
         $manifests->promote($generation);
 

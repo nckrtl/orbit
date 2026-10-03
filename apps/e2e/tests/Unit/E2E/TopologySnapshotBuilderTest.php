@@ -14,6 +14,7 @@ use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\PreparedFingerprint;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
 use App\E2E\WorktreeSynchronizer;
@@ -123,7 +124,7 @@ describe('TopologySnapshotBuilder', function () {
             str_repeat('d', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             false,
-            new OperationId(str_repeat('e', 32)),
+            new OperationId(str_repeat('e', 32)), operatorBaseImageFingerprint: str_repeat('b', 64),
         ))
             ->toThrow(RuntimeException::class, 'explicit permission');
     });
@@ -146,6 +147,10 @@ describe('TopologySnapshotBuilder', function () {
                     'type' => 'virtual-machine',
                     'fingerprint' => str_repeat('f', 64),
                     'aliases' => [['name' => 'orbit-base']],
+                ], [
+                    'type' => 'container',
+                    'fingerprint' => str_repeat('b', 64),
+                    'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
                 ]], JSON_THROW_ON_ERROR));
             }
             if (in_array('create', $command, true)) {
@@ -232,11 +237,11 @@ describe('TopologySnapshotBuilder', function () {
 
         expect(fn () => $builder->build(
             str_repeat('a', 40),
-            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base']),
+            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base', 'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE]),
             str_repeat('f', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
-            new OperationId(str_repeat('d', 32)),
+            new OperationId(str_repeat('d', 32)), operatorBaseImageFingerprint: str_repeat('b', 64),
         ))
             ->toThrow(RuntimeException::class, 'cleanup failed');
 
@@ -290,6 +295,10 @@ describe('TopologySnapshotBuilder', function () {
                     'type' => 'virtual-machine',
                     'fingerprint' => str_repeat('f', 64),
                     'aliases' => [['name' => 'orbit-base']],
+                ], [
+                    'type' => 'container',
+                    'fingerprint' => str_repeat('b', 64),
+                    'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
                 ]], JSON_THROW_ON_ERROR));
             }
             if ($command === topology_snapshot_incus_command('network', 'list', 'local:', '--format=json')) {
@@ -422,11 +431,11 @@ describe('TopologySnapshotBuilder', function () {
 
         expect(fn () => $builder->build(
             str_repeat('a', 40),
-            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base']),
+            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base', 'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE]),
             str_repeat('f', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
-            new OperationId(str_repeat('d', 32)),
+            new OperationId(str_repeat('d', 32)), operatorBaseImageFingerprint: str_repeat('b', 64),
         ))
             ->toThrow(RuntimeException::class, 'Incus VM initialization batch failed');
 
@@ -459,6 +468,10 @@ describe('TopologySnapshotBuilder', function () {
                     'type' => 'virtual-machine',
                     'fingerprint' => str_repeat('f', 64),
                     'aliases' => [['name' => 'orbit-base']],
+                ], [
+                    'type' => 'container',
+                    'fingerprint' => str_repeat('b', 64),
+                    'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
                 ]], JSON_THROW_ON_ERROR));
             }
             if ($command === topology_snapshot_incus_command('network', 'list', 'local:', '--format=json')) {
@@ -514,11 +527,11 @@ describe('TopologySnapshotBuilder', function () {
 
         expect(fn () => $builder->build(
             str_repeat('a', 40),
-            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base']),
+            new PreparedFingerprint(str_repeat('b', 64), ['base_image_alias' => 'orbit-base', 'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE]),
             str_repeat('f', 64),
             new LaravelRelease('v13.0.0', str_repeat('c', 40)),
             true,
-            new OperationId($evidence),
+            new OperationId($evidence), operatorBaseImageFingerprint: str_repeat('b', 64),
         ))
             ->toThrow(RuntimeException::class, 'already exists');
 

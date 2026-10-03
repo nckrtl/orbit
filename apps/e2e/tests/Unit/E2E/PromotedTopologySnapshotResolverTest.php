@@ -42,7 +42,7 @@ function promotedResolverGeneration(string $repositoryRoot, array $changes = [])
     return new TopologySnapshotGeneration(
         $changes['id'] ?? substr($mainSha, 0, 12).'-'.substr($preparedFingerprint, 0, 12),
         $mainSha,
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         $preparedFingerprint,
         str_repeat('b', 64),
         $laravel,
@@ -56,7 +56,7 @@ function promotedResolverGeneration(string $repositoryRoot, array $changes = [])
         topologyAssignments: $manifestSchema === TopologySnapshotGeneration::LEGACY_SCHEMA
             ? null
             : TopologyProfile::ASSIGNMENTS,
-        manifestSchema: $manifestSchema,
+        manifestSchema: $manifestSchema, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 

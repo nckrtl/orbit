@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 final readonly class TopologySnapshotGeneration
 {
-    public const int SCHEMA = 5;
+    public const int SCHEMA = 6;
 
     public const int LEGACY_SCHEMA = 4;
 
@@ -33,6 +33,7 @@ final readonly class TopologySnapshotGeneration
         /** @var array<string, list<string>>|null */
         public ?array $topologyAssignments = TopologyProfile::ASSIGNMENTS,
         public int $manifestSchema = self::SCHEMA,
+        public ?string $operatorBaseImageFingerprint = null,
     ) {
         if (
             preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $id) !== 1
@@ -44,20 +45,21 @@ final readonly class TopologySnapshotGeneration
             || $coldEpoch === ''
             || $baseImageAlias === ''
             || $topologyProfile === ''
-            || ! in_array($manifestSchema, [self::LEGACY_SCHEMA, self::SCHEMA], true)
+            || ! in_array($manifestSchema, [self::LEGACY_SCHEMA, 5, self::SCHEMA], true)
+            || ($manifestSchema === self::SCHEMA && preg_match('/\A[a-f0-9]{64}\z/D', $operatorBaseImageFingerprint ?? '') !== 1)
             || $previousGenerationId !== null
             && preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,63}\z/D', $previousGenerationId) !== 1
         ) {
             throw new InvalidArgumentException('The generation identity is invalid.');
         }
 
-        if (array_keys($snapshots) !== TopologyProfile::ROLES) {
+        if (array_keys($snapshots) !== TopologyProfile::ROLES && ! ($manifestSchema !== self::SCHEMA && array_keys($snapshots) === ['gateway', 'app-dev', 'app-prod'])) {
             throw new InvalidArgumentException('The generation must contain each ordered role once.');
         }
 
         if (
-            serialize($topologyRoles) !== serialize(TopologyProfile::ROLES)
-            || serialize($checkoutRoles) !== serialize(TopologyProfile::CHECKOUT_ROLES)
+            $topologyRoles !== array_keys($snapshots)
+            || $checkoutRoles !== ($topologyRoles === TopologyProfile::ROLES ? TopologyProfile::CHECKOUT_ROLES : ['gateway', 'app-dev'])
         ) {
             throw new InvalidArgumentException('The generation topology profile is invalid.');
         }
@@ -104,6 +106,7 @@ final readonly class TopologySnapshotGeneration
             'prepared_schema' => $this->preparedSchema,
             'cold_epoch' => $this->coldEpoch,
             'base_image_alias' => $this->baseImageAlias,
+            ...($this->manifestSchema === self::SCHEMA ? ['operator_base_image' => ['alias' => TopologyRecipe::OPERATOR_IMAGE, 'fingerprint' => $this->operatorBaseImageFingerprint]] : []),
             'topology' => $topology,
             'laravel_pin' => ['tag' => $this->laravel->tag, 'commit' => $this->laravel->commit],
             'previous_generation_id' => $this->previousGenerationId,
@@ -126,11 +129,16 @@ final readonly class TopologySnapshotGeneration
                 'prepared_schema',
                 'cold_epoch',
                 'base_image_alias',
+                ...($schema === self::SCHEMA ? ['operator_base_image'] : []),
                 'topology',
                 'laravel_pin',
                 'previous_generation_id',
             ]
-            || ! in_array($schema, [self::LEGACY_SCHEMA, self::SCHEMA], true)
+            || ! in_array($schema, [self::LEGACY_SCHEMA, 5, self::SCHEMA], true)
+            || ($schema === self::SCHEMA && (! is_array($value['operator_base_image'] ?? null)
+                || array_keys($value['operator_base_image']) !== ['alias', 'fingerprint']
+                || $value['operator_base_image']['alias'] !== TopologyRecipe::OPERATOR_IMAGE
+                || ! is_string($value['operator_base_image']['fingerprint'])))
             || ! is_string($value['id'])
             || ! is_string($value['main_sha'])
             || ! is_array($value['snapshots'])
@@ -154,7 +162,7 @@ final readonly class TopologySnapshotGeneration
         }
 
         $topologyKeys = array_keys($value['topology']);
-        $expectedTopologyKeys = $schema === self::SCHEMA
+        $expectedTopologyKeys = $schema !== self::LEGACY_SCHEMA
             ? ['profile', 'roles', 'checkout_roles', 'assignments']
             : ['profile', 'roles', 'checkout_roles'];
         if ($topologyKeys !== $expectedTopologyKeys) {
@@ -173,7 +181,7 @@ final readonly class TopologySnapshotGeneration
         $checkoutRoles = SerializedArrays::stringList($value['topology']['checkout_roles']);
 
         $assignments = null;
-        if ($schema === self::SCHEMA) {
+        if ($schema !== self::LEGACY_SCHEMA) {
             if (! is_array($value['topology']['assignments']) || array_is_list($value['topology']['assignments'])) {
                 throw new InvalidArgumentException('The generation schema is invalid.');
             }
@@ -209,11 +217,12 @@ final readonly class TopologySnapshotGeneration
             $value['previous_generation_id'],
             $assignments,
             $schema,
+            $schema === self::SCHEMA ? $value['operator_base_image']['fingerprint'] : null,
         );
     }
 
     public function isLegacy(): bool
     {
-        return $this->manifestSchema === self::LEGACY_SCHEMA;
+        return $this->manifestSchema !== self::SCHEMA;
     }
 }

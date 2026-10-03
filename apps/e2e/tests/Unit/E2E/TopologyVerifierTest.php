@@ -149,18 +149,18 @@ function topologyVerifierInventory(
     }
 
     $roles = $name === ''
-        ? ['gateway', 'app-dev', 'app-prod']
+        ? ['gateway', 'app-dev', 'app-prod', 'operator']
         : [
             str_ends_with($name, '-gateway')
                 ? 'gateway'
-                : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod'),
+                : (str_ends_with($name, '-app-dev') ? 'app-dev' : (str_ends_with($name, '-operator') ? 'operator' : 'app-prod')),
         ];
 
     return Process::result(json_encode(array_map(static function (string $role): array {
         $name = 'orbit-e2e-topology-snapshot-'.$role;
         $mac = implode(':', str_split(substr(sha1('oe-topo-snap:'.$role), 0, 6), 2));
 
-        $ipv4 = ['gateway' => '10.232.1.10', 'app-dev' => '10.232.1.11', 'app-prod' => '10.232.1.12'][$role];
+        $ipv4 = ['gateway' => '10.232.1.10', 'app-dev' => '10.232.1.11', 'app-prod' => '10.232.1.12', 'operator' => '10.232.1.14'][$role];
 
         return [
             'name' => $name,
@@ -1179,7 +1179,7 @@ describe('TopologyVerifier declared end state', function (): void {
     });
 
     it('skips only the probes that run on a declared-absent node', function (): void {
-        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]);
+        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]);
 
         expect(TopologyVerifier::skippedProbes($endState))
             ->toBe(['vm.app-prod.running', 'role.app-prod', 'php-fpm.app-prod', 'caddy.app-prod', 'laravel.prod', 'cluster.shared', 'sample.fixtures'])
@@ -1205,7 +1205,7 @@ describe('TopologyVerifier declared end state', function (): void {
     });
 
     it('tells the fleet probes which nodes to expect and runs nothing on the absent node', function (): void {
-        $run = runTopologyVerifierWithEndState(TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]));
+        $run = runTopologyVerifierWithEndState(TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]));
         $sha = str_repeat('a', 40);
         $script = '/usr/local/bin/verify-topology.sh';
         $gateway = TopologyTarget::topologySnapshot()->instance('gateway');
@@ -1245,7 +1245,7 @@ describe('TopologyVerifier declared end state', function (): void {
             ->toBe([
                 ['sample-app-state'],
                 array_keys(TopologyVerifier::probesFor(
-                    TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]),
+                    TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]),
                 )),
             ]);
     });
@@ -1297,7 +1297,7 @@ describe('TopologyVerifier declared end state', function (): void {
     it('fails when a node declared absent is still registered', function (): void {
         // The gateway registry probe is what sees it, and a declaration never skips it.
         $run = runTopologyVerifierWithEndState(
-            TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]),
+            TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]),
             ['role.assignments'],
         );
 

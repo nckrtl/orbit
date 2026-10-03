@@ -8,10 +8,12 @@ use App\E2E\State\OperationLock;
 use App\E2E\State\StatePaths;
 use App\E2E\Value\ColdTopologyCleanupResult;
 use App\E2E\Value\ColdTopologyPlan;
+use App\E2E\Value\GuestCommand;
 use App\E2E\Value\OperationId;
 use App\E2E\Value\SourceState;
 use App\E2E\Value\TopologyConstructionInputs;
 use App\E2E\Value\TopologyNode;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologyTarget;
 use App\Exceptions\E2E\ColdTopologyCleanupException;
 use Closure;
@@ -68,6 +70,7 @@ final readonly class ColdTopologyConstructor
             $result['slot'],
             $imageAlias,
             $plan->imageFingerprints[$imageAlias],
+            $plan->imageFingerprints[TopologyRecipe::OPERATOR_IMAGE],
         );
     }
 
@@ -88,7 +91,7 @@ final readonly class ColdTopologyConstructor
             $instances = array_map($plan->target->instance(...), $plan->target->recipe->nodeKeys());
             $this->phase('start-instances', fn () => $this->host->startAll($instances), $observePhase);
             $bootstrap = file_get_contents(__DIR__.'/../../resources/guest/bootstrap-operator.sh');
-            if (! is_string($bootstrap) || ! $this->host->exec($plan->target->instance('operator'), new \App\E2E\Value\GuestCommand(['bash', '-s'], 900, $bootstrap))->successful()) {
+            if (! is_string($bootstrap) || ! $this->host->exec($plan->target->instance('operator'), new GuestCommand(['bash', '-s'], 900, $bootstrap))->successful()) {
                 throw new RuntimeException('Operator container bootstrap failed.');
             }
             $this->phase('prepare-host-state', fn () => $this->host->prepareClonedHostStates($instances), $observePhase);
@@ -192,7 +195,7 @@ final readonly class ColdTopologyConstructor
     private function preflight(ColdTopologyPlan $plan): void
     {
         foreach ($plan->imageFingerprints as $image => $fingerprint) {
-            if ($this->host->imageFingerprint($image) !== $fingerprint) {
+            if ($this->host->imageFingerprint($image, $image === TopologyRecipe::OPERATOR_IMAGE ? 'container' : 'virtual-machine') !== $fingerprint) {
                 throw new RuntimeException("The cold topology base image [{$image}] changed before construction.");
             }
         }
@@ -213,6 +216,11 @@ final readonly class ColdTopologyConstructor
         }
 
         try {
+            foreach ($plan->imageFingerprints as $image => $fingerprint) {
+                if ($this->host->imageFingerprint($image, $image === TopologyRecipe::OPERATOR_IMAGE ? 'container' : 'virtual-machine') !== $fingerprint) {
+                    throw new RuntimeException('A required cold topology base image changed before construction.');
+                }
+            }
             $slot = $plan->isDisposable()
                 ? $this->capacity->reserveSlot($plan->target->recipe->vmCount())
                 : $plan->fixedSlot ?? throw new RuntimeException('Persistent cold topology slot is absent.');
@@ -224,14 +232,14 @@ final readonly class ColdTopologyConstructor
             $vms = [];
             foreach ($plan->target->recipe->nodes as $node) {
                 $vms[$node->key] = [
-                    'image' => $node->image,
+                    'image' => $plan->imageFingerprints[$node->image],
                     'name' => $plan->target->instance($node->key),
                     'network' => $plan->target->network(),
                     'role' => $node->key,
                     'address' => $node->address,
                     'topology' => $plan->target->network(),
                     'slot' => $slot,
-                    'metadata' => $plan->metadata,
+                    'metadata' => [...$plan->metadata, 'user.orbit.e2e.base-image' => $node->image, 'user.orbit.e2e.base-image-fingerprint' => $plan->imageFingerprints[$node->image]],
                 ];
             }
             $this->host->initVms($vms);

@@ -37,7 +37,7 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
     new TopologySnapshotManifestStore($store, $paths, new IncusHost)->promote(new TopologySnapshotGeneration(
         substr($mainSha, 0, 12).'-'.substr($prepared->value, 0, 12),
         $mainSha,
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         $prepared->value,
         str_repeat('b', 64),
         topologyPromotedLaravel(),
@@ -47,7 +47,7 @@ function promoteDiscoveryGeneration(string $repositoryRoot, StatePaths $paths): 
         $structural->manifest['base_image_alias'],
         $structural->manifest['topology']['profile'],
         $structural->manifest['topology']['roles'],
-        $structural->manifest['topology']['checkout_roles'],
+        $structural->manifest['topology']['checkout_roles'], operatorBaseImageFingerprint: str_repeat('b', 64),
     ));
 }
 
@@ -136,7 +136,7 @@ function topologySnapshotVmInventoryJson(): string
     return json_encode(array_map(
         static fn (string $name): array => [
             'name' => $name,
-            'type' => 'virtual-machine',
+            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
             'status' => 'Stopped',
             'status_code' => 102,
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
@@ -159,6 +159,7 @@ function topologySnapshotSnapshotInventoryJson(
         'gateway' => 'main-gateway',
         'app-dev' => 'main-app-dev',
         'app-prod' => 'main-app-prod',
+        'operator' => 'main-operator',
         default => throw new RuntimeException('Unexpected topology snapshot fixture instance.'),
     };
 
@@ -185,6 +186,7 @@ function topologyVmJson(
         $role = match (true) {
             str_ends_with($name, '-gateway') => 'gateway',
             str_ends_with($name, '-app-dev') => 'app-dev',
+            str_ends_with($name, '-operator') => 'operator',
             str_ends_with($name, '-app-prod-2') => 'app-prod-2',
             default => 'app-prod',
         };
@@ -197,7 +199,7 @@ function topologyVmJson(
 
     return json_encode([[
         'name' => $name,
-        'type' => 'virtual-machine',
+        'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
         'status' => $running ? 'Running' : 'Stopped',
         'status_code' => $running ? 103 : 102,
         'config' => $metadata,
@@ -211,6 +213,10 @@ function preparedBaseImageJson(string $fingerprint): string
         'type' => 'virtual-machine',
         'fingerprint' => $fingerprint,
         'aliases' => [['name' => 'orbit-base-ubuntu-26.04-runtime']],
+    ], [
+        'type' => 'container',
+        'fingerprint' => str_repeat('b', 64),
+        'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
     ]], JSON_THROW_ON_ERROR);
 }
 

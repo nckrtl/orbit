@@ -38,6 +38,8 @@ Every topology includes a small Incus system container named `operator`, in addi
 
 Release checks ownership, stops, deletes, and verifies absence for every recorded guest, including the operator container and any extension VM. It also stops the owned web process and removes its loopback publication. Orbit retains the lease and topology record on failure and never drops topology state while a recorded guest remains. Network deletion and successful session cleanup precede dropping that state.
 
+Cold construction uses two operator-maintained local Ubuntu 26.04 base aliases: `orbit-base-ubuntu-26.04-runtime` for the workload VMs and `orbit-base-ubuntu-26.04-operator` for the operator system container. The VM base stays unchanged. Construction checks each image's type and fingerprint before any resource creation and again under the creation lock. Cold evidence and the coordinated snapshot record both aliases and fingerprints. A missing, wrong-type, or changed required image fails; construction never fetches an upstream image or falls back to a remote image. The operator prepares and verifies the container base on beast before rebuilding the shared snapshot.
+
 The coordinated topology snapshot includes the operator container and its prepared tooling and configuration. Acquisition aligns its network identity and WireGuard endpoint with the cloned Gateway. After deployment, the operator must rebuild the shared topology snapshot on beast to include this guest, using the snapshot's ownership-checked rebuild or recovery path. This shared operation is not a task fixture change.
 
 ### Foreground web session

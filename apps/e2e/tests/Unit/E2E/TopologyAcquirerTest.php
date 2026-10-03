@@ -90,7 +90,8 @@ function legacyAcquisitionGeneration(): TopologySnapshotGeneration
         [
             'gateway' => 'main-legacy-gateway',
             'app-dev' => 'main-legacy-app-dev',
-            'app-prod' => 'main-legacy-app-prod',
+            'app-prod' => 'main-legacy-app-prod', 'operator' => 'main-legacy-operator',
+            'operator' => 'main-legacy-operator', 'operator' => 'main-legacy-operator',
         ],
         str_repeat('b', 64),
         str_repeat('c', 64),
@@ -103,7 +104,7 @@ function legacyAcquisitionGeneration(): TopologySnapshotGeneration
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
         topologyAssignments: null,
-        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA,
+        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 
@@ -166,7 +167,7 @@ function acquirerConflictingReplacementInstallation(
     $new = new TopologySnapshotGeneration(
         'replacement-new-generation',
         str_repeat('6', 40),
-        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod'],
+        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod', 'operator' => 'main-replacement-operator'],
         str_repeat('7', 64),
         $old->baseImageFingerprint,
         $old->laravel,
@@ -177,7 +178,7 @@ function acquirerConflictingReplacementInstallation(
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
-        $old->id,
+        $old->id, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new TopologySnapshotReplacementInstallation(
@@ -196,10 +197,10 @@ function acquirerConflictingReplacementInstallation(
         $new->baseImageAlias,
         $new->baseImageFingerprint,
         'oe-replacement',
-        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
-        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
-        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
-        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod', 'operator' => 'replacement-operator'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod', 'operator' => 'snapshot-operator'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next', 'operator' => 'snapshot-operator-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old', 'operator' => 'snapshot-operator-old'],
     );
 }
 

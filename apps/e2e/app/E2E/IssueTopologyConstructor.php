@@ -41,6 +41,7 @@ final readonly class IssueTopologyConstructor
         array $mounts = [],
         ?TopologyExtension $extension = null,
     ): TopologyConstructionInputs {
+        $this->assertBaseImages($generation);
         $expectedRecipe = $extension?->recipe() ?? TopologyRecipe::registered();
         if ($target->recipe->nodeKeys() !== $expectedRecipe->nodeKeys()) {
             throw new RuntimeException('The issue topology recipe does not match its extension declaration.');
@@ -61,6 +62,7 @@ final readonly class IssueTopologyConstructor
             throw new RuntimeException('Another topology creation holds the host.');
         }
         try {
+            $this->assertBaseImages($generation);
             if (
                 $extension !== null
                 && $this->host->imageFingerprint(TopologyRecipe::BASE_IMAGE) !== $imageFingerprint
@@ -116,6 +118,14 @@ final readonly class IssueTopologyConstructor
             );
         } finally {
             $creation->release();
+        }
+    }
+
+    private function assertBaseImages(TopologySnapshotGeneration $generation): void
+    {
+        if ($this->host->imageFingerprint($generation->baseImageAlias) !== $generation->baseImageFingerprint
+            || $this->host->imageFingerprint(TopologyRecipe::OPERATOR_IMAGE, 'container') !== $generation->operatorBaseImageFingerprint) {
+            throw new RuntimeException('Topology snapshot base image provenance changed; rebuild the snapshot.');
         }
     }
 

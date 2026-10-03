@@ -10,6 +10,8 @@ final readonly class TopologyRecipe
 {
     public const string BASE_IMAGE = 'orbit-base-ubuntu-26.04-runtime';
 
+    public const string OPERATOR_IMAGE = 'orbit-base-ubuntu-26.04-operator';
+
     /** @var array<string, TopologyNode> */
     private array $nodesByKey;
 
@@ -48,7 +50,7 @@ final readonly class TopologyRecipe
                 false,
                 TopologyProfile::ASSIGNMENTS['app-prod'],
             ),
-            new TopologyNode('operator', $image, TopologyNodePurpose::Operator, 14, true, []),
+            new TopologyNode('operator', self::OPERATOR_IMAGE, TopologyNodePurpose::Operator, 14, true, []),
         ]);
     }
 
@@ -76,7 +78,7 @@ final readonly class TopologyRecipe
             new TopologyNode('app-dev', $image, TopologyNodePurpose::Workload, 11, true, ['app-dev', 'metrics']),
             new TopologyNode('app-prod', $image, TopologyNodePurpose::Workload, 12, false, ['app-prod']),
             new TopologyNode('extra', $image, TopologyNodePurpose::Extension, 13, false, []),
-            new TopologyNode('operator', $image, TopologyNodePurpose::Operator, 14, true, []),
+            new TopologyNode('operator', self::OPERATOR_IMAGE, TopologyNodePurpose::Operator, 14, true, []),
         ]);
     }
 
@@ -150,7 +152,6 @@ final readonly class TopologyRecipe
         return array_keys($this->nodesByKey);
     }
 
-    /** @return list<string> */
     public function vmCount(): int
     {
         return count(array_filter($this->nodes, static fn (TopologyNode $node): bool => $node->purpose !== TopologyNodePurpose::Operator));

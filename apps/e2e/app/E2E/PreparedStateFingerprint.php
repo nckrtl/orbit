@@ -9,6 +9,7 @@ use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\SerializedArrays;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use InvalidArgumentException;
 use JsonException;
 
@@ -19,6 +20,7 @@ final readonly class PreparedStateFingerprint
         'paths',
         'cold_epoch',
         'base_image_alias',
+        'operator_base_image_alias',
         'declared_epochs',
         'topology',
     ];
@@ -51,6 +53,7 @@ final readonly class PreparedStateFingerprint
             'paths' => $hashes,
             'cold_epoch' => $manifest['cold_epoch'],
             'base_image_alias' => $manifest['base_image_alias'],
+            'operator_base_image_alias' => $manifest['operator_base_image_alias'],
             'declared_epochs' => $manifest['declared_epochs'],
             'topology' => $manifest['topology'],
         ]);
@@ -79,7 +82,7 @@ final readonly class PreparedStateFingerprint
         return new PreparedFingerprint(hash('sha256', $encoded), $payload);
     }
 
-    /** @return array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>, assignments: array<string, list<string>>}} */
+    /** @return array{schema: int, paths: list<string>, cold_epoch: string, base_image_alias: string, operator_base_image_alias: string, declared_epochs: array<string, int>, topology: array{profile: string, roles: list<string>, checkout_roles: list<string>, assignments: array<string, list<string>>}} */
     private function validateManifest(mixed $manifest): array
     {
         if (! is_array($manifest) || array_is_list($manifest)) {
@@ -95,6 +98,9 @@ final readonly class PreparedStateFingerprint
             throw new InvalidArgumentException('The prepared-state manifest schema is invalid.');
         }
 
+        if (($manifest['operator_base_image_alias'] ?? null) !== TopologyRecipe::OPERATOR_IMAGE) {
+            throw new InvalidArgumentException('The operator base image alias is invalid.');
+        }
         $paths = $this->validatePaths($manifest['paths']);
         $coldBase = $this->validateColdBase($manifest['cold_epoch'], $manifest['base_image_alias']);
         $declaredEpochs = $this->validateEpochs($manifest['declared_epochs']);
@@ -105,6 +111,7 @@ final readonly class PreparedStateFingerprint
             'paths' => $paths,
             'cold_epoch' => $coldBase['cold_epoch'],
             'base_image_alias' => $coldBase['base_image_alias'],
+            'operator_base_image_alias' => $manifest['operator_base_image_alias'],
             'declared_epochs' => $declaredEpochs,
             'topology' => $topology,
         ];

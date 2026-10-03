@@ -79,7 +79,7 @@ function interruptedReplacementFixture(): array
         $proofTarget,
         2,
         $alias,
-        $imageFingerprint,
+        $imageFingerprint, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $verification = new VerificationReport(true, [
         'replacement' => verificationProbeFixture(),
@@ -211,7 +211,7 @@ function replacementGeneration(
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
         $previous,
-        TopologyProfile::ASSIGNMENTS,
+        TopologyProfile::ASSIGNMENTS, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 
@@ -658,7 +658,7 @@ function replacementInstallationAtMain(
         $generation->checkoutRoles,
         $generation->previousGenerationId,
         $generation->topologyAssignments,
-        $generation->manifestSchema,
+        $generation->manifestSchema, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new TopologySnapshotReplacementInstallation(

@@ -24,7 +24,7 @@ final readonly class ColdTopologyPlan
         public bool $snapshotReplacement = false,
     ) {
         $requiredNodes = [];
-        foreach (TopologyProfile::ROLES as $role) {
+        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
             $requiredNodes[] = $target->recipe->nodeForRole($role)->key;
         }
         if (count($requiredNodes) !== count(array_unique($requiredNodes))) {

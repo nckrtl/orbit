@@ -32,6 +32,8 @@ final readonly class TopologyVerifier
         'service.vpn' => 'gateway',
         'wireguard.reachability' => 'gateway',
         'operator.app-dev' => 'app-dev',
+        'operator.container' => 'operator',
+        'source.operator' => 'operator',
         'https.gateway-internal' => 'app-dev',
         'php-fpm.app-dev' => 'app-dev',
         'caddy.app-dev' => 'app-dev',

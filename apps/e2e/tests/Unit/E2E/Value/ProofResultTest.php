@@ -100,14 +100,14 @@ describe('ProofResult declared end state', function (): void {
             [['id' => 'remove-node', 'node' => 'app-dev', 'exit_code' => 0, 'stdout' => '', 'stderr' => '']],
             null,
             '2026-08-30T10:00:00Z',
-            TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]),
+            TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]),
             ['vm.app-prod.running', 'role.app-prod'],
             str_repeat('c', 64),
             str_repeat('d', 64),
         );
 
         expect($result->toArray()['ends_with'] ?? null)
-            ->toBe(['nodes' => ['gateway', 'app-dev']])
+            ->toBe(['nodes' => ['gateway', 'app-dev', 'operator']])
             ->and($result->toArray()['skipped_probes'] ?? null)
             ->toBe(['vm.app-prod.running', 'role.app-prod'])
             ->and(array_keys($result->toArray()))

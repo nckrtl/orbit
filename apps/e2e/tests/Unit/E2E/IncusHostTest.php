@@ -356,7 +356,8 @@ describe('IncusHost reads', function () {
         $addresses = incusHost()->globalIpv4All([
             'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
+            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod', 'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator',
+            'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator', 'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator',
         ]);
 
         expect($addresses)
@@ -488,7 +489,7 @@ describe('IncusHost reads', function () {
                         16,
                         JSON_THROW_ON_ERROR,
                     )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
+                    ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ), JSON_THROW_ON_ERROR));
             }
             if (array_slice($process->command, 3, 2) === ['network', 'list']) {
@@ -506,14 +507,15 @@ describe('IncusHost reads', function () {
         incusHost()->configureCloneNetworks([
             'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
+            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod', 'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator',
+            'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator', 'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator',
         ], 'oe-b32d6c83af72');
 
         expect($instanceReads)
             ->toBe(1)
             ->and($networkReads)
             ->toBe(1);
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
+        foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $role) {
             $hash = substr(sha1("oe-b32d6c83af72:{$role}"), 0, 6);
             $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
             Process::assertRan(incusCommand(
@@ -536,7 +538,7 @@ describe('IncusHost reads', function () {
     it('validates owned topology network and MAC identity from one instance inventory', function () {
         $network = 'oe-b32d6c83af72';
         $resources = [];
-        foreach (['gateway', 'app-dev', 'app-prod'] as $offset => $role) {
+        foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $offset => $role) {
             $hash = substr(sha1("{$network}:{$role}"), 0, 6);
             $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
             $resources[] = json_decode(
@@ -575,7 +577,8 @@ describe('IncusHost reads', function () {
         incusHost()->assertTopologyNetworkIdentity([
             'gateway' => 'orbit-e2e-tst-123-aaaaaaaa-gateway',
             'app-dev' => 'orbit-e2e-tst-123-aaaaaaaa-app-dev',
-            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod',
+            'app-prod' => 'orbit-e2e-tst-123-aaaaaaaa-app-prod', 'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator',
+            'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator', 'operator' => 'orbit-e2e-tst-123-aaaaaaaa-operator',
         ], $network);
 
         expect($reads)->toBe(1);
@@ -985,7 +988,7 @@ describe('IncusHost mutations', function () {
         $host = incusHost();
 
         $instances = $host->initVms(array_combine(
-            ['gateway', 'app-dev', 'app-prod'],
+            ['gateway', 'app-dev', 'app-prod', 'operator'],
             array_map(static fn (string $role): array => [
                 'image' => 'orbit-base',
                 'name' => "orbit-e2e-topology-snapshot-{$role}",
@@ -994,11 +997,11 @@ describe('IncusHost mutations', function () {
                 'topology' => 'oe-topo-snap',
                 'slot' => 1,
                 'metadata' => ['user.orbit.e2e.operation' => str_repeat('a', 32)],
-            ], ['gateway', 'app-dev', 'app-prod']),
+            ], ['gateway', 'app-dev', 'app-prod', 'operator']),
         ));
 
-        expect(array_keys($instances))->toBe(['gateway', 'app-dev', 'app-prod']);
-        foreach (['gateway', 'app-dev', 'app-prod'] as $role) {
+        expect(array_keys($instances))->toBe(['gateway', 'app-dev', 'app-prod', 'operator']);
+        foreach (['gateway', 'app-dev', 'app-prod', 'operator'] as $role) {
             $hash = substr(sha1("oe-topo-snap:{$role}"), 0, 6);
             $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
             $ipv4 = match ($role) {
@@ -1870,7 +1873,7 @@ describe('IncusHost mutations', function () {
                         16,
                         JSON_THROW_ON_ERROR,
                     )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
+                    ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ), JSON_THROW_ON_ERROR));
             }
             if (array_slice($process->command, 3, 2) === ['snapshot', 'list']) {
@@ -1917,7 +1920,7 @@ describe('IncusHost mutations', function () {
         ]);
 
         expect(array_keys($instances))
-            ->toBe(['gateway', 'app-dev', 'app-prod'])
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'operator'])
             ->and($sourceReads)
             ->toBe(1)
             ->and($snapshotReads)
@@ -2013,7 +2016,7 @@ describe('IncusHost mutations', function () {
                         16,
                         JSON_THROW_ON_ERROR,
                     )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
+                    ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ), JSON_THROW_ON_ERROR));
             }
 

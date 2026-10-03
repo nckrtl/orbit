@@ -6,6 +6,7 @@ namespace App\E2E;
 
 use App\E2E\Git\GitRepository;
 use App\E2E\Value\PreparedFingerprint;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use RuntimeException;
 
@@ -63,6 +64,7 @@ final readonly class PromotedTopologySnapshotResolver
             if (
                 ($feature->manifest['cold_epoch'] ?? null) !== $generation->coldEpoch
                 || ($feature->manifest['base_image_alias'] ?? null) !== $generation->baseImageAlias
+                || ($feature->manifest['operator_base_image_alias'] ?? null) !== TopologyRecipe::OPERATOR_IMAGE
             ) {
                 throw new RuntimeException('The feature prepared state changes the cold base contract.');
             }
@@ -79,6 +81,7 @@ final readonly class PromotedTopologySnapshotResolver
         if (
             ($feature->manifest['cold_epoch'] ?? null) !== ($baseline->manifest['cold_epoch'] ?? null)
             || ($feature->manifest['base_image_alias'] ?? null) !== ($baseline->manifest['base_image_alias'] ?? null)
+            || ($feature->manifest['operator_base_image_alias'] ?? null) !== ($baseline->manifest['operator_base_image_alias'] ?? null)
         ) {
             throw new RuntimeException('The feature prepared state changes the cold base contract.');
         }

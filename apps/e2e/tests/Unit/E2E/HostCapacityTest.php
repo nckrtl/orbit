@@ -32,7 +32,7 @@ function fakeCapacityHost(array $harnessInstances, array $subnets): void
         $instances = array_map(
             static fn (string $name): array => [
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             ],
             $harnessInstances,

@@ -200,14 +200,14 @@ final class IncusHost implements GuestTransport
         return $users;
     }
 
-    public function imageFingerprint(string $alias): string
+    public function imageFingerprint(string $alias, string $type = 'virtual-machine'): string
     {
         $this->validateImage($alias);
         [$remote, $selector] = $this->imageSelector($alias);
         $images = $this->readJson(['image', 'list', $remote, $selector, '--format=json']);
         $matches = [];
         foreach ($images as $image) {
-            if (! is_array($image) || ($image['type'] ?? null) !== 'virtual-machine') {
+            if (! is_array($image) || ($image['type'] ?? null) !== $type) {
                 continue;
             }
             if (($image['fingerprint'] ?? null) === $selector) {
@@ -227,7 +227,7 @@ final class IncusHost implements GuestTransport
             }
         }
         if (count($matches) !== 1) {
-            throw new RuntimeException('Incus image selector did not identify exactly one virtual-machine image.');
+            throw new RuntimeException("Incus image selector [{$alias}] did not identify exactly one {$type} image.");
         }
         $fingerprint = $matches[0]['fingerprint'] ?? null;
 
@@ -349,10 +349,10 @@ final class IncusHost implements GuestTransport
             $container = $vm['role'] === 'operator';
             $arguments = [
                 'init',
-                $container ? 'images:ubuntu/26.04' : $remote.$selector,
+                $remote.$selector,
                 $this->target($vm['name']),
                 ...($container ? [] : ['--vm']),
-                ...($container ? ['--config', 'security.nesting=true', '--config', 'security.syscalls.intercept.mknod=true', '--config', 'security.syscalls.intercept.setxattr=true'] : []),
+                ...($container ? ['--config', 'security.nesting=true'] : []),
                 '--storage',
                 $this->pool,
                 '--config',

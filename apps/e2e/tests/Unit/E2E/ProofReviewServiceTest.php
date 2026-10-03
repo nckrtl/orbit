@@ -54,7 +54,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
     $generation = new TopologySnapshotGeneration(
         'fixture-generation',
         str_repeat('c', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('d', 64),
         str_repeat('e', 64),
         new LaravelRelease('v13.10.1', str_repeat('f', 40)),
@@ -64,7 +64,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
         TopologyRecipe::BASE_IMAGE,
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $construction = TopologyConstructionInputs::create(
         $target,

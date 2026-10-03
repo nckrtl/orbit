@@ -80,7 +80,7 @@ function legacyRecoveryGeneration(int $schema = TopologySnapshotGeneration::SCHE
         'orbit-base-ubuntu-26.04-runtime',
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     if ($schema === TopologySnapshotGeneration::SCHEMA) {
         return $generation;

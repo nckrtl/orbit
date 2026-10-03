@@ -129,8 +129,8 @@ it('declares the committed snapshot scenarios with their lane recipes and action
         static fn (ScenarioDefinition $definition): array => $definition->recipe->nodeKeys(),
         $definitions,
     ))->toBe([
-        ['gateway', 'app-dev', 'app-prod'],
-        ['gateway', 'app-dev', 'app-prod'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
         ['gateway', 'app-dev', 'app-prod', 'app-prod-2'],
     ]);
     expect(array_map(

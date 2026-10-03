@@ -128,7 +128,7 @@ function extendedReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose
     $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', str_repeat('e', 40)),
@@ -138,7 +138,7 @@ function extendedReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose
         TopologyRecipe::BASE_IMAGE,
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new FeatureTopology(
@@ -161,7 +161,7 @@ function replacementReleaseTopology(TopologyTarget $target, AttemptPurpose $purp
     $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', str_repeat('e', 40)),
@@ -171,7 +171,7 @@ function replacementReleaseTopology(TopologyTarget $target, AttemptPurpose $purp
         TopologyRecipe::BASE_IMAGE,
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new FeatureTopology(
@@ -179,7 +179,7 @@ function replacementReleaseTopology(TopologyTarget $target, AttemptPurpose $purp
             $target,
             2,
             TopologyRecipe::BASE_IMAGE,
-            str_repeat('d', 64),
+            str_repeat('d', 64), operatorBaseImageFingerprint: str_repeat('b', 64),
         ),
         $purpose,
         $generation,
@@ -612,7 +612,7 @@ describe('TopologyReleaser', function () {
             ->and($state->hasAttempt(AttemptPurpose::Discovery))
             ->toBeFalse()
             ->and($generation['snapshots'])
-            ->toBe(['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'])
+            ->toBe(['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'])
             ->and(array_values(array_filter($commands, static fn (string $command): bool => str_starts_with(
                 $command,
                 'delete',

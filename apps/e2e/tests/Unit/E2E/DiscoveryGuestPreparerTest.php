@@ -39,10 +39,10 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
                 $batch['stdin'][] = $request['stdin'];
                 $results[] = [
                     'label' => $request['label'],
-                    'stdout' => $outputs[$request['label']] ?? (in_array($request['label'], ['gateway', 'app-dev', 'app-prod'], true)
+                    'stdout' => $outputs[$request['label']] ?? (in_array($request['label'], ['gateway', 'app-dev', 'app-prod', 'operator'], true)
                         ? '2: enp5s0    inet 10.44.0.'.(10 + count($batch['labels']))."/24 scope global enp5s0\n"
                         : ($request['label'] === 'retarget-gateway'
-                            ? '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820"}' : '')),
+                            ? '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}' : '')),
                     'stderr' => '',
                     'exit_code' => $failures[$request['label']] ?? 0,
                 ];
@@ -308,10 +308,10 @@ describe('repair.identity', function () {
 
         expect(array_column($batches, 'labels'))
             ->toBe([
-                ['gateway', 'app-dev', 'app-prod'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ['retarget-gateway'],
                 ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
-                ['php-fpm.gateway', 'php-fpm.app-dev'],
+                ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
             ])
             ->and($batches[1]['instances'])->toBe(['local:'.$target->instance('gateway')])
             ->and($batches[1]['argv'])->toBe([[
@@ -341,10 +341,10 @@ describe('repair.identity', function () {
 
         expect(array_column($batches, 'labels'))
             ->toBe([
-                ['gateway', 'app-dev', 'app-prod'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ['retarget-gateway'],
                 ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
-                ['php-fpm.gateway', 'php-fpm.app-dev'],
+                ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
             ])
             ->and(collect($batches)->flatMap(fn (array $batch): array => $batch['instances'])->all())
             ->not->toContain('local:'.$target->instance('app-prod-2'));
@@ -378,7 +378,7 @@ describe('repair.identity', function () {
         expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
             ->toThrow(RuntimeException::class, 'Gateway clone identity preparation failed on retarget-gateway.')
             ->and(array_column($batches, 'labels'))->toBe([
-                ['gateway', 'app-dev', 'app-prod'], ['retarget-gateway'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'], ['retarget-gateway'],
             ]);
     });
 
@@ -394,9 +394,9 @@ describe('repair.identity', function () {
         'invalid JSON' => 'not JSON',
         'missing peer' => '{"app-dev":"10.44.0.11:51820"}',
         'unknown peer' => '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820","extra":"10.44.0.11:51820"}',
-        'snapshot endpoint' => '{"app-dev":"10.232.1.10:51820","app-prod":"10.44.0.11:51820"}',
-        'invalid port' => '{"app-dev":"10.44.0.11:65536","app-prod":"10.44.0.11:51820"}',
-        'wrong type' => '{"app-dev":null,"app-prod":"10.44.0.11:51820"}',
+        'snapshot endpoint' => '{"app-dev":"10.232.1.10:51820","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
+        'invalid port' => '{"app-dev":"10.44.0.11:65536","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
+        'wrong type' => '{"app-dev":null,"app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
     ]);
 
     it('refuses duplicate clone addresses before publishing identity', function () {

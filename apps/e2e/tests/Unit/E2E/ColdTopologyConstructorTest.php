@@ -43,7 +43,7 @@ function cold_constructor_instance(string $name, string $network, string $operat
 {
     return [
         'name' => $name,
-        'type' => 'virtual-machine',
+        'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
         'status' => 'Stopped',
         'status_code' => 102,
         'config' => [
@@ -96,6 +96,10 @@ final class ColdConstructorProcessState
                 'type' => 'virtual-machine',
                 'fingerprint' => str_repeat('f', 64),
                 'aliases' => [['name' => TopologyRecipe::BASE_IMAGE]],
+            ], [
+                'type' => 'container',
+                'fingerprint' => str_repeat('b', 64),
+                'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]],
             ]], JSON_THROW_ON_ERROR));
         }
         if ($command === ['incus', '--project', 'default', 'network', 'list', 'local:', '--format=json']) {
@@ -198,7 +202,7 @@ function cold_constructing_plan(TopologyTarget $target, OperationId $operation):
         $target,
         '/tmp',
         str_repeat('a', 40),
-        [TopologyRecipe::BASE_IMAGE => str_repeat('f', 64)],
+        [TopologyRecipe::BASE_IMAGE => str_repeat('f', 64), TopologyRecipe::OPERATOR_IMAGE => str_repeat('b', 64)],
         new LaravelRelease('v13.0.0', str_repeat('b', 40)),
         $operation,
         ['user.orbit.e2e.operation' => $operation->value],

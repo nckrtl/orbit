@@ -14,6 +14,7 @@ use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\RefreshResult;
 use App\E2E\Value\SerializedArrays;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -273,7 +274,11 @@ final readonly class TopologySnapshotRefresher
                 throw new RuntimeException('The prepared fingerprint has no base image alias.');
             }
             $alias = $desired->manifest['base_image_alias'];
-            $baseImageFingerprint = $promoted->baseImageFingerprint ?? $this->host->imageFingerprint($alias);
+            $baseImageFingerprint = $this->host->imageFingerprint($alias);
+            $operatorBaseImageFingerprint = $this->host->imageFingerprint(TopologyRecipe::OPERATOR_IMAGE, 'container');
+            if ($promoted !== null && ($promoted->isLegacy() || $promoted->baseImageFingerprint !== $baseImageFingerprint || $promoted->operatorBaseImageFingerprint !== $operatorBaseImageFingerprint)) {
+                throw new RuntimeException('Base image provenance changed; recovery-required cold topology snapshot rebuild.');
+            }
             if (
                 $promoted !== null
                 && ! $promoted->isLegacy()
@@ -315,6 +320,7 @@ final readonly class TopologySnapshotRefresher
                     $release,
                     $allowCold,
                     $operation,
+                    $operatorBaseImageFingerprint,
                 );
             } else {
                 if (! $this->generationLock->acquire(
@@ -378,6 +384,7 @@ final readonly class TopologySnapshotRefresher
                 $promoted?->id,
                 $structural->value,
                 $desired->manifest,
+                $operatorBaseImageFingerprint,
             ));
             $this->generationLock->release();
             $generationMutationLockHeld = false;
@@ -528,6 +535,7 @@ final readonly class TopologySnapshotRefresher
         ?string $previousGenerationId,
         string $structuralFingerprint,
         array $manifest,
+        string $operatorBaseImageFingerprint,
     ): TopologySnapshotGeneration {
         $id = substr($mainSha, 0, 12).'-'.substr($fingerprint, 0, 12);
         $snapshot = 'main-'.$id;
@@ -595,6 +603,7 @@ final readonly class TopologySnapshotRefresher
             $checkoutRoles,
             $previousGenerationId,
             $assignments,
+            operatorBaseImageFingerprint: $operatorBaseImageFingerprint,
         );
     }
 

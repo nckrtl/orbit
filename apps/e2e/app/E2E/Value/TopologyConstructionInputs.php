@@ -27,6 +27,7 @@ final readonly class TopologyConstructionInputs
         public ?string $imageFingerprint,
         public array $nodes,
         public int $schema,
+        public ?string $operatorBaseImageFingerprint = null,
     ) {
         if (! in_array($schema, [self::LEGACY_SCHEMA, self::SCHEMA], true)) {
             throw new InvalidArgumentException('The topology construction input schema is invalid.');
@@ -39,6 +40,9 @@ final readonly class TopologyConstructionInputs
         }
         if ($slot < 1 || $slot > 200) {
             throw new InvalidArgumentException('The topology construction slot is invalid.');
+        }
+        if ($snapshotReplacement && preg_match('/\A[a-f0-9]{64}\z/D', $operatorBaseImageFingerprint ?? '') !== 1) {
+            throw new InvalidArgumentException('The operator base image fingerprint is invalid.');
         }
         $usesBaseImage = $extension !== null || $snapshotReplacement;
         if ($usesBaseImage !== ($imageAlias !== null) || $usesBaseImage !== ($imageFingerprint !== null)) {
@@ -65,7 +69,7 @@ final readonly class TopologyConstructionInputs
             || $target->recipe->nodeKeys() !== TopologyProfile::ROLES
             || ! array_all(
                 $target->recipe->nodes,
-                static fn (TopologyNode $node): bool => $node->image === $imageAlias,
+                static fn (TopologyNode $node): bool => $node->image === ($node->key === 'operator' ? TopologyRecipe::OPERATOR_IMAGE : $imageAlias),
             ))
         ) {
             throw new InvalidArgumentException('The snapshot replacement construction declaration is invalid.');
@@ -89,6 +93,7 @@ final readonly class TopologyConstructionInputs
             $slot,
             $extension,
             $imageFingerprint,
+            $generation->operatorBaseImageFingerprint,
         );
     }
 
@@ -98,6 +103,7 @@ final readonly class TopologyConstructionInputs
         int $slot,
         ?TopologyExtension $extension = null,
         ?string $imageFingerprint = null,
+        ?string $operatorBaseImageFingerprint = null,
     ): self {
         $nodes = [];
         foreach ($target->recipe->nodes as $node) {
@@ -119,6 +125,7 @@ final readonly class TopologyConstructionInputs
             $imageFingerprint,
             $nodes,
             self::SCHEMA,
+            $operatorBaseImageFingerprint,
         );
     }
 
@@ -127,6 +134,7 @@ final readonly class TopologyConstructionInputs
         int $slot,
         string $imageAlias,
         string $imageFingerprint,
+        string $operatorBaseImageFingerprint,
     ): self {
         $nodes = [];
         foreach ($target->recipe->nodes as $node) {
@@ -148,6 +156,7 @@ final readonly class TopologyConstructionInputs
             $imageFingerprint,
             $nodes,
             self::SCHEMA,
+            $operatorBaseImageFingerprint,
         );
     }
 
@@ -170,6 +179,7 @@ final readonly class TopologyConstructionInputs
             'slot' => $this->slot,
             'image_alias' => $this->imageAlias,
             'image_fingerprint' => $this->imageFingerprint,
+            ...($this->schema === self::SCHEMA ? ['operator_base_image' => ['alias' => TopologyRecipe::OPERATOR_IMAGE, 'fingerprint' => $this->operatorBaseImageFingerprint]] : []),
             'nodes' => $this->nodes,
         ];
     }
@@ -200,6 +210,7 @@ final readonly class TopologyConstructionInputs
                 'slot',
                 'image_alias',
                 'image_fingerprint',
+                'operator_base_image',
                 'nodes',
             ];
         if (
@@ -217,6 +228,10 @@ final readonly class TopologyConstructionInputs
             && ! is_string($value['image_alias'])
             || $value['image_fingerprint'] !== null
             && ! is_string($value['image_fingerprint'])
+            || ($schema === self::SCHEMA && (! is_array($value['operator_base_image'] ?? null)
+                || array_keys($value['operator_base_image']) !== ['alias', 'fingerprint']
+                || $value['operator_base_image']['alias'] !== TopologyRecipe::OPERATOR_IMAGE
+                || ($value['operator_base_image']['fingerprint'] !== null && ! is_string($value['operator_base_image']['fingerprint']))))
             || ! is_array($value['nodes'])
         ) {
             throw new InvalidArgumentException('The topology construction input schema is invalid.');
@@ -248,6 +263,7 @@ final readonly class TopologyConstructionInputs
             $value['image_fingerprint'],
             $nodes,
             $schema,
+            $schema === self::SCHEMA ? $value['operator_base_image']['fingerprint'] : null,
         );
     }
 

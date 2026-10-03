@@ -103,7 +103,8 @@ function legacyProofGeneration(): TopologySnapshotGeneration
         [
             'gateway' => 'main-legacy-gateway',
             'app-dev' => 'main-legacy-app-dev',
-            'app-prod' => 'main-legacy-app-prod',
+            'app-prod' => 'main-legacy-app-prod', 'operator' => 'main-legacy-operator',
+            'operator' => 'main-legacy-operator', 'operator' => 'main-legacy-operator',
         ],
         str_repeat('b', 64),
         str_repeat('c', 64),
@@ -116,7 +117,7 @@ function legacyProofGeneration(): TopologySnapshotGeneration
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
         topologyAssignments: null,
-        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA,
+        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 

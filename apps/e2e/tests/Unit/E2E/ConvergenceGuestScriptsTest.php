@@ -33,7 +33,8 @@ function discovery_gateway_identity_fixture(): array
         INSERT INTO nodes VALUES
             (1, 'gateway', 'active', '10.232.1.10', 2201, 'orbit', '10.44.0.1', '192.168.1.10', 'gateway-public-key', NULL, '10.44.0.1', 'gateway-host-key', NULL, '2026-09-01', '2026-09-02'),
             (2, 'app-dev', 'active', '10.232.1.11', 2202, 'orbit', '10.44.0.2', '192.168.1.11', 'dev-public-key', NULL, '10.44.0.1', 'dev-host-key', 7, '2026-09-01', '2026-09-03'),
-            (3, 'app-prod', 'active', '10.232.1.12', 2203, 'deploy', '10.44.0.3', NULL, 'prod-public-key', NULL, '192.0.2.53', 'prod-host-key', NULL, '2026-09-01', '2026-09-04');
+            (3, 'app-prod', 'active', '10.232.1.12', 2203, 'deploy', '10.44.0.3', NULL, 'prod-public-key', NULL, '192.0.2.53', 'prod-host-key', NULL, '2026-09-01', '2026-09-04'),
+            (5, 'operator', 'active', '10.232.1.14', 22, 'orbit', '10.44.0.5', NULL, 'operator-public-key', NULL, NULL, 'operator-host-key', NULL, '2026-09-01', '2026-09-04');
         INSERT INTO node_roles VALUES
             (1, 1, 'gateway', 'active', '2026-09-01', '2026-09-02'),
             (2, 1, 'vpn', 'active', '2026-09-01', '2026-09-02'),
@@ -76,6 +77,7 @@ function discovery_gateway_identity_process(string $database, array $addresses =
         dirname(__DIR__, 3).'/resources/guest/retarget-gateway.php',
         $database,
         ...$addresses,
+        ...(count($addresses) === 3 ? ['10.232.7.14'] : []),
     ]);
 }
 
@@ -2640,6 +2642,7 @@ describe('convergence guest scripts', function () {
             'converge-gateway.sh',
             'converge-app-dev.sh',
             'converge-app-prod.sh',
+            'converge-operator.sh',
             'converge-sample-app.sh',
         ];
 

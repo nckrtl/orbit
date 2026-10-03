@@ -446,22 +446,22 @@ describe('ProofPlan ends_with', function (): void {
 
     it('reads a declared end state and records it', function (): void {
         $plan = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan): array {
-            $plan['ends_with'] = ['nodes' => ['gateway', 'app-dev']];
+            $plan['ends_with'] = ['nodes' => ['gateway', 'app-dev', 'operator']];
 
             return $plan;
         }));
 
         expect($plan->endsWith->nodes)
-            ->toBe(['gateway', 'app-dev'])
+            ->toBe(['gateway', 'app-dev', 'operator'])
             ->and($plan->endsWith->absent())
             ->toBe(['app-prod'])
             ->and($plan->toArray()['ends_with'] ?? null)
-            ->toBe(['nodes' => ['gateway', 'app-dev']]);
+            ->toBe(['nodes' => ['gateway', 'app-dev', 'operator']]);
     });
 
     it('makes a plan that removes a node a mutating plan whatever it says', function (mixed $declared): void {
         $plan = ProofPlan::fromFile(mutatedProofPlanFile(function (array $plan) use ($declared): array {
-            $plan['ends_with'] = ['nodes' => ['gateway', 'app-dev']];
+            $plan['ends_with'] = ['nodes' => ['gateway', 'app-dev', 'operator']];
             if ($declared !== null) {
                 $plan['mutates'] = $declared;
             }
@@ -591,7 +591,7 @@ describe('ProofPlan snapshot replacement', function (): void {
             ->toThrow(InvalidArgumentException::class, 'cannot declare a topology extension')
             ->and(fn () => ProofPlan::fromArray(
                 proofPlanFixture() + [
-                    'ends_with' => ['nodes' => ['gateway', 'app-dev']],
+                    'ends_with' => ['nodes' => ['gateway', 'app-dev', 'operator']],
                     'snapshot_replacement' => true,
                 ],
             ))

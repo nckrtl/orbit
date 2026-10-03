@@ -103,7 +103,7 @@ function closeoutState(
     $generation = new TopologySnapshotGeneration(
         'fixture-generation',
         str_repeat('c', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('d', 64),
         str_repeat('e', 64),
         new LaravelRelease('v13.10.1', str_repeat('f', 40)),
@@ -112,15 +112,15 @@ function closeoutState(
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
-        ['gateway', 'app-dev', 'app-prod'],
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $construction = $snapshotReplacement
         ? TopologyConstructionInputs::forSnapshotReplacement(
             $target,
             2,
             $generation->baseImageAlias,
-            $generation->baseImageFingerprint,
+            $generation->baseImageFingerprint, operatorBaseImageFingerprint: str_repeat('b', 64),
         )
         : TopologyConstructionInputs::forGeneration($target, $generation->id, 2);
     $topology = new FeatureTopology(

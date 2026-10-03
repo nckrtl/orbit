@@ -813,6 +813,7 @@ final readonly class TopologySnapshotReplacementInstaller
             TopologyProfile::CHECKOUT_ROLES,
             $old->id,
             TopologyProfile::ASSIGNMENTS,
+            operatorBaseImageFingerprint: $construction->operatorBaseImageFingerprint,
         );
         $attempt = $this->attempts === null ? AttemptId::generate() : ($this->attempts)();
         $temporary = TopologyTarget::disposableCold(

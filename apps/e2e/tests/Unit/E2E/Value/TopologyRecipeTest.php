@@ -11,8 +11,8 @@ it('preserves the registered three-Node profile', function () {
     $recipe = TopologyRecipe::registered();
 
     expect($recipe->id)->toBe(TopologyProfile::NAME);
-    expect($recipe->nodeKeys())->toBe(['gateway', 'app-dev', 'app-prod']);
-    expect($recipe->checkoutNodeKeys())->toBe(['gateway', 'app-dev']);
+    expect($recipe->nodeKeys())->toBe(['gateway', 'app-dev', 'app-prod', 'operator']);
+    expect($recipe->checkoutNodeKeys())->toBe(['gateway', 'app-dev', 'operator']);
     expect($recipe->assignments())->toBe(TopologyProfile::ASSIGNMENTS);
     expect($recipe->nodeForRole('router')->key)->toBe('gateway');
     expect($recipe->nodeForRole('websocket')->key)->toBe('gateway');
@@ -30,7 +30,7 @@ it('declares exactly one temporary app-prod Node with fixed physical addresses',
     expect($recipe->nodeKeys())
         ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
         ->and($recipe->checkoutNodeKeys())
-        ->toBe(['gateway', 'app-dev'])
+        ->toBe(['gateway', 'app-dev', 'operator'])
         ->and($recipe->node('app-prod-2')->address)
         ->toBe(13)
         ->and($recipe->node('app-prod-2')->wireGuardAddress())

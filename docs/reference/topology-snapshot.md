@@ -24,7 +24,8 @@ A topology snapshot generation is a coordinated set of four Incus snapshots: one
 | Network | `oe-topo-snap`, slot 1, `10.232.1.0/24` |
 | VMs | `orbit-e2e-topology-snapshot-gateway`, `-app-dev`, and `-app-prod` |
 | System container | `orbit-e2e-topology-snapshot-operator` |
-| Base image | `orbit-base-ubuntu-26.04-runtime` |
+| VM base image | `orbit-base-ubuntu-26.04-runtime` (type `virtual-machine`, unchanged) |
+| Operator base image | `orbit-base-ubuntu-26.04-operator` (type `container`) |
 | Generation ID | The first 12 characters of the main SHA, a hyphen, and the first 12 characters of the prepared fingerprint |
 | Snapshot | `main-<generation-id>` on every guest |
 
@@ -34,7 +35,23 @@ Every topology includes the small `operator` system container from the snapshot.
 
 Discovery acquisition mounts the task worktree live in the operator at `/home/orbit/orbit`, as it does in gateway and app-dev. It aligns the operator's network identity and WireGuard endpoint with the acquired Gateway, and pins its Gateway URL and trusted CA to that topology. Missing operator configuration is a readiness failure, not permission to use the real fleet. [Web session](/reference/incus-topologies#web-session) defines the dev-server and publication lifecycle.
 
-After deployment of this change, the operator must rebuild the shared topology snapshot on beast to include this container. The new contract requires a generation containing all three VMs and the operator container. Use the ownership-checked [rebuild and recovery](#rebuild-and-recover) commands for the snapshot's actual state; do not manually delete shared resources. The task's disposable environment does not authorize this shared rebuild.
+After deployment of this change, the operator must first prepare and verify the local container base on beast, then rebuild the shared topology snapshot on beast to include this container. The new contract requires a generation containing all three VMs and the operator container. Use the ownership-checked [rebuild and recovery](#rebuild-and-recover) commands for the snapshot's actual state; do not manually delete shared resources. The task's disposable environment does not authorize this shared rebuild.
+
+### Prepare the operator base on beast
+
+This is an explicit operator step on the shared host, not a task-fixture action. Keep `orbit-base-ubuntu-26.04-runtime` unchanged. Choose and record a specific Ubuntu 26.04 container fingerprint from the configured Incus image remote. Copy that fingerprint into the harness's local Incus remote and project as `orbit-base-ubuntu-26.04-operator`; do not set auto-update. For example, with the default local remote and project:
+
+```bash
+incus image info images:ubuntu/26.04 --project default
+incus image copy images:CONTAINER_FINGERPRINT local: --project default --alias orbit-base-ubuntu-26.04-operator
+incus image list local: orbit-base-ubuntu-26.04-operator --project default --format=json
+```
+
+Replace `CONTAINER_FINGERPRINT` with the full fingerprint after confirming that the upstream image has type `container`, release `resolute` (Ubuntu 26.04), and the host architecture. Verify that the local result has exactly one matching alias, the same fingerprint, type `container`, and `auto_update: false`. Adjust the local remote and project to the harness configuration. Do not overwrite an existing alias without reviewing its use and ownership. The generic container base has no Orbit credentials or topology identity. Cold construction installs its prerequisites and prepares its Orbit user and tooling inside the new task-owned container.
+
+The harness never fetches this image. It requires both local aliases to exist with their declared types. Cold construction records and rechecks both fingerprints under the creation lock before creating guests. The snapshot manifest records both aliases and fingerprints; rolling refresh refuses changed image provenance and requires an ownership-checked cold rebuild. Acquisition clones the operator's pinned snapshot, not a newly pulled image. A missing, wrong-type, or changed required image fails closed.
+
+After verifying the base, use the ownership-checked rebuild or recovery commands below for the actual shared snapshot state. Older three-guest generations do not satisfy the new contract.
 
 ## Prepared fingerprint
 

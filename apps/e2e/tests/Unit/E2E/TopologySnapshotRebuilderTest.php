@@ -60,7 +60,7 @@ function rebuildGeneration(string $id): TopologySnapshotGeneration
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
         TopologyProfile::ROLES,
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 

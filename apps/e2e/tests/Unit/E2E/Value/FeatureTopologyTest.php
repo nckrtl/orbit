@@ -30,7 +30,7 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
     $generation = new TopologySnapshotGeneration(
         'g1',
         str_repeat('a', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', str_repeat('e', 40)),
@@ -40,7 +40,7 @@ function mountedTopologyFixture(bool $mounted = true, ?array $mounts = null): Fe
         'orbit-base-ubuntu-26.04-runtime',
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new FeatureTopology(
@@ -194,7 +194,7 @@ it('round-trips a cold replacement with exact generic-base inputs for every regi
         $target,
         7,
         $generation->baseImageAlias,
-        $generation->baseImageFingerprint,
+        $generation->baseImageFingerprint, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $topology = new FeatureTopology(
         $construction,

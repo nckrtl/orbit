@@ -7,6 +7,7 @@ use App\E2E\State\AtomicJsonStore;
 use App\E2E\State\StatePaths;
 use App\E2E\TopologySnapshotManifestStore;
 use App\E2E\Value\LaravelRelease;
+use App\E2E\Value\TopologyRecipe;
 use App\E2E\Value\TopologySnapshotGeneration;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
@@ -30,7 +31,8 @@ describe('TopologySnapshotManifestStore', function () {
             [
                 'gateway' => 'main-g1-gateway',
                 'app-dev' => 'main-g1-app-dev',
-                'app-prod' => 'main-g1-app-prod',
+                'app-prod' => 'main-g1-app-prod', 'operator' => 'main-g1-operator',
+                'operator' => 'main-g1-operator', 'operator' => 'main-g1-operator',
             ],
             str_repeat('b', 64),
             str_repeat('c', 64),
@@ -40,14 +42,14 @@ describe('TopologySnapshotManifestStore', function () {
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
-            ['gateway', 'app-dev', 'app-prod'],
-            ['gateway', 'app-dev'],
+            ['gateway', 'app-dev', 'app-prod', 'operator'],
+            ['gateway', 'app-dev', 'operator'],
             null,
             [
                 'gateway' => ['gateway', 'vpn'],
                 'app-dev' => ['app-dev', 'metrics'],
                 'app-prod' => ['app-prod'],
-            ],
+            ], operatorBaseImageFingerprint: str_repeat('b', 64),
         );
         $store->record($generation);
         $store->promote($generation);
@@ -65,10 +67,11 @@ describe('TopologySnapshotManifestStore', function () {
                 'prepared_schema' => 2,
                 'cold_epoch' => 'ubuntu-26.04-amd64-v1',
                 'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+                'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
                 'topology' => [
                     'profile' => 'gateway_app-dev_app-prod',
-                    'roles' => ['gateway', 'app-dev', 'app-prod'],
-                    'checkout_roles' => ['gateway', 'app-dev'],
+                    'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
+                    'checkout_roles' => ['gateway', 'app-dev', 'operator'],
                     'assignments' => [
                         'gateway' => ['gateway', 'vpn'],
                         'app-dev' => ['app-dev', 'metrics'],
@@ -95,8 +98,8 @@ describe('TopologySnapshotManifestStore', function () {
                 'ubuntu-26.04-amd64-v1',
                 'orbit-base-ubuntu-26.04-runtime',
                 'gateway_app-dev_app-prod',
-                ['gateway', 'app-dev', 'app-prod'],
-                ['gateway', 'app-dev'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'],
+                ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
             ),
         )
             ->toThrow(InvalidArgumentException::class);
@@ -211,7 +214,7 @@ describe('TopologySnapshotManifestStore', function () {
         $current = new TopologySnapshotGeneration(
             'g1',
             str_repeat('a', 40),
-            ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1'],
+            ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1', 'operator' => 'main-g1'],
             str_repeat('b', 64),
             str_repeat('c', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -220,8 +223,8 @@ describe('TopologySnapshotManifestStore', function () {
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
-            ['gateway', 'app-dev', 'app-prod'],
-            ['gateway', 'app-dev'],
+            ['gateway', 'app-dev', 'app-prod', 'operator'],
+            ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
         );
         $paths->ensureParent($collection.'-placeholder');
         file_put_contents($paths->path($collection), 'not a directory');
@@ -236,7 +239,7 @@ describe('TopologySnapshotManifestStore', function () {
         $current = new TopologySnapshotGeneration(
             'g1',
             str_repeat('a', 40),
-            ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1'],
+            ['gateway' => 'main-g1', 'app-dev' => 'main-g1', 'app-prod' => 'main-g1', 'operator' => 'main-g1'],
             str_repeat('b', 64),
             str_repeat('c', 64),
             new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -245,8 +248,8 @@ describe('TopologySnapshotManifestStore', function () {
             'ubuntu-26.04-amd64-v1',
             'orbit-base-ubuntu-26.04-runtime',
             'gateway_app-dev_app-prod',
-            ['gateway', 'app-dev', 'app-prod'],
-            ['gateway', 'app-dev'],
+            ['gateway', 'app-dev', 'app-prod', 'operator'],
+            ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
         );
         $link = $paths->root().'/'.$collection;
         if (! is_dir(dirname($link)) && ! mkdir(dirname($link), 0700, true) && ! is_dir(dirname($link))) {
@@ -284,7 +287,7 @@ function topologySnapshotPruneGeneration(string $id, ?string $previous = null): 
     return new TopologySnapshotGeneration(
         $id,
         str_repeat(substr($id, offset: -1), 40),
-        ['gateway' => "main-{$id}", 'app-dev' => "main-{$id}", 'app-prod' => "main-{$id}"],
+        ['gateway' => "main-{$id}", 'app-dev' => "main-{$id}", 'app-prod' => "main-{$id}", 'operator' => "main-{$id}"],
         str_repeat('a', 64),
         str_repeat('b', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -293,8 +296,8 @@ function topologySnapshotPruneGeneration(string $id, ?string $previous = null): 
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
-        ['gateway', 'app-dev', 'app-prod'],
-        ['gateway', 'app-dev'],
-        $previous,
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
+        ['gateway', 'app-dev', 'operator'],
+        $previous, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }

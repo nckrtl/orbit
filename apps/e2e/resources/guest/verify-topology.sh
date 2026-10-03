@@ -10,7 +10,7 @@ umask 077
 # a declaration, both probes receive the complete canonical topology.
 [[ $# -ge 4 ]]
 case "$1" in
-  source.gateway|source.app-dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
+  source.gateway|source.app-dev|source.operator) [[ $# -eq 4 || $# -eq 5 ]] ;;
   source.manifest) [[ $# -eq 6 || $# -eq 7 ]] ;;
   role.app-dev|laravel.dev) [[ $# -eq 4 || $# -eq 5 ]] ;;
   role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 || $# -eq 5 ]] ;;
@@ -27,7 +27,7 @@ expected_pointer=
 typed_checkout=
 production_placement=
 case "$probe" in
-  source.gateway|source.app-dev) [[ $# -eq 4 ]] || expected_pointer=$5 ;;
+  source.gateway|source.app-dev|source.operator) [[ $# -eq 4 ]] || expected_pointer=$5 ;;
   source.manifest) [[ $# -eq 6 ]] || expected_pointer=$7 ;;
   role.app-dev|laravel.dev) [[ $# -eq 4 ]] || typed_checkout=$5 ;;
   role.app-prod|php-fpm.app-prod|caddy.app-prod|laravel.prod) [[ $# -eq 4 ]] || production_placement=$5 ;;
@@ -159,7 +159,7 @@ case "$probe" in
     # every declared roleless Node must remain absent. Undeclared Node names are
     # rejected, while additional active roles on a declared Node remain valid
     # for mutating feature proofs.
-    read -r expected extra < <(php -r '$pdo = new PDO("sqlite:".$argv[1]); $required = json_decode(base64_decode($argv[2], true), true, 16, JSON_THROW_ON_ERROR); if (!is_array($required) || array_is_list($required) || $required === []) exit(65); $base=[]; $parts=[]; $registered=[]; foreach ($required as $node => $roles) { if (!is_string($node) || preg_match("/\\A[a-z][a-z0-9-]{0,22}\\z/D", $node)!==1 || !is_array($roles) || !array_is_list($roles)) exit(65); $parts[]=$node.":".($roles===[] ? "none" : implode("+", $roles)); if ($roles===[]) continue; $registered[$node]=true; foreach ($roles as $role) { if (!is_string($role) || preg_match("/\\A[a-z][a-z0-9-]{0,31}\\z/D", $role)!==1) exit(65); $base[]=$node.":".$role; } } $nodeRows=$pdo->query("SELECT name, status FROM nodes ORDER BY name")->fetchAll(PDO::FETCH_ASSOC); $seenNodes=[]; foreach ($nodeRows as $row) { $node=$row["name"]; if (!is_string($node) || !isset($registered[$node]) || isset($seenNodes[$node]) || $row["status"]!=="active") exit(1); $seenNodes[$node]=true; } if (array_keys($seenNodes)!==array_keys($registered)) { $seen=array_keys($seenNodes); $expectedNodes=array_keys($registered); sort($seen, SORT_STRING); sort($expectedNodes, SORT_STRING); if ($seen!==$expectedNodes) exit(1); } $rows=$pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $seen=[]; $extra=[]; foreach ($rows as $row) { if (!isset($registered[$row["name"]]) || $row["node_status"]!=="active" || $row["role_status"]!=="active") exit(1); $key=$row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[]=$key; continue; } $extra[]=$key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $parts), ":active ", implode(",", $extra), "\n";' -- "$db" "$required_assignments")
+    read -r expected extra < <(php -r '$pdo = new PDO("sqlite:".$argv[1]); $required = json_decode(base64_decode($argv[2], true), true, 16, JSON_THROW_ON_ERROR); if (!is_array($required) || array_is_list($required) || $required === []) exit(65); $base=[]; $parts=[]; $registered=[]; foreach ($required as $node => $roles) { if (!is_string($node) || preg_match("/\\A[a-z][a-z0-9-]{0,22}\\z/D", $node)!==1 || !is_array($roles) || !array_is_list($roles)) exit(65); $parts[]=$node.":".($roles===[] ? "none" : implode("+", $roles)); if ($roles===[] && $node!=="operator") continue; $registered[$node]=true; foreach ($roles as $role) { if (!is_string($role) || preg_match("/\\A[a-z][a-z0-9-]{0,31}\\z/D", $role)!==1) exit(65); $base[]=$node.":".$role; } } $nodeRows=$pdo->query("SELECT name, status FROM nodes ORDER BY name")->fetchAll(PDO::FETCH_ASSOC); $seenNodes=[]; foreach ($nodeRows as $row) { $node=$row["name"]; if (!is_string($node) || !isset($registered[$node]) || isset($seenNodes[$node]) || $row["status"]!=="active") exit(1); $seenNodes[$node]=true; } if (array_keys($seenNodes)!==array_keys($registered)) { $seen=array_keys($seenNodes); $expectedNodes=array_keys($registered); sort($seen, SORT_STRING); sort($expectedNodes, SORT_STRING); if ($seen!==$expectedNodes) exit(1); } $rows=$pdo->query("SELECT n.name, n.status AS node_status, r.role, r.status AS role_status FROM nodes n INNER JOIN node_roles r ON r.node_id = n.id ORDER BY n.name, r.role")->fetchAll(PDO::FETCH_ASSOC); $seen=[]; $extra=[]; foreach ($rows as $row) { if (!isset($registered[$row["name"]]) || $row["node_status"]!=="active" || $row["role_status"]!=="active") exit(1); $key=$row["name"].":".$row["role"]; if (in_array($key, $base, true)) { $seen[]=$key; continue; } if ($row["name"]==="operator") exit(1); $extra[]=$key; } foreach ($base as $key) { if (!in_array($key, $seen, true)) exit(1); } echo implode(",", $parts), ":active ", implode(",", $extra), "\n";' -- "$db" "$required_assignments")
     observed=$expected
     if [[ -n "$extra" ]]; then
       observed="${expected}+${extra}"
@@ -332,7 +332,7 @@ case "$probe" in
     fi
     ;;
   workspace.app-dev) [[ -d /home/orbit/.orbit/worktrees/laravel/e2e && -f /home/orbit/.orbit/worktrees/laravel/e2e/artisan ]]; expected='app-dev-workspace:operational'; observed=$expected ;;
-  source.gateway|source.app-dev)
+  source.gateway|source.app-dev|source.operator)
     if [[ -n "$expected_pointer" ]]; then
       assert_mounted_source
       expected="$identity:git-pointer=$expected_pointer"
@@ -386,6 +386,10 @@ case "$probe" in
       observed="$marker_sha:$actual_tree_hash"
     fi
     ;;
+  operator.container)
+    [[ -s /etc/wireguard/orbit.conf && -s /home/orbit/.orbit/e2e-gateway-root-ca.pem ]]
+    sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite /home/orbit/orbit/apps/cli/orbit node:list --json >/dev/null
+    expected='operator:gateway-access+wireguard+ca'; observed=$expected ;;
   operator.app-dev) sudo -u orbit -- env HOME=/home/orbit ORBIT_HOME=/home/orbit/.orbit DB_DATABASE=/home/orbit/.orbit/gateway.sqlite /home/orbit/orbit/apps/cli/orbit gateway:status --json >/dev/null; expected='gateway:status=available'; observed=$expected ;;
   *) exit 64 ;;
 esac
