@@ -37,6 +37,7 @@ export type Annotation = {
     delivery?: "queued" | "sending" | "sent" | "error" | "cancelled";
     syncError?: string;
     summary?: string;
+    question?: boolean;
     id: string;
     x: number;
     y: number;

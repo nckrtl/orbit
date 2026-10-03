@@ -58,7 +58,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1172,6 +1173,7 @@
                 "Role",
                 "Route",
                 "Task",
+                "Task definition",
                 "Task workspace"
             ],
             "governing_adrs": []
@@ -1236,6 +1238,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deliverable",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -1917,6 +1920,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
                 "Role",
                 "Tool"
@@ -2037,6 +2041,22 @@
                 "Task",
                 "Task workspace",
                 "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/solutions/incus-zfs-efficiency.md",
+            "title": "Reduce Incus VM costs on ZFS",
+            "kind": "solution",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Deployment",
+                "Extension",
+                "Gateway",
+                "Node",
+                "Task"
             ],
             "governing_adrs": []
         },

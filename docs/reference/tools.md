@@ -18,6 +18,8 @@ A Tool is one package that Orbit manages on one Node through one Tool Manager. T
 
 Recording a development [Instance branch rename](/cli/instance#orbit-instancerename) does not install, update, adopt, or remove packages. The Gateway keeps branch inspection separate from Tool manager operations; rename does not rerun Project setup.
 
+The [annotator Process preset](/reference/agentation#annotator-process) installs Gateway-owned server files and their verified injection asset, not a package through a Tool Manager. It creates no Tool intent and does not adopt or remove the Node's existing Node.js runtime. Its private file publication and environment projection stay separate from Tool operations.
+
 ## Where Tools run
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.

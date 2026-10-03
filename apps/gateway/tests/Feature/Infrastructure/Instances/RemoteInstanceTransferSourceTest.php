@@ -6,11 +6,39 @@ use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
+use App\Models\InstanceTransfer;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalInstanceTransferTransport;
+
+it('transfers the private annotator store through the source archive and deletes the old store only at cleanup', function (): void {
+    [$sandbox, $capture, $source, $destination] = remote_transfer_archive();
+    $transport = new LocalInstanceTransferTransport($sandbox);
+    $project = Project::query()->create(['name' => 'Annotations', 'slug' => 'annotations', 'repository_url' => 'git@example.test:annotations.git']);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $source->id, 'name' => 'main', 'checkout_path' => $sandbox.'/source', 'source_layout' => 'checkout', 'annotator_port' => 4848]);
+    new Filesystem()->ensureDirectoryExists($sandbox.'/annotator-store', 0700);
+    file_put_contents($sandbox.'/annotator-store/annotations.json', 'durable annotations');
+    $captured = null;
+    try {
+        $captured = $transport->source()->capture($instance);
+        $transport->source()->materialize($captured, $destination, StoragePath::parse($sandbox.'/destination'));
+        expect(file_get_contents($sandbox.'/destination/.orbit/annotator/annotations.json'))->toBe('durable annotations')
+            ->and(is_dir($sandbox.'/annotator-store'))->toBeTrue();
+        $transfer = new InstanceTransfer(['instance_id' => $instance->id, 'source_node_id' => $source->id, 'source_path' => $sandbox.'/source', 'source_layout' => 'checkout']);
+        $transport->source()->cleanupSource($transfer);
+        expect(is_dir($sandbox.'/annotator-store'))->toBeFalse()
+            ->and(file_get_contents($sandbox.'/destination/.orbit/annotator/annotations.json'))->toBe('durable annotations');
+    } finally {
+        if ($captured !== null && is_file($captured->archiveIdentity)) {
+            unlink($captured->archiveIdentity);
+        }
+        new Filesystem()->deleteDirectory($sandbox);
+    }
+});
 
 it('stages the archive on Gateway disk outside the system temporary directory and removes it after upload', function (): void {
     [$sandbox, $capture, $source, $destination] = remote_transfer_archive();

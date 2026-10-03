@@ -35,6 +35,8 @@ describe(InstanceResponse::class, function (): void {
             'project' => null,
             'node' => null,
             'vite_port' => null,
+            'annotator_port' => null,
+            'annotator_url' => null,
             'name' => 'main',
             'source_layout' => 'checkout',
             'checkout_path' => '/home/orbit/apps/orbit-docs',
@@ -104,6 +106,14 @@ describe(InstanceResponse::class, function (): void {
             'error_code' => null,
         ]);
     });
+});
+
+it('exposes the annotator URL and bounds its port', function (): void {
+    $response = InstanceResponse::fromGatewayData(['annotator_port' => 4848, 'annotator_url' => 'https://site.test/__orbit/annotator'], 'request-id');
+    expect($response->annotatorPort)->toBe(4848)->and($response->annotatorUrl)->toBe('https://site.test/__orbit/annotator')->and($response->toArray()['annotator_url'])->toBe($response->annotatorUrl);
+    foreach ([0, 1023, 65536, '4848', false] as $invalid) {
+        expect(InstanceResponse::fromGatewayData(['annotator_port' => $invalid, 'annotator_url' => []], 'request-id')->annotatorPort)->toBeNull();
+    }
 });
 
 it('exposes a valid assigned Vite port and rejects invalid transport values', function (): void {

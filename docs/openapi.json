@@ -13638,7 +13638,7 @@
                   },
                   "preset": {
                     "type": "string",
-                    "description": "Process preset: vp-dev, agentation-mcp, or antigravity-watch"
+                    "description": "Process preset: vp-dev, annotator, agentation-mcp, or antigravity-watch"
                   },
                   "user": {
                     "type": "string",
@@ -25219,6 +25219,18 @@
             ]
           },
           "seed_commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "annotator_port": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "annotator_url": {
             "type": [
               "string",
               "null"

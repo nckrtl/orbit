@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domain\Processes\AgentationMcpPreset;
+use App\Domain\Processes\AnnotatorPreset;
 use App\Domain\Processes\AntigravityWatchPreset;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
@@ -12,6 +13,7 @@ use App\Domain\Processes\VpDevPreset;
 use App\Domain\Shared\LifecycleStatus;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -27,6 +29,8 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property DesiredProcessState $desired_state
  * @property LifecycleStatus $status
  * @property string|null $failed_step
+ * @property Carbon|null $endpoint_withdrawal_started_at
+ * @property Carbon|null $endpoint_withdrawn_at
  * @property string|null $error_code
  * @property-read Instance|Node $owner
  */
@@ -48,6 +52,8 @@ final class Process extends Model
         'status',
         'failed_step',
         'error_code',
+        'endpoint_withdrawal_started_at',
+        'endpoint_withdrawn_at',
     ];
 
     /** @var list<string> */
@@ -59,6 +65,11 @@ final class Process extends Model
     public function isVpDev(): bool
     {
         return ($this->runtime_config['preset'] ?? null) === VpDevPreset::NAME;
+    }
+
+    public function isAnnotator(): bool
+    {
+        return ($this->runtime_config['preset'] ?? null) === AnnotatorPreset::NAME;
     }
 
     public function isAgentationMcp(): bool
@@ -92,6 +103,8 @@ final class Process extends Model
             'keep_alive' => 'boolean',
             'desired_state' => DesiredProcessState::class,
             'status' => LifecycleStatus::class,
+            'endpoint_withdrawal_started_at' => 'datetime',
+            'endpoint_withdrawn_at' => 'datetime',
         ];
     }
 }

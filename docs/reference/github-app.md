@@ -108,9 +108,19 @@ GitHub refuses a token that asks for a permission the installation has not accep
 
 ## How Orbit watches a task pull request
 
-Each scheduler tick reads a settling task's pull request. While it is open, the Gateway also asks for a token with only `checks: read` and lists the check runs of the head commit, at most once a minute. [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) describes what a conflict or a failed check starts.
+Each scheduler tick reads a settling group's pull request. While it is open, the Gateway also asks for a token with only `checks: read` and lists the check runs of the head commit, at most once a minute. With a non-empty repository entry in `orbit.tasks.github_reviewers`, it reads submitted GitHub reviews through a separate token with only `pull_requests: read`. This permission is already covered by the App's `Pull requests: write` grant; the registration, installation permissions, and webhook policy do not change. The watcher never uses the maintainer's CLI identity. [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) describes conflicts, failed checks, and trusted requested changes.
 
 The checks token is separate, because GitHub refuses a whole token request when one permission is not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts.
+
+### Read review records
+
+Review reads use the App on the Gateway only. The review list is `GET /repos/{owner}/{repo}/pulls/{number}/reviews`. Findings come from `GET /repos/{owner}/{repo}/pulls/{number}/reviews/{review_id}` and `/reviews/{review_id}/comments`. Review lists follow at most 10 pages of 100 records; inline comments from the selected review use at most 5 pages of 100 records. Pagination is accepted only for the expected repository and endpoint on `api.github.com`. A next-page link after the last allowed page is overflow. Invalid records, incomplete pagination, permission failures, and transport failures are unreadable, never a partial successful selection. Review/comment URLs are provenance, not URLs that Orbit fetches.
+
+A cached snapshot lives at most 60 seconds and is scoped to repository, PR, head, and trust configuration. Before consuming a request, the watcher performs uncached reads of the PR, the complete review list, and selected findings. The [Tasks contract](/reference/tasks#retrieve-the-findings) bounds the complete packet at 64 KiB and defines edit/head races, durable deduplication, retries, and assistance. Review failure does not turn CI green, change consumption, or disable existing CI/conflict repair. A token is never cached with review data, put in a brief, or passed to an agent.
+
+The App reads review decisions; it never submits, edits, dismisses, or requests one as part of this feature. Reading `APPROVED` supplies [durable approval evidence](/reference/tasks#inspect-approval-observations), not merge enforcement. Only complete uncached scans confirm that evidence; cached, failed, or incomplete reads do not confirm current approval. The local inspection report reads stored provenance and freshness, without a GitHub call or token. Orbit still does not merge. The [final-review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) keeps the maintainer identity's admin bypass and requires its own exact-head checks.
+
+### Watch open subtasks' branch pull requests
 
 While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway also lists pull requests for head `{owner}:task-{id}`, at most once a minute per task. The list is `GET /repos/{owner}/{repo}/pulls` with query `head={owner}:task-{id}` and `state=all`. The token asks only for `pull_requests: read`. The Gateway accepts GitHub's canonical owner and repository casing in a listed pull request URL, because that identity is case-insensitive. It still requires the exact `https://github.com/` host and scheme, the `/pull/{number}` path, and a number matching the row. A URL for another repository leaves the list unreadable.
 
@@ -180,6 +190,10 @@ A personal access token acts as the operator, lasts for months, and would rest o
 An organization can refuse to install a third-party App. Its operators already have a GitHub CLI login. One login on the Gateway serves every Node, because the Gateway already sends a token with each read. The token rests only on the Gateway, which already holds the App's private key and SSH access to every Node. A Node sees the token only while a read runs there, so whoever controls that Node can copy it. That person already controls the Node, so this adds no new boundary.
 
 A login on each Node was rejected. Every Node needs its own login, and moving an Instance needs one on the target. A credential helper that runs `gh` in each command was rejected, because production clones run as the Instance user, which has no login. Storing the token in Orbit was rejected, because the GitHub CLI already stores and refreshes it. A fallback to the App or to no credential was rejected, because the error then points at the wrong cause. Publishing task pull requests through the GitHub CLI is not built yet.
+
+### Review reads do not need review authority
+
+The existing App grant can mint a token narrowed to `pull_requests: read`. Feedback needs no new App permission, maintainer credential, or public webhook. Numeric account trust and once-only repair belong to the [Tasks contract](/reference/tasks#trusted-reviews-are-input-not-merge-authority); the App merely supplies complete bounded source records. A write-scoped publishing token is not needed for review retrieval.
 
 ### No webhooks
 

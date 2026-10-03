@@ -29,17 +29,21 @@ Keep the branch's documentation, ADRs, implementation, tests, and task briefs co
 
 ## Split the work
 
-Give each subtask one concise goal that an implementer can finish and a reviewer can verify in one turn. Keep each subtask independently verifiable and limit it to at most five deliverables. Split work that needs more than five.
+Give each subtask one concise goal that a capable agent can implement and verify in one implementation session. Include code, tests, generated contracts, required checks, and handoff evidence in that estimate. Keep each subtask independently verifiable and limit it to at most five deliverables. The deliverable limit is a ceiling, not proof that the scope fits a session.
+
+Assess session feasibility before presenting the breakdown, without waiting for the operator to request smaller tasks. Inspect the relevant code and count distinct behaviors, project boundaries, failure modes, and proof environments. Split a task when completing its full acceptance checks would likely need another session. In particular, do not bundle broad platform changes, several package-manager adapters, all client transports, UI work, and multi-environment proof under one goal or one review deliverable. Use the smallest complete, verifiable slice that makes sense; do not add tasks only to reach a target count.
 
 Name contract documents and paths in a brief when the contract requires them. Leave implementation paths to the implementer otherwise. A subtask's brief should state its goal, contract, dependencies, deliverables, and acceptance checks.
 
 Prefer a narrow vertical slice that a reviewer can verify from start to finish over a horizontal slice of one layer. When behavior spans several projects, split by project only when each project's tests prove its side of the contract. For a wide refactor that mechanically breaks many call sites, sequence separate expand, migrate, and contract subtasks: add the new form beside the old, move callers in batches, then remove the old form after no callers remain.
 
-Split a live proof by scenario, so one implementer can finish it within its context. A proof that covers several unrelated behaviors becomes several subtasks.
-
-Prove a subtask on an allocated Incus topology, never on shared machines such as beast or the live Gateway. A proof on shared machines needs merged, deployed code, so list it in the PR as an operator step after deploy.
+Subtasks never carry proofs, proof scripts, or proof deliverables. Behavior tests and the review accept a subtask. The implementer may use the group's Incus topology for discovery, and the reviewer reproduces the feature on it; see [using-incus-topologies](../using-incus-topologies/SKILL.md). A check on shared machines, such as beast or the live Gateway, needs merged, deployed code, so list it in the PR as an operator step after deploy.
 
 Keep CI, release, and deployment work separate from product code. Subtasks run in dependency order on one shared branch; a later subtask may build on an earlier one but never finishes its work.
+
+Plan at most five subtasks in a group, the docs subtask included. A feature that needs more becomes several groups. Each group's pull request merges to `main` before the next group starts. A branch that stays open while `main` moves collects merge fixups and runtime changes it was not built for.
+
+Do not add a subtask that only runs the final gate or prepares the pull request. Every handoff already runs the task check, and the last subtask's approval proposes the pull request.
 
 A subtask that changes the web UI must include a screenshot `review` deliverable for the phone and desktop PNGs produced by `bin/web-verify`. The reviewer judges the phone layout as described in [Verifying web UI](../verifying-web-ui/SKILL.md): content starts near the top, controls are reachable, filters are not an awkward stack, and long lists and filters use native patterns such as infinite scroll and sheets. Reading the diff is not a substitute for this review. Count the screenshot deliverable toward the five-deliverable limit.
 
@@ -59,7 +63,9 @@ When the bug cannot be reproduced automatically, for example an iOS behavior tha
 
 ## Review the breakdown
 
-Before moving the group to Todo, present the breakdown to the operator as a numbered list. For each subtask show its title, what it builds on, its goal from the user's point of view, and its deliverables. Ask whether the granularity is right, whether each dependency is real, and whether any subtask should be merged or split. Iterate until the operator approves.
+Before presenting the breakdown, check that every subtask can meet its complete acceptance checks in one implementation session, that earlier dependencies supply everything it needs, and that later tasks do not finish its work. Check that the group has at most five subtasks. Revise oversized tasks yourself and state any remaining scope uncertainty.
+
+Before moving the group to Todo, present the breakdown to the operator as a numbered list. For each subtask show its title, what it builds on, its goal from the user's point of view, and its deliverables. Explain briefly why the larger slices fit one session. Ask whether the granularity is right, whether each dependency is real, and whether any subtask should be merged or split. Iterate until the operator approves.
 
 ## Write the briefs
 
@@ -94,7 +100,6 @@ Do not assume that every Project uses Composer, Pest, PHP, or any particular tes
 - Keep handoff evidence, such as impact reports, logs, and check output, under `.orbit-artifacts/`. Git ignores it. Do not commit evidence.
 - Build test fixtures from real output. Capture it from the real tool or its source, and do not invent it.
 - Make every new test able to fail. Confirm that it fails without the change.
-- Make proof scripts fail closed. Check every exit code, assert each expected result, and audit for leftovers after cleanup.
 - When the handoff check fails, read the failed step's log and fix the cause before you hand off again.
 
 ## Review a subtask
@@ -106,3 +111,5 @@ Report other gaps as follow-ups, each with a one-line reason. The subtask that f
 ## Create the work in Orbit
 
 Find the Orbit Project and its id, then call `tasks-create` with that Project id to create the group. Create ordered subtasks with `tasks-subtask-create`, including their deliverables. Use the task APIs or MCP tools to keep the branch's task group consistent with the agreed contract. Move the group to Todo only after the operator approves the breakdown.
+
+Never create a group to rebase a task branch or merge `main` into it. Orbit repairs a conflicting pull request with a fixup subtask on the same branch.

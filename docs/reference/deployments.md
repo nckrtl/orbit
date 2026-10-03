@@ -31,6 +31,8 @@ Each production Instance has a home, `/home/<production-user>`, with these paths
 
 A clone leaves the home prepared, with no `current` link. The application must point its SQLite configuration at `<home>/database.sqlite` itself. Orbit has no placeholder for that path. [Cloning](/reference/instance-cloning) describes how to seed the file.
 
+The Gateway lists retained releases as the production user from a directory that user can access. A private SSH home does not prevent reading the first clone's empty selection. Failed scans and invalid release receipts still stop the operation.
+
 The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
 ## Development defaults

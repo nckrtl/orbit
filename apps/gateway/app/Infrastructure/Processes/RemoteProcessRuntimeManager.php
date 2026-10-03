@@ -5,26 +5,30 @@ declare(strict_types=1);
 namespace App\Infrastructure\Processes;
 
 use App\Domain\AgentView\AgentProcessView;
+use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\AppDev\ViteProcessLifecycle;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Processes\DesiredProcessState;
+use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTarget;
 use App\Domain\Processes\ProcessTargetResolver;
+use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Instance;
 use App\Models\Process;
 use SensitiveParameter;
 
-final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManager
+final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentProjection, ProcessRuntimeManager
 {
     /** Reads a container's last lines with standard error merged into standard output, in order. */
     /**
@@ -121,6 +125,22 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         });
     }
 
+    public function project(Instance $instance, int $exceptProcessId): void
+    {
+        foreach ($instance->processes()->where('id', '!=', $exceptProcessId)->where('runtime', ProcessRuntime::Systemd)->whereNull('endpoint_withdrawal_started_at')->get() as $process) {
+            $this->lease->run($process, function (Process $fresh): void {
+                $target = $this->targets->forInspection($fresh);
+                if (! $this->runtimeExistsAndIsOwned($fresh, 'inspect-runtime', 'process.environment_projection_failed', $target)) {
+                    return;
+                }
+                $hadPrevious = $this->convergeSystemd($fresh, $target, installRuntime: false);
+                if ($hadPrevious) {
+                    $this->executeSuccessfully($fresh, ['sudo', 'rm', '-f', '--', $this->systemdBackupPath($fresh)], 'remove-unit-backup', 'process.environment_projection_failed', target: $target);
+                }
+            });
+        }
+    }
+
     public function start(#[SensitiveParameter] Process $process, bool $explicit = false): void
     {
         $this->lease->run($process, function (Process $fresh) use ($explicit): void {
@@ -128,6 +148,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             $this->assertReleaseAvailable($fresh, $target, 'start', 'process.start_failed');
             if ($fresh->isVpDev()) {
                 app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true, explicitStart: $explicit);
+
+                return;
+            }
+            if ($fresh->isAnnotator()) {
+                $this->convergeAndActivateSystemd($fresh, $target, forceRunning: true);
 
                 return;
             }
@@ -149,6 +174,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
             $this->assertReleaseAvailable($fresh, $target, 'restart', 'process.restart_failed');
             if ($fresh->isVpDev()) {
                 app(ViteProcessLifecycle::class)->run($fresh, fn () => $this->startUnlocked($fresh, $this->targets->forStart($fresh)), fn () => $this->stopUnlocked($fresh, $this->targets->forInspection($fresh)), true, restart: true);
+
+                return;
+            }
+            if ($fresh->isAnnotator()) {
+                $this->convergeAndActivateSystemd($fresh, $target, forceRunning: true);
 
                 return;
             }
@@ -250,6 +280,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
 
         if (! $this->runtimeExistsAndIsOwned($process, 'inspect-runtime', 'process.remove_failed', $target)) {
             $this->removeViteEnvironment($process, $target);
+            $this->removeAnnotatorStore($process, $target);
 
             return;
         }
@@ -277,6 +308,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         );
         $this->resetFailedUnit($process, $target);
         $this->removeViteEnvironment($process, $target);
+        $this->removeAnnotatorStore($process, $target);
     }
 
     /**
@@ -286,6 +318,35 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
     private function resetFailedUnit(#[SensitiveParameter] Process $process, ProcessTarget $target): void
     {
         $this->execute($process, ['sudo', 'systemctl', 'reset-failed', $this->systemd->unitName($process)], target: $target);
+    }
+
+    private function installAnnotator(Process $process, ProcessTarget $target): void
+    {
+        try {
+            $installation = new AnnotatorServerInstallation()->command();
+        } catch (ResourceOperationException $exception) {
+            throw new ProcessOperationException('install-annotator', $exception->errorCode, $exception->getMessage(), previous: $exception);
+        }
+        $this->executeSuccessfully($process, $installation->arguments, 'install-annotator', 'process.annotator_install_failed', $installation->input, target: $target);
+        $store = AnnotatorEndpoint::store($process->owner_id);
+        $this->executeSuccessfully($process, ['sudo', 'install', '-d', '-m', '0700', '-o', $target->user, $store], 'prepare-annotator-store', 'process.annotator_install_failed', target: $target);
+        $this->executeSuccessfully($process, ['bash', '-seu', '--', $target->checkoutPath.'/.orbit/annotator', $store], 'restore-annotator-store', 'process.annotator_install_failed', <<<'BASH'
+            staged=$1
+            store=$2
+            if [ -d "$staged" ] && [ ! -L "$staged" ]; then
+              cp -a -- "$staged/." "$store/"
+              rm -rf -- "$staged"
+            fi
+            BASH, target: $target);
+    }
+
+    private function removeAnnotatorStore(Process $process, ProcessTarget $target): void
+    {
+        // Transfer removes the unit without removing the Process or its durable store.
+        if (! $process->isAnnotator() || $process->status !== LifecycleStatus::Removing) {
+            return;
+        }
+        $this->executeSuccessfully($process, ['sudo', 'rm', '-rf', '--', AnnotatorEndpoint::store($process->owner_id)], 'remove-annotator-store', 'process.remove_failed', target: $target);
     }
 
     private function removeViteEnvironment(Process $process, ProcessTarget $target): void
@@ -447,9 +508,10 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         #[SensitiveParameter]
         Process $process,
         ProcessTarget $target,
+        bool $forceRunning = false,
     ): void {
         $hadPreviousUnit = $this->convergeSystemd($process, $target);
-        $activation = $this->activateSystemdDesiredState($process, $target);
+        $activation = $this->activateSystemdDesiredState($process, $target, $forceRunning);
 
         if (! $activation->succeeded()) {
             if ($hadPreviousUnit) {
@@ -460,7 +522,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
                 $this->removeFailedNewSystemdUnit($process);
             }
 
-            $state = $process->desired_state === DesiredProcessState::Running ? 'start' : 'stop';
+            $state = $forceRunning || $process->desired_state === DesiredProcessState::Running ? 'start' : 'stop';
             $restoration = $hadPreviousUnit ? 'the previous unit was restored' : 'the new unit was removed';
 
             throw new ProcessOperationException(
@@ -481,8 +543,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         }
     }
 
-    private function convergeSystemd(#[SensitiveParameter] Process $process, ProcessTarget $target): bool
+    private function convergeSystemd(#[SensitiveParameter] Process $process, ProcessTarget $target, bool $installRuntime = true): bool
     {
+        if ($installRuntime && $process->isAnnotator()) {
+            $this->installAnnotator($process, $target);
+        }
         $path = $this->systemd->unitPath($process);
         $candidate = $this->systemdCandidatePath($process);
         $backup = $this->systemdBackupPath($process);
@@ -568,10 +633,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessRuntimeManage
         #[SensitiveParameter]
         Process $process,
         ProcessTarget $target,
+        bool $forceRunning = false,
     ): CommandResult {
         $unit = $this->systemd->unitName($process);
 
-        if ($process->desired_state === DesiredProcessState::Stopped) {
+        if (! $forceRunning && $process->desired_state === DesiredProcessState::Stopped) {
             return $this->execute($process, ['sudo', 'systemctl', 'disable', '--now', $unit]);
         }
 

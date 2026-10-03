@@ -456,6 +456,13 @@ final readonly class DevelopmentSiteRepository
             ->values();
     }
 
+    private function annotationPort(Instance $instance, string $preset, ?int $port): ?int
+    {
+        $withdrawing = $instance->processes()->where('runtime_config->preset', $preset)->whereNotNull('endpoint_withdrawal_started_at')->exists();
+
+        return $withdrawing ? null : $port;
+    }
+
     private function instanceSite(
         Instance $instance,
         Route $route,
@@ -480,7 +487,8 @@ final readonly class DevelopmentSiteRepository
             certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
             productionPhpSocket: $instance->production_php_socket,
             vitePort: $instance->vite_port,
-            agentationPort: $instance->agentation_port,
+            agentationPort: $this->annotationPort($instance, 'agentation-mcp', $instance->agentation_port),
+            annotatorPort: $this->annotationPort($instance, 'annotator', $instance->annotator_port),
         );
     }
 

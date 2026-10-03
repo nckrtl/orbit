@@ -23,6 +23,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property int $project_id
  * @property int|null $vite_port
+ * @property int|null $annotator_port
  * @property int|null $agentation_port
  * @property int $node_id
  * @property string $name
@@ -115,6 +116,7 @@ final class Instance extends Model
         'node_id',
         'vite_port',
         'agentation_port',
+        'annotator_port',
         'name',
         'source_layout',
         'checkout_path',
@@ -389,6 +391,7 @@ final class Instance extends Model
         return [
             'vite_port' => 'integer',
             'agentation_port' => 'integer',
+            'annotator_port' => 'integer',
             'clone_candidate_id' => 'integer',
             'clone_completed_at' => 'immutable_datetime',
             'registration_detached' => 'boolean',

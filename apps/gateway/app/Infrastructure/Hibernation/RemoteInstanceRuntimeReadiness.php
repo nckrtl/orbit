@@ -53,6 +53,10 @@ final readonly class RemoteInstanceRuntimeReadiness implements InstanceRuntimeRe
 
                 continue;
             }
+            if ($process->isAnnotator()) {
+                $instance->refresh()->load('node');
+                $this->waitUntilAgentationReady($instance, $deadline, annotator: true);
+            }
             if ($process->isAgentationMcp()) {
                 $instance->refresh()->load('node');
                 $this->waitUntilAgentationReady($instance, $deadline);
@@ -103,9 +107,9 @@ final readonly class RemoteInstanceRuntimeReadiness implements InstanceRuntimeRe
         return $viewed;
     }
 
-    private function waitUntilAgentationReady(Instance $instance, int $deadline): void
+    private function waitUntilAgentationReady(Instance $instance, int $deadline, bool $annotator = false): void
     {
-        $port = (string) ($instance->agentation_port ?? AgentationEndpoint::PORT);
+        $port = (string) ($annotator ? $instance->annotator_port : ($instance->agentation_port ?? AgentationEndpoint::PORT));
         $remaining = max(1, $deadline - time());
         $result = $this->ssh->execute(
             $this->connection($instance->node, (float) ($remaining + 5)),
@@ -142,8 +146,8 @@ PY
         }
 
         throw new HibernationException(
-            errorCode: 'hibernation.agentation_not_ready',
-            message: 'The Agentation HTTP endpoint did not become ready before the wake timeout.',
+            errorCode: $annotator ? 'hibernation.annotator_not_ready' : 'hibernation.agentation_not_ready',
+            message: 'The annotation HTTP endpoint did not become ready before the wake timeout.',
         );
     }
 

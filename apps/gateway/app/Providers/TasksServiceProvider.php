@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
@@ -80,6 +81,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         CoderSettleNotifier::class => HttpCoderSettleNotifier::class,
         TaskPullRequestWatcher::class => HttpTaskPullRequestWatcher::class,
+        TaskPullRequestReviewWatcher::class => HttpTaskPullRequestWatcher::class,
     ];
 
     #[\Override]

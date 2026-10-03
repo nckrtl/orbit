@@ -12,6 +12,8 @@ use SensitiveParameter;
 
 /**
  * @phpstan-type InstanceRecordFields array{
+ *     annotator_port: int|null,
+ *     annotator_url: string|null,
  *     id: int,
  *     project_id: int,
  *     node_id: int,
@@ -40,6 +42,8 @@ use SensitiveParameter;
  *     deploy_steps: list<array{name: string, phase: string, command: string, timeout_seconds: int}>
  * }
  * @phpstan-type InstanceRecord array{
+ *     annotator_port: int|null,
+ *     annotator_url: string|null,
  *     id: int,
  *     project_id: int,
  *     node_id: int,
@@ -100,6 +104,8 @@ final readonly class InstanceResponse
         public ?int $vitePort = null,
         public ?string $seedPath = null,
         public ?string $seedCommit = null,
+        public ?int $annotatorPort = null,
+        public ?string $annotatorUrl = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -118,6 +124,8 @@ final readonly class InstanceResponse
             vitePort: is_int($data['vite_port'] ?? null) && $data['vite_port'] >= 1024 && $data['vite_port'] <= 65535 ? $data['vite_port'] : null,
             seedPath: is_string($data['seed_path'] ?? null) ? $data['seed_path'] : null,
             seedCommit: is_string($data['seed_commit'] ?? null) ? $data['seed_commit'] : null,
+            annotatorPort: is_int($data['annotator_port'] ?? null) && $data['annotator_port'] >= 1024 && $data['annotator_port'] <= 65535 ? $data['annotator_port'] : null,
+            annotatorUrl: is_string($data['annotator_url'] ?? null) ? $data['annotator_url'] : null,
             name: is_string($data['name'] ?? null) ? $data['name'] : '',
             sourceLayout: is_string($data['source_layout'] ?? null) ? $data['source_layout'] : '',
             checkoutPath: is_string($data['checkout_path'] ?? null) ? $data['checkout_path'] : '',
@@ -150,6 +158,8 @@ final readonly class InstanceResponse
             'project' => $this->project?->toArray(),
             'node' => $this->node?->toArray(),
             'vite_port' => $this->vitePort,
+            'annotator_port' => $this->annotatorPort,
+            'annotator_url' => $this->annotatorUrl,
             'name' => $this->name,
             'source_layout' => $this->sourceLayout,
             'checkout_path' => $this->checkoutPath,

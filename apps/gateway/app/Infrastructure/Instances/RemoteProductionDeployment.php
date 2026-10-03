@@ -391,6 +391,8 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
                 input: <<<'BASH'
+                    # find must restore its working directory after sudo changes users.
+                    cd /
                     repository=$1
                     user=$2
                     home=$3

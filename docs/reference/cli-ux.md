@@ -110,6 +110,8 @@ The title uses the singular human entity label and its selector. Align property 
 
 Property values wrap at spaces. Only a word longer than the line breaks by width.
 
+Optional feature properties follow the command's contract, not a second machine schema. For example, `instance:show` adds `Annotator port` and `Annotator URL` only when a port is assigned. An unavailable URL uses an em dash in the detail tree, while JSON always carries the nullable `annotator_port` and `annotator_url` fields. Keep this distinction in the response fixtures and expected CLI output.
+
 ## Progress and liveness
 
 Show feedback before slow work starts. A human command that can take longer than one second uses a progress tree, except when its primary output is a log stream or its current contract defines a bespoke panel. A spinner serves a sub-second wait or an inner wait whose surrounding tree already supplies the context.

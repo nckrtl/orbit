@@ -24,7 +24,7 @@ afterEach(function (): void {
     $GLOBALS['docsImpactGateFixtureRoots'] = [];
 });
 
-function docsImpactGateFixture(?string $baseException = null): array
+function docsImpactGateFixture(): array
 {
     $root = sys_get_temp_dir().'/docs-impact-gate-'.bin2hex(random_bytes(6));
     $GLOBALS['docsImpactGateFixtureRoots'][] = $root;
@@ -35,10 +35,7 @@ function docsImpactGateFixture(?string $baseException = null): array
     file_put_contents($root.'/docs/reference/mcp.mdx', "---\ntitle: MCP\n---\nMCP documentation.\n");
     file_put_contents($root.'/apps/gateway/resources/mcp/tools.json', '{"tools":[]}');
     file_put_contents($root.'/apps/gateway/app/Domain/Tasks/RunTask.php', "<?php\nclass RunTask {}\n");
-    if ($baseException !== null) {
-        file_put_contents($root.'/docs/.docs-unaffected', $baseException."\n");
-    }
-    exec('git -C '.escapeshellarg($root).' init -q');
+    exec('git -C '.escapeshellarg($root).' init -q -b task-1');
     // Detached maintenance can create object files while teardown removes the repository.
     exec('git -C '.escapeshellarg($root).' config gc.auto 0');
     exec('git -C '.escapeshellarg($root).' config maintenance.auto false');
@@ -52,6 +49,15 @@ function docsImpactGateFixture(?string $baseException = null): array
 function changeDocsImpactGateSource(string $root): void
 {
     file_put_contents($root.'/apps/gateway/app/Domain/Tasks/RunTask.php', "<?php\nclass RunTask { public function changed(): void {} }\n");
+}
+
+function writeUnaffectedPageNote(string $root, string $branch, string $note): void
+{
+    $directory = dirname($root.'/.git/orbit/docs-unaffected/'.$branch.'.txt');
+    if (! is_dir($directory)) {
+        mkdir($directory, 0777, true);
+    }
+    file_put_contents($root.'/.git/orbit/docs-unaffected/'.$branch.'.txt', $note."\n");
 }
 
 function runDocsImpactGateCommand(string $root, string $base): array
@@ -89,58 +95,54 @@ it('docs impact gate fails and names an impacted page that was not changed', fun
         ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md');
 });
 
-it('base waivers do not prevent a branch-added page reason from waiving the page', function (): void {
-    [$root, $base] = docsImpactGateFixture('docs/reference/tasks.md: An older branch changed internal behavior.');
-    file_put_contents($root.'/docs/.docs-unaffected', "docs/reference/tasks.md: An older branch changed internal behavior.\ndocs/reference/tasks.md: This branch changes only the internal refactor.\n");
-    changeDocsImpactGateSource($root);
-
-    $gate = new DocsImpact($root)->gate($base);
-
-    expect($gate['passed'])->toBeTrue()
-        ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('This branch changes only the internal refactor.');
-});
-
-it('docs impact gate accepts a newly committed page reason exception', function (): void {
+it('a note for the checked-out branch waives an impacted page', function (): void {
     [$root, $base] = docsImpactGateFixture();
-    file_put_contents($root.'/docs/.docs-unaffected', "docs/reference/tasks.md: Existing instructions remain accurate for this internal refactor.\n");
-    exec('git -C '.escapeshellarg($root).' add docs/.docs-unaffected');
-    exec('git -C '.escapeshellarg($root).' -c user.name=Docs -c user.email=docs@example.test commit -qm exception');
     changeDocsImpactGateSource($root);
+    writeUnaffectedPageNote($root, 'task-1', 'docs/reference/tasks.md: This branch changes only internal behavior.');
 
     $gate = new DocsImpact($root)->gate($base);
 
     expect($gate['passed'])->toBeTrue()
         ->and($gate['missing_pages'])->toBe([])
-        ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('Existing instructions remain accurate for this internal refactor.');
+        ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('This branch changes only internal behavior.');
 });
 
-it('base waivers do not waive a page changed again on the branch', function (): void {
-    [$root, $base] = docsImpactGateFixture('docs/reference/tasks.md: Old reviewer-approved exception.');
-    changeDocsImpactGateSource($root);
-
-    $gate = new DocsImpact($root)->gate($base);
-
-    expect($gate['passed'])->toBeFalse()
-        ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md')
-        ->and($gate['exceptions'])->toBe([]);
-});
-
-it('base waivers require additions in the diff, not an untracked waiver file', function (): void {
+it('a note for another branch does not waive an impacted page', function (): void {
     [$root, $base] = docsImpactGateFixture();
     changeDocsImpactGateSource($root);
-    file_put_contents($root.'/docs/.docs-unaffected', "docs/reference/tasks.md: This branch changes only internal behavior.\n");
+    writeUnaffectedPageNote($root, 'task-2', 'docs/reference/tasks.md: Another branch changed only internal behavior.');
+    writeUnaffectedPageNote($root, 't3code/task-1', 'docs/reference/tasks.md: A nested branch name is a different branch.');
 
     $gate = new DocsImpact($root)->gate($base);
 
     expect($gate['passed'])->toBeFalse()
         ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md')
         ->and($gate['exceptions'])->toBe([]);
+});
 
-    exec('git -C '.escapeshellarg($root).' add docs/.docs-unaffected');
+it('a detached HEAD has no notes', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    exec('git -C '.escapeshellarg($root).' checkout -q --detach');
+    changeDocsImpactGateSource($root);
+    writeUnaffectedPageNote($root, 'task-1', 'docs/reference/tasks.md: This branch changes only internal behavior.');
+
     $gate = new DocsImpact($root)->gate($base);
 
-    expect($gate['passed'])->toBeTrue()
-        ->and($gate['exceptions']['docs/reference/tasks.md'])->toBe('This branch changes only internal behavior.');
+    expect($gate['passed'])->toBeFalse()
+        ->and($gate['exceptions'])->toBe([]);
+});
+
+it('a committed docs/.docs-unaffected file does not waive an impacted page', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    file_put_contents($root.'/docs/.docs-unaffected', "docs/reference/tasks.md: The old committed waiver file.\n");
+    exec('git -C '.escapeshellarg($root).' add docs/.docs-unaffected');
+    changeDocsImpactGateSource($root);
+
+    $gate = new DocsImpact($root)->gate($base);
+
+    expect($gate['passed'])->toBeFalse()
+        ->and($gate['missing_pages'])->toContain('docs/reference/tasks.md')
+        ->and($gate['exceptions'])->toBe([]);
 });
 
 it('docs impact gate rejects unowned migration errors', function (): void {

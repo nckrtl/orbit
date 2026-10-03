@@ -12,9 +12,11 @@ use App\Domain\AppDev\AgentationUrlProjection;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Processes\AgentationMcpPreset;
+use App\Domain\Processes\AnnotatorPreset;
 use App\Domain\Processes\AntigravityWatchPreset;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Processes\ProcessOperationException;
 use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
@@ -174,6 +176,9 @@ final readonly class AddProcessAction
                 'owner_id' => $data->targetId,
                 'name' => $data->name,
             ]);
+        if ($process->endpoint_withdrawal_started_at !== null) {
+            throw new ResourceOperationException('process.removal_pending', 'Finish removing this Process before creating it again.', 409);
+        }
         $created = ! $process->exists;
         $desiredState = $process->desired_state;
 
@@ -209,7 +214,7 @@ final readonly class AddProcessAction
 
     private function projectAgentationSite(Process $process): void
     {
-        if (! $process->isAgentationMcp()) {
+        if (! $process->isAgentationMcp() && ! $process->isAnnotator()) {
             return;
         }
 
@@ -219,6 +224,9 @@ final readonly class AddProcessAction
 
         if ($owner instanceof Instance) {
             $this->agentationSites->project($owner);
+            if ($process->isAnnotator()) {
+                app(ProcessEnvironmentProjection::class)->project($owner, $process->id);
+            }
         }
     }
 
@@ -266,6 +274,11 @@ final readonly class AddProcessAction
                 message: 'The antigravity-watch preset requires an agentation-mcp Process on this Instance.',
                 status: 422,
             );
+        }
+
+        if ($data->preset === AnnotatorPreset::NAME) {
+            $this->agentationPorts->assign($target->instance, 'annotator_port');
+            $this->agentationUrls->project($target->instance, annotator: true);
         }
 
         if ($data->preset === AgentationMcpPreset::NAME) {

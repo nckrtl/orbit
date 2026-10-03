@@ -10,6 +10,16 @@ use App\Infrastructure\Caddy\CaddyGlobalOptions;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
+it('strips the annotator prefix on the workload and omits it without an assigned port', function (): void {
+    $site = development_server_site('site.test', '/home/orbit/apps/site');
+    $withPort = new DevelopmentSite(nodeId: 12, nodeAddress: '10.44.0.10', scope: 'app-instance-6', checkoutPath: '/home/orbit/apps/site', documentRoot: 'public', phpVersion: null, domain: 'site.test', annotatorPort: 4849);
+    $renderer = new DevelopmentCaddyConfigRenderer;
+    $configuration = $renderer->render(collect([$withPort]));
+    expect($configuration)->toContain('path /__orbit/annotator /__orbit/annotator/*')->toContain('uri strip_prefix /__orbit/annotator')->toContain('reverse_proxy 127.0.0.1:4849');
+    expect($renderer->render(collect([$site])))->not->toContain('/__orbit/annotator');
+    expect(caddy_adapt($configuration)->succeeded())->toBeTrue();
+});
+
 it('proxies the reserved development-server path to loopback on a development site', function (): void {
     $configuration = new DevelopmentCaddyConfigRenderer()->render(collect([
         development_server_site('tasks.commander.test', '/home/orbit/apps/tasks'),

@@ -137,6 +137,7 @@ use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Processes\ProcessAdmissionLock;
+use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -473,6 +474,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         NodeAgentRuntime::class => NodeAgentSshExecutor::class,
         DatabaseServerAdmin::class => RemoteDatabaseServerAdmin::class,
         ProcessRuntimeManager::class => RemoteProcessRuntimeManager::class,
+        ProcessEnvironmentProjection::class => RemoteProcessRuntimeManager::class,
         ProcessRuntimeStatusIndex::class => PrometheusProcessRuntimeStatusIndex::class,
         AgentStateView::class => CacheAgentStateView::class,
         AgentViewConverger::class => NativeAgentViewConverger::class,

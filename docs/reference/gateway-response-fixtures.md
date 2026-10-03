@@ -18,7 +18,11 @@ Tool scan and adoption fixtures distinguish formula, cask, and Vite+ global iden
 
 Doctor fixtures include informational-only healthy reports and mixed reports with drift or unverifiable findings. Node fixtures include an enrolled Mac with empty roles. Web fixtures preserve registered Tools while a live inventory request fails.
 
+Task fixtures include a GitHub feedback fixup with `fixup_problem: review:{reviewer_id}` and an immutable findings packet in `brief`. Record that response from the Gateway fixture test with example identities and findings. Its `review-findings` deliverable and optional `project-check` use the existing response schema. Replaying the fixture must preserve source provenance without interpreting review text as an action. The [Tasks contract](/reference/tasks#review-fixup-lifecycle) owns the meaning of those fields.
+
 Process response fixtures include `user`, which is null when the Process uses its derived account. When an explicit account is selected, the response includes that name both in `user` and in `runtime_config.user`; see [Node accounts](/reference/processes-and-schedules#node-account).
+
+Instance create, list, and show fixtures include `annotator_port` and `annotator_url`. Both are null without an assigned annotator port; an Instance with a port but no Route still has a null URL. Re-record these fixtures when either field changes, regenerate the OpenAPI schema, and replay the Instance CLI contracts. Human detail output shows the annotator properties only when a port is assigned, while JSON retains the nullable fields. The web API types must also be regenerated from the same OpenAPI schema.
 
 ## Record a fixture
 

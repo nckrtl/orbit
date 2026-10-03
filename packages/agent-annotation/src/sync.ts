@@ -6,7 +6,13 @@ import {
     type AnnotationRealtimeConnection,
 } from "./realtime";
 import { checkOrbit } from "./orbit";
-import { dismissAnnotations, isDismissed, loadAnnotations, saveAnnotations } from "./store";
+import {
+    dismissAnnotations,
+    isDismissed,
+    loadAnnotations,
+    saveAnnotations,
+    reconcileServerAnnotations,
+} from "./store";
 import type { Annotation } from "./types";
 
 export type AnnotationSync = {
@@ -27,6 +33,7 @@ export const serviceConnection = createStore<
 >("Host integration");
 let serviceUrl = "";
 let generation = 0;
+let discoverServer = false;
 let eventsUrl = "";
 let realtime: AnnotationRealtime = {};
 let defaults: { serviceUrl: string; realtime: AnnotationRealtime } = {
@@ -89,6 +96,7 @@ export function configureAnnotationService(
     url?: string,
     options: AnnotationRealtime = {},
     override?: ServiceSettings,
+    serverUrl?: string,
 ): void {
     defaults = { serviceUrl: url ?? "", realtime: options };
     if (!override) {
@@ -114,7 +122,11 @@ export function configureAnnotationService(
             /* Optional storage. */
         }
     }
-    settings = override ?? { mode: url ? "orbit" : "server", serviceUrl: "" };
+    discoverServer = !override && !url && !serverUrl;
+    settings = override ?? {
+        mode: serverUrl ? "server" : url ? "orbit" : "server",
+        serviceUrl: serverUrl ?? "",
+    };
     deliveryMode.setState(settings.mode);
     removalError.setState("");
     serviceUrl =
@@ -338,6 +350,28 @@ function summary(annotations: Annotation[]): AnnotationSync {
     };
 }
 export async function fetchAnnotationSync(): Promise<AnnotationSync> {
+    if (discoverServer) {
+        const started = generation;
+        discoverServer = false;
+        try {
+            const candidate = "/__orbit/annotator/annotations";
+            const response = await fetch(candidate, { signal: AbortSignal.timeout(5000) });
+            const body = await response.json();
+            if (
+                started === generation &&
+                response.ok &&
+                body.meta?.service === "@nckrtl/annotator" &&
+                Array.isArray(body.data)
+            ) {
+                configureAnnotationService(defaults.serviceUrl, defaults.realtime, {
+                    mode: "server",
+                    serviceUrl: candidate,
+                });
+            }
+        } catch {
+            /* No same-origin server: keep manual local setup. */
+        }
+    }
     const current = generation;
     if (serviceUrl) {
         try {
@@ -359,10 +393,16 @@ export async function fetchAnnotationSync(): Promise<AnnotationSync> {
                     ? result.meta.deletedIds.filter((id): id is string => typeof id === "string")
                     : [];
             dismissAnnotations(deletedIds);
-            const snapshot = summary(
-                (result.annotations ?? result.data ?? []).flatMap((value) => receive(value) ?? []),
-            );
-            snapshot.resolvedIds.push(...deletedIds);
+            const records = result.annotations ?? result.data;
+            if (!Array.isArray(records)) throw new Error("Invalid annotation list");
+            const missingIds =
+                settings.mode === "server"
+                    ? reconcileServerAnnotations(
+                          records.flatMap((value) => parseAnnotation(value) ?? []),
+                      )
+                    : [];
+            const snapshot = summary(records.flatMap((value) => receive(value) ?? []));
+            snapshot.resolvedIds.push(...deletedIds, ...missingIds);
             return snapshot;
         } catch {
             if (current === generation) serviceConnection.setState("Unavailable");

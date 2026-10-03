@@ -394,6 +394,8 @@ function instance_gateway_data(): array
         'project_id' => 3,
         'node_id' => 4,
         'vite_port' => null,
+        'annotator_port' => null,
+        'annotator_url' => null,
         'name' => 'main',
         'source_layout' => 'checkout',
         'checkout_path' => '/home/orbit/apps/orbit-docs',

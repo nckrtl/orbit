@@ -44,6 +44,7 @@ final readonly class DevelopmentSite
          * system roots, which also hold the Orbit root, and not against the Orbit root alone.
          */
         public bool $upstreamSystemRoots = false,
+        public ?int $annotatorPort = null,
     ) {}
 
     public function asSecondary(): self

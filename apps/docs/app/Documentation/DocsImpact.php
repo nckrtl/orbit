@@ -217,22 +217,9 @@ final readonly class DocsImpact
     {
         $report = $this->report($base, []);
         $changed = array_fill_keys($report['paths'], true);
-        // Only added lines in the candidate diff can waive a page. In particular,
-        // an untracked file or a line inherited from the base cannot be reused.
-        $diff = $this->git(['diff', '--no-ext-diff', '--no-textconv', '--unified=0', $base, '--', 'docs/.docs-unaffected']);
         $exceptions = [];
-        $inHunk = false;
-        foreach ($diff as $line) {
-            if (str_starts_with($line, '@@')) {
-                $inHunk = true;
-
-                continue;
-            }
-            if (! $inHunk || ! str_starts_with($line, '+')) {
-                continue;
-            }
-            $addedLine = trim(substr($line, 1));
-            if (preg_match('/^([^:#]+):\\s*(\\S.*)$/', $addedLine, $match) === 1) {
+        foreach ($this->unaffectedPageNotes() as $note) {
+            if (preg_match('/^([^:#]+):\\s*(\\S.*)$/', trim($note), $match) === 1) {
                 $exceptions[$match[1]] = $match[2];
             }
         }
@@ -1700,6 +1687,24 @@ final readonly class DocsImpact
         exec($command, $output, $status);
 
         return $status === 0 ? implode("\n", $output) : null;
+    }
+
+    /**
+     * Notes that an impacted page needs no update, for the checked-out branch only.
+     * They live in the Git directory, so they never reach main or another branch.
+     *
+     * @return list<string>
+     */
+    private function unaffectedPageNotes(): array
+    {
+        $branch = $this->gitAllowMissing(['symbolic-ref', '--quiet', '--short', 'HEAD']);
+        if ($branch === null || trim($branch) === '') {
+            return [];
+        }
+        $gitDirectory = $this->git(['rev-parse', '--path-format=absolute', '--git-common-dir'])[0];
+        $path = $gitDirectory.'/orbit/docs-unaffected/'.trim($branch).'.txt';
+
+        return is_file($path) ? (file($path, FILE_IGNORE_NEW_LINES) ?: []) : [];
     }
 
     /**

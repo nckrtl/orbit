@@ -130,6 +130,13 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $arguments = $command->arguments;
+        $input = $command->input;
+        foreach ($arguments as $index => $argument) {
+            if (str_starts_with($argument, '/var/lib/orbit/annotator/instance-')) {
+                $arguments[$index] = $this->sandbox.'/annotator-store';
+                $input = str_replace('sudo rm -rf -- "$annotator_store"', 'rm -rf -- "$annotator_store"', $input ?? '');
+            }
+        }
         if (str_contains($command->input ?? '', 'archive=$1'."\n")) {
             $arguments[3] = $this->localPath($arguments[3]);
         }
@@ -159,7 +166,7 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
             }
         }
 
-        $process = new Process($arguments, input: $command->input);
+        $process = new Process($arguments, input: $input);
         $process->run();
         $stdout = $process->getOutput();
 

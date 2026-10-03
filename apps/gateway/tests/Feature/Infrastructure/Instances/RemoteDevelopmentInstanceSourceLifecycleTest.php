@@ -70,6 +70,9 @@ beforeEach(function (): void {
     $this->appsRoot = $this->sandbox.'/apps';
     $this->remoteOrigin = 'ssh://git@example.test/acme/site.git';
     $this->files->makeDirectory($this->sandbox, 0o755, true);
+    // Worker commands inherit this directory. A linked worktree's Git directory may be closed to the worker.
+    $this->previousDirectory = getcwd();
+    chdir($this->sandbox);
     orb76_create_remote_repository($this->sandbox, $this->repository);
 
     $identity = posix_getpwuid(posix_geteuid());
@@ -156,6 +159,7 @@ beforeEach(function (): void {
 });
 
 afterEach(function (): void {
+    chdir($this->previousDirectory);
     $this->files->deleteDirectory($this->sandbox);
 });
 

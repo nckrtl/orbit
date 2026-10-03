@@ -42,7 +42,7 @@ A wake still starts every desired-running Process, including a keep-alive Proces
 
 `orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker.
 
-Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings.
+Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings. The repository map that [trusts GitHub feedback](/reference/tasks#trusted-github-feedback), `orbit.tasks.github_reviewers`, also lives in Gateway configuration but changes no hibernation threshold, Process keep-alive setting, or wake behavior.
 
 | Setting | Default | Config key | Environment key |
 | --- | --- | --- | --- |
@@ -66,6 +66,8 @@ The same sweep deletes `vendor` and `node_modules` when all of these are true:
 - No desired-running Process has `keep_alive`.
 
 Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
+
+The `annotator` preset also sleeps with its Instance and refuses keep-alive. Creating a stopped annotator or removing it rewrites the systemd units of its siblings without activation, so desired-running sleeping workers and Vite stay stopped and cold dependencies are not restored. Its port and store survive hibernation. Wake waits for `/health` on its assigned loopback port; a timeout reports `hibernation.annotator_not_ready`.
 
 ## Wake
 

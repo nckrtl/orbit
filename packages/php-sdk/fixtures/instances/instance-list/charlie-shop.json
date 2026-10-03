@@ -71,7 +71,9 @@
                 "deploy_steps": [],
                 "vite_port": 5173,
                 "seed_path": null,
-                "seed_commit": null
+                "seed_commit": null,
+                "annotator_port": null,
+                "annotator_url": null
             },
             {
                 "id": 4,
@@ -139,7 +141,9 @@
                 "deploy_steps": [],
                 "vite_port": 5176,
                 "seed_path": null,
-                "seed_commit": null
+                "seed_commit": null,
+                "annotator_port": null,
+                "annotator_url": null
             },
             {
                 "id": 3,
@@ -207,7 +211,9 @@
                 "deploy_steps": [],
                 "vite_port": 5175,
                 "seed_path": null,
-                "seed_commit": null
+                "seed_commit": null,
+                "annotator_port": null,
+                "annotator_url": null
             },
             {
                 "id": 2,
@@ -275,7 +281,9 @@
                 "deploy_steps": [],
                 "vite_port": 5174,
                 "seed_path": null,
-                "seed_commit": null
+                "seed_commit": null,
+                "annotator_port": null,
+                "annotator_url": null
             }
         ],
         "meta": {

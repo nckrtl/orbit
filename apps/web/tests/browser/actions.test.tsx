@@ -53,11 +53,15 @@ it("destroys a process only after it is confirmed", async () => {
 
 it("profiles an instance and shows what the command printed in a modal", async () => {
     const report = "GET https://charlie-shop.test 200 in 41.20ms\n\nTotal ....... 41.20ms";
-    const fetched = vi.spyOn(window, "fetch").mockResolvedValue(
-        new Response(JSON.stringify({ ok: true, output: report }), {
-            headers: { "content-type": "application/json" },
-        }),
-    );
+    const fetch = window.fetch.bind(window);
+    const fetched = vi.spyOn(window, "fetch").mockImplementation((input, init) => {
+        // Mounting the annotator also fetches discovery; it must not consume the profile body.
+        if (input === "/__orbit/profile?instance=1") {
+            return Promise.resolve(Response.json({ ok: true, output: report }));
+        }
+
+        return fetch(input, init);
+    });
 
     await openApp("/instances/1");
     await page.getByRole("button", { name: "Actions", exact: true }).click();

@@ -97,6 +97,8 @@ Response classes are `final readonly` objects with public camel-case properties 
 | `DoctorReportResponse` | Doctor, with `DoctorNodeResponse`, `DoctorFamilyResponse`, and `DoctorIssueResponse` nested inside. |
 | `ActivityResponse`, `WorkspaceResponse` | Activities and legacy Workspaces. |
 
+[GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) remain ordinary subtasks in task-group responses. Their existing `brief` contains the source review and immutable findings. The Gateway's `fixup_problem` string uses `review:{reviewer_id}`. Feedback adds no SDK request, response shape, trust configuration input, or merge method. SDK tests replay the Gateway-recorded review-fixup fixture to check that its findings and typed deliverables survive unchanged.
+
 ## Handle an error
 
 Every failed request throws `Orbit\Sdk\GatewayApiException`. It carries the Gateway's stable error code, redacted details, and the request ID, and it never carries a request body or raw remote output.

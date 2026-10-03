@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\TransferInstanceAction;
 use App\Data\Instances\TransferInstanceData;
+use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
@@ -137,6 +138,40 @@ beforeEach(function (): void {
         name: null,
         sqliteSourcePath: null,
     );
+});
+
+it('keeps a source annotator reservation through failed activation or retirement and frees it only after retry retires Caddy', function (string $failure): void {
+    $allocator = app(AgentationPortAllocator::class);
+    $allocator->assign($this->instance, 'annotator_port');
+    if ($failure === 'activation') {
+        $this->runtime->onCall = function (string $operation): void {
+            if ($operation === 'activate') {
+                $this->runtime->onCall = null;
+                throw new ResourceOperationException('test.activation_failed', 'Destination activation failed.', 409);
+            }
+        };
+    } else {
+        $this->projection->failRetirementOnce = true;
+    }
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+    expect($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
+        ->and(DB::table('annotation_port_assignments')->where('instance_id', $this->instance->id)->where('node_id', $this->sourceNode->id)->value('port'))->toBe(4848);
+    $other = orb245_instance($this->orbitApp, $this->sourceNode, 'new-source-user', 'checkout');
+    expect($allocator->assign($other, 'annotator_port'))->toBe(4849);
+    $this->action->execute($this->instance->refresh(), $this->data);
+    expect(DB::table('annotation_port_assignments')->where('instance_id', $this->instance->id)->where('node_id', $this->sourceNode->id)->exists())->toBeFalse()
+        ->and($allocator->nextAvailable($this->sourceNode->id, 0, 'annotator_port'))->toBe(4848);
+})->with(['activation', 'retirement']);
+
+it('reassigns the annotator port at destination and preserves its environment URL', function (): void {
+    $this->instance->update(['annotator_port' => 4855]);
+    $this->instance->environmentValues()->create(['env_key' => 'ANNOTATOR_URL', 'env_value' => 'https://{{instance.domain}}/__orbit/annotator/annotations']);
+    $occupied = orb245_instance($this->orbitApp, $this->destinationNode, 'occupied', 'checkout');
+    $occupied->update(['annotator_port' => 4848]);
+    $result = $this->action->execute($this->instance, $this->data);
+    expect($result['instance']->annotator_port)->toBe(4849)
+        ->and($result['instance']->node_id)->toBe($this->destinationNode->id)
+        ->and($this->writer->contents)->toContain('ANNOTATOR_URL="https://web.shop.other.orbit/__orbit/annotator/annotations"');
 });
 
 it('refuses transfer when schedules target the Instance', function (): void {

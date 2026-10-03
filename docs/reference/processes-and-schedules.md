@@ -60,8 +60,11 @@ A preset configures a development Instance Process. It sets the command, the run
 | Preset | Result |
 | --- | --- |
 | `vp-dev` | Runs VitePlus on an [assigned Vite port](/reference/assigned-vite-ports). The default restart policy is `on-failure`. |
+| `annotator` | Installs the server and injection asset, reserves a port until proxy withdrawal, and publishes `/__orbit/annotator`. Uses systemd with restart on failure and refuses keep-alive. |
 | `agentation-mcp` | Runs the [Agentation](/reference/agentation) HTTP server, assigns its port, and publishes `/__orbit/agentation`. It refuses keep-alive. |
 | `antigravity-watch` | Runs the Agentation watcher. It needs the `agentation-mcp` Process and refuses keep-alive. Its default restart policy is `always`. |
+
+Explicit start or restart activates a stopped annotator. An identical create still respects its desired state. Sibling environment projection rewrites units without activation, including for sleeping workers and cold dependencies. See [Annotator Process](/reference/agentation#annotator-process).
 
 ## Create a Process
 

@@ -7,6 +7,8 @@ import { chromium } from "playwright";
 
 let revision = 0;
 let annotation;
+let queueRecords = [];
+let discoveryService = "@nckrtl/annotator";
 const streams = new Set();
 let subscriptions = 0;
 let authorizations = 0;
@@ -32,6 +34,14 @@ const server = createServer(async (request, response) => {
     if (url.pathname === "/index.js") {
         response.setHeader("Content-Type", "text/javascript");
         response.end(await readFile(new URL("../dist/index.js", import.meta.url)));
+    } else if (["/discover", "/explicit"].includes(url.pathname)) {
+        response.setHeader("Content-Type", "text/html");
+        response.end(
+            `<h1>Queue target</h1><script type="module">import { mountAnnotation } from "/index.js"; mountAnnotation({${url.pathname === "/explicit" ? 'serverUrl:"/__orbit/annotator/annotations",' : ""}dictation:{autoStart:false}});</script>`,
+        );
+    } else if (url.pathname === "/__orbit/annotator/annotations") {
+        response.setHeader("Content-Type", "application/json");
+        response.end(JSON.stringify({ data: queueRecords, meta: { service: discoveryService } }));
     } else if (url.pathname === "/api/v1/tasks/status") {
         response.setHeader("Content-Type", "application/json");
         response.end(JSON.stringify({ data: { enabled: true } }));
@@ -272,6 +282,40 @@ try {
         });
     await status("in_progress");
     await page.getByRole("button", { name: "In progress annotation 1" }).waitFor({ timeout: 5000 });
+    const transition = async (action, fields) => {
+        const response = await fetch(`${localUrl}/${action}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: list.data[0].id, ...fields }),
+        });
+        assert.equal(response.status, 200);
+        return (await response.json()).data;
+    };
+    await transition("release", { question: true, summary: "Which color?" });
+    const questionPin = page.getByRole("button", { name: "Question annotation 1", exact: true });
+    await questionPin.waitFor({ timeout: 5000 });
+    assert.equal(await questionPin.getAttribute("title"), "Question: Which color?");
+    const claimedQuestion = await transition("claim", {});
+    assert.equal(claimedQuestion.question, undefined);
+    assert.equal(claimedQuestion.summary, undefined);
+    const claimedPin = page.getByRole("button", { name: "In progress annotation 1", exact: true });
+    await claimedPin.waitFor({ timeout: 5000 });
+    assert.equal(
+        await claimedPin.getAttribute("title"),
+        "In progress: Local only",
+        "Live claim clears the question without reloading",
+    );
+    assert.equal(await questionPin.count(), 0);
+    const cachedClaim = await page.evaluate(
+        (id) =>
+            Object.keys(localStorage)
+                .filter((key) => key.startsWith("toolbar-annotations-"))
+                .flatMap((key) => JSON.parse(localStorage.getItem(key)))
+                .find((record) => record.id === id),
+        list.data[0].id,
+    );
+    assert.equal(cachedClaim.question, undefined);
+    assert.equal(cachedClaim.summary, undefined);
     await page.reload();
     await page.getByRole("button", { name: "Enter annotation mode" }).click();
     await page.getByRole("button", { name: "In progress annotation 1" }).waitFor();
@@ -332,8 +376,79 @@ try {
         .getByText("Enter the annotation server URL in settings.", { exact: false })
         .waitFor();
     assert.deepEqual(outboundPosts, [], "Missing local URL never falls back to host delivery");
+    const queueContext = await browser.newContext();
+    const queuePage = await queueContext.newPage();
+    queueRecords = [
+        {
+            id: "queue-pin",
+            number: 3,
+            revision: 1,
+            comment: "Clarify this",
+            question: true,
+            summary: "Which color?",
+            status: "todo",
+            pathname: "/discover",
+            x: 50,
+            y: 80,
+            timestamp: Date.now(),
+        },
+    ];
+    await queuePage.goto(`${origin}/discover`);
+    await queuePage.getByRole("button", { name: "Enter annotation mode", exact: true }).click();
+    await queuePage.getByRole("button", { name: "Question annotation 3", exact: true }).waitFor();
+    assert.match(
+        await queuePage.locator("[data-annotation-marker]").getAttribute("title"),
+        /Which color/,
+    );
+    await queuePage.evaluate(() => {
+        const stale = { id: "stale", comment: "Replaced store", timestamp: Date.now() };
+        localStorage.setItem("toolbar-annotations-/other", JSON.stringify([stale]));
+    });
+    queueRecords = [];
+    await queuePage.reload();
+    await queuePage.getByRole("button", { name: "Enter annotation mode", exact: true }).click();
+    await queuePage.waitForFunction(
+        () => localStorage.getItem("toolbar-annotations-/other") === "[]",
+    );
+    assert.equal(
+        await queuePage.locator("[data-annotation-marker]").count(),
+        0,
+        "Missing server records remove stale pins without deletedIds",
+    );
+    assert.deepEqual(
+        await queuePage.evaluate(() =>
+            JSON.parse(localStorage.getItem("toolbar-annotations-/discover")),
+        ),
+        [],
+    );
+    queueRecords = [
+        {
+            id: "explicit-pin",
+            number: 4,
+            revision: 1,
+            comment: "Explicit host",
+            status: "todo",
+            pathname: "/explicit",
+            x: 50,
+            y: 80,
+            timestamp: Date.now(),
+        },
+    ];
+    await queuePage.goto(`${origin}/explicit`);
+    await queuePage.getByRole("button", { name: "Enter annotation mode", exact: true }).click();
+    await queuePage.getByRole("button", { name: "Edit annotation 4", exact: true }).waitFor();
+    discoveryService = "not-annotator";
+    const refusedPage = await queueContext.newPage();
+    await refusedPage.goto(`${origin}/discover`);
+    await refusedPage.getByRole("button", { name: "Annotation settings", exact: true }).click();
+    assert.equal(
+        await refusedPage.getByLabel("Annotation server URL", { exact: true }).inputValue(),
+        "",
+        "Discovery refuses an unidentified server",
+    );
+    await queueContext.close();
     console.log(
-        "Service: submission, shared progress, WebSocket reconnect recovery, completion, and refresh passed",
+        "Service: submission, shared progress, WebSocket reconnect recovery, completion, discovery, questions, stale pins, and refresh passed",
     );
 } finally {
     local?.kill("SIGTERM");

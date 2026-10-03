@@ -4,22 +4,28 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+/**
+ * Runs PHPStan on one file and decodes its JSON report from stdout only. Under an AI agent,
+ * PHPStan writes guidance to stderr, which would corrupt the report.
+ *
+ * @return array{0: int, 1: array<string, mixed>, 2: string}
+ */
+function analyseWithPhpstan(string $path): array
+{
+    $process = new Process(
+        ['./vendor/bin/phpstan', 'analyse', '--configuration=phpstan.neon', '--no-progress', '--error-format=json', $path],
+        env: ['PAO_DISABLE' => '1'],
+    );
+    $process->run();
+    $result = json_decode($process->getOutput(), true);
+
+    return [(int) $process->getExitCode(), is_array($result) ? $result : [], $process->getOutput().$process->getErrorOutput()];
+}
+
 it('reports the three PHP finding rules and accepts allowed declarations', function (): void {
     $directory = sys_get_temp_dir().'/orbit-finding-rules-'.bin2hex(random_bytes(8));
     mkdir($directory.'/tests', 0777, true);
 
-    $analyse = static function (string $path): array {
-        exec(
-            'PAO_DISABLE=1 ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
-                .escapeshellarg($path).' 2>&1',
-            $output,
-            $status,
-        );
-
-        $result = json_decode(implode("\n", $output), true);
-
-        return [$status, is_array($result) ? $result : [], implode("\n", $output)];
-    };
     $checkClassifications = static function (string $path): array {
         exec('php ../../bin/check-classification-fakes '.escapeshellarg($path).' 2>&1', $output, $status);
 
@@ -41,7 +47,7 @@ final class InlineOverride
     }
 }
 PHP);
-        [$status, $result, $output] = $analyse($inlineVar);
+        [$status, $result, $output] = analyseWithPhpstan($inlineVar);
         $messages = array_values(array_filter(
             $result['files'][$inlineVar]['messages'] ?? [],
             static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
@@ -58,7 +64,7 @@ function forbidden_call(): int
     return strtotime('2026-01-01');
 }
 PHP);
-        [$status, $result, $output] = $analyse($strtotime);
+        [$status, $result, $output] = analyseWithPhpstan($strtotime);
         $messages = $result['files'][$strtotime]['messages'] ?? [];
         expect($status)->toBe(1, $output)
             ->and($messages)->toHaveCount(1)
@@ -85,13 +91,13 @@ final class Allowed
     }
 }
 PHP);
-        [$status, , $output] = $analyse($allowed);
+        [$status, , $output] = analyseWithPhpstan($allowed);
         expect($status)->toBe(0, $output);
 
         foreach (['@phpstan-var', '@psalm-var'] as $annotation) {
             $typedOverride = $directory.'/'.substr($annotation, 1).'.php';
             file_put_contents($typedOverride, "<?php\nfinal class TypedOverride {\n    public function override(): void {\n        /** {$annotation} string \$value */\n        \$value = 'value';\n    }\n}\n");
-            [$status, $result, $output] = $analyse($typedOverride);
+            [$status, $result, $output] = analyseWithPhpstan($typedOverride);
             $messages = $result['files'][$typedOverride]['messages'] ?? [];
             expect($status)->toBe(1, $output)
                 ->and($messages)->toHaveCount(1)
@@ -112,7 +118,7 @@ function allowed_function(): string
     return $value;
 }
 PHP);
-        [$status, , $output] = $analyse($outsideMethod);
+        [$status, , $output] = analyseWithPhpstan($outsideMethod);
         expect($status)->toBe(0, $output);
 
         $badImport = $directory.'/tests/BadImportTest.php';
@@ -277,32 +283,19 @@ final class MethodBodyVarFixture
 PHP);
 
     try {
-        exec(
-            'PAO_DISABLE=1 ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
-                .escapeshellarg($fixture).' 2>&1',
-            $output,
-            $status,
-        );
-
-        $result = json_decode(implode("\n", $output), true);
+        [$status, $result, $output] = analyseWithPhpstan($fixture);
         $messages = array_values(array_filter(
             $result['files'][$fixture]['messages'] ?? [],
             static fn (array $message): bool => ($message['identifier'] ?? null) === 'orbit.inlineVarOverride',
         ));
 
-        expect($status)->toBe(1, implode("\n", $output))
+        expect($status)->toBe(1, $output)
             ->and($result['files'][$fixture]['messages'] ?? [])->toHaveCount(1)
             ->and($messages)->toHaveCount(1)
             ->and($messages[0]['message'])->toBe('Inline @var overrides an inferred type inside a method body.');
 
         $existingSource = realpath(__DIR__.'/../../Support/LifecycleSshExecutor.php');
-        exec(
-            'PAO_DISABLE=1 ./vendor/bin/phpstan analyse --configuration=phpstan.neon --no-progress --error-format=json '
-                .escapeshellarg($existingSource).' 2>&1',
-            $sourceOutput,
-        );
-
-        $sourceResult = json_decode(implode("\n", $sourceOutput), true);
+        [, $sourceResult] = analyseWithPhpstan($existingSource);
         $sourceMessages = $sourceResult['files'][$existingSource]['messages'] ?? [];
         $sourceOverrides = array_values(array_filter(
             $sourceMessages,

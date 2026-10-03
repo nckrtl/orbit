@@ -1,11 +1,11 @@
 ---
-name: proving-on-incus
-description: Use when a feature or review must be proved on an Incus topology with bin/e2e-topology, such as running Orbit commands on the Nodes, watching a live process, or recording evidence.
+name: using-incus-topologies
+description: Use when exploring or checking behavior on a task group's Incus topology with bin/e2e-topology, such as running Orbit commands on the Nodes, watching a live process, or reproducing a feature in review.
 ---
 
-# Proving on Incus
+# Using Incus topologies
 
-Prove a feature on a disposable three-Node topology: `gateway`, `app-dev`, and `app-prod`. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command. This skill covers the working habits that keep a proof fast and its evidence trustworthy.
+A task group's topology is a disposable three-Node fleet: `gateway`, `app-dev`, and `app-prod`. It is for discovery. The implementer uses it to explore and check behavior while building, and the reviewer reproduces the feature on it. Subtasks do not carry proofs or proof scripts; tests and the review accept the work. The [Incus topology registry](../../../docs/reference/incus-topologies.md) is the reference for every command.
 
 ## Use the allocated topology
 
@@ -13,12 +13,12 @@ Orbit acquires the group's topology, `TASK-<group>`, when it provisions an Orbit
 
 Run commands from the task workspace. The issue must appear in the branch name, so branch `task-58` uses `TASK-58`. A task workspace clone runs through its [bridge worktree](../../../docs/reference/incus-topologies.md#task-workspace-clones).
 
-Leave the topology allocated while you wait for help and after the proof. Orbit or the operator owns teardown. Clean up only the disposable processes and fixtures you created within that allocation.
+Leave the topology allocated while you wait for help and when you finish. Orbit or the operator owns teardown. Clean up only the disposable processes and fixtures you created within that allocation.
 
 ## Run commands on a Node
 
 - `exec ISSUE NODE --argv='[...]'` runs one argument vector as `orbit` in `/home/orbit` and waits for it. It allows 60 seconds; pass `--timeout=SECONDS` for slower work such as a converge, up to 3600.
-- Do not use sudo or perform root work. Request operator help when the proof requires privileged changes. Wrap a pipeline in `["sh","-c","..."]`. Guests have no `incus` command.
+- Do not use sudo or perform root work. Request operator help when you need a privileged change. Wrap a pipeline in `["sh","-c","..."]`. Guests have no `incus` command.
 - Run the Orbit CLI on `gateway`: `["orbit","node:list"]`. The CLI's command names use colons, such as `node:role:add`.
 - Give your own Bash tool a timeout longer than the harness command. `sync` can take two minutes.
 
@@ -47,14 +47,9 @@ A task workspace clone reaches the Nodes through its bridge worktree, and every 
 - `orbit node:add NODE` refuses a Node that owns Instances, which includes `app-dev` and `app-prod`. Converge a role instead: `orbit node:role:add NODE ROLE --converge`.
 - A converge rewrites the files Orbit owns on that Node. It undoes any manual patch to them, so reapply the patch or fix the cause in code.
 
-## Keep the evidence honest
+## Keep notes honest
 
-- Do not work around a product gap on the Nodes, for example with `/etc/hosts` entries or hand-installed packages. A workaround hides the failure the proof exists to catch. Record the gap as a finding and ask for help when it blocks you.
-- Record proof evidence with `--record=LABEL` on `exec` and `logs`, for example `exec TASK-58 gateway --argv='["orbit","node:list"]' --record="node list after crash"`. The harness appends the command, its UTC start and end times in milliseconds, the exit code, and the redacted output to `<worktree>/.e2e/evidence.log`. Cite entries by label in the evidence summary instead of copying output by hand.
+- Do not work around a product gap on the Nodes, for example with `/etc/hosts` entries or hand-installed packages. A workaround hides the failure you are looking for. Record the gap as a finding and ask for help when it blocks you.
+- Record what you checked with `--record=LABEL` on `exec` and `logs`, for example `exec TASK-58 gateway --argv='["orbit","node:list"]' --record="node list after crash"`. The harness appends the command, its UTC start and end times in milliseconds, the exit code, and the redacted output to `<worktree>/.e2e/evidence.log`. Cite entries by label in your handoff or review instead of copying output by hand.
 - Timing claims such as "within one second" need both ends. Use the recorded start and end times, or record `["date","-Ins"]` before and after an action that the harness does not run.
-- Record every limitation, manual patch, and skipped check in the evidence summary.
-
-## Keep proof scripts small
-
-- A proof script is disposable evidence, not product code. It needs three things: it fails closed, it audits for leftovers after cleanup, and its scenario reproduces on a fresh lease. Do not build crash recovery for the script itself beyond that.
-- A proof that needs a live GitHub pull request state or a live agent turn gets no GitHub App, repository, or model credentials on the topology. Run the scheduler tick in `php artisan tinker` on the topology Gateway, and bind the one external seam to a fake in that process: `TaskPullRequestWatcher`, or `AgentDriverRegistry` with a scripted driver like `tests/Support/FakeAgentDriver.php`. Keep everything else real, and record the substitution as a limitation.
+- Record every limitation, manual patch, and skipped check in your handoff or review.

@@ -706,6 +706,7 @@ final readonly class TransferInstanceAction
     {
         DB::transaction(function () use ($instance, $destination, $transfer, $sourceClusterId): void {
             $lockedInstance = Instance::query()->lockForUpdate()->findOrFail($instance->id);
+            Node::query()->whereKey($destination->id)->lockForUpdate()->firstOrFail();
             $lockedTransfer = InstanceTransfer::query()->lockForUpdate()->findOrFail($transfer->id);
             $sourceRoute = Route::query()->lockForUpdate()->findOrFail($lockedTransfer->source_route_id);
             $destinationRoute = Route::query()->lockForUpdate()->findOrFail(
@@ -718,16 +719,23 @@ final readonly class TransferInstanceAction
             }
             $lockedTransfer->update(['source_router_node_id' => $this->sourceRouterId($sourceRoute)]);
 
+            $annotationPorts = app(AgentationPortAllocator::class);
+            $annotationPorts->retain($lockedInstance, 'annotator_port');
+            $annotationPorts->retain($lockedInstance, 'agentation_port');
+            $annotatorPort = $lockedInstance->annotator_port === null ? null : $annotationPorts->nextAvailable($destination->id, $lockedInstance->id, 'annotator_port');
+            $agentationPort = $lockedInstance->agentation_port === null ? null : $annotationPorts->nextAvailable($destination->id, $lockedInstance->id, reserved: $annotatorPort === null ? [] : [$annotatorPort]);
+
             $lockedInstance->update([
                 'node_id' => $destination->id,
                 'vite_port' => StoredInteger::fromOrZero(DB::table('vite_port_assignments')->where('instance_id', $instance->id)->where('node_id', $destination->id)->value('port')),
-                ...($lockedInstance->agentation_port === null ? [] : [
-                    'agentation_port' => app(AgentationPortAllocator::class)->nextAvailable($destination->id, $lockedInstance->id),
-                ]),
+                'annotator_port' => $annotatorPort,
+                'agentation_port' => $agentationPort,
                 'name' => $lockedTransfer->destination_name,
                 'checkout_path' => $lockedTransfer->destination_path,
                 'source_layout' => InstanceSourceLayout::Checkout,
             ]);
+            $annotationPorts->retain($lockedInstance, 'annotator_port');
+            $annotationPorts->retain($lockedInstance, 'agentation_port');
 
             if ($destinationRoute->id === $sourceRoute->id) {
                 $destinationRoute->update([
@@ -774,6 +782,9 @@ final readonly class TransferInstanceAction
         DB::transaction(fn (): array => $this->lockCleanupRoutes($instance, $transfer));
         $sourceNode = Node::query()->findOrFail($transfer->source_node_id);
         $this->transferProjection->retireSource($transfer);
+        $annotationPorts = app(AgentationPortAllocator::class);
+        $annotationPorts->releaseOnNode($instance, $sourceNode->id, 'annotator_port');
+        $annotationPorts->releaseOnNode($instance, $sourceNode->id, 'agentation_port');
         $this->runtime->cleanupSourceArtifacts($instance, $sourceNode, $transfer->source_path);
         $cleanup = $this->sources->cleanupSource($transfer);
 

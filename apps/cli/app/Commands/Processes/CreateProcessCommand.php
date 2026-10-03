@@ -21,7 +21,7 @@ final class CreateProcessCommand extends TargetedProcessCommand
     protected $signature = 'process:create
         {name : Process name}
         {--instance= : Positive Instance ID or exact development Route domain}
-        {--preset= : Process preset: vp-dev, agentation-mcp, or antigravity-watch}
+        {--preset= : Process preset: vp-dev, annotator, agentation-mcp, or antigravity-watch}
         {--node= : Node ID or registered name}
         {--project= : Numeric Project ID}
         {--for= : Comma-separated definition environments}
@@ -86,15 +86,15 @@ final class CreateProcessCommand extends TargetedProcessCommand
                 );
             }
 
-            if (! in_array($preset, ['vp-dev', 'agentation-mcp', 'antigravity-watch'], true)) {
-                return $this->renderGatewayFailure('process.preset_invalid', 'Supported Process presets are vp-dev, agentation-mcp, and antigravity-watch.');
+            if (! in_array($preset, ['vp-dev', 'annotator', 'agentation-mcp', 'antigravity-watch'], true)) {
+                return $this->renderGatewayFailure('process.preset_invalid', 'Supported Process presets are vp-dev, annotator, agentation-mcp, and antigravity-watch.');
             }
             foreach (['app', 'node', 'runtime', 'command', 'image', 'working-directory', 'environment', 'port', 'volume'] as $option) {
                 if ($this->input->hasParameterOption('--'.$option)) {
                     return $this->renderGatewayFailure('process.preset_option_invalid', 'A Process preset requires --instance and owns runtime, command, working directory, and environment configuration.');
                 }
             }
-            if ($this->option('keep-alive') === true && in_array($preset, ['agentation-mcp', 'antigravity-watch'], true)) {
+            if ($this->option('keep-alive') === true && in_array($preset, ['annotator', 'agentation-mcp', 'antigravity-watch'], true)) {
                 return $this->renderGatewayFailure('process.preset_keep_alive_invalid', 'The Agentation presets hibernate with the Instance and cannot keep-alive.');
             }
         }

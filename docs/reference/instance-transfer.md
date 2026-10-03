@@ -53,11 +53,13 @@ The Gateway stages the transfer archive on disk, not in a size-limited `/tmp`. A
 
 When the request selects a SQLite file, the checkout archive excludes that file and its `-wal` and `-shm` files. The SQLite step installs the consistent snapshot at the selected path, so the database contents come from the snapshot rather than an inconsistent archive copy.
 
-Stopping Processes before the final checkout copy prevents their writes from being missed. Orbit copies no other database or data path.
+Stopping Processes before the final checkout copy prevents their writes from being missed. The `annotator` preset also transfers its private store at `/var/lib/orbit/annotator/instance-{id}`. Capture adds the store to the checkout archive under `.orbit/annotator`; destination runtime installation restores it outside the checkout and removes that staging directory. Pausing the source unit does not delete its store. Source cleanup deletes the old store only after cutover, so rollback can restart the source with its annotations. Apart from that managed store and the selected SQLite file, Orbit copies no other database or data path.
 
 Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
 
 Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
+
+An assigned annotator port is reassigned under the destination Node lock at cutover. The source assignment stays in `annotation_port_assignments` until source Caddy retirement succeeds, including after a failed destination activation or interrupted cleanup. Another Instance cannot claim that port while the old proxy may still exist. Allocation skips both annotator and Agentation assignments on that Node. The destination units use the new port and Route domain, and the stored `ANNOTATOR_URL` placeholder stays unchanged. See [Annotator Process](/reference/agentation#annotator-process).
 
 ## Route
 

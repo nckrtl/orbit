@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\AnnotatorEndpoint;
+use App\Domain\Hibernation\InstanceCheckoutInspector;
+use App\Domain\Hibernation\RuntimeDependencyState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\ManagedUserAccount;
@@ -32,8 +35,10 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
+use Tests\Support\FakeInstanceCheckoutInspector;
 use Tests\Support\TestToolchain;
 
 beforeEach(function (): void {
@@ -72,6 +77,106 @@ beforeEach(function (): void {
         'provisioning_step' => 'active',
         'status' => 'active',
     ]);
+});
+
+it('installs the Gateway annotator files and deletes only a removed Process store, not a transfer store', function (): void {
+    $this->instance->update(['annotator_port' => 4848]);
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/local/bin/node']]]);
+    $unitPath = new SystemdProcessRenderer()->unitPath($process);
+    $unitExists = false;
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($unitPath, $process, &$unitExists): void {
+        if ($command->arguments === ['sudo', 'test', '-e', $unitPath]) {
+            $this->ssh->responses[] = process_runtime_result($unitExists ? 0 : 1);
+        }
+        if ($command->arguments === ['sudo', 'cat', '--', $unitPath]) {
+            $this->ssh->responses[] = process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID={$process->id}\n");
+        }
+    };
+    $this->manager->converge($process);
+    $installed = $this->ssh->commands[0];
+    expect($installed->arguments[0])->toBe('sudo')->and($installed->arguments[1])->toBe('python3');
+    $files = json_decode($installed->input, true, flags: JSON_THROW_ON_ERROR);
+    expect($files['bin/serve.mjs'])->toBe(file_get_contents(base_path('../../packages/agent-annotation/bin/serve.mjs')))
+        ->and($files)->toHaveKeys(['bin/store.mjs', 'bin/lifecycle.mjs', 'bin/SKILL.md', 'bin/QUEUE-SKILL.md']);
+    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'install', '-d', '-m', '0700', '-o', 'nckrtl', AnnotatorEndpoint::store($this->instance->id)]))->toBeTrue();
+    $this->ssh->commands = [];
+    $this->manager->remove($process);
+    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => in_array('rm', $command->arguments, true)))->toBeFalse();
+    $process->update(['status' => LifecycleStatus::Removing]);
+    $unitExists = true;
+    $this->manager->remove($process);
+    $arguments = array_map(fn (RemoteCommand $command): array => $command->arguments, $this->ssh->commands);
+    $stop = array_search(['sudo', 'systemctl', 'disable', '--now', new SystemdProcessRenderer()->unitName($process)], $arguments, true);
+    $deleteStore = array_search(['sudo', 'rm', '-rf', '--', AnnotatorEndpoint::store($this->instance->id)], $arguments, true);
+    expect($stop)->not->toBeFalse()->and($deleteStore)->not->toBeFalse()->and($stop)->toBeLessThan($deleteStore);
+});
+
+it('activates a stopped annotator on explicit start or restart while normal convergence stays stopped', function (string $operation): void {
+    $this->instance->update(['annotator_port' => 4848]);
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['desired_state' => 'stopped', 'runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/local/bin/node']]]);
+    $unit = new SystemdProcessRenderer()->unitName($process);
+    $path = new SystemdProcessRenderer()->unitPath($process);
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($path): void {
+        if ($command->arguments === ['sudo', 'test', '-e', $path]) {
+            $this->ssh->responses[] = process_runtime_result(1);
+        }
+    };
+    $this->manager->converge($process);
+    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'systemctl', 'disable', '--now', $unit]))->toBeTrue();
+    $this->ssh->commands = [];
+    $this->manager->{$operation}($process);
+    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'systemctl', 'restart', $unit]))->toBeTrue()
+        ->and(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'systemctl', 'disable', '--now', $unit]))->toBeFalse()
+        ->and($process->refresh()->desired_state->value)->toBe('stopped');
+})->with(['start', 'restart']);
+
+it('reprojects sleeping and cold worker and Vite units without activation or checkout restoration', function (bool $cold): void {
+    $checkout = new FakeInstanceCheckoutInspector;
+    if ($cold) {
+        $checkout->state = new RuntimeDependencyState(true, false, true, false, null);
+    }
+    app()->instance(InstanceCheckoutInspector::class, $checkout);
+    $route = Route::query()->create(['project_id' => $this->instance->project_id, 'node_id' => $this->instance->node_id, 'domain' => 'sleeping.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $this->instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    $this->instance->update(['annotator_port' => 4848]);
+    $worker = runtime_manager_systemd_process($this->instance);
+    $worker->update(['desired_state' => 'running']);
+    $vite = $worker->replicate();
+    $vite->fill(['name' => 'assets', 'runtime_config' => ['preset' => 'vp-dev', 'command' => ['/usr/local/bin/vp'], 'environment_file' => $this->instance->checkout_path.'/.env']])->save();
+    $paths = [new SystemdProcessRenderer()->unitPath($worker) => $worker->id, new SystemdProcessRenderer()->unitPath($vite) => $vite->id];
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($paths): void {
+        if (array_slice($command->arguments, 0, 3) === ['sudo', 'cat', '--'] && isset($paths[$command->arguments[3]])) {
+            $this->ssh->responses[] = process_runtime_result(stdout: '[Unit]'."\nX-Orbit-Process-ID=".$paths[$command->arguments[3]]."\n");
+        }
+    };
+    $this->manager->project($this->instance, 0);
+    $units = collect($this->ssh->commands)->filter(fn (RemoteCommand $command): bool => ($command->arguments[4] ?? null) === '/dev/stdin')->pluck('input');
+    expect($units)->toHaveCount(2);
+    foreach ($units as $unit) {
+        expect($unit)->toContain('ANNOTATOR_URL=https://sleeping.test/__orbit/annotator/annotations');
+    }
+    $this->instance->update(['annotator_port' => null]);
+    $this->ssh->commands = [];
+    $this->manager->project($this->instance, 0);
+    foreach ($this->ssh->commands as $command) {
+        expect($command->arguments)->not->toContain('start')->not->toContain('restart')->not->toContain('stop')->not->toContain('enable')->not->toContain('disable');
+        if (($command->arguments[4] ?? null) === '/dev/stdin') {
+            expect($command->input)->toContain('UnsetEnvironment=ANNOTATOR_URL ORBIT_ANNOTATOR_PORT');
+        }
+    }
+    expect($checkout->restored)->toBe([])->and($worker->refresh()->desired_state->value)->toBe('running')->and($vite->refresh()->desired_state->value)->toBe('running');
+})->with([false, true]);
+
+it('does not create an annotator unit when installing the server files fails', function (): void {
+    $this->instance->update(['annotator_port' => 4848]);
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/local/bin/node']]]);
+    $this->ssh->responses = [process_runtime_result(1)];
+    expect(fn () => $this->manager->converge($process))->toThrow(fn (ProcessOperationException $exception) => expect($exception->errorCode)->toBe('process.annotator_install_failed'));
+    expect($this->ssh->commands)->toHaveCount(1);
 });
 
 it('installs and manages a systemd process through fixed SSH argv', function (): void {

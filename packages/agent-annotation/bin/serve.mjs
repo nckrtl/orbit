@@ -17,6 +17,7 @@ const usage = `Usage:
 
 serve runs in the foreground. Default: 127.0.0.1, a random port and a new temporary store.
 --host without an IP binds to 0.0.0.0, so other machines can reach the server.
+--allow-origin ORIGIN restricts browser access; repeat for each allowed origin.
 --state writes the server's PID, port and URL to FILE while it runs.
 start runs serve in the background; stop and status use the same state file.
 start, stop and status print JSON.`;
@@ -36,6 +37,7 @@ try {
     let file;
     let stateFile;
     const serveArgs = [];
+    const allowedOrigins = new Set();
     while (args.length) {
         const flag = args.shift();
         if (flag === "--host" && (!args.length || args[0].startsWith("--"))) {
@@ -48,7 +50,12 @@ try {
         if (flag === "--port" && /^\d+$/.test(value) && Number(value) > 0 && Number(value) <= 65535)
             port = Number(value);
         else if (flag === "--host" && isIP(value)) host = value;
-        else if (flag === "--store") file = resolve(value);
+        else if (flag === "--allow-origin") {
+            const origin = new URL(value);
+            if (origin.host === "" || value !== `${origin.protocol}//${origin.host}`)
+                throw new Error(`Invalid origin: ${value}`);
+            allowedOrigins.add(value);
+        } else if (flag === "--store") file = resolve(value);
         else if (flag === "--state") stateFile = resolve(value);
         else throw new Error(`Invalid option: ${flag} ${value}`);
         if (flag !== "--state") serveArgs.push(flag, flag === "--store" ? file : value);
@@ -74,6 +81,7 @@ try {
         const store = new AnnotationStore(file);
         const base = "/annotations";
         const skillTemplate = readFileSync(new URL("./SKILL.md", import.meta.url), "utf8");
+        const queueTemplate = readFileSync(new URL("./QUEUE-SKILL.md", import.meta.url), "utf8");
         // A wildcard bind is printed with the first network address, so the URL works from other machines.
         const networkAddress = (family) =>
             Object.values(networkInterfaces())
@@ -147,10 +155,23 @@ try {
                 if (
                     path !== base &&
                     !path.startsWith(`${base}/`) &&
-                    !["/claim", "/complete", "/release", "/skill"].includes(path)
+                    ![
+                        "/claim",
+                        "/complete",
+                        "/release",
+                        "/skill",
+                        "/health",
+                        "/inject.js",
+                    ].includes(path)
                 )
                     return json(404, { error: "Not found" });
-                response.setHeader("Access-Control-Allow-Origin", "*");
+                const origin = request.headers.origin;
+                if (allowedOrigins.size) {
+                    response.setHeader("Vary", "Origin");
+                    if (origin && !allowedOrigins.has(origin))
+                        return json(403, { error: "Origin not allowed" });
+                    if (origin) response.setHeader("Access-Control-Allow-Origin", origin);
+                } else response.setHeader("Access-Control-Allow-Origin", "*");
                 response.setHeader(
                     "Access-Control-Allow-Methods",
                     "GET, HEAD, POST, DELETE, OPTIONS",
@@ -160,6 +181,17 @@ try {
                 if (request.method === "OPTIONS") {
                     response.writeHead(204);
                     return response.end();
+                }
+                if (path === "/health" || path === "/inject.js") {
+                    if (!["GET", "HEAD"].includes(request.method))
+                        return json(405, { error: "Method not allowed" });
+                    if (path === "/health") return json(200, { ok: true });
+                    const script = readFileSync(new URL("../dist/inject.js", import.meta.url));
+                    response.writeHead(200, {
+                        "Content-Type": "text/javascript; charset=utf-8",
+                        "Cache-Control": "no-store",
+                    });
+                    return response.end(request.method === "HEAD" ? undefined : script);
                 }
                 if (path === "/skill" || path === `${base}/skill`) {
                     if (!["GET", "HEAD"].includes(request.method))
@@ -171,7 +203,10 @@ try {
                     return response.end(
                         request.method === "HEAD"
                             ? undefined
-                            : skillTemplate
+                            : (url.searchParams.get("mode") === "queue"
+                                  ? queueTemplate
+                                  : skillTemplate
+                              )
                                   .replaceAll("{{ANNOTATIONS_URL}}", `${serverUrl()}${base}`)
                                   .replaceAll("{{PROJECT_ROOT}}", process.cwd()),
                     );
@@ -196,8 +231,8 @@ try {
                         data: store.list(),
                         meta: {
                             service: "@nckrtl/annotator",
-                            eventsUrl: `${base}/events`,
-                            skillUrl: `${base}/skill`,
+                            eventsUrl: "annotations/events",
+                            skillUrl: "annotations/skill",
                             lastNumber: store.lastNumber,
                             deletedIds: [...store.deletedIds],
                         },
@@ -250,7 +285,15 @@ try {
                 }
                 const action = path.startsWith(`${base}/`) ? path.slice(base.length) : path;
                 if (action === "/claim") {
-                    const annotation = store.claim();
+                    if (body.id !== undefined && !validId(body.id))
+                        return json(422, { error: "Invalid annotation id" });
+                    if (body.id !== undefined) {
+                        const current = store.find(body.id);
+                        if (!current) return json(404, { error: "Annotation not found" });
+                        if (current.status !== "todo")
+                            return json(409, { error: "Annotation must be todo" });
+                    }
+                    const annotation = store.claim(body.id);
                     if (!annotation) {
                         response.writeHead(204);
                         return response.end();
@@ -261,16 +304,20 @@ try {
                 if (["/complete", "/release"].includes(action)) {
                     if (
                         !validId(body.id) ||
-                        (body.summary !== undefined && typeof body.summary !== "string")
+                        (body.summary !== undefined && typeof body.summary !== "string") ||
+                        (body.question !== undefined && typeof body.question !== "boolean") ||
+                        (body.question === true && (action !== "/release" || !body.summary?.trim()))
                     )
-                        return json(422, { error: "A valid id and optional summary are required" });
+                        return json(422, {
+                            error: "A valid id, optional summary and question are required",
+                        });
                     const current = store.find(body.id);
                     if (!current) return json(404, { error: "Annotation not found" });
                     const status = action === "/complete" ? "done" : "todo";
                     if (current.status === status) return json(200, { data: current });
                     if (current.status !== "in_progress")
                         return json(409, { error: "Annotation must be in progress" });
-                    const updated = store.transition(current, status, body.summary);
+                    const updated = store.transition(current, status, body.summary, body.question);
                     notify();
                     return json(200, { data: updated });
                 }
