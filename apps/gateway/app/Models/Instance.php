@@ -363,6 +363,24 @@ final class Instance extends Model
         return $root;
     }
 
+    public function applicationDirectory(): string
+    {
+        $root = $this->root ?? $this->project->root;
+        $base = $this->placementEnvironment() === 'production' && is_string($this->production_home)
+            ? "{$this->production_home}/current"
+            : $this->checkout_path;
+
+        if ($root === 'public') {
+            $root = null;
+        } elseif (is_string($root) && str_ends_with($root, '/public')) {
+            $root = substr($root, 0, -strlen('/public'));
+        }
+
+        return $root === null || $root === '.' || $root === ''
+            ? rtrim($base, '/')
+            : rtrim($base, '/').'/'.$root;
+    }
+
     public function placementEnvironment(): ?string
     {
         $this->loadMissing('node.roles');
