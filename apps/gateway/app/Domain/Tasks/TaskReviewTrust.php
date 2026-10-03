@@ -12,6 +12,30 @@ final readonly class TaskReviewTrust
     /** @param list<int> $accountIds */
     private function __construct(public bool $valid, public array $accountIds, public string $revision) {}
 
+    /**
+     * Reads the operator's env value `owner/repo:id,id;owner/repo:id` into the config shape. A token that is not a
+     * positive integer stays a string, so fromConfig() disables that repository instead of trusting it.
+     *
+     * @return array<string, list<int|string>>
+     */
+    public static function parseEnv(?string $value): array
+    {
+        $config = [];
+        foreach (explode(';', (string) $value) as $entry) {
+            $entry = trim($entry);
+            if ($entry === '') {
+                continue;
+            }
+            [$repository, $ids] = array_pad(explode(':', $entry, 2), 2, '');
+            $config[strtolower(trim($repository))] = array_map(
+                static fn (string $id): int|string => preg_match('/\A[1-9][0-9]{0,18}\z/', $id) === 1 ? (int) $id : $id,
+                array_map(trim(...), explode(',', $ids)),
+            );
+        }
+
+        return $config;
+    }
+
     public static function fromConfig(GitHubRepository $repository, mixed $config): self
     {
         $key = strtolower($repository->owner.'/'.$repository->name);
