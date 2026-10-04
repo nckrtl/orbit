@@ -161,7 +161,7 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 | `error` | Next step |
 | --- | --- |
 | `usage` | Pass `--sha` with the merged commit. |
-| `unreachable` | Production is not reachable from this machine. Use `--dry-run` or `--fixture`. Do not invent a live pass. When the failure is a certificate problem, set `SSL_CERT_FILE` to Orbit's root CA, then run again. |
+| `unreachable` | Use `--dry-run` or `--fixture`. For a certificate problem, set `SSL_CERT_FILE`. |
 | `version_mismatch` | The live `APP_VERSION` is not this SHA. Do not treat the deploy as verified. |
 | `up_failed` | `/up` is not up. Do not treat the deploy as verified. |
 | `status_failed` | Gateway status is not `ok`. Do not treat the deploy as verified. |
