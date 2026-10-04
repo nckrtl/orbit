@@ -68,6 +68,8 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 
 `cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` and `proxycli:models` remain family-specific reads. `tasks` uses `create` for tasks and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
 
+The Gateway names its [Project Documents storage](/reference/project-documents#private-s3-boundary) routes `project:document-storage:show` and `project:document-storage:update`. Storage belongs to the Gateway, so neither operation takes a Project selector. `update` accepts partial changes after initial configuration and can rotate credentials; there is no `destroy`, `disable`, or `unset` operation for this configuration.
+
 ## Family-specific actions
 
 Some families have actions outside the pairs above. Each action belongs only to the family that lists it.

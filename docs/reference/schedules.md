@@ -17,6 +17,8 @@ A Schedule runs one command on a timer for one Node or one Instance. The Gateway
 
 An Orbit Schedule is not a command on the Gateway's own Laravel schedule. The Tasks extension registers `tasks:tick`, `problems:collect`, and `problems:file` there. [Tasks](/reference/tasks#scheduler) describes those timers. The Gateway also runs `orbit:deploy-development-defaults` every minute without overlap as the push fallback for [development defaults](/reference/deployments#development-defaults). That internal tick is not a user-created Schedule and does not install a timer on an app-dev Node.
 
+The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
+
 ## Fields
 
 The Schedule UUID is its public identity. It is also the only value that names the host artifacts.

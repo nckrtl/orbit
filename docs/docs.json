@@ -320,6 +320,8 @@
             "group": "Projects",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/project-document-storage",
+              "PUT /api/v1/project-document-storage",
               "GET /api/v1/projects",
               "POST /api/v1/projects",
               "DELETE /api/v1/projects/{project}",

@@ -4789,6 +4789,57 @@
       }
     },
     {
+      "name": "project-document-storage-show",
+      "extension": null,
+      "title": "project:document-storage:show",
+      "description": "project:document-storage:show",
+      "method": "GET",
+      "path": "/api/v1/project-document-storage",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "project-document-storage-update",
+      "extension": null,
+      "title": "project:document-storage:update",
+      "description": "project:document-storage:update",
+      "method": "PUT",
+      "path": "/api/v1/project-document-storage",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "region": {
+            "type": "string",
+            "pattern": "^[\\x21-\\x7e]{1,63}$(?![\\s\\S])"
+          },
+          "bucket": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9.-]{1,61})[a-z0-9]$(?![\\s\\S])"
+          },
+          "access_key_id": {
+            "type": "string"
+          },
+          "secret_access_key": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "project-excluded-node-add",
       "extension": null,
       "title": "project:excluded-node:add",

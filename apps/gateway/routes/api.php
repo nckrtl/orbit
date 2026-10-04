@@ -43,6 +43,7 @@ use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\ProcessLogStreamsController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
+use App\Http\Controllers\Api\ProjectDocumentStorageController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
 use App\Http\Controllers\Api\ProjectRuntimeDefinitionsController;
@@ -154,6 +155,10 @@ Route::prefix('v1')->group(function (): void {
         RequireActiveWireGuardPeer::class,
         RequireNodeAccess::class,
     ])->group(function (): void {
+        Route::get('project-document-storage', [ProjectDocumentStorageController::class, 'show'])
+            ->name('project:document-storage:show');
+        Route::put('project-document-storage', [ProjectDocumentStorageController::class, 'update'])
+            ->name('project:document-storage:update');
         Route::get('nodes', [NodesController::class, 'index'])
             ->name('node:list');
         Route::post('github/app/install', [GitHubAppController::class, 'install'])->name('github:app:install');

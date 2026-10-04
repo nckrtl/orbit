@@ -196,6 +196,8 @@ it('declares node access scope on every active-peer API route', function (): voi
         'project:dev-deploy-step:destroy' => ServingNode::ProjectOwning,
         'project:dev-deploy-step:list' => ServingNode::ProjectOwning,
         'project:dev-deploy-step:update' => ServingNode::ProjectOwning,
+        'project:document-storage:show' => ServingNode::Gateway,
+        'project:document-storage:update' => ServingNode::Gateway,
         'project:excluded-node:add' => ServingNode::ProjectOwning,
         'project:excluded-node:list' => ServingNode::ProjectOwning,
         'project:excluded-node:remove' => ServingNode::ProjectOwning,

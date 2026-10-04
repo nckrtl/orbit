@@ -35,6 +35,7 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
+use App\Models\ProjectDocumentStorage;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
@@ -70,6 +71,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         InstanceEnvironmentValue::class,
         ToolManagerRecord::class,
         Setting::class,
+        ProjectDocumentStorage::class,
         Cluster::class,
         Route::class,
         RouteTarget::class,

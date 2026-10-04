@@ -1,6 +1,12 @@
 ---
 title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
+covers:
+  - apps/gateway/app/Actions/ProjectDocuments/**
+  - apps/gateway/app/Infrastructure/ProjectDocuments/**
+  - apps/gateway/app/Models/ProjectDocumentStorage.php
+  - apps/gateway/app/Console/Commands/*DocumentProbe*.php
+  - apps/gateway/database/migrations/*_create_project_document_storages_table.php
 ---
 
 # Project Documents
@@ -77,11 +83,37 @@ The credential must allow GetObject, PutObject, DeleteObject, and listing only t
 
 Configuration accepts `endpoint`, `region`, `bucket`, `access_key_id`, and `secret_access_key`. Endpoint, region, and bucket are required on the initial update and may be omitted on later updates. The endpoint is an HTTPS origin without userinfo, query, fragment, or path; region is a nonempty S3 signing-region string of at most 63 ASCII characters; bucket is a valid S3 bucket name of 3–63 characters. Credential fields are nonempty strings of at most 1,024 bytes. The Gateway encrypts both credential fields with its application encryption key before database storage.
 
-Credentials are write-only: no API, SDK, CLI, MCP result, web view, Activity payload, exception, or log returns either value. Configuration responses expose only `configured`, `endpoint`, `region`, `bucket`, `credentials_configured`, `updated_at`, and the cleanup status fields below. Before configuration, `configured` and `credentials_configured` are false and endpoint, region, bucket, and updated time are null. Supplying credentials requires both fields; omitting both preserves them. Configuration validates a read/write/delete probe under a reserved random probe prefix before saving. Probe failures leave the previous configuration intact and trigger cleanup of any probe object created. Secrets and bodies are redacted before Activity recording; Activity can record entry IDs, version IDs, size, digest, and operation outcome.
+Credentials are write-only: no API, SDK, CLI, MCP result, web view, Activity payload, exception, or log returns either value. Configuration responses expose only `configured`, `endpoint`, `region`, `bucket`, `credentials_configured`, `updated_at`, and the cleanup status fields below. Before configuration, `configured` and `credentials_configured` are false and endpoint, region, bucket, and updated time are null. Supplying credentials requires both fields; omitting both preserves them.
+
+Configuration validates a read/write/delete probe under the reserved `orbit-document-probes/` prefix with a random key before saving. The probe writes 32 private bytes, reads at most 33 bytes to detect a mismatch, and deletes only its own key.
+
+The Gateway uses cURL for each provider request, allowing at most two seconds to connect and five seconds to complete a request, with no retries or HTTP redirects. Probe responses use a size-limited memory sink, not PHP's streaming HTTP transport: 33 bytes for GET and 64 KiB for PUT and DELETE responses, including reconciliation. The read loop handles short reads, rejects trailing bytes and stalled reads, and shares the GET request's five-second deadline.
+
+A provider operation succeeds only with a 2xx HTTP response. The cURL handler retains Guzzle's HTTP-error middleware; redirects are failures. The Gateway also rejects all other responses outside the 2xx range. A denied or failed DELETE prevents configuration approval and records a reconciliation failure with backoff, even when its response body is small.
+
+Invalid credentials, an unavailable endpoint, a missing bucket, and a failed probe return `project_documents.storage_unavailable`, without provider diagnostics. Probe failures leave the previous configuration intact and trigger cleanup of any probe object created.
+
+#### Recover reserved probes
+
+Before the first PUT, the Gateway commits each fresh probe ID, its exact candidate endpoint, region and bucket, and encrypted candidate credentials to a private journal at `$ORBIT_HOME/project-document-probes/journal.sqlite`. This is a separate SQLite database with full synchronous commits, not a nested transaction on the configuration connection. A journal failure prevents the PUT. Configuration rollback leaves this journal intact. Journal credentials remain write-only in debug output, errors, logs, Activity and responses.
+
+Cleanup records are permanent, including after a successful DELETE or an absent-key observation. Request death or a late PUT cannot erase the record. Immediate cleanup and later reconciliation delete only the exact generated `orbit-document-probes/{UUID}` key named by a tracked record. They never list provider objects, accept arbitrary keys, retarget an old record to a new configuration, or use document-body deletion authorization.
+
+The scheduler attempts `project-documents:probes:reconcile` once per minute. Operators can also run this local command to attempt one batch without waiting for the scheduler. Each run claims at most 20 due records and makes one bounded DELETE per record. Records are ordered by their next attempt time and ID for fair progress. Successful attempts become due after one minute; failures back off exponentially from one minute to at most one hour. Claims expire after ten minutes if the process dies. Records and retry state survive restart; neither success nor missing bytes retires a record.
+
+The cadence is an attempt schedule, not a wall-clock lifetime promise. Eventual deletion requires a running scheduler, a reachable provider, and usable authorized credentials. Revoked credentials or a lost encryption key require operator repair and never justify dropping a record.
+
+The local `project-documents:probes:repair RECORD --access-key-id-file=PATH --secret-access-key-file=PATH` command replaces a tracked record's encrypted credentials from paired mode-0600 UTF-8 files, stripping one optional final newline; it preserves its ID and destination. Inspect only the journal's nonsecret ID, destination, attempt times and error code locally to select a repair record; never print its credential columns. Back up the journal and the Gateway encryption key, and restore both when recovering the Gateway.
+
+API cleanup counts report only work on document bodies. The guard against changing the destination also checks only state for document bodies, not these retained probe records. Probe records keep their own destination and credentials when the configured destination changes.
+
+Reserved probes contain only synthetic random bytes. They are separate from document bodies and their restore-time cleanup gate: probe reconciliation remains authorized to delete its tracked generated keys while document-body cleanup is paused. Restoring the journal must preserve all retained records, including keys currently absent from the bucket. No bucket lifecycle policy, bucket provisioning, or live resource change is required.
+
+Secrets and bodies are redacted before Activity recording; Activity can record entry IDs, version IDs, size, digest, and operation outcome.
 
 While live versions, active upload intents, retained abandoned-upload fences, or pending cleanup exist, endpoint, region, and bucket cannot change; return `project_documents.storage_in_use`. This guard is atomic with upload-intent creation. An absent fenced object still reserves the destination even when `pending_cleanup_count` is zero. Because abandoned fences are permanent, any retained fence prevents destination changes permanently; storage migration and fence retirement are out of scope.
 
-Credentials can rotate after the probe succeeds. There is no disable or delete-configuration operation. Metadata listing, search, show, and archive remain available if S3 is unavailable. Body operations require configuration and reachable storage; permanent removal can enqueue cleanup during an outage.
+Credentials can rotate after the probe succeeds. Supplying both replacement credentials does not decrypt the previous pair, including when the old Gateway encryption key has been lost; a failed probe preserves the previous ciphertext unchanged. There is no disable or delete-configuration operation. Metadata listing, search, show, and archive remain available if S3 is unavailable. Body operations require configuration and reachable storage; permanent removal can enqueue cleanup during an outage.
 
 Live credential injection and verification of private UpCloud read/write/delete are post-CLEAN DevOps work on the existing service. Before CLEAN, implementers and reviewers use isolated fake or disposable S3 fixtures to verify this contract. Neither live credentials nor a live UpCloud probe is required for pre-CLEAN review. Post-CLEAN setup uses the validated configuration operation and records the verified signing region without publishing credentials.
 
