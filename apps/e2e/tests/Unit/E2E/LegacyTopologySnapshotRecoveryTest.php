@@ -713,6 +713,42 @@ it('rejects non-empty lists and mixed map shapes in retained inventory', functio
     }],
 ]);
 
+it('archives a failed recovery that a later promotion superseded and starts fresh', function (bool $promotedAgain): void {
+    [$recovery, $store, , $paths] = legacyRecoveryService();
+    $recovery->start(str_repeat('b', 40), $recovery->authorize());
+    $recovery->record('failed', [
+        'error' => 'Guest convergence script failed.',
+        'next_action' => 'bin/e2e-topology-snapshot recover-legacy --main-sha='.str_repeat('b', 40),
+    ]);
+    $failed = $store->read('topology-snapshot/recovery.json');
+    if ($promotedAgain) {
+        $promoted = $store->read('topology-snapshot/promoted.json');
+        $promoted['id'] = 'later-generation';
+        $store->write('topology-snapshot/promoted.json', $promoted);
+    }
+    $next = new LegacyTopologySnapshotRecovery(
+        new IncusHost(project: 'default', pool: 'orbit-e2e'),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        $store,
+        new OperationId(str_repeat('c', 32)),
+        TopologySnapshotIdentity::primary(),
+    );
+
+    if (! $promotedAgain) {
+        expect(fn () => $next->resume(str_repeat('d', 40)))
+            ->toThrow(RuntimeException::class, 'The retained legacy recovery does not match the requested main SHA');
+
+        return;
+    }
+
+    expect($next->resume(str_repeat('d', 40)))->toBeNull()
+        ->and($store->read('topology-snapshot/recoveries/'.str_repeat('a', 32).'.json'))->toBe($failed)
+        ->and($store->read('topology-snapshot/recovery.json'))->toBeNull();
+})->with([
+    'a later promotion' => [true],
+    'the same promoted generation' => [false],
+]);
+
 it('archives completed evidence before starting a separately authorized recovery', function (): void {
     [$recovery, $store, , $paths] = legacyRecoveryService();
     $inventory = $recovery->authorize();

@@ -112,6 +112,7 @@ final readonly class TopologySnapshotRefresher
                 $resumable = $recovery->resumableBoundaries();
                 $inventory = $recovery->resume($mainSha);
                 if ($inventory === null) {
+                    $resumable = ['instances' => false, 'network' => false, 'manifests' => false];
                     $inventory = $recovery->authorize();
                     $recovery->start($mainSha, $inventory);
                 } elseif ($interruptedConstruction !== null) {
