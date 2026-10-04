@@ -20,7 +20,8 @@ use RuntimeException;
 final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopology
 {
     private const string Script = <<<'BASH'
-        cd -- "$1"
+        # A removed checkout has no harness to run, like a workspace without one.
+        cd -- "$1" 2>/dev/null || { echo orbit-topology-unavailable; exit 0; }
         test -x bin/e2e-topology || { echo orbit-topology-unavailable; exit 0; }
         if [ "$3" = acquire ]; then
             discovery_state() {
