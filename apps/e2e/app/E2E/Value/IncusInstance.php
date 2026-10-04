@@ -25,6 +25,8 @@ final readonly class IncusInstance
         public ?string $network = null,
         ?string $mac = null,
         public array $disks = [],
+        public bool $webPublished = false,
+        public ?string $webSessionToken = null,
     ) {
         foreach ([$remote, $project, $name, $pool] as $identity) {
             if (preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}\z/', $identity) !== 1) {

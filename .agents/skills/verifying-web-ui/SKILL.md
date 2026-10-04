@@ -7,6 +7,12 @@ description: Use when an Orbit web UI change needs phone and desktop screenshots
 
 Verify a web app change with `bin/web-verify`. The command runs `apps/web` in demo mode and drives it with Playwright. Stdout is one JSON object and nothing else. The contract is [Web verification](../../../docs/reference/web-verification.md). [ADR 0162](../../../docs/reference/web-verification.md#why-it-works-this-way) records the decision.
 
+## Check the group's topology
+
+First run `bin/e2e-topology status TASK-<group>`. When the group holds a topology, also check the changed page and actions there with `bin/e2e-topology web TASK-<group>` and the operator's Playwright tooling. Follow [using-incus-topologies](../using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) for startup, browser prerequisites, live reload, isolated actions, and Mac access. The demo screenshots below still prove layout; they do not prove Gateway behavior. Use IDs from the sample fleet for the live check and never test actions against the real Gateway. Stop the web command when finished, leaving the topology held.
+
+If no topology is held, continue with demo screenshots and tests and record that limitation. A reviewer can request one for discovery through the turn receipt; an implementer uses the existing consult. Missing discovery infrastructure is not itself a reason to withhold approval.
+
 ## Capture evidence
 
 Run the commands from the repository root. Use `bin/web-verify routes` to read the map patterns in `apps/web/feature-map.json` before choosing a selector. A mapped control is `[data-testid=VALUE]`, using the `testid` from that map.

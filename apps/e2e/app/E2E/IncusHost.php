@@ -693,6 +693,61 @@ final class IncusHost implements GuestTransport
         $this->run($arguments);
     }
 
+    /** Reserve the one session device before starting its unit. Incus rejects a duplicate atomically. */
+    public function publishWeb(string $instance, int $port, string $token): void
+    {
+        $owned = $this->operationOwnedInstances([$instance], 'web publication');
+        if ($owned[$instance]->webPublished) {
+            throw new RuntimeException('A web session already owns this topology; stop it before starting another.');
+        }
+        $this->assertWebToken($token);
+        if ($port < 1024 || $port > 65535) {
+            throw new RuntimeException('Invalid web loopback port.');
+        }
+        $this->run([
+            'config', 'device', 'add', $this->target($instance), 'orbit-e2e-web', 'proxy',
+            "listen=tcp:127.0.0.1:{$port}", 'connect=tcp:127.0.0.1:5173', 'bind=host',
+            'user.orbit.e2e.web-session='.$token,
+        ]);
+    }
+
+    /** Remove only the reserved session device, after stopping its unit. Guest deletion also removes it. */
+    public function stopWeb(string $instance, ?string $expectedToken = null): void
+    {
+        $resource = $this->instance($instance);
+        if ($resource === null) {
+            return;
+        }
+        $this->assertOwned($resource->metadata, "instance {$instance}");
+        if (! $resource->webPublished) {
+            return;
+        }
+        if ($expectedToken !== null && $resource->webSessionToken !== $expectedToken) {
+            return;
+        }
+        $token = $resource->webSessionToken;
+        if ($token === null) {
+            throw new RuntimeException('The web reservation has no ownership token; retain it for recovery.');
+        }
+        $this->assertWebToken($token);
+        if ($resource->isRunning()) {
+            $stopped = $this->exec($instance, GuestCommand::asOrbitUser([
+                'sudo', 'bash', '/home/orbit/orbit/apps/e2e/resources/web-unit.sh', 'stop', $token,
+            ]));
+            if (! $stopped->successful()) {
+                throw new RuntimeException('Could not confirm the owned topology web unit stopped; retain its reservation for retry.');
+            }
+        }
+        $this->run(['config', 'device', 'remove', $this->target($instance), 'orbit-e2e-web']);
+    }
+
+    private function assertWebToken(string $token): void
+    {
+        if (preg_match('/\\A[0-9a-f]{32}\\z/D', $token) !== 1) {
+            throw new RuntimeException('Invalid web session ownership token.');
+        }
+    }
+
     public function start(string $instance): void
     {
         if ($this->validatedOwnedVm($instance)->isRunning()) {
@@ -1680,6 +1735,8 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException("Incus instance {$name} MAC identity is invalid.");
         }
 
+        $webToken = $this->valueAt($resource, 'devices', 'orbit-e2e-web', 'user.orbit.e2e.web-session');
+
         return new IncusInstance(
             $this->remote,
             $this->project,
@@ -1691,6 +1748,8 @@ final class IncusHost implements GuestTransport
             $network,
             $mac,
             $this->disks($resource, $name),
+            webPublished: is_array($resource['devices'] ?? null) && isset($resource['devices']['orbit-e2e-web']),
+            webSessionToken: is_string($webToken) ? $webToken : null,
         );
     }
 

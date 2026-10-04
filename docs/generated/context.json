@@ -689,34 +689,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0195-request-topologies-for-review-with-an-operator-container.md",
-            "title": "ADR 0195: Request topologies for review with an operator container",
-            "kind": "decision",
-            "components": [
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "apps/web"
-            ],
-            "concepts": [
-                "Access grant",
-                "Deployment",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Role",
-                "Route",
-                "Subtask",
-                "Task",
-                "Turn receipt"
-            ],
-            "governing_adrs": [
-                "0195"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",

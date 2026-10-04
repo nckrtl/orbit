@@ -18,6 +18,7 @@ use App\Console\Commands\Topology\SpawnCommand;
 use App\Console\Commands\Topology\StatusCommand;
 use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
+use App\Console\Commands\Topology\WebCommand;
 use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
@@ -89,6 +90,7 @@ describe('topology commands', function () {
             new ShellCommand()->getName(),
             new ExecCommand()->getName(),
             new SpawnCommand()->getName(),
+            new WebCommand()->getName(),
             new LogsCommand()->getName(),
             new KillCommand()->getName(),
             new SyncCommand()->getName(),
@@ -106,6 +108,7 @@ describe('topology commands', function () {
             'topology:shell',
             'topology:exec',
             'topology:spawn',
+            'topology:web',
             'topology:logs',
             'topology:kill',
             'topology:sync',
@@ -119,6 +122,13 @@ describe('topology commands', function () {
             'topology:status',
             'topology:release',
         ]);
+    });
+
+    it('refuses web without an acquired topology rather than acquiring or using a live profile', function () {
+        commandPrimaryFixture();
+        Process::fake();
+        $this->artisan('topology:web', ['issue' => 'TST-12', '--json' => true])->assertFailed();
+        Process::assertNothingRan();
     });
 
     it('takes the issue and finds the worktree; only acquire names the worktree as an argument', function () {

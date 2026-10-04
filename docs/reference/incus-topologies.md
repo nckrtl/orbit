@@ -5,10 +5,10 @@ covers:
   - bin/{e2e-topology,e2e-clone-bridge,e2e-task-cleanup,e2e-scenarios}
   - apps/e2e/config/e2e.php
   - apps/e2e/app/Console/Commands/{Topology,Scenario}/**
-  - apps/e2e/app/E2E/{TopologyAcquirer,TopologyReleaser,IssueTopologyConstructor,AcquisitionRollback,DiscoveryGuestPreparer,WorktreeSynchronizer,WorktreeLocator,HostCapacity,OrphanNetworkSweep,IncusNetworkLifecycle,EvidenceLog}.php
+  - apps/e2e/app/E2E/{TopologyAcquirer,TopologyReleaser,IssueTopologyConstructor,AcquisitionRollback,DiscoveryGuestPreparer,WorktreeSynchronizer,WorktreeLocator,TopologyWebSession,HostCapacity,OrphanNetworkSweep,IncusNetworkLifecycle,EvidenceLog}.php
   - apps/e2e/app/E2E/{Scenario,SnapshotScenario,ColdTopology}*.php
   - apps/e2e/app/E2E/Value/{Topology,Guest,Evidence,Scenario}*.php
-  - apps/e2e/resources/guest/converge-sample-{app,fixtures}.sh
+  - apps/e2e/resources/{guest/converge-sample-{app,fixtures},web-session,web-unit}.sh
 ---
 
 # Incus topology registry
@@ -120,7 +120,7 @@ Memory limits apply when the harness creates or clones a guest. The three worklo
 
 ### Locks
 
-Every command except `status` and `shell` holds the lock `topology-<ISSUE>` under `<primary>/.e2e/locks/`. Topology creation holds the host lock `topology-create` from network creation until every VM exists.
+Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSUE>` under `<primary>/.e2e/locks/`. Topology creation holds the host lock `topology-create` from network creation until every VM exists. `web` atomically reserves its operator proxy device rather than holding the issue lock throughout the session, so other discovery commands and release can run while the page is open.
 
 ## Commands
 
@@ -144,13 +144,19 @@ Every command except `status` and `shell` holds the lock `topology-<ISSUE>` unde
 
 ### Web session
 
-Run `bin/e2e-topology web TASK-58` in the task workspace only after its topology has been acquired. `web` requires that topology and its configured operator; it never acquires one implicitly. It runs `vp dev` in `/home/orbit/orbit/apps/web` in the operator, with guest TCP port `5173` and strict-port behavior. An occupied guest port fails startup; there is no guest-port fallback.
+Run `bin/e2e-topology web TASK-58` in the task workspace only after its topology has been acquired. `web` requires that topology and its configured operator; it never acquires one implicitly. It installs the mounted web app and annotation package dependencies with `vp install` and runs `vp dev` as the transient `orbit-e2e-web.service` unit in `/home/orbit/orbit/apps/web` in the operator, with guest TCP port `5173` and strict-port behavior. An occupied guest port fails startup; there is no guest-port fallback.
 
 The command publishes the dev server only on beast's IPv4 loopback, `127.0.0.1`, using an available OS-assigned ephemeral host TCP port. After readiness, it prints the actual host port and URL, such as `http://127.0.0.1:P` with the numeric port in place of `P`. There is no fixed host port, DNS name, or Caddy Route. [Web app: Run against a topology](/reference/web-app#run-against-a-topology) gives the Mac SSH forwarding steps.
 
 `web` stays in the foreground and streams dev-server output. Keep it running while using the page. Ctrl-C, command termination, startup failure, and topology release stop that session's dev-server process and remove its loopback publication. Stopping `web` does not release the topology. Only one web session may run per topology. A second invocation fails clearly without disturbing the first.
 
+The proxy device records a random ownership token before startup, and the unit's description carries the same token. Cleanup reads that durable reservation rather than trusting whether an external command returned successfully. It stops only the matching unit and keeps the reservation until the unit is confirmed stopped. A guest lock serializes startup and cleanup; cancellation records prevent a delayed start from reviving a cleaned session. Release can recover a session after its foreground owner crashes, and failed cleanup retains the marker for retry.
+
+The public wrapper transfers its PID through the clone bridge to PHP, so TERM or HUP sent to that PID reaches the foreground owner and waits for cleanup, just as terminal Ctrl-C does.
+
 The session pins the Gateway URL and trusted CA to the selected topology. Inherited endpoint overrides must not redirect Gateway, realtime, or metrics traffic to the live fleet. If the topology, operator, URL, CA, Gateway grant, or WireGuard configuration is absent, startup fails clearly instead of falling back to the caller's live profile or another user's credentials.
+
+Agents drive the page from `operator` at `http://127.0.0.1:5173`, using the Playwright dependency in the mounted `apps/web`. Install Chromium and WebKit with `vp exec playwright install --with-deps webkit chromium` there, then run browser code with `vp exec node --input-type=module -e '...'` through `exec`. The [topology skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) describes checks against the sample fleet, live reload, and isolated actions. In a task workspace clone, run a harness command such as `status` after each edit to mirror it into the mounted bridge. Demo-mode screenshots remain the layout check; they do not replace the live Gateway check when a topology is held.
 
 ### Guest commands
 
@@ -309,6 +315,16 @@ An operator runs this command explicitly. It is not part of `bin/test`, CI, revi
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.
+
+### The reviewer requests discovery
+
+Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
+
+### An isolated operator for web work
+
+The operator is a small roleless container rather than another workload VM. Its own WireGuard identity, Gateway grant, CA, and pinned endpoint keep UI actions on the disposable fleet. Joining the topology tunnel on beast was rejected: beast has a live identity, and topologies reuse address ranges. Running experiments against the real Gateway or falling back to a live profile was rejected because a missing disposable configuration must never turn a safe experiment into a live operation. Every topology pays the small operator cost, and the shared snapshot needs an operator-owned rebuild after deployment.
+
+The web session owns both its systemd unit and its Incus proxy device. The proxy publishes only on host IPv4 loopback; SSH forwarding gives Mac access without a public listener, DNS entry, or Caddy Route. Those alternatives add shared fleet state and exposure. Concurrent groups need OS-assigned host ports rather than a fixed port. The guest port stays fixed and strict so a conflict fails visibly, rather than silently opening the wrong server. Stopping the session removes both resources; release retries cleanup without forgetting ownership on failure.
 
 ### Disposable topologies from one snapshot
 

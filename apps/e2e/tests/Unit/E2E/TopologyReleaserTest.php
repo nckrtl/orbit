@@ -50,6 +50,7 @@ function fakeReleaseHost(
     ?array $presentNames = null,
     ?string $failCommandContaining = null,
     ?string $foreignInstance = null,
+    bool $webPublished = false,
 ): void {
     $present = $presentNames ?? array_map($target->instance(...), $target->recipe->nodeKeys());
     Process::fake(function (PendingProcess $process) use (
@@ -60,6 +61,7 @@ function fakeReleaseHost(
         &$network,
         $failCommandContaining,
         $foreignInstance,
+        &$webPublished,
     ) {
         $command = $process->command;
         assert(is_array($command));
@@ -110,7 +112,7 @@ function fakeReleaseHost(
                         'status' => 'Running',
                         'status_code' => 103,
                         'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', ...$metadata, ...($name === $foreignInstance ? ['user.orbit.e2e.attempt' => str_repeat('f', 32)] : [])],
-                        'devices' => ['root' => ['pool' => 'default'], 'eth0' => ['network' => $target->network()]],
+                        'devices' => ['root' => ['pool' => 'default'], 'eth0' => ['network' => $target->network()], ...($webPublished && str_ends_with($name, '-operator') ? ['orbit-e2e-web' => ['type' => 'proxy', 'user.orbit.e2e.web-session' => str_repeat('a', 32)]] : [])],
                     ],
                     $wanted,
                 )),
@@ -286,6 +288,31 @@ describe('TopologyReleaser', function () {
         Facade::clearResolvedInstances();
         Facade::setFacadeApplication($container);
     });
+
+    it('stops the web unit and removes publication before deleting guests, and retains the lease on cleanup failure', function (bool $fail) {
+        $worktree = temporaryPath('orbit-release-web-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state = IssueState::forWorktree('AUX-99', $worktree);
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)), null);
+        $target = TopologyTarget::feature('AUX-99', $attempt);
+        $commands = [];
+        fakeReleaseHost($target, ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => $attempt->value], $commands,
+            failCommandContaining: $fail ? 'device remove' : null, webPublished: true);
+        $release = fn () => releaserForTest($paths)->release(new TopologyRequest('AUX-99', $worktree));
+        if ($fail) {
+            expect($release)->toThrow(RuntimeException::class, 'injected cleanup failure');
+            expect($state->hasAttempt())->toBeTrue();
+            expect(implode("\n", $commands))->not->toContain('delete local:orbit-e2e');
+        } else {
+            expect($release()['state'])->toBe('released');
+            expect($state->hasAttempt())->toBeFalse();
+            $text = implode("\n", $commands);
+            expect($text)->toContain('web-unit.sh stop '.str_repeat('a', 32), 'device remove');
+            expect(strpos($text, 'device remove'))->toBeLessThan(strpos($text, 'delete local:orbit-e2e'));
+        }
+    })->with([false, true]);
 
     it('retains successful captured proof unless replacement or abandonment is explicit', function (
         ProofReleaseReason $reason,

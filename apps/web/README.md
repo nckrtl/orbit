@@ -15,6 +15,12 @@ The Gateway names the Nodes. Node metrics come from the Metrics role's Grafana: 
 
 The page acts on the real fleet. Process, schedule, database, and firewall actions send the same requests the matching commands send.
 
+## Run it against a disposable topology
+
+From the task workspace, run `bin/e2e-topology web TASK-<group>` after the group's topology is acquired. The foreground command installs dependencies and runs `vp dev` as an owned unit inside the operator, on strict guest port 5173. It pins the Gateway URL and CA to that topology and discards inherited endpoint overrides. Worktree edits reload live; in a task clone, run a harness command such as `status` to mirror each edit into the mounted bridge.
+
+The command prints an assigned beast-loopback URL and an SSH forwarding command. On the Mac, run `ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:5173:127.0.0.1:P beast`, replacing `P` with the printed host port, and open `http://127.0.0.1:5173`. Use another free Mac-local port if 5173 is occupied. Keep both commands running. Ctrl-C stops the web unit and publication; stopping web does not release the topology. There is no DNS route. Agents can drive the page from the operator with this app's Playwright dependency at `http://127.0.0.1:5173`; see `docs/reference/incus-topologies.md` and the using-incus-topologies skill.
+
 ## Run it without a Gateway
 
 ```bash

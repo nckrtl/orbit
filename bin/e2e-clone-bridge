@@ -244,15 +244,19 @@ def fail(message, arguments):
 
 
 def main(argv):
-    if len(argv) >= 3 and argv[0] == 'route':
+    if len(argv) >= 3 and argv[0] in ('route', 'dispatch'):
         root, action, arguments = argv[1], argv[2], argv[3:]
         try:
             command = route(root, action, arguments)
         except BridgeFailure as exception:
             return fail(str(exception), arguments)
         if command is None:
-            return NOT_BRIDGED
-        os.execv(command[0], command)
+            if argv[0] == 'route':
+                return NOT_BRIDGED
+            # The public wrapper execs dispatch. Keep that PID for the foreground
+            # PHP owner even when routing runs in place or bridging is disabled.
+            command = ['php', str(Path(root).resolve() / 'apps/e2e/artisan'), f'topology:{action}', *arguments]
+        os.execvp(command[0], command)
     if len(argv) >= 2 and argv[0] == 'register':
         arguments = argv[2:]
         unknown = [argument for argument in arguments if argument not in ('--force', '--if-primary', '--json')]
@@ -271,7 +275,7 @@ def main(argv):
         elif '--if-primary' not in arguments:
             print(f'Registered {registered_primary(key)} for task workspace clones: {registry_path(key)}')
         return 0
-    print('usage: bin/e2e-clone-bridge route ROOT ACTION [ARGS...] | register ROOT [--force] [--if-primary] [--json]', file=sys.stderr)
+    print('usage: bin/e2e-clone-bridge route|dispatch ROOT ACTION [ARGS...] | register ROOT [--force] [--if-primary] [--json]', file=sys.stderr)
     return 64
 
 
