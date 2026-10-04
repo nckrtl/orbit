@@ -442,19 +442,21 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 test ! -L "$common_directory/config"
                 test "$(stat -c '%U' "$common_directory/config")" = "$managed_user"
                 test ! -L "$common_directory/hooks"
+                # A worker command can leave a private directory, such as a check receipt, that the managed user cannot
+                # enter. The worker owns everything below it, so the grants skip it instead of failing the whole prepare.
                 # setfacl writes access before defaults in a combined call. Finish inheritance first.
                 default_grant="d:u:$worker_user:rwX,d:u:$managed_user:rwX"
-                find -P "$checkout" -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} +
+                find -P "$checkout" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} + \)
                 access_grant="u:$worker_user:rwX,u:$managed_user:rwX"
                 if [ -z "$(find -P "$checkout" ! -user "$managed_user" -print -quit)" ]; then
                     setfacl -R -P -m "$access_grant" -- "$checkout"
                 else
                     # Worker-owned files already inherit access; only their owner can change their ACL.
-                    find -P "$checkout" -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} +
+                    find -P "$checkout" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} + \)
                 fi
                 # Linked worktrees need their own administration and the shared refs/objects.
-                find -P "$common_directory" -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} +
-                find -P "$common_directory" -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} +
+                find -P "$common_directory" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} + \)
+                find -P "$common_directory" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} + \)
                 setfacl -m "u:$worker_user:r--" -- "$common_directory/config"
                 if [ -d "$common_directory/hooks" ]; then
                     find -P "$common_directory/hooks" -user "$managed_user" -type d -exec setfacl -m "u:$worker_user:r-X,d:u:$worker_user:r-X" -- {} +
