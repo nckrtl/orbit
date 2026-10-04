@@ -51,6 +51,15 @@ Replace `CONTAINER_FINGERPRINT` with the full fingerprint after confirming that 
 
 The harness never fetches this image. It requires both local aliases to exist with their declared types. Cold construction records and rechecks both fingerprints under the creation lock before creating guests. The snapshot manifest records both aliases and fingerprints; rolling refresh refuses changed image provenance and requires an ownership-checked cold rebuild. Acquisition clones the operator's pinned snapshot, not a newly pulled image. A missing, wrong-type, or changed required image fails closed.
 
+The operator container shares beast's kernel, so beast's own AppArmor profile for `wg-quick` also confines `wg-quick` inside it. In an unprivileged container, the container's files belong to shifted IDs, and that profile then refuses to load `/usr/bin/bash` for the `wg-quick` script, which crashes. Node provisioning fails at step `wireguard-peer-install` with `vpn.peer_config_failed`. Add one rule to beast's local override and reload the profile:
+
+```bash
+printf '\n  file mr /usr/bin/bash,\n' | sudo tee -a /etc/apparmor.d/local/wg-quick
+sudo apparmor_parser -r /etc/apparmor.d/wg-quick
+```
+
+The VMs are unaffected, because each runs its own kernel and AppArmor policy.
+
 After verifying the base, use the ownership-checked rebuild or recovery commands below for the actual shared snapshot state. Older three-guest generations do not satisfy the new contract.
 
 ## Prepared fingerprint
