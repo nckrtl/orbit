@@ -177,7 +177,7 @@ it('posts a direction request to OpsBot and records the headers and body', funct
 
     $recorded = Http::recorded(fn (Request $request): bool => $request->url() === 'https://opsbot.example.test/hooks/direction');
     expect($recorded)->toHaveCount(1);
-    [$request] = $recorded[0];
+    [$request] = $recorded->first();
     expect($request->hasHeader('Content-Type', 'application/json'))->toBeTrue()
         ->and($request->hasHeader('Authorization', 'Bearer opsbot-secret'))->toBeTrue()
         ->and($request->hasHeader('X-Automation-Key', 'opsbot-secret'))->toBeTrue()
