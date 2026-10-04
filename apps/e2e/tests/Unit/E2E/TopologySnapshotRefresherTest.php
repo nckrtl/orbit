@@ -46,6 +46,7 @@ function topologySnapshotRefresherForPowerTests(
     ?OperationId $operation = null,
     int $refreshLockTimeoutSeconds = 3600,
     ?TopologySnapshotReplacementStore $replacements = null,
+    bool $keepFailedColdBuild = false,
 ): TopologySnapshotRefresher {
     $root = $repositoryRoot ?? dirname(__DIR__, 4);
     $operation ??= new OperationId(str_repeat('a', 32));
@@ -90,6 +91,7 @@ function topologySnapshotRefresherForPowerTests(
         new TopologySnapshotAvailability($host, TopologySnapshotIdentity::primary()),
         $refreshLockTimeoutSeconds,
         $replacements,
+        $keepFailedColdBuild,
     );
 }
 
@@ -1875,4 +1877,19 @@ describe('TopologySnapshotRefresher contracts', function () {
             removeRefreshFixture($fixture);
         }
     });
+
+    it('keeps a failed cold build for diagnosis only when the operator opts in', function (bool $keep): void {
+        $commands = [];
+        Process::fake(function (PendingProcess $process) use (&$commands): ProcessResult {
+            $commands[] = $process->command;
+
+            return Process::result('[]');
+        });
+        $refresher = topologySnapshotRefresherForPowerTests(new IncusHost(pool: 'orbit-e2e'), keepFailedColdBuild: $keep);
+
+        $rollback = new ReflectionMethod($refresher, 'rollback');
+        $rollback->invoke($refresher, null);
+
+        expect($commands === [])->toBe($keep);
+    })->with(['opted in' => [true], 'default' => [false]]);
 });

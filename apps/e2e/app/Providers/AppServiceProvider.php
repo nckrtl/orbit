@@ -288,6 +288,7 @@ final class AppServiceProvider extends ServiceProvider
             $app->make(TopologySnapshotIdentity::class),
             $app->make(TopologySnapshotAvailability::class),
             replacements: $app->make(TopologySnapshotReplacementStore::class),
+            keepFailedColdBuild: config('e2e.incus.keep_failed_cold_build') === true,
         ));
         $this->app->singleton(TopologySnapshotAvailability::class, fn (Application $app): TopologySnapshotAvailability => new TopologySnapshotAvailability(
             $app->make(IncusHost::class),
