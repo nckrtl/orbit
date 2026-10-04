@@ -52,7 +52,7 @@ bin/bug-repro --command COMMAND --paths PATH [--paths PATH ...] [--directory DIR
 | `--paths` | required, repeatable | Workspace-relative files the task engine already requires for a base run. |
 | `--directory` | `.` | Directory relative to the extracted tree. |
 | `--repository` | the current checkout | Git repository that holds main and the overlay files. |
-| `--main` | `origin/main`, then `main` | The ref that supplies the main SHA. |
+| `--main` | `origin/main`, then `main` | Pin that ref as the main SHA and skip the origin freshness check. |
 | `--timeout` | `600` | Seconds before the base run stops, matching the task check. |
 | `--dry-run` | off | Print the main SHA, command, directory, and paths. Do not extract or run. |
 
@@ -61,6 +61,8 @@ bin/bug-repro --command "vendor/bin/pest tests/Feature/HomeScreenTest.php --filt
 bin/bug-repro --command "bin/docs-impact --gate" --paths bin/docs-impact --dry-run
 ```
 
+When `--main` is omitted, the command names current main only after the local `origin/main` or `main` SHA matches `git ls-remote origin main`. It does not fetch. A cached ref that differs is `main_stale`. Fetch origin main, then run again. `--main` pins a ref and skips that check.
+
 The command copies installed `vendor` and `node_modules` directories into the extracted tree, then copies each path from the working tree, including an uncommitted file. It registers no Git worktree and does not change the checkout. A `--paths` value that is absolute, that leaves the tree, that is a symlink, or that is not a file fails before the run.
 
 When the command exits nonzero, stdout includes `main_sha`, `command`, `exit_code`, and `paths`. When it exits `0`, the verdict is `not_reproduced`. The next step is to stop: the failure is not on current main, so do not file a task.
@@ -68,6 +70,7 @@ When the command exits nonzero, stdout includes `main_sha`, `command`, `exit_cod
 | `error` | Next step |
 | --- | --- |
 | `usage` | Pass `--command` and at least one `--paths`. |
+| `main_stale` | Fetch origin main, then run again. Do not name a cached main SHA. |
 | `main_unavailable` | Fetch `origin/main` or pass `--main`. |
 | `path_invalid` | Fix the named path so it is a regular workspace-relative file. |
 | `not_reproduced` | Do not file a task. The command exited 0 on current main. |
@@ -151,12 +154,14 @@ bin/deploy-verify --sha SHA [--up-url URL] [--status-url URL] [--dry-run] [--fix
 
 `--dry-run` exits `0` and does not claim a live pass. `--fixture` evaluates the recorded `/up` body, gateway status, and `APP_VERSION` `2f214816deae` marker shape from 2026-10-01. A fixture pass is not a live pass. The JSON says `source` is `fixture` or `live`.
 
+Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail certificate verification. That file is the Gateway profile `ca_path` after [`orbit gateway:trust`](/cli/gateway#orbit-gatewaytrust). An unreachable result from this machine is not a reason to change the live checks.
+
 `instance:rollback` is not part of this command. A rollback selects one retained production release and does not undo deploy steps, environment writes, or database files. See [Roll back](/reference/deployments#roll-back).
 
 | `error` | Next step |
 | --- | --- |
 | `usage` | Pass `--sha` with the merged commit. |
-| `unreachable` | Production is not reachable from this machine. Use `--dry-run` or `--fixture`. Do not invent a live pass. |
+| `unreachable` | Production is not reachable from this machine. Use `--dry-run` or `--fixture`. Do not invent a live pass. When the failure is a certificate problem, set `SSL_CERT_FILE` to Orbit's root CA, then run again. |
 | `version_mismatch` | The live `APP_VERSION` is not this SHA. Do not treat the deploy as verified. |
 | `up_failed` | `/up` is not up. Do not treat the deploy as verified. |
 | `status_failed` | Gateway status is not `ok`. Do not treat the deploy as verified. |

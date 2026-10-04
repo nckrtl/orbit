@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import ssl
 import sys
 import urllib.error
 import urllib.request
@@ -17,6 +18,15 @@ from pathlib import Path
 
 DEFAULT_UP = 'https://gateway.orbit/up'
 DEFAULT_STATUS = 'https://gateway.orbit/api/v1/gateway/status'
+UNREACHABLE_NEXT = (
+    'Production is not reachable from this machine. Use --dry-run or --fixture. '
+    'Do not invent a live pass.'
+)
+CERTIFICATE_NEXT = (
+    'HTTPS failed certificate verification. Set SSL_CERT_FILE to Orbit\'s root CA '
+    '(the Gateway profile ca_path after orbit gateway:trust), then run again. '
+    'Do not invent a live pass.'
+)
 
 
 class ProofParser(argparse.ArgumentParser):
@@ -56,6 +66,34 @@ def decode_body(raw):
         return {'text': text}
 
 
+def certificate_problem(error):
+    current = error
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return True
+        text = str(current).lower()
+        if isinstance(current, ssl.SSLError) and 'certificate' in text:
+            return True
+        if any(token in text for token in (
+            'certificate verify failed',
+            'certificate_verify_failed',
+            'unable to get local issuer certificate',
+            'self signed certificate',
+            'self-signed certificate',
+        )):
+            return True
+        current = current.__cause__ or getattr(current, '__context__', None)
+    return False
+
+
+def unreachable_next(error):
+    if certificate_problem(error):
+        return CERTIFICATE_NEXT
+    return UNREACHABLE_NEXT
+
+
 def fetch(url, timeout=15):
     request = urllib.request.Request(url, method='GET', headers={'Accept': 'application/json'})
     try:
@@ -71,7 +109,7 @@ def fetch(url, timeout=15):
             'status_code': error.code,
             'body': decode_body(error.read() if error.fp else b''),
         }
-    except (urllib.error.URLError, TimeoutError, OSError) as error:
+    except (urllib.error.URLError, TimeoutError, OSError, ssl.SSLError) as error:
         raise RuntimeError(f'{url} is not reachable: {error}') from error
 
 
@@ -172,6 +210,11 @@ The checks match ops verified-merges: tip APP_VERSION, /up, and gateway status.
 --dry-run prints the URLs and the expected SHA and does not call them.
 --fixture evaluates a recorded response set. A fixture pass is not a live pass.
 
+Python HTTPS calls need SSL_CERT_FILE set to Orbit's root CA, or they fail
+certificate verification. That file is the Gateway profile ca_path after
+orbit gateway:trust. An unreachable result from this machine is not a
+reason to change the live checks.
+
 Examples:
   bin/deploy-verify --sha 2f214816deaed1d961f4a64c7f40762088c64226 --dry-run
   bin/deploy-verify --sha 2f214816deae --fixture apps/e2e/tests/Fixtures/delivery-line/verified-merge-2026-10-01.json
@@ -231,7 +274,7 @@ def main(argv=None):
             'passed': False,
             'error': 'unreachable',
             'message': str(error),
-            'next': 'Production is not reachable from this machine. Use --dry-run or --fixture. Do not invent a live pass.',
+            'next': unreachable_next(error),
         })
     return evaluate(args.sha, args.up_url, args.status_url, up, status, 'live')
 
@@ -244,5 +287,5 @@ if __name__ == '__main__':
             'passed': False,
             'error': 'unreachable',
             'message': str(error),
-            'next': 'Production is not reachable from this machine. Use --dry-run or --fixture. Do not invent a live pass.',
+            'next': unreachable_next(error),
         }))

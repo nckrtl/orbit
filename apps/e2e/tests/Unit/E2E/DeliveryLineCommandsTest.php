@@ -62,6 +62,66 @@ function deliveryLineFixture(string $name): string
     return dirname(__DIR__, 2).'/Fixtures/delivery-line/'.$name;
 }
 
+/** @return array{root: string, stale: string, current: string} */
+function deliveryLineStaleOriginRepo(): array
+{
+    $remote = temporaryPath('orbit-delivery-remote-', 6);
+    mkdir($remote, 0o700, true);
+    file_put_contents($remote.'/repro.sh', "#!/bin/sh\nexit 1\n");
+    chmod($remote.'/repro.sh', 0o700);
+    $git = static function (string $root, string ...$arguments): string {
+        $process = new Process(['git', '-C', $root, ...$arguments]);
+        $process->mustRun();
+
+        return trim($process->getOutput());
+    };
+    $git($remote, 'init', '-b', 'main');
+    $git($remote, 'config', 'user.name', 'Orbit');
+    $git($remote, 'config', 'user.email', 'orbit@example.test');
+    $git($remote, 'add', 'repro.sh');
+    $git($remote, 'commit', '-m', 'main');
+    $stale = $git($remote, 'rev-parse', 'HEAD');
+
+    $clone = temporaryPath('orbit-delivery-clone-', 6);
+    (new Process(['git', 'clone', $remote, $clone]))->mustRun();
+
+    file_put_contents($remote.'/repro.sh', "#!/bin/sh\nexit 2\n");
+    $git($remote, 'add', 'repro.sh');
+    $git($remote, 'commit', '-m', 'newer main');
+
+    return [
+        'root' => $clone,
+        'stale' => $stale,
+        'current' => $git($remote, 'rev-parse', 'HEAD'),
+    ];
+}
+
+/** @return array{root: string, main: string} */
+function deliveryLineFreshOriginRepo(): array
+{
+    $remote = temporaryPath('orbit-delivery-fresh-remote-', 6);
+    mkdir($remote, 0o700, true);
+    file_put_contents($remote.'/repro.sh', "#!/bin/sh\nexit 1\n");
+    chmod($remote.'/repro.sh', 0o700);
+    $git = static function (string $root, string ...$arguments): string {
+        $process = new Process(['git', '-C', $root, ...$arguments]);
+        $process->mustRun();
+
+        return trim($process->getOutput());
+    };
+    $git($remote, 'init', '-b', 'main');
+    $git($remote, 'config', 'user.name', 'Orbit');
+    $git($remote, 'config', 'user.email', 'orbit@example.test');
+    $git($remote, 'add', 'repro.sh');
+    $git($remote, 'commit', '-m', 'main');
+    $main = $git($remote, 'rev-parse', 'HEAD');
+
+    $clone = temporaryPath('orbit-delivery-fresh-clone-', 6);
+    (new Process(['git', 'clone', $remote, $clone]))->mustRun();
+
+    return ['root' => $clone, 'main' => $main];
+}
+
 describe('delivery-line proof commands', function (): void {
     it('prints rich help for each command', function (string $script): void {
         $result = deliveryLineRun($script, ['--help']);
@@ -70,12 +130,50 @@ describe('delivery-line proof commands', function (): void {
             ->and($result['stdout'])->toContain('usage:')
             ->and($result['stdout'])->toContain('Print one JSON object')
             ->and($result['stdout'])->not->toContain("\e[");
+        if ($script === 'bug-repro') {
+            expect($result['stdout'])->toContain('git ls-remote origin main')
+                ->and($result['stdout'])->toContain('main_stale');
+        }
+        if ($script === 'deploy-verify') {
+            expect($result['stdout'])->toContain('SSL_CERT_FILE')
+                ->and($result['stdout'])->toContain("Orbit's root CA");
+        }
     })->with([
         'bug-repro' => ['bug-repro'],
         'task-group-check' => ['task-group-check'],
         'pr-head-check' => ['pr-head-check'],
         'deploy-verify' => ['deploy-verify'],
     ]);
+
+    it('refuses to name a cached origin/main that does not match git ls-remote', function (): void {
+        $repo = deliveryLineStaleOriginRepo();
+        $result = deliveryLineRun('bug-repro', [
+            '--repository', $repo['root'],
+            '--command', './repro.sh',
+            '--paths', 'repro.sh',
+            '--dry-run',
+        ], $repo['root']);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json']['error'] ?? null)->toBe('main_stale')
+            ->and($result['json']['local_sha'] ?? null)->toBe($repo['stale'])
+            ->and($result['json']['origin_sha'] ?? null)->toBe($repo['current'])
+            ->and($result['stderr'])->toContain('Fetch origin main');
+    });
+
+    it('names main when the local origin/main SHA matches git ls-remote', function (): void {
+        $repo = deliveryLineFreshOriginRepo();
+        $result = deliveryLineRun('bug-repro', [
+            '--repository', $repo['root'],
+            '--command', './repro.sh',
+            '--paths', 'repro.sh',
+            '--dry-run',
+        ], $repo['root']);
+
+        expect($result['exit'])->toBe(0)
+            ->and($result['json']['dry_run'] ?? null)->toBeTrue()
+            ->and($result['json']['main_sha'] ?? null)->toBe($repo['main']);
+    });
 
     it('reproduces a command that exits nonzero on current main', function (): void {
         $repo = deliveryLineRepo();
@@ -252,5 +350,73 @@ describe('delivery-line proof commands', function (): void {
             ])
             ->and(data_get($result['json'], 'up.ok'))->toBeTrue()
             ->and(data_get($result['json'], 'gateway_status.ok'))->toBeTrue();
+    });
+
+    it('names SSL_CERT_FILE when a live call fails certificate verification', function (): void {
+        $directory = temporaryPath('orbit-delivery-tls-', 6);
+        mkdir($directory, 0o700, true);
+        $key = $directory.'/key.pem';
+        $cert = $directory.'/cert.pem';
+        (new Process([
+            'openssl', 'req', '-x509', '-newkey', 'rsa:2048',
+            '-keyout', $key, '-out', $cert, '-days', '1', '-nodes',
+            '-subj', '/CN=127.0.0.1',
+        ]))->mustRun();
+
+        $server = new Process([
+            'python3', '-c',
+            <<<'PY'
+import http.server
+import ssl
+import sys
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        self.wfile.write(b'{"status":"ok"}')
+
+    def log_message(self, *_args):
+        return
+
+httpd = http.server.HTTPServer(('127.0.0.1', 0), Handler)
+context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+context.load_cert_chain(sys.argv[1], sys.argv[2])
+httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+print(httpd.server_port, flush=True)
+httpd.handle_request()
+PY
+            , $cert, $key,
+        ]);
+        $server->start();
+        $port = null;
+        $deadline = microtime(true) + 5;
+        while ($port === null && microtime(true) < $deadline) {
+            $output = trim($server->getOutput());
+            if ($output !== '') {
+                $port = $output;
+            }
+            usleep(20_000);
+        }
+        expect($port)->not->toBeNull();
+
+        $url = 'https://127.0.0.1:'.$port.'/up';
+        $process = new Process([
+            dirname(__DIR__, 5).'/bin/deploy-verify',
+            '--sha', '2f214816deae',
+            '--up-url', $url,
+            '--status-url', $url,
+        ], dirname(__DIR__, 5), ['SSL_CERT_FILE' => '']);
+        $process->setTimeout(15);
+        $process->run();
+        $server->stop();
+
+        $decoded = json_decode($process->getOutput(), true);
+        expect($process->getExitCode())->toBe(1)
+            ->and(is_array($decoded))->toBeTrue()
+            ->and($decoded['error'] ?? null)->toBe('unreachable')
+            ->and($decoded['next'] ?? '')->toContain('SSL_CERT_FILE')
+            ->and($process->getErrorOutput())->toContain('SSL_CERT_FILE');
     });
 });

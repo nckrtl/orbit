@@ -21,6 +21,15 @@ BASES = ('origin/main', 'main')
 DEFAULT_TIMEOUT = 600
 
 
+class MainStale(RuntimeError):
+    def __init__(self, local_sha, origin_sha):
+        self.local_sha = local_sha
+        self.origin_sha = origin_sha
+        super().__init__(
+            f'Local main {local_sha} does not match origin main {origin_sha}.'
+        )
+
+
 class ProofParser(argparse.ArgumentParser):
     def error(self, message):
         self.print_usage(sys.stderr)
@@ -52,17 +61,39 @@ def repository_root(path):
     return Path(root)
 
 
+def origin_main_sha(root):
+    result = subprocess.run(
+        ['git', '-C', str(root), 'ls-remote', 'origin', 'refs/heads/main'],
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'git ls-remote origin main failed')
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] in ('refs/heads/main', 'main'):
+            return parts[0]
+    raise RuntimeError('origin main is not advertised.')
+
+
 def resolve_main(root, ref):
     if ref:
         sha = git(root, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}', check=False)
         if sha:
             return sha
         raise RuntimeError(f'The --main ref {ref} is not a commit.')
+    local_sha = None
     for candidate in BASES:
         sha = git(root, 'rev-parse', '--verify', '--quiet', f'{candidate}^{{commit}}', check=False)
         if sha:
-            return sha
-    raise RuntimeError('Current main could not be resolved.')
+            local_sha = sha
+            break
+    if not local_sha:
+        raise RuntimeError('Current main could not be resolved.')
+    remote_sha = origin_main_sha(root)
+    if local_sha.lower() != remote_sha.lower():
+        raise MainStale(local_sha, remote_sha)
+    return local_sha
 
 
 def path_invalid(relative):
@@ -160,6 +191,11 @@ def build_parser():
 The task engine already requires paths for a fails_on_base command. This command
 uses the same overlay: current main, plus those working-tree files.
 
+When --main is omitted, the command names current main only after the local
+origin/main or main SHA matches `git ls-remote origin main`. It does not fetch.
+A cached ref that differs is main_stale. Fetch origin main, then run again.
+--main pins a ref and skips that check.
+
 Pass JSON includes main_sha, command, exit_code, and paths.
 A zero exit is not_reproduced. Do not file a task.
 
@@ -174,7 +210,7 @@ Examples:
                         help='Workspace-relative overlay file. Repeat for each path.')
     parser.add_argument('--directory', default='.', help='Directory relative to the extracted tree. Default: .')
     parser.add_argument('--repository', default='.', help='Git repository that holds main and the overlay files.')
-    parser.add_argument('--main', help='Ref that supplies the main SHA. Default: origin/main, then main.')
+    parser.add_argument('--main', help='Pin this ref as the main SHA and skip the origin freshness check. Default: origin/main, then main, after it matches git ls-remote origin main.')
     parser.add_argument('--timeout', type=int, default=DEFAULT_TIMEOUT,
                         help=f'Seconds before the base run stops. Default: {DEFAULT_TIMEOUT}.')
     parser.add_argument('--dry-run', action='store_true',
@@ -203,6 +239,15 @@ def main(argv=None):
         }, 2)
     try:
         main_sha = resolve_main(root, args.main)
+    except MainStale as error:
+        return fail({
+            'passed': False,
+            'error': 'main_stale',
+            'message': str(error),
+            'local_sha': error.local_sha,
+            'origin_sha': error.origin_sha,
+            'next': 'Fetch origin main, then run again. Do not name a cached main SHA.',
+        })
     except RuntimeError as error:
         return fail({
             'passed': False,
