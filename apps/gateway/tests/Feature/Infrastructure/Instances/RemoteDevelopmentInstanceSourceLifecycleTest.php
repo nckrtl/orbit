@@ -502,6 +502,38 @@ describe('TaskWorkspaceAcl', function (): void {
         expect(orb76_run(['getfacl', '-cp', $this->appsRoot])->stdout)->not->toContain('nobody');
     });
 
+    it('grants access around a private directory the worker created in the Git directory', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-private');
+        $checkout = $instance->checkout_path;
+
+        // A check run by the worker keeps its receipt in a mkdtemp directory. Mode 0700 narrows the ACL mask, which
+        // closes the directory to the managed user.
+        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'python3', '-c', <<<'PYTHON'
+            import os, sys, tempfile
+            reports = os.path.join(sys.argv[1], '.git/orbit-checks/head')
+            os.makedirs(reports)
+            private = os.path.join(reports, 'review-private')
+            os.rename(tempfile.mkdtemp(prefix='review-', dir=reports), private)
+            with open(os.path.join(private, 'result.json'), 'w') as receipt:
+                receipt.write('receipt\n')
+            PYTHON, $checkout]);
+        $private = $checkout.'/.git/orbit-checks/head/review-private';
+
+        try {
+            clearstatcache();
+            expect(is_executable($private))->toBeFalse();
+
+            $this->source->prepare($instance, true);
+            $this->source->inspectPrepared($instance);
+
+            expect(orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'cat', $private.'/result.json'])->stdout)->toBe("receipt\n")
+                ->and(orb76_run(['getfacl', '-cp', $checkout.'/.git/orbit'])->stdout)->toContain('user:nobody:rwx');
+        } finally {
+            orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'rm', '-rf', '--', $private]);
+        }
+    });
+
     it('removes a checkout containing worker-owned directories and files', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-removal-acl');

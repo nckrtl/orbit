@@ -590,6 +590,8 @@ The checkout directory stays owned by the Node's managed user and group. `ORBIT_
 
 Default ACLs are installed before worker write access, so a partial grant cannot expose a directory without inheritance. Files the worker creates inherit the managed user's access, so removal can delete them without changing the checkout owner. Inspection repairs ACLs on entries the managed user owns. Entries the worker owns keep the ACLs they inherited. The grant does not cover either user's home.
 
+A worker command can leave a directory the managed user cannot enter, such as a check receipt that Python's `mkdtemp` created with mode `0700`. Prepare and inspect skip such a directory instead of failing. The worker owns everything below it, so no managed-user entry misses its grant. Linked worktrees share one Git common directory, so one such directory would otherwise stop every new workspace.
+
 `.git/orbit` is mode `0775`. `.git/config` and `.git/hooks` are read-only for the worker, but the writable checkout root means that protection is not a trust boundary. Git creates `index.lock` in `.git`. Git 2.55 also refuses the tree because the owner is the managed user. Prepare adds the absolute path to `safe.directory` in `orbit-worker`'s global Git config. [Checkout access](/reference/instance-setup#checkout-access) states both. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the account and ACL choices.
 
 | Project setting | New workspace |
