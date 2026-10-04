@@ -84,6 +84,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Subtask",
@@ -581,6 +582,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Schedule",
@@ -716,6 +718,36 @@
             ]
         },
         {
+            "path": "docs/decisions/0197-native-project-documents-with-private-s3-storage.md",
+            "title": "Native Project Documents with private S3 storage",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0197"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -747,6 +779,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Schedule",
@@ -760,7 +793,8 @@
                 "0182",
                 "0190",
                 "0191",
-                "0196"
+                "0196",
+                "0197"
             ]
         },
         {
@@ -816,6 +850,7 @@
             "concepts": [
                 "Extension",
                 "Project",
+                "Project Documents",
                 "Task"
             ],
             "governing_adrs": []
@@ -1797,6 +1832,26 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/project-documents.md",
+            "title": "Project Documents",
+            "kind": "reference",
+            "components": [],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Project Documents",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0197"
+            ]
+        },
+        {
             "path": "docs/reference/projects.md",
             "title": "Projects",
             "kind": "reference",
@@ -1813,6 +1868,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Route",
                 "Schedule",
                 "Task",

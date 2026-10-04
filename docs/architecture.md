@@ -58,6 +58,6 @@ A role refuses a Node that holds a conflicting role. For example, the `gateway` 
 
 ## Data
 
-The Gateway's SQLite database holds all Orbit records. Applications keep their own data in their own databases. Orbit stores connection records for them.
+The Gateway's SQLite database holds all Orbit records. [Project Documents](/reference/project-documents) keep hierarchy, versions, and encrypted storage credentials there, but their file bodies live in a dedicated private UpCloud S3-compatible bucket. Only the Gateway accesses that bucket. Applications keep their own data in their own databases. Orbit stores connection records for them.
 
 See [Concepts](/concepts) for the terms, and each domain page for its details.

@@ -70,6 +70,7 @@
             "pages": [
               "domains/applications",
               "reference/projects",
+              "reference/project-documents",
               "reference/routes",
               "reference/environment-variables",
               "reference/database-connections",
@@ -580,7 +581,8 @@
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
-              "decisions/0196-derive-application-directory-from-web-root"
+              "decisions/0196-derive-application-directory-from-web-root",
+              "decisions/0197-native-project-documents-with-private-s3-storage"
             ]
           }
         ]
