@@ -88,7 +88,7 @@ Each test process copies `apps/gateway` to the host with rsync once and reuses t
 
 Add regression tests for behavior changes and their important failure modes. Confirm that the tests that exercise the new behavior ran. Temporary Git repositories in DocsImpact tests disable automatic garbage collection and maintenance before the first commit, so background Git processes cannot write pack files during fixture cleanup.
 
-The [delivery-line commands](/reference/delivery-line) prove reproduction on current main, a task-group payload, the current pull-request head, and post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
+Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 
 GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 

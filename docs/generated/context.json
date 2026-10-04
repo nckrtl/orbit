@@ -719,7 +719,9 @@
             "path": "docs/decisions/0197-keep-delivery-line-proofs-as-repo-commands.md",
             "title": "ADR 0197: Keep delivery-line proofs as repository commands",
             "kind": "decision",
-            "components": [],
+            "components": [
+                "apps/e2e"
+            ],
             "concepts": [
                 "Deliverable",
                 "Doctor",
