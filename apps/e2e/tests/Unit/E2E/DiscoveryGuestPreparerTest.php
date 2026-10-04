@@ -39,10 +39,10 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
                 $batch['stdin'][] = $request['stdin'];
                 $results[] = [
                     'label' => $request['label'],
-                    'stdout' => $outputs[$request['label']] ?? (in_array($request['label'], ['gateway', 'app-dev', 'app-prod'], true)
+                    'stdout' => $outputs[$request['label']] ?? (in_array($request['label'], ['gateway', 'app-dev', 'app-prod', 'operator'], true)
                         ? '2: enp5s0    inet 10.44.0.'.(10 + count($batch['labels']))."/24 scope global enp5s0\n"
                         : ($request['label'] === 'retarget-gateway'
-                            ? '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820"}' : '')),
+                            ? '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}' : '')),
                     'stderr' => '',
                     'exit_code' => $failures[$request['label']] ?? 0,
                 ];
@@ -56,7 +56,7 @@ function fakePreparerGuests(array $failures, array &$batches, array &$execs, arr
             return Process::result(json_encode(array_map(
                 static fn (string $role): array => [
                     'name' => preparerTarget()->instance($role),
-                    'type' => 'virtual-machine',
+                    'type' => $role === 'operator' ? 'container' : 'virtual-machine',
                     'status' => 'Running',
                     'status_code' => 103,
                     'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
@@ -98,9 +98,9 @@ describe('mount.source', function () {
         expect($batches)
             ->toHaveCount(1)
             ->and($batches[0]['labels'])
-            ->toBe(['mountpoint.gateway', 'mountpoint.app-dev'])
+            ->toBe(['mountpoint.gateway', 'mountpoint.app-dev', 'mountpoint.operator'])
             ->and($batches[0]['instances'])
-            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')])
+            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev'), 'local:'.$target->instance('operator')])
             ->and($batches[0]['argv'])
             ->each
             ->toBe(['mountpoint', '-q', '--', '/home/orbit/orbit'])
@@ -216,9 +216,9 @@ describe('mount.source', function () {
         expect($batches)
             ->toHaveCount(1)
             ->and($batches[0]['labels'])
-            ->toBe(['orbit-cli.gateway', 'orbit-cli.app-dev'])
+            ->toBe(['orbit-cli.gateway', 'orbit-cli.app-dev', 'orbit-cli.operator'])
             ->and($batches[0]['instances'])
-            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev')])
+            ->toBe(['local:'.$target->instance('gateway'), 'local:'.$target->instance('app-dev'), 'local:'.$target->instance('operator')])
             ->and($batches[0]['argv'])
             ->each
             ->toBe(['ln', '-sfn', '/home/orbit/orbit/apps/cli/orbit', '/usr/local/bin/orbit'])
@@ -308,25 +308,26 @@ describe('repair.identity', function () {
 
         expect(array_column($batches, 'labels'))
             ->toBe([
-                ['gateway', 'app-dev', 'app-prod'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ['retarget-gateway'],
-                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
-                ['php-fpm.gateway', 'php-fpm.app-dev'],
+                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod', 'retarget-vpn.operator'],
+                ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
             ])
             ->and($batches[1]['instances'])->toBe(['local:'.$target->instance('gateway')])
             ->and($batches[1]['argv'])->toBe([[
                 ...GuestCommand::ORBIT_USER_PREFIX,
-                'php', '/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', '/home/orbit/.orbit/gateway.sqlite', '10.44.0.11', '10.44.0.12', '10.44.0.13',
+                'php', '/home/orbit/orbit/apps/e2e/resources/guest/retarget-gateway.php', '/home/orbit/.orbit/gateway.sqlite', '10.44.0.11', '10.44.0.12', '10.44.0.13', '10.44.0.14',
             ]])
             ->and($batches[1]['stdin'])->toBe([null])
             ->and($batches[2]['instances'])
-            ->toBe(['local:'.$target->instance('app-dev'), 'local:'.$target->instance('app-prod')])
+            ->toBe(['local:'.$target->instance('app-dev'), 'local:'.$target->instance('app-prod'), 'local:'.$target->instance('operator')])
             ->and($batches[2]['argv'])
             ->each->toBe(['bash', '-s', '--', '10.44.0.11', '10.44.0.11:51820'])
             ->and($batches[2]['stdin'])->each->toBe(file_get_contents(dirname(__DIR__, 3).'/resources/guest/retarget-vpn.sh'))
             ->and($batches[3]['instances'])->toBe([
                 'local:'.$target->instance('gateway'),
                 'local:'.$target->instance('app-dev'),
+                'local:'.$target->instance('operator'),
             ])->and($batches[3]['argv'])
             ->each->toBe(['systemctl', 'restart', 'php8.5-fpm'])->and($execs)->toBe([]);
     });
@@ -341,10 +342,10 @@ describe('repair.identity', function () {
 
         expect(array_column($batches, 'labels'))
             ->toBe([
-                ['gateway', 'app-dev', 'app-prod'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ['retarget-gateway'],
-                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod'],
-                ['php-fpm.gateway', 'php-fpm.app-dev'],
+                ['retarget-vpn.app-dev', 'retarget-vpn.app-prod', 'retarget-vpn.operator'],
+                ['php-fpm.gateway', 'php-fpm.app-dev', 'php-fpm.operator'],
             ])
             ->and(collect($batches)->flatMap(fn (array $batch): array => $batch['instances'])->all())
             ->not->toContain('local:'.$target->instance('app-prod-2'));
@@ -378,7 +379,7 @@ describe('repair.identity', function () {
         expect(fn () => new DiscoveryGuestPreparer(new IncusHost)->repairCloneIdentity(preparerTarget()))
             ->toThrow(RuntimeException::class, 'Gateway clone identity preparation failed on retarget-gateway.')
             ->and(array_column($batches, 'labels'))->toBe([
-                ['gateway', 'app-dev', 'app-prod'], ['retarget-gateway'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'], ['retarget-gateway'],
             ]);
     });
 
@@ -394,9 +395,9 @@ describe('repair.identity', function () {
         'invalid JSON' => 'not JSON',
         'missing peer' => '{"app-dev":"10.44.0.11:51820"}',
         'unknown peer' => '{"app-dev":"10.44.0.11:51820","app-prod":"10.44.0.11:51820","extra":"10.44.0.11:51820"}',
-        'snapshot endpoint' => '{"app-dev":"10.232.1.10:51820","app-prod":"10.44.0.11:51820"}',
-        'invalid port' => '{"app-dev":"10.44.0.11:65536","app-prod":"10.44.0.11:51820"}',
-        'wrong type' => '{"app-dev":null,"app-prod":"10.44.0.11:51820"}',
+        'snapshot endpoint' => '{"app-dev":"10.232.1.10:51820","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
+        'invalid port' => '{"app-dev":"10.44.0.11:65536","app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
+        'wrong type' => '{"app-dev":null,"app-prod":"10.44.0.11:51820","operator":"10.44.0.11:51820"}',
     ]);
 
     it('refuses duplicate clone addresses before publishing identity', function () {

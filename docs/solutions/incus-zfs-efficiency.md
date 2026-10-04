@@ -10,7 +10,7 @@ covers:
 
 ## Problem
 
-Each Orbit proof needs its own [Incus topology](/reference/incus-topologies). ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
+An Orbit task group has no [Incus topology](/reference/incus-topologies) by default. The reviewer requests one when discovery needs it. An acquired topology has three workload VMs plus a small operator system container; an extended topology adds one workload VM. The operator container is separate from the VM counts and memory measurements below. ZFS makes the VM disk copies cheap. The prepared image contents, new writes inside each guest, and each VM's memory allocation still use resources.
 
 ## Cause
 

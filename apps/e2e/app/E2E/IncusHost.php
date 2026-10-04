@@ -85,6 +85,23 @@ final class IncusHost implements GuestTransport
         return $instances;
     }
 
+    /** @return array<string, array<string, string>> */
+    public function harnessVmMetadata(): array
+    {
+        $instances = [];
+        foreach ($this->readJson(['list', "{$this->remote}:", '--format=json']) as $resource) {
+            if (! is_array($resource) || ($resource['type'] ?? null) !== 'virtual-machine' || ! is_string($resource['name'] ?? null)) {
+                continue;
+            }
+            $metadata = $this->metadata($resource);
+            if (($metadata['user.orbit.e2e.owner'] ?? null) === 'orbit-e2e') {
+                $instances[$resource['name']] = $metadata;
+            }
+        }
+
+        return $instances;
+    }
+
     /** @phpstan-impure */
     public function instance(string $name): ?IncusInstance
     {
@@ -183,14 +200,14 @@ final class IncusHost implements GuestTransport
         return $users;
     }
 
-    public function imageFingerprint(string $alias): string
+    public function imageFingerprint(string $alias, string $type = 'virtual-machine'): string
     {
         $this->validateImage($alias);
         [$remote, $selector] = $this->imageSelector($alias);
         $images = $this->readJson(['image', 'list', $remote, $selector, '--format=json']);
         $matches = [];
         foreach ($images as $image) {
-            if (! is_array($image) || ($image['type'] ?? null) !== 'virtual-machine') {
+            if (! is_array($image) || ($image['type'] ?? null) !== $type) {
                 continue;
             }
             if (($image['fingerprint'] ?? null) === $selector) {
@@ -210,7 +227,7 @@ final class IncusHost implements GuestTransport
             }
         }
         if (count($matches) !== 1) {
-            throw new RuntimeException('Incus image selector did not identify exactly one virtual-machine image.');
+            throw new RuntimeException("Incus image selector [{$alias}] did not identify exactly one {$type} image.");
         }
         $fingerprint = $matches[0]['fingerprint'] ?? null;
 
@@ -329,11 +346,13 @@ final class IncusHost implements GuestTransport
                 }
             }
             [$remote, $selector] = $this->imageSelector($vm['image']);
+            $container = $vm['role'] === 'operator';
             $arguments = [
                 'init',
                 $remote.$selector,
                 $this->target($vm['name']),
-                '--vm',
+                ...($container ? [] : ['--vm']),
+                ...($container ? ['--config', 'security.privileged=false', '--config', 'security.nesting=true'] : []),
                 '--storage',
                 $this->pool,
                 '--config',
@@ -600,6 +619,10 @@ final class IncusHost implements GuestTransport
             if ($resource === null) {
                 throw new RuntimeException("Incus instance {$instance} does not exist.");
             }
+            $expectedType = $node->key === 'operator' ? 'container' : 'virtual-machine';
+            if (($resource['type'] ?? null) !== $expectedType) {
+                throw new RuntimeException("Incus instance {$instance} type does not match topology.");
+            }
             $vm = $this->instanceFromResource($resource);
             $this->assertOwned($vm->metadata, "instance {$instance}");
             if ($requireRunning && ! $vm->isRunning()) {
@@ -668,6 +691,61 @@ final class IncusHost implements GuestTransport
             $arguments[] = "{$key}={$value}";
         }
         $this->run($arguments);
+    }
+
+    /** Reserve the one session device before starting its unit. Incus rejects a duplicate atomically. */
+    public function publishWeb(string $instance, int $port, string $token): void
+    {
+        $owned = $this->operationOwnedInstances([$instance], 'web publication');
+        if ($owned[$instance]->webPublished) {
+            throw new RuntimeException('A web session already owns this topology; stop it before starting another.');
+        }
+        $this->assertWebToken($token);
+        if ($port < 1024 || $port > 65535) {
+            throw new RuntimeException('Invalid web loopback port.');
+        }
+        $this->run([
+            'config', 'device', 'add', $this->target($instance), 'orbit-e2e-web', 'proxy',
+            "listen=tcp:127.0.0.1:{$port}", 'connect=tcp:127.0.0.1:5173', 'bind=host',
+            'user.orbit.e2e.web-session='.$token,
+        ]);
+    }
+
+    /** Remove only the reserved session device, after stopping its unit. Guest deletion also removes it. */
+    public function stopWeb(string $instance, ?string $expectedToken = null): void
+    {
+        $resource = $this->instance($instance);
+        if ($resource === null) {
+            return;
+        }
+        $this->assertOwned($resource->metadata, "instance {$instance}");
+        if (! $resource->webPublished) {
+            return;
+        }
+        if ($expectedToken !== null && $resource->webSessionToken !== $expectedToken) {
+            return;
+        }
+        $token = $resource->webSessionToken;
+        if ($token === null) {
+            throw new RuntimeException('The web reservation has no ownership token; retain it for recovery.');
+        }
+        $this->assertWebToken($token);
+        if ($resource->isRunning()) {
+            $stopped = $this->exec($instance, GuestCommand::asOrbitUser([
+                'sudo', 'bash', '/home/orbit/orbit/apps/e2e/resources/web-unit.sh', 'stop', $token,
+            ]));
+            if (! $stopped->successful()) {
+                throw new RuntimeException('Could not confirm the owned topology web unit stopped; retain its reservation for retry.');
+            }
+        }
+        $this->run(['config', 'device', 'remove', $this->target($instance), 'orbit-e2e-web']);
+    }
+
+    private function assertWebToken(string $token): void
+    {
+        if (preg_match('/\\A[0-9a-f]{32}\\z/D', $token) !== 1) {
+            throw new RuntimeException('Invalid web session ownership token.');
+        }
     }
 
     public function start(string $instance): void
@@ -1612,7 +1690,7 @@ final class IncusHost implements GuestTransport
     private function instanceFromResource(array $resource, ?string $requestedName = null): IncusInstance
     {
         $name = $resource['name'] ?? null;
-        if (! is_string($name) || ($resource['type'] ?? null) !== 'virtual-machine') {
+        if (! is_string($name) || ! in_array($resource['type'] ?? null, ['virtual-machine', 'container'], true)) {
             if ($requestedName !== null) {
                 throw new RuntimeException("Incus instance {$requestedName} is not a virtual machine.");
             }
@@ -1657,6 +1735,8 @@ final class IncusHost implements GuestTransport
             throw new RuntimeException("Incus instance {$name} MAC identity is invalid.");
         }
 
+        $webToken = $this->valueAt($resource, 'devices', 'orbit-e2e-web', 'user.orbit.e2e.web-session');
+
         return new IncusInstance(
             $this->remote,
             $this->project,
@@ -1668,6 +1748,8 @@ final class IncusHost implements GuestTransport
             $network,
             $mac,
             $this->disks($resource, $name),
+            webPublished: is_array($resource['devices'] ?? null) && isset($resource['devices']['orbit-e2e-web']),
+            webSessionToken: is_string($webToken) ? $webToken : null,
         );
     }
 
@@ -1975,6 +2057,10 @@ final class IncusHost implements GuestTransport
             $configuration[] = "{$mount['device']},source={$mount['source']}";
             $configuration[] = '--device';
             $configuration[] = "{$mount['device']},path={$mount['path']}";
+            if ($role === 'operator') {
+                $configuration[] = '--device';
+                $configuration[] = "{$mount['device']},shift=true";
+            }
             $disks[$mount['device']] = ['source' => $mount['source'], 'path' => $mount['path']];
         }
 

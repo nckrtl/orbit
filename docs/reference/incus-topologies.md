@@ -5,33 +5,50 @@ covers:
   - bin/{e2e-topology,e2e-clone-bridge,e2e-task-cleanup,e2e-scenarios}
   - apps/e2e/config/e2e.php
   - apps/e2e/app/Console/Commands/{Topology,Scenario}/**
-  - apps/e2e/app/E2E/{TopologyAcquirer,TopologyReleaser,IssueTopologyConstructor,AcquisitionRollback,DiscoveryGuestPreparer,WorktreeSynchronizer,WorktreeLocator,HostCapacity,OrphanNetworkSweep,IncusNetworkLifecycle,EvidenceLog}.php
+  - apps/e2e/app/E2E/{TopologyAcquirer,TopologyReleaser,IssueTopologyConstructor,AcquisitionRollback,DiscoveryGuestPreparer,WorktreeSynchronizer,WorktreeLocator,TopologyWebSession,HostCapacity,OrphanNetworkSweep,IncusNetworkLifecycle,EvidenceLog}.php
   - apps/e2e/app/E2E/{Scenario,SnapshotScenario,ColdTopology}*.php
   - apps/e2e/app/E2E/Value/{Topology,Guest,Evidence,Scenario}*.php
-  - apps/e2e/resources/guest/converge-sample-{app,fixtures}.sh
+  - apps/e2e/resources/{guest/converge-sample-{app,fixtures},web-session,web-unit}.sh
 ---
 
 # Incus topology registry
 
 This page is for the contributor, agent, or reviewer who runs Orbit on disposable Incus machines. The `apps/e2e` harness leases one topology per issue, and `bin/e2e-topology` controls it. `bin/e2e-scenarios` runs regression scenarios on demand. The guest convergence fixtures establish the sample application's current state and are fingerprinted in the prepared topology data. Every topology starts from the shared [topology snapshot](/reference/topology-snapshot). The [using-incus-topologies](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md) skill covers the working habits.
 
+## Topologies on the reviewer's request
+
+An Orbit task group has no topology by default. Workspace provisioning never acquires one. The reviewer decides whether discovery needs a topology and ends a turn with `topology_requested` through the [turn receipt](/reference/tasks#request-a-topology). An implementer asks the reviewer through the existing consult instead. Agents run as `orbit-worker` without sudo; they do not acquire topologies themselves.
+
+Orbit consumes the receipt, acquires `TASK-<group>` as the managed user, and resumes the same requesting reviewer thread in its original review, consult, or relay context with the acquisition result or failure. A consult stays open and its implementer stays paused during acquisition; a resource request neither answers it nor escalates it to the operator. The resumed reviewer answers normally under the original context's outcome and cause rules.
+
+Acquisition changes host firewall rules. Each group holds at most one topology, shared across its subtasks and review turns. A repeated request uses that group's complete discovery topology, not another one.
+
+A retained discovery lease without its topology record is an incomplete acquisition, not an already-held usable topology. Orbit reports that failure and keeps its ownership and state for normal workspace-removal cleanup; it neither acquires another topology nor asks the agent to release it. Failure replies include a bounded, redacted reason from the harness output. Acquisition failure or absence of a topology never prevents approval: these topologies support discovery, not mandatory proofs. Orbit releases the topology when it removes the group's workspace.
+
 ## Registered profile
 
-An issue topology uses the three-Node profile `gateway_app-dev_app-prod`. The [extension](#the-app-prod-2-extension) adds a fourth Node.
+An issue topology has three VMs with the profile `gateway_app-dev_app-prod` and one small Incus system container, `operator`. Every topology includes the operator. The [extension](#the-app-prod-2-extension) adds a fourth workload VM, not another operator.
 
 | Field | Value |
 | --- | --- |
-| Physical Nodes | `gateway`, `app-dev`, `app-prod`, in this order |
+| Workload VMs | `gateway`, `app-dev`, `app-prod`, in this order |
+| Operator | `operator`, a small roleless system container on the same topology network |
 | Roles | `gateway`: `gateway`, `vpn`, `websocket`, `router`; `app-dev`: `app-dev`, `metrics`, `database`; `app-prod`: `app-prod`, `ingress` |
-| Checkouts | `gateway` and `app-dev` mount the worktree at `/home/orbit/orbit`. `app-prod` has no checkout. |
+| Checkouts | `gateway`, `app-dev`, and `operator` mount the worktree live at `/home/orbit/orbit`. `app-prod` has no checkout. |
 | Network | `oe-<hash>` on `10.232.<slot>.0/24`. The hash is 12 hex characters of the SHA-256 of `<issue>:<attempt>`. |
 | Instances | `orbit-e2e-<issue-lowercase>-<attempt-prefix>-<node>`, with the first 8 characters of the attempt ID |
-| Addresses | Incus `.10`, `.11`, and `.12`. WireGuard `10.44.0.1`, `.2`, and `.3`. |
+| Workload addresses | Incus `.10`, `.11`, and `.12`. WireGuard `10.44.0.1`, `.2`, and `.3`. The operator has its own non-conflicting addresses and WireGuard peer. |
 | Issue ID | Matches `[A-Z][A-Z0-9]{1,9}-[1-9][0-9]{0,8}`. `acquire` and `sync` require it in the worktree's branch name, such as `TASK-58` on branch `task-58`. |
 
-The three Nodes share the active `e2e-development` Cluster. It has no Cluster TLD. Gateway is its Router, and app-prod is its Ingress. Development traffic goes from the Gateway Router to app-dev. Public production Routes enter app-prod and pass through the Gateway Router to the workload.
+The three workload Nodes share the active `e2e-development` Cluster. It has no Cluster TLD. Gateway is its Router, and app-prod is its Ingress. Development traffic goes from the Gateway Router to app-dev. Public production Routes enter app-prod and pass through the Gateway Router to the workload.
 
 A change to this recipe does not change the saved snapshot. Acquisition clones the saved generation and does not provision new roles. `acquire` verifies readiness against the assignments that the generation records, so it passes on a generation with other assignments. A full `sync` and `verify` check the current recipe, and they fail on that generation. Run a snapshot `refresh` to adopt a new recipe.
+
+### The operator guest
+
+The operator is a roleless Node registered with the topology's Gateway, with a Gateway access grant and its own WireGuard peer in that topology. It has no workload role and hosts no sample Instance. It trusts the topology's Orbit CA and mounts the worktree live, so host edits reach `apps/web` without a copy or rebuild. Its CLI profile and web proxy configuration refer only to this topology. Missing configuration is an error, not permission to use the real Gateway or another user's credentials.
+
+The [topology snapshot](/reference/topology-snapshot#operator-container) includes the operator container and its prepared configuration. Acquisition aligns its network identity and WireGuard endpoint with the cloned Gateway. The operator is separate from beast's network namespace: beast already belongs to the real fleet, and the topology reuses the fleet's WireGuard address range. Joining that tunnel on beast would mix live and disposable traffic.
 
 ## Sample resources
 
@@ -67,7 +84,7 @@ A topology can carry one extra production Node, `app-prod-2`. It is the recipe `
 | --- | --- | --- | --- | --- |
 | `app-prod-2` | The `orbit-base-ubuntu-26.04-runtime` image | `.13` | `10.44.0.4` | `app-prod` |
 
-The three standard Nodes still come from the snapshot. The harness builds `app-prod-2` from the base image inside the same attempt and network, and it records the image fingerprint. It refuses when the image changes between the check and the build. Convergence provisions `app-prod-2` as an `app-prod` Node. It stays outside the `e2e-development` Cluster and gets no Instance. An extended topology reserves four VMs.
+The three standard VMs and the operator container still come from the snapshot. The harness builds `app-prod-2` from the base image inside the same attempt and network, and it records the image fingerprint. It refuses when the image changes between the check and the build. Convergence provisions `app-prod-2` as an `app-prod` Node. It stays outside the `e2e-development` Cluster and gets no Instance. An extended topology reserves four VMs.
 
 The committed scenario `snapshot-extension` uses the extension. A discovery topology gets it only when `<worktree>/.loop/proof/<ISSUE>.json` declares `"extension": "app-prod"` (see [what acquire reads](#what-acquire-reads)).
 
@@ -95,13 +112,15 @@ The harness counts capacity from `incus list`, never from a ledger. It counts th
 | Network slots | Slot 1 belongs to the topology snapshot. Disposable topologies take slots 2 to 200. |
 | Incus scope | `e2e.incus.remote`, `e2e.incus.project`, and `e2e.incus.storage_pool`, from `ORBIT_E2E_INCUS_REMOTE`, `ORBIT_E2E_INCUS_PROJECT`, and `ORBIT_E2E_INCUS_STORAGE_POOL`. The defaults are `local`, `default`, and `orbit-e2e`. The remote must be `local`, because network creation and deletion also change host firewall rules. |
 
-Every `incus` call carries the configured project. The harness reserves the recipe's VMs, three or four, before it creates a network or a VM. It refuses `acquire` when the budget cannot hold them, and it names the count and the limit. At the default budget, seven topologies fit beside the snapshot.
+Every `incus` call carries the configured project. The harness reserves the recipe's VMs, three or four, before it creates a network or a VM. It refuses `acquire` when the budget cannot hold them, and it names the count and the limit. At the default VM budget, seven standard topologies fit beside the snapshot. Each also needs one operator system container; that container is not a fourth VM.
 
-Memory limits apply when the harness creates or clones a VM. The registered three-Node profile has a 4.5 GiB configured budget. `ORBIT_E2E_INCUS_MEMORY=2GiB` overrides every Node's limit for a run. The cold recipe's `operator` and `extra` Nodes keep the 2 GiB default. These limits do not change the CPU allocation or reduce the application's CPU work. See the [ZFS efficiency measurements](/solutions/incus-zfs-efficiency) for the evidence and workload limits.
+Memory limits apply when the harness creates or clones a guest. The three workload VMs have a 4.5 GiB configured budget. The operator adds a separate 512 MiB container limit, for 5 GiB across all four guests.
+
+`ORBIT_E2E_INCUS_MEMORY=2GiB` overrides every Node's limit for a run. The cold recipe's workload development Node and `extra` Node keep the 2 GiB default. The roleless operator is a separate small system container, not part of these VM memory totals. These limits do not change the CPU allocation or reduce the application's CPU work. See the [ZFS efficiency measurements](/solutions/incus-zfs-efficiency) for the evidence and workload limits.
 
 ### Locks
 
-Every command except `status` and `shell` holds the lock `topology-<ISSUE>` under `<primary>/.e2e/locks/`. Topology creation holds the host lock `topology-create` from network creation until every VM exists.
+Every command except `status`, `shell`, and `web` holds the lock `topology-<ISSUE>` under `<primary>/.e2e/locks/`. Topology creation holds the host lock `topology-create` from network creation until every VM exists. `web` atomically reserves its operator proxy device rather than holding the issue lock throughout the session, so other discovery commands and release can run while the page is open.
 
 ## Commands
 
@@ -118,9 +137,26 @@ Every command except `status` and `shell` holds the lock `topology-<ISSUE>` unde
 | `sync ISSUE [--quick]` | Proves the mount, applies pending Gateway migrations, and verifies readiness. `--quick` skips verification. |
 | `verify ISSUE` | Verifies readiness and records the report |
 | `status ISSUE` | Reports the state files without touching Incus |
-| `release ISSUE` | Removes the topology and verifies that it is gone |
+| `web ISSUE` | Runs the web development server in the acquired topology's operator, publishes it on beast's loopback, and streams output until stopped; see [Web session](#web-session) |
+| `release ISSUE` | Stops its web session, removes its loopback publication, removes the topology, and verifies that it is gone |
 
-`NODE` is a physical Node key: `gateway`, `app-dev`, `app-prod`, or `app-prod-2` on an extended topology. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
+`NODE` is a guest key: `gateway`, `app-dev`, `app-prod`, `operator`, or `app-prod-2` on an extended topology. `--argv-file=PATH` can replace `--argv` on `exec` and `spawn`. The file holds `{"argv":[...],"stdin":null}`, and only `exec` accepts stdin. The harness refuses both options together.
+
+### Web session
+
+Run `bin/e2e-topology web TASK-58` in the task workspace only after its topology has been acquired. `web` requires that topology and its configured operator; it never acquires one implicitly. It installs the mounted web app and annotation package dependencies with `vp install` and runs `vp dev` as the transient `orbit-e2e-web.service` unit in `/home/orbit/orbit/apps/web` in the operator, with guest TCP port `5173` and strict-port behavior. An occupied guest port fails startup; there is no guest-port fallback.
+
+The command publishes the dev server only on beast's IPv4 loopback, `127.0.0.1`, using an available OS-assigned ephemeral host TCP port. After readiness, it prints the actual host port and URL, such as `http://127.0.0.1:P` with the numeric port in place of `P`. There is no fixed host port, DNS name, or Caddy Route. [Web app: Run against a topology](/reference/web-app#run-against-a-topology) gives the Mac SSH forwarding steps.
+
+`web` stays in the foreground and streams dev-server output. Keep it running while using the page. Ctrl-C, command termination, startup failure, and topology release stop that session's dev-server process and remove its loopback publication. Stopping `web` does not release the topology. Only one web session may run per topology. A second invocation fails clearly without disturbing the first.
+
+The proxy device records a random ownership token before startup, and the unit's description carries the same token. Cleanup reads that durable reservation rather than trusting whether an external command returned successfully. It stops only the matching unit and keeps the reservation until the unit is confirmed stopped. A guest lock serializes startup and cleanup; cancellation records prevent a delayed start from reviving a cleaned session. Release can recover a session after its foreground owner crashes, and failed cleanup retains the marker for retry.
+
+The public wrapper transfers its PID through the clone bridge to PHP, so TERM or HUP sent to that PID reaches the foreground owner and waits for cleanup, just as terminal Ctrl-C does.
+
+The session pins the Gateway URL and trusted CA to the selected topology. Inherited endpoint overrides must not redirect Gateway, realtime, or metrics traffic to the live fleet. If the topology, operator, URL, CA, Gateway grant, or WireGuard configuration is absent, startup fails clearly instead of falling back to the caller's live profile or another user's credentials.
+
+Agents drive the page from `operator` at `http://127.0.0.1:5173`, using the Playwright dependency in the mounted `apps/web`. Install Chromium and WebKit with `vp exec playwright install --with-deps webkit chromium` there, then run browser code with `vp exec node --input-type=module -e '...'` through `exec`. The [topology skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/using-incus-topologies/SKILL.md#check-the-web-ui-on-the-held-topology) describes checks against the sample fleet, live reload, and isolated actions. In a task workspace clone, run a harness command such as `status` after each edit to mirror it into the mounted bridge. Demo-mode screenshots remain the layout check; they do not replace the live Gateway check when a topology is held.
 
 ### Guest commands
 
@@ -151,7 +187,7 @@ Recording never changes the command's output or exit code. A failed append print
 
 ## Discovery mount
 
-`acquire` attaches the worktree to `gateway` and `app-dev` as the Incus disk device `orbit-source`. It is a read-write virtiofs share at `/home/orbit/orbit`. A host edit is live in both guests at once. Run `sync` only after a migration or a change to a guest helper script.
+`acquire` attaches the worktree to `gateway`, `app-dev`, and `operator` as the Incus disk device `orbit-source`. It is a read-write virtiofs share at `/home/orbit/orbit`. A host edit is live in all three checkout guests at once. Run `sync` only after a migration or a change to a guest helper script.
 
 Guests never run Composer. Host `bin/bootstrap` owns `vendor/`, and `acquire` refuses a worktree without the Gateway, CLI, and SDK autoloaders. `acquire` places the preserved Gateway `.env` in the worktree when it is absent. When the worktree has a `.env`, the harness sets only its `ORBIT_GATEWAY_CHECKOUT` to `/home/orbit/orbit/apps/gateway`.
 
@@ -184,7 +220,7 @@ State directories and operation locks allow access only to their owner and ACL-n
 
 The mirror leaves the bridge's other ignored files, such as `.e2e/`, `.env`, and Gateway storage, because the harness and the guests write them. So a file that a guest writes into the mount appears in the bridge, not in the clone. The evidence log is in the bridge too. Every command mirrors the clone first, so any command, such as `status`, pushes an edit. Set `ORBIT_E2E_BRIDGE=0` to run in the clone itself. `bin/e2e-topology-snapshot` never bridges, because snapshot operations belong to the primary checkout.
 
-In a task workspace on branch `task-58`, use the allocated topology with commands such as `bin/e2e-topology exec TASK-58 gateway --argv='["orbit","node:list","--json"]'`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Orbit or the operator must release the topology during teardown, because bridge removal does not release it.
+In a task workspace on branch `task-58`, use the allocated topology with commands such as `bin/e2e-topology exec TASK-58 gateway --argv='["orbit","node:list","--json"]'`. The topology snapshot [registers](/reference/topology-snapshot#commands) the primary checkout. When the Gateway ends a task, the Orbit Project's configured teardown step runs the installed copy of `bin/e2e-task-cleanup` to remove the task's bridge. [Tasks](/reference/tasks#complete-and-cleanup) describes that cleanup. Orbit releases the group's topology, including any web session and loopback publication, before removing the workspace. Bridge removal itself does not release a topology.
 
 Vendor mirroring keeps content, symbolic links, file timestamps, and deletion of stale entries. With rsync, it disables owner, group, and permission preservation after archive mode and omits directory timestamps. Existing destination permissions and ACL grants stay in place; new files use source permissions subject to the destination's defaults and the caller's umask, including executable permissions. This lets `orbit-worker` update a managed-user-owned bridge without trying to change its ownership, chmod owner-owned entries, or set timestamps on directories the worker does not own.
 
@@ -196,13 +232,17 @@ It targets `task-{id}-e2e` under that primary's worktree root. It removes a regi
 
 An absent bridge, or a checkout with no registration, is success. A registration that exists is not that case. A cleanup command failure exits nonzero and makes teardown retain the task checkout and Instance for retry. Removal of a matching bridge, its unused branch, and its staging ref is idempotent. The helper does not alter the checkout that runs it or that checkout's worktrees.
 
-Orbit acquires a task group's topology, `TASK-<group>`, as the managed user when it provisions the group's workspace, and releases it before it removes the workspace. Acquiring changes host firewall rules, which the task worker cannot do; agents and reviewers only use the topology. Acquiring is best effort: a failure is logged and the group continues without a topology. A failed release keeps the workspace so a later removal retries it. Both steps first run `status`, which prints `absent` when the group holds no topology, so they do nothing when there is nothing to do, and a workspace without `bin/e2e-topology` has no topology.
+Orbit provisions the group's workspace without acquiring a topology. Only the [reviewer's request](#topologies-on-the-reviewers-request) acquires `TASK-<group>` as the managed user. Orbit releases it before removing the workspace. Acquiring changes host firewall rules, which the task worker cannot do; agents and reviewers only use the topology. Acquisition failure resumes the requesting reviewer with the failure and never prevents approval. A failed release keeps the workspace and topology state so a later removal retries it. An absent topology needs no release, and a workspace without `bin/e2e-topology` has no topology.
 
 ## Release
 
-`release` checks each VM against the attempt's ownership metadata. It force-stops the running VMs, deletes them, and verifies that they are gone. It checks the network's ownership just before it deletes the network. Then it drops the lease and the record. The output lists `released`, `already_absent`, and `networks_reaped`.
+`release` checks every recorded guest against the attempt's ownership metadata, including each workload VM, any extension VM, and the operator system container. It stops the owned web session's dev-server process and removes its loopback publication. It force-stops any running recorded guests, deletes them, and verifies that every recorded guest is absent, including the operator. It checks the network's ownership just before deleting it.
 
-An ownership mismatch stops the release and keeps every unrelated resource. The attempt record stays for diagnosis. A retry continues from the same exact target.
+New construction records use schema 3 and require the operator. Release also reads schema 1 and 2 records with their exact three-VM inventory, or four VMs when an extension was recorded. These records authorize only ownership-checked cleanup of those guests; they do not authorize a new acquisition or snapshot replacement. Release does not infer an operator or enlarge the recorded inventory.
+
+Only after web-session cleanup succeeds, every recorded guest is absent, and the network is removed does release drop the lease and topology record. It never drops topology state while a recorded guest remains. The output lists `released`, `already_absent`, and `networks_reaped`.
+
+An ownership mismatch or cleanup failure stops release and keeps every unrelated resource. The lease and attempt record stay for diagnosis and retry. A retry continues from the same exact target and handles already-absent owned guests without selecting new resources.
 
 Every network named `oe-*` or `orbit-e2e-*` belongs to the harness and never outlives its topology. Every release ends with an orphan sweep. The sweep selects networks by those name prefixes, not by ownership metadata. It deletes each one in the configured project whose `used_by` list is empty, except the snapshot networks `oe-topo-snap` and `oe-standby`. It holds the `topology-create` lock, so it never deletes a network that a starting acquisition just created.
 
@@ -229,30 +269,35 @@ The catalog holds five committed scenarios.
 
 | ID | Lane | Recipe | What it proves |
 | --- | --- | --- | --- |
-| `cold-four-node` | cold | Cold acceptance, four Nodes | Orbit builds and verifies the whole topology from the base image, and cleanup removes it |
-| `cold-construction-cleanup` | cold | Cold acceptance, four Nodes | After an injected source failure during construction, cleanup removes exactly the recorded resources |
-| `snapshot-lifecycle` | snapshot | Registered, three Nodes | A clone of the snapshot syncs, converges, passes readiness, runs a bounded app-dev action, and verifies |
-| `snapshot-isolation` | snapshot | Registered, three Nodes | A fresh clone does not contain a marker that an earlier attempt wrote |
-| `snapshot-extension` | snapshot | Registered plus `app-prod-2` | The [extension](#the-app-prod-2-extension) Node has its recorded identity, capacity, and image fingerprint |
+| `cold-four-node` | cold | Cold acceptance, four VMs plus operator container (five guests/Nodes) | Orbit builds and verifies the whole topology from the base image, and cleanup removes it |
+| `cold-construction-cleanup` | cold | Cold acceptance, four VMs plus operator container (five guests/Nodes) | After an injected source failure during construction, cleanup removes exactly the recorded resources |
+| `snapshot-lifecycle` | snapshot | Registered, three VMs plus operator container (four guests/Nodes) | A clone of the snapshot syncs, converges, passes readiness, runs a bounded app-dev action, and verifies |
+| `snapshot-isolation` | snapshot | Registered, three VMs plus operator container (four guests/Nodes) | A fresh clone does not contain a marker that an earlier attempt wrote |
+| `snapshot-extension` | snapshot | Four VMs including `app-prod-2`, plus operator container (five guests/Nodes) | The [extension](#the-app-prod-2-extension) Node has its recorded identity, capacity, and image fingerprint |
 
 The checkout must be clean. An optional SHA must be the full lowercase `HEAD`. Before it changes Incus, the command validates the catalog, every selected scenario, and the worker count. It refuses an unknown or repeated ID, a scenario from the other lane, an invalid recipe, a missing action deadline, and an invalid declared input.
 
-Each worker gets its own attempt, network, VMs, state path, and Pest process. One Pest test is one independent flow, and a flow stops at its first failed step. Admission holds the `topology-create` lock while it counts the recipe's VMs against the shared budget and picks a network slot. After that, `run` workers go on in parallel. A failure in one worker does not cancel another.
+Each worker gets its own attempt, network, workload VMs, operator container, state path, and Pest process. One Pest test is one independent flow, and a flow stops at its first failed step. Admission holds the `topology-create` lock while it counts the recipe's VMs against the shared budget and picks a network slot. After that, `run` workers go on in parallel. A failure in one worker does not cancel another.
 
-The cold flow starts from the unchanged base image and installs no PCOV before construction. Fresh development Nodes get the sample TLD `beast`. Each fresh production Node gets its own name as its TLD through the provision command. The unique production TLD lets the sample Instance clone create its preview route. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs, or its manifest.
+The cold flow starts from the unchanged VM runtime base and a separately prepared local Ubuntu 26.04 operator container base, and installs no PCOV before construction. It checks both image types and fingerprints before resource creation, records both fingerprints in cold evidence, and refuses changed, missing, or wrong-type images without an upstream fetch or remote fallback. See [operator base preparation](/reference/topology-snapshot#prepare-the-operator-base-on-beast).
 
-A snapshot flow mounts no worktree. It clones the three Nodes, and builds `app-prod-2` for the extension. Before dependency installation, it repairs the cloned Gateway addresses and WireGuard endpoints, so DNS can use the new Gateway. It synchronizes the exact candidate commit from Git into the checkout Nodes and checks the guest commit. It converges the whole topology, checks the commit again, and runs the readiness probes. Then it runs the exercise and a final verification.
+Fresh development Nodes get the sample TLD `beast`. Each fresh production Node gets its own name as its TLD through the provision command. The unique production TLD lets the sample Instance clone create its preview route. A snapshot flow checks the promoted generation first. A missing, stale, or changed generation gives `infrastructure-error` and skips the exercise. A snapshot flow never changes the generation, its VMs or operator container, or its manifest.
+
+A snapshot flow mounts no worktree. It clones the three workload VMs and the operator container, and builds `app-prod-2` for the extension. Before dependency installation, it repairs the cloned Gateway addresses and WireGuard endpoints, so DNS can use the new Gateway. It synchronizes the exact candidate commit from Git into the checkout Nodes and checks the guest commit. It converges the whole topology, checks the commit again, and runs the readiness probes. Then it runs the exercise and a final verification.
 
 Scenario resources carry the issue `SCN-1` and the extra metadata `user.orbit.e2e.run`, `user.orbit.e2e.scenario`, and `user.orbit.e2e.recipe`. VM names are `orbit-e2e-scn-<run>-<scenario>-<attempt>-<node>`, with 8 characters of the run ID, 6 hex characters of the SHA-256 of the scenario ID, and 8 characters of the attempt ID. The network is `oe-` plus 12 hex characters of the SHA-256 of `<run>:<scenario>:<attempt>`. These VMs count against the same budget as issue topologies.
 
-The cold acceptance recipe separates the physical Node from its roles.
+The cold acceptance recipe has four workload VMs and one operator system container: five guests. The snapshot recipe has three workload VMs and one operator container: four guests/Nodes. The extension adds one workload VM. VM counts exclude the operator container; guest and Node counts include it.
 
 | Node key | Address | Checkout | Roles |
 | --- | --- | --- | --- |
 | `gateway` | `.10` | yes | `gateway`, `vpn` |
-| `operator` | `.11` | yes | `app-dev`, `metrics` |
+| `app-dev` workload Node | `.11` | yes | `app-dev`, `metrics` |
 | `app-prod` | `.12` | no | `app-prod` |
 | `extra` | `.13` | no | none |
+| `operator` system container | `.14` | yes | none; Gateway access grant and WireGuard peer |
+
+The roleless operator is distinct from the cold recipe's development workload Node. It has the same topology-pinned configuration and web-session contract as the operator in a snapshot topology.
 
 The harness writes each result and the aggregate under `<primary>/.e2e/scenarios/runs/<run-id>/`. A result records the commit, the run, scenario, and attempt IDs, the lane, the recipe and definition fingerprints, the phase timings, the action outcomes, the verification, the cleanup, and the recovery command.
 
@@ -271,6 +316,16 @@ An operator runs this command explicitly. It is not part of `bin/test`, CI, revi
 
 These reasons explain the design. Check them before you propose a change.
 
+### The reviewer requests discovery
+
+Ordinary groups use no topology resources. Acquisition at workspace provisioning was rejected because most groups do not need discovery and startup should not depend on it. The reviewer decides when discovery helps; the existing consult gives implementers a way to ask without granting agents host sudo or adding another request API. Orbit owns acquisition because it changes host firewall rules. A topology is not proof of correctness, so acquisition failure or absence never prevents approval. This serves lean resource use and the principle that agents operate while humans steer.
+
+### An isolated operator for web work
+
+The operator is a small roleless container rather than another workload VM. Its own WireGuard identity, Gateway grant, CA, and pinned endpoint keep UI actions on the disposable fleet. Joining the topology tunnel on beast was rejected: beast has a live identity, and topologies reuse address ranges. Running experiments against the real Gateway or falling back to a live profile was rejected because a missing disposable configuration must never turn a safe experiment into a live operation. Every topology pays the small operator cost, and the shared snapshot needs an operator-owned rebuild after deployment.
+
+The web session owns both its systemd unit and its Incus proxy device. The proxy publishes only on host IPv4 loopback; SSH forwarding gives Mac access without a public listener, DNS entry, or Caddy Route. Those alternatives add shared fleet state and exposure. Concurrent groups need OS-assigned host ports rather than a fixed port. The guest port stays fixed and strict so a conflict fails visibly, rather than silently opening the wrong server. Stopping the session removes both resources; release retries cleanup without forgetting ownership on failure.
+
 ### Disposable topologies from one snapshot
 
 Each issue gets fresh VMs on an isolated network, cloned from one prepared snapshot. Isolated networks let several topologies reuse the same addresses without conflict. Cloning takes about a minute, while a cold build takes much longer. Work on shared long-lived machines is a rejected alternative, because one change can leave state that breaks the next.
@@ -287,7 +342,7 @@ Topologies never reuse production resources or credentials. Evidence from a topo
 
 Discovery mounts the worktree, so an edit reaches the guests at once. Copying source into the guests after every edit is a rejected alternative, because it is slow and hides which source the guests run.
 
-### Three Nodes
+### Three workload VMs and an operator container
 
 The profile gives the Gateway, app-dev, and app-prod roles the room they need, with Router, database, WebSocket, and Ingress on those same three VMs. A fourth VM in every topology is a rejected alternative, because it raises the cost of every session for tests that need only one development host. Router on app-prod would work, but it keeps production routing on one VM and tests fewer network hops. The `gateway` role conflicts with `app-dev`, so those two roles need separate VMs.
 

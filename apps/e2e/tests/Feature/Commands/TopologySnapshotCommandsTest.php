@@ -44,7 +44,7 @@ function promotedGenerationFixture(): TopologySnapshotGeneration
     return new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -53,8 +53,8 @@ function promotedGenerationFixture(): TopologySnapshotGeneration
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
-        ['gateway', 'app-dev', 'app-prod'],
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 
@@ -230,7 +230,7 @@ describe('topology snapshot commands', function () {
             bindPromotedTopologySnapshot(new TopologySnapshotGeneration(
                 'g-'.str_repeat('a', 12),
                 $repository['old'],
-                ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+                ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
                 $promotedFingerprint->value,
                 str_repeat('d', 64),
                 $release,
@@ -240,7 +240,7 @@ describe('topology snapshot commands', function () {
                 $structuralFingerprint->manifest['base_image_alias'],
                 $structuralFingerprint->manifest['topology']['profile'],
                 $structuralFingerprint->manifest['topology']['roles'],
-                $structuralFingerprint->manifest['topology']['checkout_roles'],
+                $structuralFingerprint->manifest['topology']['checkout_roles'], operatorBaseImageFingerprint: str_repeat('b', 64),
             ));
             app()->instance(PreparedStateFingerprint::class, $fingerprints);
             app()->instance(LaravelReleaseResolver::class, new LaravelReleaseResolver('/missing/laravel.git'));
@@ -269,7 +269,7 @@ describe('topology snapshot commands', function () {
             bindPromotedTopologySnapshot(new TopologySnapshotGeneration(
                 'g-'.str_repeat('a', 12),
                 $repository['old'],
-                ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+                ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
                 $promotedFingerprint->value,
                 str_repeat('d', 64),
                 $promotedRelease,
@@ -279,7 +279,7 @@ describe('topology snapshot commands', function () {
                 $structuralFingerprint->manifest['base_image_alias'],
                 $structuralFingerprint->manifest['topology']['profile'],
                 $structuralFingerprint->manifest['topology']['roles'],
-                $structuralFingerprint->manifest['topology']['checkout_roles'],
+                $structuralFingerprint->manifest['topology']['checkout_roles'], operatorBaseImageFingerprint: str_repeat('b', 64),
             ));
             app()->instance(PreparedStateFingerprint::class, $fingerprints);
             app()->instance(LaravelReleaseResolver::class, new LaravelReleaseResolver($repository['path']));
@@ -490,7 +490,7 @@ describe('topology snapshot commands', function () {
         expect($instanceInventories)
             ->toBe(2)
             ->and($snapshotInventories)
-            ->toBe(3);
+            ->toBe(4);
     });
 });
 
@@ -509,15 +509,17 @@ function topologySnapshotCommandFingerprintRepository(bool $changePreparedInput)
                 'paths' => ['contracts/prepared.php'],
                 'cold_epoch' => 'ubuntu-26.04-amd64-v1',
                 'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+                'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
                 'declared_epochs' => ['node_convergence' => 1],
                 'topology' => [
                     'profile' => 'gateway_app-dev_app-prod',
-                    'roles' => ['gateway', 'app-dev', 'app-prod'],
-                    'checkout_roles' => ['gateway', 'app-dev'],
+                    'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
+                    'checkout_roles' => ['gateway', 'app-dev', 'operator'],
                     'assignments' => [
                         'gateway' => ['gateway', 'vpn'],
                         'app-dev' => ['app-dev', 'metrics'],
                         'app-prod' => ['app-prod'],
+                        'operator' => [],
                     ],
                 ],
             ],
@@ -584,6 +586,6 @@ function topologySnapshotCommandInstanceInventory(): string
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
             'devices' => ['root' => ['pool' => 'default']],
         ],
-        ['gateway', 'app-dev', 'app-prod'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
     ), JSON_THROW_ON_ERROR);
 }

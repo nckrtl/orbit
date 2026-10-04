@@ -1,12 +1,15 @@
 """Exercise bin/e2e-clone-bridge and the bin/e2e-topology bridge with real repositories."""
 import importlib.machinery
 import importlib.util
+import json
 import os
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -284,6 +287,72 @@ class CloneBridgeTest(unittest.TestCase):
         )
         self.assertEqual(arguments, ['TASK-7', str(self.bridge), f'--worktree={self.bridge}', '--json', 'kept.php'])
         self.assertTrue(has_worktree)
+
+    def test_signalling_the_public_web_pid_reaches_the_bridged_owner_and_waits_for_cleanup(self):
+        bridge.register(self.primary)
+        fake = Path(self.temporary.name) / 'signal-bin'
+        fake.mkdir()
+        (fake / 'php').write_text('''#!/usr/bin/env python3
+import json
+import os
+import signal
+import sys
+from pathlib import Path
+state = Path(os.environ['WEB_TEST_STATE'])
+unit = state / 'unit'
+publication = state / 'publication'
+unit.touch()
+publication.touch()
+def stop(number, frame):
+    unit.unlink()
+    publication.unlink()
+    (state / 'cleaned').write_text(str(number))
+    sys.exit(0)
+signal.signal(signal.SIGTERM, stop)
+signal.signal(signal.SIGHUP, stop)
+(state / 'ready.tmp').write_text(json.dumps({'pid': os.getpid(), 'argv': sys.argv[1:]}))
+(state / 'ready.tmp').rename(state / 'ready')
+while True:
+    signal.pause()
+''')
+        (fake / 'php').chmod(stat.S_IRWXU)
+        for number in (signal.SIGTERM, signal.SIGHUP):
+            with self.subTest(signal=number):
+                state = Path(self.temporary.name) / f'signal-{number}'
+                state.mkdir()
+                environment = {**os.environ, 'PATH': f'{fake}:{os.environ["PATH"]}',
+                               'WEB_TEST_STATE': str(state)}
+                # Exercise the public wrapper, real clone registry and real bridge routing.
+                # Only the final PHP/service boundary is substituted.
+                process = subprocess.Popen(['bin/e2e-topology', 'web', 'TASK-7'], cwd=self.clone,
+                                           env=environment, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                           text=True, start_new_session=True)
+                try:
+                    deadline = time.monotonic() + 10
+                    while not (state / 'ready').exists() and process.poll() is None and time.monotonic() < deadline:
+                        time.sleep(0.01)
+                    self.assertTrue((state / 'ready').exists(), 'bridged foreground owner did not become ready')
+                    ready = json.loads((state / 'ready').read_text())
+                    self.assertEqual(ready['argv'], [str(self.bridge / 'apps/e2e/artisan'),
+                                                    'topology:web', 'TASK-7', f'--worktree={self.bridge}'])
+                    # Signal only the command PID, not its process group or the PHP PID.
+                    os.kill(process.pid, number)
+                    self.assertEqual(process.wait(timeout=5), 0, 'public command exited without waiting for owner cleanup')
+                    output, errors = process.communicate(timeout=5)
+                    self.assertEqual(process.returncode, 0, output + errors)
+                    self.assertEqual(ready['pid'], process.pid, 'the public command left a waiting parent wrapper')
+                    self.assertEqual((state / 'cleaned').read_text(), str(number))
+                    self.assertFalse((state / 'unit').exists())
+                    self.assertFalse((state / 'publication').exists())
+                finally:
+                    # Kill only this fixture's newly created process group, including orphaned
+                    # bridge descendants when testing the broken wrapper.
+                    if process.poll() is None or not (state / 'cleaned').exists():
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                    process.communicate(timeout=5)
 
     def test_the_wrapper_runs_the_command_through_the_bridge(self):
         fake = Path(self.temporary.name) / 'fake-bin'

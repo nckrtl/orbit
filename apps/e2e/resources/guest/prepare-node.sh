@@ -16,7 +16,9 @@ case "$mode" in
     esac
     apt-get clean
     sync -f /
-    fstrim --quiet-unsupported /
+    if ! systemd-detect-virt --quiet --container; then
+      fstrim --quiet-unsupported /
+    fi
     ;;
   gateway-authorize)
     [[ $# -eq 2 && "$2" =~ ^ssh-ed25519\ [A-Za-z0-9+/]+={0,2}$ ]] || exit 64

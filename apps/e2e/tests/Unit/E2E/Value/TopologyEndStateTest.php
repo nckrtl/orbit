@@ -16,18 +16,18 @@ describe('TopologyEndState', function (): void {
             ->and($endState->declaresAbsence())
             ->toBeFalse()
             ->and($endState->peers())
-            ->toBe(['app-dev', 'app-prod']);
+            ->toBe(['app-dev', 'app-prod', 'operator']);
     });
 
     it('reads a declared set and names what it leaves out', function (): void {
-        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev']]);
+        $endState = TopologyEndState::fromArray(['nodes' => ['gateway', 'app-dev', 'operator']]);
 
         expect($endState->nodes)
-            ->toBe(['gateway', 'app-dev'])
+            ->toBe(['gateway', 'app-dev', 'operator'])
             ->and($endState->absent())
             ->toBe(['app-prod'])
             ->and($endState->peers())
-            ->toBe(['app-dev'])
+            ->toBe(['app-dev', 'operator'])
             ->and($endState->declaresAbsence())
             ->toBeTrue()
             ->and($endState->keeps('app-dev'))
@@ -35,21 +35,21 @@ describe('TopologyEndState', function (): void {
             ->and($endState->keeps('app-prod'))
             ->toBeFalse()
             ->and($endState->toArray())
-            ->toBe(['nodes' => ['gateway', 'app-dev']]);
+            ->toBe(['nodes' => ['gateway', 'app-dev', 'operator']]);
     });
 
     it('records the declared set in profile order however the plan wrote it', function (): void {
-        expect(TopologyEndState::fromArray(['nodes' => ['app-prod', 'app-dev', 'gateway']])->nodes)
+        expect(TopologyEndState::fromArray(['nodes' => ['app-prod', 'operator', 'app-dev', 'gateway']])->nodes)
             ->toBe(TopologyProfile::ROLES)
-            ->and(TopologyEndState::fromArray(['nodes' => ['app-dev', 'gateway']])->nodes)
-            ->toBe(['gateway', 'app-dev']);
+            ->and(TopologyEndState::fromArray(['nodes' => ['app-dev', 'operator', 'gateway']])->nodes)
+            ->toBe(['gateway', 'app-dev', 'operator']);
     });
 
     it('accepts a declaration that keeps the gateway alone', function (): void {
         $endState = TopologyEndState::fromArray(['nodes' => ['gateway']]);
 
         expect($endState->absent())
-            ->toBe(['app-dev', 'app-prod'])
+            ->toBe(['app-dev', 'app-prod', 'operator'])
             ->and($endState->peers())
             ->toBe([]);
     });
@@ -61,7 +61,7 @@ describe('TopologyEndState', function (): void {
                 'The proof plan key ends_with must be an object with exactly the key nodes.',
             );
     })->with([
-        'a list of node names' => [['gateway', 'app-dev']],
+        'a list of node names' => [['gateway', 'app-dev', 'operator']],
         'an extra key' => [['nodes' => ['gateway'], 'roles' => []]],
         'no key at all' => [[]],
         'a string' => ['gateway'],
@@ -86,7 +86,7 @@ describe('TopologyEndState', function (): void {
         expect(fn (): TopologyEndState => TopologyEndState::fromArray(['nodes' => ['gateway', $node]]))
             ->toThrow(
                 InvalidArgumentException::class,
-                'The proof plan key ends_with.nodes must name nodes from gateway, app-dev, app-prod.',
+                'The proof plan key ends_with.nodes must name nodes from gateway, app-dev, app-prod, operator.',
             );
     })->with([
         'an unknown role' => ['app-staging'],

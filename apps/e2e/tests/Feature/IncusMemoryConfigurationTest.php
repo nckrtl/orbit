@@ -6,7 +6,7 @@ use App\E2E\IncusHost;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 
-it('sizes newly created VMs by physical Node with the existing uniform override', function (?string $override, string $node, string $memory, int $address): void {
+it('sizes newly created guests by physical Node with the existing uniform override', function (?string $override, string $node, string $memory, int $address): void {
     if ($override !== null) {
         config(['e2e.incus.memory' => $override]);
     }
@@ -34,7 +34,7 @@ it('sizes newly created VMs by physical Node with the existing uniform override'
     'development' => [null, 'app-dev', '2GiB', 11],
     'production' => [null, 'app-prod', '1GiB', 12],
     'production extension' => [null, 'app-prod-2', '1GiB', 13],
-    'cold operator' => [null, 'operator', '2GiB', 11],
+    'roleless operator container' => [null, 'operator', '512MiB', 14],
     'cold extra' => [null, 'extra', '2GiB', 13],
     'uniform Gateway override' => ['3GiB', 'gateway', '3GiB', 10],
     'uniform production override' => ['3GiB', 'app-prod', '3GiB', 12],

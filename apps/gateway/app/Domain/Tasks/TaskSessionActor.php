@@ -89,8 +89,8 @@ final readonly class TaskSessionActor
     }
 
     /**
-     * Continues one thread after a server restart. The key was reserved before this call. Pi posts it
-     * as the send key (ADR 0167).
+     * Continues the same thread after a server restart or resource request. The caller reserves a stable
+     * key before this call. Pi posts it as the send key (ADR 0167).
      */
     public function resumeInterruptedTurn(Task $group, TaskThreadObservation $observed, string $message, string $key): void
     {

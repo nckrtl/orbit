@@ -112,7 +112,10 @@ final readonly class ScenarioColdExecutor
                 throw new RuntimeException('The faithful cold flow requires the unchanged Ubuntu 26.04 runtime base alias.');
             }
             $sourceSha = $definition->expectsConstructionFailure ? str_repeat('0', 40) : $candidate;
-            $imageFingerprints = [$image => $this->host->imageFingerprint($image)];
+            $imageFingerprints = [
+                $image => $this->host->imageFingerprint($image),
+                TopologyRecipe::OPERATOR_IMAGE => $this->host->imageFingerprint(TopologyRecipe::OPERATOR_IMAGE, 'container'),
+            ];
             $metadata = [
                 'user.orbit.e2e.issue' => 'SCN-1',
                 'user.orbit.e2e.run' => $run->value,

@@ -196,7 +196,7 @@ it('provisions a workspace without an automatic root dependency copy', function 
     expect($instance?->status)->toBe(InstanceState::SourceResolved);
 });
 
-it('acquires the group topology for a new and a reused workspace, and continues when acquiring fails', function (): void {
+it('never acquires a topology when provisioning a new or reused workspace', function (): void {
     $project = provisioner_app('topology');
     provisioner_node('topology-dev', '10.44.0.112');
     $group = provisioner_group($project, 'Topology');
@@ -210,7 +210,7 @@ it('acquires the group topology for a new and a reused workspace, and continues 
     $reused = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(['taskable']) ?? $group, false));
 
     expect($reused?->id)->toBe($instance?->id)
-        ->and($topology->calls)->toBe([['acquire', $instance?->id, $group->id], ['acquire', $instance?->id, $group->id]]);
+        ->and($topology->calls)->toBe([]);
 });
 
 it('leaves a group reserved when no app-dev Node can take the workspace', function (): void {

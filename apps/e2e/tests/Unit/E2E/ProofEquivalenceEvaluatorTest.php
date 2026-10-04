@@ -203,7 +203,7 @@ function proofEquivalenceGeneration(string $main): TopologySnapshotGeneration
         [
             'gateway' => 'main-equivalence-gateway',
             'app-dev' => 'main-equivalence-app-dev',
-            'app-prod' => 'main-equivalence-app-prod',
+            'app-prod' => 'main-equivalence-app-prod', 'operator' => 'main-equivalence-operator',
         ],
         str_repeat('d', 64),
         str_repeat('e', 64),
@@ -214,7 +214,7 @@ function proofEquivalenceGeneration(string $main): TopologySnapshotGeneration
         'orbit-base-ubuntu-26.04-runtime',
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 

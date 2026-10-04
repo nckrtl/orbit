@@ -54,7 +54,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
     $generation = new TopologySnapshotGeneration(
         'fixture-generation',
         str_repeat('c', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('d', 64),
         str_repeat('e', 64),
         new LaravelRelease('v13.10.1', str_repeat('f', 40)),
@@ -64,7 +64,7 @@ function proofReviewServiceFixture(bool $proofFlow = true): array
         TopologyRecipe::BASE_IMAGE,
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $construction = TopologyConstructionInputs::create(
         $target,
@@ -161,7 +161,7 @@ function fakeProofReviewHost(array &$commands, ?string $wrongOwner = null): void
 
             return Process::result(json_encode([[
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'status' => 'Running',
                 'status_code' => 103,
                 'config' => [
@@ -203,7 +203,7 @@ it('records an incomplete action before exec and then stores a redacted bounded 
         if (($command[3] ?? null) === 'list') {
             return Process::result(json_encode([[
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'status' => 'Running',
                 'status_code' => 103,
                 'config' => [
@@ -306,7 +306,7 @@ it('reports an exploratory failure separately without blocking readiness', funct
         if (($command[3] ?? null) === 'list') {
             return Process::result(json_encode([[
                 'name' => $name,
-                'type' => 'virtual-machine',
+                'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                 'status' => 'Running',
                 'status_code' => 103,
                 'config' => [

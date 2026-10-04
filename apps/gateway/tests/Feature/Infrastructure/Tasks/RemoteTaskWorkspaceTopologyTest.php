@@ -22,10 +22,36 @@ function topology_workspace(bool $harness, bool $held, bool $exits = false): arr
         file_put_contents($checkout.'/bin/e2e-topology', <<<'BASH'
             #!/bin/bash
             printf '%s\n' "$*" >> "$(dirname "$0")/../calls"
+            root=$(dirname "$0")/..
+            if [ "$1" = acquire ]; then
+                if [ -e "$root/acquire-fails" ]; then
+                    if [ -e "$root/stdout-failure" ]; then
+                        # E2ECommand::outputFailure uses Laravel error(), which writes to stdout.
+                        echo 'No topology capacity; token=topology-secret-value'
+                    else
+                        echo 'No topology capacity; token=topology-secret-value' >&2
+                    fi
+                    exit 7
+                fi
+                if [ -e "$root/interrupt-acquisition" ]; then
+                    touch "$root/incomplete"
+                    echo 'Construction failed and rollback was refused; lease retained.'
+                    exit 7
+                fi
+                touch "$root/held"
+            fi
             if [ "$1" = status ]; then
-                if [ -e "$(dirname "$0")/../held" ]; then echo 'discovery 0123'; elif [ -e "$(dirname "$0")/../exits" ]; then exit 1; else echo absent; fi
+                if [ -e "$root/exits" ]; then echo 'Cannot read topology status'; exit 1; fi
+                if [ -e "$root/incomplete" ]; then
+                    if [ "${3:-}" = --json ]; then echo '{"state":"discovery","attempt_id":"0123","topology":null}'; else echo 'discovery 0123'; fi
+                elif [ -e "$root/held" ]; then
+                    if [ "${3:-}" = --json ]; then echo '{"state":"discovery","attempt_id":"0123","topology":{"purpose":"discovery","attempt_id":"0123"}}'; else echo 'discovery 0123'; fi
+                else
+                    if [ "${3:-}" = --json ]; then echo '{"state":"absent","proof":null}'; else echo absent; fi
+                fi
                 exit 0
             fi
+            if [ "$1" = release ]; then rm -f "$root/incomplete" "$root/held"; fi
             BASH);
         chmod($checkout.'/bin/e2e-topology', 0755);
     }
@@ -66,37 +92,85 @@ it('acquires only when the group holds no topology and releases only one it hold
     [$topology, $instance, $checkout] = topology_workspace(true, $held);
 
     try {
-        $topology->{$operation}($instance, 42);
+        $result = $topology->{$operation}($instance, 42);
 
         expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(str_replace('{checkout}', (string) realpath($checkout), $calls));
+        if ($operation === 'acquire') {
+            expect($result)->toBe(! $held);
+        }
     } finally {
         new Filesystem()->deleteDirectory($checkout);
     }
 })->with([
-    'acquire a missing topology' => ['acquire', false, ['status TASK-42', 'acquire TASK-42 {checkout}']],
-    'keep a held topology' => ['acquire', true, ['status TASK-42']],
+    'acquire a missing topology' => ['acquire', false, ['status TASK-42 --json', 'acquire TASK-42 {checkout}', 'status TASK-42 --json']],
+    'keep a held topology' => ['acquire', true, ['status TASK-42 --json']],
     'release a held topology' => ['release', true, ['status TASK-42', 'release TASK-42']],
     'skip release without one' => ['release', false, ['status TASK-42']],
 ]);
 
-it('treats a harness whose status exits non-zero as holding no topology', function (): void {
+it('reports the acquisition failure reason from stdout or stderr without claiming ready or leaking secrets', function (bool $stdout): void {
+    [$topology, $instance, $checkout] = topology_workspace(true, false);
+    touch($checkout.'/acquire-fails');
+    if ($stdout) {
+        touch($checkout.'/stdout-failure');
+    }
+    try {
+        $failure = null;
+        try {
+            $topology->acquire($instance, 42);
+        } catch (RuntimeException $exception) {
+            $failure = $exception->getMessage();
+        }
+        expect($failure)->not->toBeNull()
+            ->and($failure)->toContain('No topology capacity')
+            ->and($failure)->not->toContain('topology-secret-value')
+            ->and(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['status TASK-42 --json', 'acquire TASK-42 '.realpath($checkout)]);
+    } finally {
+        new Filesystem()->deleteDirectory($checkout);
+    }
+})->with([false, true]);
+
+it('does not acquire when topology status cannot be read', function (): void {
     [$topology, $instance, $checkout] = topology_workspace(true, false, true);
 
     try {
-        $topology->acquire($instance, 42);
-        $topology->release($instance, 42);
+        expect(fn () => $topology->acquire($instance, 42))->toThrow(RuntimeException::class, 'Cannot read topology status');
 
-        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['status TASK-42', 'acquire TASK-42 '.realpath($checkout), 'status TASK-42']);
+        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['status TASK-42 --json']);
     } finally {
         new Filesystem()->deleteDirectory($checkout);
     }
 });
 
-it('does nothing in a workspace without the harness', function (string $operation): void {
+it('reports retained incomplete acquisition state instead of already held and preserves it for normal cleanup', function (): void {
+    [$topology, $instance, $checkout] = topology_workspace(true, false);
+    touch($checkout.'/interrupt-acquisition');
+
+    try {
+        expect(fn () => $topology->acquire($instance, 42))->toThrow(RuntimeException::class, 'lease retained');
+        expect(fn () => $topology->acquire($instance, 42))->toThrow(RuntimeException::class, 'without a complete discovery topology');
+        expect(file_exists($checkout.'/incomplete'))->toBeTrue()
+            ->and(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe([
+                'status TASK-42 --json', 'acquire TASK-42 '.realpath($checkout), 'status TASK-42 --json',
+            ]);
+
+        $topology->release($instance, 42);
+        expect(file_exists($checkout.'/incomplete'))->toBeFalse()
+            ->and(array_slice(file($checkout.'/calls', FILE_IGNORE_NEW_LINES), -2))->toBe(['status TASK-42', 'release TASK-42']);
+    } finally {
+        new Filesystem()->deleteDirectory($checkout);
+    }
+});
+
+it('reports an unavailable acquisition but skips release in a workspace without the harness', function (string $operation): void {
     [$topology, $instance, $checkout] = topology_workspace(false, false);
 
     try {
-        $topology->{$operation}($instance, 42);
+        if ($operation === 'acquire') {
+            expect(fn () => $topology->acquire($instance, 42))->toThrow(RuntimeException::class, 'no executable bin/e2e-topology harness');
+        } else {
+            $topology->release($instance, 42);
+        }
 
         expect(file_exists($checkout.'/calls'))->toBeFalse();
     } finally {

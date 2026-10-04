@@ -14,19 +14,19 @@ function replacementRecoveryInstallationFixture(string $artifactSha = ''): Topol
 {
     $old = new TopologySnapshotGeneration(
         'old-generation', str_repeat('1', 40),
-        ['gateway' => 'main-old-gateway', 'app-dev' => 'main-old-app-dev', 'app-prod' => 'main-old-app-prod'],
+        ['gateway' => 'main-old-gateway', 'app-dev' => 'main-old-app-dev', 'app-prod' => 'main-old-app-prod', 'operator' => 'main-old-operator'],
         str_repeat('2', 64), str_repeat('3', 64),
         new LaravelRelease('v13.10.1', str_repeat('4', 40)),
         str_repeat('5', 64), 2, 'ubuntu-26.04-amd64-v1', 'orbit-base-ubuntu-26.04-runtime',
-        TopologyProfile::NAME, TopologyProfile::ROLES, TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::NAME, TopologyProfile::ROLES, TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $new = new TopologySnapshotGeneration(
         'new-generation', str_repeat('6', 40),
-        ['gateway' => 'main-new-gateway', 'app-dev' => 'main-new-app-dev', 'app-prod' => 'main-new-app-prod'],
+        ['gateway' => 'main-new-gateway', 'app-dev' => 'main-new-app-dev', 'app-prod' => 'main-new-app-prod', 'operator' => 'main-new-operator'],
         str_repeat('7', 64), str_repeat('8', 64),
         new LaravelRelease('v13.10.1', str_repeat('4', 40)),
         str_repeat('9', 64), 2, 'ubuntu-26.04-amd64-v1', 'orbit-base-ubuntu-26.04-runtime',
-        TopologyProfile::NAME, TopologyProfile::ROLES, TopologyProfile::CHECKOUT_ROLES, 'old-generation',
+        TopologyProfile::NAME, TopologyProfile::ROLES, TopologyProfile::CHECKOUT_ROLES, 'old-generation', operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new TopologySnapshotReplacementInstallation(
@@ -35,10 +35,10 @@ function replacementRecoveryInstallationFixture(string $artifactSha = ''): Topol
         $artifactSha === '' ? str_repeat('e', 40) : $artifactSha,
         str_repeat('f', 40), str_repeat('6', 40), str_repeat('a', 64), str_repeat('b', 64),
         $old, $new, 'orbit-base-ubuntu-26.04-runtime', str_repeat('8', 64), 'oe-replacement',
-        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
-        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
-        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
-        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod', 'operator' => 'replacement-operator'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod', 'operator' => 'snapshot-operator'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next', 'operator' => 'snapshot-operator-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old', 'operator' => 'snapshot-operator-old'],
     );
 }
 

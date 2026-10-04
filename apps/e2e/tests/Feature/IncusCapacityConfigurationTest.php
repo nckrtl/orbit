@@ -11,6 +11,7 @@ it('accepts a numeric Incus VM capacity', function (int|float|string $capacity):
     Process::fake(['*' => Process::result(json_encode(array_map(
         static fn (int $index): array => [
             'name' => 'orbit-e2e-capacity-'.$index,
+            'type' => 'virtual-machine',
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
         ],
         range(1, 24),

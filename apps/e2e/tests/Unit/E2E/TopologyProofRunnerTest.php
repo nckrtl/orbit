@@ -103,7 +103,7 @@ function legacyProofGeneration(): TopologySnapshotGeneration
         [
             'gateway' => 'main-legacy-gateway',
             'app-dev' => 'main-legacy-app-dev',
-            'app-prod' => 'main-legacy-app-prod',
+            'app-prod' => 'main-legacy-app-prod', 'operator' => 'main-legacy-operator',
         ],
         str_repeat('b', 64),
         str_repeat('c', 64),
@@ -116,7 +116,7 @@ function legacyProofGeneration(): TopologySnapshotGeneration
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
         topologyAssignments: null,
-        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA,
+        manifestSchema: TopologySnapshotGeneration::LEGACY_SCHEMA, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 
@@ -945,7 +945,7 @@ it('constructs and retains an independently addressed extended proof beside disc
     expect($capture->attempt->value)
         ->toBe($proofTarget->requireAttempt()->value)
         ->and(array_keys($capture->topology->instances))
-        ->toBe(['gateway', 'app-dev', 'app-prod', 'app-prod-2'])
+        ->toBe(['gateway', 'app-dev', 'app-prod', 'operator', 'app-prod-2'])
         ->and($state->hasAttempt(AttemptPurpose::Proof))
         ->toBeTrue()
         ->and($state->capturedProof()?->fingerprint())
@@ -1123,7 +1123,7 @@ it('persists and proves a declared replacement from exact generic-base inputs', 
         ->and($topology->construction->imageFingerprint)
         ->toBe(str_repeat('b', 64))
         ->and(array_column($topology->construction->nodes, 'source'))
-        ->toBe(['image', 'image', 'image'])
+        ->toBe(['image', 'image', 'image', 'image'])
         ->and($manifest['construction'] ?? null)
         ->toBe($topology->construction->toArray())
         ->and($commands)

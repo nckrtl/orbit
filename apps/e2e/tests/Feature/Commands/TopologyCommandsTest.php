@@ -18,6 +18,7 @@ use App\Console\Commands\Topology\SpawnCommand;
 use App\Console\Commands\Topology\StatusCommand;
 use App\Console\Commands\Topology\SyncCommand;
 use App\Console\Commands\Topology\VerifyCommand;
+use App\Console\Commands\Topology\WebCommand;
 use App\E2E\DiscoveryGuestPreparer;
 use App\E2E\HostCapacity;
 use App\E2E\IncusHost;
@@ -89,6 +90,7 @@ describe('topology commands', function () {
             new ShellCommand()->getName(),
             new ExecCommand()->getName(),
             new SpawnCommand()->getName(),
+            new WebCommand()->getName(),
             new LogsCommand()->getName(),
             new KillCommand()->getName(),
             new SyncCommand()->getName(),
@@ -106,6 +108,7 @@ describe('topology commands', function () {
             'topology:shell',
             'topology:exec',
             'topology:spawn',
+            'topology:web',
             'topology:logs',
             'topology:kill',
             'topology:sync',
@@ -119,6 +122,13 @@ describe('topology commands', function () {
             'topology:status',
             'topology:release',
         ]);
+    });
+
+    it('refuses web without an acquired topology rather than acquiring or using a live profile', function () {
+        commandPrimaryFixture();
+        Process::fake();
+        $this->artisan('topology:web', ['issue' => 'TST-12', '--json' => true])->assertFailed();
+        Process::assertNothingRan();
     });
 
     it('takes the issue and finds the worktree; only acquire names the worktree as an argument', function () {
@@ -460,7 +470,7 @@ describe('topology commands', function () {
             TopologyProfile::ROLES,
             TopologyProfile::CHECKOUT_ROLES,
             $old->id,
-            TopologyProfile::ASSIGNMENTS,
+            TopologyProfile::ASSIGNMENTS, operatorBaseImageFingerprint: str_repeat('b', 64),
         );
         $replacementAttempt = new AttemptId(str_repeat('c', 32));
         $temporary = TopologyTarget::disposableCold(
@@ -1098,7 +1108,7 @@ function commandTopologyFixture(
     $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -1107,8 +1117,8 @@ function commandTopologyFixture(
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
-        ['gateway', 'app-dev', 'app-prod'],
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
     $construction = $recipe?->nodeKeys() === TopologyRecipe::extendedAppProd()->nodeKeys()
         ? TopologyConstructionInputs::create(
@@ -1179,7 +1189,7 @@ function commandInstanceFixture(FeatureTopology $topology, string $role): array
 {
     return [
         'name' => $topology->target->instance($role),
-        'type' => 'virtual-machine',
+        'type' => $role === 'operator' ? 'container' : 'virtual-machine',
         'status' => 'Running',
         'status_code' => 103,
         'config' => [

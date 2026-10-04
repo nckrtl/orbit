@@ -131,10 +131,10 @@ describe('TopologyTarget', function () {
 
         expect($target->network())->toBe('oe-a004e3f9e8dd');
         expect($target->instance('operator'))->toBe('orbit-e2e-aux-106-aaaaaaaa-operator');
-        expect($target->instance('app-dev'))->toBe('orbit-e2e-aux-106-aaaaaaaa-operator');
+        expect($target->instance('app-dev'))->toBe('orbit-e2e-aux-106-aaaaaaaa-app-dev');
         expect($target->instance('extra'))->toBe('orbit-e2e-aux-106-aaaaaaaa-extra');
         expect($target->mac('operator'))->toBe('00:16:3e:77:1f:b1');
-        expect($target->mac('app-dev'))->toBe('00:16:3e:77:1f:b1');
+        expect($target->mac('app-dev'))->toBe('00:16:3e:79:4e:6d');
         expect(TopologyTarget::ipv4For(2, $target->recipe->node('extra')->address))->toBe('10.232.2.13');
     });
 

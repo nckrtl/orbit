@@ -10,7 +10,6 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -55,7 +54,7 @@ final readonly class LegacyTopologySnapshotRecovery
         }
         if (! in_array(
             $promoted->manifestSchema,
-            [TopologySnapshotGeneration::LEGACY_SCHEMA, TopologySnapshotGeneration::SCHEMA],
+            [TopologySnapshotGeneration::LEGACY_SCHEMA, 5, TopologySnapshotGeneration::SCHEMA],
             true,
         )) {
             throw new RuntimeException(
@@ -67,7 +66,7 @@ final readonly class LegacyTopologySnapshotRecovery
         $recorded = $this->manifests->recorded();
         $target = TopologyTarget::topologySnapshot($this->identity);
         $roles = [];
-        foreach (TopologyProfile::ROLES as $role) {
+        foreach ($promoted->topologyRoles as $role) {
             $roles[$target->instance($role)] = ['role' => $role, 'copy' => false];
             $roles[$target->instance($role).'-next'] = ['role' => $role, 'copy' => true];
         }
@@ -76,7 +75,7 @@ final readonly class LegacyTopologySnapshotRecovery
         $serializedInstances = [];
         foreach ($instances as $name => $instance) {
             $identity = $roles[$name];
-            $this->assertInstance($instance, $identity['role'], $identity['copy']);
+            $this->assertInstance($instance, $identity['role'], $identity['copy'], $promoted);
             $serializedInstances[$name] = $this->instanceArray($instance);
         }
         ksort($serializedInstances, SORT_STRING);
@@ -96,7 +95,7 @@ final readonly class LegacyTopologySnapshotRecovery
 
         $network = $this->host->network($this->identity->network());
         if ($network !== null) {
-            $this->assertNetwork($network, array_keys($instances));
+            $this->assertNetwork($network, array_keys($instances), $promoted);
         }
         if ($instances === [] && $network === null) {
             throw new RuntimeException(
@@ -326,7 +325,7 @@ final readonly class LegacyTopologySnapshotRecovery
         $this->state->delete('topology-snapshot/recovery.json');
     }
 
-    private function assertInstance(IncusInstance $instance, string $role, bool $copy): void
+    private function assertInstance(IncusInstance $instance, string $role, bool $copy, TopologySnapshotGeneration $generation): void
     {
         if (($instance->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
             throw new RuntimeException("Incus instance {$instance->name} ownership does not match.");
@@ -347,6 +346,7 @@ final readonly class LegacyTopologySnapshotRecovery
         $expectedMetadata = [
             'user.orbit.e2e.owner' => 'orbit-e2e',
             'user.orbit.e2e.operation' => $operation->value,
+            ...$generation->baseImageMetadata($role),
         ];
         $metadata = $instance->metadata;
         if (! is_string($issue) || $issue === '') {
@@ -389,18 +389,19 @@ final readonly class LegacyTopologySnapshotRecovery
     }
 
     /** @param list<string> $instanceNames */
-    private function assertNetwork(IncusNetwork $network, array $instanceNames): void
+    private function assertNetwork(IncusNetwork $network, array $instanceNames, TopologySnapshotGeneration $generation): void
     {
         if (($network->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e') {
             throw new RuntimeException("Incus network {$network->name} ownership does not match.");
         }
         $operation = $this->operationId($network->metadata, $network->name);
+        $lastAddress = $generation->isLegacy() ? 12 : 14;
         $expected = [
             'user.orbit.e2e.owner' => 'orbit-e2e',
             'user.orbit.e2e.operation' => $operation->value,
             'ipv4.address' => "10.232.{$this->identity->slot}.1/24",
             'ipv4.nat' => 'true',
-            'ipv4.dhcp.ranges' => "10.232.{$this->identity->slot}.10-10.232.{$this->identity->slot}.12",
+            'ipv4.dhcp.ranges' => "10.232.{$this->identity->slot}.10-10.232.{$this->identity->slot}.{$lastAddress}",
             'ipv6.address' => 'none',
             'raw.dnsmasq' => 'port=0',
         ];

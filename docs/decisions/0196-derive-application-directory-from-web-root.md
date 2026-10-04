@@ -3,7 +3,7 @@ title: "Derive the application directory from the web root"
 description: "Separate a Laravel application's directory from its repository, and keep the path contract ready for several named apps per Project."
 ---
 
-# ADR 0195: Derive the application directory from the web root
+# ADR 0196: Derive the application directory from the web root
 
 Orbit derives one Laravel application directory from the effective web root. Repository operations keep their repository scope. A follow-up group replaces the single root with named apps without creating another Project for the same repository.
 

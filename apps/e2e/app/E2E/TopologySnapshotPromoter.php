@@ -497,6 +497,7 @@ final readonly class TopologySnapshotPromoter
             $checkoutRoles,
             $previous,
             $assignments,
+            operatorBaseImageFingerprint: $promoted->operatorBaseImageFingerprint,
         );
     }
 

@@ -202,7 +202,7 @@ describe('IncusHost reads', function () {
             ->and(fn () => $host->instances([$name]))
             ->toThrow(RuntimeException::class, $batchMessage);
     })->with([
-        'container' => ['type', 'container', 'not a virtual machine', 'identity is not a virtual machine'],
+        'unknown type' => ['type', 'unknown', 'not a virtual machine', 'identity is not a virtual machine'],
         'missing pool' => ['pool', null, 'no storage pool identity', 'identity is invalid'],
         'wrong pool' => ['pool', 'other', 'storage pool identity does not match', 'identity is invalid'],
         'missing status' => ['status', null, 'no valid power status', 'identity is invalid'],
@@ -888,7 +888,7 @@ describe('IncusHost reads', function () {
         expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'malformed JSON');
 
-        Process::fake(['*' => Process::result(vmJson(type: 'container'))]);
+        Process::fake(['*' => Process::result(vmJson(type: 'unknown'))]);
         expect(fn () => incusHost()->instance('orbit-e2e-tst-123-aaaaaaaa-gateway'))
             ->toThrow(RuntimeException::class, 'not a virtual machine');
     });

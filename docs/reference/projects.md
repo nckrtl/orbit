@@ -38,7 +38,7 @@ For a Laravel Instance, the application directory is the effective web root with
 
 The application directory contains `composer.json`, `artisan`, development [environment files](/reference/environment-variables#where-the-file-lives), and Laravel [logs](/reference/instance-logs#know-which-file-the-gateway-reads). PHP-FPM, default systemd Instance Processes, and Instance Schedules use it as their application working directory. Production resolves it through `current`. Setup, teardown, deploy steps, and task-check commands still run from the repository root; a nested Artisan step must change directory explicitly.
 
-Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. This group keeps one effective root and the existing type rules. The [application-directory decision](/decisions/0195-derive-application-directory-from-web-root#target-model-for-the-follow-up-multi-app-group) records the follow-up target: one or more named apps per Project, each with a path and web root, and each Instance serving every app under its own Route. That target is not today's API.
+Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. This group keeps one effective root and the existing type rules. The [application-directory decision](/decisions/0196-derive-application-directory-from-web-root#target-model-for-the-follow-up-multi-app-group) records the follow-up target: one or more named apps per Project, each with a path and web root, and each Instance serving every app under its own Route. That target is not today's API.
 
 ## Development deploy steps
 

@@ -37,7 +37,7 @@ function issueStateTopology(
     $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', '5aad4ddf34d5e21dfe6b4c07eeac67d5bd5e08b0'),
@@ -46,8 +46,8 @@ function issueStateTopology(
         'ubuntu-26.04-amd64-v1',
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
-        ['gateway', 'app-dev', 'app-prod'],
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'app-prod', 'operator'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     $construction = $snapshotReplacement
@@ -55,7 +55,7 @@ function issueStateTopology(
             $target,
             2,
             $generation->baseImageAlias,
-            $generation->baseImageFingerprint,
+            $generation->baseImageFingerprint, operatorBaseImageFingerprint: str_repeat('b', 64),
         )
         : TopologyConstructionInputs::create(
             $target,

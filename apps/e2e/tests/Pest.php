@@ -57,6 +57,17 @@ if (is_string($scenarioTiaDirectory) && is_string($scenarioPrimary)) {
     pest()->tia()->directory($scenarioTiaDirectory);
 }
 
+/** Serialized with the pre-operator value classes from commit 9f1e79c70. */
+function preOperatorTopologyRecord(): array
+{
+    return json_decode(
+        file_get_contents(__DIR__.'/Fixtures/topology/pre-operator-schema-2.json'),
+        true,
+        512,
+        JSON_THROW_ON_ERROR,
+    );
+}
+
 /** @return array{passed:bool,checked_at:string,expected:string,observed:string,evidence_ref:string} */
 function verificationProbeFixture(bool $passed = true, string $probe = 'fixture'): array
 {

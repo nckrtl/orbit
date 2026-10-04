@@ -52,6 +52,7 @@ final readonly class IssueTopologyConstructor
         if ($this->host->instances($instanceNames) !== []) {
             throw new RuntimeException('An issue topology VM already exists and cannot be adopted.');
         }
+        $this->assertBaseImages($generation);
         $imageFingerprint = $extension === null
             ? null
             : $this->host->imageFingerprint(TopologyRecipe::BASE_IMAGE);
@@ -61,13 +62,14 @@ final readonly class IssueTopologyConstructor
             throw new RuntimeException('Another topology creation holds the host.');
         }
         try {
+            $this->assertBaseImages($generation);
             if (
                 $extension !== null
                 && $this->host->imageFingerprint(TopologyRecipe::BASE_IMAGE) !== $imageFingerprint
             ) {
                 throw new RuntimeException('The issue topology base image changed before construction.');
             }
-            $slot = $this->capacity->reserveSlot(count($target->recipe->nodes));
+            $slot = $this->capacity->reserveSlot($target->recipe->vmCount());
             $lastAddress = max(array_map(
                 static fn (TopologyNode $node): int => $node->address,
                 $target->recipe->nodes,
@@ -116,6 +118,14 @@ final readonly class IssueTopologyConstructor
             );
         } finally {
             $creation->release();
+        }
+    }
+
+    private function assertBaseImages(TopologySnapshotGeneration $generation): void
+    {
+        if ($this->host->imageFingerprint($generation->baseImageAlias) !== $generation->baseImageFingerprint
+            || $this->host->imageFingerprint(TopologyRecipe::OPERATOR_IMAGE, 'container') !== $generation->operatorBaseImageFingerprint) {
+            throw new RuntimeException('Topology snapshot base image provenance changed; rebuild the snapshot.');
         }
     }
 

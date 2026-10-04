@@ -25,9 +25,10 @@ describe('TopologySnapshotIdentity', function (): void {
                 'orbit-e2e-topology-snapshot-gateway',
                 'orbit-e2e-topology-snapshot-app-dev',
                 'orbit-e2e-topology-snapshot-app-prod',
+                'orbit-e2e-topology-snapshot-operator',
             ])
             ->and(TopologyProfile::ROLES)
-            ->toBe(['gateway', 'app-dev', 'app-prod']);
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'operator']);
     });
 
     it('keeps the retired physical identity available only for explicit migration', function (): void {

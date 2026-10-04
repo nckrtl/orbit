@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\E2E;
 
-use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotIdentity;
 use RuntimeException;
 
@@ -21,7 +20,7 @@ final readonly class HostCapacity
         private IncusHost $host,
         private int $maxVms,
     ) {
-        if ($maxVms < (3 * count(TopologyProfile::ROLES))) {
+        if ($maxVms < 9) {
             throw new RuntimeException(
                 'Incus host capacity cannot fit the topology snapshot, discovery, and proof.',
             );
@@ -34,7 +33,7 @@ final readonly class HostCapacity
         if ($requiredVms < 1 || $requiredVms > $this->maxVms) {
             throw new RuntimeException('The requested topology VM count is outside host capacity.');
         }
-        $existing = count($this->host->harnessInstanceMetadata());
+        $existing = count($this->host->harnessVmMetadata());
         if (($existing + $requiredVms) > $this->maxVms) {
             throw new RuntimeException(
                 "Incus host capacity is exhausted: {$existing} harness VMs exist and the limit is "

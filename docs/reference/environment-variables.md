@@ -22,6 +22,8 @@ Reviewer trust is not an Instance environment setting. The Gateway operator sets
 
 The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overrides the memory limit for every VM it creates or clones, for example `2GiB`. When unset, the harness uses the [per-Node defaults](/reference/incus-topologies#capacity). It does not read this setting from an Instance's `.env`.
 
+`ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` are web development proxy inputs, not Instance settings. A [topology web session](/reference/web-app#run-against-a-topology) pins the URL and trusted CA to its selected topology. Inherited endpoint overrides, including settings in the caller's environment or web development files, must not redirect Gateway, realtime, or metrics traffic to the live fleet. Missing required topology configuration fails startup instead of reading a live profile or another user's credentials.
+
 ## Operations
 
 The import and update endpoints accept either a positive numeric Instance ID or an exact Route domain in `{instance}`. A selector that matches no Instance returns HTTP 404. A Route domain that has multiple Instance targets returns HTTP 409 with `env.target_ambiguous`. The Instance's recorded placement owns its environment: the owning Node is the Instance's `node_id`, not a Route. An Instance without a Route can still have its environment synchronized. Changing the Project's [task workspace routing setting](/reference/projects#task-workspace-routing) does not change an existing Instance's environment target.

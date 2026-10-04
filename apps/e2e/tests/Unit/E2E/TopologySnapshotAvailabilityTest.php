@@ -36,7 +36,7 @@ function availabilityGeneration(): TopologySnapshotGeneration
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
         TopologyProfile::ROLES,
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 
@@ -46,7 +46,7 @@ function availabilityReplacementInstallation(
     $new = new TopologySnapshotGeneration(
         'replacement-generation',
         str_repeat('6', 40),
-        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod'],
+        ['gateway' => 'main-replacement-gateway', 'app-dev' => 'main-replacement-app-dev', 'app-prod' => 'main-replacement-app-prod', 'operator' => 'main-replacement-operator'],
         str_repeat('7', 64),
         $old->baseImageFingerprint,
         $old->laravel,
@@ -57,7 +57,7 @@ function availabilityReplacementInstallation(
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
         TopologyProfile::CHECKOUT_ROLES,
-        $old->id,
+        $old->id, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new TopologySnapshotReplacementInstallation(
@@ -76,10 +76,10 @@ function availabilityReplacementInstallation(
         $new->baseImageAlias,
         $new->baseImageFingerprint,
         'oe-replacement',
-        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod'],
-        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod'],
-        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next'],
-        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old'],
+        ['gateway' => 'replacement-gateway', 'app-dev' => 'replacement-app-dev', 'app-prod' => 'replacement-app-prod', 'operator' => 'replacement-operator'],
+        ['gateway' => 'snapshot-gateway', 'app-dev' => 'snapshot-app-dev', 'app-prod' => 'snapshot-app-prod', 'operator' => 'snapshot-operator'],
+        ['gateway' => 'snapshot-gateway-next', 'app-dev' => 'snapshot-app-dev-next', 'app-prod' => 'snapshot-app-prod-next', 'operator' => 'snapshot-operator-next'],
+        ['gateway' => 'snapshot-gateway-old', 'app-dev' => 'snapshot-app-dev-old', 'app-prod' => 'snapshot-app-prod-old', 'operator' => 'snapshot-operator-old'],
     );
 }
 
@@ -89,7 +89,7 @@ function availabilityInventoryJson(array $instances): string
     return json_encode(array_map(
         static fn (string $name): array => [
             'name' => $name,
-            'type' => 'virtual-machine',
+            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
             'status' => 'Stopped',
             'status_code' => 102,
             'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],

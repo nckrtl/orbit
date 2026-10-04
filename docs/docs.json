@@ -580,7 +580,7 @@
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
-              "decisions/0195-derive-application-directory-from-web-root"
+              "decisions/0196-derive-application-directory-from-web-root"
             ]
           }
         ]
@@ -615,6 +615,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0195-request-topologies-for-review-with-an-operator-container",
+      "destination": "/reference/incus-topologies#the-reviewer-requests-discovery"
+    },
     {
       "source": "/decisions/0192-stop-a-group-whose-pull-request-ended",
       "destination": "/reference/tasks#a-watched-pull-request-is-not-the-reviewed-pull-request"

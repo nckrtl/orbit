@@ -94,14 +94,15 @@ describe('StatePaths', function () {
         $target = TopologyTarget::feature('TST-321', new AttemptId(str_repeat('a', 32)));
 
         expect(TopologyProfile::ROLES)
-            ->toBe(['gateway', 'app-dev', 'app-prod'])
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'operator'])
             ->and(TopologyProfile::CHECKOUT_ROLES)
-            ->toBe(['gateway', 'app-dev'])
+            ->toBe(['gateway', 'app-dev', 'operator'])
             ->and(TopologyProfile::ASSIGNMENTS)
             ->toBe([
                 'gateway' => ['gateway', 'vpn', 'websocket', 'router'],
                 'app-dev' => ['app-dev', 'metrics', 'database'],
                 'app-prod' => ['app-prod', 'ingress'],
+                'operator' => [],
             ])
             ->and($target->network())
             ->toBe('oe-9498fa889742')

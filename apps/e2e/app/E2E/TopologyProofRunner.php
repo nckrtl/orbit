@@ -491,7 +491,10 @@ final readonly class TopologyProofRunner
                 $target,
                 $sourceWorktree,
                 $sourceSha,
-                [$generation->baseImageAlias => $generation->baseImageFingerprint],
+                [
+                    $generation->baseImageAlias => $generation->baseImageFingerprint,
+                    TopologyRecipe::OPERATOR_IMAGE => $generation->operatorBaseImageFingerprint ?? throw new RuntimeException('Operator base image provenance is absent.'),
+                ],
                 $generation->laravel,
                 $this->operation,
                 $metadata,

@@ -679,19 +679,37 @@ Before each review turn, opening or continued, the Gateway also writes `$(git re
 | Role | Outcomes |
 | --- | --- |
 | Implementer | `ready_for_review`, `blocked` |
-| Reviewer | `approved`, `changes_requested`, `blocked` |
-| Reviewer in a consult | `answered`, `blocked` |
-| Reviewer in a relay | `answered`, `blocked` |
+| Reviewer | `approved`, `changes_requested`, `blocked`, `topology_requested` |
+| Reviewer in a consult | `answered`, `blocked`, `topology_requested` |
+| Reviewer in a relay | `answered`, `blocked`, `topology_requested` |
 
 The command refuses an outcome of the other role, an empty summary, a repeated flag, and an unknown argument. `blocked` needs `--question="One specific question"`. An implementer's question goes to its reviewer first, and a reviewer's question goes to the operator. The command refuses `--question` with any outcome other than `blocked`.
 
-`answered` is valid in a consult and in a relay. A relay is not a consult. A reviewer's `answered` and `blocked`, in a consult or a relay, need `--cause=CAUSE`, one of the [question causes](#questions). The review turn that follows a direction resolution also needs `--cause`, and that value becomes the question's cause. Every other turn refuses `--cause`.
+`answered` is valid in a consult and in a relay. A relay is not a consult. A reviewer's `answered` and `blocked`, in a consult or a relay, need `--cause=CAUSE`, one of the [question causes](#questions). The review outcome that answers a direction resolution also needs `--cause`, and that value becomes the question's cause. `topology_requested` is a resource request, not an answer: it refuses `--cause` even in a consult, relay, or review following a direction resolution. The resumed reviewer supplies the cause when it answers normally. Every other turn refuses `--cause`.
 
 A blocked relay creates no second question record. The same direction record stays `escalated`. Its `question` becomes the reviewer's `--question`, and its `cause` becomes that turn's `--cause`. That receipt sets `assistance_requested`, `assistance_kind` `direction`, and `assistance_question` on the subtask and the task. The subtask asks for direction again.
 
 The approval of the subtask that opens the pull request also needs `--pr-summary`, at least one `--pr-change`, and at least one `--pr-breaking`, or `--pr-breaking=none`. `none` cannot be combined with another `--pr-breaking`. The command refuses the three pull request flags on every other turn. On success it writes the turn receipt to `$(git rev-parse --git-path orbit)/receipt.json` atomically. A second call overwrites that file. The command stays in place.
 
 When the acting thread stops, the tick reads `$(git rev-parse --git-path orbit)/receipt.json` over SSH. It applies the receipt only when its `thread` is the acting thread. It stores the receipt as a comment with its content hash, then removes the receipt file. It does not remove `"$(git rev-parse --git-path orbit)/turn"`. A receipt read again after a crash has the same hash and is stored once. The scheduler then acts on the stored comment, so a failed send or commit is retried without the file.
+
+### Request a topology
+
+Orbit task workspaces have no Incus topology by default. Provisioning does not acquire one. A reviewer that needs discovery ends its review, consult, or relay turn through the existing receipt command:
+
+```bash
+"$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why this group needs a topology"
+```
+
+Only a reviewer turn may use `topology_requested`. The command refuses it from an implementer turn and tells the implementer to ask the reviewer through the [existing consult](#consult-the-reviewer). There is no separate agent CLI or API acquisition command. Agents run as `orbit-worker` without sudo; acquisition changes host firewall rules.
+
+Orbit consumes this receipt, acquires the group's one `TASK-<group>` topology as the managed user, and resumes the requesting reviewer with the acquisition result or failure. An existing group topology is reused, so requests never allocate a second topology. The request does not approve or reject the subtask. Orbit resumes the same reviewer thread in its original review, consult, or relay context with the acquisition result or failure. Acquisition failure or absence of a topology never prevents approval: topologies are for discovery, not required proofs.
+
+During a consult, the pending consult stays open while Orbit acquires the topology. The implementer remains paused. The resource request does not answer the consult, change its cause, or escalate it to the operator, even when acquisition fails. The resumed reviewer can then answer the implementer normally with `answered` or ask for direction with `blocked`. A relay or unresolved direction resolution likewise stays pending until the reviewer records its normal answer or review outcome.
+
+`topology_requested` requires a summary but refuses `--question`, `--cause`, and pull request flags. It leaves question records and assistance flags as they were; it does not create or resolve a direction request. Orbit records the requesting turn before sending the reply. A lost send response or a crash after the send never changes that source turn: Orbit reconciles an accepted or later turn instead of sending the resource reply again. If the resumed turn stops without a usable receipt, the normal missing-receipt reminder applies. The original context's outcome and cause rules apply again after resumption.
+
+The topology is shared by the group's subtasks and review turns. Orbit releases it when it removes the group's workspace, including any web session and loopback publication. [Incus topologies](/reference/incus-topologies#topologies-on-the-reviewers-request) owns the guest and command contract.
 
 ### Rubric and reminders
 
@@ -720,7 +738,7 @@ Each observation also reports whether the workspace has commits since its starti
 
 ### Consult the reviewer
 
-When an implementer hands off `blocked`, Orbit sends the summary and the question to the subtask's reviewer. Orbit starts that reviewer when the subtask has none yet, and the review that follows uses the same thread. The subtask stays `running`, and nobody is asked for assistance. This turn is a consult.
+When an implementer hands off `blocked`, Orbit sends the summary and the question to the subtask's reviewer. Orbit starts that reviewer when the subtask has none yet, and the review that follows uses the same thread. The subtask stays `running`, and nobody is asked for assistance. This turn is a consult. Its reviewer may [request a topology](#request-a-topology) before answering. The consult remains open and the implementer remains paused until the same reviewer resumes with the acquisition result or failure and answers normally.
 
 The reviewer answers from the brief, the ADRs, the documentation, the code, and the task history. It hands off `answered` with the answer as its summary, and Orbit sends that answer to the implementer, which continues the same attempt. A question about scope, priorities, access, money, or a resource that only the operator controls cannot be answered from the contract. The reviewer then hands off `blocked` with one question for the operator, and the subtask asks for direction.
 
@@ -764,7 +782,7 @@ When the reviewer answers a consult, that record becomes `answered` with `answer
 
 Each record change is keyed to the stored comment that caused it: a turn receipt, an operator `assistance_requested` comment, or a `resolution` comment. Orbit writes that change in one transaction with `assistance_requested`, `assistance_kind`, and `assistance_question` on the subtask and the task. A tick that applies the same comment again creates no second record and does not count a second consult.
 
-The consult limit counts consult records for the current `completion_attempt`. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records.
+The consult limit counts consult records for the current `completion_attempt`. A consult record is the row created when an implementer's `blocked` receipt starts a consult. A relay, a third block, a reviewer's `blocked` during a review, and an operator comment are not consult records. A `topology_requested` receipt creates no question record and consumes no additional consult; the existing consult remains open until answered or escalated normally.
 
 [`tasks:question:list`](/cli/tasks#orbit-tasksquestionlist) is `GET /api/v1/task-questions`. Any authorized peer can call it. The filters are `project_id`, `cause`, `status`, and `since`. `since` is an ISO 8601 date or time, and the list holds questions asked at or after it, newest first.
 
@@ -805,9 +823,9 @@ When the subtask is `running` and its reviewer has started, Orbit sends the reso
 
 When the subtask is `reviewing`, Orbit does not send an `answered` turn to the implementer. This covers a reviewer who asked during the review, and an operator `assistance_requested` comment posted during the review. Orbit delivers the resolution, clears the assistance flag in that send, and continues the review. The question stays `escalated` until the next review receipt.
 
-That receipt needs `--cause`. It marks the question `answered`, with `answered_by` `operator`, the resolution body as the answer, and that cause. The delivery counts as that reviewer's next review request. A `blocked` outcome also creates the new direction record a review block always creates.
+A `topology_requested` receipt leaves that resolution and question pending, needs no cause, and resumes the same reviewer in this context after acquisition. The subsequent normal review receipt needs `--cause`. It marks the question `answered`, with `answered_by` `operator`, the resolution body as the answer, and that cause. The delivery counts as that reviewer's next review request. A `blocked` outcome also creates the new direction record a review block always creates.
 
-When the subtask is `running` and no reviewer has started, Orbit starts the reviewer, as a consult does, and sends the resolution as a relay. The message is that relay, not an opening review packet, because the implementer has not handed off. The relay rules apply, including `--cause`.
+When the subtask is `running` and no reviewer has started, Orbit starts the reviewer, as a consult does, and sends the resolution as a relay. The message is that relay, not an opening review packet, because the implementer has not handed off. The relay rules apply: `answered` and `blocked` require `--cause`, while `topology_requested` refuses it and leaves the resolution pending until the resumed reviewer answers normally.
 
 Clearing the flag on send is keyed to the `resolution` comment and does not change the question record. The receipt that follows is keyed to its turn-receipt comment. A failed send keeps the flag set and leaves the record unchanged.
 
@@ -1257,7 +1275,7 @@ The Gateway tests inject these completion failures:
 
 Cancel, complete, and the sweep remove a workspace the same way. The forced Instance remover deletes the recorded checkout and the workspace's Routes. It writes a removal record, and it deletes the Instance row only after the checkout is gone.
 
-The Instance remover runs the Project's teardown steps before deleting the checkout. A failed teardown keeps the checkout and Instance for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path. The engine has no Orbit bridge cleanup hook. The Orbit Project records its bridge cleanup as a [teardown step](/reference/instance-setup#configure-orbits-task-policy); [Incus topologies](/reference/incus-topologies#task-workspace-clones) defines its ownership checks. Release the Incus topology the bridge holds before the task ends.
+The Instance remover runs the Project's teardown steps before deleting the checkout. A failed teardown keeps the checkout and Instance for retry. On a completed or cancelled task, that failure does not ask for assistance and keeps the reason. On any other task, it asks for assistance through the normal task cleanup path. The engine has no Orbit bridge cleanup hook. The Orbit Project records its bridge cleanup as a [teardown step](/reference/instance-setup#configure-orbits-task-policy); [Incus topologies](/reference/incus-topologies#task-workspace-clones) defines its ownership checks. Orbit releases any acquired Incus topology before removing the group's workspace. A group without a topology needs no acquisition or release.
 
 `apps/e2e/resources/proofs/task-policy-handoff.sh` runs that install and the teardown create, update, readback, and destroy commands on a disposable Project. `apps/e2e/resources/proofs/project-owned-tasks.sh` proves the task lifecycle on the same topology. Neither proof uses the live Project. The directory also holds proofs that are not part of Tasks. `apps/e2e/resources/proofs/mcp-instance-timeouts.sh` calls `instance-create` and `instance-destroy` through the Gateway MCP endpoint on a disposable topology. It prints how long the first call waits, what an identical call returns while that work is still running, and what it returns after the Gateway has finished.
 
@@ -1313,7 +1331,9 @@ When the Project has no development release on that Node, Orbit creates an indep
 
 ### Routing and cleanup
 
-[Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. Orbit acquires the group's [Incus topology](/reference/incus-topologies#task-workspace-clones) when it provisions an Orbit workspace and releases it before it removes the workspace. Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
+[Task workspace routing](/reference/projects#task-workspace-routing) decides whether a new workspace is visitable. It defaults to routed, and a change applies only to a workspace Orbit creates afterward. An unrouted workspace stays healthy in `source_resolved`. Orbit provisions the workspace without a topology. Only the [reviewer's turn request](#request-a-topology) acquires the group's one [Incus topology](/reference/incus-topologies#task-workspace-clones). Orbit releases it before removing the workspace; a failed acquisition or missing topology never prevents approval.
+
+Orbit-specific cleanup, including a task bridge worktree, is a Project teardown step. The engine has no bridge cleanup hook. [Configure Orbit's task policy](/reference/instance-setup#configure-orbits-task-policy) records Orbit's check, setup, and installed helper. [Task workspace clones](/reference/incus-topologies#task-workspace-clones) defines that helper's ownership checks.
 
 ### The base-run limit
 

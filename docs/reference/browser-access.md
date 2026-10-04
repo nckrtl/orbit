@@ -36,6 +36,8 @@ The annotation package's Orbit mode calls the Gateway from the page it annotates
 
 `vp dev` in `apps/web` proxies `/api` to the Gateway and `/grafana` to Grafana. For both, the proxy removes the browser's `Origin` header, because it serves the page on its own origin. The browser's `Sec-Fetch-Site` header still reaches the Gateway, so a cross-site request through the development server is refused too.
 
+For disposable UI work, [run the web app against a topology](/reference/web-app#run-against-a-topology) with `bin/e2e-topology web ISSUE`. Its proxy runs inside the topology's operator container as that topology's WireGuard peer, with a Gateway access grant. It pins the selected Gateway URL and CA for Gateway, realtime, and metrics traffic. It does not fall back to the caller's live profile. Loopback publication and SSH forwarding expose the development page, not a new Gateway origin or an exception to the browser-origin policy.
+
 ## Refusal response
 
 A refused request receives this JSON body with HTTP 403.

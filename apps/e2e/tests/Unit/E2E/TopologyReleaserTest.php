@@ -49,6 +49,8 @@ function fakeReleaseHost(
     bool $network = true,
     ?array $presentNames = null,
     ?string $failCommandContaining = null,
+    ?string $foreignInstance = null,
+    bool $webPublished = false,
 ): void {
     $present = $presentNames ?? array_map($target->instance(...), $target->recipe->nodeKeys());
     Process::fake(function (PendingProcess $process) use (
@@ -58,6 +60,8 @@ function fakeReleaseHost(
         &$present,
         &$network,
         $failCommandContaining,
+        $foreignInstance,
+        &$webPublished,
     ) {
         $command = $process->command;
         assert(is_array($command));
@@ -104,11 +108,11 @@ function fakeReleaseHost(
                 array_values(array_map(
                     static fn (string $name): array => [
                         'name' => $name,
-                        'type' => 'virtual-machine',
+                        'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
                         'status' => 'Running',
                         'status_code' => 103,
-                        'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', ...$metadata],
-                        'devices' => ['root' => ['pool' => 'default'], 'eth0' => ['network' => $target->network()]],
+                        'config' => ['user.orbit.e2e.owner' => 'orbit-e2e', ...$metadata, ...($name === $foreignInstance ? ['user.orbit.e2e.attempt' => str_repeat('f', 32)] : [])],
+                        'devices' => ['root' => ['pool' => 'default'], 'eth0' => ['network' => $target->network()], ...($webPublished && str_ends_with($name, '-operator') ? ['orbit-e2e-web' => ['type' => 'proxy', 'user.orbit.e2e.web-session' => str_repeat('a', 32)]] : [])],
                     ],
                     $wanted,
                 )),
@@ -128,7 +132,7 @@ function extendedReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose
     $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', str_repeat('e', 40)),
@@ -138,7 +142,7 @@ function extendedReleaseTopology(TopologyTarget $target, AttemptPurpose $purpose
         TopologyRecipe::BASE_IMAGE,
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new FeatureTopology(
@@ -161,7 +165,7 @@ function replacementReleaseTopology(TopologyTarget $target, AttemptPurpose $purp
     $generation = new TopologySnapshotGeneration(
         'g-'.str_repeat('a', 12),
         str_repeat('b', 40),
-        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'],
+        ['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'],
         str_repeat('c', 64),
         str_repeat('d', 64),
         new LaravelRelease('v13.10.1', str_repeat('e', 40)),
@@ -171,7 +175,7 @@ function replacementReleaseTopology(TopologyTarget $target, AttemptPurpose $purp
         TopologyRecipe::BASE_IMAGE,
         TopologyProfile::NAME,
         TopologyProfile::ROLES,
-        TopologyProfile::CHECKOUT_ROLES,
+        TopologyProfile::CHECKOUT_ROLES, operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 
     return new FeatureTopology(
@@ -179,7 +183,7 @@ function replacementReleaseTopology(TopologyTarget $target, AttemptPurpose $purp
             $target,
             2,
             TopologyRecipe::BASE_IMAGE,
-            str_repeat('d', 64),
+            str_repeat('d', 64), operatorBaseImageFingerprint: str_repeat('b', 64),
         ),
         $purpose,
         $generation,
@@ -284,6 +288,31 @@ describe('TopologyReleaser', function () {
         Facade::clearResolvedInstances();
         Facade::setFacadeApplication($container);
     });
+
+    it('stops the web unit and removes publication before deleting guests, and retains the lease on cleanup failure', function (bool $fail) {
+        $worktree = temporaryPath('orbit-release-web-', 4);
+        mkdir($worktree, 0700);
+        $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state = IssueState::forWorktree('AUX-99', $worktree);
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)), null);
+        $target = TopologyTarget::feature('AUX-99', $attempt);
+        $commands = [];
+        fakeReleaseHost($target, ['user.orbit.e2e.issue' => 'AUX-99', 'user.orbit.e2e.attempt' => $attempt->value], $commands,
+            failCommandContaining: $fail ? 'device remove' : null, webPublished: true);
+        $release = fn () => releaserForTest($paths)->release(new TopologyRequest('AUX-99', $worktree));
+        if ($fail) {
+            expect($release)->toThrow(RuntimeException::class, 'injected cleanup failure');
+            expect($state->hasAttempt())->toBeTrue();
+            expect(implode("\n", $commands))->not->toContain('delete local:orbit-e2e');
+        } else {
+            expect($release()['state'])->toBe('released');
+            expect($state->hasAttempt())->toBeFalse();
+            $text = implode("\n", $commands);
+            expect($text)->toContain('web-unit.sh stop '.str_repeat('a', 32), 'device remove');
+            expect(strpos($text, 'device remove'))->toBeLessThan(strpos($text, 'delete local:orbit-e2e'));
+        }
+    })->with([false, true]);
 
     it('retains successful captured proof unless replacement or abandonment is explicit', function (
         ProofReleaseReason $reason,
@@ -516,9 +545,11 @@ describe('TopologyReleaser', function () {
             ->toEqualCanonicalizing([
                 'stopped:'.$target->instance('gateway'),
                 'stopped:'.$target->instance('app-dev'),
+                'stopped:'.$target->instance('operator'),
                 'stopped:'.$target->instance('app-prod'),
                 'deleted:'.$target->instance('gateway'),
                 'deleted:'.$target->instance('app-dev'),
+                'deleted:'.$target->instance('operator'),
                 'deleted:'.$target->instance('app-prod'),
                 'deleted:'.$target->network(),
             ])
@@ -531,6 +562,7 @@ describe('TopologyReleaser', function () {
                 'delete',
             ))))
             ->toBe([
+                'delete local:'.$target->instance('operator'),
                 'delete local:'.$target->instance('app-prod'),
                 'delete local:'.$target->instance('app-dev'),
                 'delete local:'.$target->instance('gateway'),
@@ -572,6 +604,80 @@ describe('TopologyReleaser', function () {
             ->toBe('diagnosis');
     });
 
+    it('releases a persisted pre-operator inventory without querying an operator', function (int $schema): void {
+        $record = preOperatorTopologyRecord();
+        if ($schema === 1) {
+            $record['construction']['schema'] = 1;
+            unset($record['construction']['snapshot_replacement']);
+        }
+        $worktree = temporaryPath('orbit-release-historical-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('TST-321', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        new AtomicJsonStore(StatePaths::forWorktree($worktree))->write(IssueState::TOPOLOGY, $record);
+        $target = TopologyConstructionInputs::fromArray($record['construction'])->target;
+        $commands = [];
+        fakeReleaseHost($target, ['user.orbit.e2e.issue' => 'TST-321', 'user.orbit.e2e.attempt' => $attempt->value], $commands);
+
+        $result = releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->release(new TopologyRequest('TST-321', $worktree));
+
+        expect($result['released'])->toHaveCount(7)
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))->toBeFalse()
+            ->and(implode("\n", $commands))->not->toContain('-operator');
+    })->with([1, 2]);
+
+    it('refuses foreign ownership before mutating a historical inventory', function (): void {
+        $record = preOperatorTopologyRecord();
+        $worktree = temporaryPath('orbit-release-historical-foreign-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('TST-321', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $store = new AtomicJsonStore(StatePaths::forWorktree($worktree));
+        $store->write(IssueState::TOPOLOGY, $record);
+        $target = TopologyConstructionInputs::fromArray($record['construction'])->target;
+        $commands = [];
+        fakeReleaseHost($target, ['user.orbit.e2e.issue' => 'TST-321', 'user.orbit.e2e.attempt' => $attempt->value], $commands, foreignInstance: $target->instance('gateway'));
+
+        expect(fn () => releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)))
+            ->release(new TopologyRequest('TST-321', $worktree)))
+            ->toThrow(RuntimeException::class, 'ownership does not match the issue attempt');
+        expect(array_filter($commands, static fn (string $command): bool => preg_match('/^(stop|delete|network delete) /', $command) === 1))->toBe([])
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))->toBeTrue()
+            ->and($store->read(IssueState::TOPOLOGY))->toBe($record);
+    });
+
+    it('retains a historical inventory after partial deletion and retries only its remaining guests', function (): void {
+        $record = preOperatorTopologyRecord();
+        $worktree = temporaryPath('orbit-release-historical-retry-', 4);
+        mkdir($worktree, 0700);
+        $state = IssueState::forWorktree('TST-321', $worktree);
+        $attempt = new AttemptId(str_repeat('a', 32));
+        $state->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
+        $store = new AtomicJsonStore(StatePaths::forWorktree($worktree));
+        $store->write(IssueState::TOPOLOGY, $record);
+        $target = TopologyConstructionInputs::fromArray($record['construction'])->target;
+        $metadata = ['user.orbit.e2e.issue' => 'TST-321', 'user.orbit.e2e.attempt' => $attempt->value];
+        $commands = [];
+        fakeReleaseHost($target, $metadata, $commands, failCommandContaining: 'delete local:'.$target->instance('gateway'));
+        $releaser = releaserForTest(new StatePaths(temporaryPath('orbit-release-host-', 4)));
+        $request = new TopologyRequest('TST-321', $worktree);
+
+        expect(fn () => $releaser->release($request))->toThrow(RuntimeException::class, 'injected cleanup failure');
+        expect($state->hasAttempt(AttemptPurpose::Discovery))->toBeTrue()
+            ->and($store->read(IssueState::TOPOLOGY))->toBe($record);
+        $commands = [];
+        fakeReleaseHost($target, $metadata, $commands, presentNames: [$target->instance('gateway')]);
+        $result = $releaser->release($request);
+
+        expect($result['released'])->toBe(['stopped:'.$target->instance('gateway'), 'deleted:'.$target->instance('gateway'), 'deleted:'.$target->network()])
+            ->and($result['already_absent'])->toBe([$target->instance('app-prod'), $target->instance('app-dev')])
+            ->and($state->hasAttempt(AttemptPurpose::Discovery))->toBeFalse()
+            ->and(implode("\n", $commands))->not->toContain('-operator');
+    });
+
     it('releases the exact persisted four-Node inventory without changing the shared generation', function (): void {
         $worktree = temporaryPath('orbit-release-extended-', 4);
         mkdir($worktree, 0700);
@@ -600,10 +706,12 @@ describe('TopologyReleaser', function () {
         expect($result['released'])
             ->toBe([
                 'stopped:'.$target->instance('app-prod-2'),
+                'stopped:'.$target->instance('operator'),
                 'stopped:'.$target->instance('app-prod'),
                 'stopped:'.$target->instance('app-dev'),
                 'stopped:'.$target->instance('gateway'),
                 'deleted:'.$target->instance('app-prod-2'),
+                'deleted:'.$target->instance('operator'),
                 'deleted:'.$target->instance('app-prod'),
                 'deleted:'.$target->instance('app-dev'),
                 'deleted:'.$target->instance('gateway'),
@@ -612,13 +720,14 @@ describe('TopologyReleaser', function () {
             ->and($state->hasAttempt(AttemptPurpose::Discovery))
             ->toBeFalse()
             ->and($generation['snapshots'])
-            ->toBe(['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod'])
+            ->toBe(['gateway' => 'main-gateway', 'app-dev' => 'main-app-dev', 'app-prod' => 'main-app-prod', 'operator' => 'main-operator'])
             ->and(array_values(array_filter($commands, static fn (string $command): bool => str_starts_with(
                 $command,
                 'delete',
             ))))
             ->toBe([
                 'delete local:'.$target->instance('app-prod-2'),
+                'delete local:'.$target->instance('operator'),
                 'delete local:'.$target->instance('app-prod'),
                 'delete local:'.$target->instance('app-dev'),
                 'delete local:'.$target->instance('gateway'),
@@ -671,6 +780,7 @@ describe('TopologyReleaser', function () {
             ])
             ->and($result['already_absent'])
             ->toBe([
+                $target->instance('operator'),
                 $target->instance('app-prod'),
                 $target->instance('app-dev'),
                 $target->instance('gateway'),
@@ -1054,7 +1164,7 @@ describe('TopologyReleaser', function () {
         Process::assertNothingRan();
     });
 
-    it('refuses a VM that another attempt owns and names an absent attempt', function () {
+    it('refuses a guest that another attempt owns and names an absent attempt', function (string $node) {
         $worktree = temporaryPath('orbit-release-worktree-', 4);
         mkdir($worktree, 0700);
         $paths = new StatePaths(temporaryPath('orbit-release-host-', 4));
@@ -1069,8 +1179,9 @@ describe('TopologyReleaser', function () {
             ->writeAttempt($attempt, AttemptPurpose::Discovery, new OperationId(str_repeat('c', 32)));
         fakeReleaseHost(
             $target,
-            ['user.orbit.e2e.issue' => 'TST-12', 'user.orbit.e2e.attempt' => str_repeat('f', 32)],
+            ['user.orbit.e2e.issue' => 'TST-12', 'user.orbit.e2e.attempt' => $attempt->value],
             $commands,
+            foreignInstance: $target->instance($node),
         );
 
         expect(fn () => releaserForTest($paths)->release(new TopologyRequest('TST-12', $worktree)))
@@ -1079,5 +1190,5 @@ describe('TopologyReleaser', function () {
             ->toBe([])
             ->and(IssueState::forWorktree('TST-12', $worktree)->hasAttempt())
             ->toBeTrue();
-    });
+    })->with(['gateway', 'operator']);
 });

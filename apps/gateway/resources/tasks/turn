@@ -13,15 +13,15 @@ import sys
 
 OUTCOMES = {
     'implementer': {'ready_for_review', 'blocked'},
-    'reviewer': {'approved', 'changes_requested', 'blocked'},
+    'reviewer': {'approved', 'changes_requested', 'blocked', 'topology_requested'},
 }
-REVIEWER_QUESTION = {'answered', 'blocked'}
+REVIEWER_QUESTION = {'answered', 'blocked', 'topology_requested'}
 REPEATABLE = {'pr-change', 'pr-breaking', 'deliverable'}
 OUTCOME_ORDER = {
     'implementer': ['ready_for_review', 'blocked'],
-    'reviewer': ['approved', 'changes_requested', 'blocked'],
+    'reviewer': ['approved', 'changes_requested', 'blocked', 'topology_requested'],
 }
-QUESTION_ORDER = ['answered', 'blocked']
+QUESTION_ORDER = ['answered', 'blocked', 'topology_requested']
 CAUSES = ['brief_unclear', 'contract_gap', 'scope', 'environment', 'missed_contract']
 
 
@@ -73,6 +73,10 @@ def main(argv):
             options[name] = value
 
     outcome = options.get('outcome', '')
+    if outcome == 'topology_requested' and role == 'implementer':
+        refuse('only the reviewer can request a topology. Ask the reviewer through a blocked consult.')
+    if outcome == 'topology_requested' and any(key in options for key in ('question', 'cause', 'pr-summary', 'pr-change', 'pr-breaking')):
+        refuse('topology_requested refuses --question, --cause, and pull request flags.')
     if outcome not in allowed:
         refuse('--outcome must be one of: ' + ', '.join(order) + '.')
     if 'summary' not in options:
@@ -81,7 +85,7 @@ def main(argv):
         refuse('blocked needs --question with one specific question the operator can answer. If you can decide or find the answer yourself, keep working instead.')
     if outcome != 'blocked' and 'question' in options:
         refuse('--question is only for --outcome=blocked.')
-    needs_cause = outcome == 'answered' or (role == 'reviewer' and outcome == 'blocked') or cause_required
+    needs_cause = outcome != 'topology_requested' and (outcome == 'answered' or (role == 'reviewer' and outcome == 'blocked') or cause_required)
     if needs_cause:
         if options.get('cause') not in CAUSES:
             refuse('--cause must be one of: ' + ', '.join(CAUSES) + '.')

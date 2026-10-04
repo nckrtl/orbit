@@ -244,6 +244,12 @@ function fakeSnapshotRunnerForeignResource(
         }
 
         $events[] = $command;
+        if (($command[3] ?? null) === 'image') {
+            return Process::result(json_encode([
+                ['type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64), 'aliases' => [['name' => TopologyRecipe::BASE_IMAGE]]],
+                ['type' => 'container', 'fingerprint' => str_repeat('b', 64), 'aliases' => [['name' => TopologyRecipe::OPERATOR_IMAGE]]],
+            ], JSON_THROW_ON_ERROR));
+        }
         if (($command[3] ?? null) === 'network' && ($command[4] ?? null) === 'list') {
             if ($foreignResource !== 'network') {
                 return Process::result('[]');

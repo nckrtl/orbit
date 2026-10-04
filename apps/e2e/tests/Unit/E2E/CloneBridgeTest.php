@@ -17,7 +17,7 @@ it('finds a shared registration owned by the checkout owner', function (): void 
     expect($process->isSuccessful())->toBeTrue($process->getOutput().$process->getErrorOutput());
 });
 
-it('runs topology commands from a task workspace clone through a bridge worktree', function (): void {
+it('runs task-clone topology commands through a bridge and preserves the public web PID for cleanup', function (): void {
     $repository = dirname(__DIR__, 5);
     $process = new Process(
         ['python3', dirname(__DIR__, 2).'/Fixtures/e2e-clone-bridge-tests.py', $repository],

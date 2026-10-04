@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnMode;
 use App\Domain\Tasks\TaskTurnOutcome;
+use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
@@ -320,7 +321,7 @@ it('refuses input that does not fit the turn', function (TaskThreadRole $role, a
         ->and($receipts->read($instance))->toBeNull();
 })->with([
     'a reviewer outcome in an implementer turn' => [TaskThreadRole::Implementer, ['--outcome=approved', '--summary=Looks good.'], '--outcome must be one of: ready_for_review, blocked.'],
-    'an implementer outcome in a reviewer turn' => [TaskThreadRole::Reviewer, ['--outcome=ready_for_review', '--summary=Done.'], '--outcome must be one of: approved, changes_requested, blocked.'],
+    'an implementer outcome in a reviewer turn' => [TaskThreadRole::Reviewer, ['--outcome=ready_for_review', '--summary=Done.'], '--outcome must be one of: approved, changes_requested, blocked, topology_requested.'],
     'an unknown outcome' => [TaskThreadRole::Implementer, ['--outcome=done', '--summary=Done.'], '--outcome must be one of: ready_for_review, blocked.'],
     'a missing outcome' => [TaskThreadRole::Implementer, ['--summary=Done.'], '--outcome must be one of: ready_for_review, blocked.'],
     'an empty summary' => [TaskThreadRole::Implementer, ['--outcome=blocked', '--summary=  '], '--summary cannot be empty.'],
@@ -355,7 +356,7 @@ it('records the question of a blocked turn', function (): void {
         ->and($receipt?->body())->toBe("Installing intl needs sudo.\n\nQuestion: May I run sudo apt-get install php8.5-intl?");
 });
 
-it('records a reviewer cause and limits a relay to answered or blocked', function (): void {
+it('records a reviewer cause and limits a relay to answers or resource requests', function (): void {
     $checkout = turn_receipt_checkout();
     $instance = turn_receipt_instance($checkout);
     $receipts = turn_receipts(new LocalShellSshExecutor);
@@ -363,7 +364,7 @@ it('records a reviewer cause and limits a relay to answered or blocked', functio
 
     $refused = turn_receipt_script($checkout, ['--outcome=approved', '--summary=Good.', '--cause=scope']);
     expect($refused->getExitCode())->toBe(2)
-        ->and($refused->getErrorOutput())->toBe("orbit turn: --outcome must be one of: answered, blocked.\n");
+        ->and($refused->getErrorOutput())->toBe("orbit turn: --outcome must be one of: answered, blocked, topology_requested.\n");
 
     $recorded = turn_receipt_script($checkout, ['--outcome=answered', '--summary=Use the ADR.', '--cause=contract_gap']);
     $receipt = $receipts->read($instance);
@@ -418,6 +419,44 @@ it('requires a cause on every outcome of the review after a direction resolution
         ->and($receipt?->outcome)->toBe(TaskTurnOutcome::Approved)
         ->and($receipt?->cause)->toBe('brief_unclear');
 });
+
+it('records a topology request in every reviewer context without cause or final approval fields', function (?TaskTurnMode $mode): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer, final: true, mode: $mode);
+    $process = turn_receipt_script($checkout, ['--outcome=topology_requested', '--summary=Discovery needs Nodes.']);
+    expect($process->getExitCode())->toBe(0)
+        ->and($receipts->read($instance)?->outcome)->toBe(TaskTurnOutcome::TopologyRequested);
+})->with([null, new TaskTurnMode(consult: true), new TaskTurnMode(relay: true), new TaskTurnMode(causeRequired: true)]);
+
+it('refuses an implementer topology request with consult guidance', function (): void {
+    $checkout = turn_receipt_checkout();
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $instance = turn_receipt_instance($checkout);
+    $receipts->prepare($instance, TaskThreadRole::Implementer);
+    $process = turn_receipt_script($checkout, ['--outcome=topology_requested', '--summary=Need Nodes.']);
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getErrorOutput())->toContain('Ask the reviewer through a blocked consult')
+        ->and($receipts->read($instance))->toBeNull();
+});
+
+it('refuses question, cause and pull request fields on a topology request at both receipt boundaries', function (string $flag, array $field): void {
+    $checkout = turn_receipt_checkout();
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $instance = turn_receipt_instance($checkout);
+    $receipts->prepare($instance, TaskThreadRole::Reviewer);
+    $process = turn_receipt_script($checkout, ['--outcome=topology_requested', '--summary=Need Nodes.', $flag]);
+    expect($process->getExitCode())->toBe(2)
+        ->and($process->getErrorOutput())->toContain('topology_requested refuses')
+        ->and(TaskTurnReceipt::parse(json_encode(['outcome' => 'topology_requested', 'summary' => 'Need Nodes.', ...$field], JSON_THROW_ON_ERROR))->outcome)->toBeNull();
+})->with([
+    ['--question=Why?', ['question' => 'Why?']],
+    ['--cause=environment', ['cause' => 'environment']],
+    ['--pr-summary=Feature', ['pull_request' => ['summary' => 'Feature']]],
+    ['--pr-change=Feature', ['pull_request' => ['changes' => ['Feature']]]],
+    ['--pr-breaking=none', ['pull_request' => ['breaking' => []]]],
+]);
 
 it('refuses to write a receipt before Orbit starts a turn', function (): void {
     $checkout = turn_receipt_checkout();

@@ -60,7 +60,7 @@ function rebuildGeneration(string $id): TopologySnapshotGeneration
         'orbit-base-ubuntu-26.04-runtime',
         'gateway_app-dev_app-prod',
         TopologyProfile::ROLES,
-        ['gateway', 'app-dev'],
+        ['gateway', 'app-dev', 'operator'], operatorBaseImageFingerprint: str_repeat('b', 64),
     );
 }
 
@@ -68,6 +68,7 @@ function legacyRebuildGeneration(string $id): TopologySnapshotGeneration
 {
     $legacy = rebuildGeneration($id)->toArray();
     $legacy['schema'] = TopologySnapshotGeneration::LEGACY_SCHEMA;
+    unset($legacy['operator_base_image']);
     $legacy['prepared_schema'] = 1;
     unset($legacy['topology']['assignments']);
 
@@ -124,7 +125,7 @@ function rebuildInstanceInventoryJson(RebuildHost $state): string
     return json_encode(array_map(
         static fn (string $name): array => [
             'name' => $name,
-            'type' => 'virtual-machine',
+            'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
             'status' => 'Stopped',
             'status_code' => 102,
             'config' => $state->instanceMetadata[$name] ?? ['user.orbit.e2e.owner' => 'orbit-e2e'],
@@ -287,6 +288,7 @@ describe('TopologySnapshotRebuilder', function () {
                 'orbit-e2e-topology-snapshot-app-prod',
                 'orbit-e2e-topology-snapshot-gateway',
                 'orbit-e2e-topology-snapshot-gateway-next',
+                'orbit-e2e-topology-snapshot-operator',
             ])
             ->and($teardown['networks_deleted'])
             ->toBe(['oe-topo-snap'])
@@ -315,6 +317,8 @@ describe('TopologySnapshotRebuilder', function () {
             'user.orbit.e2e.operation' => str_repeat('a', 32),
             'user.orbit.e2e.issue' => 'AUX-92',
             'user.orbit.e2e.attempt' => str_repeat('b', 32),
+            'user.orbit.e2e.base-image' => 'orbit-base-ubuntu-26.04-runtime',
+            'user.orbit.e2e.base-image-fingerprint' => str_repeat('d', 64),
         ];
         $state->networks = [$identity->network()];
         fakeRebuildHost($state);

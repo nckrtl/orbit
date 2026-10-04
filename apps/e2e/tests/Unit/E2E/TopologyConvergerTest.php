@@ -30,15 +30,15 @@ function task7_host(): IncusHost
 
 function task7_vm(string $name, string $owner = 'orbit-e2e'): string
 {
-    $role = str_ends_with($name, '-gateway') ? 'gateway' : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
+    $role = str_ends_with($name, '-gateway') ? 'gateway' : (str_ends_with($name, '-app-dev') ? 'app-dev' : (str_ends_with($name, '-operator') ? 'operator' : 'app-prod'));
     $network = 'oe-50fa1830b7de';
     $hash = substr(sha1("{$network}:{$role}"), 0, 6);
     $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
-    $ipv4 = ['gateway' => '10.232.2.10', 'app-dev' => '10.232.2.11', 'app-prod' => '10.232.2.12'][$role];
+    $ipv4 = ['gateway' => '10.232.2.10', 'app-dev' => '10.232.2.11', 'app-prod' => '10.232.2.12', 'operator' => '10.232.2.14'][$role];
 
     return json_encode([[
         'name' => $name,
-        'type' => 'virtual-machine',
+        'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
         'status' => 'Stopped',
         'status_code' => 102,
         'config' => ['user.orbit.e2e.owner' => $owner],
@@ -53,7 +53,7 @@ function task7_recipe_vm(TopologyTarget $target, string $node, string $owner = '
 {
     return json_encode([[
         'name' => $target->instance($node),
-        'type' => 'virtual-machine',
+        'type' => $node === 'operator' ? 'container' : 'virtual-machine',
         'status' => 'Stopped',
         'status_code' => 102,
         'config' => ['user.orbit.e2e.owner' => $owner],
@@ -93,6 +93,7 @@ function task7_ipv4(array $command): ?string
     return match (true) {
         str_contains($target, 'gateway') => '192.0.2.10',
         str_contains($target, 'app-dev') => '192.0.2.11',
+        str_contains($target, 'operator') => '192.0.2.14',
         default => '192.0.2.12',
     };
 }
@@ -133,7 +134,7 @@ function task7_process_result(
                     ? (
                         str_contains($request['instance'], 'gateway')
                             ? '192.0.2.10'
-                            : (str_contains($request['instance'], 'app-dev') ? '192.0.2.11' : '192.0.2.12')
+                            : (str_contains($request['instance'], 'app-dev') ? '192.0.2.11' : (str_contains($request['instance'], 'operator') ? '192.0.2.14' : '192.0.2.12'))
                     )
                     : '192.0.2.'.$target->recipe->node($request['label'])->address;
                 $results[] = [
@@ -243,7 +244,7 @@ function task7_process_result(
                         16,
                         JSON_THROW_ON_ERROR,
                     )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
+                    ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ),
                 JSON_THROW_ON_ERROR,
             ));
@@ -499,6 +500,7 @@ describe('TopologyConverger', function () {
             'bootstrap.gateway',
             'authorize.gateway-ssh',
             'retarget.vpn',
+            'prepare.operator',
             'provision.app-dev',
             'provision.app-prod',
             'authorize.app-dev-operator',
@@ -526,8 +528,8 @@ describe('TopologyConverger', function () {
             ->all();
 
         expect($guestCommands)
-            ->toHaveCount(33)
-            ->and(array_column(array_slice($guestCommands, 3, 3), 4))
+            ->toHaveCount(42)
+            ->and(array_column(array_slice($guestCommands, 4, 3), 4))
             ->toBe([
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
                 'lab:orbit-e2e-tst-123-aaaaaaaa-gateway',
@@ -539,13 +541,17 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/prepare-node.sh', 'align-identity'],
+                ['/usr/local/bin/prepare-node.sh', 'align-identity'],
                 ['/usr/local/bin/converge-gateway.sh', 'prerequisites'],
                 ['/usr/local/bin/converge-gateway.sh', 'bootstrap', '192.0.2.10'],
                 ['ssh-keygen', '-y', '-f', '/home/orbit/.orbit/ssh/id_ed25519'],
                 ['/usr/local/bin/prepare-node.sh', 'gateway-authorize', task7_gateway_public_key()],
                 ['/usr/local/bin/prepare-node.sh', 'gateway-authorize', task7_gateway_public_key()],
+                ['/usr/local/bin/prepare-node.sh', 'gateway-authorize', task7_gateway_public_key()],
                 ['/usr/local/bin/retarget-vpn.sh', '192.0.2.10'],
                 ['/usr/local/bin/retarget-vpn.sh', '192.0.2.10'],
+                ['/usr/local/bin/retarget-vpn.sh', '192.0.2.10'],
+                ['uname', '-m'],
                 ['uname', '-m'],
                 ['uname', '-m'],
                 ['/usr/local/bin/converge-app-dev.sh', 'app-dev', '192.0.2.11', 'x86_64'],
@@ -556,6 +562,9 @@ describe('TopologyConverger', function () {
                     'aarch64',
                     '10.44.0.3',
                 ],
+                ['/usr/local/bin/converge-operator.sh', '192.0.2.14', 'x86_64', '10.44.0.5'],
+                ['/usr/local/bin/converge-sample-app.sh', 'grant-operator', 'operator', 'gateway'],
+                ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '10.44.0.1'],
                 ['/usr/local/bin/converge-sample-app.sh', 'grant-operator', 'app-dev', 'gateway'],
                 ['/usr/local/bin/converge-sample-app.sh', 'configure-cli', '10.44.0.1'],
                 [
@@ -578,8 +587,10 @@ describe('TopologyConverger', function () {
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
                 ['/usr/local/bin/prepare-node.sh', 'permissions'],
+                ['/usr/local/bin/prepare-node.sh', 'permissions'],
                 ['/usr/local/bin/prepare-node.sh', 'compact-storage', 'prune-images'],
                 ['/usr/local/bin/prepare-node.sh', 'compact-storage', 'keep-images'],
+                ['/usr/local/bin/prepare-node.sh', 'compact-storage', 'prune-images'],
                 ['/usr/local/bin/prepare-node.sh', 'compact-storage', 'prune-images'],
             ]);
 
@@ -656,26 +667,27 @@ describe('TopologyConverger', function () {
             ->toBe($expectedInstances)
             ->and($arguments)
             ->toContain(
-                ['/usr/local/bin/converge-app-dev.sh', 'operator', '192.0.2.11', 'x86_64'],
+                ['/usr/local/bin/converge-app-dev.sh', 'app-dev', '192.0.2.11', 'x86_64'],
                 ['/usr/local/bin/converge-sample-app.sh', 'grant-operator', 'operator', 'gateway'],
                 [
                     '/usr/local/bin/converge-sample-app.sh',
                     'create-resources',
-                    'operator',
+                    'app-dev',
                     'app-prod',
                     str_repeat('b', 40),
                 ],
-                ['/usr/local/bin/converge-sample-app.sh', 'metrics', 'operator'],
-                ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'operator'],
+                ['/usr/local/bin/converge-sample-app.sh', 'metrics', 'app-dev'],
+                ['/usr/local/bin/converge-sample-app.sh', 'metrics-publication', 'app-dev'],
             );
         $storageCommands = $guestCommands->filter(
             fn (array $command): bool => ($command[7] ?? null) === 'compact-storage',
         )->mapWithKeys(fn (array $command): array => [$command[4] => $command[8]])->all();
         expect($storageCommands)->toBe([
             'lab:'.$target->instance('gateway') => 'prune-images',
-            'lab:'.$target->instance('operator') => 'keep-images',
+            'lab:'.$target->instance('app-dev') => 'keep-images',
             'lab:'.$target->instance('app-prod') => 'prune-images',
             'lab:'.$target->instance('extra') => 'prune-images',
+            'lab:'.$target->instance('operator') => 'prune-images',
         ]);
     });
 
@@ -751,8 +763,8 @@ describe('TopologyConverger', function () {
 
         expect($sampleActions)->toMatchArray(array_filter(
             [
-                'grant-operator' => 1,
-                'configure-cli' => 1,
+                'grant-operator' => 2,
+                'configure-cli' => 2,
                 'create-resources' => 2,
                 'metrics' => 1,
                 'reproject' => 1,
@@ -997,7 +1009,7 @@ describe('TopologyConverger', function () {
                         16,
                         JSON_THROW_ON_ERROR,
                     )[0],
-                    ['gateway', 'app-dev', 'app-prod'],
+                    ['gateway', 'app-dev', 'app-prod', 'operator'],
                 ), JSON_THROW_ON_ERROR));
             }
             $name = str_contains($target, ':') ? substr($target, strpos($target, ':') + 1) : $target;

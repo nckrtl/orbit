@@ -123,6 +123,7 @@ final readonly class TaskScheduler
         private TaskPullRequestReviewWatcher $reviewWatcher,
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
+        private TaskWorkspaceTopology $topology,
     ) {}
 
     /**
@@ -385,6 +386,9 @@ final readonly class TaskScheduler
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Implementer);
+        if ($this->resumeTopologyRequest($group, $task, $implementer, $receipt)) {
+            return true;
+        }
         if ($receipt instanceof TaskComment && $this->receiptOutcome($receipt) === TaskTurnOutcome::Blocked) {
             $this->beginConsult($group, $task, $receipt, $observation);
 
@@ -590,6 +594,9 @@ final readonly class TaskScheduler
             return true;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        if ($this->resumeTopologyRequest($group, $task, $reviewer, $receipt)) {
+            return true;
+        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if ($receipt instanceof TaskComment && TaskQuestions::awaitsCause($task) && ! $receipt->cause instanceof QuestionCause) {
             $this->remindOrAssist($group, $task, $reviewer, [
@@ -1030,7 +1037,23 @@ final readonly class TaskScheduler
         if (! $receipt instanceof TaskTurnReceipt || ! $this->receiptMatchesActingThread($receipt, $actingThreadId)) {
             return null;
         }
-        if ($receipt->outcome instanceof TaskTurnOutcome && $receipt->fits($role)) {
+        if ($receipt->outcome === TaskTurnOutcome::TopologyRequested) {
+            $existing = TaskComment::query()->where('task_id', $task->id)->where('receipt_hash', $receipt->hash)->first();
+            if (! $existing instanceof TaskComment) {
+                TaskComment::query()->create([
+                    'task_id' => $task->id,
+                    'task_group_id' => $group->id,
+                    'agent_thread_id' => $actingThreadId,
+                    'receipt_hash' => $receipt->hash,
+                    'completion_attempt' => $task->completion_attempt,
+                    'review_attempt' => $role === TaskThreadRole::Reviewer ? $task->review_attempt : null,
+                    'type' => TaskCommentType::TopologyRequested,
+                    'body' => $receipt->summary."\n\n".$this->topologyReply($instance, $group, $role),
+                    'author' => $role->value,
+                    'posted_at' => now(),
+                ]);
+            }
+        } elseif ($receipt->outcome instanceof TaskTurnOutcome && $receipt->fits($role)) {
             TaskComment::query()->firstOrCreate(['task_id' => $task->id, 'receipt_hash' => $receipt->hash], [
                 'task_group_id' => $group->id,
                 'agent_thread_id' => $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id,
@@ -1048,6 +1071,69 @@ final readonly class TaskScheduler
         $this->receipts->clear($instance, $receipt);
 
         return $receipt;
+    }
+
+    private function topologyReply(Instance $instance, Task $group, TaskThreadRole $role): string
+    {
+        if ($role !== TaskThreadRole::Reviewer) {
+            return 'Topology request refused. Ask the reviewer through a blocked consult; only the reviewer can request a topology.';
+        }
+        try {
+            return $this->topology->acquire($instance, $group->id)
+                ? 'Topology TASK-'.$group->id.' is ready.'
+                : 'Topology TASK-'.$group->id.' is already held.';
+        } catch (Throwable $exception) {
+            return 'Topology TASK-'.$group->id.' acquisition failed: '.$exception->getMessage().' A missing topology does not block approval. Continue without operator assistance for this failure.';
+        }
+    }
+
+    /** A resource request resumes this thread without answering a question or advancing the subtask. */
+    private function resumeTopologyRequest(Task $group, Task $task, TaskThreadObservation $thread, ?TaskComment $receipt): bool
+    {
+        if (! $receipt instanceof TaskComment || $this->receiptOutcome($receipt) !== TaskTurnOutcome::TopologyRequested) {
+            return false;
+        }
+        // Reserve before sending. A retry must not mistake the resumed turn for the requesting turn.
+        $resume = $receipt->topology_resume;
+        if ($resume === null) {
+            $resume = ['source_turn_id' => $thread->turnId];
+            $receipt->update(['topology_resume' => $resume]);
+        }
+        $sourceTurn = $resume['source_turn_id'];
+        $key = 'topology-request-'.$receipt->id;
+        $accepted = $thread->turnId === $key
+            || array_any($thread->recentMessages, static fn (array $message): bool => $message['id'] === $key);
+        $superseded = is_string($thread->turnId) && $thread->turnId !== '' && $thread->turnId !== $sourceTurn;
+        if ($accepted || $superseded) {
+            $this->finishTopologyResume($task, $thread->role, $receipt, $sourceTurn);
+
+            return true;
+        }
+        try {
+            $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
+            $message = $receipt->body."\n\n".$this->actingInstructions($group, $task, $thread->role, $thread->threadId);
+            $this->actor->resumeInterruptedTurn($group, $thread, $message, $key);
+            $this->finishTopologyResume($task, $thread->role, $receipt, $sourceTurn);
+        } catch (AgentDriverException|TaskTurnReceiptException $exception) {
+            $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+        }
+
+        return true;
+    }
+
+    /** The completion gate always names the reserved source, never an already-stopped resumed turn. */
+    private function finishTopologyResume(Task $task, TaskThreadRole $role, TaskComment $receipt, ?string $sourceTurn): void
+    {
+        $task->update($role === TaskThreadRole::Reviewer ? [
+            'review_handled_comment_id' => $receipt->id,
+            'review_notified_turn_id' => $sourceTurn,
+            'communication_failures' => 0,
+        ] : [
+            'completion_handoff_comment_id' => $receipt->id,
+            'completion_handoff_attempt' => $task->completion_attempt,
+            'completion_handoff_turn_id' => $sourceTurn,
+            'communication_failures' => 0,
+        ]);
     }
 
     /** The Orbit id of the thread this phase acts as, or null when that thread has not been stored. */
@@ -1432,6 +1518,9 @@ final readonly class TaskScheduler
             return;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        if ($this->resumeTopologyRequest($group, $task, $reviewer, $receipt)) {
+            return;
+        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
             $this->remindOrAssist($group, $task, $reviewer, [
@@ -1615,6 +1704,9 @@ final readonly class TaskScheduler
             return;
         }
         $receipt = $this->pendingReceipt($task, TaskThreadRole::Reviewer);
+        if ($this->resumeTopologyRequest($group, $task, $reviewer, $receipt)) {
+            return;
+        }
         $outcome = $receipt instanceof TaskComment ? $this->receiptOutcome($receipt) : null;
         if (! $receipt instanceof TaskComment || ! in_array($outcome, [TaskTurnOutcome::Answered, TaskTurnOutcome::Blocked], true)) {
             if ($read instanceof TaskTurnReceipt || $receipt instanceof TaskComment) {

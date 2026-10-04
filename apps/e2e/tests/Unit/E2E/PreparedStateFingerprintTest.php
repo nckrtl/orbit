@@ -7,6 +7,7 @@ use App\E2E\PreparedStateFingerprint;
 use App\E2E\Value\LaravelRelease;
 use App\E2E\Value\PreparedFingerprint;
 use App\E2E\Value\TopologyProfile;
+use App\E2E\Value\TopologyRecipe;
 use Illuminate\Container\Container;
 use Illuminate\Process\Factory as ProcessFactory;
 use Illuminate\Support\Facades\Facade;
@@ -52,15 +53,17 @@ describe('PreparedStateFingerprint', function (): void {
             'paths' => ['contracts/*.php'],
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+            'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
             'declared_epochs' => ['php' => 1, 'base_image' => 2],
             'topology' => [
-                'roles' => ['gateway', 'app-dev', 'app-prod'],
+                'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
                 'profile' => 'gateway_app-dev_app-prod',
-                'checkout_roles' => ['gateway', 'app-dev'],
+                'checkout_roles' => ['gateway', 'app-dev', 'operator'],
                 'assignments' => [
                     'gateway' => ['gateway', 'vpn'],
                     'app-dev' => ['app-dev', 'metrics'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]);
@@ -70,17 +73,19 @@ describe('PreparedStateFingerprint', function (): void {
 
         writePreparedManifest($this->path, [
             'topology' => [
-                'checkout_roles' => ['gateway', 'app-dev'],
+                'checkout_roles' => ['gateway', 'app-dev', 'operator'],
                 'profile' => 'gateway_app-dev_app-prod',
-                'roles' => ['gateway', 'app-dev', 'app-prod'],
+                'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
                 'assignments' => [
                     'gateway' => ['gateway', 'vpn'],
                     'app-dev' => ['app-dev', 'metrics'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
             'declared_epochs' => ['base_image' => 2, 'php' => 1],
             'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+            'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
             'cold_epoch' => 'ubuntu-26.04-amd64-v1',
             'paths' => ['contracts/*.php'],
             'schema' => 2,
@@ -105,14 +110,15 @@ describe('PreparedStateFingerprint', function (): void {
             ->and($fingerprints->forCommit($second)->manifest['base_image_alias'])
             ->toBe('orbit-base-ubuntu-26.04-runtime')
             ->and($fingerprints->forCommit($second)->manifest['topology']['roles'])
-            ->toBe(['gateway', 'app-dev', 'app-prod'])
+            ->toBe(['gateway', 'app-dev', 'app-prod', 'operator'])
             ->and($fingerprints->forCommit($second)->manifest['topology']['checkout_roles'])
-            ->toBe(['gateway', 'app-dev'])
+            ->toBe(['gateway', 'app-dev', 'operator'])
             ->and($fingerprints->forCommit($second)->manifest['topology']['assignments'])
             ->toBe([
                 'gateway' => ['gateway', 'vpn'],
                 'app-dev' => ['app-dev', 'metrics'],
                 'app-prod' => ['app-prod'],
+                'operator' => [],
             ]);
     });
 
@@ -175,6 +181,7 @@ describe('PreparedStateFingerprint', function (): void {
         'extra root key' => [['unexpected' => true]],
         'invalid cold epoch' => [['cold_epoch' => 'ubuntu-26.04-amd64-v0']],
         'invalid base image alias' => [['base_image_alias' => 'ubuntu:26.04']],
+        'invalid operator base image alias' => [['operator_base_image_alias' => 'images:ubuntu/26.04']],
         'invalid declared epoch' => [['declared_epochs' => ['php' => '1']]],
         'extra Laravel pin key' => [['laravel_pin' => ['tag' => 'v13.0.0', 'commit' => str_repeat('a', 40)]]],
         'invalid profile' => [['topology' => ['profile' => 'other']]],
@@ -188,6 +195,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['gateway', 'vpn'],
                     'app-dev' => ['app-dev', 'vpn'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]],
@@ -197,6 +205,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['gateway', 'vpn', 'metrics'],
                     'app-dev' => ['app-dev'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]],
@@ -206,6 +215,7 @@ describe('PreparedStateFingerprint', function (): void {
                     'gateway' => ['vpn', 'gateway'],
                     'app-dev' => ['app-dev', 'metrics'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                 ],
             ],
         ]],
@@ -522,15 +532,17 @@ function preparedManifest(): array
         'paths' => ['contracts/*.php'],
         'cold_epoch' => 'ubuntu-26.04-amd64-v1',
         'base_image_alias' => 'orbit-base-ubuntu-26.04-runtime',
+        'operator_base_image_alias' => TopologyRecipe::OPERATOR_IMAGE,
         'declared_epochs' => ['php' => 1],
         'topology' => [
             'profile' => 'gateway_app-dev_app-prod',
-            'roles' => ['gateway', 'app-dev', 'app-prod'],
-            'checkout_roles' => ['gateway', 'app-dev'],
+            'roles' => ['gateway', 'app-dev', 'app-prod', 'operator'],
+            'checkout_roles' => ['gateway', 'app-dev', 'operator'],
             'assignments' => [
                 'gateway' => ['gateway', 'vpn'],
                 'app-dev' => ['app-dev', 'metrics'],
                 'app-prod' => ['app-prod'],
+                'operator' => [],
             ],
         ],
     ];

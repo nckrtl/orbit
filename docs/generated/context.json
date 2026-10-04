@@ -689,7 +689,7 @@
             ]
         },
         {
-            "path": "docs/decisions/0195-derive-application-directory-from-web-root.md",
+            "path": "docs/decisions/0196-derive-application-directory-from-web-root.md",
             "title": "Derive the application directory from the web root",
             "kind": "decision",
             "components": [
@@ -712,7 +712,7 @@
                 "Task"
             ],
             "governing_adrs": [
-                "0195"
+                "0196"
             ]
         },
         {
@@ -760,7 +760,7 @@
                 "0182",
                 "0190",
                 "0191",
-                "0195"
+                "0196"
             ]
         },
         {
@@ -987,6 +987,7 @@
                 "apps/web"
             ],
             "concepts": [
+                "Access grant",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1353,9 +1354,11 @@
             "components": [
                 "apps/cli",
                 "apps/e2e",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Extension",
@@ -1368,7 +1371,8 @@
                 "Route",
                 "Schedule",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Turn receipt"
             ],
             "governing_adrs": []
         },
@@ -1817,7 +1821,7 @@
                 "Tool"
             ],
             "governing_adrs": [
-                "0195"
+                "0196"
             ]
         },
         {
@@ -1963,9 +1967,11 @@
             "title": "Topology snapshot",
             "kind": "reference",
             "components": [
-                "apps/e2e"
+                "apps/e2e",
+                "apps/web"
             ],
             "concepts": [
+                "Access grant",
                 "Cluster",
                 "Deployment",
                 "Doctor",
@@ -2005,6 +2011,7 @@
                 "Subtask",
                 "Task",
                 "Task definition",
+                "Task workspace",
                 "Tool"
             ],
             "governing_adrs": []

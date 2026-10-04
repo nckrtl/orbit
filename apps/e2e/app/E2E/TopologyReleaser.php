@@ -407,6 +407,12 @@ final readonly class TopologyReleaser
                 $running[] = $name;
             }
         }
+        if (in_array('operator', $target->recipe->nodeKeys(), true)) {
+            $operator = $target->instance('operator');
+            if (in_array($operator, $present, true)) {
+                $this->host->stopWeb($operator);
+            }
+        }
         if ($running !== []) {
             $this->host->forceStopAll($running);
             foreach ($running as $name) {

@@ -33,7 +33,8 @@ function discovery_gateway_identity_fixture(): array
         INSERT INTO nodes VALUES
             (1, 'gateway', 'active', '10.232.1.10', 2201, 'orbit', '10.44.0.1', '192.168.1.10', 'gateway-public-key', NULL, '10.44.0.1', 'gateway-host-key', NULL, '2026-09-01', '2026-09-02'),
             (2, 'app-dev', 'active', '10.232.1.11', 2202, 'orbit', '10.44.0.2', '192.168.1.11', 'dev-public-key', NULL, '10.44.0.1', 'dev-host-key', 7, '2026-09-01', '2026-09-03'),
-            (3, 'app-prod', 'active', '10.232.1.12', 2203, 'deploy', '10.44.0.3', NULL, 'prod-public-key', NULL, '192.0.2.53', 'prod-host-key', NULL, '2026-09-01', '2026-09-04');
+            (3, 'app-prod', 'active', '10.232.1.12', 2203, 'deploy', '10.44.0.3', NULL, 'prod-public-key', NULL, '192.0.2.53', 'prod-host-key', NULL, '2026-09-01', '2026-09-04'),
+            (5, 'operator', 'active', '10.232.1.14', 22, 'orbit', '10.44.0.5', NULL, 'operator-public-key', NULL, NULL, 'operator-host-key', NULL, '2026-09-01', '2026-09-04');
         INSERT INTO node_roles VALUES
             (1, 1, 'gateway', 'active', '2026-09-01', '2026-09-02'),
             (2, 1, 'vpn', 'active', '2026-09-01', '2026-09-02'),
@@ -76,6 +77,7 @@ function discovery_gateway_identity_process(string $database, array $addresses =
         dirname(__DIR__, 3).'/resources/guest/retarget-gateway.php',
         $database,
         ...$addresses,
+        ...(count($addresses) === 3 ? ['10.232.7.14'] : []),
     ]);
 }
 
@@ -1340,6 +1342,7 @@ describe('convergence guest scripts', function () {
             $expected['nodes'][0]['public_ssh_host'] = '10.232.7.10';
             $expected['nodes'][1]['public_ssh_host'] = '10.232.7.11';
             $expected['nodes'][2]['public_ssh_host'] = '10.232.7.12';
+            $expected['nodes'][3]['public_ssh_host'] = '10.232.7.14';
             $expected['settings'][0]['value'] = '10.232.7.10:51821';
             $process = discovery_gateway_identity_process($fixture['database']);
 
@@ -1347,6 +1350,7 @@ describe('convergence guest scripts', function () {
             expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
                 'app-dev' => '10.232.7.10:51821',
                 'app-prod' => '10.232.7.10:51821',
+                'operator' => '10.232.7.10:51821',
             ]);
             expect($process->getErrorOutput())->toBe('');
             expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($expected);
@@ -1364,12 +1368,14 @@ describe('convergence guest scripts', function () {
             $expected['nodes'][0]['public_ssh_host'] = '10.232.7.10';
             $expected['nodes'][1]['public_ssh_host'] = '10.232.7.11';
             $expected['nodes'][2]['public_ssh_host'] = '10.232.7.12';
+            $expected['nodes'][3]['public_ssh_host'] = '10.232.7.14';
             $process = discovery_gateway_identity_process($fixture['database']);
 
             expect($process->run())->toBe(0);
             expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
                 'app-dev' => "10.232.7.10:{$port}",
                 'app-prod' => "10.232.7.10:{$port}",
+                'operator' => "10.232.7.10:{$port}",
             ]);
             expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($expected);
         } finally {
@@ -1397,6 +1403,7 @@ describe('convergence guest scripts', function () {
             $expected['nodes'][1]['public_ssh_host'] = '10.232.7.11';
             $expected['nodes'][1]['wireguard_endpoint_override'] = '10.232.7.10:51901';
             $expected['nodes'][2]['public_ssh_host'] = '10.232.7.12';
+            $expected['nodes'][3]['public_ssh_host'] = '10.232.7.14';
             $expected['settings'][0]['value'] = '10.232.7.10:51821';
             $process = discovery_gateway_identity_process($fixture['database']);
 
@@ -1404,6 +1411,7 @@ describe('convergence guest scripts', function () {
             expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
                 'app-dev' => '10.232.7.10:51901',
                 'app-prod' => '10.232.7.10:51902',
+                'operator' => '10.232.7.10:51821',
             ]);
             expect(discovery_gateway_identity_state($fixture['pdo']))->toBe($expected);
 
@@ -1428,9 +1436,10 @@ describe('convergence guest scripts', function () {
             expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe([
                 'app-dev' => '10.232.7.10:51901',
                 'app-prod' => $productionEndpoint,
+                'operator' => $productionEndpoint,
             ]);
             expect($fixture['pdo']->query('SELECT wireguard_endpoint_override FROM nodes ORDER BY id')->fetchAll(PDO::FETCH_COLUMN))
-                ->toBe([null, '10.232.7.10:51901', null]);
+                ->toBe([null, '10.232.7.10:51901', null, null]);
         } finally {
             new Filesystem()->deleteDirectory($fixture['root']);
         }
@@ -1545,7 +1554,7 @@ describe('convergence guest scripts', function () {
     })->with([
         'no addresses' => [[]],
         'missing production address' => [['10.232.7.10', '10.232.7.11']],
-        'unexpected fourth address' => [['10.232.7.10', '10.232.7.11', '10.232.7.12', '10.232.7.13']],
+        'unexpected fifth address' => [['10.232.7.10', '10.232.7.11', '10.232.7.12', '10.232.7.14', '10.232.7.15']],
     ]);
 
     it('does not create a missing cloned Gateway database', function (): void {
@@ -2275,6 +2284,7 @@ describe('convergence guest scripts', function () {
             $assignments = base64_encode(json_encode([
                 'gateway' => ['gateway', 'vpn'],
                 'app-prod' => ['app-prod'],
+                'operator' => [],
             ], JSON_THROW_ON_ERROR));
             $command = [
                 'bash',
@@ -2448,8 +2458,8 @@ describe('convergence guest scripts', function () {
             $pdo->exec('CREATE TABLE nodes (id INTEGER PRIMARY KEY, name TEXT, status TEXT)');
             $pdo->exec('CREATE TABLE node_roles (node_id INTEGER, role TEXT, status TEXT)');
             $pdo->exec(
-                "INSERT INTO nodes VALUES (1, 'gateway', 'active'), (2, 'operator', 'active'), "
-                ."(3, 'app-prod', 'active')",
+                "INSERT INTO nodes VALUES (1, 'gateway', 'active'), (2, 'app-dev', 'active'), "
+                ."(3, 'app-prod', 'active'), (5, 'operator', 'active')",
             );
             $pdo->exec(
                 "INSERT INTO node_roles VALUES (1, 'gateway', 'active'), (1, 'vpn', 'active'), "
@@ -2473,8 +2483,9 @@ describe('convergence guest scripts', function () {
                 'orbit-e2e-topology-snapshot-gateway',
                 base64_encode(json_encode([
                     'gateway' => ['gateway', 'vpn'],
-                    'operator' => ['app-dev', 'metrics'],
+                    'app-dev' => ['app-dev', 'metrics'],
                     'app-prod' => ['app-prod'],
+                    'operator' => [],
                     'extra' => [],
                 ], JSON_THROW_ON_ERROR)),
             ];
@@ -2491,8 +2502,8 @@ describe('convergence guest scripts', function () {
                     'probe' => 'role.assignments',
                     'passed' => true,
                     'identity' => str_repeat('a', 40),
-                    'expected' => 'gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active',
-                    'observed' => 'gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active',
+                    'expected' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod,operator:none,extra:none:active',
+                    'observed' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod,operator:none,extra:none:active',
                     'evidence_ref' => 'incus://orbit-e2e-topology-snapshot-gateway/role.assignments',
                 ]);
 
@@ -2520,7 +2531,7 @@ describe('convergence guest scripts', function () {
             );
             expect($withExtra)->toMatchArray([
                 'passed' => true,
-                'observed' => 'gateway:gateway+vpn,operator:app-dev+metrics,app-prod:app-prod,extra:none:active+operator:proof-role',
+                'observed' => 'gateway:gateway+vpn,app-dev:app-dev+metrics,app-prod:app-prod,operator:none,extra:none:active+app-dev:proof-role',
             ]);
 
             // An extra that is not active fails, and so does a missing base assignment.
@@ -2640,6 +2651,7 @@ describe('convergence guest scripts', function () {
             'converge-gateway.sh',
             'converge-app-dev.sh',
             'converge-app-prod.sh',
+            'converge-operator.sh',
             'converge-sample-app.sh',
         ];
 

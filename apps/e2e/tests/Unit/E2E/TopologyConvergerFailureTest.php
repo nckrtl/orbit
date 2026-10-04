@@ -22,15 +22,15 @@ beforeEach(function () {
 
 function failing_converger_vm(string $name): string
 {
-    $role = str_ends_with($name, '-gateway') ? 'gateway' : (str_ends_with($name, '-app-dev') ? 'app-dev' : 'app-prod');
+    $role = str_ends_with($name, '-gateway') ? 'gateway' : (str_ends_with($name, '-app-dev') ? 'app-dev' : (str_ends_with($name, '-operator') ? 'operator' : 'app-prod'));
     $network = 'oe-50fa1830b7de';
     $hash = substr(sha1("{$network}:{$role}"), 0, 6);
     $mac = '00:16:3e:'.implode(':', str_split($hash, 2));
-    $ipv4 = ['gateway' => '10.232.2.10', 'app-dev' => '10.232.2.11', 'app-prod' => '10.232.2.12'][$role];
+    $ipv4 = ['gateway' => '10.232.2.10', 'app-dev' => '10.232.2.11', 'app-prod' => '10.232.2.12', 'operator' => '10.232.2.14'][$role];
 
     return json_encode([[
         'name' => $name,
-        'type' => 'virtual-machine',
+        'type' => str_ends_with($name, '-operator') ? 'container' : 'virtual-machine',
         'status' => 'Stopped',
         'status_code' => 102,
         'config' => ['user.orbit.e2e.owner' => 'orbit-e2e'],
@@ -69,7 +69,7 @@ function failing_converger_process_result(
                     16,
                     JSON_THROW_ON_ERROR,
                 )[0],
-                ['gateway', 'app-dev', 'app-prod'],
+                ['gateway', 'app-dev', 'app-prod', 'operator'],
             ),
             JSON_THROW_ON_ERROR,
         )),
@@ -204,7 +204,7 @@ describe('TopologyConverger guest failures', function () {
                             16,
                             JSON_THROW_ON_ERROR,
                         )[0],
-                        ['gateway', 'app-dev', 'app-prod'],
+                        ['gateway', 'app-dev', 'app-prod', 'operator'],
                     ),
                     JSON_THROW_ON_ERROR,
                 ));
@@ -291,7 +291,7 @@ describe('TopologyConverger diagnostic parsing', function () {
                             16,
                             JSON_THROW_ON_ERROR,
                         )[0],
-                        ['gateway', 'app-dev', 'app-prod'],
+                        ['gateway', 'app-dev', 'app-prod', 'operator'],
                     ),
                     JSON_THROW_ON_ERROR,
                 ));

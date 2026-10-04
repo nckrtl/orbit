@@ -193,7 +193,7 @@ describe('ProofInputManifestBuilder', function (): void {
         );
         $value = $manifest->toArray();
         $value['construction']['schema'] = TopologyConstructionInputs::LEGACY_SCHEMA;
-        unset($value['construction']['snapshot_replacement'], $value['fingerprint']);
+        unset($value['construction']['snapshot_replacement'], $value['construction']['operator_base_image'], $value['construction']['nodes']['operator'], $value['fingerprint']);
         $value['fingerprint'] = hash('sha256', json_encode(
             $value,
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,

@@ -40,6 +40,7 @@ final readonly class TopologySnapshotBuilder
         LaravelRelease $laravel,
         bool $allowCold,
         OperationId $operation,
+        string $operatorBaseImageFingerprint,
     ): SourceState {
         if (! $allowCold) {
             throw new RuntimeException('Cold topology snapshot construction requires explicit permission.');
@@ -68,7 +69,7 @@ final readonly class TopologySnapshotBuilder
                 $target,
                 $this->mainWorktree,
                 $mainSha,
-                [$alias => $baseImageFingerprint],
+                [$alias => $baseImageFingerprint, TopologyRecipe::OPERATOR_IMAGE => $operatorBaseImageFingerprint],
                 $laravel,
                 $operation,
                 ['user.orbit.e2e.operation' => $operation->value],
