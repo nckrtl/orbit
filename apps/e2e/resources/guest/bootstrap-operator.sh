@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
-# The harness runs this right after the container starts, before DHCP and DNS are up.
+# The harness runs this right after the container starts. Wait for systemd and the end of boot.
+for _ in $(seq 1 90); do
+  systemctl show --property=SystemState >/dev/null 2>&1 && break
+  sleep 1
+done
+systemctl is-system-running --wait >/dev/null 2>&1 || true
+# Topology networks run dnsmasq without DNS (port=0), so use the VMs' public upstreams, persistently.
+install -d -m 0755 /etc/systemd/resolved.conf.d
+printf '[Resolve]\nDNS=1.1.1.1 8.8.8.8\n' >/etc/systemd/resolved.conf.d/orbit-e2e-upstream.conf
+systemctl restart systemd-resolved
 for _ in $(seq 1 90); do
   getent hosts archive.ubuntu.com >/dev/null && break
   sleep 1
