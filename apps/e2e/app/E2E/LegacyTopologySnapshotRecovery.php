@@ -207,6 +207,12 @@ final readonly class LegacyTopologySnapshotRecovery
         if ($record === null) {
             return null;
         }
+        // A later promotion rebuilt the snapshot after this recovery failed, so its inventory describes nothing.
+        if (($record['phase'] ?? null) === 'failed' && $this->supersededByPromotion($record)) {
+            $this->archive($record);
+
+            return null;
+        }
         if (($record['main_sha'] ?? null) !== $mainSha) {
             throw new RuntimeException(
                 'The retained legacy recovery does not match the requested main SHA; use its recorded next action.',
@@ -291,6 +297,23 @@ final readonly class LegacyTopologySnapshotRecovery
                 'A retained legacy topology snapshot recovery record already exists; follow its recorded next action.',
             );
         }
+        $this->archive($record);
+    }
+
+    /** @param array<array-key, mixed> $record */
+    private function supersededByPromotion(array $record): bool
+    {
+        $promoted = $this->state->read('topology-snapshot/promoted.json')['id'] ?? null;
+        $inventory = $record['inventory'] ?? null;
+        $manifest = is_array($inventory) ? ($inventory['promoted_manifest'] ?? null) : null;
+        $recovered = is_array($manifest) ? ($manifest['id'] ?? null) : null;
+
+        return is_string($promoted) && is_string($recovered) && $promoted !== $recovered;
+    }
+
+    /** @param array<array-key, mixed> $record */
+    private function archive(array $record): void
+    {
         $operation = $record['operation_id'] ?? null;
         $inventoryValue = $record['inventory'] ?? null;
         $digest = $record['inventory_sha256'] ?? null;
@@ -300,27 +323,27 @@ final readonly class LegacyTopologySnapshotRecovery
             || ! is_array($inventoryValue)
             || ! is_string($digest)
         ) {
-            throw new RuntimeException('The completed legacy recovery record is invalid.');
+            throw new RuntimeException('The retained legacy recovery record is invalid.');
         }
         try {
             $inventory = LegacyTopologySnapshotInventory::fromArray($inventoryValue);
         } catch (InvalidArgumentException $exception) {
-            throw new RuntimeException('The completed legacy recovery record is invalid.', previous: $exception);
+            throw new RuntimeException('The retained legacy recovery record is invalid.', previous: $exception);
         }
         if (! hash_equals($inventory->sha256(), $digest)) {
-            throw new RuntimeException('The completed legacy recovery inventory digest does not match.');
+            throw new RuntimeException('The retained legacy recovery inventory digest does not match.');
         }
 
         $archive = "topology-snapshot/recoveries/{$operation}.json";
         $retained = $this->state->read($archive);
         if ($retained !== null && $retained !== $record) {
-            throw new RuntimeException('The completed legacy recovery archive conflicts with retained evidence.');
+            throw new RuntimeException('The retained legacy recovery archive conflicts with retained evidence.');
         }
         if ($retained === null) {
             $this->state->write($archive, $record);
         }
         if ($this->state->read($archive) !== $record) {
-            throw new RuntimeException('The completed legacy recovery evidence could not be archived.');
+            throw new RuntimeException('The retained legacy recovery evidence could not be archived.');
         }
         $this->state->delete('topology-snapshot/recovery.json');
     }
