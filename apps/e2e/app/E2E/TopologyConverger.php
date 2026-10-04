@@ -536,7 +536,7 @@ final readonly class TopologyConverger
     {
         $pattern = match (true) {
             $script === 'converge-gateway.sh' && $result->exitCode === 71 => '/(?:\A|\R)Gateway bootstrap failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
-            in_array($script, ['converge-app-dev.sh', 'converge-app-prod.sh'], true)
+            in_array($script, ['converge-app-dev.sh', 'converge-app-prod.sh', 'converge-operator.sh'], true)
                 && $result->exitCode === 1 => '/(?:\A|\R)Node provisioning failed at step \[([a-z0-9:-]+)\] with error \[([a-z0-9._-]+)\]\.(?:\R|\z)/D',
             default => null,
         };
