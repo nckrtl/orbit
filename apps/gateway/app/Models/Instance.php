@@ -79,6 +79,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $error_code
  * @property Carbon|null $runtime_definitions_captured_at
  * @property bool $development_release_layout
+ * @property bool $development_projection_pending
  * @property bool|null $task_workspace_routed
  * @property InstanceState $status
  * @property Carbon|null $created_at
@@ -172,6 +173,7 @@ final class Instance extends Model
         'error_code',
         'task_workspace_routed',
         'development_release_layout',
+        'development_projection_pending',
     ];
 
     public const string MorphAlias = 'instance';
@@ -427,6 +429,7 @@ final class Instance extends Model
             'source_is_laravel' => 'boolean',
             'task_workspace_routed' => 'boolean',
             'development_release_layout' => 'boolean',
+            'development_projection_pending' => 'boolean',
             'seed_selected' => 'boolean',
             'status' => InstanceState::class,
         ];

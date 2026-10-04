@@ -43,7 +43,9 @@ A `default` Instance on an `app-dev` Node is a development release seed. Other d
 
 The Gateway checks development defaults every minute with `orbit:deploy-development-defaults`. The GitHub App currently has no push webhook, so this schedule is the push fallback. It fetches the default branch inside the Instance operation lock and skips an unchanged commit. Pushes that arrive during a deployment are picked up on the next tick; intermediate commits coalesce to the newest fetched commit. Only one deployment runs per Instance, including manual requests.
 
-An unchanged tick creates no deployment history row. Before skipping it, Orbit reconciles a visitable default's `current` route projection, including after a crash during migration. Failed deployments are recorded and retried on a later tick.
+An unchanged tick creates no deployment history row. Failed deployments are recorded and retried on a later tick.
+
+A deployment records that the default's route projection is pending before it converges the route, and clears that mark when the converge succeeds. A layout migration also marks the projection pending. A tick reconverges a visitable default's `current` route projection only while the mark is set, so a crash or a failed converge is repaired on the next tick. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
 
 The existing checkout directory is the release home. Its `.git` repository stays at the same path. `releases/<name>` holds detached linked worktrees, and `current` selects the live one. The first deployment migrates a plain checkout by reflinking its files into an initial release before selecting that release. The original repository and checkout files stay in place: existing task bridges and registered `t3code-<hex>` worktrees keep their Git links. Do not move or delete this repository.
 

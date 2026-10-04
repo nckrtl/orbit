@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\DeployDefaultInstanceAction;
 use App\Actions\Instances\DeployInstanceAction;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentEvent;
 use App\Domain\Instances\Deployment\DeploymentFailureBoundary;
@@ -87,6 +88,48 @@ describe('development default deployments', function (): void {
             ->and($calls)->toBe(2)
             ->and(InstanceDeployment::query()->count())->toBe(1)
             ->and($this->remote->trace)->not->toContain('activate:release-1');
+    });
+
+    it('skips the projection lock for an unchanged scheduled tick with a current projection', function (): void {
+        $instance = $this->instance;
+        $instance->update(['development_release_layout' => true, 'development_projection_pending' => false, 'root' => 'public', 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
+        $this->remote->targetCommit = str_repeat('a', 40);
+        $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => 'idle935.example.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => 'active']);
+        $projector = Mockery::mock(DevelopmentRouteProjector::class);
+        $projector->shouldNotReceive('converge');
+        app()->instance(DevelopmentRouteProjector::class, $projector);
+        app()->instance(DevelopmentProjectionOperationLock::class, new class implements DevelopmentProjectionOperationLock
+        {
+            public function run(Closure $operation): mixed
+            {
+                throw new LogicException('An unchanged tick with a current projection took the projection lock.');
+            }
+        });
+
+        $result = app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule');
+
+        expect($result)->toBeNull()
+            ->and($instance->fresh()->development_projection_pending)->toBeFalse()
+            ->and(InstanceDeployment::query()->count())->toBe(0);
+    });
+
+    it('marks the projection pending until a deployment converges it', function (): void {
+        $instance = $this->instance;
+        $instance->update(['development_release_layout' => true, 'development_projection_pending' => false, 'root' => 'public', 'selected_php_version' => '8.5', 'source_is_laravel' => true]);
+        $route = Route::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'domain' => 'switch935.example.test', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => 'active']);
+        $projector = Mockery::mock(DevelopmentRouteProjector::class);
+        $projector->shouldReceive('converge')->once()->andThrow(new RuntimeConvergenceException('projection', 'app-dev.source_access_failed', 'Lost switch convergence.'));
+        app()->instance(DevelopmentRouteProjector::class, $projector);
+
+        $result = app(DeployDefaultInstanceAction::class)->execute($instance, onlyChanged: true, triggeredBy: 'schedule');
+
+        expect($result?->succeeded)->toBeFalse()
+            ->and($this->remote->trace)->toContain('activate:release-1')
+            ->and($instance->fresh()->development_projection_pending)->toBeTrue();
     });
 
     it('keeps current and reports the failed required step without running later steps', function (): void {

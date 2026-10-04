@@ -77,11 +77,13 @@ final readonly class DeployDefaultInstanceAction
                         $selected = $this->deployment->selected($instance);
                         $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
                         if (! $instance->development_release_layout) {
-                            $instance->update(['development_release_layout' => true]);
+                            $instance->update(['development_release_layout' => true, 'development_projection_pending' => true]);
                         }
-                        // The flag is layout intent, not a receipt of remote convergence. Reconcile
-                        // before the unchanged fast path so a lost process cannot strand migration.
-                        $this->projectRoute($instance);
+                        // The pending mark is the receipt of remote convergence. Repair before the unchanged
+                        // fast path so a lost process cannot strand migration; a completed projection skips the lock.
+                        if ($instance->development_projection_pending) {
+                            $this->projectRoute($instance);
+                        }
                         $commit = $this->deployment->target($instance);
                         if ($onlyChanged && $selected->commit === $commit) {
                             return null;
@@ -111,6 +113,8 @@ final readonly class DeployDefaultInstanceAction
                         $this->assertNotCancelled($output);
                         $boundary = DeploymentFailureBoundary::Activation;
                         $output->emitPhase(DeploymentProgressPhase::Activation);
+                        // A crash between the switch and its projection must leave a mark for the next tick.
+                        $instance->update(['development_projection_pending' => true]);
                         $selected = $this->deployment->activate($instance, $release);
                         $instance->update(['seed_path' => $selected->path, 'seed_commit' => $selected->commit, 'seed_repository' => $instance->checkout_path]);
                         // checkout_path remains the repository home, never a disposable release.
@@ -164,7 +168,9 @@ final readonly class DeployDefaultInstanceAction
     {
         $route = $instance->authoritativeRoute();
         if ($route !== null) {
+            $instance->update(['development_projection_pending' => true]);
             $this->projections->run(fn () => $this->routes->converge($instance, $route));
+            $instance->update(['development_projection_pending' => false]);
         }
     }
 
