@@ -10,6 +10,7 @@ use App\E2E\Value\IncusInstance;
 use App\E2E\Value\IncusNetwork;
 use App\E2E\Value\LegacyTopologySnapshotInventory;
 use App\E2E\Value\OperationId;
+use App\E2E\Value\TopologyProfile;
 use App\E2E\Value\TopologySnapshotGeneration;
 use App\E2E\Value\TopologySnapshotIdentity;
 use App\E2E\Value\TopologyTarget;
@@ -165,6 +166,11 @@ final readonly class LegacyTopologySnapshotRecovery
                 }
             }
         }
+        // After a verified teardown the authorized snapshot is gone, so snapshot guests can only come from a later
+        // cold build that stopped without a journal entry, such as an interrupted rebuild. Clean up that build.
+        if ($this->teardownVerified($history)) {
+            $operation = $this->leftoverConstructionOperation()->value ?? $operation;
+        }
         if ($operation === null) {
             return null;
         }
@@ -213,10 +219,17 @@ final readonly class LegacyTopologySnapshotRecovery
 
             return null;
         }
-        if (($record['main_sha'] ?? null) !== $mainSha) {
-            throw new RuntimeException(
-                'The retained legacy recovery does not match the requested main SHA; use its recorded next action.',
-            );
+        $previousMainSha = $record['main_sha'] ?? null;
+        if ($previousMainSha !== $mainSha) {
+            // Teardown is the destructive part. Once it is verified, only construction remains, and it builds the
+            // requested main instead of the commit the recovery started at.
+            $history = $record['history'] ?? null;
+            if (($record['phase'] ?? null) !== 'failed' || ! is_array($history) || ! $this->teardownVerified($history)) {
+                throw new RuntimeException(
+                    'The retained legacy recovery does not match the requested main SHA; use its recorded next action.',
+                );
+            }
+            $record['main_sha'] = $mainSha;
         }
         $inventoryValue = $record['inventory'] ?? null;
         $digest = $record['inventory_sha256'] ?? null;
@@ -254,6 +267,7 @@ final readonly class LegacyTopologySnapshotRecovery
             'evidence' => [
                 'previous_operation_id' => $previousOperation,
                 'previous_phase' => $previousPhase,
+                ...($previousMainSha !== $mainSha ? ['previous_main_sha' => $previousMainSha] : []),
             ],
         ];
         $record['history'] = $history;
@@ -287,6 +301,45 @@ final readonly class LegacyTopologySnapshotRecovery
     public function retained(): ?array
     {
         return $this->state->read('topology-snapshot/recovery.json');
+    }
+
+    /** @param array<array-key, mixed> $history */
+    private function teardownVerified(array $history): bool
+    {
+        return array_any($history, fn ($entry) => is_array($entry) && ($entry['phase'] ?? null) === 'manifests_verified');
+    }
+
+    /** The one cold-build operation that owns every present snapshot guest, or null when there are none. */
+    private function leftoverConstructionOperation(): ?OperationId
+    {
+        $names = [];
+        foreach (TopologyProfile::ROLES as $role) {
+            $names[] = $this->identity->instance($role);
+            $names[] = $this->identity->instance($role).'-next';
+        }
+        $operations = [];
+        foreach ($this->host->instances($names) as $name => $instance) {
+            $operation = $instance->metadata['user.orbit.e2e.operation'] ?? null;
+            if (
+                ($instance->metadata['user.orbit.e2e.owner'] ?? null) !== 'orbit-e2e'
+                || ($instance->metadata['user.orbit.e2e.issue'] ?? '') !== ''
+                || ! is_string($operation)
+            ) {
+                throw new RuntimeException("Incus instance {$name} is not a harness-owned topology snapshot guest.");
+            }
+            $operations[$operation] = true;
+        }
+        if ($operations === []) {
+            return null;
+        }
+        if (count($operations) !== 1) {
+            throw new RuntimeException('The present topology snapshot guests belong to more than one operation.');
+        }
+        try {
+            return new OperationId((string) array_key_first($operations));
+        } catch (InvalidArgumentException $exception) {
+            throw new RuntimeException('The present topology snapshot guests have an invalid operation identity.', previous: $exception);
+        }
     }
 
     /** @param array<array-key, mixed> $record */

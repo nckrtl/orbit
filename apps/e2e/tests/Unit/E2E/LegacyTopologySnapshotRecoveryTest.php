@@ -749,6 +749,56 @@ it('archives a failed recovery that a later promotion superseded and starts fres
     'the same promoted generation' => [false],
 ]);
 
+it('continues a failed recovery at a newer main only after its teardown was verified', function (bool $teardownVerified): void {
+    [$recovery, $store, , $paths] = legacyRecoveryService();
+    $inventory = $recovery->authorize();
+    $recovery->start(str_repeat('b', 40), $inventory);
+    if ($teardownVerified) {
+        foreach (['instances_pending', 'instances_verified', 'network_pending', 'network_verified', 'manifests_pending', 'manifests_verified', 'construction_pending'] as $phase) {
+            $recovery->record($phase, []);
+        }
+    }
+    $recovery->record('failed', ['error' => 'Construction failed.']);
+    $next = new LegacyTopologySnapshotRecovery(
+        new IncusHost(project: 'default', pool: 'orbit-e2e'),
+        new TopologySnapshotManifestStore($store, $paths, new IncusHost(project: 'default', pool: 'orbit-e2e')),
+        $store,
+        new OperationId(str_repeat('c', 32)),
+        TopologySnapshotIdentity::primary(),
+    );
+
+    if (! $teardownVerified) {
+        expect(fn () => $next->resume(str_repeat('d', 40)))
+            ->toThrow(RuntimeException::class, 'does not match the requested main SHA');
+
+        return;
+    }
+
+    expect($next->resume(str_repeat('d', 40))?->toArray())->toBe($inventory->toArray())
+        ->and($store->read('topology-snapshot/recovery.json'))
+        ->main_sha->toBe(str_repeat('d', 40))
+        ->phase->toBe('resumed');
+})->with(['after teardown' => [true], 'before teardown' => [false]]);
+
+it('cleans up the snapshot guests an interrupted cold build left after a verified teardown', function (): void {
+    [$recovery, $store, $hostState, $paths] = legacyRecoveryService();
+    $recovery->start(str_repeat('b', 40), $recovery->authorize());
+    foreach (['instances_pending', 'instances_verified', 'network_pending', 'network_verified', 'manifests_pending', 'manifests_verified'] as $phase) {
+        $recovery->record($phase, []);
+    }
+    $recovery->record('construction_pending', ['operation_id' => str_repeat('e', 32)]);
+    $recovery->record('failed', ['error' => 'Construction failed.']);
+    foreach ($hostState->instances as $name) {
+        $hostState->metadata[$name] = ['user.orbit.e2e.owner' => 'orbit-e2e', 'user.orbit.e2e.operation' => str_repeat('f', 32)];
+    }
+
+    expect($recovery->interruptedConstructionOperation()?->value)->toBe(str_repeat('f', 32));
+
+    $hostState->instances = [];
+
+    expect($recovery->interruptedConstructionOperation()?->value)->toBe(str_repeat('e', 32));
+});
+
 it('archives completed evidence before starting a separately authorized recovery', function (): void {
     [$recovery, $store, , $paths] = legacyRecoveryService();
     $inventory = $recovery->authorize();

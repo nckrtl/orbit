@@ -182,7 +182,9 @@ The network may have only those guests as users. Any other evidence fails closed
 
 Recovery writes the journal `topology-snapshot/recovery.json` before it changes anything. The journal holds the inventory, its SHA-256 digest, the requested SHA, and the phase history, from `authorized` to `construction_verified` or `failed`. Recovery deletes the guests, the network, and the manifests, and verifies each step in the journal. Then it runs a cold build and verifies the new generation. A retry with the same SHA resumes from the journal when the digest still matches the host. A new recovery archives a finished journal to `topology-snapshot/recoveries/<operation-id>.json`.
 
-A new recovery also archives a failed journal when the promoted generation differs from the one the journal recorded. A later build promoted that generation, so the journal's inventory describes resources the host replaced. Any other retained journal blocks a recovery at a different SHA.
+A new recovery also archives a failed journal when the promoted generation differs from the one the journal recorded. A later build promoted that generation, so the journal's inventory describes resources the host replaced. A failed journal whose teardown is verified (`manifests_verified`) may also continue at a newer main SHA. Teardown is the destructive part, so only construction remains, and it builds the requested commit. The journal records the new SHA. Any other retained journal blocks a recovery at a different SHA.
+
+After a verified teardown, the snapshot's original guests are gone. So snapshot guests that are present can only come from a later cold build that stopped without a journal entry, such as an interrupted `rebuild`. Recovery cleans up that build's resources by its operation identity before it constructs. It refuses when such a guest lacks the harness owner, carries an issue, or when the guests belong to more than one operation.
 
 Every recovery result includes `error`, `recovery_evidence`, `recovery_phase`, and `next_action`. Never run `incus delete`, remove a manifest, or edit the journal by hand. Recovery depends on that evidence to resume safely.
 
