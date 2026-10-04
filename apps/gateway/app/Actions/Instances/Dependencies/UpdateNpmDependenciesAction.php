@@ -68,7 +68,7 @@ final readonly class UpdateNpmDependenciesAction
 
         try {
             $probe = $this->ssh->execute($connection, new RemoteCommand(
-                arguments: ['/usr/bin/python3', '-I', '-', $instance->checkout_path],
+                arguments: ['/usr/bin/python3', '-I', '-', $instance->dependencyDirectory()],
                 input: NpmDependencyUpdatePresenceProgram::render(),
                 maxOutputBytes: 65_536,
                 cancelled: $cancelled,
@@ -144,7 +144,7 @@ final readonly class UpdateNpmDependenciesAction
                     '-c',
                     NpmDependencyUpdateProgram::render(),
                     'npm-update',
-                    $instance->checkout_path,
+                    $instance->dependencyDirectory(),
                     $vpPath,
                     (string) NpmDependencyUpdateProgram::DeadlineSeconds,
                 ],
@@ -184,7 +184,7 @@ final readonly class UpdateNpmDependenciesAction
     private function connection(Instance $instance): ?SshConnection
     {
         $node = $instance->node;
-        $path = $instance->checkout_path;
+        $path = $instance->dependencyDirectory();
         $user = $node->user;
         if (! $instance->placedOnAppDev()
             || ! in_array($instance->source_layout, array_column(InstanceSourceLayout::cases(), 'value'), true)

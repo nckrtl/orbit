@@ -44,7 +44,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $name = ($this->releaseName)();
         $this->assertReleaseName($name);
 
-        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), <<<'BASH'
+        $script = GitReadScript::for($this->access->for($repository, $instance->loadMissing('project')->project->source_access), ProductionApplicationPaths::render(<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -57,7 +57,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     releases="$home/releases"
                     release="$releases/$name"
                     environment="$home/.env"
-                    release_environment="$release/.env"
+                    release_environment="$release__APPLICATION_SUFFIX__/.env"
                     current="$home/current"
 
                     test "$home" = "/home/$user"
@@ -87,7 +87,8 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     git_read sudo $git_read_sudo -u "$user" -H git -C "$release" fetch --prune -- origin >/dev/null 2>&1
                     sudo -u "$user" -H git -C "$release" show-ref --verify --quiet "$source_ref"
                     sudo -u "$user" -H git -C "$release" checkout --detach "$source_ref" >/dev/null 2>&1
-                    sudo -u "$user" -H ln -s ../../.env "$release_environment"
+                    test "$(sudo -u "$user" -H realpath -e -- "$release__APPLICATION_SUFFIX__")" = "$release__APPLICATION_SUFFIX__"
+                    sudo -u "$user" -H ln -s __ENVIRONMENT_TARGET__ "$release_environment"
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
                     selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")
                     case "$selected_root" in "$release"|"$release"/*) ;; *) exit 1 ;; esac
@@ -100,7 +101,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test -z "$unexpected_group"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
-                    BASH);
+                    BASH, $root));
         $result = $this->execute(
             $instance,
             new RemoteCommand(
@@ -261,7 +262,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $release->commit,
                     $root,
                 ],
-                input: <<<'BASH'
+                input: ProductionApplicationPaths::render(<<<'BASH'
                     repository=$1
                     user=$2
                     home=$3
@@ -275,7 +276,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     release="$releases/$name"
                     current="$home/current"
                     environment="$home/.env"
-                    release_environment="$release/.env"
+                    release_environment="$release__APPLICATION_SUFFIX__/.env"
                     printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
                     case "$relative_root" in ''|/*|..|../*|*/../*|*/..) exit 1 ;; esac
                     sudo test -f "$marker"
@@ -319,7 +320,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     sudo -u "$user" -H mv -Tf -- "$temporary" "$current"
                     trap - EXIT
                     printf '%s\t%s\n' "$name" "$expected_commit"
-                    BASH,
+                    BASH, $root),
                 maxOutputBytes: 4096,
             ),
             'deployment-activate',
@@ -341,7 +342,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $instance,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
-                input: $this->inspectionScript(selectCurrent: true),
+                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: true), $root),
                 maxOutputBytes: 4096,
             ),
             'deployment-selected-release',
@@ -373,7 +374,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $root,
                     $name,
                 ],
-                input: $this->inspectionScript(selectCurrent: false),
+                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: false), $root),
                 maxOutputBytes: 4096,
             ),
             'rollback-retained-release',
@@ -390,7 +391,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $instance,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
-                input: <<<'BASH'
+                input: ProductionApplicationPaths::render(<<<'BASH'
                     # find must restore its working directory after sudo changes users.
                     cd /
                     repository=$1
@@ -438,7 +439,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                         actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0) || return 1
                         expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
                         test "$actual_repository" = "$expected_repository" || return 1
-                        release_environment="$release/.env"
+                        release_environment="$release__APPLICATION_SUFFIX__/.env"
                         sudo -u "$user" -H test -L "$release_environment" || return 1
                         test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment" || return 1
                         selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root") || return 1
@@ -459,7 +460,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                             printf '%s\n' "$receipt"
                         fi
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
-                    BASH,
+                    BASH, $root),
                 maxOutputBytes: 65536,
             ),
             'deployment-release-list',
@@ -546,7 +547,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             actual_repository=$(sudo -u "$user" -H git -C "$release" config --null --get remote.origin.url | base64 --wrap=0)
             expected_repository=$(printf '%s\0' "$repository" | base64 --wrap=0)
             test "$actual_repository" = "$expected_repository"
-            release_environment="$release/.env"
+            release_environment="$release__APPLICATION_SUFFIX__/.env"
             sudo -u "$user" -H test -L "$release_environment"
             test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
             selected_root=$(sudo -u "$user" -H realpath -m -- "$release/$relative_root")

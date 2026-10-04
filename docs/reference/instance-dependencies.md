@@ -9,13 +9,15 @@ covers:
 
 # Instance dependencies
 
-The Gateway keeps an inventory of the resolved dependencies of each Instance. It reads the root manifests and lockfiles, so the inventory works while dependencies are [pruned](/reference/app-dev-runtime-hibernation#dependency-prune). On a development Instance, Orbit can also update dependencies within their declared version constraints. [Dependency contracts](/reference/instance-dependency-contracts) holds the reader rules, stored tables, and response shapes.
+The Gateway keeps an inventory of the resolved dependencies of each Instance. It reads the manifests and lockfiles in the Instance's dependency directory, so the inventory works while dependencies are [pruned](/reference/app-dev-runtime-hibernation#dependency-prune). On a development Instance, Orbit can also update dependencies within their declared version constraints. [Dependency contracts](/reference/instance-dependency-contracts) holds the reader rules, stored tables, and response shapes.
 
 ## What the inventory holds
 
 The inventory belongs to one Instance. Two Instances of a Project can resolve different versions.
 
-A development scan reads the recorded checkout. A production scan reads the selected release. Both read the project root, not the web root. Orbit reads only these files:
+For a Laravel Instance, the dependency directory is its [application directory](/reference/projects#application-directory), not its web root. With root `apps/site/public`, a development scan reads `<checkout>/apps/site`, and a production scan reads `<home>/releases/<selected-release>/apps/site`. Root `public` keeps the checkout or release root. Non-Laravel Instances still read the repository root.
+
+A scan reads only that directory; it does not combine manifests from the repository root or sibling apps. The response's `source.project_root` names the directory actually read. When the CLI selects by directory, it identifies the Instance, not an arbitrary dependency tree within it. Orbit reads only these files:
 
 | Ecosystem | Files | Supported format |
 | --- | --- | --- |
@@ -24,7 +26,7 @@ A development scan reads the recorded checkout. A production scan reads the sele
 | pnpm | `package.json`, `pnpm-lock.yaml` | `lockfileVersion` 9.0 with one root importer. |
 | Bun | `package.json`, `bun.lock` | Text lock, `lockfileVersion` 1 or 2. |
 
-npm, pnpm, and Bun all record packages in the `npm` ecosystem. Yarn, binary `bun.lockb`, workspaces, monorepos, and local `file:` or `link:` packages are unsupported and fail the scan.
+npm, pnpm, and Bun all record packages in the `npm` ecosystem. Yarn, binary `bun.lockb`, workspace or multi-importer layouts, and local `file:` or `link:` packages are unsupported and fail the scan.
 
 For each package, the inventory records every resolved version and how the root reaches it: direct or transitive, regular or development, and peer requirements. It records what the lockfile says. It does not prove that packages are installed or safe.
 
@@ -59,7 +61,7 @@ Each ecosystem keeps its last successful observation and its latest attempt, sep
 | Manifest and lockfile are valid | Replace the observation. |
 | Both files are missing | Record that the ecosystem is absent. |
 | One of the two files is missing | Fail with `dependencies.incomplete_source`. |
-| The lockfile root differs from `package.json` | Fail with `dependencies.stale_npm_lockfile`, `dependencies.stale_pnpm_lockfile`, or `dependencies.stale_bun_lockfile`. Human output adds a fix, such as `Run bun install in the project root and commit bun.lock.` |
+| The lockfile root differs from `package.json` | Fail with `dependencies.stale_npm_lockfile`, `dependencies.stale_pnpm_lockfile`, or `dependencies.stale_bun_lockfile`. Human output adds a fix, such as `Run bun install in the dependency directory and commit bun.lock.` |
 | The format or layout is unsupported, or a file is invalid | Fail with the matching code. |
 | A production Instance has no selected release | Fail with `dependencies.source_unavailable`. |
 | The source changes during the scan | Fail both ecosystems with `dependencies.source_changed`. Retry. |
@@ -77,7 +79,7 @@ orbit instance:dependencies:update
 orbit instance:dependencies:update --project=commander.test
 ```
 
-The Gateway runs these steps as the Node's user in the project root:
+The Gateway runs these steps as the Node's user in the same dependency directory used by scans. For a Laravel root of `apps/site/public`, that is `<checkout>/apps/site`; presence checks, Composer, Vite+, and the final scan all use that directory. These commands do not update repository-root or sibling manifests. Unlike dependency updates, repository-owned setup, deploy, and task-check commands keep their [repository-root scope](/reference/projects#application-directory):
 
 1. It inspects both ecosystems. A refusal stops the whole update before any package command. See the refusals below.
 2. It runs `composer update --no-interaction --no-ansi --no-progress --no-audit` for a Composer project. Regular and development packages move within their constraints.

@@ -59,7 +59,7 @@ describe('TaskCheckWorkerUser', function (): void {
     })->with(['branch' => false, 'detached' => true]);
 });
 
-it('materializes a transferred checkout with an environment that other local users cannot read', function (): void {
+it('materializes a transferred checkout with an environment that other local users cannot read', function (string $webRoot, string $suffix): void {
     $root = sys_get_temp_dir().'/orbit-transfer-env-'.bin2hex(random_bytes(4));
     $name = 'source-'.bin2hex(random_bytes(4));
     $files = new Filesystem;
@@ -72,8 +72,9 @@ it('materializes a transferred checkout with an environment that other local use
         ] as $command) {
             new Process($command, $root.'/'.$name)->mustRun();
         }
-        file_put_contents($root.'/'.$name.'/.env', "APP_KEY=secret\n");
-        chmod($root.'/'.$name.'/.env', 0o664);
+        $files->ensureDirectoryExists($root.'/'.$name.$suffix);
+        file_put_contents($root.'/'.$name.$suffix.'/.env', "APP_KEY=secret\n");
+        chmod($root.'/'.$name.$suffix.'/.env', 0o664);
         file_put_contents($root.'/'.$name.'/README.md', "Readme\n");
         chmod($root.'/'.$name.'/README.md', 0o664);
 
@@ -85,6 +86,7 @@ it('materializes a transferred checkout with an environment that other local use
         $instance = Instance::query()->create([
             'project_id' => $project->id, 'node_id' => $node('transfer-from', '10.44.0.51')->id, 'name' => 'dev',
             'checkout_path' => $root.'/'.$name, 'source_layout' => 'checkout', 'status' => 'source_resolved',
+            'root' => $webRoot, 'source_is_laravel' => true,
         ]);
         $source = new LocalInstanceTransferTransport($root)->source();
 
@@ -92,9 +94,9 @@ it('materializes a transferred checkout with an environment that other local use
         $source->materialize($capture, $node('transfer-to', '10.44.0.52'), StoragePath::parse($root.'/destination'));
         clearstatcache();
 
-        expect(file_get_contents($root.'/destination/.env'))->toBe("APP_KEY=secret\n")
-            ->and(fileperms($root.'/destination/.env') & 0o007)->toBe(0)
-            ->and(fileperms($root.'/destination/.env') & 0o600)->toBe(0o600)
+        expect(file_get_contents($root.'/destination'.$suffix.'/.env'))->toBe("APP_KEY=secret\n")
+            ->and(fileperms($root.'/destination'.$suffix.'/.env') & 0o007)->toBe(0)
+            ->and(fileperms($root.'/destination'.$suffix.'/.env') & 0o600)->toBe(0o600)
             ->and(fileperms($root.'/destination/README.md') & 0o004)->toBe(0o004);
     } finally {
         $files->deleteDirectory($root);
@@ -103,4 +105,4 @@ it('materializes a transferred checkout with an environment that other local use
             @unlink($archive);
         }
     }
-});
+})->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);

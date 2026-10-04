@@ -715,55 +715,63 @@ function refreshFixture(): array
     expect(
         $processes->run(['git', '-C', $sourceRoot, 'worktree', 'add', '--detach', $worktree, 'HEAD'])->successful(),
     )->toBeTrue();
-    expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
-    copyPreparedStateManifest($worktree);
-    $git = new GitRepository($worktree);
-    $manifestPath = $worktree.'/apps/e2e/resources/prepared-state.json';
-    $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
-    unset($manifest['laravel_pin']);
-    expect(file_put_contents(
-        $manifestPath,
-        json_encode($manifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
-    ))->not->toBeFalse();
-    refreshFixtureCommit($processes, $worktree, [$manifestPath], 'refresh fixture baseline');
-    $oldSha = $git->commit('HEAD');
-    $release = new LaravelRelease('v13.10.1', str_repeat('e', 40));
-    $oldFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha, $release);
-    $oldStructuralFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha);
-    $rendererPath = $worktree.'/apps/gateway/app/Infrastructure/Metrics/MetricsPublicationRenderer.php';
-    expect(file_put_contents($rendererPath, "\n", FILE_APPEND))->not->toBeFalse();
-    refreshFixtureCommit($processes, $worktree, [$rendererPath], 'refresh fixture change');
-    $newSha = $git->commit('HEAD');
-    $paths = new StatePaths(temporaryPath('orbit-refresh-fixture-state-', 4));
-    $state = new AtomicJsonStore($paths);
-    $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
-    $generation = static fn (
-        string $id,
-        string $snapshotPrefix,
-        ?string $previous = null,
-    ): TopologySnapshotGeneration => new TopologySnapshotGeneration(
-        $id,
-        $oldSha,
-        [
-            'gateway' => "main-{$snapshotPrefix}-gateway",
-            'app-dev' => "main-{$snapshotPrefix}-app-dev",
-            'app-prod' => "main-{$snapshotPrefix}-app-prod", 'operator' => "main-{$snapshotPrefix}-operator",
-        ],
-        $oldFingerprint->value,
-        str_repeat('d', 64),
-        $release,
-        $oldStructuralFingerprint->value,
-        $oldStructuralFingerprint->manifest['schema'],
-        $oldStructuralFingerprint->manifest['cold_epoch'],
-        $oldStructuralFingerprint->manifest['base_image_alias'],
-        $oldStructuralFingerprint->manifest['topology']['profile'],
-        $oldStructuralFingerprint->manifest['topology']['roles'],
-        $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
-        $previous, operatorBaseImageFingerprint: str_repeat('b', 64),
-    );
-    $manifests->promote($generation('old-generation', 'old', 'rollback-generation'));
-    $manifests->record($generation('rollback-generation', 'rollback'));
-    $manifests->record($generation('stale-generation', 'stale'));
+    // A failed setup must not leave a linked worktree: Orbit refuses to remove a task workspace that has one.
+    try {
+        expect($processes->run(['git', '-C', $worktree, 'switch', '-c', $branch])->successful())->toBeTrue();
+        copyPreparedStateManifest($worktree);
+        $git = new GitRepository($worktree);
+        $manifestPath = $worktree.'/apps/e2e/resources/prepared-state.json';
+        $manifest = json_decode((string) file_get_contents($manifestPath), true, 512, JSON_THROW_ON_ERROR);
+        unset($manifest['laravel_pin']);
+        expect(file_put_contents(
+            $manifestPath,
+            json_encode($manifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT)."\n",
+        ))->not->toBeFalse();
+        refreshFixtureCommit($processes, $worktree, [$manifestPath], 'refresh fixture baseline');
+        $oldSha = $git->commit('HEAD');
+        $release = new LaravelRelease('v13.10.1', str_repeat('e', 40));
+        $oldFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha, $release);
+        $oldStructuralFingerprint = new PreparedStateFingerprint($git)->forCommit($oldSha);
+        $rendererPath = $worktree.'/apps/gateway/app/Infrastructure/Metrics/MetricsPublicationRenderer.php';
+        expect(file_put_contents($rendererPath, "\n", FILE_APPEND))->not->toBeFalse();
+        refreshFixtureCommit($processes, $worktree, [$rendererPath], 'refresh fixture change');
+        $newSha = $git->commit('HEAD');
+        $paths = new StatePaths(temporaryPath('orbit-refresh-fixture-state-', 4));
+        $state = new AtomicJsonStore($paths);
+        $manifests = new TopologySnapshotManifestStore($state, $paths, new IncusHost);
+        $generation = static fn (
+            string $id,
+            string $snapshotPrefix,
+            ?string $previous = null,
+        ): TopologySnapshotGeneration => new TopologySnapshotGeneration(
+            $id,
+            $oldSha,
+            [
+                'gateway' => "main-{$snapshotPrefix}-gateway",
+                'app-dev' => "main-{$snapshotPrefix}-app-dev",
+                'app-prod' => "main-{$snapshotPrefix}-app-prod",
+                'operator' => "main-{$snapshotPrefix}-operator",
+            ],
+            $oldFingerprint->value,
+            str_repeat('d', 64),
+            $release,
+            $oldStructuralFingerprint->value,
+            $oldStructuralFingerprint->manifest['schema'],
+            $oldStructuralFingerprint->manifest['cold_epoch'],
+            $oldStructuralFingerprint->manifest['base_image_alias'],
+            $oldStructuralFingerprint->manifest['topology']['profile'],
+            $oldStructuralFingerprint->manifest['topology']['roles'],
+            $oldStructuralFingerprint->manifest['topology']['checkout_roles'],
+            $previous, operatorBaseImageFingerprint: str_repeat('b', 64),
+        );
+        $manifests->promote($generation('old-generation', 'old', 'rollback-generation'));
+        $manifests->record($generation('rollback-generation', 'rollback'));
+        $manifests->record($generation('stale-generation', 'stale'));
+    } catch (Throwable $exception) {
+        removeRefreshFixture(['sourceRoot' => $sourceRoot, 'worktree' => $worktree, 'branch' => $branch, 'processes' => $processes]);
+
+        throw $exception;
+    }
 
     return [
         'sourceRoot' => $sourceRoot,

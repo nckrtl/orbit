@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\RemoteVitePortRuntime;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -10,14 +12,18 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Process;
+use App\Models\Project;
+use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process as LocalProcess;
 use Tests\Support\LinuxHost;
 
-function local_vite_port_runtime(): RemoteVitePortRuntime
+function local_vite_port_runtime(?Closure $execute = null): RemoteVitePortRuntime
 {
     $ssh = Mockery::mock(SshExecutor::class);
-    $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
+    $ssh->shouldReceive('execute')->andReturnUsing($execute ?? function (SshConnection $connection, RemoteCommand $command): CommandResult {
         expect(array_slice($command->arguments, 0, 2))->toBe(['python3', '-c']);
         $process = new LocalProcess($command->arguments, input: $command->input, timeout: 10);
         $process->run();
@@ -51,6 +57,70 @@ it('skips actual occupied TCP ports and explicit exclusions on Linux', function 
         fclose($listener);
     }
 })->with(['IPv4' => 'tcp://127.0.0.1:0', 'IPv6' => 'tcp://[::1]:0']);
+
+it('prepares Vite using application-local dependencies and publishes its environment', function (string $root, bool $laravel, string $suffix, ?string $missing): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $sandbox = sys_get_temp_dir().'/orbit-vite-prepare-'.bin2hex(random_bytes(8));
+    $filesystem = new Filesystem;
+    $checkout = $sandbox.'/checkout';
+    $application = $checkout.$suffix;
+    $filesystem->makeDirectory($application, 0755, true);
+    $filesystem->makeDirectory($sandbox.'/bin', 0755, true);
+    $filesystem->put($sandbox.'/bin/sudo', "#!/bin/sh\nexec \"\$@\"\n");
+    $filesystem->put($sandbox.'/bin/vp', "#!/bin/sh\nexit 0\n");
+    chmod($sandbox.'/bin/sudo', 0755);
+    chmod($sandbox.'/bin/vp', 0755);
+    if ($missing !== 'package.json') {
+        $filesystem->put($application.'/package.json', '{}');
+    }
+    if ($missing !== 'node_modules') {
+        $filesystem->makeDirectory($application.'/node_modules');
+    }
+    $node = Node::query()->create(['name' => 'vite-prepare', 'user' => 'orbit', 'public_ssh_host' => '192.0.2.1', 'wireguard_ip' => '192.0.2.1']);
+    $node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
+    $project = Project::query()->create(['name' => 'Vite prepare', 'slug' => 'vite-prepare', 'repository_url' => 'git@example.test:vite.git', 'root' => $root]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main',
+        'checkout_path' => $checkout, 'source_is_laravel' => $laravel, 'vite_port' => 5210,
+    ]);
+    $runtime = local_vite_port_runtime(function (SshConnection $connection, RemoteCommand $command) use ($sandbox): CommandResult {
+        // Redirect only host-owned runtime paths; execute the real dependency checks and publication script.
+        $arguments = array_map(static fn (string $argument): string => str_replace(
+            ['/usr/local/bin/vp', '/etc/orbit/vite', '/dev/shm/orbit/hibernation'],
+            [$sandbox.'/bin/vp', $sandbox.'/environment', $sandbox.'/run'],
+            $argument,
+        ), $command->arguments);
+        $local = new LocalProcess($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $command->input, timeout: 10);
+        $local->run();
+
+        return new CommandResult($local->getExitCode() ?? 1, $local->getOutput(), $local->getErrorOutput(), 1, false);
+    });
+
+    try {
+        if ($missing !== null) {
+            expect(fn () => $runtime->prepare(new Process, $instance))
+                ->toThrow(fn (RuntimeConvergenceException $exception): bool => $exception->errorCode === 'vite.environment_failed');
+            expect(file_exists($sandbox.'/environment/app-instance-'.$instance->id.'.env'))->toBeFalse();
+        } else {
+            $runtime->prepare(new Process, $instance);
+            $environment = $sandbox.'/environment/app-instance-'.$instance->id.'.env';
+            expect(file_get_contents($environment))->toBe("# Orbit Instance {$instance->id}\nORBIT_DEV_SERVER_PORT=5210\n")
+                ->and(fileperms($environment) & 0o777)->toBe(0o600)
+                ->and(file_exists($environment.'.pending'))->toBeFalse();
+        }
+    } finally {
+        $filesystem->deleteDirectory($sandbox);
+    }
+})->with([
+    'nested Laravel dependencies only in the app' => ['server/web/public', true, '/server/web', null],
+    'root public Laravel app' => ['public', true, '', null],
+    'non Laravel retains checkout dependencies' => ['server/web/public', false, '', null],
+    'nested app missing manifest' => ['server/web/public', true, '/server/web', 'package.json'],
+    'nested app missing dependencies' => ['server/web/public', true, '/server/web', 'node_modules'],
+]);
 
 it('reports finite exhaustion when the final candidate is excluded', function (): void {
     if (LinuxHost::delegate($this)) {

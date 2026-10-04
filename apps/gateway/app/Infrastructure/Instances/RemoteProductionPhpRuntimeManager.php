@@ -42,10 +42,9 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
         string $operation = 'converge',
     ): void {
         $identity = ProductionPhpRuntimeIdentity::from($instance);
-        $configuration = $this->renderer->render(
-            $identity,
-            $metricsEnabled ?? $this->serviceMetrics?->enabled($instance->node) ?? false,
-        );
+        $metrics = $metricsEnabled ?? $this->serviceMetrics?->enabled($instance->node) ?? false;
+        $configuration = $this->renderer->render($identity, $metrics);
+        $initialConfiguration = $this->renderer->render($identity, $metrics, initialRelease: true);
         $versions = collect([$identity->version]);
         if ($operation !== 'monitor') {
             $this->packages->installPackagesOnlyForAppProd(
@@ -80,6 +79,9 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                     base64_encode($configuration->masterIni),
                     base64_encode($configuration->unit),
                     base64_encode($identity->marker()),
+                    base64_encode($initialConfiguration->pool),
+                    $identity->applicationDirectory(),
+                    $identity->applicationDirectory(initialRelease: true),
                 ],
                 input: $this->convergeScript(),
             ),
@@ -618,10 +620,47 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             BASH;
     }
 
+    /**
+     * Bind the pool to the resolved release so convergence replaces workers whose cwd still points at
+     * the previous release, even though the configured chdir through current has not changed.
+     */
+    public static function applicationPoolSelectionFunction(): string
+    {
+        return <<<'BASH'
+            select_application_pool() {
+                local application_directory="$application" selected resolved
+                if [ "$application" != "$initial_application" ]; then
+                    if [ -e "$home/current" ] || [ -L "$home/current" ]; then
+                        test -L "$home/current" || return 1
+                        selected=$(realpath -e -- "$home/current") || return 1
+                        case "$selected" in "$home/releases/"*) ;; *) return 1 ;; esac
+                        printf '%s' "${selected#"$home/releases/"}" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$' || return 1
+                        resolved=$(realpath -e -- "$application") || return 1
+                        test "$resolved" = "$selected${application#"$home/current"}" || return 1
+                    else
+                        application_directory="$initial_application"
+                        pool_configuration="$initial_pool_configuration"
+                        resolved=$(realpath -e -- "$application_directory") || return 1
+                        test "$resolved" = "$application_directory" || return 1
+                    fi
+                else
+                    resolved=$(realpath -e -- "$application_directory") || return 1
+                    test "$resolved" = "$application_directory" || return 1
+                fi
+                test -d "$application_directory" || return 1
+                pool_configuration=$({
+                    printf '%s' "$pool_configuration" | base64 --decode
+                    printf '\n; Orbit application release: %s\n' "$resolved"
+                } | base64 --wrap=0)
+            }
+            BASH;
+    }
+
     private function convergeScript(): string
     {
-        return $this->sharedOrbitDirectory->convergenceFunction()."\n".self::monitoringPoolConvergenceFunction()."\n".self::cleanupInterruptedMonitoringCandidateFunction()."\n".<<<'BASH'
+        return $this->sharedOrbitDirectory->convergenceFunction()."\n".self::monitoringPoolConvergenceFunction()."\n".self::cleanupInterruptedMonitoringCandidateFunction()."\n".self::applicationPoolSelectionFunction()."\n".ProductionRuntimeGenerationProgram::functions()."\n".<<<'BASH'
             operation=$1
+            proc_root=/proc
             user=$2
             home=$3
             version=$4
@@ -640,6 +679,9 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             master_ini=${17}
             unit_configuration=${18}
             marker_configuration=${19}
+            initial_pool_configuration=${20}
+            application=${21}
+            initial_application=${22}
             case "$operation" in converge|monitor) ;; *) exit 1 ;; esac
             if [ "$operation" = monitor ] && { ! test -f "$marker_path" || test -L "$marker_path" || ! test -d "$generated_directory" || test -L "$generated_directory"; }; then
                 exit 0
@@ -726,6 +768,8 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             local_before=$(sha256sum -- "$local_tuning" | awk '{print $1}')
 
             monitoring=0
+            select_application_pool
+
             if printf '%s' "$pool_configuration" | base64 --decode | grep -q '^pm.status_path = /orbit-fpm-status$'; then
                 monitoring=1
             fi
@@ -835,9 +879,19 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 runtime_changed=1
             fi
 
+            guard_runtime_receipt "$runtime_directory/.runtime-generation.pending"
+            guard_runtime_receipt "$runtime_directory/.runtime-generation.applied"
+            if ! runtime_generation_applied; then
+                runtime_changed=1
+            fi
+
             if [ "$operation" = monitor ]; then
+                test ! -e "$runtime_directory/.runtime-generation.pending"
+                test ! -L "$runtime_directory/.runtime-generation.pending"
+                if [ "$was_active" = 1 ]; then runtime_generation_applied; fi
                 converge_monitoring_pool \
                     "$generated_directory/pool.conf" "$work_directory/pool.conf" "$runtime_directory" "$service" "$was_active" apply
+                if [ "$was_active" = 1 ]; then confirm_runtime_generation; fi
                 rm -f -- "$expected_marker"
                 rm -rf -- "$work_directory"
                 exit 0
@@ -878,10 +932,11 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 cp -- "$work_directory/local.sha256" "$generated_candidate/local.sha256"
                 chown root:root -- "$generated_candidate/php-fpm.conf" "$generated_candidate/pool.conf" "$generated_candidate/master.ini" "$generated_candidate/local.sha256"
                 chmod 0644 -- "$generated_candidate/php-fpm.conf" "$generated_candidate/pool.conf" "$generated_candidate/master.ini" "$generated_candidate/local.sha256"
-                unit_candidate="/etc/systemd/system/.$service.$$.candidate"
+                unit_candidate="$(dirname -- "$unit_path")/.$service.$$.candidate"
                 printf '%s' "$unit_configuration" | base64 --decode > "$unit_candidate"
                 chown root:root -- "$unit_candidate"
                 chmod 0644 -- "$unit_candidate"
+                begin_runtime_generation
                 published=1
                 if [ ! -e "$generated_directory" ]; then
                     install -d -o root -g root -m 0755 -- "$generated_directory"
@@ -892,6 +947,8 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
                 mv -fT -- "$generated_candidate/local.sha256" "$generated_directory/local.sha256"
                 rmdir -- "$generated_candidate"
                 mv -fT -- "$unit_candidate" "$unit_path"
+                sync -f "$generated_directory"
+                sync -f "$(dirname -- "$unit_path")"
                 systemctl daemon-reload
                 if [ "$was_active" = 1 ]; then
                     systemctl enable "$service"
@@ -903,12 +960,18 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             systemctl is-active --quiet "$service"
             main_pid=$(systemctl show --property MainPID --value "$service")
             test "$main_pid" -gt 1
-            test -e "/proc/$main_pid/exe"
-            test "$(readlink -f -- "/proc/$main_pid/exe")" = "/usr/sbin/php-fpm$version"
+            test -e "$proc_root/$main_pid/exe"
+            test "$(readlink -f -- "$proc_root/$main_pid/exe")" = "/usr/sbin/php-fpm$version"
             test -S "$socket"
             test "$(stat -c '%U:%G:%a' -- "$socket")" = "$user:caddy:660"
             local_after=$(sha256sum -- "$local_tuning" | awk '{print $1}')
             test "$local_before" = "$local_after"
+            test "$(systemctl show --property MainPID --value "$service")" = "$main_pid"
+            if [ "$was_active" = 1 ] && [ "$runtime_changed" = 0 ]; then
+                runtime_generation_applied
+            else
+                confirm_runtime_generation
+            fi
 
             published=0
             trap - EXIT
@@ -1118,6 +1181,15 @@ final readonly class RemoteProductionPhpRuntimeManager implements ProductionPhpR
             case "$main_pid" in *[!0-9]*) exit 1 ;; esac
             test "$main_pid" -eq 0
             rm -f -- "$runtime_directory/.metrics-pool.pending" "$runtime_directory/.metrics-pool.backup"
+            for receipt in .runtime-generation.pending .runtime-generation.applied; do
+                path="$runtime_directory/$receipt"
+                if [ -e "$path" ] || [ -L "$path" ]; then
+                    test -f "$path"
+                    test ! -L "$path"
+                    test "$(stat -c '%U:%G:%a' -- "$path")" = root:root:600
+                    rm -f -- "$path"
+                fi
+            done
             rm -rf -- "$generated_directory"
             rm -f -- "$unit_path"
             systemctl daemon-reload

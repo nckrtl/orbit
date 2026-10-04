@@ -33,6 +33,7 @@ function dependency_collection_instance(bool $production = false): Instance
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
         'root' => 'public',
+        'source_is_laravel' => true,
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);
@@ -48,19 +49,21 @@ function dependency_collection_keys(): void
 }
 
 describe('managed dependency collection transport', function (): void {
-    it('uses pinned SSH and bounded fixed argv for the recorded source', function (bool $production): void {
+    it('uses pinned SSH and bounded fixed argv for the recorded source', function (bool $production, string $webRoot, string $suffix): void {
         $instance = dependency_collection_instance($production);
-        $root = $production ? '/home/app_sample/releases/selected' : '/home/orbit/project';
+        $instance->root = $webRoot;
+        $root = ($production ? '/home/app_sample/releases/selected' : '/home/orbit/project').$suffix;
         $receipt = dependency_collection_receipt($root, $production ? 'selected' : null);
         dependency_collection_keys();
-        mock(SshExecutor::class)->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($production): bool {
+        mock(SshExecutor::class)->shouldReceive('execute')->once()->withArgs(function (SshConnection $connection, RemoteCommand $command) use ($production, $suffix): bool {
             expect($connection->host)->toBe('10.44.0.2');
             expect($connection->user)->toBe('orbit');
             expect($connection->identityFile)->toBe('/keys/private');
             expect($connection->knownHostsFile)->toBe('/keys/known_hosts');
-            expect($command->arguments)->toBe($production
+            $arguments = $production
                 ? ['sudo', '-n', '-u', 'app_sample', '-H', '--', '/usr/bin/python3', '-I', '-', 'production', '/home/app_sample']
-                : ['/usr/bin/python3', '-I', '-', 'development', '/home/orbit/project']);
+                : ['/usr/bin/python3', '-I', '-', 'development', '/home/orbit/project'];
+            expect($command->arguments)->toBe($suffix === '' ? $arguments : [...$arguments, $suffix]);
             expect($command->timeout)->toBe(30.0);
             expect($command->maxOutputBytes)->toBe(48 * 1024 * 1024);
             expect($command->input)->toBe(DependencyFilesProgram::render());
@@ -73,7 +76,12 @@ describe('managed dependency collection transport', function (): void {
         expect($files->projectRoot)->toBe($root);
         expect($files->contents['composer.json'])->toBe('{}');
         expect($files->hashes['package.json'])->toBeNull();
-    })->with([false, true]);
+    })->with([
+        'development public' => [false, 'public', ''],
+        'production public' => [true, 'public', ''],
+        'development nested' => [false, 'apps/site/public', '/apps/site'],
+        'production nested' => [true, 'apps/site/public', '/apps/site'],
+    ]);
 
     it('rejects invalid identities before SSH', function (array $attributes, bool $production = false): void {
         $instance = dependency_collection_instance();

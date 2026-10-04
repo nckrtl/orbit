@@ -45,7 +45,7 @@ final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopolog
                 exit 0
             fi
             if [ "$state" = absent ]; then
-                bin/e2e-topology acquire "$2" .
+                bin/e2e-topology acquire "$2" "$(pwd -P)"
                 state=$(discovery_state "$1" "$2") || { printf '%s\n' "$state"; exit 1; }
                 if [ "$state" = complete ]; then
                     echo orbit-topology-ready

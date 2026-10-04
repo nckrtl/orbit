@@ -689,6 +689,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0196-derive-application-directory-from-web-root.md",
+            "title": "Derive the application directory from the web root",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/e2e",
+                "apps/gateway",
+                "apps/web",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Route",
+                "Schedule",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0196"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -732,7 +759,8 @@
             "governing_adrs": [
                 "0182",
                 "0190",
-                "0191"
+                "0191",
+                "0196"
             ]
         },
         {
@@ -1403,7 +1431,8 @@
                 "Process",
                 "Project",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1791,7 +1820,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0196"
+            ]
         },
         {
             "path": "docs/reference/proxycli.md",
@@ -2134,6 +2165,7 @@
             ],
             "concepts": [
                 "Gateway",
+                "Instance",
                 "Node",
                 "Node agent",
                 "Role"

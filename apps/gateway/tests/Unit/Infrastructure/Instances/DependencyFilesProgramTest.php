@@ -16,9 +16,10 @@ function dependency_source_directory(): string
 }
 
 /** @return array<string, mixed> */
-function dependency_program(string $path, string $environment = 'development', ?string $program = null): array
+function dependency_program(string $path, string $environment = 'development', ?string $program = null, string $application = ''): array
 {
-    $process = new Process(['/usr/bin/python3', '-I', '-', $environment, $path], timeout: 10);
+    $arguments = ['/usr/bin/python3', '-I', '-', $environment, $path];
+    $process = new Process($application === '' ? $arguments : [...$arguments, $application], timeout: 10);
     $process->setInput($program ?? DependencyFilesProgram::render());
     $process->mustRun();
     expect($process->getErrorOutput())->toBeEmpty();
@@ -27,6 +28,60 @@ function dependency_program(string $path, string $environment = 'development', ?
 }
 
 describe('bounded dependency file reading', function (): void {
+    it('reads only the nested application in the checkout or pinned release', function (string $environment): void {
+        $home = dependency_source_directory();
+        $repository = $environment === 'production' ? $home.'/releases/selected' : $home;
+        mkdir($repository.'/apps/site', 0o700, true);
+        mkdir($repository.'/apps/sibling');
+        file_put_contents($repository.'/composer.json', 'repository');
+        file_put_contents($repository.'/apps/sibling/package.json', 'sibling');
+        file_put_contents($repository.'/apps/site/composer.json', '{}');
+        file_put_contents($repository.'/apps/site/package.json', '{}');
+        if ($environment === 'production') {
+            symlink('releases/selected', $home.'/current');
+        }
+
+        try {
+            $result = dependency_program($home, $environment, application: '/apps/site');
+
+            expect($result['root'])->toBe($repository.'/apps/site');
+            expect($result['reference'])->toBe($environment === 'production' ? 'selected' : null);
+            expect($result['files']['composer.json']['content'])->toBe(base64_encode('{}'));
+            expect($result['files']['package.json']['content'])->toBe(base64_encode('{}'));
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    })->with(['development', 'production']);
+
+    it('rejects unsafe application suffixes and symlink application ancestors', function (string $suffix): void {
+        $home = dependency_source_directory();
+        mkdir($home.'/actual');
+        symlink('actual', $home.'/alias');
+
+        try {
+            expect(dependency_program($home, application: $suffix))->toBe(['error' => 'dependencies.unsafe_source']);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    })->with(['/../outside', '/actual/..', '/actual/', '/alias', 'actual']);
+
+    it('detects nested application replacement and release switches during collection', function (string $change): void {
+        $home = dependency_source_directory();
+        mkdir($home.'/releases/one/apps/site', 0o700, true);
+        mkdir($home.'/releases/two/apps/site', 0o700, true);
+        symlink('releases/one', $home.'/current');
+        $mutation = $change === 'application'
+            ? "os.rename(root, root + '.old'); os.mkdir(root)"
+            : "os.unlink(os.path.join(path, 'current')); os.symlink('releases/two', os.path.join(path, 'current'))";
+        $program = str_replace('        again = ', '        '.$mutation."\n        again = ", DependencyFilesProgram::render());
+
+        try {
+            expect(dependency_program($home, 'production', $program, '/apps/site'))->toBe(['error' => 'dependencies.source_changed']);
+        } finally {
+            new Filesystem()->deleteDirectory($home);
+        }
+    })->with(['application', 'release']);
+
     it('reads only root files without installed trees or project execution', function (): void {
         $root = dependency_source_directory();
         $manifest = '{"scripts":{"install":"touch NEVER"}}';

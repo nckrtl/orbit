@@ -31,6 +31,7 @@ final readonly class DevelopmentPhpFpmConfigRenderer
                 $homeEnvironment = $production ? "env[HOME] = {$home}\nenv[USER] = {$user}\n" : '';
                 $validateTimestamps = $production ? 0 : 1;
                 $revalidateFrequency = $production ? '' : "php_admin_value[opcache.revalidate_freq] = 0\n";
+                $directory = $production ? $site->checkoutPath : $site->applicationDirectory();
 
                 return <<<FPM
                     [{$site->poolName()}]
@@ -44,7 +45,7 @@ final readonly class DevelopmentPhpFpmConfigRenderer
                     pm.max_children = {$maxChildren}
                     pm.process_idle_timeout = 10s
                     pm.max_requests = 500
-                    chdir = {$site->checkoutPath}
+                    chdir = {$directory}
                     catch_workers_output = yes
                     clear_env = {$clearEnvironment}
                     {$homeEnvironment}env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin

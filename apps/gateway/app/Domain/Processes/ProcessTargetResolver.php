@@ -196,8 +196,8 @@ final readonly class ProcessTargetResolver
                 ->exists());
 
         if ($appDevPlacement) {
-            $workingDirectory = $instance->checkout_path;
-            $environmentFile = "{$instance->checkout_path}/.env";
+            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path;
+            $environmentFile = "{$workingDirectory}/.env";
             $user = $instance->node->user;
             $certificateScope = "app-instance-{$instance->id}";
             $productionReleaseLayout = false;
@@ -214,7 +214,7 @@ final readonly class ProcessTargetResolver
             }
 
             $productionReleaseLayout = true;
-            $workingDirectory = "{$home}/current";
+            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : "{$home}/current";
             $environmentFile = "{$home}/.env";
             $certificateScope = null;
         } else {

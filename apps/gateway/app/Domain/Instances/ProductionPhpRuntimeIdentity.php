@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Instance;
 
 final readonly class ProductionPhpRuntimeIdentity
@@ -109,6 +110,19 @@ final readonly class ProductionPhpRuntimeIdentity
             'production_php_pool' => $this->pool,
             'production_php_socket' => $this->socket,
         ];
+    }
+
+    public function applicationDirectory(bool $initialRelease = false): string
+    {
+        $root = substr($this->documentRoot, strlen($this->home) + 1);
+        $base = $this->home;
+
+        if ($initialRelease && str_starts_with($root, 'current/')) {
+            $base .= '/releases/initial';
+            $root = substr($root, strlen('current/'));
+        }
+
+        return ApplicationDirectory::resolve($base, $root);
     }
 
     public function marker(): string

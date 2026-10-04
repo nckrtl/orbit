@@ -29,7 +29,7 @@ final readonly class LogStreamTargetResolver
 
     public function forInstance(Instance $instance): LogStreamTarget
     {
-        $checkout = StoragePath::tryParse((string) $instance->checkout_path);
+        $checkout = StoragePath::tryParse($instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path);
 
         if ($checkout === null) {
             throw new ResourceOperationException(

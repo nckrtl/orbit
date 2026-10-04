@@ -30,11 +30,12 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LinuxHost;
 
-it('prepares a fresh branch-pinned release without changing current', function (): void {
+it('prepares a fresh branch-pinned release without changing current', function (string $webRoot, string $target): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),
     ]);
 
+    $instance->update(['root' => $webRoot]);
     $release = $deployment->prepare($instance, 'release');
 
     expect($release->name)
@@ -54,7 +55,7 @@ it('prepares a fresh branch-pinned release without changing current', function (
             (string) $instance->id,
             'release',
             '20260911-a1',
-            'public',
+            $webRoot,
         ])
         ->and($ssh->commands[0]->input)
         ->toContain(
@@ -62,12 +63,12 @@ it('prepares a fresh branch-pinned release without changing current', function (
             'git -C "$release" fetch --prune -- origin',
             'show-ref --verify --quiet "$source_ref"',
             'checkout --detach "$source_ref"',
-            'ln -s ../../.env "$release_environment"',
+            'ln -s '.$target.' "$release_environment"',
             'test ! -e "$release"',
             'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
         )
         ->not->toContain('mv -Tf -- "$temporary" "$current"');
-});
+})->with(['root public' => ['public', '../../.env'], 'nested Laravel' => ['server/web/public', '../../../../.env']]);
 
 it('carries a GitHub App token only in protected input for a covered repository', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
@@ -165,7 +166,7 @@ it('runs protected application input from the release with streaming controls', 
         ]);
 });
 
-it('publishes one validated release with an atomic current replacement', function (): void {
+it('publishes one validated release with an atomic current replacement', function (string $webRoot, string $environmentPath): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "retained\t".str_repeat('b', 40)."\n", '', 1, false),
     ]);
@@ -175,6 +176,7 @@ it('publishes one validated release with an atomic current replacement', functio
         str_repeat('b', 40),
     );
 
+    $instance->update(['root' => $webRoot]);
     $selected = $deployment->activate($instance, $release);
 
     expect($selected)
@@ -189,15 +191,20 @@ it('publishes one validated release with an atomic current replacement', functio
             'sudo find -P "$selected_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +',
             'ln -s "releases/$name" "$temporary"',
             'mv -Tf -- "$temporary" "$current"',
+            $environmentPath,
         );
-});
+})->with([
+    'root public' => ['public', 'release_environment="$release/.env"'],
+    'nested Laravel' => ['server/web/public', 'release_environment="$release${application_suffix}/.env"'],
+]);
 
-it('inspects current and retained releases through owned source and root boundaries', function (): void {
+it('inspects current and retained releases through owned source and root boundaries', function (string $webRoot, string $environmentPath): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "initial\t".str_repeat('a', 40)."\n", '', 1, false),
         new CommandResult(0, "retained\t".str_repeat('b', 40)."\n", '', 1, false),
     ]);
 
+    $instance->update(['root' => $webRoot]);
     $selected = $deployment->selected($instance);
     $retained = $deployment->retained($instance, 'retained');
 
@@ -213,6 +220,7 @@ it('inspects current and retained releases through owned source and root boundar
             'unexpected_symlink=$(sudo find -P "$selected_root" -type l -print -quit)',
             'find -P "$release" -xdev ! -user "$user"',
             'realpath -e -- "$release_environment"',
+            $environmentPath,
         );
     }
 
@@ -220,7 +228,10 @@ it('inspects current and retained releases through owned source and root boundar
         ->toContain('case "$release" in "$releases"/*)')
         ->and($ssh->commands[1]->input)
         ->toContain('release="$releases/$name"');
-});
+})->with([
+    'root public' => ['public', 'release_environment="$release/.env"'],
+    'nested Laravel' => ['server/web/public', 'release_environment="$release${application_suffix}/.env"'],
+]);
 
 it('reports no selection when current does not exist', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
@@ -282,7 +293,7 @@ it('reports a nullable current selection while retaining present releases', func
         ->toHaveCount(1);
 });
 
-it('reads retained releases from a private SSH working directory', function (bool $selected): void {
+it('reads retained releases from a private SSH working directory', function (bool $selected, string $webRoot, string $suffix, string $target): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -290,6 +301,7 @@ it('reads retained releases from a private SSH working directory', function (boo
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "SELECTED\t\nRELEASE\tinitial\t".str_repeat('a', 40)."\n", '', 1, false),
     ]);
+    $instance->update(['root' => $webRoot, 'source_is_laravel' => true]);
     $deployment->releases($instance);
     $sandbox = sys_get_temp_dir().'/orbit-private-release-list-'.Str::uuid();
     mkdir($sandbox, 0o755);
@@ -301,10 +313,14 @@ it('reads retained releases from a private SSH working directory', function (boo
 
     try {
         mkdir("$release/public", 0o700, true);
+        if ($suffix !== '') {
+            mkdir("$release/$webRoot", 0o700, true);
+        }
         mkdir("$sandbox/state", 0o700);
         file_put_contents("$home/.env", "APP_ENV=production\n");
         file_put_contents("$release/public/index.php", "<?php\n");
-        symlink('../../.env', "$release/.env");
+        file_put_contents("$release/$webRoot/index.php", "<?php\n");
+        symlink($target, "$release$suffix/.env");
         if ($selected) {
             symlink('releases/initial', "$home/current");
         }
@@ -330,7 +346,7 @@ it('reads retained releases from a private SSH working directory', function (boo
         );
 
         $process = new Process(
-            ['bash', '-seu', '--', $repository, 'caddy', $home, 'fixture-instance', 'public', "$sandbox/state"],
+            ['bash', '-seu', '--', $repository, 'caddy', $home, 'fixture-instance', $webRoot, "$sandbox/state"],
             "$sandbox/ssh-home",
             input: $script,
         );
@@ -343,12 +359,18 @@ it('reads retained releases from a private SSH working directory', function (boo
     } finally {
         new Process(['sudo', 'rm', '-r', '--', $sandbox])->mustRun();
     }
-})->with(['first clone' => false, 'selected release' => true]);
+})->with([
+    'root first clone' => [false, 'public', '', '../../.env'],
+    'root selected' => [true, 'public', '', '../../.env'],
+    'nested first clone' => [false, 'server/web/public', '/server/web', '../../../../.env'],
+    'nested selected' => [true, 'server/web/public', '/server/web', '../../../../.env'],
+]);
 
-it('skips partial directories while executing the retained release listing', function (): void {
+it('skips partial directories while executing the retained release listing', function (string $webRoot, string $suffix, string $target): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "SELECTED\tvalid\nRELEASE\tvalid\t".str_repeat('a', 40)."\n", '', 1, false),
     ]);
+    $instance->update(['root' => $webRoot]);
     $deployment->releases($instance);
 
     $filesystem = new Filesystem;
@@ -360,13 +382,13 @@ it('skips partial directories while executing the retained release listing', fun
     $user = 'orbit-fixture';
 
     try {
-        $filesystem->ensureDirectoryExists($release.'/public');
+        $filesystem->ensureDirectoryExists($release.'/'.$webRoot);
         $filesystem->ensureDirectoryExists($partial.'/.git');
         $filesystem->ensureDirectoryExists($home.'/state');
         $filesystem->ensureDirectoryExists($sandbox.'/bin');
         file_put_contents($home.'/.env', "APP_ENV=production\n");
-        file_put_contents($release.'/public/index.php', "<?php\n");
-        symlink('../../.env', $release.'/.env');
+        file_put_contents($release.'/'.$webRoot.'/index.php', "<?php\n");
+        symlink($target, $release.$suffix.'/.env');
         symlink('releases/valid', $home.'/current');
         file_put_contents(
             $home.'/state/release-layout',
@@ -389,7 +411,7 @@ it('skips partial directories while executing the retained release listing', fun
             ['git', '-C', $release, 'config', 'user.email', 'orbit@example.test'],
             ['git', '-C', $release, 'config', 'user.name', 'Orbit Test'],
             ['git', '-C', $release, 'remote', 'add', 'origin', $repository],
-            ['git', '-C', $release, 'add', 'public/index.php'],
+            ['git', '-C', $release, 'add', $webRoot.'/index.php'],
             ['git', '-C', $release, 'commit', '--quiet', '-m', 'fixture'],
         ] as $arguments) {
             new Process($arguments)->mustRun();
@@ -414,7 +436,7 @@ it('skips partial directories while executing the retained release listing', fun
             $ssh->commands[0]->input ?? '',
         );
         $process = new Process(
-            ['bash', '-seu', '--', $repository, $user, $home, 'fixture-instance', 'public'],
+            ['bash', '-seu', '--', $repository, $user, $home, 'fixture-instance', $webRoot],
             env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')],
         );
         $process->setInput($script);
@@ -426,7 +448,7 @@ it('skips partial directories while executing the retained release listing', fun
     } finally {
         $filesystem->deleteDirectory($sandbox);
     }
-});
+})->with(['root public' => ['public', '', '../../.env'], 'nested Laravel' => ['server/web/public', '/server/web', '../../../../.env']]);
 
 it('rejects traversal before asking the remote host to inspect a release', function (): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([]);

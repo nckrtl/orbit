@@ -41,7 +41,12 @@ final readonly class CollectInstanceDependencyFilesAction
             throw new DependencyCollectionException('dependencies.unsafe_source');
         }
 
+        $base = $production ? $path.'/current' : $path;
+        $application = substr($instance->dependencyDirectory(), strlen($base));
         $arguments = ['/usr/bin/python3', '-I', '-', $instance->defaultAppEnv(), $path];
+        if ($application !== '') {
+            $arguments[] = $application;
+        }
         if ($production) {
             $arguments = ['sudo', '-n', '-u', $user, '-H', '--', ...$arguments];
         }
@@ -84,8 +89,8 @@ final readonly class CollectInstanceDependencyFilesAction
         $files = $receipt['files'] ?? null;
         if (! is_string($root) || ! is_string($identity) || preg_match('/\A[a-f0-9]{64}\z/D', $identity) !== 1
             || ! is_array($files) || array_keys($files) !== DependencyFilesProgram::FILES
-            || ($production && (! is_string($reference) || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/D', $reference) !== 1 || $root !== $path.'/releases/'.$reference))
-            || (! $production && ($root !== $path || $reference !== null))) {
+            || ($production && (! is_string($reference) || preg_match('/\A[A-Za-z0-9][A-Za-z0-9._-]{0,127}\z/D', $reference) !== 1 || $root !== $path.'/releases/'.$reference.$application))
+            || (! $production && ($root !== $path.$application || $reference !== null))) {
             throw new DependencyCollectionException('dependencies.invalid_collection');
         }
         $contents = $hashes = $errors = [];

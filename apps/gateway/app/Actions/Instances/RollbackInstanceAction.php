@@ -76,6 +76,7 @@ final readonly class RollbackInstanceAction
             if (is_string($instance->selected_php_version)) {
                 $boundary = DeploymentFailureBoundary::CacheRefresh;
                 $this->assertNotCancelled($request);
+                $this->runtime->converge($instance);
                 $this->runtime->refreshCache($instance);
             }
 

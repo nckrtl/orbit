@@ -33,6 +33,7 @@ function pnpm_update_instance(bool $production = false, string $path = '/home/or
         'production_user' => $production ? 'app_sample' : null,
         'production_home' => $production ? '/home/app_sample' : null,
         'root' => 'public',
+        'source_is_laravel' => true,
     ]);
     $node = new Node(['user' => 'orbit', 'wireguard_ip' => '10.44.0.2']);
     orbit_test_set_app_placement_role($node, $production);
@@ -135,6 +136,18 @@ function pnpm_update_probe_present(string $version = '0.3.0', string $vpPath = P
 }
 
 describe('bounded Vite+ pnpm dependency updates', function (): void {
+    it('probes and updates the configured application directory', function (string $root, string $suffix): void {
+        $instance = pnpm_update_instance();
+        $instance->root = $root;
+        $path = '/home/orbit/project'.$suffix;
+        pnpm_update_ssh([
+            [fn (SshConnection $connection, RemoteCommand $command): bool => pnpm_update_probe_command($command, $path), pnpm_update_probe_present()],
+            [fn (SshConnection $connection, RemoteCommand $command): bool => pnpm_update_update_command($command, path: $path), new CommandResult(0, '', '', 1, false)],
+        ]);
+
+        expect(app(UpdatePnpmDependenciesAction::class)->execute($instance)->status)->toBe(DependencyUpdateStepStatus::Succeeded);
+    })->with(['root public' => ['public', ''], 'nested app' => ['apps/site/public', '/apps/site']]);
+
     it('reuses the shared Vite+ supervisor and runs vp update --no-save for a pnpm root within declared constraints', function (): void {
         pnpm_update_ssh([
             [

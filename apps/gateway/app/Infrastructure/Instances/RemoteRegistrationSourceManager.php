@@ -179,6 +179,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 'id' => $instance->id,
                 'source' => $facts->path,
                 'destination' => $instance->checkout_path,
+                'application' => $instance->applicationDirectory(),
                 'layout' => $facts->layout->value,
                 'commit' => $facts->commit,
                 'branch' => $facts->branch,
@@ -483,6 +484,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                 $instance->checkout_path,
                 (string) $instance->id,
                 $operation,
+                $instance->applicationDirectory(),
             ]),
             step: 'registration-laravel-rollback',
             errorCode: 'instance.laravel_rollback_failed',
@@ -909,7 +911,8 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             def close_environment():
                 # Other local users, the Node agent included, never read an Instance's environment.
                 for member in members:
-                    env=os.path.join(member['destination'],'.env')
+                    env=os.path.join(member['application'],'.env')
+                    if os.path.realpath(member['application']) != member['application']: raise SystemExit(42)
                     if os.path.isfile(env) and not os.path.islink(env) and os.lstat(env).st_mode & 0o007:
                         os.chmod(env, stat.S_IMODE(os.lstat(env).st_mode) & 0o770)
             if operation == 'adopt':
@@ -940,8 +943,10 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
             import json, os, pathlib, shutil, sys
             root=pathlib.Path(sys.argv[1]); instance=sys.argv[2]; operation=sys.argv[3]
             receipt=root.parent/('.orbit-registration-url-'+instance)
-            paths=[root/'.env', root/'bootstrap'/'cache'/'config.php']
-            directories=[root, root/'bootstrap', root/'bootstrap'/'cache']
+            application=pathlib.Path(sys.argv[4])
+            if application.resolve() != application: raise SystemExit(42)
+            paths=[application/'.env', application/'bootstrap'/'cache'/'config.php']
+            directories=[application, application/'bootstrap', application/'bootstrap'/'cache']
             def validate_receipt():
                 if receipt.is_symlink() or not receipt.is_dir(): raise SystemExit(42)
                 manifest_path=receipt/'manifest'

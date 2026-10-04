@@ -24,7 +24,7 @@ A viewer can follow the log as the application writes it with a [live log stream
 
 ## Know which file the Gateway reads
 
-The Gateway reads one file under `storage/logs` in the checkout of the Instance, which is the Laravel convention.
+The Gateway reads one file under `storage/logs` in the Instance's [application directory](/reference/projects#application-directory), which is the Laravel convention. Root `apps/site/public` means `<checkout>/apps/site/storage/logs` in development or `<production-home>/current/apps/site/storage/logs` in production. Root `public` keeps `storage/logs` at the checkout or release root. One-shot reads and live streams use the same directory.
 
 | Order | File | Used when |
 | --- | --- | --- |

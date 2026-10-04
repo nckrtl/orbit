@@ -48,10 +48,12 @@ The Gateway derives the file location and the user from the Instance's placement
 
 | Placement | File | User |
 | --- | --- | --- |
-| `app-dev` | `.env` in the Instance checkout | The Node's managed user |
+| `app-dev` | `.env` in the Instance's application directory within the checkout | The Node's managed user |
 | `app-prod` | `.env` in the production home | The Instance's production user |
 
-On `app-prod`, every release links its own `.env` to the production home's file. See [Production release layout](/reference/deployments).
+For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, development reads and writes `<checkout>/apps/site/.env`, and `.env.testing` lives beside it. A development default uses the same paths in its stable checkout home and copies those files into each candidate's application directory.
+
+On `app-prod`, every release links `.env` in its application directory to the production home's file. With root `apps/site/public`, `<home>/releases/<name>/apps/site/.env` links to `<home>/.env`; no release-root `.env` link is needed. See [Production release layout](/reference/deployments).
 
 `ORBIT_TASKS_WORKER_USER` is a setting in the Gateway's own environment, not in an Instance's `.env`. It selects the worker account for [checkout ACLs](/reference/instance-setup#checkout-access), normally `orbit-worker`. An unset setting leaves checkout access unchanged. It does not change the Instance's placement, the user that imports or synchronizes its environment, or the mode `0600` used for a synchronized `.env` file. Setting an Instance key with that name does not configure the Gateway.
 
@@ -63,7 +65,7 @@ The importer accepts blank lines, comments, quoted and escaped values, multiline
 
 Without `replace`, a file key that is already stored returns `env.import_conflict` (409), and nothing is stored. With `replace`, matching keys take the file value, new keys are added, and stored keys that the file lacks stay.
 
-For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps `APP_KEY` and every other value as the file has it.
+For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps `APP_KEY` and every other value as the file has it. When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root.
 
 ## Update
 

@@ -94,7 +94,7 @@ it('acquires only when the group holds no topology and releases only one it hold
     try {
         $result = $topology->{$operation}($instance, 42);
 
-        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe($calls);
+        expect(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(str_replace('{checkout}', (string) realpath($checkout), $calls));
         if ($operation === 'acquire') {
             expect($result)->toBe(! $held);
         }
@@ -102,7 +102,7 @@ it('acquires only when the group holds no topology and releases only one it hold
         new Filesystem()->deleteDirectory($checkout);
     }
 })->with([
-    'acquire a missing topology' => ['acquire', false, ['status TASK-42 --json', 'acquire TASK-42 .', 'status TASK-42 --json']],
+    'acquire a missing topology' => ['acquire', false, ['status TASK-42 --json', 'acquire TASK-42 {checkout}', 'status TASK-42 --json']],
     'keep a held topology' => ['acquire', true, ['status TASK-42 --json']],
     'release a held topology' => ['release', true, ['status TASK-42', 'release TASK-42']],
     'skip release without one' => ['release', false, ['status TASK-42']],
@@ -124,7 +124,7 @@ it('reports the acquisition failure reason from stdout or stderr without claimin
         expect($failure)->not->toBeNull()
             ->and($failure)->toContain('No topology capacity')
             ->and($failure)->not->toContain('topology-secret-value')
-            ->and(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['status TASK-42 --json', 'acquire TASK-42 .']);
+            ->and(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe(['status TASK-42 --json', 'acquire TASK-42 '.realpath($checkout)]);
     } finally {
         new Filesystem()->deleteDirectory($checkout);
     }
@@ -151,7 +151,7 @@ it('reports retained incomplete acquisition state instead of already held and pr
         expect(fn () => $topology->acquire($instance, 42))->toThrow(RuntimeException::class, 'without a complete discovery topology');
         expect(file_exists($checkout.'/incomplete'))->toBeTrue()
             ->and(file($checkout.'/calls', FILE_IGNORE_NEW_LINES))->toBe([
-                'status TASK-42 --json', 'acquire TASK-42 .', 'status TASK-42 --json',
+                'status TASK-42 --json', 'acquire TASK-42 '.realpath($checkout), 'status TASK-42 --json',
             ]);
 
         $topology->release($instance, 42);

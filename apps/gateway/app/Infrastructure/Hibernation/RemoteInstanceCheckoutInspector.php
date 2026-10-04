@@ -35,7 +35,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
         $result = $this->ssh->execute(
             $this->connection($instance->node),
             new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', $checkout],
+                ['sudo', 'bash', '-seu', '--', $checkout, $this->application($instance)],
                 self::inspectScript(),
             ),
         );
@@ -52,7 +52,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function prune(Instance $instance, RuntimeDependencyState $state): void
     {
-        $checkout = $this->checkout($instance);
+        $this->checkout($instance);
         $targets = [];
 
         if ($state->prunableVendor()) {
@@ -70,7 +70,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
         $result = $this->ssh->execute(
             $this->connection($instance->node),
             new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', $checkout, ...$targets],
+                ['sudo', 'bash', '-seu', '--', $this->application($instance), ...$targets],
                 self::pruneScript(),
             ),
         );
@@ -87,7 +87,8 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function restore(Instance $instance, RuntimeDependencyState $state): void
     {
-        $checkout = $this->checkout($instance);
+        $this->checkout($instance);
+        $checkout = $this->application($instance);
         $account = $this->accounts->resolve($instance->node);
 
         if ($state->restorableVendor()) {
@@ -140,6 +141,20 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
             throw new HibernationException(
                 errorCode: 'hibernation.checkout_path_invalid',
                 message: "Instance [{$instance->name}] has an invalid checkout path.",
+            );
+        }
+
+        return $path->value;
+    }
+
+    private function application(Instance $instance): string
+    {
+        $checkout = $this->checkout($instance);
+        $path = StoragePath::tryParse($instance->dependencyDirectory());
+        if ($path === null || ($path->value !== $checkout && ! str_starts_with($path->value, $checkout.'/'))) {
+            throw new HibernationException(
+                errorCode: 'hibernation.checkout_path_invalid',
+                message: "Instance [{$instance->name}] has an invalid application path.",
             );
         }
 
@@ -221,7 +236,9 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
     private static function inspectScript(): string
     {
         return <<<'BASH'
-            checkout=$1
+            repository=$1
+            checkout=$2
+            [ "$(realpath -e -- "$checkout")" = "$checkout" ]
             regular_file() {
                 [ -f "$1" ] && [ ! -L "$1" ]
             }
@@ -240,7 +257,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
                 fi
             done
 
-            source_mtime=$(find "$checkout" \
+            source_mtime=$(find "$repository" \
                 \( -name vendor -o -name node_modules -o -name .git \) -prune -o \
                 -type f ! -type l -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
             source_mtime=${source_mtime%.*}
@@ -252,6 +269,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
     {
         return <<<'BASH'
             checkout=$1
+            [ "$(realpath -e -- "$checkout")" = "$checkout" ]
             shift
             for target in "$@"; do
                 path="$checkout/$target"

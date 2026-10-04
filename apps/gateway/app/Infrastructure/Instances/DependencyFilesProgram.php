@@ -35,10 +35,15 @@ def directory(path):
         os.close(fd)
         raise
 
-def source(environment, path):
+def source(environment, path, application):
     fd = directory(path)
     if environment == 'development':
-        return path, None, fd, [os.fstat(fd).st_dev, os.fstat(fd).st_ino]
+        try:
+            root = path + application
+            app_fd = directory(root)
+            return root, None, app_fd, [os.fstat(fd).st_dev, os.fstat(fd).st_ino, os.fstat(app_fd).st_dev, os.fstat(app_fd).st_ino]
+        finally:
+            os.close(fd)
     try:
         try:
             pointer = os.stat('current', dir_fd=fd, follow_symlinks=False)
@@ -54,7 +59,13 @@ def source(environment, path):
             fail('unsafe_source')
         release_fd = directory(root)
         identity = [os.fstat(fd).st_dev, os.fstat(fd).st_ino, signature(pointer), target, os.fstat(release_fd).st_dev, os.fstat(release_fd).st_ino]
-        return root, name, release_fd, identity
+        try:
+            root += application
+            app_fd = directory(root)
+            identity += [os.fstat(app_fd).st_dev, os.fstat(app_fd).st_ino]
+            return root, name, app_fd, identity
+        finally:
+            os.close(release_fd)
     finally:
         os.close(fd)
 
@@ -92,10 +103,13 @@ def read_file(fd, name):
     return entry
 
 try:
-    environment, path = sys.argv[1:]
+    environment, path, *suffix = sys.argv[1:]
+    application = suffix[0] if len(suffix) == 1 else ''
+    if len(suffix) > 1 or (application and (not application.startswith('/') or any(p in ('', '.', '..') for p in application[1:].split('/')))):
+        fail('unsafe_source')
     if environment not in ('development', 'production'):
         fail('unsafe_source')
-    root, reference, fd, identity = source(environment, path)
+    root, reference, fd, identity = source(environment, path, application)
     try:
         files = {name: read_file(fd, name) for name in FILES}
         if sum(v['state'][3] for v in files.values() if v['hash'] is not None) > 32 * 1024 * 1024:
@@ -103,7 +117,7 @@ try:
         again = {name: read_file(fd, name) for name in FILES}
         if files != again:
             fail('source_changed')
-        next_root, next_reference, next_fd, next_identity = source(environment, path)
+        next_root, next_reference, next_fd, next_identity = source(environment, path, application)
         os.close(next_fd)
         if (root, reference, identity) != (next_root, next_reference, next_identity):
             fail('source_changed')

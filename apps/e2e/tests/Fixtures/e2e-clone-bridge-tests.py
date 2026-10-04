@@ -144,13 +144,22 @@ class CloneBridgeTest(unittest.TestCase):
         os.environ['ORBIT_E2E_BRIDGE'] = '0'
         self.assertIsNone(bridge.bridge_primary(self.clone))
 
-    def test_a_linked_worktree_or_another_origin_never_bridges(self):
+    def test_a_linked_worktree_of_the_primary_or_another_origin_never_bridges(self):
         bridge.register(self.primary)
         linked = Path(self.temporary.name) / 'linked'
         git(self.primary, 'worktree', 'add', '-q', '-b', 'task-8', str(linked))
         self.assertIsNone(bridge.bridge_primary(linked))
         git(self.clone, 'remote', 'set-url', 'origin', 'git@github.com:someone/else.git')
         self.assertIsNone(bridge.bridge_primary(self.clone))
+
+    def test_a_linked_worktree_of_another_repository_bridges_through_the_primary(self):
+        # Task workspaces are linked worktrees of the default Instance, which holds no topology snapshot.
+        bridge.register(self.primary)
+        default = Path(self.temporary.name) / 'default'
+        git(Path(self.temporary.name), 'clone', '-q', str(self.origin), str(default))
+        workspace = Path(self.temporary.name) / 'task-5'
+        git(default, 'worktree', 'add', '-q', '-b', 'task-5', str(workspace))
+        self.assertEqual(bridge.bridge_primary(workspace), self.primary)
 
     def test_mirrors_vendor_without_preserving_owner_or_group(self):
         if not shutil.which('rsync'):
@@ -359,6 +368,13 @@ while True:
         git(self.primary, 'worktree', 'add', '-q', '-b', 'task-1', str(linked))
         run(linked, 'bin/e2e-topology', 'status', 'TASK-1', env=environment)
         self.assertEqual(bridge.registered_primary(self.key()), self.primary)
+
+        default = Path(self.temporary.name) / 'default'
+        git(Path(self.temporary.name), 'clone', '-q', str(self.origin), str(default))
+        workspace = Path(self.temporary.name) / 'task-5'
+        git(default, 'worktree', 'add', '-q', '-b', 'task-5', str(workspace))
+        bridged = run(workspace, 'bin/e2e-topology', 'acquire', 'TASK-5', str(workspace), env=environment)
+        self.assertIn(f'php {self.worktrees}/task-5-e2e/apps/e2e/artisan topology:acquire TASK-5 {self.worktrees}/task-5-e2e', bridged.stdout)
 
         acquired = run(self.clone, 'bin/e2e-topology', 'acquire', 'TASK-7', '.', env=environment)
         self.assertIn(f'php {self.bridge}/apps/e2e/artisan topology:acquire TASK-7 {self.bridge}', acquired.stdout)

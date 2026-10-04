@@ -13,6 +13,7 @@ use App\Domain\Instances\Transfer\TransferCleanupResult;
 use App\Domain\Instances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -185,6 +186,10 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         StoragePath $path,
         TransferSourceCapture $capture,
     ): void {
+        $instance = Instance::query()->with('project')->findOrFail($capture->instanceId);
+        $environmentDirectory = $instance->source_is_laravel === true
+            ? ApplicationDirectory::resolve($path->value, $instance->root ?? $instance->project->root)
+            : $path->value;
         $remoteArchive = "/tmp/orbit-transfer-{$capture->instanceId}.tar";
         $this->copyArchive(
             $this->scpToRemote($destination, $archive, $remoteArchive),
@@ -203,6 +208,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
                     $capture->head,
                     $capture->branch ?? '',
                     $capture->detached ? '1' : '0',
+                    $environmentDirectory.'/.env',
                 ],
                 input: $this->materializeScript(),
             ),
@@ -393,8 +399,11 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
               workspace_git -C "$destination" reset --mixed --quiet "$head"
             fi
             # Other local users, the Node agent included, never read an Instance's environment (ADR 0151).
-            if [ -f .env ] && [ ! -L .env ]; then
-              chmod o-rwx .env
+            environment=${6:-$destination/.env}
+            case "$environment" in "$destination"/*) ;; *) exit 20 ;; esac
+            if [ -f "$environment" ] && [ ! -L "$environment" ]; then
+              test "$(realpath -e -- "$environment")" = "$environment"
+              chmod o-rwx -- "$environment"
             fi
             BASH;
     }

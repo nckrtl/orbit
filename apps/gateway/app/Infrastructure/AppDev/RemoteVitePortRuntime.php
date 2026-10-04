@@ -145,6 +145,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 
     public function prepare(Process $process, Instance $instance): void
     {
+        $applicationDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path;
         $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id);
         $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['bash', '-c', <<<'BASH'
@@ -160,7 +161,7 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
             sudo rm -f -- "$4"
             sudo install -m 0600 /dev/stdin "$2.pending"
             sudo mv -T -- "$2.pending" "$2"
-            BASH, 'orbit-vite-environment', $instance->checkout_path, $path, (string) $instance->id, $marker], input: "# Orbit Instance {$instance->id}\nORBIT_DEV_SERVER_PORT={$instance->vite_port}\n", timeout: 15), 'vite-environment', 'vite.environment_failed');
+            BASH, 'orbit-vite-environment', $applicationDirectory, $path, (string) $instance->id, $marker], input: "# Orbit Instance {$instance->id}\nORBIT_DEV_SERVER_PORT={$instance->vite_port}\n", timeout: 15), 'vite-environment', 'vite.environment_failed');
     }
 
     public function project(Instance $instance): void
