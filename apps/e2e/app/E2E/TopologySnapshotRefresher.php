@@ -361,7 +361,7 @@ final readonly class TopologySnapshotRefresher
                 requiredAssignments: $requiredAssignments,
             ));
             if (! $verification->passed) {
-                throw new RuntimeException('Topology snapshot verification failed.');
+                throw new RuntimeException('Topology snapshot verification failed.'.$verification->failedSummary());
             }
             $proof = $this->measure(
                 $timings,
@@ -374,7 +374,7 @@ final readonly class TopologySnapshotRefresher
                 ),
             );
             if (! $proof->passed) {
-                throw new RuntimeException('Topology snapshot proof verification failed.');
+                throw new RuntimeException('Topology snapshot proof verification failed.'.$proof->failedSummary());
             }
             $this->measure($timings, 'stop', fn () => $this->stopAndProve());
             $generation = $this->measure($timings, 'snapshot', fn () => $this->snapshot(

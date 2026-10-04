@@ -1233,7 +1233,7 @@ describe('TopologySnapshotRefresher contracts', function () {
             expect($result->state)
                 ->toBe('failed')
                 ->and($result->error)
-                ->toBe('Topology snapshot verification failed.')
+                ->toStartWith('Topology snapshot verification failed. Failed probes: ')
                 ->and($result->generationId)
                 ->toBe('old-generation')
                 ->and($readiness)
