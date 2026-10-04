@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Laravel\Boost\Install\SkillComposer;
 use Laravel\Boost\Support\RenderFailures;
+use Tests\Support\TemporaryPaths;
 
 describe('Boost guidance', function (): void {
     it('has a committed guidance index', function (): void {
@@ -56,9 +57,14 @@ describe('Boost guidance', function (): void {
                 'testing-best-practices',
             ]);
 
+        // Gate users must not share compiled Blade files, including in the full-suite fallback.
+        $views = TemporaryPaths::path('orbit-boost-views-');
+        mkdir($views, 0700, true);
+        config(['view.compiled' => $views]);
+
         app(SkillComposer::class)->skills();
 
         expect(app(RenderFailures::class)->paths())
-            ->toBeEmpty();
+            ->toBe([]);
     });
 });
