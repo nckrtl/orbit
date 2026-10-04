@@ -1,0 +1,322 @@
+#!/usr/bin/env python3
+"""Prove that a command fails on current main the same way the task engine runs fails_on_base.
+
+Extract current main, overlay the given paths, and run the command. Pass when the
+command exits nonzero. Print one JSON object. Do not file a task.
+
+The overlay and the 600-second timeout match apps/gateway/resources/tasks/check.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+BASES = ('origin/main', 'main')
+DEFAULT_TIMEOUT = 600
+
+
+class ProofParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f'{self.prog}: {message}', file=sys.stderr)
+        print('Pass --command and at least one --paths, or run --help.', file=sys.stderr)
+        sys.exit(2)
+
+
+def emit(payload):
+    sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=True) + '\n')
+    sys.stdout.flush()
+
+
+def fail(payload, exit_code=1):
+    emit(payload)
+    print(payload.get('next') or payload.get('message'), file=sys.stderr)
+    return exit_code
+
+
+def git(root, *args, check=True):
+    result = subprocess.run(['git', '-C', str(root), *args], capture_output=True, text=True)
+    if check and result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or 'git failed')
+    return result.stdout.strip() if result.returncode == 0 else ''
+
+
+def repository_root(path):
+    root = git(path, 'rev-parse', '--show-toplevel')
+    return Path(root)
+
+
+def resolve_main(root, ref):
+    if ref:
+        sha = git(root, 'rev-parse', '--verify', '--quiet', f'{ref}^{{commit}}', check=False)
+        if sha:
+            return sha
+        raise RuntimeError(f'The --main ref {ref} is not a commit.')
+    for candidate in BASES:
+        sha = git(root, 'rev-parse', '--verify', '--quiet', f'{candidate}^{{commit}}', check=False)
+        if sha:
+            return sha
+    raise RuntimeError('Current main could not be resolved.')
+
+
+def path_invalid(relative):
+    if not isinstance(relative, str) or relative == '' or relative.startswith('/'):
+        return True
+    if any(part in ('', '.', '..') for part in relative.split('/')):
+        return True
+    return False
+
+
+def overlay_source(root, relative):
+    if path_invalid(relative):
+        return None
+    path = (root / relative).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError:
+        return None
+    if not path.is_file() or path.is_symlink():
+        return None
+    return path
+
+
+def copy_dependencies(checkout, scratch):
+    for current, directories, _files in os.walk(checkout):
+        directories[:] = [name for name in directories if name not in {'.git', 'vendor', 'node_modules'}]
+        for name in ('vendor', 'node_modules'):
+            source = Path(current) / name
+            if not source.is_dir():
+                continue
+            relative = os.path.relpath(source, checkout)
+            destination = Path(scratch) / relative
+            if destination.exists():
+                shutil.rmtree(destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, destination, symlinks=True, copy_function=shutil.copy2)
+
+
+def extract_main(root, sha, scratch):
+    archive = subprocess.Popen(
+        ['git', '-C', str(root), 'archive', sha],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
+    extract = subprocess.run(['tar', '-xf', '-', '-C', str(scratch)], stdin=archive.stdout,
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    if archive.stdout is not None:
+        archive.stdout.close()
+    return archive.wait() == 0 and extract.returncode == 0
+
+
+def inside(root, relative):
+    path = (root / (relative or '.')).resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError:
+        return None
+    return path
+
+
+def run_command(command, cwd, timeout):
+    process = subprocess.Popen(
+        ['bash', '-lc', command],
+        cwd=cwd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
+    try:
+        output, _ = process.communicate(timeout=timeout)
+        return process.returncode, output.decode('utf-8', errors='replace')
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, 15)
+        except ProcessLookupError:
+            pass
+        try:
+            output, _ = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, 9)
+            except ProcessLookupError:
+                pass
+            output, _ = process.communicate()
+        return 124, (output or b'').decode('utf-8', errors='replace')
+
+
+def build_parser():
+    parser = ProofParser(
+        prog='bin/bug-repro',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Prove that a command fails on current main. Print one JSON object. Do not file a task.',
+        epilog="""
+The task engine already requires paths for a fails_on_base command. This command
+uses the same overlay: current main, plus those working-tree files.
+
+Pass JSON includes main_sha, command, exit_code, and paths.
+A zero exit is not_reproduced. Do not file a task.
+
+Examples:
+  bin/bug-repro --command "vendor/bin/pest tests/Feature/HomeScreenTest.php" \\
+    --paths apps/gateway/tests/Feature/HomeScreenTest.php --directory apps/gateway
+  bin/bug-repro --command "bin/docs-impact --gate" --paths bin/docs-impact --dry-run
+""",
+    )
+    parser.add_argument('--command', required=True, help='Shell command the task engine would run.')
+    parser.add_argument('--paths', action='append', required=True,
+                        help='Workspace-relative overlay file. Repeat for each path.')
+    parser.add_argument('--directory', default='.', help='Directory relative to the extracted tree. Default: .')
+    parser.add_argument('--repository', default='.', help='Git repository that holds main and the overlay files.')
+    parser.add_argument('--main', help='Ref that supplies the main SHA. Default: origin/main, then main.')
+    parser.add_argument('--timeout', type=int, default=DEFAULT_TIMEOUT,
+                        help=f'Seconds before the base run stops. Default: {DEFAULT_TIMEOUT}.')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Print the main SHA, command, and paths. Do not extract or run.')
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.timeout <= 0:
+        return fail({
+            'passed': False,
+            'error': 'usage',
+            'message': 'The --timeout value must be a positive number of seconds.',
+            'next': 'Pass a timeout of at least 1 second, or omit --timeout.',
+        }, 2)
+    try:
+        root = repository_root(args.repository)
+    except (OSError, RuntimeError) as error:
+        return fail({
+            'passed': False,
+            'error': 'usage',
+            'message': str(error) or 'The --repository path is not a Git checkout.',
+            'next': 'Run the command from the repository root, or pass --repository.',
+        }, 2)
+    try:
+        main_sha = resolve_main(root, args.main)
+    except RuntimeError as error:
+        return fail({
+            'passed': False,
+            'error': 'main_unavailable',
+            'message': str(error),
+            'next': 'Fetch origin/main or pass --main with a reachable commit.',
+        })
+
+    payload = {
+        'main_sha': main_sha,
+        'command': args.command,
+        'directory': args.directory,
+        'paths': list(args.paths),
+    }
+    if args.dry_run:
+        payload['dry_run'] = True
+        emit(payload)
+        return 0
+
+    invalid = []
+    for relative in args.paths:
+        if overlay_source(root, relative) is None:
+            invalid.append(relative)
+    if invalid:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'path_invalid',
+            'message': f'Invalid overlay path: {", ".join(invalid)}.',
+            'next': 'Pass regular workspace-relative files the task engine would overlay.',
+        })
+    if inside(root, args.directory) is None:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'path_invalid',
+            'message': 'The command directory is outside the repository.',
+            'next': 'Pass a --directory that stays inside the checkout.',
+        })
+
+    scratch = Path(tempfile.mkdtemp(prefix='orbit-bug-repro-'))
+    try:
+        if not extract_main(root, main_sha, scratch):
+            return fail({
+                **payload,
+                'passed': False,
+                'error': 'command_unstarted',
+                'message': 'Could not extract the current main commit.',
+                'next': 'Confirm the main SHA is present and run again.',
+            })
+        copy_dependencies(root, scratch)
+        for relative in args.paths:
+            source = overlay_source(root, relative)
+            destination = overlay_source(scratch, relative)
+            if source is None:
+                return fail({
+                    **payload,
+                    'passed': False,
+                    'error': 'path_invalid',
+                    'message': f'Could not overlay path {relative}.',
+                    'next': 'Pass regular workspace-relative files the task engine would overlay.',
+                })
+            if destination is None:
+                target = scratch / relative
+                if path_invalid(relative):
+                    return fail({
+                        **payload,
+                        'passed': False,
+                        'error': 'path_invalid',
+                        'message': f'Could not overlay path {relative}.',
+                        'next': 'Pass regular workspace-relative files the task engine would overlay.',
+                    })
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+                shutil.copymode(source, target)
+            else:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, destination)
+                shutil.copymode(source, destination)
+        directory = inside(scratch, args.directory)
+        if directory is None or not directory.is_dir():
+            return fail({
+                **payload,
+                'passed': False,
+                'error': 'command_unstarted',
+                'message': 'The command directory is outside the extracted main tree.',
+                'next': 'Pass a --directory that exists on current main, or overlay it with --paths.',
+            })
+        exit_code, output = run_command(args.command, directory, args.timeout)
+        payload['exit_code'] = exit_code
+        if exit_code == 0:
+            return fail({
+                **payload,
+                'passed': False,
+                'error': 'not_reproduced',
+                'message': 'The command exited 0 on current main. The failure is not reproduced.',
+                'next': 'Do not file a task. The command does not fail on current main.',
+                'output_tail': output[-4096:],
+            })
+        payload['passed'] = True
+        payload['output_tail'] = output[-4096:]
+        emit(payload)
+        return 0
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError) as error:
+        sys.exit(fail({
+            'passed': False,
+            'error': 'command_unstarted',
+            'message': str(error),
+            'next': 'Fix the overlay, the directory, or the extracted tree, then run again.',
+        }))

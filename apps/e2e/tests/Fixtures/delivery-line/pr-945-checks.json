@@ -1,0 +1,10 @@
+{
+  "check_runs": [
+    {
+      "name": "Required checks",
+      "status": "completed",
+      "conclusion": "success",
+      "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}

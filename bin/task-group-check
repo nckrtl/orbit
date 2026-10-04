@@ -1,0 +1,410 @@
+#!/usr/bin/env python3
+"""Validate a task-group payload against CreateTaskGroupRequest without creating a group.
+
+Pass when there is one ordered group, every subtask has a Goal and Acceptance, and a
+bug group's first code-changing subtask carries fails_on_base true on BugBot's command.
+Fail when a field is missing, a subtask only restates the final gate, or a bug group
+has no failing command. Print one JSON object. Do not create a group.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+ALLOWED_TOP = ('project_id', 'title', 'brief', 'status', 'notify_coder', 'notify_on_settle', 'tasks')
+DELIVERABLE_KEYS = ('id', 'type', 'description', 'path', 'change', 'command', 'directory', 'fails_on_base', 'paths')
+STATUSES = ('backlog', 'todo')
+CHANGES = ('created', 'modified', 'any')
+TYPES = ('file', 'command', 'review')
+ID_RE = re.compile(r'\A[a-z0-9]+(?:-[a-z0-9]+)*\Z')
+UNSAFE_PATH = re.compile(r'(?:\A/|(?:\A|/)\.\.(?:/|\Z))')
+GOAL_RE = re.compile(r'(?im)^\s*(?:\*\*)?goal(?:\*\*)?\s*:')
+ACCEPTANCE_RE = re.compile(r'(?im)^\s*(?:\*\*)?acceptance(?:\*\*)?\s*:')
+GATE_RE = re.compile(
+    r'(?is)\b(?:final\s+gate|candidate\s+gate|task\s+check|review-check|bin/review-check|'
+    r'(?:prepare|propose|open|submit|complete|file)\s+(?:the\s+)?(?:pull\s+request|pr)|'
+    r'pull\s+request|pr)\b'
+)
+DOCS_RE = re.compile(r'(?i)\b(?:docs?|documentation|adr|owning page)\b')
+SUBSTANTIVE_RE = re.compile(r'[A-Za-z]{3,}')
+
+
+class ProofParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f'{self.prog}: {message}', file=sys.stderr)
+        print('Pass --payload with one JSON object, or run --help.', file=sys.stderr)
+        sys.exit(2)
+
+
+def emit(payload):
+    sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=True) + '\n')
+    sys.stdout.flush()
+
+
+def fail(payload, exit_code=1):
+    emit(payload)
+    print(payload.get('next') or payload.get('message'), file=sys.stderr)
+    return exit_code
+
+
+def top_level_keys(text):
+    keys = []
+    depth = 0
+    expects_key = False
+    index = 0
+    length = len(text)
+    while index < length:
+        character = text[index]
+        if character in '{[':
+            depth += 1
+            if depth == 1 and character == '{':
+                expects_key = True
+            index += 1
+            continue
+        if character in '}]':
+            depth -= 1
+            index += 1
+            continue
+        if character == ',' and depth == 1:
+            expects_key = True
+            index += 1
+            continue
+        if character != '"':
+            index += 1
+            continue
+        end = string_end(text, index + 1)
+        if depth == 1 and expects_key:
+            keys.append(json.loads(text[index:end + 1]))
+            expects_key = False
+        index = end + 1
+    return keys
+
+
+def string_end(text, index):
+    escaped = False
+    while index < len(text):
+        character = text[index]
+        if escaped:
+            escaped = False
+        elif character == '\\':
+            escaped = True
+        elif character == '"':
+            return index
+        index += 1
+    raise ValueError('The request body must be a valid JSON object.')
+
+
+def load_payload(path):
+    raw = sys.stdin.read() if path == '-' else Path(path).read_text()
+    if raw.strip() == '':
+        raise ValueError('The request body must be a valid JSON object.')
+    keys = top_level_keys(raw)
+    if len(keys) != len(set(keys)):
+        raise ValueError('The request body contains duplicate top-level keys.')
+    extra = [key for key in keys if key not in ALLOWED_TOP and key != 'groups']
+    if extra:
+        raise ValueError('The request body contains unsupported top-level keys.')
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ValueError('The request body must be a valid JSON object.') from error
+    if not isinstance(payload, dict):
+        raise ValueError('The request body must be a valid JSON object.')
+    return payload
+
+
+def require_string(value, name, maximum):
+    if not isinstance(value, str):
+        raise ValueError(f'The {name} field must be a string.')
+    if value == '' or len(value) > maximum:
+        raise ValueError(f'The {name} field is required and at most {maximum} characters.')
+    return value
+
+
+def require_bool(value, name):
+    if not isinstance(value, bool):
+        raise ValueError(f'The {name} value must be true or false.')
+    return value
+
+
+def unsafe(path):
+    return not isinstance(path, str) or path == '' or bool(UNSAFE_PATH.search(path))
+
+
+def validate_deliverable(deliverable, index):
+    if not isinstance(deliverable, dict):
+        raise ValueError(f'deliverables.{index} must be an object.')
+    extra = [key for key in deliverable if key not in DELIVERABLE_KEYS]
+    if extra:
+        raise ValueError(f'deliverables.{index} contains unsupported keys: {", ".join(extra)}.')
+    identity = deliverable.get('id')
+    who = f'deliverable {identity}' if isinstance(identity, str) and identity else f'deliverable {index}'
+    if not isinstance(identity, str) or not ID_RE.fullmatch(identity) or len(identity) > 64:
+        raise ValueError(f'The id for {who} must be a lowercase slug of at most 64 characters.')
+    kind = deliverable.get('type')
+    if kind not in TYPES:
+        raise ValueError(f'The type for {who} must be file, command, or review.')
+    require_string(deliverable.get('description'), f'description for {who}', 500)
+    if kind == 'file':
+        if 'command' in deliverable or 'directory' in deliverable or 'fails_on_base' in deliverable or 'paths' in deliverable:
+            raise ValueError(f'The fails_on_base and command fields are only allowed on a command deliverable ({who}).')
+        if unsafe(deliverable.get('path')) or len(str(deliverable.get('path', ''))) > 500:
+            raise ValueError(f'The path for {who} must be a relative path without .., at most 500 characters.')
+        if deliverable.get('change') not in CHANGES:
+            raise ValueError(f'The change for {who} must be created, modified, or any.')
+    elif kind == 'command':
+        if 'path' in deliverable or 'change' in deliverable:
+            raise ValueError(f'The path field is only allowed on a file deliverable ({who}).')
+        require_string(deliverable.get('command'), f'command for {who}', 1000)
+        directory = deliverable.get('directory', '.')
+        if directory is not None and (not isinstance(directory, str) or unsafe(directory) or len(directory) > 500):
+            raise ValueError(f'The directory for {who} must be a relative path without .., at most 500 characters.')
+        if 'fails_on_base' in deliverable:
+            require_bool(deliverable['fails_on_base'], f'fails_on_base for {who}')
+        paths = deliverable.get('paths')
+        if paths is None:
+            paths = []
+        elif not isinstance(paths, list) or any(not isinstance(item, str) for item in paths):
+            raise ValueError(f'The paths value for {who} must be a list of strings.')
+        elif len(paths) > 100:
+            raise ValueError(f'The paths value for {who} may contain at most 100 paths.')
+        for item in paths:
+            if unsafe(item) or len(item) > 500:
+                raise ValueError(f'The paths value for {who} contains an invalid path.')
+        if deliverable.get('fails_on_base') is True and paths == []:
+            raise ValueError(f'The paths value for {who} must contain at least one path when fails_on_base is true.')
+    else:
+        for field in ('path', 'change', 'command', 'directory', 'fails_on_base', 'paths'):
+            if field in deliverable:
+                raise ValueError(f'The {field} field is only allowed on a command deliverable ({who}).'
+                                 if field in ('fails_on_base', 'paths', 'command', 'directory')
+                                 else f'The {field} field is only allowed on a file deliverable ({who}).')
+    return deliverable
+
+
+def validate_subtask(task, index):
+    if not isinstance(task, dict):
+        raise ValueError(f'tasks.{index} must be an object.')
+    title = require_string(task.get('title'), f'tasks.{index}.title', 160)
+    brief = require_string(task.get('brief'), f'tasks.{index}.brief', 8000)
+    deliverables = task.get('deliverables', [])
+    if deliverables is None:
+        deliverables = []
+    if not isinstance(deliverables, list) or len(deliverables) > 5:
+        raise ValueError(f'tasks.{index}.deliverables must be a list of at most 5 items.')
+    ids = []
+    checked = []
+    for offset, deliverable in enumerate(deliverables):
+        checked.append(validate_deliverable(deliverable, offset))
+        ids.append(deliverable.get('id'))
+    repeated = sorted({item for item in ids if isinstance(item, str) and ids.count(item) > 1})
+    if repeated:
+        raise ValueError('Each deliverable id must be unique within the subtask. Repeated: ' + ', '.join(repeated) + '.')
+    return {'title': title, 'brief': brief, 'deliverables': checked}
+
+
+def validate_group(payload):
+    extra = [key for key in payload if key not in ALLOWED_TOP]
+    if extra:
+        raise ValueError('The request body contains unsupported top-level keys.')
+    if not isinstance(payload.get('project_id'), int) or isinstance(payload.get('project_id'), bool) or payload['project_id'] < 1:
+        raise ValueError('The project_id field must be an integer of at least 1.')
+    require_string(payload.get('title'), 'title', 160)
+    require_string(payload.get('brief'), 'brief', 8000)
+    if 'status' in payload and payload['status'] not in STATUSES:
+        raise ValueError('The status field must be backlog or todo.')
+    for name in ('notify_coder', 'notify_on_settle'):
+        if name in payload:
+            require_bool(payload[name], name)
+    tasks = payload.get('tasks')
+    if tasks is None:
+        raise ValueError('The tasks field must be a nonempty ordered list.')
+    if not isinstance(tasks, list) or len(tasks) > 50 or tasks == []:
+        raise ValueError('The tasks field must be a nonempty ordered list of at most 50 subtasks.')
+    return [validate_subtask(task, index) for index, task in enumerate(tasks)]
+
+
+def unwrap_groups(payload):
+    if 'groups' in payload:
+        groups = payload['groups']
+        if not isinstance(groups, list) or len(groups) != 1 or not isinstance(groups[0], dict):
+            raise ValueError('Supply exactly one ordered group.')
+        return groups[0], 'groups'
+    return payload, 'object'
+
+
+def section_text(brief, heading):
+    match = re.search(
+        rf'(?im)^\s*(?:\*\*)?{heading}(?:\*\*)?\s*:\s*(.*?)(?=^\s*(?:\*\*)?(?:goal|acceptance|contract|builds on|deliverables)(?:\*\*)?\s*:|\Z)',
+        brief,
+        flags=re.S,
+    )
+    return match.group(1).strip() if match else ''
+
+
+def has_goal_and_acceptance(brief):
+    return bool(GOAL_RE.search(brief) and ACCEPTANCE_RE.search(brief))
+
+
+def only_final_gate(task):
+    goal = section_text(task['brief'], 'goal')
+    acceptance = section_text(task['brief'], 'acceptance')
+    blob = ' '.join(part for part in (task['title'], goal, acceptance) if part)
+    if not GATE_RE.search(blob):
+        return False
+    remainder = GATE_RE.sub(' ', blob)
+    words = [word.lower() for word in SUBSTANTIVE_RE.findall(remainder)]
+    ignored = {
+        'the', 'and', 'for', 'run', 'runs', 'running', 'then', 'with', 'this', 'that',
+        'subtask', 'task', 'group', 'open', 'opens', 'prepare', 'prepares', 'propose',
+        'proposes', 'complete', 'completes', 'submit', 'submits', 'file', 'files',
+        'pass', 'passes', 'passed', 'ready', 'candidate', 'bin', 'review', 'check',
+        'checks',
+    }
+    return [word for word in words if word not in ignored] == []
+
+
+def docs_only(task):
+    if not DOCS_RE.search(task['title'] + ' ' + task['brief']):
+        file_paths = [item.get('path') for item in task['deliverables'] if item.get('type') == 'file']
+        if file_paths and all(isinstance(path, str) and path.startswith('docs/') for path in file_paths):
+            return not any(item.get('type') == 'command' for item in task['deliverables'])
+        return False
+    if any(item.get('type') == 'command' for item in task['deliverables']):
+        return False
+    file_paths = [item.get('path') for item in task['deliverables'] if item.get('type') == 'file']
+    return all(not isinstance(path, str) or path.startswith('docs/') for path in file_paths)
+
+
+def failing_command(task):
+    for deliverable in task['deliverables']:
+        if deliverable.get('type') == 'command' and deliverable.get('fails_on_base') is True:
+            return deliverable
+    return None
+
+
+def detect_kind(kind, group):
+    if kind in ('bug', 'feature'):
+        return kind
+    brief = group.get('brief', '')
+    title = group.get('title', '')
+    if brief.startswith('Filed by the outer loop.') or title.startswith('Doctor '):
+        return 'bug'
+    return 'feature'
+
+
+def policy_errors(kind, group, tasks):
+    errors = []
+    for index, task in enumerate(tasks):
+        if not has_goal_and_acceptance(task['brief']):
+            errors.append({
+                'error': 'brief_incomplete',
+                'message': f'Subtask {index + 1} ({task["title"]}) is missing Goal or Acceptance.',
+                'next': 'Add Goal and Acceptance to that subtask brief.',
+            })
+        if only_final_gate(task):
+            errors.append({
+                'error': 'final_gate',
+                'message': f'Subtask {index + 1} ({task["title"]}) only restates the final gate.',
+                'next': 'Give that subtask real work. Do not add a gate-only subtask.',
+            })
+    if kind != 'bug':
+        return errors
+    code_changing = [task for task in tasks if not docs_only(task)]
+    if not code_changing:
+        errors.append({
+            'error': 'fails_on_base_missing',
+            'message': 'This bug group has no failing command.',
+            'next': 'Put fails_on_base true and paths on BugBot\'s command in the first code-changing subtask.',
+        })
+        return errors
+    command = failing_command(code_changing[0])
+    if command is None:
+        errors.append({
+            'error': 'fails_on_base_missing',
+            'message': 'The first code-changing subtask has no fails_on_base command.',
+            'next': 'Put fails_on_base true and paths on BugBot\'s command in the first code-changing subtask.',
+        })
+    return errors
+
+
+def build_parser():
+    parser = ProofParser(
+        prog='bin/task-group-check',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Validate a task-group payload without creating a group. Print one JSON object.',
+        epilog="""
+The payload uses the same fields as POST /api/v1/task-groups. The check does not
+create a group and does not add a proof field.
+
+A bug group needs fails_on_base true on the first code-changing subtask.
+A subtask that only restates the final gate fails.
+
+Examples:
+  bin/task-group-check --payload group.json
+  bin/task-group-check --payload group.json --kind bug
+""",
+    )
+    parser.add_argument('--payload', required=True, help='JSON file, or - for stdin.')
+    parser.add_argument('--kind', choices=('auto', 'bug', 'feature'), default='auto',
+                        help='bug requires a failing command. auto detects outer-loop and Doctor groups.')
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        raw = load_payload(args.payload)
+        group, wrapper = unwrap_groups(raw)
+        if wrapper == 'groups':
+            extra = [key for key in raw if key != 'groups']
+            if extra:
+                raise ValueError('The request body contains unsupported top-level keys.')
+        tasks = validate_group(group)
+    except (OSError, ValueError) as error:
+        token = 'group_invalid' if 'one ordered group' in str(error) else 'validation.failed'
+        if 'must be a valid JSON object' in str(error) or 'unsupported top-level' in str(error) or 'duplicate top-level' in str(error):
+            token = 'validation.failed'
+        return fail({
+            'passed': False,
+            'error': token,
+            'message': str(error),
+            'next': 'Fix the named field so it matches CreateTaskGroupRequest, and keep exactly one ordered group.',
+        })
+    kind = detect_kind(args.kind, group)
+    errors = policy_errors(kind, group, tasks)
+    if errors:
+        first = errors[0]
+        return fail({
+            'passed': False,
+            'kind': kind,
+            'error': first['error'],
+            'message': first['message'],
+            'next': first['next'],
+            'errors': errors,
+            'subtasks': len(tasks),
+        })
+    emit({
+        'passed': True,
+        'kind': kind,
+        'subtasks': len(tasks),
+        'fails_on_base': any(failing_command(task) is not None for task in tasks),
+    })
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError, ValueError) as error:
+        sys.exit(fail({
+            'passed': False,
+            'error': 'validation.failed',
+            'message': str(error),
+            'next': 'Fix the payload so it is one valid CreateTaskGroupRequest object.',
+        }))

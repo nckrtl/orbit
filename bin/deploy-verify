@@ -1,0 +1,248 @@
+#!/usr/bin/env python3
+"""Read-only verification that a merged SHA is live.
+
+Pass when the live APP_VERSION equals the given merged SHA, /up is up, and
+gateway status is ok. Those are the checks recorded in ops verified-merges.
+Print one JSON object. Do not deploy and do not roll back.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import sys
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+DEFAULT_UP = 'https://gateway.orbit/up'
+DEFAULT_STATUS = 'https://gateway.orbit/api/v1/gateway/status'
+
+
+class ProofParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f'{self.prog}: {message}', file=sys.stderr)
+        print('Pass --sha with the merged commit, or run --help. Do not deploy.', file=sys.stderr)
+        sys.exit(2)
+
+
+def emit(payload):
+    sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=True) + '\n')
+    sys.stdout.flush()
+
+
+def fail(payload, exit_code=1):
+    emit(payload)
+    print(payload.get('next') or payload.get('message'), file=sys.stderr)
+    return exit_code
+
+
+def version_matches(expected, observed):
+    if not isinstance(expected, str) or not isinstance(observed, str):
+        return False
+    expected = expected.lower()
+    observed = observed.lower()
+    return expected.startswith(observed) or observed.startswith(expected)
+
+
+def decode_body(raw):
+    text = raw.decode('utf-8', errors='replace').strip()
+    if text == '':
+        return {}
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return {'text': text}
+
+
+def fetch(url, timeout=15):
+    request = urllib.request.Request(url, method='GET', headers={'Accept': 'application/json'})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return {
+                'url': url,
+                'status_code': response.getcode(),
+                'body': decode_body(response.read()),
+            }
+    except urllib.error.HTTPError as error:
+        return {
+            'url': url,
+            'status_code': error.code,
+            'body': decode_body(error.read() if error.fp else b''),
+        }
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        raise RuntimeError(f'{url} is not reachable: {error}') from error
+
+
+def load_fixture(path):
+    payload = json.loads(Path(path).read_text())
+    if not isinstance(payload, dict):
+        raise ValueError('The fixture must be a JSON object.')
+    return payload
+
+
+def fixture_record(fixture, key, url):
+    record = fixture.get(key)
+    if not isinstance(record, dict):
+        raise ValueError(f'The fixture is missing {key}.')
+    return {
+        'url': record.get('url') or url,
+        'status_code': record.get('status_code'),
+        'body': record.get('body') if isinstance(record.get('body'), dict) else {},
+    }
+
+
+def up_ok(record):
+    if record.get('status_code') != 200:
+        return False
+    body = record.get('body') or {}
+    status = body.get('status')
+    return status in (None, 'ok', 'up') or body.get('message') in ('OK', 'ok')
+
+
+def status_ok(record):
+    if record.get('status_code') != 200:
+        return False
+    body = record.get('body') or {}
+    data = body.get('data') if isinstance(body.get('data'), dict) else body
+    return data.get('status') == 'ok'
+
+
+def observed_version(record, fixture=None):
+    if fixture and isinstance(fixture.get('app_version'), str):
+        return fixture['app_version']
+    body = record.get('body') or {}
+    data = body.get('data') if isinstance(body.get('data'), dict) else body
+    version = data.get('version')
+    return version if isinstance(version, str) else None
+
+
+def evaluate(sha, up_url, status_url, up, status, source, fixture=None):
+    version = observed_version(status, fixture)
+    payload = {
+        'source': source,
+        'expected_sha': sha,
+        'app_version': version,
+        'up': {'url': up.get('url') or up_url, 'status_code': up.get('status_code'), 'ok': up_ok(up)},
+        'gateway_status': {
+            'url': status.get('url') or status_url,
+            'status_code': status.get('status_code'),
+            'ok': status_ok(status),
+            'status': ((status.get('body') or {}).get('data') or status.get('body') or {}).get('status'),
+        },
+    }
+    if not up_ok(up):
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'up_failed',
+            'message': '/up is not up.',
+            'next': 'Do not treat the deploy as verified. Check /up, then run again.',
+        })
+    if not status_ok(status):
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'status_failed',
+            'message': 'Gateway status is not ok.',
+            'next': 'Do not treat the deploy as verified. Check gateway status, then run again.',
+        })
+    if not version_matches(sha, version or ''):
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'version_mismatch',
+            'message': f'Live APP_VERSION {version!r} is not the merged SHA {sha}.',
+            'next': 'Do not treat the deploy as verified. Wait for this SHA to be live, or pass the live SHA.',
+        })
+    payload['passed'] = True
+    emit(payload)
+    return 0
+
+
+def build_parser():
+    parser = ProofParser(
+        prog='bin/deploy-verify',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Read-only check that a merged SHA is live. Print one JSON object. Do not deploy and do not roll back.',
+        epilog="""
+The checks match ops verified-merges: tip APP_VERSION, /up, and gateway status.
+
+--dry-run prints the URLs and the expected SHA and does not call them.
+--fixture evaluates a recorded response set. A fixture pass is not a live pass.
+
+Examples:
+  bin/deploy-verify --sha 2f214816deaed1d961f4a64c7f40762088c64226 --dry-run
+  bin/deploy-verify --sha 2f214816deae --fixture apps/e2e/tests/Fixtures/delivery-line/verified-merge-2026-10-01.json
+""",
+    )
+    parser.add_argument('--sha', required=True, help='Merged commit expected as live APP_VERSION.')
+    parser.add_argument('--up-url', default=os.environ.get('ORBIT_DEPLOY_UP_URL', DEFAULT_UP),
+                        help=f'/up URL. Default: {DEFAULT_UP}.')
+    parser.add_argument('--status-url', default=os.environ.get('ORBIT_DEPLOY_STATUS_URL', DEFAULT_STATUS),
+                        help=f'Gateway status URL. Default: {DEFAULT_STATUS}.')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Print the URLs and expected SHA. Do not call them.')
+    parser.add_argument('--fixture', help='Recorded /up and gateway-status responses instead of live calls.')
+    return parser
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.sha.strip() == '':
+        return fail({
+            'passed': False,
+            'error': 'usage',
+            'message': 'The --sha value must not be empty.',
+            'next': 'Pass --sha with the merged commit. Do not deploy.',
+        }, 2)
+    payload = {
+        'expected_sha': args.sha,
+        'up_url': args.up_url,
+        'status_url': args.status_url,
+    }
+    if args.dry_run:
+        payload['dry_run'] = True
+        payload['source'] = 'dry-run'
+        emit(payload)
+        return 0
+    if args.fixture:
+        try:
+            fixture = load_fixture(args.fixture)
+            up = fixture_record(fixture, 'up', args.up_url)
+            status = fixture_record(fixture, 'gateway_status', args.status_url)
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            return fail({
+                **payload,
+                'passed': False,
+                'error': 'usage',
+                'message': str(error),
+                'next': 'Pass a recorded fixture of the 2026-10-01 marker shape. Do not invent a live pass.',
+            }, 2)
+        return evaluate(args.sha, args.up_url, args.status_url, up, status, 'fixture', fixture)
+    try:
+        up = fetch(args.up_url)
+        status = fetch(args.status_url)
+    except RuntimeError as error:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'unreachable',
+            'message': str(error),
+            'next': 'Production is not reachable from this machine. Use --dry-run or --fixture. Do not invent a live pass.',
+        })
+    return evaluate(args.sha, args.up_url, args.status_url, up, status, 'live')
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError) as error:
+        sys.exit(fail({
+            'passed': False,
+            'error': 'unreachable',
+            'message': str(error),
+            'next': 'Production is not reachable from this machine. Use --dry-run or --fixture. Do not invent a live pass.',
+        }))

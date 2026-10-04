@@ -1,0 +1,34 @@
+{
+  "project_id": 1,
+  "title": "Doctor instance.php_fpm_projection_mismatch on instance 12",
+  "brief": "Filed by the outer loop.\n\nSymptom: PHP-FPM projection mismatch.",
+  "status": "backlog",
+  "tasks": [
+    {
+      "title": "Update the owning page",
+      "brief": "**Goal:** Document the projection fix.\n\n**Contract:** Instance releases.\n\n**Builds on:** None.\n\n**Deliverables:**\n- The owning page matches the fix, or records that no page changes.\n\n**Acceptance:** The instance page matches the fix, or records that no page changes.",
+      "deliverables": [
+        {
+          "id": "docs",
+          "type": "review",
+          "description": "The owning page matches the fix, or no page changes"
+        }
+      ]
+    },
+    {
+      "title": "Reproduce and fix the projection mismatch",
+      "brief": "**Goal:** The PHP-FPM projection matches the Instance.\n\n**Contract:** Instance releases.\n\n**Builds on:** The docs subtask.\n\n**Deliverables:**\n- The scoped command fails on the start commit and passes on the working tree.\n\n**Acceptance:** The scoped command fails on the start commit and passes on the working tree.",
+      "deliverables": [
+        {
+          "id": "layout-repro",
+          "type": "command",
+          "description": "The home-screen regression fails before the fix",
+          "command": "vendor/bin/pest tests/Feature/HomeScreenTest.php --filter='home screen layout'",
+          "directory": "apps/gateway",
+          "fails_on_base": true,
+          "paths": ["apps/gateway/tests/Feature/HomeScreenTest.php"]
+        }
+      ]
+    }
+  ]
+}
