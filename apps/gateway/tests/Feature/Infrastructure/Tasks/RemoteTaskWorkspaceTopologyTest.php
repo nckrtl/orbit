@@ -162,6 +162,15 @@ it('reports retained incomplete acquisition state instead of already held and pr
     }
 });
 
+it('skips release when the workspace checkout is already gone', function (): void {
+    [$topology, $instance, $checkout] = topology_workspace(true, true);
+    new Filesystem()->deleteDirectory($checkout);
+
+    $topology->release($instance, 42);
+
+    expect(is_dir($checkout))->toBeFalse();
+});
+
 it('reports an unavailable acquisition but skips release in a workspace without the harness', function (string $operation): void {
     [$topology, $instance, $checkout] = topology_workspace(false, false);
 
