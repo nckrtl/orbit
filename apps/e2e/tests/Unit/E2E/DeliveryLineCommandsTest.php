@@ -354,6 +354,22 @@ describe('delivery-line proof commands', function (): void {
             ->and($result['stderr'])->toContain('Do not merge');
     });
 
+    it('does not treat the detector, leftover-refusal test, or leftover fixture as product leftovers', function (): void {
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/946',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-commented-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-946-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(0)
+            ->and($result['json']['passed'] ?? null)->toBeTrue()
+            ->and($result['json']['error'] ?? null)->toBeNull()
+            ->and($result['json']['leftovers'] ?? null)->toBe([])
+            ->and($result['json']['kept_reviews'] ?? null)->toBe(1);
+    });
+
     it('prints deploy-verify dry-run URLs without calling them', function (): void {
         $result = deliveryLineRun('deploy-verify', [
             '--sha', '2f214816deaed1d961f4a64c7f40762088c64226',

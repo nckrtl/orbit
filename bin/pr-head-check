@@ -28,6 +28,9 @@ NAMED_LEFTOVERS = (
 )
 NEGATION = re.compile(r'(?i)\b(?:does not|do not|adds no|changes no|never|without|forbids?|not)\b')
 PR_RE = re.compile(r'(?:https://github.com/)?([^/#]+)/([^/#]+)(?:/pull/|#)(\d+)')
+DETECTOR_PATH = 'bin/pr-head-check'
+REFUSAL_TEST_PATH = 'apps/e2e/tests/Unit/E2E/DeliveryLineCommandsTest.php'
+DELIVERY_LINE_FIXTURE_PREFIX = 'apps/e2e/tests/Fixtures/delivery-line/'
 
 
 class ProofParser(argparse.ArgumentParser):
@@ -132,6 +135,16 @@ def required_check(runs, head):
     return matches[-1]
 
 
+def leftover_scan_exempt(filename):
+    if not isinstance(filename, str) or filename == '':
+        return False
+    if filename == DETECTOR_PATH:
+        return True
+    if filename == REFUSAL_TEST_PATH:
+        return True
+    return filename.startswith(DELIVERY_LINE_FIXTURE_PREFIX)
+
+
 def leftover_in_line(line):
     if NEGATION.search(line):
         return None
@@ -147,6 +160,8 @@ def leftovers_in_files(files):
         if not isinstance(entry, dict):
             raise RuntimeError('The pull request file list was unparsable.')
         filename = entry.get('filename', '')
+        if leftover_scan_exempt(filename):
+            continue
         patch = entry.get('patch') or ''
         for line in patch.splitlines():
             if not line.startswith('+') or line.startswith('+++'):
@@ -192,6 +207,9 @@ COMMENTED on the current head is enough. Pass does not require APPROVED.
 
 Newer gh wraps paginated check-runs in a one-element array (--slurp). Older
 gh has no --slurp and returns the check-runs object. Both shapes are flattened.
+
+The leftover scan skips this detector, the leftover-refusal test, and recorded
+delivery-line fixtures. A leftover added in product code still fails.
 
 On mismatch the JSON names it. The next step is to review the new head.
 
