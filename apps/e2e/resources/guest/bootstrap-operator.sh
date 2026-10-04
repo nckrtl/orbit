@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 export DEBIAN_FRONTEND=noninteractive
+# The harness runs this right after the container starts, before DHCP and DNS are up.
+for _ in $(seq 1 90); do
+  getent hosts archive.ubuntu.com >/dev/null && break
+  sleep 1
+done
+getent hosts archive.ubuntu.com >/dev/null || { echo 'The operator container has no DNS after 90 seconds.' >&2; exit 1; }
 apt-get update
 apt-get install --yes --no-install-recommends sudo openssh-server git curl ca-certificates python3 iproute2 wireguard-tools resolvconf composer php8.5-cli php8.5-fpm php8.5-curl php8.5-mbstring php8.5-xml php8.5-sqlite3 php8.5-zip php8.5-bcmath php8.5-intl unzip
 if ! id orbit >/dev/null 2>&1; then
