@@ -618,6 +618,10 @@
   },
   "redirects": [
     {
+      "source": "/decisions/0198-post-direction-requests-to-opsbot-immediately",
+      "destination": "/reference/tasks#direction-wakes-opsbot-immediately"
+    },
+    {
       "source": "/decisions/0195-request-topologies-for-review-with-an-operator-container",
       "destination": "/reference/incus-topologies#the-reviewer-requests-discovery"
     },

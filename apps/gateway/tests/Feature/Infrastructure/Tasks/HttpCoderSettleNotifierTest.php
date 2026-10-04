@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSessionDecision;
 use App\Domain\Tasks\TaskSessionNextAction;
@@ -154,4 +156,108 @@ it('does not fail settle when Coder refuses the webhook', function (): void {
 
     expect(fn () => app(HttpCoderSettleNotifier::class)->notify(coder_settle_group()))
         ->not->toThrow(Throwable::class);
+});
+
+it('posts a direction request to OpsBot and records the headers and body', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://coder.example.test/hooks/settle' => Http::response(['ok' => true]),
+        'https://opsbot.example.test/hooks/direction' => Http::response(['ok' => true]),
+    ]);
+    config()->set('orbit.tasks.coder_webhook_url', 'https://coder.example.test/hooks/settle');
+    config()->set('orbit.tasks.coder_webhook_secret', 'coder-secret');
+    config()->set('orbit.tasks.opsbot_webhook_url', 'https://opsbot.example.test/hooks/direction');
+    config()->set('orbit.tasks.opsbot_webhook_secret', 'opsbot-secret');
+    $group = coder_settle_group();
+    $question = 'Which database should this subtask use?';
+    $reason = 'The implementer is blocked: The mirror is down.';
+    $group->update(TaskAssistance::attributes(AssistanceKind::Direction, $question, $reason));
+
+    app(HttpCoderSettleNotifier::class)->assistance($group->fresh() ?? $group, $reason);
+
+    $recorded = Http::recorded(fn (Request $request): bool => $request->url() === 'https://opsbot.example.test/hooks/direction');
+    expect($recorded)->toHaveCount(1);
+    [$request] = $recorded[0];
+    expect($request->hasHeader('Content-Type', 'application/json'))->toBeTrue()
+        ->and($request->hasHeader('Authorization', 'Bearer opsbot-secret'))->toBeTrue()
+        ->and($request->hasHeader('X-Automation-Key', 'opsbot-secret'))->toBeTrue()
+        ->and($request->isJson())->toBeTrue()
+        ->and($request->data())->toBe([
+            'event' => 'task_group.assistance_requested',
+            'task_group_id' => $group->id,
+            'title' => 'Settle notify',
+            'kind' => 'direction',
+            'question' => $question,
+            'reason' => $reason,
+        ])
+        ->and($request->body())->not->toContain('opsbot-secret');
+});
+
+it('does not post settle, escalate, or non-direction assistance to OpsBot', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://coder.example.test/hooks/settle' => Http::response(['ok' => true]),
+        'https://opsbot.example.test/hooks/direction' => Http::response(['ok' => true]),
+    ]);
+    config()->set('orbit.tasks.coder_webhook_url', 'https://coder.example.test/hooks/settle');
+    config()->set('orbit.tasks.coder_webhook_secret', 'coder-secret');
+    config()->set('orbit.tasks.opsbot_webhook_url', 'https://opsbot.example.test/hooks/direction');
+    config()->set('orbit.tasks.opsbot_webhook_secret', 'opsbot-secret');
+    $group = coder_settle_group();
+    $notifier = app(HttpCoderSettleNotifier::class);
+    $observation = new TaskSessionObservation(
+        taskId: 42,
+        taskStatus: 'running',
+        taskTitle: 'Models',
+        taskBrief: 'Store the records.',
+        groupId: $group->id,
+        groupStatus: $group->status->value,
+        title: $group->title,
+        brief: $group->brief,
+        hasPendingSubtasks: false,
+        prUrl: $group->pr_url,
+        ciSummary: null,
+        threads: [
+            new TaskThreadObservation(
+                threadId: 1,
+                role: TaskThreadRole::Implementer,
+                sessState: 'idle',
+                idle: true,
+                pendingApprovalId: null,
+                pendingUserInputId: null,
+                lastAssistantText: 'Need a human.',
+                lastUserText: null,
+                hasNewCommitsSinceThreadStart: false,
+                prUrl: $group->pr_url,
+                ciSummary: null,
+            ),
+        ],
+    );
+    $decision = new TaskSessionDecision(TaskSessionNextAction::EscalateCoder, 0.2, 'Choice confidence 0.2 is below 0.75.');
+
+    $notifier->notify($group);
+    $notifier->escalate($group, $observation, $decision);
+    $group->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'The implementer thread failed.'));
+    $notifier->assistance($group->fresh() ?? $group, 'The implementer thread failed.');
+
+    Http::assertNotSent(fn (Request $request): bool => $request->url() === 'https://opsbot.example.test/hooks/direction');
+    Http::assertSentCount(3);
+});
+
+it('skips the OpsBot post when the URL or secret is missing', function (): void {
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://coder.example.test/hooks/settle' => Http::response(['ok' => true]),
+    ]);
+    config()->set('orbit.tasks.coder_webhook_url', 'https://coder.example.test/hooks/settle');
+    config()->set('orbit.tasks.coder_webhook_secret', 'coder-secret');
+    config()->set('orbit.tasks.opsbot_webhook_url', 'https://opsbot.example.test/hooks/direction');
+    config()->set('orbit.tasks.opsbot_webhook_secret', null);
+    $group = coder_settle_group();
+    $group->update(TaskAssistance::attributes(AssistanceKind::Direction, 'Which database?', 'Which database?'));
+
+    app(HttpCoderSettleNotifier::class)->assistance($group->fresh() ?? $group, 'Which database?');
+
+    Http::assertSent(fn (Request $request): bool => $request->url() === 'https://coder.example.test/hooks/settle');
+    Http::assertNotSent(fn (Request $request): bool => $request->url() === 'https://opsbot.example.test/hooks/direction');
 });
