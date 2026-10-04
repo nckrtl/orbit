@@ -165,6 +165,8 @@ Before it deletes more source, the Gateway checks each remaining source again. A
 
 Before deleting source, the Gateway runs `find -P` as the task worker on directories that worker owns. It clears setgid and sticky bits and gives the group `rwx`, which also sets the ACL mask. This lets the managed user remove the worker's entries without changing ownership or following symlinks. The managed user enters the validated tree before switching to the worker, so the quarantine's parent stays private.
 
+The worker's `find` does not descend into directories it cannot enter; it skips them instead of failing the mode fix. This is safe because the worker cannot have created entries inside those directories, so skipping them cannot leave worker-owned entries that need the mode fix behind. The managed user then deletes the whole tree, including the skipped directories.
+
 Two things otherwise block that removal. On Ubuntu 26.04, uutils `mkdir` 0.8.0 can set setgid and sticky bits on directories created under a default ACL; GNU `mkdir` and `os.mkdir` do not. The ACL alone does not override the sticky bit. A directory created with an explicit mode such as `0755`, as Pest does for its graph, narrows the mask to `r-x` and hides the managed user's ACL entry.
 
 Source finalization checks dirty and unpublished content before moving the tree into quarantine. A normal refusal leaves the source at its original path and does not change Git's worktree entry. It then moves the validated tree into quarantine and writes an authenticated receipt before deletion.

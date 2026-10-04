@@ -580,6 +580,50 @@ describe('TaskWorkspaceAcl', function (): void {
         expect(orb178_run_allow_failure($workerStateAccess)->succeeded())->toBeFalse();
     });
 
+    it('removes a quarantined source with managed-user directories the worker cannot enter', function (string $layout): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = null;
+        $siblingPath = null;
+        if ($layout === 'worktree') {
+            [$checkout, $instance, $siblingPath] = orb180_worktree_source(
+                $this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-private-removal',
+            );
+            $instance->update(['seed_repository' => $checkout->checkout_path]);
+            $this->source->inspectPrepared($instance);
+        } else {
+            $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-private-removal');
+        }
+        $private = $instance->checkout_path.'/storage/app/private';
+        $this->files->makeDirectory($private.'/nested', 0o755, true);
+        file_put_contents($private.'/nested/file', "managed\n");
+        chmod($private.'/nested', 0o700);
+        chmod($private, 0o700);
+        expect(trim(orb76_run(['stat', '-c', '%U', $private])->stdout))->toBe($this->node->user);
+        expect(orb178_run_allow_failure(['sudo', '-n', '-u', 'nobody', '--', 'test', '-x', $private])->succeeded())->toBeFalse();
+        orb76_run(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-seu', '--', $instance->checkout_path], <<<'BASH'
+            mkdir -p "$1/worker-directory/nested"
+            printf 'worker\n' > "$1/worker-directory/nested/file"
+            chmod g+s,+t -- "$1/worker-directory" "$1/worker-directory/nested"
+            BASH);
+        expect(fileperms($instance->checkout_path.'/worker-directory/nested') & 0o3000)->toBe(0o3000);
+        $member = orb180_record_source($this->removal, $instance, true);
+        $quarantine = orb180_quarantine_path($member);
+
+        $receipt = $this->removal->finalize($member);
+
+        expect($receipt)->toBe(trim(file_get_contents(orb180_receipt_path($member))));
+        expect(file_exists($quarantine))->toBeFalse();
+        expect(file_exists($instance->checkout_path))->toBeFalse();
+        if ($checkout !== null) {
+            expect(is_dir($checkout->checkout_path.'/.git'))->toBeTrue();
+            expect(is_dir($siblingPath))->toBeTrue();
+            $worktrees = orb76_run(['git', '-C', $checkout->checkout_path, 'worktree', 'list', '--porcelain'])->stdout;
+            expect($worktrees)->toContain($checkout->checkout_path, $siblingPath)
+                ->not->toContain($instance->checkout_path, $quarantine);
+            expect(trim(orb76_run(['git', '-C', $checkout->checkout_path, 'branch', '--list', $instance->branch])->stdout))->toBe($instance->branch);
+        }
+    })->with(['checkout', 'worktree']);
+
     it('finishes a worker-owned workspace removal after partial deletion leaves a damaged quarantined Git directory', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-partial-removal');
