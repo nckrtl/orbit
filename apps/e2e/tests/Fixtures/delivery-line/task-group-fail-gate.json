@@ -1,0 +1,19 @@
+{
+  "project_id": 1,
+  "title": "Add delivery-line proofs",
+  "brief": "Ship the four proof commands.",
+  "status": "backlog",
+  "tasks": [
+    {
+      "title": "Prepare the pull request",
+      "brief": "**Goal:** Run the final gate and prepare the pull request.\n\n**Acceptance:** bin/review-check passes and the pull request is ready.",
+      "deliverables": [
+        {
+          "id": "gate",
+          "type": "review",
+          "description": "Run the candidate gate and open the pull request"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "recorded_at": "2026-10-01T15:28:04Z",
+  "merge": "2f214816deaed1d961f4a64c7f40762088c64226",
+  "app_version": "2f214816deae",
+  "up": {
+    "url": "https://gateway.orbit/up",
+    "status_code": 200,
+    "body": {
+      "status": "ok"
+    }
+  },
+  "gateway_status": {
+    "url": "https://gateway.orbit/api/v1/gateway/status",
+    "status_code": 200,
+    "body": {
+      "data": {
+        "name": "orbit-gateway",
+        "status": "ok",
+        "version": "2f214816deae",
+        "php_version": "8.5.0",
+        "laravel_version": "13.0.0"
+      }
+    }
+  }
+}

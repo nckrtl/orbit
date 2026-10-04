@@ -716,6 +716,27 @@
             ]
         },
         {
+            "path": "docs/decisions/0197-keep-delivery-line-proofs-as-repo-commands.md",
+            "title": "ADR 0197: Keep delivery-line proofs as repository commands",
+            "kind": "decision",
+            "components": [
+                "apps/e2e"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Project",
+                "Subtask",
+                "Task",
+                "Task check"
+            ],
+            "governing_adrs": [
+                "0197"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -760,7 +781,8 @@
                 "0182",
                 "0190",
                 "0191",
-                "0196"
+                "0196",
+                "0197"
             ]
         },
         {
@@ -1130,6 +1152,27 @@
                 "Node",
                 "Process",
                 "Project"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/delivery-line.md",
+            "title": "Delivery-line proofs",
+            "kind": "reference",
+            "components": [
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Deliverable",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Subtask",
+                "Task",
+                "Task check"
             ],
             "governing_adrs": []
         },

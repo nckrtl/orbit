@@ -1,0 +1,406 @@
+#!/usr/bin/env python3
+"""Read-only check that a pull request head is reviewed and clean to merge.
+
+Pass only when one review has commit_id equal to the current pull request head,
+Required checks are success with that same head_sha, and the diff has no leftover
+already named by .agents/skills/merging-pull-requests/SKILL.md. Print one JSON
+object. Do not merge.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+SKILL = Path(__file__).resolve().parent.parent / '.agents/skills/merging-pull-requests/SKILL.md'
+NAMED_LEFTOVERS = (
+    ('auto-merge', re.compile(r'(?i)\bauto-merge\b|\s--auto\b')),
+    ('admin-merge', re.compile(r'(?i)\s--admin\b')),
+    ('tasks-merge', re.compile(r'(?i)\b(?:orbit\s+)?tasks:merge\b|\btasks-merge\b')),
+    ('gateway-merge-endpoint', re.compile(r'(?i)gateway merge endpoint|/task(?:-groups?)?/.+merge|tasks:merge')),
+    ('merge-sdk-contract', re.compile(r'(?i)\bmerge\b.*\bsdk contract\b|\bMergeTask(?:Group)?Request\b')),
+    ('merge-mcp-contract', re.compile(r'(?i)\bmerge\b.*\bmcp contract\b|\btasks-merge\b')),
+    ('merge-api-contract', re.compile(r'(?i)\bmerge\b.*\bapi contract\b')),
+    ('ruleset', re.compile(r'(?i)\bruleset\b')),
+    ('app-permission', re.compile(r'(?i)\bapp permission\b')),
+)
+NEGATION = re.compile(r'(?i)\b(?:does not|do not|adds no|changes no|never|without|forbids?|not)\b')
+PR_RE = re.compile(r'(?:https://github.com/)?([^/#]+)/([^/#]+)(?:/pull/|#)(\d+)')
+DETECTOR_PATH = 'bin/pr-head-check'
+REFUSAL_TEST_PATH = 'apps/e2e/tests/Unit/E2E/DeliveryLineCommandsTest.php'
+DELIVERY_LINE_FIXTURE_PREFIX = 'apps/e2e/tests/Fixtures/delivery-line/'
+
+
+class ProofParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f'{self.prog}: {message}', file=sys.stderr)
+        print('Pass --pr with the pull request URL, or run --help. Do not merge.', file=sys.stderr)
+        sys.exit(2)
+
+
+def emit(payload):
+    sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=True) + '\n')
+    sys.stdout.flush()
+
+
+def fail(payload, exit_code=1):
+    emit(payload)
+    print(payload.get('next') or payload.get('message'), file=sys.stderr)
+    return exit_code
+
+
+def parse_pr(value):
+    match = PR_RE.search(value)
+    if not match:
+        raise ValueError('Pass --pr as https://github.com/owner/repo/pull/123 or owner/repo#123.')
+    return match.group(1), match.group(2), int(match.group(3))
+
+
+def read_json(path):
+    return json.loads(Path(path).read_text())
+
+
+_GH_SLURP = None
+
+
+def gh_supports_slurp():
+    global _GH_SLURP
+    if _GH_SLURP is None:
+        result = subprocess.run(['gh', 'api', '--help'], capture_output=True, text=True)
+        _GH_SLURP = '--slurp' in f'{result.stdout}\n{result.stderr}'
+    return _GH_SLURP
+
+
+def gh_json(owner, repo, path, paginate=False):
+    command = ['gh', 'api']
+    if paginate:
+        command.append('--paginate')
+        if gh_supports_slurp():
+            command.append('--slurp')
+    command.append(f'repos/{owner}/{repo}/{path}')
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or f'gh api repos/{owner}/{repo}/{path} failed.')
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(f'The GitHub response for {path} was unparsable.') from error
+
+
+def check_runs_page(item):
+    return isinstance(item, dict) and isinstance(item.get('check_runs'), list)
+
+
+def flatten_pages(payload):
+    if check_runs_page(payload):
+        return list(payload['check_runs'])
+    if isinstance(payload, list):
+        if not payload:
+            return payload
+        if all(isinstance(item, list) for item in payload):
+            flat = []
+            for page in payload:
+                flat.extend(page)
+            return flat
+        if all(check_runs_page(item) for item in payload):
+            flat = []
+            for page in payload:
+                flat.extend(page['check_runs'])
+            return flat
+        return payload
+    raise RuntimeError('The GitHub response was unparsable.')
+
+
+def kept_reviews(reviews, head):
+    kept = []
+    for review in reviews:
+        if not isinstance(review, dict):
+            raise RuntimeError('The review list was unparsable.')
+        state = review.get('state')
+        commit = review.get('commit_id')
+        if state in ('DISMISSED', 'PENDING'):
+            continue
+        if commit == head:
+            kept.append(review)
+    return kept
+
+
+def required_check(runs, head):
+    matches = [run for run in runs if isinstance(run, dict) and run.get('name') == 'Required checks']
+    if not matches:
+        return None
+    return matches[-1]
+
+
+def leftover_scan_exempt(filename):
+    if not isinstance(filename, str) or filename == '':
+        return False
+    if filename == DETECTOR_PATH:
+        return True
+    if filename == REFUSAL_TEST_PATH:
+        return True
+    return filename.startswith(DELIVERY_LINE_FIXTURE_PREFIX)
+
+
+def leftover_in_line(line):
+    if NEGATION.search(line):
+        return None
+    for name, pattern in NAMED_LEFTOVERS:
+        if pattern.search(line):
+            return name
+    return None
+
+
+def leftovers_in_files(files):
+    found = []
+    for entry in files:
+        if not isinstance(entry, dict):
+            raise RuntimeError('The pull request file list was unparsable.')
+        filename = entry.get('filename', '')
+        if leftover_scan_exempt(filename):
+            continue
+        patch = entry.get('patch') or ''
+        for line in patch.splitlines():
+            if not line.startswith('+') or line.startswith('+++'):
+                continue
+            name = leftover_in_line(line[1:])
+            if name and (filename, name) not in [(item['path'], item['leftover']) for item in found]:
+                found.append({'path': filename, 'leftover': name, 'line': line[1:].strip()})
+    return found
+
+
+def skill_names_present(path):
+    text = Path(path).read_text() if Path(path).is_file() else ''
+    missing = []
+    for name, pattern in NAMED_LEFTOVERS:
+        if name in ('merge-sdk-contract', 'merge-mcp-contract', 'merge-api-contract'):
+            if not re.search(r'(?i)SDK contract|MCP contract|API contract', text):
+                missing.append(name)
+            continue
+        if name == 'admin-merge' and '--admin' not in text:
+            missing.append(name)
+        elif name == 'auto-merge' and 'auto-merge' not in text and '--auto' not in text:
+            missing.append(name)
+        elif name == 'tasks-merge' and 'tasks:merge' not in text:
+            missing.append(name)
+        elif name == 'gateway-merge-endpoint' and 'Gateway merge endpoint' not in text:
+            missing.append(name)
+        elif name == 'ruleset' and 'ruleset' not in text:
+            missing.append(name)
+        elif name == 'app-permission' and 'App permission' not in text:
+            missing.append(name)
+    return missing
+
+
+def build_parser():
+    parser = ProofParser(
+        prog='bin/pr-head-check',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Read-only check that the current pull request head is reviewed and clean. Print one JSON object. Do not merge.',
+        epilog="""
+Pass only when one review commit_id equals the current head, Required checks
+succeeded with that head_sha, and the diff has no leftover the merge skill names.
+COMMENTED on the current head is enough. Pass does not require APPROVED.
+
+Newer gh wraps paginated check-runs in a one-element array (--slurp). Older
+gh has no --slurp and returns the check-runs object. Both shapes are flattened.
+
+The leftover scan skips this detector, the leftover-refusal test, and recorded
+delivery-line fixtures. A leftover added in product code still fails.
+
+On mismatch the JSON names it. The next step is to review the new head.
+
+Examples:
+  bin/pr-head-check --pr https://github.com/nckrtl/orbit/pull/945
+""",
+    )
+    parser.add_argument('--pr', required=True, help='GitHub pull request URL or owner/repo#number.')
+    parser.add_argument('--pull-file', help='Recorded pull request JSON instead of gh api.')
+    parser.add_argument('--reviews-file', help='Recorded reviews JSON instead of gh api.')
+    parser.add_argument('--checks-file', help='Recorded check-runs JSON instead of gh api.')
+    parser.add_argument('--files-file', help='Recorded pull-request files JSON instead of gh api.')
+    parser.add_argument('--skill-file', default=str(SKILL), help=argparse.SUPPRESS)
+    return parser
+
+
+def load_records(args, owner, repo, number, head):
+    if args.pull_file:
+        pull = read_json(args.pull_file)
+    else:
+        pull = gh_json(owner, repo, f'pulls/{number}')
+    if not isinstance(pull, dict) or not isinstance(pull.get('head'), dict):
+        raise RuntimeError('The pull request record was unparsable.')
+    current = pull['head'].get('sha')
+    if not isinstance(current, str) or current == '':
+        raise RuntimeError('The pull request head SHA was unreadable.')
+    if args.reviews_file:
+        reviews = flatten_pages(read_json(args.reviews_file))
+    else:
+        reviews = flatten_pages(gh_json(owner, repo, f'pulls/{number}/reviews', paginate=True))
+    if args.checks_file:
+        checks = flatten_pages(read_json(args.checks_file))
+    else:
+        checks = flatten_pages(gh_json(owner, repo, f'commits/{current}/check-runs', paginate=True))
+    if args.files_file:
+        files = flatten_pages(read_json(args.files_file))
+    else:
+        files = flatten_pages(gh_json(owner, repo, f'pulls/{number}/files', paginate=True))
+    return pull, current, reviews, checks, files
+
+
+def main(argv=None):
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    try:
+        owner, repo, number = parse_pr(args.pr)
+    except ValueError as error:
+        return fail({
+            'passed': False,
+            'error': 'usage',
+            'message': str(error),
+            'next': 'Pass --pr with the pull request URL. Do not merge.',
+        }, 2)
+    missing_names = skill_names_present(args.skill_file)
+    try:
+        pull, head, reviews, checks, files = load_records(args, owner, repo, number, None)
+    except (OSError, RuntimeError, json.JSONDecodeError) as error:
+        return fail({
+            'passed': False,
+            'error': 'review_unreadable',
+            'message': str(error),
+            'next': 'Re-read the pull request, reviews, and checks until the lists are complete. Do not merge.',
+        })
+    payload = {
+        'pull_request': f'{owner}/{repo}#{number}',
+        'head_sha': head,
+        'merged': bool(pull.get('merged')),
+    }
+    try:
+        kept = kept_reviews(reviews, head)
+        check = required_check(checks, head)
+        leftovers = leftovers_in_files(files)
+    except RuntimeError as error:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'review_unreadable',
+            'message': str(error),
+            'next': 'Re-read the reviews and checks until the lists are complete. Do not merge.',
+        })
+
+    if missing_names:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'leftover',
+            'message': 'The merge skill no longer names the leftover list this command enforces.',
+            'next': 'Restore the named leftovers in the merge skill. Do not merge.',
+            'missing_skill_names': missing_names,
+        })
+    if not reviews:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'review_missing',
+            'message': 'The review list is empty. No review has commit_id equal to the current head.',
+            'next': 'Review the current head. Do not merge.',
+            'reviews': 0,
+            'kept_reviews': 0,
+        })
+    if not kept:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'head_mismatch',
+            'message': 'No review has commit_id equal to the current pull request head.',
+            'next': 'Review the new head. Do not merge.',
+            'reviews': len(reviews),
+            'kept_reviews': 0,
+        })
+    if check is None:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'check_missing',
+            'message': 'No Required checks run exists for this head.',
+            'next': 'Wait for Required checks on this head, or review the new head. Do not merge.',
+            'kept_reviews': len(kept),
+        })
+    check_sha = check.get('head_sha')
+    if check_sha != head:
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'head_mismatch',
+            'message': f'Required checks head_sha {check_sha} is not the current pull request head.',
+            'next': 'Review the new head. Do not merge.',
+            'required_checks': {
+                'status': check.get('status'),
+                'conclusion': check.get('conclusion'),
+                'head_sha': check_sha,
+            },
+        })
+    if check.get('status') != 'completed':
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'check_pending',
+            'message': 'Required checks are not completed on this head.',
+            'next': 'Wait for Required checks on this head. Do not merge.',
+            'required_checks': {
+                'status': check.get('status'),
+                'conclusion': check.get('conclusion'),
+                'head_sha': check_sha,
+            },
+        })
+    if check.get('conclusion') != 'success':
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'check_failed',
+            'message': f'Required checks conclusion is {check.get("conclusion")!r}, not success.',
+            'next': 'Wait for Required checks to succeed on this head, or review the new head. Do not merge.',
+            'required_checks': {
+                'status': check.get('status'),
+                'conclusion': check.get('conclusion'),
+                'head_sha': check_sha,
+            },
+        })
+    if leftovers:
+        named = ', '.join(sorted({item['leftover'] for item in leftovers}))
+        return fail({
+            **payload,
+            'passed': False,
+            'error': 'leftover',
+            'message': f'The diff adds a leftover the merge skill already names: {named}.',
+            'next': 'Remove the named leftover. Do not merge.',
+            'leftovers': leftovers,
+        })
+    emit({
+        **payload,
+        'passed': True,
+        'reviews': len(reviews),
+        'kept_reviews': len(kept),
+        'required_checks': {
+            'status': check.get('status'),
+            'conclusion': check.get('conclusion'),
+            'head_sha': check_sha,
+        },
+        'leftovers': [],
+    })
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError) as error:
+        sys.exit(fail({
+            'passed': False,
+            'error': 'review_unreadable',
+            'message': str(error),
+            'next': 'Re-read the pull request until the lists are complete. Do not merge.',
+        }))

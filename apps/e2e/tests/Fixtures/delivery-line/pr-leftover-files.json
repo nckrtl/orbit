@@ -1,0 +1,6 @@
+[
+  {
+    "filename": "apps/cli/app/Commands/Tasks/MergeCommand.php",
+    "patch": "@@ -0,0 +1,5 @@\n+<?php\n+final class MergeCommand\n+{\n+    protected $signature = 'tasks:merge {pr}';\n+}\n"
+  }
+]
