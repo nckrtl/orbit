@@ -138,6 +138,10 @@ describe('delivery-line proof commands', function (): void {
             expect($result['stdout'])->toContain('SSL_CERT_FILE')
                 ->and($result['stdout'])->toContain("Orbit's root CA");
         }
+        if ($script === 'pr-head-check') {
+            expect($result['stdout'])->toContain('--slurp')
+                ->and($result['stdout'])->toContain('COMMENTED');
+        }
     })->with([
         'bug-repro' => ['bug-repro'],
         'task-group-check' => ['task-group-check'],
@@ -304,6 +308,36 @@ describe('delivery-line proof commands', function (): void {
             ->and($result['json']['passed'] ?? null)->toBeTrue()
             ->and($result['json']['kept_reviews'] ?? null)->toBe(1)
             ->and(data_get($result['json'], 'required_checks.conclusion'))->toBe('success');
+    });
+
+    it('finds Required checks in a slurped one-element array of the check-runs object', function (): void {
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/1',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-pass-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-slurped-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(0)
+            ->and($result['json']['passed'] ?? null)->toBeTrue()
+            ->and($result['json']['error'] ?? null)->toBeNull()
+            ->and(data_get($result['json'], 'required_checks.conclusion'))->toBe('success')
+            ->and(data_get($result['json'], 'required_checks.head_sha'))->toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+    });
+
+    it('keeps a COMMENTED review on the current head and does not require APPROVED', function (): void {
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/1',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-commented-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(0)
+            ->and($result['json']['passed'] ?? null)->toBeTrue()
+            ->and($result['json']['kept_reviews'] ?? null)->toBe(1);
     });
 
     it('names a tasks:merge leftover and refuses to merge', function (): void {

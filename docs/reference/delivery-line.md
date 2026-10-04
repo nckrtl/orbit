@@ -119,9 +119,9 @@ bin/pr-head-check --pr URL
 | `--pr` | required | A GitHub pull request URL or `owner/repo#number`. |
 | `--pull-file`, `--reviews-file`, `--checks-file`, `--files-file` | GitHub through `gh api` | Recorded JSON for tests. |
 
-The command keeps a review only when its `commit_id` equals the current full head SHA and its state is not `DISMISSED` or `PENDING`. Pass needs one kept review. An empty successful review list is missing. A failed, partial, or unparsable read is unreadable and is not treated as empty.
+The command keeps a review only when its `commit_id` equals the current full head SHA and its state is not `DISMISSED` or `PENDING`. `COMMENTED` counts. Pass does not require `APPROVED`. GitHub refuses `APPROVE` from the pull request author. An empty successful review list is missing. A failed, partial, or unparsable read is unreadable and is not treated as empty.
 
-On that same full head SHA, the GitHub Actions check run named `Required checks` must have `status` `completed` and `conclusion` `success`. That run's `head_sha` must equal the pull request head. A check that is not completed is pending. A completed check whose conclusion is not `success` is failed. No run with that name is missing. The admin bypass is not a successful check.
+On that same full head SHA, the GitHub Actions check run named `Required checks` must have `status` `completed` and `conclusion` `success`. That run's `head_sha` must equal the pull request head. Newer `gh` wraps `gh api --paginate --slurp` check-runs in a one-element array of the check-runs object. Older `gh` has no `--slurp` and returns the object. Both shapes flatten to the `check_runs` list. A check that is not completed is pending. A completed check whose conclusion is not `success` is failed. No run with that name is missing. The admin bypass is not a successful check.
 
 The diff fails when it adds a leftover the merge skill already names: GitHub auto-merge, `--auto`, `--admin`, an `orbit tasks:merge` command, a Gateway merge endpoint, a merge SDK, MCP, or API contract, a ruleset change, or an App permission change. Documentation that states those leftovers stay forbidden is not a leftover.
 

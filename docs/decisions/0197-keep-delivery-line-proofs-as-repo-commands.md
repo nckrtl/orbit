@@ -29,6 +29,8 @@ The commands do not file a task, merge, deploy, or roll back. Instance rollback 
 
 `bin/bug-repro` names current main only when the local `origin/main` or `main` SHA matches `git ls-remote origin main`. It does not fetch. A cached ref that differs is `main_stale`. `bin/deploy-verify` tells the operator to set `SSL_CERT_FILE` to Orbit's root CA when HTTPS fails certificate verification. An unreachable result from one machine is not a reason to change the live checks.
 
+`bin/pr-head-check` flattens both a bare check-runs object and the one-element array `gh api --paginate --slurp` wraps around it. It omits `--slurp` on older `gh` that do not have the flag. A `COMMENTED` review on the current head is enough; pass does not require `APPROVED`.
+
 ## Rejected alternatives
 
 - A `proof` field on a subtask: the Orbit Tasks policy forbids it, and `fails_on_base` already names the failing command.

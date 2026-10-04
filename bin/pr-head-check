@@ -60,10 +60,23 @@ def read_json(path):
     return json.loads(Path(path).read_text())
 
 
-def gh_json(owner, repo, path, slurp=False):
+_GH_SLURP = None
+
+
+def gh_supports_slurp():
+    global _GH_SLURP
+    if _GH_SLURP is None:
+        result = subprocess.run(['gh', 'api', '--help'], capture_output=True, text=True)
+        _GH_SLURP = '--slurp' in f'{result.stdout}\n{result.stderr}'
+    return _GH_SLURP
+
+
+def gh_json(owner, repo, path, paginate=False):
     command = ['gh', 'api']
-    if slurp:
-        command.extend(['--paginate', '--slurp'])
+    if paginate:
+        command.append('--paginate')
+        if gh_supports_slurp():
+            command.append('--slurp')
     command.append(f'repos/{owner}/{repo}/{path}')
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
@@ -74,16 +87,27 @@ def gh_json(owner, repo, path, slurp=False):
         raise RuntimeError(f'The GitHub response for {path} was unparsable.') from error
 
 
+def check_runs_page(item):
+    return isinstance(item, dict) and isinstance(item.get('check_runs'), list)
+
+
 def flatten_pages(payload):
+    if check_runs_page(payload):
+        return list(payload['check_runs'])
     if isinstance(payload, list):
-        if payload and all(isinstance(item, list) for item in payload):
+        if not payload:
+            return payload
+        if all(isinstance(item, list) for item in payload):
             flat = []
             for page in payload:
                 flat.extend(page)
             return flat
+        if all(check_runs_page(item) for item in payload):
+            flat = []
+            for page in payload:
+                flat.extend(page['check_runs'])
+            return flat
         return payload
-    if isinstance(payload, dict) and isinstance(payload.get('check_runs'), list):
-        return payload['check_runs']
     raise RuntimeError('The GitHub response was unparsable.')
 
 
@@ -164,6 +188,10 @@ def build_parser():
         epilog="""
 Pass only when one review commit_id equals the current head, Required checks
 succeeded with that head_sha, and the diff has no leftover the merge skill names.
+COMMENTED on the current head is enough. Pass does not require APPROVED.
+
+Newer gh wraps paginated check-runs in a one-element array (--slurp). Older
+gh has no --slurp and returns the check-runs object. Both shapes are flattened.
 
 On mismatch the JSON names it. The next step is to review the new head.
 
@@ -193,15 +221,15 @@ def load_records(args, owner, repo, number, head):
     if args.reviews_file:
         reviews = flatten_pages(read_json(args.reviews_file))
     else:
-        reviews = flatten_pages(gh_json(owner, repo, f'pulls/{number}/reviews', slurp=True))
+        reviews = flatten_pages(gh_json(owner, repo, f'pulls/{number}/reviews', paginate=True))
     if args.checks_file:
         checks = flatten_pages(read_json(args.checks_file))
     else:
-        checks = flatten_pages(gh_json(owner, repo, f'commits/{current}/check-runs', slurp=True))
+        checks = flatten_pages(gh_json(owner, repo, f'commits/{current}/check-runs', paginate=True))
     if args.files_file:
         files = flatten_pages(read_json(args.files_file))
     else:
-        files = flatten_pages(gh_json(owner, repo, f'pulls/{number}/files', slurp=True))
+        files = flatten_pages(gh_json(owner, repo, f'pulls/{number}/files', paginate=True))
     return pull, current, reviews, checks, files
 
 
