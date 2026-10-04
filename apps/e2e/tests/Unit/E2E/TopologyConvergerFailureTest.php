@@ -127,14 +127,14 @@ function failing_converger_batch(
 }
 
 describe('TopologyConverger failures', function () {
-    it('reports typed app provisioning evidence without exposing command output', function () {
-        Process::fake(function (PendingProcess $process) {
+    it('reports typed node provisioning evidence without exposing command output', function (string $script) {
+        Process::fake(function (PendingProcess $process) use ($script) {
             $command = $process->command;
             assert(is_array($command));
             if (($command[0] ?? null) === 'python3') {
                 return failing_converger_batch(
                     $process,
-                    'converge-app-dev.sh',
+                    $script,
                     'private stdout',
                     "Node provisioning failed at step [base-packages] with error [node.package_install_failed].\n"
                     .'Bearer private-token',
@@ -144,7 +144,7 @@ describe('TopologyConverger failures', function () {
 
             return failing_converger_process_result(
                 $command,
-                'converge-app-dev.sh',
+                $script,
                 'private stdout',
                 "Node provisioning failed at step [base-packages] with error [node.package_install_failed].\n"
                 .'Bearer private-token',
@@ -162,14 +162,14 @@ describe('TopologyConverger failures', function () {
         } catch (RuntimeException $exception) {
             expect($exception->getMessage())
                 ->toBe(
-                    'Guest convergence script converge-app-dev.sh failed on orbit-e2e-tst-123-aaaaaaaa-gateway '
+                    "Guest convergence script {$script} failed on orbit-e2e-tst-123-aaaaaaaa-gateway "
                     ."with exit code 1 at step base-packages (node.package_install_failed).\n"
                     ."Node provisioning failed at step [base-packages] with error [node.package_install_failed].\n"
                     .'Bearer [REDACTED]',
                 )
                 ->not->toContain('private stdout', 'private-token');
         }
-    });
+    })->with(['converge-app-dev.sh', 'converge-operator.sh']);
 });
 
 describe('TopologyConverger guest failures', function () {
