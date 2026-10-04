@@ -48,6 +48,7 @@ final readonly class TopologySnapshotRefresher
         private TopologySnapshotAvailability $availability,
         private int $refreshLockTimeoutSeconds = 3600,
         private ?TopologySnapshotReplacementStore $replacements = null,
+        private bool $keepFailedColdBuild = false,
     ) {}
 
     public function request(string $mainSha, bool $allowCold = false): RefreshResult
@@ -639,6 +640,12 @@ final readonly class TopologySnapshotRefresher
     private function rollback(?TopologySnapshotGeneration $generation): bool
     {
         if ($generation === null) {
+            // Opt-in for diagnosis: leave the failed cold build's guests to inspect. Its operation identity stays on
+            // the guests, so the next recover-legacy cleans them up.
+            if ($this->keepFailedColdBuild) {
+                return true;
+            }
+
             return $this->builder->cleanupCold($this->operation);
         }
 

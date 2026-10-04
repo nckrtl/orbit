@@ -186,6 +186,8 @@ A new recovery also archives a failed journal when the promoted generation diffe
 
 After a verified teardown, the snapshot's original guests are gone. So snapshot guests that are present can only come from a later cold build that stopped without a journal entry, such as an interrupted `rebuild`. Recovery cleans up that build's resources by its operation identity before it constructs. It refuses when such a guest lacks the harness owner, carries an issue, or when the guests belong to more than one operation.
 
+To diagnose a failing cold build, set `ORBIT_E2E_KEEP_FAILED_COLD_BUILD=1` for that run. The failed build then keeps its guests on the host to inspect, instead of cleaning them up. The guests keep their operation identity, so the next `recover-legacy` removes them. Leave the setting unset otherwise.
+
 Every recovery result includes `error`, `recovery_evidence`, `recovery_phase`, and `next_action`. Never run `incus delete`, remove a manifest, or edit the journal by hand. Recovery depends on that evidence to resume safely.
 
 ## Locks
