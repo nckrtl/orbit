@@ -91,7 +91,7 @@ final readonly class WorkDocumentCleanupAction
                 ->where(fn ($query) => $query->where('pending', true)->orWhere('retained_fence', true))
                 ->where('next_attempt_at', '<=', now())
                 ->where(fn ($query) => $query->whereNull('claim_expires_at')->orWhere('claim_expires_at', '<=', now()))
-                ->orderBy('next_attempt_at')->orderBy('id')->limit(100)->lockForUpdate()->get();
+                ->orderByDesc('pending')->orderBy('next_attempt_at')->orderBy('id')->limit(100)->lockForUpdate()->get();
             $claims = [];
             foreach ($records as $record) {
                 $token = bin2hex(random_bytes(32));
@@ -118,7 +118,7 @@ final readonly class WorkDocumentCleanupAction
                 || (! $record->retained_fence && ProjectDocumentUpload::query()->where('storage_key', $key)->where('state', 'abandoned')->exists())) {
                 throw $this->conflict();
             }
-            // Compatibility handoff for removals committed by earlier versions of the Gateway.
+            // Removal retains published rows until this gated transactional handoff.
             $published = ProjectDocumentUpload::query()->where('storage_key', $key)->where('state', 'published')->lockForUpdate()->get();
             if ($record->retained_fence && $published->isNotEmpty()) {
                 throw $this->conflict();

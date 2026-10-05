@@ -176,6 +176,31 @@ it('recovers expired process claims without consuming unexpired claims and bound
     expect(ProjectDocumentCleanup::query()->first()->storage_key)->toBe('removed-0');
 });
 
+it('claims pending tombstones and pending fences before more than 100 older idle fences', function (): void {
+    $this->freezeTime();
+    deletion_provider();
+    for ($i = 0; $i < 101; $i++) {
+        $key = 'idle-'.$i;
+        ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => $key, 'state' => 'abandoned']);
+        ProjectDocumentCleanup::query()->create(['storage_key' => $key, 'retained_fence' => true,
+            'pending' => false, 'next_attempt_at' => now()->subMinutes(10)]);
+    }
+    $tombstone = ProjectDocumentCleanup::query()->create(['storage_key' => 'pending-removal', 'next_attempt_at' => now()]);
+    ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => 'pending-fence', 'state' => 'abandoned']);
+    $fence = ProjectDocumentCleanup::query()->create(['storage_key' => 'pending-fence', 'retained_fence' => true, 'next_attempt_at' => now()]);
+    deletion_resume();
+
+    expect(deletion_work())->toMatchArray(['claimed_count' => 100, 'deleted_count' => 100, 'failed_count' => 0]);
+
+    expect($tombstone->fresh())->toBeNull();
+    expect($fence->fresh())->pending->toBeFalse()->retained_fence->toBeTrue();
+    expect(array_slice(array_column(deletion_requests(), 'path'), 0, 2))
+        ->toBe(['/fixture-bucket/pending-removal', '/fixture-bucket/pending-fence']);
+    expect(ProjectDocumentCleanup::query()->where('retained_fence', true)->count())->toBe(102);
+    expect(deletion_work())->toMatchArray(['claimed_count' => 3, 'deleted_count' => 3, 'failed_count' => 0]);
+    expect(ProjectDocumentCleanup::query()->where('next_attempt_at', '<=', now())->count())->toBe(0);
+});
+
 it('commits the retained published-row handoff but never deletes conflicting committed or active keys', function (): void {
     deletion_provider(['removed' => 'body']);
     $published = ProjectDocumentUpload::query()->create(['project_id' => 999, 'storage_key' => 'removed', 'state' => 'published']);
@@ -209,6 +234,9 @@ it('deletes Project removal bodies without touching unknown objects or tracked p
         app(DocumentTreeAction::class)->removeProject($project->id);
         $project->delete();
     });
+    expect($upload->fresh()->state)->toBe('published');
+    expect($version->fresh())->toBeNull();
+    expect($conflict->fresh())->not->toBeNull();
     $conflict->refresh()->update(['next_attempt_at' => now()]);
     $journal = app(ProbeJournal::class);
     $probe = $journal->create(ProjectDocumentStorage::query()->findOrFail(1));

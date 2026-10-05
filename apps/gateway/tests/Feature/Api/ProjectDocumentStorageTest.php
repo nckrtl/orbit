@@ -49,8 +49,8 @@ function document_storage_gateway(): Node
 function document_storage_input(): array
 {
     return [
-        'endpoint' => 'https://qho6e.upcloudobjects.com', 'region' => 'europe-2',
-        'bucket' => 'orbit-project-documents', 'access_key_id' => 'sentinel-access-key',
+        'endpoint' => 'https://s3.example.test', 'region' => 'example-1',
+        'bucket' => 'project-documents-example', 'access_key_id' => 'sentinel-access-key',
         'secret_access_key' => 'sentinel-secret-key',
     ];
 }
@@ -147,9 +147,9 @@ describe('Project document storage', function (): void {
 
         $response = $this->putJson('/api/v1/project-document-storage', document_storage_input())
             ->assertOk()->assertJsonPath('data.configured', true)
-            ->assertJsonPath('data.endpoint', 'https://qho6e.upcloudobjects.com')
-            ->assertJsonPath('data.region', 'europe-2')
-            ->assertJsonPath('data.bucket', 'orbit-project-documents');
+            ->assertJsonPath('data.endpoint', 'https://s3.example.test')
+            ->assertJsonPath('data.region', 'example-1')
+            ->assertJsonPath('data.bucket', 'project-documents-example');
         $storage = ProjectDocumentStorage::query()->findOrFail(1);
         foreach (['access_key_id', 'secret_access_key'] as $field) {
             $plaintext = document_storage_input()[$field];
@@ -166,15 +166,15 @@ describe('Project document storage', function (): void {
         foreach ($provider->calls as $call) {
             expect($call['command']['Key'])->toBe($key);
             expect($call['command']['@http'])->toMatchArray(['connect_timeout' => 2, 'timeout' => 5, 'read_timeout' => 5, 'allow_redirects' => false]);
-            expect($call['request']->getUri()->getHost())->toBe('qho6e.upcloudobjects.com');
-            expect($call['request']->getUri()->getPath())->toBe('/orbit-project-documents/'.$key);
-            expect($call['request']->getHeaderLine('Authorization'))->toContain('AWS4-HMAC-SHA256', '/europe-2/s3/aws4_request');
+            expect($call['request']->getUri()->getHost())->toBe('s3.example.test');
+            expect($call['request']->getUri()->getPath())->toBe('/project-documents-example/'.$key);
+            expect($call['request']->getHeaderLine('Authorization'))->toContain('AWS4-HMAC-SHA256', '/example-1/s3/aws4_request');
         }
         expect($provider->calls[1]['command']['@http']['stream'])->toBeFalse();
         expect($provider->calls[1]['command']['@http']['sink'])->toBeInstanceOf(ProbeResponseBuffer::class);
         expect($provider->calls[0]['command'])->not->toHaveKey('ACL');
         expect(config('filesystems.default'))->toBe($default);
-        expect(Storage::disk('documents')->getClient()->getRegion())->toBe('europe-2');
+        expect(Storage::disk('documents')->getClient()->getRegion())->toBe('example-1');
 
         $this->getJson('/api/v1/project-document-storage')->assertOk()
             ->assertJsonMissingPath('data.access_key_id')->assertJsonMissingPath('data.secret_access_key');
@@ -261,7 +261,7 @@ describe('Project document storage', function (): void {
         document_storage_gateway();
         $provider = document_storage_provider();
         $this->putJson('/api/v1/project-document-storage', document_storage_input())->assertOk();
-        $this->putJson('/api/v1/project-document-storage', ['region' => 'europe-2'])->assertOk();
+        $this->putJson('/api/v1/project-document-storage', ['region' => 'example-1'])->assertOk();
         $prior = ProjectDocumentStorage::query()->findOrFail(1)->getAttributes();
         $provider->failure = 'SignatureDoesNotMatch';
 
@@ -290,12 +290,12 @@ describe('Project document storage', function (): void {
         $oldAccess = $oldEncrypter->encryptString('lost-key-access');
         $oldSecret = $oldEncrypter->encryptString('lost-key-secret');
         DB::table('project_document_storages')->where('id', 1)->update([
-            'endpoint' => 'https://qho6e.upcloudobjects.com', 'region' => 'europe-2',
-            'bucket' => 'orbit-project-documents', 'access_key_id' => $oldAccess, 'secret_access_key' => $oldSecret,
+            'endpoint' => 'https://s3.example.test', 'region' => 'example-1',
+            'bucket' => 'project-documents-example', 'access_key_id' => $oldAccess, 'secret_access_key' => $oldSecret,
         ]);
         expect(fn () => Crypt::decryptString($oldAccess))->toThrow(DecryptException::class);
         $this->getJson('/api/v1/project-document-storage')->assertOk()->assertJsonPath('data.configured', true);
-        $this->putJson('/api/v1/project-document-storage', ['region' => 'europe-2'])->assertStatus(503)
+        $this->putJson('/api/v1/project-document-storage', ['region' => 'example-1'])->assertStatus(503)
             ->assertJsonPath('error.code', 'project_documents.storage_unavailable');
         expect($provider->calls)->toBe([]);
         $replacement = ['access_key_id' => 'replacement-access', 'secret_access_key' => 'replacement-secret'];
