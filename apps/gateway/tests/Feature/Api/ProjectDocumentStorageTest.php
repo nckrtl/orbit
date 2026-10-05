@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\ProjectDocuments\CleanupGate;
 use App\Infrastructure\ProjectDocuments\DocumentsFilesystem;
 use App\Infrastructure\ProjectDocuments\ProbeResponseBuffer;
 use App\Models\Activity;
@@ -103,6 +104,28 @@ function document_storage_provider(?string $failure = null): object
 }
 
 describe('Project document storage', function (): void {
+    it('shows the local cleanup gate without rotating it or contacting storage and fails closed on unreadable state', function (): void {
+        document_storage_gateway();
+        $provider = document_storage_provider('NoSuchBucket');
+        $runtime = sys_get_temp_dir().'/orbit-document-gate-api-'.Str::uuid();
+        config(['orbit.document_cleanup_runtime' => $runtime]);
+        $this->beforeApplicationDestroyed(static fn (): bool => File::deleteDirectory($runtime));
+        $gate = app(CleanupGate::class);
+        $generation = $gate->invalidate()->generation;
+
+        $this->getJson('/api/v1/project-document-storage')->assertOk()
+            ->assertJsonPath('data.cleanup_state', 'paused')
+            ->assertJsonPath('data.cleanup_generation', $generation)
+            ->assertJsonPath('data.reconciliation_report_id', null);
+        expect($gate->status()->generation)->toBe($generation);
+        chmod($runtime.'/generation.json', 0000);
+        $this->getJson('/api/v1/project-document-storage')->assertOk()
+            ->assertJsonPath('data.cleanup_state', 'paused')
+            ->assertJsonPath('data.cleanup_generation', null)
+            ->assertJsonPath('data.reconciliation_report_id', null);
+        expect($provider->calls)->toBe([]);
+    });
+
     it('returns unconfigured redacted status without contacting S3', function (): void {
         document_storage_gateway();
         $provider = document_storage_provider('NoSuchBucket');

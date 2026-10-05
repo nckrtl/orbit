@@ -3,9 +3,9 @@ title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
   - apps/gateway/app/{Actions,Jobs}/ProjectDocuments/**
-  - apps/gateway/app/Data/ProjectDocuments/**
+  - apps/gateway/app/{Data/ProjectDocuments/**,Infrastructure/{ProjectDocuments/**,Gateway/{GatewayCleanupStartupRenderer,NativeGatewayFpmConverger}.php},Providers/DocumentsServiceProvider.php}
   - apps/gateway/app/Http/Requests/ProjectDocuments/**
-  - apps/gateway/app/Infrastructure/ProjectDocuments/**
+  - apps/gateway/artisan
   - apps/gateway/app/Models/ProjectDocument*.php
   - apps/gateway/app/Console/Commands/*Document{Probe,Cleanup}*.php
   - apps/gateway/database/migrations/*_create_project_document*_table*.php
@@ -182,7 +182,9 @@ Run the local commands as the Gateway service account, from the Gateway install 
 
 The shared status fields are `cleanup_state`, `cleanup_generation`, `reconciliation_report_id`, `pending_cleanup_count`, `oldest_pending_cleanup_at`, and `last_cleanup_error_code`. IDs and generations are opaque strings; times are UTC ISO 8601 or null. When no valid generation can be read, status reports paused with null generation and exits 1. A report ID is an identifier, not a path; resume rejects path traversal and arbitrary file input.
 
-Pause removes the permit under an exclusive cleanup-execution lock and waits for in-flight deletions to finish; each deletion holds that lock from its gate check through the provider result. Once pause returns, no deletion can start. Pause is idempotent in effect: every successful call leaves cleanup paused and invalidates prior reports. Commands fail closed if their lock or state files cannot be read or written. Use one stable lock file; replacing or unlinking that file cannot be used to create independent locks. A failed pause is not permission to restore: stop the services and repair local state before proceeding.
+Pause removes the permit under an exclusive cleanup-execution lock and waits for in-flight deletions to finish; each deletion holds that lock from its gate check through the provider result. Once pause returns, no deletion can start. Pause is idempotent in effect: every successful call leaves cleanup paused and invalidates prior reports. Commands fail closed if their lock or state files cannot be read or written.
+
+Use one stable lock file; replacing or unlinking that file cannot be used to create independent locks. The generation binds the lock's device and inode. An existing runtime directory with a missing or replaced lock needs repair with services stopped; startup does not recreate that lock. A failed pause is not permission to restore: stop the services and repair local state before proceeding.
 
 Status reports `cleanup_state` (`paused` or `running`), `cleanup_generation`, `reconciliation_report_id` (nullable), and pending-cleanup counts, without keys or credentials. The storage-show API adds these same gate fields. A pause or service restart invalidates any prior reconciliation report. Resume refuses without a completed report from the current generation, with unchanged database and bucket inventory since reconciliation. An invalid report returns a local nonzero exit status and leaves the gate paused.
 
@@ -192,7 +194,9 @@ Keep the generation, permit, and stable execution lock under `/run/orbit/project
 
 Actual Gateway service startup runs the invalidation hook under that same lock before accepting API traffic or starting scheduler and queue consumers. It removes the permit and report association and creates a fresh unpredictable generation atomically. Wire this ordering into the installed service lifecycle for the Gateway PHP-FPM pool and every scheduler/queue entry point, including independently restarted consumers.
 
-A consumer restart may conservatively pause the whole gate. Do not rely on a first scheduled job, an operator remembering pause, or a boot-only `/run` cleanup. Per-request application boot must not rotate a healthy generation. Hook failure prevents that service from starting; a manual consumer without established startup state remains paused. Tests must exercise the installed startup wiring, not only call the hook in isolation.
+The installed PHP-FPM service drop-in runs `project-documents:cleanup:invalidate` as the Gateway account in `ExecStartPre`. Gateway web convergence also runs that hook before activating the pool with a reload, because a reload does not run `ExecStartPre`. Hook failure prevents activation. The hook does not query the database or contact S3.
+
+Artisan also runs invalidation before `schedule:run`, `schedule:work`, `queue:work`, and `queue:listen` execute, including manual invocations. A consumer restart may conservatively pause the whole gate. Do not rely on a first scheduled job, an operator remembering pause, or a boot-only `/run` cleanup. Per-request application boot must not rotate a healthy generation. Hook failure prevents that service from starting; a manual consumer without established startup state remains paused. Tests must exercise the installed startup wiring, not only call the hook in isolation.
 
 ### Private reconciliation reports
 

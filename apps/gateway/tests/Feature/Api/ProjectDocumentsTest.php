@@ -24,6 +24,7 @@ beforeEach(function (): void {
     DB::rollBack();
     $home = sys_get_temp_dir().'/orbit-document-api-'.Str::uuid();
     mkdir($home, 0700, true);
+    config(['orbit.document_cleanup_runtime' => $home.'/cleanup-runtime']);
     touch($home.'/database.sqlite');
     config(['database.connections.sqlite.database' => $home.'/database.sqlite']);
     DB::purge('sqlite');

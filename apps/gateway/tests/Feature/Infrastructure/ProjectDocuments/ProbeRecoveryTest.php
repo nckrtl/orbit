@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\ProjectDocuments\ReconcileProbesAction;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\ProjectDocuments\CleanupGate;
 use App\Infrastructure\ProjectDocuments\ProbeJournal;
 use App\Models\Activity;
 use App\Models\Node;
@@ -77,6 +78,25 @@ function probe_recovery_provider(): object
 }
 
 describe('reserved probe recovery', function (): void {
+    it('reconciles only tracked synthetic probes while the document-body gate remains paused', function (): void {
+        mkdir($this->probeHome, 0700);
+        config(['orbit.document_cleanup_runtime' => $this->probeHome.'/runtime']);
+        $gate = app(CleanupGate::class);
+        $generation = $gate->invalidate()->generation;
+        $provider = probe_recovery_provider();
+        $record = app(ProbeJournal::class)->create(new ProjectDocumentStorage(probe_recovery_input()));
+        $provider->objects[$record->key()] = str_repeat('p', 32);
+        $provider->objects['project-documents/private-body'] = 'private document bytes';
+        $this->travel(2)->minutes();
+
+        expect(app(ReconcileProbesAction::class)->handle())->toBe(['attempted' => 1, 'succeeded' => 1, 'failed' => 0]);
+        expect(array_column($provider->calls, 'key'))->toBe([$record->key()]);
+        expect($provider->objects)->toBe(['project-documents/private-body' => 'private document bytes']);
+        expect($gate->status()->state)->toBe('paused');
+        expect($gate->status()->generation)->toBe($generation);
+        expect($gate->executeWithPermit(fn () => throw new RuntimeException('Document deletion ran')))->toBeFalse();
+    });
+
     it('commits encrypted credentials independently before PUT and fails configuration without losing that journal', function (): void {
         probe_recovery_gateway();
         $provider = probe_recovery_provider();

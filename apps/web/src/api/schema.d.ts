@@ -3955,6 +3955,9 @@ export interface components {
             pending_cleanup_count?: number;
             oldest_pending_cleanup_at?: string | null;
             last_cleanup_error_code?: string | null;
+            cleanup_state?: string;
+            cleanup_generation?: string | null;
+            reconciliation_report_id?: string | null;
         };
         DocumentEntry: {
             id?: number;

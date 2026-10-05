@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\ProjectDocuments;
 
+use App\Infrastructure\ProjectDocuments\CleanupGate;
 use App\Models\ProjectDocumentCleanup;
 use App\Models\ProjectDocumentStorage;
 
@@ -19,6 +20,9 @@ final readonly class DocumentStorageData
         public int $pendingCleanupCount = 0,
         public ?string $oldestPendingCleanupAt = null,
         public ?string $lastCleanupErrorCode = null,
+        public string $cleanupState = 'paused',
+        public ?string $cleanupGeneration = null,
+        public ?string $reconciliationReportId = null,
     ) {}
 
     public static function fromModel(ProjectDocumentStorage $storage): self
@@ -26,7 +30,12 @@ final readonly class DocumentStorageData
         $credentialsConfigured = $storage->getRawOriginal('access_key_id') !== null
             && $storage->getRawOriginal('secret_access_key') !== null;
 
+        $gate = app(CleanupGate::class)->status();
+
         return new self(
+            cleanupState: $gate->state,
+            cleanupGeneration: $gate->generation,
+            reconciliationReportId: $gate->reportId,
             configured: $credentialsConfigured && $storage->endpoint !== null && $storage->region !== null && $storage->bucket !== null,
             endpoint: $storage->endpoint,
             region: $storage->region,
@@ -52,6 +61,9 @@ final readonly class DocumentStorageData
             'pending_cleanup_count' => $this->pendingCleanupCount,
             'oldest_pending_cleanup_at' => $this->oldestPendingCleanupAt,
             'last_cleanup_error_code' => $this->lastCleanupErrorCode,
+            'cleanup_state' => $this->cleanupState,
+            'cleanup_generation' => $this->cleanupGeneration,
+            'reconciliation_report_id' => $this->reconciliationReportId,
         ];
     }
 }
