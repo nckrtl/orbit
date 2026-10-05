@@ -39,8 +39,10 @@ Each app stores its application directory explicitly as `path`, relative to the 
 | --- | --- |
 | `name` | Required lowercase ASCII DNS label, 1 through 63 characters, letters or digits at both ends and hyphens internally. Unique within the Project. Uppercase is invalid; `default` is an ordinary app name. |
 | `path` | Required canonical repository-relative directory, including `.` for the repository top level. |
-| `web_root` | Required member: a canonical non-dot directory relative to `path`, or null for a non-serving package. |
+| `web_root` | Required member: a canonical non-dot directory relative to `path`, or null. Null serving semantics depend on type and path, as described below. |
 | `type` | Required `laravel-app`, `monorepo`, `laravel-package`, or `node-package`. See [Project types](#project-types). |
+
+Null web root serves the application directory itself for `laravel-app`, `monorepo`, and package apps with a non-dot path. Only a package with path `.` and null web root is non-serving.
 
 Each path is 1 through 255 bytes, with segments containing only ASCII letters, digits, dots, underscores and hyphens. The composed serving path is at most 255 bytes. Paths accept `/` separators only, with no absolute prefix, drive prefix, backslash, NUL, empty segment, trailing slash, `.` segment other than the entire application path, or `..` segment. Resolution must stay inside the checkout or release, including after resolving symlinks. Configuration validation checks the lexical form; projection checks containment before making runtime changes.
 
@@ -90,7 +92,7 @@ The removed top-level Instance `route`, `domain`, `url`, `vite_port`, `agentatio
 
 Orbit durably records the requested map, prior map and runtime profiles, effective paths, owned file snapshots and completed steps before remote mutation. It preflights every affected app's canonical containment, distinct paths, source classification, web root, permissions and available runtime. It validates every existing Process, preset and Schedule against the new app path. Domains, Route IDs, provenance and ports are unchanged.
 
-An override update cannot change a retained app between a null web root and a non-null web root in either direction; it returns `app.serving_state_change_unsupported` (409) before remote work. This includes clearing an override when inheritance would change the app's serving state. Initial Instance creation or registration may supply a serving package override because provisioning reserves and publishes its required Route before activation. Migration also preserves an existing serving package override; it is not a new override mutation.
+An override update cannot change a retained app between serving and non-serving in either direction (only a package with path `.` and null web root is non-serving); it returns `app.serving_state_change_unsupported` (409) before remote work. This includes clearing an override when inheritance would change the app's serving state. Initial Instance creation or registration may supply a serving package override because provisioning reserves and publishes its required Route before activation. Migration also preserves an existing serving package override; it is not a new override mutation.
 
 Production override mutations return `app.production_path_update_unsupported` (409); migrated overrides remain readable and are inherited by single-app cloning, but production paths change only through source preparation in a separate feature.
 
@@ -112,13 +114,15 @@ The migration removes the Project and Instance `root` fields, `--root` flag and 
 | --- | --- | --- | --- |
 | `public` | `.` | `public` | A root-level application. |
 | `apps/site/public` | `apps/site` | `public` | Strip only the final path segment. |
-| `apps/site/web` | `apps/site` | `web` | Other supported roots also split at the final segment. |
-| `web` | `.` | `web` | A single non-public segment has the repository as parent. |
+| `apps/site/web` | `apps/site/web` | null | Keep the whole application and document-root directory. |
+| `web` | `web` | null | Serve the application directory itself. |
 | `.` on `laravel-package` or `node-package` | `.` | null | A non-serving package, not a Laravel application. No Route or FPM pool is invented. |
 
-For example, a Project's removed value `public` becomes `apps: [{"name":"web","path":".","web_root":"public","type":"laravel-app"}]`. An Instance whose removed override is `apps/site/public` becomes `app_overrides: {"web":{"path":"apps/site","web_root":"public"}}`. An absent removed override becomes `{}`; an explicit override equal to the Project value is still preserved. A package override with a web root other than `.` remains serving, with the package type and no PHP-FPM. Existing explicit Route domains stay the same; [generated domains change to include `web`](/reference/routes#select-a-domain-and-scope).
+For example, a Project's removed value `public` becomes `apps: [{"name":"web","path":".","web_root":"public","type":"laravel-app"}]`. An Instance whose removed override is `apps/site/public` becomes `app_overrides: {"web":{"path":"apps/site","web_root":"public"}}`. An absent removed override becomes `{}`; an explicit override equal to the Project value is still preserved. A package override with a removed root other than `.` remains serving (including a non-dot path with null web root), with the package type and no PHP-FPM. Existing explicit Route domains stay the same; [generated domains change to include `web`](/reference/routes#select-a-domain-and-scope).
 
 The migration associates existing environment values, Instance Processes, Schedules, Project definitions and app Routes with `web`. Node-owned Processes and Schedules keep null `app`. Existing single-app production environments, release links, dedicated FPM identities and pool associations keep their physical layout. Conversion is resumable and uses the existing Route replacement lifecycle for generated-domain cutover. Development Instances with a serving app acquire a generated Route if none exists, except task workspaces whose recorded mode is unrouted. Existing source-only production Instances keep their recorded unrouted mode; migration does not invent a public domain. There is no request compatibility period.
+
+Only a trailing `public` segment is stripped during conversion. All other supported non-dot roots retain their full directory as the app path and use null web root to serve that directory. Neither application directories nor document roots move. Production apps with null web root retain the release-root `<release>/.env` link with target `../../.env` to `<production-home>/.env`, even with a nested app path. Trailing-public apps retain their app-directory link and its original relative target depth. Migration performs no runtime or environment relocation.
 
 ### Named-app interfaces
 
@@ -141,7 +145,9 @@ An app selector is an exact name, not an app ID or path. Omission resolves the s
 
 Resource-ID start/stop/run/log/destroy operations use the resource's stored app and accept no new selector. Project slug change, transfer and removal process all affected apps. Instance domain rename affects only the selected app; it never changes the Instance name or sibling domains.
 
-Generated MCP schemas expose `apps`, `app_overrides` and `app` on the same operations as API requests. The web app's Project create/edit form has a repeatable app editor with name, path, web root and type; it sends the entire list. Instance detail lists every app with its effective paths and Route and edits the override map. Process/Schedule and definition forms have an app picker required for multi-app Projects; single-app forms send the sole name. Environment/log/dependency panels select an app. Route forms choose an app. Null web roots show as non-serving rather than a broken link.
+Generated MCP schemas expose `apps`, `app_overrides` and `app` on the same operations as API requests. The web app's Project create/edit form has a repeatable app editor with name, path, web root and type; it sends the entire list. Instance detail lists every app with its effective paths and Route and edits the override map. Process/Schedule and definition forms have an app picker required for multi-app Projects; single-app forms send the sole name. Environment/log/dependency panels select an app. Route forms choose an app.
+
+Only packages with path `.` and null web root show as non-serving rather than a broken link. Other null web roots serve the app directory itself.
 
 The web app displays the same validation codes, never chooses the first app, and uses no fallback to removed fields.
 
@@ -149,7 +155,7 @@ The web app displays the same validation codes, never chooses the first app, and
 
 Adding or changing an app preflights all affected development Instances and their effective paths, domain conflicts and runtime projections before publishing the list.
 
-An edit to the app list cannot change a retained name between null and non-null web root, in either direction, at the Project or effective Instance level. It returns `app.serving_state_change_unsupported` (409), even when an override masks the declared change or no Instance exists. Add a new app name with the intended serving state instead; remove the old app only after satisfying app-in-use checks.
+An edit to the app list cannot change a retained name between serving and non-serving, in either direction, at the Project or effective Instance level. Serving state follows the app type and effective path as well as its web root; null alone does not mean non-serving. It returns `app.serving_state_change_unsupported` (409), even when an override masks the declared change or no Instance exists. Add a new app name with the intended serving state instead; remove the old app only after satisfying app-in-use checks.
 
 Existing overrides remain for unchanged names and win over Project paths. Removing an app is refused while a Process, Schedule, Project definition, explicit Route, tracking configuration or environment configuration refers to it, or an Instance has an override for it. Generated Routes and pools can be removed by the app-list update itself.
 
@@ -171,10 +177,10 @@ The type belongs to each named app. Every Instance inherits that type; path over
 
 | App type | Web root | Route | PHP-FPM |
 | --- | --- | --- | --- |
-| `laravel-app` | Required non-null relative directory | Exactly one per active routed Instance/app pair | Yes; requires Laravel source in the app path |
-| `monorepo` | Required non-null relative directory | Exactly one per active routed Instance/app pair | Only when its app path classifies as Laravel source |
-| `laravel-package` | Null or a non-dot relative directory | Only when web root is non-null | No |
-| `node-package` | Null or a non-dot relative directory | Only when web root is non-null | No |
+| `laravel-app` | Non-dot relative directory, or null to serve the app directory | Exactly one per active routed Instance/app pair | Yes; requires Laravel source in the app path |
+| `monorepo` | Non-dot relative directory, or null to serve the app directory | Exactly one per active routed Instance/app pair | Only when its app path classifies as Laravel source |
+| `laravel-package` | Null or a non-dot relative directory | Unless path is `.` and web root is null | No |
+| `node-package` | Null or a non-dot relative directory | Unless path is `.` and web root is null | No |
 
 `.` is allowed as an application path, never as a serving web root. Non-serving packages need no `artisan` file. Unrouted task workspaces inherit apps but skip Route and serving-runtime preparation.
 
@@ -245,7 +251,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
 
-An app type or path change must keep every effective Instance app valid. A serving Route requires a non-null, non-dot web root; otherwise the update returns `route.target_web_root_unsupported`.
+An app type or path change must keep every effective Instance app valid. A serving Route requires a serving app with a contained composed document root (null serves the app directory); otherwise the update returns `route.target_web_root_unsupported`.
 
 ### Change source access
 
@@ -298,7 +304,7 @@ The Gateway returns these codes for Project requests. Named-app requests add the
 
 | New code | HTTP | Cause |
 | --- | --- | --- |
-| `project.apps_invalid` | 422 | Empty app list, missing app member, invalid name/type/path/web root, or a type that forbids null web root. Also local CLI JSON-list parse failure. |
+| `project.apps_invalid` | 422 | Empty app list, missing app member, invalid name/type/path/web root, or an invalid composed document root. Also local CLI JSON-list parse failure. |
 | `project.app_name_conflict` | 422 | Duplicate app name in the submitted list. |
 | `project.app_path_conflict` | 422 | Two effective apps share an application path, including after Instance overrides. |
 | `project.app_in_use` | 409 | Removing an app would leave an override, Process, Schedule, definition, explicit Route, tracking configuration or stored environment reference. |
@@ -311,7 +317,7 @@ The Gateway returns these codes for Project requests. Named-app requests add the
 | `instance.app_update_in_progress` | 409 | Another override map is recorded by an incomplete update. |
 | `instance.app_update_failed` | 409 | Override projection failed without a more specific existing code; identical retry resumes recovery. |
 | `app.production_path_update_unsupported` | 409 | An override update targets production, or an app-list change changes an existing production app's effective path, web root or type. |
-| `app.serving_state_change_unsupported` | 409 | A retained app's declared or effective serving state would change between null and non-null web root through an app-list or override edit, including override clearing. |
+| `app.serving_state_change_unsupported` | 409 | A retained app's declared or effective serving state would change between serving and non-serving through an app-list or override edit, including override clearing. |
 | `app.port_migration_conflict` | 409 | Port migration found conflicting retained transfer/withdrawal reservations; complete the named owning operations before retrying migration. |
 | `app.analytics_multi_app_unsupported` | 409 | An analytics read/enable targets a multi-app Project, or adding another app would affect an Instance with tracking hosts. |
 | `app.production_multi_app_unsupported` | 409 | Adding another app with production Instances present, or preparing production from a multi-app Project. |

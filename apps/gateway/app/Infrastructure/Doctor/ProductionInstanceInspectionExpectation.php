@@ -26,6 +26,7 @@ final readonly class ProductionInstanceInspectionExpectation
         public ?ProductionPhpRuntimeIdentity $runtime,
         public ?ProductionPhpRuntimeConfiguration $runtimeConfiguration,
         public ?ProductionPhpRuntimeConfiguration $initialRuntimeConfiguration,
+        public ?string $applicationPath = null,
     ) {}
 
     public function environment(): string

@@ -52,10 +52,11 @@ function rename_migration_rows(): object
         'repository_url' => 'https://example.test/rename.git',
         'default_branch' => 'main',
     ]);
-    // The schema at the rename migration has no source_access column yet.
+    // Historical fixtures must not run today's named-app model hooks.
     $project->offsetUnset('source_access');
-    $project->save();
-    $instance = Instance::query()->create([
+    $project->forceFill(['code' => 'REN', 'repository_identity' => 'example.test/rename']);
+    $project->saveQuietly();
+    $instance = new Instance([
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => 'dev',
@@ -63,6 +64,7 @@ function rename_migration_rows(): object
         'checkout_path' => '/srv/rename',
         'status' => 'active',
     ]);
+    $instance->saveQuietly();
     InstanceDeployment::query()->create([
         'instance_id' => $instance->id,
         'started_at' => now(),

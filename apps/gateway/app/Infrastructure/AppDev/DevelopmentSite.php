@@ -47,6 +47,7 @@ final readonly class DevelopmentSite
          */
         public bool $upstreamSystemRoots = false,
         public ?int $annotatorPort = null,
+        public ?string $applicationPath = null,
     ) {}
 
     public function asSecondary(): self
@@ -62,7 +63,9 @@ final readonly class DevelopmentSite
 
     public function applicationDirectory(): string
     {
-        return ApplicationDirectory::resolve($this->checkoutPath, $this->documentRoot);
+        return $this->applicationPath === null
+            ? ApplicationDirectory::resolve($this->checkoutPath, $this->documentRoot)
+            : ApplicationDirectory::resolvePath($this->checkoutPath, $this->applicationPath);
     }
 
     public function poolName(): string

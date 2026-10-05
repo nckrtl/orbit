@@ -23,7 +23,7 @@ A Route has one of three kinds. The kind never changes.
 | `custom_proxy` | The serving Node | A service on that Node's loopback or a Node Process. See [custom proxy Routes](#custom-proxy-routes). |
 | `analytics_tracking` | One Instance | Plausible's script and event paths. See [Analytics](/reference/analytics#publish-a-tracking-host). |
 
-Each active routed Instance has exactly one authoritative app Route for each app with a non-null web root. The association is unique by Instance and app, not just Instance. Non-serving packages and unrouted task workspaces have none. An Instance can temporarily lack required Routes while Orbit creates it, after a failed activation, or while Orbit removes it; it is not active until all required Routes are ready.
+Each active routed Instance has exactly one authoritative app Route for each serving app. Null web root serves the app directory itself; only a package with path `.` and null web root is non-serving. The association is unique by Instance and app, not just Instance. Non-serving packages and unrouted task workspaces have none. An Instance can temporarily lack required Routes while Orbit creates it, after a failed activation, or while Orbit removes it; it is not active until all required Routes are ready.
 
 A visitable development `default` serves its web root through `<checkout>/current` after release migration. Caddy resolves that link for PHP requests, so a deployment selects new code without changing the Route domain. Defaults without a Route are also kept current. [Development defaults](/reference/deployments#development-defaults) describes migration, atomic activation, and failure retention.
 
@@ -107,7 +107,7 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
 | `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
 | `route.target_inactive` | The Instance is not active. |
-| `route.target_web_root_unsupported` | The selected app has no supported relative web root, such as a package app with null web root. |
+| `route.target_web_root_unsupported` | The selected app has no supported relative web root, such as a package app with path `.` and null web root. |
 | `route.target_conflict` | The Instance/app pair already belongs to another authoritative Route. |
 | `route.router_required` | The Cluster has no active Router. |
 | `route.node_inactive`, `route.cluster_inactive` | The Instance's Node or Cluster, or the custom proxy's Node, is not active. |
@@ -115,7 +115,7 @@ The Gateway API accepts `POST /api/v1/routes` with an app Route body such as `{"
 | `route.upstream_unresolved` | The Process has no single Node-local listener. |
 | `route.process_conflict` | The Process is not a Node Process on the serving Node. |
 
-A Route target must have the Route's named app with a supported relative web root that is non-null. A package without a web root returns `route.target_web_root_unsupported` when explicitly routed. Existing non-serving apps cannot be made serving through app-list or override edits; those transitions return `app.serving_state_change_unsupported`. Provision a new serving app, or supply its serving override during initial Instance creation/registration. Selecting a missing app returns `app.not_found`. A custom proxy or analytics tracking Route rejects an app selector with existing `validation.failed`.
+A Route target must have the Route's named app with a contained composed document root. Null web root serves the app directory for Laravel apps, monorepos and non-dot package paths. A package with path `.` and null web root returns `route.target_web_root_unsupported` when explicitly routed. Existing non-serving apps cannot be made serving through app-list or override edits; those transitions return `app.serving_state_change_unsupported`. Provision a new serving app, or supply its serving override during initial Instance creation/registration. Selecting a missing app returns `app.not_found`. A custom proxy or analytics tracking Route rejects an app selector with existing `validation.failed`.
 
 | Change | Result |
 | --- | --- |

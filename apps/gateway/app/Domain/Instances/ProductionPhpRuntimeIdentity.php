@@ -28,6 +28,7 @@ final readonly class ProductionPhpRuntimeIdentity
         public string $pool,
         public string $socket,
         public string $documentRoot,
+        public ?string $applicationPath = null,
     ) {
         $this->runtimeDirectory = "/etc/orbit/php-fpm/{$user}";
         $this->generatedDirectory = "{$this->runtimeDirectory}/generated";
@@ -63,6 +64,7 @@ final readonly class ProductionPhpRuntimeIdentity
             pool: "orbit-{$user}",
             socket: "/run/php/{$user}.sock",
             documentRoot: $documentRoot,
+            applicationPath: $instance->applicationPath(),
         );
     }
 
@@ -114,6 +116,12 @@ final readonly class ProductionPhpRuntimeIdentity
 
     public function applicationDirectory(bool $initialRelease = false): string
     {
+        if ($this->applicationPath !== null) {
+            $base = $this->home.($initialRelease ? '/releases/initial' : '/current');
+
+            return ApplicationDirectory::resolvePath($base, $this->applicationPath);
+        }
+
         $root = substr($this->documentRoot, strlen($this->home) + 1);
         $base = $this->home;
 

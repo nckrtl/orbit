@@ -188,7 +188,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
     ): void {
         $instance = Instance::query()->with('project')->findOrFail($capture->instanceId);
         $environmentDirectory = $instance->source_is_laravel === true
-            ? ApplicationDirectory::resolve($path->value, $instance->root ?? $instance->project->root)
+            ? ApplicationDirectory::resolvePath($path->value, $instance->applicationPath())
             : $path->value;
         $remoteArchive = "/tmp/orbit-transfer-{$capture->instanceId}.tar";
         $this->copyArchive(

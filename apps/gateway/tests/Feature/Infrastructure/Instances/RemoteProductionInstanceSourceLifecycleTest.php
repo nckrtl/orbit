@@ -479,6 +479,29 @@ it('refuses to inspect a recorded production checkout outside the home or its re
  * @param  list<CommandResult>  $results
  * @return array{RemoteProductionInstanceSourceLifecycle, AppDevFakeSshExecutor, Instance}
  */
+it('prepares named app production source and release links for non-serving packages without Caddy access', function (string $type): void {
+    [$source, $ssh, $instance] = production_source_lifecycle([
+        new CommandResult(0, "main\t".str_repeat('a', 40)."\n", '', 1, false),
+        new CommandResult(0, "NONE\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+    ]);
+    $instance->project->update(['type' => $type, 'root' => '.']);
+    $instance->node->roles()->create(['role' => 'app-prod', 'status' => 'active']);
+    $instance->node->unsetRelation('roles');
+    $instance->update(['source_layout' => 'release', 'checkout_path' => $instance->production_home.'/releases/initial']);
+
+    $source->resolve($instance);
+    $source->inspectProfile($instance);
+    $source->prepareCaddyAccess($instance);
+    $source->validateCurrent($instance);
+
+    expect($ssh->commands)->toHaveCount(3);
+    expect($ssh->commands[1]->arguments)->toContain('.', $instance->checkout_path);
+    expect($ssh->commands[2]->input)->toContain('../../.env')->not->toContain('application_suffix=');
+    expect($instance->relativeWebRoot())->toBeNull();
+    expect($instance->routes()->count())->toBe(0);
+})->with(['laravel-package', 'node-package']);
+
 function production_source_lifecycle(array $results, ?string $branch = null): array
 {
     $ssh = new AppDevFakeSshExecutor($results);

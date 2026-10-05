@@ -241,7 +241,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     test "$(sudo -u "$user" -H realpath -e -- "$release_environment")" = "$environment"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$branch" "$commit"
-                    BASH, $instance->root ?? $instance->project->root));
+                    BASH, $instance->sourceRoot(), $instance->applicationPath()));
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
@@ -275,17 +275,17 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
     {
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
-        $root = $instance->root ?? $instance->project->root;
+        $root = $instance->sourceRoot();
         $checkout = $instance->checkout_path;
 
-        if (! is_string($root) || ! $this->withinRecordedHome($home, $checkout)) {
+        if (! $this->withinRecordedHome($home, $checkout)) {
             throw $this->failure('production-source-classification', 'app-prod.source_metadata_unsafe');
         }
 
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolve($checkout, $root)],
+                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolvePath($checkout, $instance->applicationPath())],
                 input: <<<'BASH'
                     # find must restore its working directory after sudo changes users.
                     cd /
@@ -346,10 +346,11 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
     {
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
-        $root = $instance->root ?? $instance->project->root;
+        $root = $instance->relativeWebRoot();
 
-        if (! is_string($root)) {
-            throw $this->failure('production-caddy-access', 'app-prod.source_metadata_unsafe');
+        if ($root === null) {
+            // Non-serving packages have source and releases, but no Caddy access to project.
+            return;
         }
 
         $this->ssh->execute(
@@ -451,11 +452,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
-        $root = $instance->root ?? $instance->project->root;
-
-        if (! is_string($root)) {
-            throw $this->failure('production-release-layout', 'app-prod.source_metadata_unsafe');
-        }
+        $root = $instance->sourceRoot();
 
         $this->ssh->execute(
             $instance->node,
@@ -537,7 +534,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     if [ "$clear_current" = 1 ]; then
                         sudo -u "$user" -H rm -- "$current"
                     fi
-                    BASH, $root),
+                    BASH, $root, $instance->applicationPath()),
             ),
             step: 'production-release-layout',
             errorCode: 'app-prod.source_metadata_unsafe',

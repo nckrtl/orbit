@@ -41,7 +41,7 @@ The CLI calls `POST /api/v1/instances/{candidate}/clone`.
 | `node_id` | Destination Node with an active `app-prod` role. Required. |
 | `name` | Name of the new Instance. Required. |
 | `app` | Exact candidate app name. Omission resolves the sole app; unknown names return `app.not_found`. A multi-app Project is refused before Node/source work. |
-| `preview_name` | Name that the sole serving app's preview domain starts with. Required when its web root is non-null; prohibited for a non-serving package. |
+| `preview_name` | Name that the sole serving app's preview domain starts with. Required when the app is serving (null web root can serve the app directory); prohibited for a non-serving package. |
 | `branch` | Branch to deploy. It must exist in the repository. It defaults to the candidate's branch, or its deployment branch for a production candidate. |
 | `sqlite_source_path` | Absolute path to one SQLite database on the candidate. Optional. |
 
@@ -73,10 +73,10 @@ The new Instance gets its own copy of each part below.
 | Environment | Every stored candidate value, encrypted again for the new Instance. Then Orbit sets `APP_ENV=production` and `APP_DEBUG=false`. You can change them later. |
 | Processes and Schedules | Copies of the Project's production [definitions](/reference/processes-and-schedules#production-copies), installed stopped. Candidate-specific Processes and Schedules do not copy. |
 | PHP | A [dedicated PHP-FPM service](/reference/php-runtime#production-runtime) with Orbit defaults, when the source uses PHP. |
-| Route | One explicit private preview Route for the sole app with a non-null web root; no Route for a non-serving package. |
+| Route | One explicit private preview Route for the sole serving app; no Route for a non-serving package. |
 | Apps | The Project's sole app and the candidate's recorded app override map. The app name remains unchanged; paths are not rediscovered. |
 
-Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment links that file from the release's application directory, including a nested path such as `apps/site/.env`. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{instance.domain}}` resolve against the new Instance.
+Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment preserves the [production environment-link layout](/reference/deployments#the-production-home): Orbit links from the application directory when the web root is non-null, while an app with null web root retains `<release>/.env` with target `../../.env`, even with a nested app path. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{instance.domain}}` resolve against the new Instance.
 
 ## Preview domain
 

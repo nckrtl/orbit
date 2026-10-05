@@ -25,7 +25,7 @@ Each production Instance has a home, `/home/<production-user>`, with these paths
 | Path | Purpose |
 | --- | --- |
 | `releases/<name>/` | One retained release: a Git checkout of the deployed branch. |
-| `.env` | The durable environment file. Each release's application directory holds a `.env` link to it. |
+| `.env` | The durable environment file. Each release holds a `.env` link to it; placement follows the app's web-root form below. |
 | `database.sqlite` | An optional SQLite database. Orbit keeps the path but does not create the file. |
 | `current` | A link to the selected release. It is absent until the first deployment. |
 
@@ -33,7 +33,9 @@ A clone leaves the home prepared, with no `current` link. The application must p
 
 The Gateway lists retained releases as the production user from a directory that user can access. A private SSH home does not prevent reading the first clone's empty selection. Failed scans and invalid release receipts still stop the operation.
 
-The sole production app's effective path and web root compose inside `current`. Path `.` and web root `public` serve `<home>/current/public`; path `apps/site` and web root `public` serve `<home>/current/apps/site/public`. Its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). App path `.` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
+The sole production app's effective path and web root compose inside `current`. Path `.` and web root `public` serve `<home>/current/public`; path `apps/site` and web root `public` serve `<home>/current/apps/site/public`. Its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). App path `.` keeps the release-root `.env` link with target `../../.env`.
+
+Apps with null web root also retain this release-root link and target, even for a nested path such as `apps/site/web`; their application directory and document root are both `<home>/current/apps/site/web`. Conversion does not relocate an environment link or runtime path. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
 With app path `server/web` and web root `public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing, rollback validation, and [Doctor](/cli/doctor) check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
 

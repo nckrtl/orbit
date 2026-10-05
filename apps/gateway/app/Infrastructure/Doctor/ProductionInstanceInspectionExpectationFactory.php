@@ -37,9 +37,9 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             ->all();
         $user = $instance->production_user;
         $home = $instance->production_home;
-        $root = $instance->root ?? $instance->project->root;
+        $root = $instance->sourceRoot();
 
-        if (! is_string($user) || ! is_string($home) || ! is_string($root)) {
+        if (! is_string($user) || ! is_string($home)) {
             throw new \InvalidArgumentException('The production inspection identity is incomplete.');
         }
 
@@ -74,6 +74,7 @@ final readonly class ProductionInstanceInspectionExpectationFactory
             user: $user,
             home: $home,
             root: $root,
+            applicationPath: $instance->applicationPath(),
             environment: $this->environmentRenderer->render($context, $values),
             caddySites: ($this->builds ?? app(NodeCaddyfileRenderer::class))
                 ->render($instance->node)

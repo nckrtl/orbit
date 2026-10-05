@@ -101,7 +101,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     test -z "$unexpected_group"
                     commit=$(sudo -u "$user" -H git -C "$release" rev-parse --verify HEAD)
                     printf '%s\t%s\n' "$name" "$commit"
-                    BASH, $root));
+                    BASH, $root, $instance->applicationPath()));
         $result = $this->execute(
             $instance,
             new RemoteCommand(
@@ -320,7 +320,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     sudo -u "$user" -H mv -Tf -- "$temporary" "$current"
                     trap - EXIT
                     printf '%s\t%s\n' "$name" "$expected_commit"
-                    BASH, $root),
+                    BASH, $root, $instance->applicationPath()),
                 maxOutputBytes: 4096,
             ),
             'deployment-activate',
@@ -342,7 +342,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             $instance,
             new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $repository, $user, $home, (string) $instance->id, $root],
-                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: true), $root),
+                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: true), $root, $instance->applicationPath()),
                 maxOutputBytes: 4096,
             ),
             'deployment-selected-release',
@@ -374,7 +374,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                     $root,
                     $name,
                 ],
-                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: false), $root),
+                input: ProductionApplicationPaths::render($this->inspectionScript(selectCurrent: false), $root, $instance->applicationPath()),
                 maxOutputBytes: 4096,
             ),
             'rollback-retained-release',
@@ -460,7 +460,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
                             printf '%s\n' "$receipt"
                         fi
                     done < <(sudo -u "$user" -H find -P "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%f\0' | sort -z)
-                    BASH, $root),
+                    BASH, $root, $instance->applicationPath()),
                 maxOutputBytes: 65536,
             ),
             'deployment-release-list',
@@ -477,7 +477,7 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
         $repository = $instance->project->repository_url;
         $user = $instance->production_user;
         $home = $instance->production_home;
-        $root = $instance->root ?? $instance->project->root;
+        $root = $instance->sourceRoot();
 
         if (
             ! $instance->placedOnAppProd()
@@ -486,7 +486,6 @@ final readonly class RemoteProductionDeployment implements ProductionDeployment
             || ! $instance->usesProductionReleaseLayout()
             || ! is_string($user)
             || ! is_string($home)
-            || ! is_string($root)
         ) {
             throw new ResourceOperationException(
                 'deployment.identity_invalid',

@@ -477,7 +477,8 @@ final readonly class DevelopmentSiteRepository
             nodeAddress: $instance->node->wireguard_ip ?? '',
             scope: "app-instance-{$instance->id}",
             checkoutPath: $checkoutPath,
-            documentRoot: $instance->root ?? $instance->project->root ?? '',
+            documentRoot: $instance->relativeWebRoot() ?? '',
+            applicationPath: $instance->applicationPath(),
             phpVersion: $instance->selected_php_version,
             domain: $route->domain,
             environment: $instance->defaultAppEnv(),
@@ -558,7 +559,8 @@ final readonly class DevelopmentSiteRepository
             checkoutPath: $localInstance->placedOnAppProd()
                 ? "{$localInstance->production_home}/current"
                 : ($localInstance->development_release_layout ? $localInstance->checkout_path.'/current' : ($localInstance->checkout_path ?? '')),
-            documentRoot: $localInstance->root ?? $localInstance->project->root ?? '',
+            documentRoot: $localInstance->relativeWebRoot() ?? '',
+            applicationPath: $localInstance->applicationPath(),
             phpVersion: $localInstance->selected_php_version,
             domain: $route->domain,
             upstreamAddresses: $addresses,
@@ -601,6 +603,7 @@ final readonly class DevelopmentSiteRepository
             scope: "route-{$route->id}-ingress",
             checkoutPath: $site->checkoutPath,
             documentRoot: $site->documentRoot,
+            applicationPath: $site->applicationPath,
             phpVersion: $site->phpVersion,
             domain: $route->domain,
             environment: $site->environment,

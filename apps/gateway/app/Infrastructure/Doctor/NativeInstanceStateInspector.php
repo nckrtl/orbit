@@ -522,6 +522,6 @@ final readonly class NativeInstanceStateInspector implements InstanceStateInspec
             emit environment_matches
             emit php_fpm_matches
             emit caddy_matches
-            BASH, $expectation->root);
+            BASH, $expectation->root, $expectation->applicationPath);
     }
 }

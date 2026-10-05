@@ -70,7 +70,7 @@ final readonly class NativeInstanceTransferRuntime implements InstanceTransferRu
         foreach ($instance->processes as $process) {
             $process->update([
                 'working_directory' => $this->relocatedPath($process->working_directory, $sourcePath, $workingDirectory),
-                ...(($process->isVpDev() || $process->isAnnotator()) ? ['runtime_config' => [...$process->runtime_config, 'environment_file' => ($instance->source_is_laravel === true ? ApplicationDirectory::resolve($workingDirectory, $instance->root ?? $instance->project->root) : $workingDirectory).'/.env']] : []),
+                ...(($process->isVpDev() || $process->isAnnotator()) ? ['runtime_config' => [...$process->runtime_config, 'environment_file' => ($instance->source_is_laravel === true ? ApplicationDirectory::resolvePath($workingDirectory, $instance->applicationPath()) : $workingDirectory).'/.env']] : []),
             ]);
         }
 

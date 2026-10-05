@@ -8,11 +8,15 @@ use App\Domain\SourceControl\ApplicationDirectory;
 
 final class ProductionApplicationPaths
 {
-    public static function render(string $program, ?string $root): string
+    public static function render(string $program, ?string $root, ?string $applicationPath = null): string
     {
         $suffix = $root === 'public' || (is_string($root) && str_ends_with($root, '/public'))
             ? ApplicationDirectory::resolve('', $root)
             : '';
+        if ($applicationPath !== null) {
+            // Null web roots compose to the app path itself and keep release-root links.
+            $suffix = $root === $applicationPath ? '' : ApplicationDirectory::resolvePath('', $applicationPath);
+        }
         $target = str_repeat('../', 2 + substr_count($suffix, '/')).'.env';
 
         $assignment = $suffix === '' ? '' : 'application_suffix='.escapeshellarg($suffix)."\n";

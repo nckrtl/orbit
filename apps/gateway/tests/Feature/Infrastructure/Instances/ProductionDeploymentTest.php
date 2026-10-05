@@ -11,6 +11,7 @@ use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DeploymentStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppProd\ProductionSshExecutor;
+use App\Infrastructure\Doctor\ProductionInstanceInspectionExpectationFactory;
 use App\Infrastructure\Instances\RemoteProductionDeployment;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessOutput;
@@ -467,6 +468,20 @@ it('rejects traversal before asking the remote host to inspect a release', funct
  * @param  list<CommandResult>  $results
  * @return array{RemoteProductionDeployment, AppDevFakeSshExecutor, Instance}
  */
+it('inspects named app production releases and Doctor expectations for non-serving packages', function (string $type): void {
+    [$deployment, $ssh, $instance] = orb219_remote_deployment([new CommandResult(0, "NONE\n", '', 1, false)]);
+    $instance->project->update(['type' => $type, 'root' => '.']);
+    $instance->update(['root' => '.', 'source_is_laravel' => false]);
+
+    expect($deployment->selected($instance))->toBeNull();
+    expect($ssh->commands[0]->arguments)->toContain('.');
+    expect($ssh->commands[0]->input)->toContain('release_environment="$release/.env"')->not->toContain('application_suffix=');
+    $expectation = app(ProductionInstanceInspectionExpectationFactory::class)->make($instance);
+    expect($expectation->root)->toBe('.');
+    expect($expectation->runtime)->toBeNull();
+    expect($instance->routes()->count())->toBe(0);
+})->with(['laravel-package', 'node-package']);
+
 function orb219_remote_deployment(array $results): array
 {
     $ssh = new AppDevFakeSshExecutor($results);

@@ -174,7 +174,8 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
                 nodeAddress: $instance->node->wireguard_ip ?? '',
                 scope: 'app-instance-'.$instance->id,
                 checkoutPath: $release->path,
-                documentRoot: $instance->root ?? $instance->project->root ?? '',
+                documentRoot: $instance->relativeWebRoot() ?? '',
+                applicationPath: $instance->applicationPath(),
                 phpVersion: $instance->selected_php_version,
                 domain: $route->domain,
             );

@@ -68,7 +68,7 @@ The app form creates and activates a Route for the Instance. The Instance implie
 | `route.retry_conflict` | A Route with this domain exists with a different Instance, publication, or custom proxy configuration. |
 | `route.scope_required` | A custom proxy Route needs a serving Node and uses the domain as its only positional argument. |
 | `route.target_inactive` | The Instance is not active. |
-| `route.target_web_root_unsupported` | The selected app has no supported non-null web root. |
+| `route.target_web_root_unsupported` | The selected app is non-serving or has no supported document root. Null web root can serve the app directory; see [target validation](/reference/routes#create-and-change-targets). |
 | `app.required`, `app.not_found` | Multiple apps need a selector, or the selected app is not in the Project. |
 | `route.target_conflict` | The Instance/app pair already belongs to another authoritative Route. |
 | `route.router_required` | The Cluster has no active Router. |

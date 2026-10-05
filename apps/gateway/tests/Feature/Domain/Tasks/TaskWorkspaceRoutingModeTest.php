@@ -378,15 +378,21 @@ function routing_mode_project(
     ProjectType $type = ProjectType::LaravelApp,
     ?string $root = 'public',
 ): Project {
-    return Project::query()->create([
+    $project = Project::query()->create([
         'name' => $slug,
         'slug' => $slug,
         'repository_url' => "git@example.test:{$slug}.git",
         'type' => $type,
         'default_branch' => 'main',
-        'root' => $root,
+        'root' => $root === '.' && in_array($type, [ProjectType::LaravelApp, ProjectType::Monorepo], true) ? 'public' : $root,
         'task_workspace_routed' => $routed,
     ]);
+    if ($project->root !== $root) {
+        // These tests intentionally inspect invalid historical roots, not valid model writes.
+        Project::query()->whereKey($project->id)->update(['root' => $root]);
+    }
+
+    return $project->refresh();
 }
 
 function routing_mode_node(string $name): Node

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Projects\ProjectApps;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
@@ -24,6 +26,7 @@ use SensitiveParameter;
  * @property string $repository_identity
  * @property ProjectSourceAccess $source_access
  * @property string|null $default_branch
+ * @property list<array{name: string, path: string, web_root: ?string, type: string}>|null $apps
  * @property string|null $root
  * @property string|null $task_check
  * @property bool $task_workspace_routed
@@ -40,7 +43,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'apps', 'task_check', 'task_workspace_routed'];
 
     /** @var list<string> */
     #[\Override]
@@ -48,6 +51,15 @@ final class Project extends Model
 
     protected static function booted(): void
     {
+        self::saving(static function (self $project): void {
+            if ($project->isDirty('apps')) {
+                $project->apps = ProjectApps::validate($project->apps);
+            } elseif ($project->apps === null || $project->isDirty(['root', 'type'])) {
+                // Expand-only bridge for the existing root writers; removed with the old interfaces.
+                $project->apps = ProjectApps::validate($project->configuredApps());
+            }
+        });
+
         self::creating(static function (self $project): void {
 
             $used = ValidatedData::stringList(self::query()->pluck('code')->all());
@@ -111,6 +123,28 @@ final class Project extends Model
         return $this->hasMany(ProjectNodeExclusion::class);
     }
 
+    /** @return list<array{name: string, path: string, web_root: ?string, type: string}> */
+    public function configuredApps(): array
+    {
+        if (! $this->isDirty('apps') && $this->isDirty(['root', 'type'])) {
+            $originalApps = $this->getOriginal('apps');
+            $originalRoot = $this->getOriginal('root');
+            $originalType = $this->getOriginal('type');
+            if ($originalApps !== null) {
+                if (($originalRoot !== null && ! is_string($originalRoot)) || ! $originalType instanceof ProjectType) {
+                    throw new ResourceOperationException('project.apps_invalid', 'The retained legacy Project configuration is invalid.');
+                }
+                if ($originalApps !== ProjectApps::legacy($originalRoot, $originalType)) {
+                    throw new ResourceOperationException('project.apps_invalid', 'Legacy root/type writes cannot replace named app configuration.');
+                }
+            }
+
+            return ProjectApps::legacy($this->root, $this->type);
+        }
+
+        return $this->apps ?? ProjectApps::legacy($this->root, $this->type);
+    }
+
     public function isWebServing(): bool
     {
         return $this->type->isWebServing();
@@ -127,6 +161,7 @@ final class Project extends Model
     protected function casts(): array
     {
         return [
+            'apps' => 'array',
             'type' => ProjectType::class,
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',

@@ -170,7 +170,7 @@ Interactive registration asks for default-No consent that names the source. JSON
 
 ## Provision the application endpoint
 
-Before source preparation, the Gateway assigns every app a [Vite port](/reference/assigned-vite-ports) and reserves a Route for every app with a non-null web root. `--app-domains=JSON` supplies explicit domains by app name; omitted names generate domains from the Cluster or Node TLD. Non-serving packages and task workspaces whose recorded mode is unrouted get no serving Routes. [Routes](/reference/routes#select-a-domain-and-scope) owns the map and generated-name rules.
+Before source preparation, the Gateway assigns every app a [Vite port](/reference/assigned-vite-ports) and reserves a Route for every [serving app](/reference/projects#project-types). Null web root can serve the app directory itself; only a package with path `.` and null web root is non-serving. `--app-domains=JSON` supplies explicit domains by app name; omitted names generate domains from the Cluster or Node TLD. Non-serving packages and task workspaces whose recorded mode is unrouted get no serving Routes. [Routes](/reference/routes#select-a-domain-and-scope) owns the map and generated-name rules.
 
 After the source is ready, the Gateway continues in this order:
 

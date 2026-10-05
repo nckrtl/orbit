@@ -643,7 +643,7 @@ final readonly class TransferInstanceAction
             nodeId: $destination->id,
             environment: 'development',
             path: $instance->source_is_laravel === true
-                ? ApplicationDirectory::resolve($transfer->destination_path, $instance->root ?? $instance->project->root)
+                ? ApplicationDirectory::resolvePath($transfer->destination_path, $instance->applicationPath())
                 : $transfer->destination_path,
             executionUser: $destination->user,
             laravel: $instance->source_is_laravel === true,
