@@ -1840,7 +1840,8 @@
             "title": "Project Documents",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Activity",
@@ -2094,6 +2095,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
+                "Project Documents",
                 "Route",
                 "Subtask",
                 "Task",

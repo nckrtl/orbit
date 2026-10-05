@@ -16,6 +16,7 @@ import type {
 import type { Activity } from "../api/activities";
 import type { TaskGroup } from "../api/tasks";
 import type { Definition } from "../definitions/definition";
+import { createDemoDocuments } from "./documents";
 
 type Fixture = { route: string; status: number; body: { data: unknown } };
 type Answer = { status: number; payload: unknown };
@@ -1081,8 +1082,11 @@ export function createDemoGateway() {
             ],
         ];
 
-    const transport: Transport = (method, path, body) => {
+    const documents = createDemoDocuments();
+    const transport: Transport = async (method, path, body) => {
         requests.push({ method, path, body });
+        const documentAnswer = await documents(method, path, body);
+        if (documentAnswer !== undefined) return documentAnswer;
 
         for (const [routeMethod, pattern, answer] of routes) {
             const match = method === routeMethod ? pattern.exec(path) : null;

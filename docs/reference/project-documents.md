@@ -8,8 +8,8 @@ covers:
   - apps/gateway/app/Infrastructure/ProjectDocuments/**
   - apps/gateway/app/Models/ProjectDocument*.php
   - apps/gateway/app/Console/Commands/*DocumentProbe*.php
-  - apps/gateway/database/migrations/*_create_project_document_storages_table.php
-  - apps/gateway/database/migrations/*_create_project_documents_tables.php
+  - apps/gateway/database/migrations/*_create_project_document*_table*.php
+  - apps/web/src/{api/documents.ts,pages/ProjectDocuments.tsx}
 ---
 
 # Project Documents
@@ -276,9 +276,23 @@ The `/mcp/search` 65,536-byte result cap still applies: large content downloads 
 
 ## Web contract
 
-The Project detail page has a Documents section with root browsing, folder navigation, breadcrumbs, name/path search, active/archive filters, create-folder, new text file, and upload. Rows show kind, name, version, size, and archive state, with reachable rename, move, archive/restore, history, download, and remove actions. Infinite pagination retains the current folder and filters. On a phone, content starts near the top, filters and secondary actions use a sheet/menu, and there is no wide fixed table or stacked filter wall. A desktop may use a table and side detail panel.
+### Browsing and actions
 
-Editable files open a plain-text editor with explicit Save. There is no autosave. The client captures the entry revision when loading content and sends it on Save. Dirty drafts survive recoverable API failures and conflicts until the user reloads or leaves with confirmation. Attachments and oversized text show metadata, history, and download/upload, not an unsafe inline preview. HTML, SVG, Markdown, and other user content are never executed or injected as trusted markup. History supports downloading a selected version and restoring it as a new one. Removal confirmation distinguishes a file from a recursive folder deletion and names the irreversible scope.
+Open a Project and choose Documents from its section menu. The workspace URL is `/projects/{id}/documents`; its query stores the current folder, search, and archive state so browser Back returns to that view. Search / filters opens one sheet on a phone. New opens the folder, text-file, and upload choices. Row menus hold secondary actions, and move uses a navigable folder picker rather than a flat list of paths. A safe preview shows escaped text, including Markdown and JSON; it does not render user markup.
+
+The Project detail page has a Documents section with root browsing, folder navigation, breadcrumbs, name/path search, active/archive filters, create-folder, new text file, and upload. Rows show kind, name, version, size, and archive state, with reachable rename, move, archive/restore, history, download, and remove actions.
+
+Infinite pagination retains the current folder and filters. Automatic page loading pauses while any list, destination-picker, or history request is fetching, including a refresh, so it cannot cancel refreshed data. On a phone, content starts near the top, filters and secondary actions use a sheet/menu, and there is no wide fixed table or stacked filter wall. A desktop may use a table and side detail panel.
+
+### Editing and pending requests
+
+Editable files open a plain-text editor with explicit Save. There is no autosave.
+
+The editor is read-only while a save, reload, or replacement is pending, including the content reload after a write. Create and metadata forms disable their inputs until the operation and folder refresh finish. This prevents changes made after a submitted snapshot from being silently replaced or discarded.
+
+The client captures the entry revision when loading content and sends it on Save. Dirty drafts survive recoverable API failures and conflicts until the user reloads or leaves with confirmation. Attachments and oversized text show metadata, history, and download/upload, not an unsafe inline preview. HTML, SVG, Markdown, and other user content are never executed or injected as trusted markup. History supports downloading a selected version and restoring it as a new one. Removal confirmation distinguishes a file from a recursive folder deletion and names the irreversible scope.
+
+### Storage status and verification
 
 The Gateway settings page configures storage with write-only credential fields and sanitized status. Revisiting it never fills credentials from the server. Document metadata remains usable during outages; body actions show the stable error and recovery guidance. Clients refresh the open folder, search results, and affected entry metadata after successful mutations; realtime collaboration is not part of this feature. Phone and desktop verification must include a nested folder, a long name, an archived child, an attachment, a dirty conflicting edit, and recursive-removal confirmation.
 
