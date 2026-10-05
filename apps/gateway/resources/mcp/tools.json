@@ -4789,10 +4789,538 @@
       }
     },
     {
+      "name": "project-document-archive",
+      "extension": null,
+      "title": "project:document:archive",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents/{entry}/archive",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ]
+      }
+    },
+    {
+      "name": "project-document-create",
+      "extension": null,
+      "title": "project:document:create",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "file"
+            ],
+            "description": "folder or file"
+          },
+          "name": {
+            "type": "string",
+            "description": "Document name"
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "content_text": {
+            "type": "string",
+            "maxLength": 1048576,
+            "description": "Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB."
+          },
+          "content_base64": {
+            "type": "string",
+            "maxLength": 13981016,
+            "description": "Canonical RFC 4648 base64; decoded size is at most 10 MiB."
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 127,
+            "description": "Media type"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "kind",
+          "name"
+        ],
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "folder"
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "content_text"
+                  ]
+                },
+                {
+                  "required": [
+                    "content_base64"
+                  ]
+                },
+                {
+                  "required": [
+                    "media_type"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "file"
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "content_text"
+                ],
+                "not": {
+                  "required": [
+                    "content_base64"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "content_base64"
+                ],
+                "not": {
+                  "required": [
+                    "content_text"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "project-document-destroy",
+      "extension": null,
+      "title": "project:document:destroy",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{project}/documents/{entry}",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recursive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ]
+      }
+    },
+    {
+      "name": "project-document-download",
+      "extension": null,
+      "title": "project:document:download",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}/download",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [
+        "version"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
+      "name": "project-document-list",
+      "extension": null,
+      "title": "project:document:list",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [
+        "parent_id",
+        "state",
+        "kind",
+        "cursor",
+        "limit"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "file"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project"
+        ]
+      }
+    },
+    {
+      "name": "project-document-read",
+      "extension": null,
+      "title": "project:document:read",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}/content",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [
+        "version"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
+      "name": "project-document-restore",
+      "extension": null,
+      "title": "project:document:restore",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents/{entry}/restore",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ]
+      }
+    },
+    {
+      "name": "project-document-restore-version",
+      "extension": null,
+      "title": "project:document:restore-version",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents/{entry}/restore-version",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          },
+          "version_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision",
+          "version_id"
+        ]
+      }
+    },
+    {
+      "name": "project-document-search",
+      "extension": null,
+      "title": "project:document:search",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/search",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [
+        "q",
+        "state",
+        "kind",
+        "cursor",
+        "limit"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "file"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "q"
+        ]
+      }
+    },
+    {
+      "name": "project-document-show",
+      "extension": null,
+      "title": "project:document:show",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
       "name": "project-document-storage-show",
       "extension": null,
       "title": "project:document-storage:show",
-      "description": "project:document-storage:show",
+      "description": "Show private Project Document storage.",
       "method": "GET",
       "path": "/api/v1/project-document-storage",
       "path_inputs": [],
@@ -4808,7 +5336,7 @@
       "name": "project-document-storage-update",
       "extension": null,
       "title": "project:document-storage:update",
-      "description": "project:document-storage:update",
+      "description": "Update private Project Document storage.",
       "method": "PUT",
       "path": "/api/v1/project-document-storage",
       "path_inputs": [],
@@ -4819,15 +5347,18 @@
         "properties": {
           "endpoint": {
             "type": "string",
-            "maxLength": 255
+            "maxLength": 255,
+            "description": "HTTPS storage origin"
           },
           "region": {
             "type": "string",
-            "pattern": "^[\\x21-\\x7e]{1,63}$(?![\\s\\S])"
+            "pattern": "^[\\x21-\\x7e]{1,63}$(?![\\s\\S])",
+            "description": "Signing region"
           },
           "bucket": {
             "type": "string",
-            "pattern": "^[a-z0-9](?:[a-z0-9.-]{1,61})[a-z0-9]$(?![\\s\\S])"
+            "pattern": "^[a-z0-9](?:[a-z0-9.-]{1,61})[a-z0-9]$(?![\\s\\S])",
+            "description": "Bucket name"
           },
           "access_key_id": {
             "type": "string"
@@ -4837,6 +5368,192 @@
           }
         },
         "additionalProperties": false
+      }
+    },
+    {
+      "name": "project-document-update",
+      "extension": null,
+      "title": "project:document:update",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "PATCH",
+      "path": "/api/v1/projects/{project}/documents/{entry}",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          },
+          "name": {
+            "type": "string",
+            "description": "New name"
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "parent_id"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "project-document-version-list",
+      "extension": null,
+      "title": "project:document:version:list",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}/versions",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [
+        "cursor",
+        "limit"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
+      "name": "project-document-write",
+      "extension": null,
+      "title": "project:document:write",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "PUT",
+      "path": "/api/v1/projects/{project}/documents/{entry}/content",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          },
+          "content_text": {
+            "type": "string",
+            "maxLength": 1048576,
+            "description": "Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB."
+          },
+          "content_base64": {
+            "type": "string",
+            "maxLength": 13981016,
+            "description": "Canonical RFC 4648 base64; decoded size is at most 10 MiB."
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 127,
+            "description": "Media type"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "content_text"
+            ],
+            "not": {
+              "required": [
+                "content_base64"
+              ]
+            }
+          },
+          {
+            "required": [
+              "content_base64"
+            ],
+            "not": {
+              "required": [
+                "content_text"
+              ]
+            }
+          }
+        ]
       }
     },
     {

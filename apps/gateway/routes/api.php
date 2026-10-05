@@ -43,6 +43,7 @@ use App\Http\Controllers\Api\NodesController;
 use App\Http\Controllers\Api\ProcessesController;
 use App\Http\Controllers\Api\ProcessLogStreamsController;
 use App\Http\Controllers\Api\ProjectDevelopmentDeployStepsController;
+use App\Http\Controllers\Api\ProjectDocumentsController;
 use App\Http\Controllers\Api\ProjectDocumentStorageController;
 use App\Http\Controllers\Api\ProjectExcludedNodesController;
 use App\Http\Controllers\Api\ProjectLifecycleStepsController;
@@ -264,6 +265,21 @@ Route::prefix('v1')->group(function (): void {
             ->scopeBindings()
             ->name('firewall:remove');
         Route::get('projects', [ProjectsController::class, 'index'])->name('project:list');
+        Route::prefix('projects/{project}/documents')->whereNumber(['project', 'entry'])->group(function (): void {
+            Route::get('', [ProjectDocumentsController::class, 'index'])->name('project:document:list');
+            Route::get('search', [ProjectDocumentsController::class, 'search'])->name('project:document:search');
+            Route::post('', [ProjectDocumentsController::class, 'store'])->name('project:document:create');
+            Route::get('{entry}', [ProjectDocumentsController::class, 'show'])->name('project:document:show');
+            Route::patch('{entry}', [ProjectDocumentsController::class, 'update'])->name('project:document:update');
+            Route::put('{entry}/content', [ProjectDocumentsController::class, 'write'])->name('project:document:write');
+            Route::get('{entry}/content', [ProjectDocumentsController::class, 'read'])->name('project:document:read');
+            Route::get('{entry}/download', [ProjectDocumentsController::class, 'download'])->name('project:document:download');
+            Route::get('{entry}/versions', [ProjectDocumentsController::class, 'versions'])->name('project:document:version:list');
+            Route::post('{entry}/restore-version', [ProjectDocumentsController::class, 'restoreVersion'])->name('project:document:restore-version');
+            Route::post('{entry}/archive', [ProjectDocumentsController::class, 'archive'])->name('project:document:archive');
+            Route::post('{entry}/restore', [ProjectDocumentsController::class, 'restore'])->name('project:document:restore');
+            Route::delete('{entry}', [ProjectDocumentsController::class, 'destroy'])->name('project:document:destroy');
+        });
         Route::get('projects/{project}', [ProjectsController::class, 'show'])->name('project:show');
         Route::post('projects', [ProjectsController::class, 'store'])->name('project:create');
         Route::patch('projects/{project}', [ProjectsController::class, 'update'])->name('project:update');

@@ -137,9 +137,9 @@ final readonly class DocumentTreeAction
         });
     }
 
-    public function remove(int $projectId, int $entryId, int $expectedRevision, bool $recursive = false): void
+    public function remove(int $projectId, int $entryId, int $expectedRevision, bool $recursive = false): bool
     {
-        DB::transaction(function () use ($projectId, $entryId, $expectedRevision, $recursive): void {
+        return DB::transaction(function () use ($projectId, $entryId, $expectedRevision, $recursive): bool {
             $this->lock();
             $entry = $this->entry($projectId, $entryId);
             $this->assertRevision($entry, $expectedRevision);
@@ -147,7 +147,11 @@ final readonly class DocumentTreeAction
             if (count($subtree) > 1 && ! $recursive) {
                 throw new ResourceOperationException('project_documents.folder_not_empty', 'Folder is not empty.', 409);
             }
+            $pending = ProjectDocumentVersion::query()->whereIn('entry_id', array_keys($subtree))->exists()
+                || ProjectDocumentUpload::query()->whereIn('entry_id', array_keys($subtree))->where('state', 'active')->exists();
             $this->removeEntries(array_keys($subtree));
+
+            return $pending;
         });
     }
 

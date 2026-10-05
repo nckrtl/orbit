@@ -16,7 +16,7 @@ The Project's [development deploy steps](/reference/deployments#development-depl
 
 ## Endpoints
 
-Both endpoints speak MCP over streamable HTTP and offer the same catalogue.
+Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Their JSON-RPC envelopes are limited to 15 MiB (15,728,640 bytes), checked after active-peer authorization and before parsing. An oversized envelope receives HTTP 413 without invoking a tool. Dispatched API requests still apply their own limits and Node access checks. This envelope limit admits the full 10 MiB decoded [Project Document upload](/reference/project-documents#content-and-versions), including base64 and JSON-RPC overhead.
 
 | Endpoint | Tools it lists | Use it when |
 | --- | --- | --- |

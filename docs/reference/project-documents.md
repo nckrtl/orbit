@@ -3,6 +3,8 @@ title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
   - apps/gateway/app/Actions/ProjectDocuments/**
+  - apps/gateway/app/Data/ProjectDocuments/**
+  - apps/gateway/app/Http/Requests/ProjectDocuments/**
   - apps/gateway/app/Infrastructure/ProjectDocuments/**
   - apps/gateway/app/Models/ProjectDocument*.php
   - apps/gateway/app/Console/Commands/*DocumentProbe*.php
@@ -52,7 +54,9 @@ A file is created with its first body. There are no bodyless files or published 
 
 ### Limits
 
-The decoded body limit is 10 MiB (10,485,760 bytes), including text, for every client. Empty content is allowed. The HTTP JSON request limit is 15 MiB (15,728,640 bytes); oversized requests use the same JSON error contract as other API failures, not an HTML proxy response.
+The decoded body limit is 10 MiB (10,485,760 bytes), including text, for every client. Empty content is allowed. The HTTP JSON request limit is 15 MiB (15,728,640 bytes); oversized requests use the same JSON error contract as other API failures, not an HTML proxy response. Document routes use this limit instead of PHP's smaller form-POST limit, including numeric IDs with leading zeroes.
+
+MCP admits envelopes up to the same 15 MiB limit, checked after active-peer authorization and before JSON-RPC parsing; each dispatched document request still enforces its own limit after Node access authorization. Document and MCP routes skip automatic trimming and empty-string conversion so authorization precedes JSON parsing and exact body bytes stay unchanged.
 
 Inline text editing and reading are limited to 1 MiB (1,048,576 bytes), valid UTF-8 without NUL, and the media types `text/plain`, `text/markdown`, `application/json`, `application/yaml`, and `text/csv`. JSON and YAML bodies are not parsed or reformatted. Larger text can be uploaded and downloaded, but not read or edited inline. A supplied media type is a lowercase type/subtype without parameters, at most 127 bytes; it defaults to `application/octet-stream` for base64 and `text/plain` for text. The `content_text` field requires an admitted editable media type and the 1 MiB inline limit; `content_base64` uploads can carry any valid media type up to 10 MiB. Changing a file's media type is a content write and creates a version.
 
@@ -194,7 +198,7 @@ Paths below are relative to `/api/v1/projects/{project}/documents`, except the s
 | POST `/{entry}/restore-version` | `project-document-restore-version` | `expected_revision`, required `version_id`; entry. |
 | POST `/{entry}/archive` | `project-document-archive` | `expected_revision`; entry. |
 | POST `/{entry}/restore` | `project-document-restore` | `expected_revision`; entry. |
-| DELETE `/{entry}` | `project-document-destroy` | JSON `expected_revision`, `recursive` (default false); removal receipt. |
+| DELETE `/{entry}` | `project-document-destroy` | JSON `expected_revision`, `recursive` (default false); no mutation query fields; removal receipt. |
 | GET `/api/v1/project-document-storage` | `project-document-storage-show` | Redacted configuration and cleanup status. No provider probe on reads. |
 | PUT `/api/v1/project-document-storage` | `project-document-storage-update` | Configuration fields described above; redacted configuration and cleanup status. |
 
@@ -250,9 +254,13 @@ The family is `orbit project:document:<verb>`. It follows [CLI UX](/reference/cl
 
 All commands support `--json`; API entry and page envelopes are returned unchanged. In noninteractive mode all required inputs, including revision and removal `--yes`, must be supplied before a mutation.
 
-In a terminal missing required inputs are prompted: Project and entry from authorized lists, kind from folder/file, name as validated text, destination from active folders plus root, body source as a local path, version from history. A terminal may read the current revision when omitted and show it before submission, but it never substitutes a newer revision after conflict. Storage credentials use masked prompts. Input/body flags that are mutually exclusive fail before any write. Missing inputs, invalid local input, and refused confirmation exit 2; API or storage failures exit 1; success exits 0. Human diagnostics go to stderr for raw content commands.
+In a terminal missing required inputs are prompted: Project and entry from authorized lists, kind from folder/file, name as validated text, destination from active folders plus root, body source as a local path, version from history. A terminal may read the current revision when omitted and show it before submission, but it never substitutes a newer revision after conflict. Storage credentials use masked prompts.
 
-Download never overwrites an existing file. Use a new path; there is no implicit overwrite or force option. It verifies the decoded size and digest and atomically renames a temporary file into place. Raw stdout cannot be recalled, so clients validate the entire bounded body before emitting it. CLI refuses binary stdout to a terminal; a pipe or `--output` file is required. JSON mode creates no local file. Upload verifies local size before sending and the server verifies again.
+Invalid prompted names and local file inputs show validation feedback and allow correction without a retry cap; cancellation sends no mutation. Explicit invalid inputs fail without prompting. Input/body flags that are mutually exclusive fail before any write. Missing inputs, invalid local input, and refused confirmation exit 2; API or storage failures exit 1; success exits 0. Human diagnostics go to stderr for raw content commands.
+
+Local filesystem or integrity failures use `project_documents.local_io_failed`, exit 1, and leave any existing destination unchanged. No file bytes or local secret paths appear in the error message.
+
+Download never overwrites an existing file. Use a new path; there is no implicit overwrite or force option. It verifies the decoded size and digest and atomically publishes a private temporary file without replacing an existing destination, including a racing creator. Raw stdout cannot be recalled, so clients validate the entire bounded body before emitting it. CLI refuses binary stdout to a terminal; a pipe or `--output` file is required. JSON mode creates no local file. Upload verifies local size before sending and the server verifies again.
 
 Storage uses `orbit project:document-storage:show` and `orbit project:document-storage:update`, without a Project selector. Update takes `--endpoint`, `--region`, `--bucket`, and credential input files `--access-key-id-file` and `--secret-access-key-file` (or masked terminal prompts); secret values are not command-line arguments or human output. Both credential files must be supplied together in noninteractive mode when setting or rotating credentials. Existing credentials may be omitted. Secret files are UTF-8 with one optional final newline stripped. Storage commands support `--json` and expose only the redacted configuration/status.
 

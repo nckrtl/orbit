@@ -1,11 +1,12 @@
 # Public contract
 
-The SDK models exactly 186 concrete public Gateway API operations:
+The SDK models exactly 201 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
 - Node: list, show, add, rename, settings update, remove, access add, access remove, role list, role add, role relocate, role remove, and metrics.
 - Cluster: list, show, create, update, remove, Node attach, Node detach, Router set, and Router clear.
+- Project Documents: Project-scoped list, search, create, show, update, write, read, download, version list, restore-version, archive, restore, and removal; Gateway-scoped storage show and update. Preserve revisions, hashes, cursor metadata and request IDs. Credentials are write-only. Decode bounded downloads only after verifying size and digest; never retry conflicts automatically.
 - Project: list, show, create, update, and remove; development deploy step list, create, update, and remove. Development steps carry a name, command, timeout, and required boolean. Omit null optional fields and preserve explicit false.
 - Development node exclusion: add, list, and remove from either the Project or the Node.
 - Project runtime definition: process and Schedule list, create, show, update, and destroy.
