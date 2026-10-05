@@ -1,4 +1,4 @@
-"""Read-only disposable S3 protocol fixture, with operator-controlled bucket state."""
+"""Disposable S3 protocol fixture, with operator-controlled bucket state."""
 import base64
 import http.server
 import json
@@ -73,16 +73,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with os.fdopen(os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), 'w') as file:
             json.dump(requests, file)
         self.send_response(status)
+        if status == 307:
+            self.send_header('Location', '/fixture-bucket/redirect-target')
         self.send_header('Content-Type', 'application/xml' if listing or status != 200 else 'application/octet-stream')
         self.send_header('Content-Length', str(len(body)))
         self.end_headers()
         self.wfile.write(body)
 
     def do_PUT(self):
-        self.respond(405, b'')
+        with open(input_path) as file:
+            state = json.load(file)
+        key = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).split('/', 2)[-1]
+        body = self.rfile.read(int(self.headers.get('Content-Length', '0')))
+        state['objects'][key] = {'body': base64.b64encode(body).decode()}
+        with open(input_path, 'w') as file:
+            json.dump(state, file)
+        self.respond(200, b'')
 
     def do_DELETE(self):
-        self.respond(405, b'')
+        with open(input_path) as file:
+            state = json.load(file)
+        mode = state.get('mode', '')
+        if mode == 'delete-500':
+            self.respond(500, b'<Error><Code>InternalError</Code><Message>fixture-secret</Message></Error>')
+            return
+        if mode == 'delete-redirect':
+            self.respond(307, b'')
+            return
+        key = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path).split('/', 2)[-1]
+        state['objects'].pop(key, None)
+        with open(input_path, 'w') as file:
+            json.dump(state, file)
+        self.respond(204, b'')
 
     def log_message(self, *args):
         pass

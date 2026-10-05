@@ -9,7 +9,7 @@ use App\Domain\Shared\ResourceOperationException;
 use Closure;
 use Throwable;
 
-/** Local execution authorization only. Durable exact-key authorization belongs to the later worker. */
+/** Local execution authorization only. The document cleanup worker owns durable exact-key authorization. */
 final readonly class CleanupGate
 {
     public const string ERROR_CODE = 'project_documents.cleanup_state_unavailable';

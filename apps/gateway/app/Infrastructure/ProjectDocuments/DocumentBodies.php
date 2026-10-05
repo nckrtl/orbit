@@ -107,6 +107,27 @@ final readonly class DocumentBodies
         }
     }
 
+    /** Exact durable keys only; the worker owns authorization and holds the execution lock. */
+    public function delete(string $key): void
+    {
+        $this->assertOutsideTransaction();
+        $disk = $this->configured();
+        try {
+            $result = $disk->getClient()->deleteObject([
+                'Bucket' => $disk->getConfig()['bucket'], 'Key' => $key,
+                '@http' => ['timeout' => 30, 'connect_timeout' => 2, 'allow_redirects' => false,
+                    'sink' => new ProbeResponseBuffer(65536)],
+            ]);
+            $metadata = $result['@metadata'];
+            $status = is_array($metadata) ? ($metadata['statusCode'] ?? null) : null;
+            if (! is_int($status) || $status < 200 || $status >= 300) {
+                throw new RuntimeException('Document deletion did not succeed.');
+            }
+        } catch (Throwable) {
+            throw new ResourceOperationException('project_documents.storage_unavailable', 'Document storage is unavailable.', 503);
+        }
+    }
+
     private function configured(): AwsS3V3Adapter
     {
         $storage = ProjectDocumentStorage::query()->find(1);

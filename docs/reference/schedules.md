@@ -19,6 +19,8 @@ An Orbit Schedule is not a command on the Gateway's own Laravel schedule. The Ta
 
 The Gateway also attempts `project-documents:probes:reconcile` once per minute without overlap. It processes a finite batch from the private probe journal and permanently retains each cleanup record for late PUT recovery. This is an internal attempt schedule, not a promise of object lifetime or a Schedule on a Node. [Reserved probe recovery](/reference/project-documents#recover-reserved-probes) defines its bounds, backoff, repair, and separation from the gate for document-body cleanup.
 
+The Gateway attempts `project-documents:cleanup:work` every five minutes without overlap. Each run processes at most 100 due document-body cleanup records, and only while the restore-time gate is running. See [Project Documents](/reference/project-documents#publish-and-recover) for authorization, durable claims, retry bounds, and permanent abandoned-upload fences. This worker is separate from reserved-probe reconciliation.
+
 ## Fields
 
 The Schedule UUID is its public identity. It is also the only value that names the host artifacts.

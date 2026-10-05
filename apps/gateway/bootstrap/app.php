@@ -66,6 +66,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('orbit:deploy-development-defaults')->everyMinute()->withoutOverlapping(90);
         $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping(10);
         $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
+        $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
