@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 use App\Actions\ProjectDocuments\ReconcileProbesAction;
 use App\Actions\ProjectDocuments\UpdateDocumentStorageAction;
+use App\Data\ProjectDocuments\DocumentBody;
 use App\Data\ProjectDocuments\UpdateDocumentStorageData;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\ProjectDocuments\DocumentBodies;
 use App\Infrastructure\ProjectDocuments\DocumentsFilesystem;
 use App\Infrastructure\ProjectDocuments\ProbeJournal;
 use App\Infrastructure\ProjectDocuments\ProbeResponseBuffer;
 use App\Infrastructure\ProjectDocuments\VerifyDocumentStorage;
 use App\Models\ProjectDocumentStorage;
 use Aws\S3\S3Client;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -48,11 +51,80 @@ function probe_transport_fixture(string $mode): array
     return [$server, app(DocumentsFilesystem::class)->forConfiguration($storage)->getClient(), $storage];
 }
 
+/** @return array{Process, DocumentBodies} */
+function body_transport_fixture(string $mode): array
+{
+    DB::rollBack();
+    $database = config()->string('orbit.home').'/bodies.sqlite';
+    touch($database);
+    config(['database.connections.sqlite.database' => $database]);
+    DB::purge('sqlite');
+    test()->artisan('migrate:fresh', ['--force' => true])->assertExitCode(0);
+    [$server, , $storage] = probe_transport_fixture($mode);
+    ProjectDocumentStorage::query()->findOrFail(1)->update([
+        'endpoint' => $storage->endpoint, 'region' => $storage->region, 'bucket' => $storage->bucket,
+        'access_key_id' => 'fixture-access', 'secret_access_key' => 'fixture-secret',
+    ]);
+
+    return [$server, app(DocumentBodies::class)];
+}
+
 /** @return array<string, mixed> */
 function probe_transport_state(): array
 {
     return json_decode(file_get_contents(config()->string('orbit.home').'/http-state.json'), true, flags: JSON_THROW_ON_ERROR);
 }
+
+describe('committed document body HTTP transport', function (): void {
+    it('round trips and verifies empty and binary bodies through real bounded HTTP responses', function (string $encoded): void {
+        [$server, $bodies] = body_transport_fixture('short');
+        $body = DocumentBody::base64($encoded);
+        $bytes = $body->bytes;
+        try {
+            $bodies->put('orbit-documents/1/1/fixture', $body);
+
+            expect($bodies->get('orbit-documents/1/1/fixture', $body->sizeBytes, $body->sha256))->toBe($bytes);
+            expect(array_column(probe_transport_state()['requests'], 'method'))->toBe(['PUT', 'GET', 'GET']);
+            expect(probe_transport_state()['requests'][0]['acl'])->toBe('private');
+        } finally {
+            $server->stop();
+            DB::disconnect('sqlite');
+        }
+    })->with(['empty' => '', 'binary' => 'YQD/Cg==']);
+
+    it('distinguishes missing and corrupt bodies from provider outages through the real HTTP sink', function (string $mode, int $size, string $code, int $status): void {
+        [$server, $bodies] = body_transport_fixture($mode);
+        try {
+            try {
+                $bodies->get('orbit-documents/1/1/fixture', $size, hash('sha256', str_repeat('a', $size)));
+                test()->fail('The provider failure must not return content.');
+            } catch (ResourceOperationException $exception) {
+                expect($exception->errorCode)->toBe($code);
+                expect($exception->status)->toBe($status);
+                expect($exception->getPrevious())->toBeNull();
+                expect((string) $exception)->not->toContain('fixture-access', 'fixture-secret', 'orbit-documents/');
+            }
+            if ($mode !== 'tls-stall') {
+                expect(probe_transport_state()['requests'])->toHaveCount(1);
+                expect(probe_transport_state()['requests'][0]['method'])->toBe('GET');
+            }
+        } finally {
+            $server->stop();
+            DB::disconnect('sqlite');
+        }
+    })->with([
+        'missing empty file' => ['get-404', 0, 'project_documents.body_unavailable', 502],
+        'missing small file' => ['get-404', 5, 'project_documents.body_unavailable', 502],
+        'oversized successful response' => ['oversized', 5, 'project_documents.body_unavailable', 502],
+        'denied empty file' => ['get-403', 0, 'project_documents.storage_unavailable', 503],
+        'server failure small file' => ['get-500', 5, 'project_documents.storage_unavailable', 503],
+        'connection timeout' => ['tls-stall', 5, 'project_documents.storage_unavailable', 503],
+        'successful headers followed by body timeout' => ['body-timeout', 32, 'project_documents.storage_unavailable', 503],
+        'missing bucket is a provider failure' => ['get-404-bucket', 0, 'project_documents.storage_unavailable', 503],
+        'oversized denied diagnostic' => ['get-403-oversized', 0, 'project_documents.storage_unavailable', 503],
+        'oversized server diagnostic' => ['get-500-oversized', 5, 'project_documents.storage_unavailable', 503],
+    ]);
+});
 
 describe('document probe HTTP transport', function (): void {
     it('rejects small HTTP DELETE error and redirect responses without retrying or following redirects', function (int $status): void {

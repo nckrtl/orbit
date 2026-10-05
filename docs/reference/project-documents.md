@@ -4,9 +4,10 @@ description: "Native Project folders, versioned files, editing, private S3 stora
 covers:
   - apps/gateway/app/Actions/ProjectDocuments/**
   - apps/gateway/app/Infrastructure/ProjectDocuments/**
-  - apps/gateway/app/Models/ProjectDocumentStorage.php
+  - apps/gateway/app/Models/ProjectDocument*.php
   - apps/gateway/app/Console/Commands/*DocumentProbe*.php
   - apps/gateway/database/migrations/*_create_project_document_storages_table.php
+  - apps/gateway/database/migrations/*_create_project_documents_tables.php
 ---
 
 # Project Documents
@@ -119,7 +120,9 @@ Live credential injection and verification of private UpCloud read/write/delete 
 
 ### Publish and recover
 
-A body write records a durable upload intent before contacting S3. The intent owns a fresh, never-reused object key and has `active`, `published`, or `abandoned` state. Upload bytes first; then publish the version, current-version pointer, entry revision, and intent's `published` state in one database transaction. This transaction locks the intent and entry, requires an `active` intent, and rechecks revision, parent, and archive state. Readers see only committed versions. Do not hold a database transaction open across a provider request. Bound each provider request to a 30-second timeout; do not automatically retry a content mutation inside the HTTP request.
+A body write records a durable upload intent before contacting S3. The intent owns a fresh, never-reused object key and has `active`, `published`, or `abandoned` state. Upload bytes first; then publish the version, current-version pointer, entry revision, and intent's `published` state in one database transaction. This transaction locks the intent and entry, requires an `active` intent, and rechecks revision, parent, and archive state. Readers see only committed versions.
+
+Do not hold a database transaction open across a provider request. Body operations start outside any database transaction. The Gateway rejects an enclosing transaction before provider access so an outer rollback cannot erase an upload's recovery record. Bound each provider request to a 30-second timeout; do not automatically retry a content mutation inside the HTTP request.
 
 Publication and abandonment compete for the same intent lock. Cleanup atomically changes an unreferenced `active` intent older than one hour to `abandoned` and records its deletion tombstone before any DeleteObject call. If publication commits first, cleanup sees `published` and cannot claim that key. If abandonment commits first, publication is permanently refused with HTTP 409 `project_documents.upload_abandoned`; the caller must retry with a new intent and key. No check-then-delete sequence outside this transaction substitutes for the claim.
 

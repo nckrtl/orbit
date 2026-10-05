@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\ProjectDocuments;
 
+use App\Models\ProjectDocumentCleanup;
 use App\Models\ProjectDocumentStorage;
 
 final readonly class DocumentStorageData
@@ -32,6 +33,9 @@ final readonly class DocumentStorageData
             bucket: $storage->bucket,
             credentialsConfigured: $credentialsConfigured,
             updatedAt: $storage->updated_at?->toIso8601String(),
+            pendingCleanupCount: ProjectDocumentCleanup::query()->where('pending', true)->count(),
+            oldestPendingCleanupAt: ProjectDocumentCleanup::query()->where('pending', true)->oldest('created_at')->first()?->created_at?->toIso8601String(),
+            lastCleanupErrorCode: ProjectDocumentCleanup::query()->where('pending', true)->whereNotNull('last_error_code')->latest('updated_at')->first()?->last_error_code,
         );
     }
 

@@ -35,19 +35,30 @@ class ProbeHandler(http.server.BaseHTTPRequestHandler):
 
     def do_GET(self):
         body = objects.get(self.path, b"a" * 32)
+        status = 200
+        if mode.startswith("get-"):
+            status = int(mode.removeprefix("get-").split("-")[0])
+            code = {403: "AccessDenied", 404: "NoSuchKey", 500: "InternalError"}[status]
+            if mode.endswith("-bucket"):
+                code = "NoSuchBucket"
+            body = ("<Error><Code>" + code + "</Code><Message>fixture-access fixture-secret</Message></Error>").encode()
+            if mode.endswith("-oversized"):
+                body += b"a" * (1024 * 1024)
         if mode == "oversized":
             body = b"a" * (1024 * 1024)
         elif mode == "trailing":
             body += b"b"
-        self.record(200)
-        self.send_response(200)
+        self.record(status)
+        self.send_response(status)
+        if status != 200:
+            self.send_header("Content-Type", "application/xml")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         try:
-            if mode == "body-stall":
+            if mode in ("body-stall", "body-timeout"):
                 self.wfile.write(body[:8])
                 self.wfile.flush()
-                time.sleep(20)
+                time.sleep(35 if mode == "body-timeout" else 20)
             else:
                 for offset in range(0, len(body), 8 if mode == "short" else 4096):
                     self.wfile.write(body[offset:offset + (8 if mode == "short" else 4096)])

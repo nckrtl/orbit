@@ -7,7 +7,10 @@ namespace App\Actions\ProjectDocuments;
 use App\Data\ProjectDocuments\UpdateDocumentStorageData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\ProjectDocuments\VerifyDocumentStorage;
+use App\Models\ProjectDocumentCleanup;
 use App\Models\ProjectDocumentStorage;
+use App\Models\ProjectDocumentUpload;
+use App\Models\ProjectDocumentVersion;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -21,6 +24,7 @@ final readonly class UpdateDocumentStorageAction
     public function handle(#[SensitiveParameter] UpdateDocumentStorageData $data): ProjectDocumentStorage
     {
         return DB::transaction(function () use ($data): ProjectDocumentStorage {
+            app(DocumentTreeAction::class)->lock();
             $storage = ProjectDocumentStorage::query()->lockForUpdate()->findOrFail(1);
             $candidate = clone $storage;
             try {
@@ -39,6 +43,14 @@ final readonly class UpdateDocumentStorageAction
                 if ($candidate->getAttribute($field) === null) {
                     throw ValidationException::withMessages([$field => ['This field is required when configuring document storage.']]);
                 }
+            }
+
+            $destinationChanged = $candidate->endpoint !== $storage->endpoint
+                || $candidate->region !== $storage->region || $candidate->bucket !== $storage->bucket;
+            if ($destinationChanged && (ProjectDocumentVersion::query()->exists()
+                || ProjectDocumentUpload::query()->whereIn('state', ['active', 'abandoned'])->exists()
+                || ProjectDocumentCleanup::query()->where('pending', true)->exists())) {
+                throw new ResourceOperationException('project_documents.storage_in_use', 'Document storage destination is in use.', 409);
             }
 
             $this->verify->handle($candidate);
