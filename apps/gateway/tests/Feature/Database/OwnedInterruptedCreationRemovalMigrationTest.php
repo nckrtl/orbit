@@ -17,5 +17,8 @@ it('round-trips the receipt-backed interrupted creation eligibility guards', fun
         expect($sql)->not->toContain('source_prepare_id');
     }
     $migration->up();
-    expect(DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all())->toBe($before);
+    $after = DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all();
+    ksort($before);
+    ksort($after);
+    expect($after)->toBe($before);
 });

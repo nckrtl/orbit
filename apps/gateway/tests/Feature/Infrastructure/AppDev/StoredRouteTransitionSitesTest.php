@@ -42,7 +42,7 @@ it('renders a Route only while it stores the publication record', function (): v
 
     $route->publishSites();
 
-    expect(stored_transition_scopes($fleet['workload']))->toBe(['feature.acme.test' => "app-instance-{$fleet['instance']->id}"])
+    expect(stored_transition_scopes($fleet['workload']))->toBe(['feature.acme.test' => "app-instance-{$fleet['instance']->id}-app-web"])
         ->and(stored_transition_scopes($fleet['routerA']))->toBe(['feature.acme.test' => "route-{$route->id}-router"])
         ->and(stored_transition_every_converge_matches($fleet))->toBeTrue();
 
@@ -77,7 +77,7 @@ it('keeps an authoritative Route published and withdraws it with its removal', f
 it('renders a placement change from its stored transition at every step', function (): void {
     $fleet = stored_transition_fleet();
     $route = stored_transition_route($fleet, status: RouteStatus::Active);
-    $workloadLive = ['feature.acme.test' => "app-instance-{$fleet['instance']->id}"];
+    $workloadLive = ['feature.acme.test' => "app-instance-{$fleet['instance']->id}-app-web"];
     $live = ['feature.acme.test' => "route-{$route->id}-router"];
     $staging = ['feature.acme.test' => "route-{$route->id}-router-hostname-change"];
     $step = static fn (array $attributes) => Route::query()->whereKey($route->id)->update($attributes);
@@ -153,12 +153,12 @@ it('keeps a cut over domain change on its staging certificates until cleanup', f
     $route->update(['status' => RouteStatus::Retiring]);
     $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
 
-    expect(stored_transition_scopes($fleet['workload']))->toBe(['next.acme.test' => "app-instance-{$fleet['instance']->id}-hostname-change"])
+    expect(stored_transition_scopes($fleet['workload']))->toBe(['next.acme.test' => "app-instance-{$fleet['instance']->id}-hostname-change-app-web"])
         ->and(stored_transition_scopes($fleet['routerA']))->toBe(['next.acme.test' => "route-{$replacement->id}-router-hostname-change"]);
 
     $replacement->update(['replacement_step' => RouteReplacementStep::Cleanup]);
 
-    expect(stored_transition_scopes($fleet['workload']))->toBe(['next.acme.test' => "app-instance-{$fleet['instance']->id}"])
+    expect(stored_transition_scopes($fleet['workload']))->toBe(['next.acme.test' => "app-instance-{$fleet['instance']->id}-app-web"])
         ->and(stored_transition_scopes($fleet['routerA']))->toBe(['next.acme.test' => "route-{$replacement->id}-router"]);
 });
 
@@ -272,7 +272,7 @@ it('renders the unavailable answer of an Instance removal from stored state', fu
     expect($sites)->toHaveCount(1)
         ->and($sites->sole()->unavailable)->toBeTrue()
         ->and($sites->sole()->domain)->toBe('feature.acme.test')
-        ->and($sites->sole()->scope)->toBe($coLocated ? "app-instance-{$fleet['instance']->id}" : "route-{$route->id}-router")
+        ->and($sites->sole()->scope)->toBe($coLocated ? "app-instance-{$fleet['instance']->id}-app-web" : "route-{$route->id}-router")
         ->and(stored_transition_dns())->toContain("host-record=feature.acme.test,{$servingNode->wireguard_ip}")
         ->and(stored_transition_every_converge_matches($fleet))->toBeTrue();
 

@@ -18,6 +18,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * @property int $id
+ * @property string|null $app
  * @property RouteKind $kind
  * @property int|null $project_id
  * @property int|null $node_id
@@ -65,6 +66,7 @@ final class Route extends Model
     protected $fillable = [
         'kind',
         'project_id',
+        'app',
         'node_id',
         'cluster_id',
         'generation_basis_node_id',
@@ -94,6 +96,12 @@ final class Route extends Model
     protected static function booted(): void
     {
         self::saving(static function (self $route): void {
+            if ($route->isApp() && $route->app === null && $route->project_id !== null) {
+                $apps = $route->project?->configuredApps() ?? [];
+                if (count($apps) === 1) {
+                    $route->app = $apps[0]['name'];
+                }
+            }
             if ($route->status->isAuthoritative()) {
                 $route->sites_published = true;
             }

@@ -79,7 +79,11 @@ it('migrates each legacy root and explicit override independently to a named app
     $node = Node::query()->create(['name' => 'named-app-node', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => 'node.example.test']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/srv/repo', 'root' => $override, 'status' => 'active']);
     $migration = require database_path('migrations/2026_10_12_000000_add_named_apps_to_projects.php');
-    // Simulate the pre-expand schema without running model events against removed columns.
+    // The predecessor schema cannot retain guards installed by its dependent runtime migration.
+    $runtimeGuards = DB::table('sqlite_master')->where('type', 'trigger')->get(['name', 'sql'])->filter(static fn ($trigger): bool => str_contains($trigger->sql, 'projects.apps') || str_contains($trigger->sql, 'SELECT apps FROM projects') || str_contains($trigger->sql, 'app_overrides'));
+    foreach ($runtimeGuards as $trigger) {
+        DB::statement('DROP TRIGGER "'.str_replace('"', '""', $trigger->name).'"');
+    }
     Schema::table('projects', fn ($table) => $table->dropColumn('apps'));
     Schema::table('instances', fn ($table) => $table->dropColumn('app_overrides'));
     $beforeProject = (array) DB::table('projects')->find($project->id);
@@ -97,6 +101,9 @@ it('migrates each legacy root and explicit override independently to a named app
         expect($afterInstance)->toBe($beforeInstance);
     } finally {
         $migration->up();
+        foreach ($runtimeGuards as $trigger) {
+            DB::statement($trigger->sql);
+        }
     }
 })->with([
     'public inherits' => ['public', 'laravel-app', '.', 'public', null, []],

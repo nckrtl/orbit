@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
+ * @property string|null $app
  * @property int $route_id
  * @property int $instance_id
  * @property int $position
@@ -19,7 +20,14 @@ final class RouteTarget extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['route_id', 'instance_id', 'position'];
+    protected $fillable = ['route_id', 'instance_id', 'position', 'app'];
+
+    protected static function booted(): void
+    {
+        self::creating(static function (self $target): void {
+            $target->app ??= $target->route->app;
+        });
+    }
 
     /** @return BelongsTo<Route, $this> */
     public function route(): BelongsTo

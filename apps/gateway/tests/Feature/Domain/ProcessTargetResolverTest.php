@@ -38,7 +38,7 @@ it('derives development placement from the Instance', function (): void {
         ->and($target->environmentFile)
         ->toBe('/srv/orbit/docs/main/.env')
         ->and($target->certificateScope)
-        ->toBe("app-instance-{$instance->id}")
+        ->toBe("app-instance-{$instance->id}-app-web")
         ->and($target->productionReleaseLayout)
         ->toBeFalse()
         ->and($target->routeDomain)
@@ -60,7 +60,7 @@ it('uses the Laravel application directory for Instance process defaults and env
 })->with([
     'nested development' => ['server/web/public', true, '/server/web', 'development'],
     'root public development' => ['public', true, '', 'development'],
-    'non Laravel development' => ['server/web/public', false, '', 'development'],
+    'non Laravel development' => ['server/web/public', false, '/server/web', 'development'],
     'nested production' => ['server/web/public', true, '/server/web', 'production'],
     'root public production' => ['public', true, '', 'production'],
     'non Laravel production' => ['server/web/public', false, '', 'production'],

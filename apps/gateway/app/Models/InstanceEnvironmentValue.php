@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * @property int $id
  * @property int $instance_id
+ * @property string $app
  * @property string $env_key
  * @property string $env_value
  * @property-read Instance $instance
@@ -23,9 +24,17 @@ final class InstanceEnvironmentValue extends Model
     #[\Override]
     protected $fillable = [
         'instance_id',
+        'app',
         'env_key',
         'env_value',
     ];
+
+    protected static function booted(): void
+    {
+        self::creating(static function (self $value): void {
+            $value->app ??= $value->instance->appConfiguration()['name'];
+        });
+    }
 
     /** @var list<string> */
     #[\Override]

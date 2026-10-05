@@ -20,6 +20,7 @@ final readonly class DevelopmentPhpFpmConfigRenderer
     public function render(Collection $sites, ManagedUserAccount $account): string
     {
         return $sites
+            ->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null)
             ->sortBy('scope')
             ->map(static function (DevelopmentSite $site) use ($account): string {
                 $user = $site->executionUser($account->user);

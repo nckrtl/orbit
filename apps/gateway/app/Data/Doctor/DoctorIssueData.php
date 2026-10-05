@@ -12,6 +12,7 @@ use InvalidArgumentException;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
+use Spatie\LaravelData\Optional;
 
 #[MapOutputName(SnakeCaseMapper::class)]
 final class DoctorIssueData extends Data
@@ -27,6 +28,7 @@ final class DoctorIssueData extends Data
         public string $summary,
         public bool|string|null $expected,
         public bool|string|null $observed,
+        public string|Optional|null $app = new Optional,
     ) {
         $family = DoctorFamily::tryFrom($resourceType) ?? throw new InvalidArgumentException(
             'A Doctor issue needs a known resource family.',

@@ -127,14 +127,14 @@ it('records Cluster TLD generated Route failure, restores the old Cluster TLD an
         ),
     ))->toThrow(ResourceOperationException::class, 'Injected dns-publication failure.');
 
-    $replacement = Route::query()->where('domain', 'main.acme.next-cluster.test')->sole();
+    $replacement = Route::query()->where('domain', 'web.main.acme.next-cluster.test')->sole();
 
     expect($cluster->refresh()->tld)
         ->toBe('cluster.test')
         ->and($cluster->refresh()->state)
         ->toBe(ClusterState::Active)
         ->and($route->refresh()->domain)
-        ->toBe('main.acme.cluster.test')
+        ->toBe('web.main.acme.cluster.test')
         ->and($route->status)
         ->toBe(RouteStatus::Active)
         ->and($route->replaced_by_route_id)
@@ -146,8 +146,8 @@ it('records Cluster TLD generated Route failure, restores the old Cluster TLD an
         ->and($replacement->error_code)
         ->not->toBeNull()
         ->and($this->events->values)
-        ->toContain('url:https://main.acme.next-cluster.test')
-        ->toContain('url:https://main.acme.cluster.test')
+        ->toContain('url:https://web.main.acme.next-cluster.test')
+        ->toContain('url:https://web.main.acme.cluster.test')
         ->and($member->refresh()->cluster_id)
         ->toBe($cluster->id)
         ->and($cluster->routerAssignment()->get()->map->getAttributes()->all())
@@ -179,7 +179,7 @@ it('records Cluster TLD generated Route failure, restores the old Cluster TLD an
             state: null,
         ),
     );
-    $replaced = Route::query()->where('domain', 'main.acme.next-cluster.test')->sole();
+    $replaced = Route::query()->where('domain', 'web.main.acme.next-cluster.test')->sole();
 
     expect($updated->tld)
         ->toBe('next-cluster.test')
@@ -1985,6 +1985,7 @@ final class RouteDomainChangeEnvironmentFake implements InstanceRouteEnvironment
     public function synchronizeRouteDomain(
         Instance $instance,
         InstanceEnvironmentRouteDomain $domain,
+        ?string $app = null,
     ): InstanceEnvironmentResult {
         $this->events->values[] = "environment:{$domain->value}";
 
@@ -2174,12 +2175,12 @@ final class RouteDomainChangeConfiguratorFake implements DevelopmentInstanceConf
         private RouteDomainChangeEvents $events,
     ) {}
 
-    public function inspect(Instance $instance): DevelopmentSourceProfile
+    public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
     {
         return new DevelopmentSourceProfile('8.5', (bool) $instance->source_is_laravel);
     }
 
-    public function configureLaravelUrl(Instance $instance, string $url): void
+    public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void
     {
         $this->events->values[] = "url:{$url}";
 

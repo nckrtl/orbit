@@ -679,7 +679,7 @@ it('refuses a route publication step when the Project no longer requires a Route
         ->toThrow(ResourceOperationException::class);
 
     $this->projection->fail = null;
-    $this->orbitApp->update(['type' => ProjectType::NodePackage]);
+    $this->orbitApp->update(['type' => ProjectType::NodePackage, 'root' => null]);
 
     expect(fn () => $this->action->execute($this->candidate, $this->data))
         ->toThrow(ResourceOperationException::class, 'The clone preview Route changed.');

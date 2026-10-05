@@ -122,7 +122,7 @@ it('withdraws the final Route in a build before it removes the Instance certific
 
     expect($projector->clearRouteTarget($member))->toBe('deleted');
 
-    $scope = "app-instance-{$member->instance_id}";
+    $scope = "app-instance-{$member->instance_id}-app-web";
     $removal = collect($ssh->commands)->search(
         static fn (RemoteCommand $command): bool => is_string($command->input)
             && str_contains($command->input, 'rm -rf -- "$managed_home/.orbit/certificates/$scope"')
@@ -182,8 +182,8 @@ it('withdraws the second placement of a Route that waits for its placement withd
             "route-{$route->id}-router-hostname-change",
         ])
         ->and($removed($on('10.44.0.31')))->toContain(
-            "app-instance-{$member->instance_id}",
-            "app-instance-{$member->instance_id}-hostname-change",
+            "app-instance-{$member->instance_id}-app-web",
+            "app-instance-{$member->instance_id}-hostname-change-app-web",
         );
 });
 
@@ -221,7 +221,7 @@ it('resumes final Route cleanup after certificate deletion and a late DNS failur
         ->and(collect($ssh->commands)
             ->contains(
                 static fn (RemoteCommand $command): bool => in_array(
-                    "app-instance-{$member->instance_id}",
+                    "app-instance-{$member->instance_id}-app-web",
                     $command->arguments,
                     true,
                 ),
@@ -402,6 +402,37 @@ it('retries shared and final production cleanup without restoring targets or Rou
             ))
         ->toBeFalse();
 })->with(['shared' => true, 'final' => false]);
+
+it('removes every per-app route and pool and makes completed withdrawal retries idempotent', function (): void {
+    $project = orb181_projector_app('two-apps');
+    $project->update(['apps' => [
+        ['name' => 'web', 'path' => 'apps/web', 'web_root' => 'public', 'type' => 'laravel-app'],
+        ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+    ]]);
+    $node = orb181_projector_node('two-apps', '41', null, RoleName::AppDev);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'main', 'checkout_path' => '/home/orbit/apps/two-apps/main', 'branch' => 'main', 'starting_commit' => str_repeat('a', 40), 'status' => InstanceState::SourceResolved]);
+    $routes = [];
+    foreach (['web', 'docs'] as $app) {
+        $instance->recordAppRuntime($app, ['php_version' => '8.5', 'laravel' => true]);
+        $route = Route::query()->create(['project_id' => $project->id, 'app' => $app, 'node_id' => $node->id, 'generation_basis_node_id' => $node->id, 'domain' => "{$app}.main.two-apps.test", 'provenance' => RouteProvenance::Generated, 'publication' => RoutePublication::Private]);
+        $route->targets()->create(['instance_id' => $instance->id, 'app' => $app, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+        $routes[] = $route;
+    }
+    $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active']);
+    $member = orb181_projector_member($instance, $routes[0], array_map(static fn (Route $route): int => $route->id, $routes));
+    [$projector, $ssh] = orb181_removal_projector($this);
+    expect($projector->clearRouteTarget($member))->toBe('deleted')
+        ->and($instance->routes()->count())->toBe(0)
+        ->and(Route::query()->whereIn('id', array_map(static fn (Route $route): int => $route->id, $routes))->count())->toBe(0);
+    expect($projector->clearRouteTarget($member))->toBe('deleted');
+    $projector->cleanupRuntime($member);
+    $arguments = json_encode(array_map(static fn (RemoteCommand $command): array => $command->arguments, $ssh->commands), JSON_THROW_ON_ERROR);
+    foreach (['web', 'docs'] as $app) {
+        expect($arguments)->toContain("app-instance-{$instance->id}-app-{$app}");
+    }
+    expect(new DevelopmentSiteRepository()->forNode($node))->toBeEmpty();
+});
 
 function orb181_unavailable_site(string $configuration): bool
 {
@@ -656,7 +687,7 @@ function orb181_projector_route(
     ]);
 }
 
-function orb181_projector_member(Instance $instance, Route $route): InstanceRemovalMember
+function orb181_projector_member(Instance $instance, Route $route, ?array $routeIds = null): InstanceRemovalMember
 {
     $operation = InstanceRemoval::query()->create([
         'id' => (string) Str::uuid(),
@@ -675,13 +706,14 @@ function orb181_projector_member(Instance $instance, Route $route): InstanceRemo
             'instance_id' => $instance->id,
             'project_id' => $instance->project_id,
             'node_id' => $instance->node_id,
-            'route_id' => $route->id,
+            'route_id' => $routeIds !== null && count($routeIds) > 1 ? null : $route->id,
+            'route_ids' => $routeIds,
             'name' => $instance->name,
             'environment' => $instance->defaultAppEnv(),
             'source_layout' => $instance->source_layout,
             'repository_identity' => $instance->project->repository_identity,
             'checkout_path' => $instance->checkout_path,
-            'root' => $instance->effectiveRoot(),
+            'root' => $instance->removalRoot(),
             'branch' => $instance->branch,
             'starting_commit' => $instance->starting_commit,
             'source_commit' => $instance->starting_commit,

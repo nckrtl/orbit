@@ -57,7 +57,7 @@ beforeEach(function (): void {
 
         public ?string $phpVersion = '8.5';
 
-        public function inspect(Instance $instance): DevelopmentSourceProfile
+        public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
         {
             $this->inspections++;
             if ($this->failInspection) {
@@ -67,7 +67,7 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
-        public function configureLaravelUrl(Instance $instance, string $url): void
+        public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void
         {
             $this->configurations++;
             if ($this->failConfiguration) {

@@ -60,7 +60,7 @@ it('activates a laravel-package Instance without a Route', function (): void {
         'type' => ProjectType::LaravelPackage,
         'repository_url' => 'https://github.com/acme/support.git',
         'default_branch' => 'main',
-        'root' => 'src',
+        'root' => null,
     ]);
     $node = Node::query()->create([
         'name' => 'dev',

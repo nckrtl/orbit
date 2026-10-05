@@ -13,7 +13,7 @@ covers:
 
 # Instance removal
 
-`instance:destroy` removes one Instance with its Route, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal keeps the application content in the production home. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
+`instance:destroy` removes one Instance with every app's Routes, Processes, Schedules, and runtime. A development removal deletes the checkout or worktree. A production removal keeps the application content in the production home. The native removal projector also removes managed Route and runtime projections; a missing production PHP service is reported as a bounded resource failure.
 
 ```bash
 orbit instance:destroy <instance> [--yes] [--force] [--json]
@@ -40,13 +40,15 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active development Instance must have one authoritative Route for each serving app. A pre-activation Instance can have no Routes or its own pending or failed app Routes. A development Instance must be the only target of each of its Routes. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
 | Code | Cause |
 | --- | --- |
 | `instance.transfer_incomplete` | A [transfer](/reference/instance-transfer) is still open: it is unfinished, failed before cutover with incomplete rollback, or failed after cutover. Retry the identical transfer request first. |
+| `instance.lifecycle_busy` | An Instance rename is unfinished. Retry the matching rename before removal. |
+| `instance.lifecycle_conflict` | A Node runtime migration journal is still open. Finish the [runtime migration](/reference/assigned-vite-ports#migrate-port-reservations) before removing the Instance. |
 | `instance.clone_in_progress` | The Instance is the candidate of an incomplete [clone](/reference/instance-cloning). |
 | `analytics.tracking_hosts_exist` | The Instance still has [tracking hosts](/cli/instance#orbit-instanceanalyticsdisable). |
 | `instance.remove_refused` | The Instance is in another state, its Route is not removable, or normal mode found dirty or unpublished source. The message names the rule. |
@@ -123,6 +125,12 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
 
 ### Route cleanup
+
+Removal rechecks unfinished rename ownership for every member after acquiring the shared Instance environment and source locks. A rename that failed while removal waited still blocks acceptance, teardown, source finalization and runtime cleanup. An entry check alone cannot authorize removal after a lock wait.
+
+Acceptance freezes the complete Route ID inventory for each removal member. Every recorded Route must target that Instance under its own app association. The inventory cannot gain or lose entries on retry, and a foreign or incomplete inventory refuses acceptance. For a multi-app development Instance, source removal records the repository root rather than choosing one app's directory. Encrypted app environments and runtime records remain available until their removal steps finish.
+
+Route cleanup visits every Route in that inventory. If withdrawal stops after one app, retry handles the remaining Routes without recreating the completed one. Runtime cleanup removes all app pools and owned certificate scopes after Route withdrawal; it does not use an Instance-prefix deletion glob.
 
 A Route that loses its last target is deleted, with its Caddy, certificate, DNS, and firewall projections, and its domain is released. A shared production Route keeps serving its other targets, and Orbit republishes it.
 

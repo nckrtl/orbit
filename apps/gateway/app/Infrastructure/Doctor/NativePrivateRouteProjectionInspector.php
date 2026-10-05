@@ -74,6 +74,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 ? ($routerValues['pool'] ?? $this->targetSetMatches($route, $routerSite))
                 : true,
             associationMatches: $this->associationMatches($instance, $route),
+            phpFpmProjectionMatches: $workloadValues['php'] ?? null,
         );
     }
 
@@ -112,7 +113,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
     private function associationMatches(Instance $instance, Route $route): bool
     {
-        $count = $instance->routeTargets()->count();
+        $count = $instance->routeTargets()->where('app', $route->app)->count();
 
         return $count === 1 && $instance->routeTargets()->where('route_id', $route->id)->exists();
     }
@@ -196,14 +197,14 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
 
     private function workloadCommand(Instance $instance, Route $route, DevelopmentSite $site): RemoteCommand
     {
-        $laravel = match ($instance->source_is_laravel) {
+        $laravel = match ($instance->runtimeForApp($route->app)['laravel']) {
             true => '1',
             false => '0',
             default => '2',
         };
         $environment = $instance->usesProductionReleaseLayout()
             ? (string) $instance->production_home
-            : $instance->applicationDirectory();
+            : $instance->applicationDirectory($route->app);
         $dnsAddress = $this->expectedDnsAddress($instance, $route) ?? '';
 
         return new RemoteCommand(
@@ -218,6 +219,11 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 $laravel === '1' ? $this->expectedLaravelUrl($instance, $route) : '',
                 $laravel === '1' ? $environment.'/.env' : '',
                 $dnsAddress,
+                $instance->placedOnAppProd() ? '' : ($site->phpVersion ?? ''),
+                $site->poolName(),
+                $site->socketPath(),
+                $site->applicationDirectory(),
+                $site->applicationDirectory().'/bootstrap/cache/config.php',
             ],
             input: <<<'BASH'
                 domain=$1
@@ -226,6 +232,25 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                 expected_url=$4
                 environment=$5
                 expected_dns=$6
+                version=$7
+                pool=$8
+                socket=$9
+                application=${10}
+                cached_config=${11}
+                if [ "$version" = '' ]; then
+                    printf 'php=1\n'
+                elif [ ! -S "$socket" ]; then
+                    printf 'php=0\n'
+                elif awk -v name="[$pool]" -v socket="$socket" -v directory="$application" '
+                    /^\[/ { selected = ($0 == name) }
+                    selected && $0 == "listen = " socket { listen = 1 }
+                    selected && $0 == "chdir = " directory { chdir = 1 }
+                    END { exit !(listen && chdir) }
+                ' "/etc/php/$version/fpm/pool.d/orbit-scopes.conf"; then
+                    printf 'php=1\n'
+                else
+                    printf 'php=0\n'
+                fi
                 # A Node Caddy build keeps every site in the one live file.
                 live=$(readlink -f /etc/caddy/Caddyfile)
                 if grep -qs -- "$domain" "$live"; then
@@ -273,7 +298,40 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
                             if (value != expected) { exit 1 }
                         }
                         END { if (found != 1) exit 1 }
-                    ' "$environment"; then
+                    ' "$environment" && python3 - "$cached_config" "$expected_url" <<'PYTHON'
+                import pathlib, re, sys
+                cache = pathlib.Path(sys.argv[1])
+                if cache.is_symlink() or (cache.exists() and not cache.is_file()):
+                    raise SystemExit(1)
+                if not cache.exists():
+                    raise SystemExit(0)
+                original = cache.read_bytes()
+                pattern = rb"'(?:\\.|[^'\\])*'|\"(?:\\.|[^\"\\])*\"|/\*.*?\*/|//[^\n]*|\#[^\n]*|=>|[()\[\],]|[A-Za-z_][A-Za-z0-9_]*|\S"
+                tokens = [token for token in re.finditer(pattern, original, re.S)
+                          if not token.group().startswith((b'/*', b'//', b'#'))]
+                stack, pending, values = [], None, []
+                for index, token in enumerate(tokens):
+                    value = token.group()
+                    if value in (b'(', b'['):
+                        stack.append((stack[-1] if stack else []) + ([pending] if pending is not None else []))
+                        pending = None
+                    elif value in (b')', b']'):
+                        if not stack: raise SystemExit(1)
+                        stack.pop()
+                        pending = None
+                    elif value == b',':
+                        pending = None
+                    elif value[:1] in (b"'", b'\"') and index + 1 < len(tokens) and tokens[index + 1].group() == b'=>':
+                        pending = value[1:-1]
+                        if len(stack) == 2 and stack[-1] == [b'app'] and pending == b'url':
+                            if index + 2 >= len(tokens): raise SystemExit(1)
+                            candidate = tokens[index + 2].group()
+                            if candidate[:1] not in (b"'", b'\"'): raise SystemExit(1)
+                            if index + 3 >= len(tokens) or tokens[index + 3].group() not in (b',', b')', b']'): raise SystemExit(1)
+                            values.append(candidate[1:-1])
+                raise SystemExit(0 if not stack and values == [sys.argv[2].encode()] else 1)
+                PYTHON
+                    then
                         printf 'laravel=1\n'
                     else
                         printf 'laravel=0\n'
@@ -342,6 +400,7 @@ final readonly class NativePrivateRouteProjectionInspector implements PrivateRou
     private function expectedLaravelUrl(Instance $instance, Route $route): string
     {
         $stored = $instance->environmentValues()
+            ->where('app', $route->app)
             ->where('env_key', 'APP_URL')
             ->value('env_value');
 

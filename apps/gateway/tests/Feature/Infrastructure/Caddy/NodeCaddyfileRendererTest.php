@@ -190,7 +190,7 @@ describe('site sources', function (): void {
             "# orbit: app-dev route-{$route->id}-router\n".rtrim($renderer->render($repository->forNode($router), '10.44.0.1'))."\n",
         )
             ->and($workloadFile->content)->toContain(
-                "# orbit: app-dev app-instance-{$instance->id}\n".rtrim($renderer->render($repository->forNode($workload), '10.44.0.30'))."\n",
+                "# orbit: app-dev app-instance-{$instance->id}-app-web\n".rtrim($renderer->render($repository->forNode($workload), '10.44.0.30'))."\n",
             )
             ->and($routerFile->sites[0]->listener)->toBe(CaddyListenerRule::Wildcard);
     });
@@ -200,14 +200,14 @@ describe('site sources', function (): void {
 
         $sites = $source->fromSites(collect([
             caddy_build_site('shop.example.com', 'route-1-ingress', publicListener: true),
-            caddy_build_site('shop.test', 'app-instance-2', environment: 'production'),
+            caddy_build_site('shop.test', 'app-instance-2-app-web', environment: 'production'),
             caddy_build_site('pool.test', 'route-3-router', localUnixUpstream: 'unix//run/orbit/route-3-local.sock'),
         ]));
 
         expect(array_map(static fn (CaddySite $site): array => [$site->source, $site->name, $site->listener], $sites))->toBe([
             ['app-dev', 'route-3-router', CaddyListenerRule::Wildcard],
             ['ingress', 'route-1-ingress', CaddyListenerRule::Public],
-            ['app-prod', 'app-instance-2', CaddyListenerRule::Wildcard],
+            ['app-prod', 'app-instance-2-app-web', CaddyListenerRule::Wildcard],
         ])
             ->and($sites[0]->unixSockets)->toBe(['unix//run/orbit/route-3-local.sock'])
             ->and($sites[1]->body)->toContain('tls force_automate');

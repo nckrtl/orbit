@@ -20,6 +20,7 @@ use App\Domain\Routes\RouteTargetWebRoot;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
+use App\Models\InstanceRename;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -71,6 +72,7 @@ final readonly class SetRouteTargetAction
     /** @param list<int> $expectedTargetIds */
     private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): Route
     {
+        InstanceRename::assertAvailable([...$expectedTargetIds, $instanceId]);
         try {
             $updated = DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
                 $locked = Route::query()->lockForUpdate()->findOrFail($route->id);
@@ -91,7 +93,11 @@ final readonly class SetRouteTargetAction
                     );
                 }
 
-                RouteTargetWebRoot::assertSupported($target);
+                if (! is_string($locked->app)) {
+                    throw new ResourceOperationException('app.required', 'The Route requires recorded app ownership.', 409);
+                }
+                $app = $target->appConfiguration($locked->app)['name'];
+                RouteTargetWebRoot::assertSupported($target, $app);
                 $currentTarget = $locked->targets()->first();
 
                 if ($currentTarget?->instance_id === $target->id) {
@@ -131,6 +137,7 @@ final readonly class SetRouteTargetAction
                         $target->project->slug,
                         $target->name,
                         $placement->effectiveTld,
+                        $app,
                     );
                 }
 
@@ -143,6 +150,7 @@ final readonly class SetRouteTargetAction
                 if ($nextDomain !== $locked->domain) {
                     $replacement = Route::query()->create([
                         'project_id' => $locked->project_id,
+                        'app' => $app,
                         'node_id' => $attributes['node_id'],
                         'cluster_id' => $attributes['cluster_id'],
                         'generation_basis_node_id' => $attributes['generation_basis_node_id'] ?? null,
@@ -153,7 +161,7 @@ final readonly class SetRouteTargetAction
                         'replaces_route_id' => $locked->id,
                         'replacement_step' => RouteReplacementStep::Reserved,
                     ]);
-                    $replacement->targets()->create(['instance_id' => $target->id, 'position' => 0]);
+                    $replacement->targets()->create(['instance_id' => $target->id, 'position' => 0, 'app' => $replacement->app]);
                     $locked->targets()->delete();
                     $locked->delete();
                     $replacement->update([
@@ -167,7 +175,7 @@ final readonly class SetRouteTargetAction
                 unset($attributes['domain']);
                 $locked->update($attributes);
                 $locked->targets()->delete();
-                $locked->targets()->create(['instance_id' => $target->id, 'position' => 0]);
+                $locked->targets()->create(['instance_id' => $target->id, 'position' => 0, 'app' => $locked->app]);
 
                 return $locked->refresh()->load('targets');
             });

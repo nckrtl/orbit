@@ -59,7 +59,11 @@ final class InstanceData extends Data
             app(SelectInstanceSeedAction::class)->execute($instance);
         }
         $instance->loadMissing(['project', 'node', 'routes.targets', 'deploySteps']);
-        $route = $instance->authoritativeRoute() ?? $instance->routes->first();
+        $singleApp = count($instance->effectiveApps()) === 1;
+        $route = $singleApp ? $instance->authoritativeRoute() : null;
+        if ($route === null && $singleApp && $instance->routes->count() === 1) {
+            $route = $instance->routes->sole();
+        }
         $removal = InstanceRemoval::query()
             ->with('members')
             ->whereHas('members', static fn ($query) => $query
@@ -85,7 +89,7 @@ final class InstanceData extends Data
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             root: $instance->root,
-            effectiveRoot: $instance->effectiveRoot(),
+            effectiveRoot: $singleApp ? $instance->effectiveRoot() : null,
             selectedBranch: $instance->branch,
             branchOverride: $instance->branch_override,
             startingCommit: $instance->starting_commit,

@@ -31,9 +31,11 @@ use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\AppDevTldConverger;
 use App\Domain\AppDev\AppDevTldRouteManager;
+use App\Domain\AppDev\AppRuntimeMigrationProjector;
 use App\Domain\AppDev\ClusterRouterDnsSelectionReconciler;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\PrivateDnsManager;
+use App\Domain\AppDev\ViteEnvironmentProjection;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\AppProd\AppProdCaddyManager;
 use App\Domain\Broadcasting\RealtimeConnection;
@@ -46,6 +48,7 @@ use App\Domain\Doctor\CaddyBuildInspector;
 use App\Domain\Doctor\CustomProxyRouteInspector;
 use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstalledPackageInventory;
+use App\Domain\Doctor\InstanceAppStateInspector;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
@@ -190,6 +193,7 @@ use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\AppDev\NativeAppDevTldConverger;
+use App\Infrastructure\AppDev\NativeAppRuntimeMigrationProjector;
 use App\Infrastructure\AppDev\NativeClusterRouterDnsSelectionReconciler;
 use App\Infrastructure\AppDev\NativeDevelopmentProjectionOperationLock;
 use App\Infrastructure\AppDev\RemoteAgentationSiteProjection;
@@ -219,6 +223,7 @@ use App\Infrastructure\DatabaseServers\RemoteDatabaseServerAdmin;
 use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
+use App\Infrastructure\Doctor\NativeInstanceAppStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
@@ -435,6 +440,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GatewayVpnStateInspector::class => NativeGatewayVpnStateInspector::class,
         HostKeyScanner::class => SshHostKeyScanner::class,
         InstanceStateInspector::class => NativeInstanceStateInspector::class,
+        InstanceAppStateInspector::class => NativeInstanceAppStateInspector::class,
         PublicRouteEdgeInspector::class => NativePublicRouteEdgeInspector::class,
         PrivateRouteProjectionInspector::class => NativePrivateRouteProjectionInspector::class,
         CustomProxyRouteInspector::class => NativeCustomProxyRouteInspector::class,
@@ -480,6 +486,8 @@ final class ApplicationServiceProvider extends ServiceProvider
         AgentViewConverger::class => NativeAgentViewConverger::class,
         ProcessUsageIndex::class => PrometheusProcessUsageIndex::class,
         VitePortRuntime::class => RemoteVitePortRuntime::class,
+        ViteEnvironmentProjection::class => RemoteVitePortRuntime::class,
+        AppRuntimeMigrationProjector::class => NativeAppRuntimeMigrationProjector::class,
         HibernationMarkerStore::class => RemoteHibernationMarkerStore::class,
         InstanceCheckoutInspector::class => RemoteInstanceCheckoutInspector::class,
         InstanceLogReader::class => RemoteInstanceLogReader::class,

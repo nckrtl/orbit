@@ -1475,6 +1475,7 @@ function route_api_environment_fake(): InstanceRouteEnvironmentSynchronizer
         public function synchronizeRouteDomain(
             Instance $instance,
             InstanceEnvironmentRouteDomain $domain,
+            ?string $app = null,
         ): InstanceEnvironmentResult {
             return new InstanceEnvironmentResult($instance->id, 'sync', false, 0);
         }

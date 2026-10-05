@@ -85,7 +85,7 @@ beforeEach(function (): void {
         /** @var list<string> */
         public array $inspected = [];
 
-        public function inspect(Instance $instance): DevelopmentSourceProfile
+        public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
         {
             $this->inspected[] = $instance->checkout_path;
 
@@ -100,7 +100,7 @@ beforeEach(function (): void {
             return new DevelopmentSourceProfile('8.5', true);
         }
 
-        public function configureLaravelUrl(Instance $instance, string $url): void {}
+        public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void {}
     };
     app()->instance(DevelopmentInstanceConfigurator::class, $this->configuration);
     $this->projection = new class implements DevelopmentRouteProjector
@@ -928,7 +928,7 @@ it('returns 409 for a retained secondary request and keeps the complete primary 
         ->and($completed['feature']['id'])
         ->toBe($instances[1]->id)
         ->and($completed['feature']['route']['domain'])
-        ->toBe('feature.acme.test')
+        ->toBe('web.feature.acme.test')
         ->and(Route::query()->count())
         ->toBe(2)
         ->and($this->registrationSource->calls)
@@ -1003,7 +1003,7 @@ it('accepts evidence-backed managed primary retries after completion and interru
             'project_id' => $project->id,
             'node_id' => $this->node->id,
             'generation_basis_node_id' => $index === 0 ? null : $this->node->id,
-            'domain' => $index === 0 ? 'primary.test' : 'feature.acme.test',
+            'domain' => $index === 0 ? 'primary.test' : 'web.feature.acme.test',
             'provenance' => $index === 0 ? RouteProvenance::Explicit : RouteProvenance::Generated,
             'publication' => RoutePublication::Private,
             'status' => RouteStatus::Pending,
@@ -1351,7 +1351,7 @@ it('uses an explicit hostname only for the primary member of a requested source 
     expect($instances['default']['route']['domain'])
         ->toBe('primary.test')
         ->and($instances['feature']['route']['domain'])
-        ->toBe('feature.acme.test')
+        ->toBe('web.feature.acme.test')
         ->and($retried['default']['id'])
         ->toBe($instances['default']['id'])
         ->and($retried['default']['route']['id'])
@@ -1419,7 +1419,7 @@ it('preflights the requested and retained application root instead of unrelated 
         /** @param array<string, array{composer: string, artisan: string}> $metadata */
         public function __construct(private readonly array $metadata) {}
 
-        public function inspect(Instance $instance): DevelopmentSourceProfile
+        public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
         {
             $directory = $instance->applicationDirectory();
             $this->inspected[] = $directory;
@@ -1430,7 +1430,7 @@ it('preflights the requested and retained application root instead of unrelated 
             );
         }
 
-        public function configureLaravelUrl(Instance $instance, string $url): void {}
+        public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void {}
     };
     app()->instance(DevelopmentInstanceConfigurator::class, $configuration);
     $payload = ['source_path' => $source, 'project_id' => $project->id, 'root' => $root];

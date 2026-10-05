@@ -16,5 +16,6 @@ final readonly class PrivateRouteProjectionObservation
         public ?bool $laravelUrlMatches,
         public ?bool $targetSetMatches = true,
         public ?bool $associationMatches = true,
+        public ?bool $phpFpmProjectionMatches = true,
     ) {}
 }

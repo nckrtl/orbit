@@ -21,12 +21,14 @@ final readonly class InstanceEnvironmentContext
         public string $nodeStatus,
         public Node $node,
         public ?InstanceEnvironmentRouteDomain $routeDomainSource = null,
+        public string $app = 'web',
     ) {}
 
     public function samePlacement(self $other): bool
     {
         return
-            $this->instanceId === $other->instanceId
+            $this->app === $other->app
+            && $this->instanceId === $other->instanceId
             && $this->projectId === $other->projectId
             && $this->nodeId === $other->nodeId
             && $this->environment === $other->environment

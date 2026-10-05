@@ -478,12 +478,12 @@ function routing_mode_bind_boundaries(): void
     });
     app()->instance(DevelopmentInstanceConfigurator::class, new class implements DevelopmentInstanceConfigurator
     {
-        public function inspect(Instance $instance): DevelopmentSourceProfile
+        public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
         {
             return new DevelopmentSourceProfile('8.5', false);
         }
 
-        public function configureLaravelUrl(Instance $instance, string $url): void {}
+        public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void {}
     });
     app()->instance(DevelopmentRouteProjector::class, new class implements DevelopmentRouteProjector
     {

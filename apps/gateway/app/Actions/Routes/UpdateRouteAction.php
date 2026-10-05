@@ -18,6 +18,7 @@ use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Models\InstanceRename;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 
@@ -32,7 +33,7 @@ final readonly class UpdateRouteAction
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
 
-    public function execute(Route $route, UpdateRouteData $data, bool $allowGenerated = false): Route
+    public function execute(Route $route, UpdateRouteData $data, bool $allowGenerated = false, ?InstanceRename $renameOwner = null): Route
     {
         if (! $route->isApp()) {
             throw new ResourceOperationException(
@@ -52,7 +53,7 @@ final readonly class UpdateRouteAction
         $targetIds = array_values($targetIds);
         $result = $this->environmentOperations->run(
             $targetIds,
-            fn (): Route => $this->executeOwned($route, $data, $targetIds, $allowGenerated),
+            fn (): Route => $this->executeOwned($route, $data, $targetIds, $allowGenerated, $renameOwner),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -67,7 +68,7 @@ final readonly class UpdateRouteAction
     }
 
     /** @param list<int> $expectedTargetIds */
-    private function executeOwned(Route $route, UpdateRouteData $data, array $expectedTargetIds, bool $allowGenerated): Route
+    private function executeOwned(Route $route, UpdateRouteData $data, array $expectedTargetIds, bool $allowGenerated, ?InstanceRename $renameOwner): Route
     {
         $route->refresh()->load('targets');
         $currentTargetIds = $route
@@ -88,6 +89,7 @@ final readonly class UpdateRouteAction
         $domain = $data->domainProvided && $data->domain !== null
             ? RouteDomain::validate($data->domain)
             : null;
+        InstanceRename::assertAvailable($expectedTargetIds, $data->publicationProvided ? null : $renameOwner, $route, $domain);
         $publicationChanges =
             $data->publicationProvided && $data->publication !== null && $route->publication !== $data->publication;
 
@@ -96,7 +98,7 @@ final readonly class UpdateRouteAction
 
         // An original-domain request must not bypass a retained replacement as a same-domain no-op.
         if ($domain !== null && ($route->replaced_by_route_id !== null || $route->replaces_route_id !== null)) {
-            return $this->converge->execute($route, $domain, $requestedPublication, allowGenerated: $allowGenerated);
+            return $this->converge->execute($route, $domain, $requestedPublication, allowGenerated: $allowGenerated, renameOwner: $renameOwner);
         }
 
         if (
@@ -108,7 +110,7 @@ final readonly class UpdateRouteAction
                 RouteStatus::Failed,
             ], true)
         ) {
-            return $this->converge->execute($route, $domain, $requestedPublication, allowGenerated: $allowGenerated);
+            return $this->converge->execute($route, $domain, $requestedPublication, allowGenerated: $allowGenerated, renameOwner: $renameOwner);
         }
 
         if (
@@ -196,6 +198,7 @@ final readonly class UpdateRouteAction
 
             $created = Route::query()->create([
                 'project_id' => $locked->project_id,
+                'app' => $locked->app,
                 'node_id' => $locked->node_id,
                 'cluster_id' => $locked->cluster_id,
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
@@ -210,6 +213,7 @@ final readonly class UpdateRouteAction
             foreach ($locked->targets as $target) {
                 $created->targets()->create([
                     'instance_id' => $target->instance_id,
+                    'app' => $created->app,
                     'position' => $target->position,
                 ]);
             }

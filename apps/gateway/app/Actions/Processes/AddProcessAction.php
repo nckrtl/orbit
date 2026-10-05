@@ -74,7 +74,7 @@ final readonly class AddProcessAction
         if ($data->user !== null && ($data->targetType !== ProcessTargetType::Node || $data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
             throw new ResourceOperationException('process.option_invalid', 'The user option requires a Node systemd Process without a preset.');
         }
-        $this->targets->resolve($data->targetType, $data->targetId);
+        $this->targets->resolve($data->targetType, $data->targetId, $data->app);
         $ownerIds = $data->targetType === ProcessTargetType::Instance ? [$data->targetId] : [];
 
         return $this->admissions->run(
@@ -149,6 +149,7 @@ final readonly class AddProcessAction
                     ->with('node')
                     ->lockForUpdate()
                     ->findOrFail($data->targetId),
+                $data->app,
             ),
             ProcessTargetType::Node => $this->targets->forNodeAdmission(
                 Node::query()
@@ -174,8 +175,12 @@ final readonly class AddProcessAction
             ->first() ?? new Process([
                 'owner_type' => $data->targetType->storedType(),
                 'owner_id' => $data->targetId,
+                'app' => $target->app,
                 'name' => $data->name,
             ]);
+        if ($process->exists && $process->app !== $target->app) {
+            throw new ResourceOperationException('process.name_taken', 'This Process name belongs to a different app.', 409);
+        }
         if ($process->endpoint_withdrawal_started_at !== null) {
             throw new ResourceOperationException('process.removal_pending', 'Finish removing this Process before creating it again.', 409);
         }
@@ -255,6 +260,7 @@ final readonly class AddProcessAction
         $siblings = Process::query()
             ->whereIn('owner_type', Instance::morphTypes())
             ->where('owner_id', $data->targetId)
+            ->where('app', $target->app)
             ->where('name', '!=', $data->name)
             ->get();
 
@@ -277,13 +283,13 @@ final readonly class AddProcessAction
         }
 
         if ($data->preset === AnnotatorPreset::NAME) {
-            $this->agentationPorts->assign($target->instance, 'annotator_port');
-            $this->agentationUrls->project($target->instance, annotator: true);
+            $this->agentationPorts->assign($target->instance, 'annotator_port', $target->app);
+            $this->agentationUrls->project($target->instance, annotator: true, app: $target->app);
         }
 
         if ($data->preset === AgentationMcpPreset::NAME) {
-            $this->agentationPorts->assign($target->instance);
-            $this->agentationUrls->project($target->instance);
+            $this->agentationPorts->assign($target->instance, app: $target->app);
+            $this->agentationUrls->project($target->instance, app: $target->app);
         }
     }
 }

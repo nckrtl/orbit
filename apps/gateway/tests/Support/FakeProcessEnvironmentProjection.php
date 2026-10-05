@@ -12,7 +12,7 @@ final class FakeProcessEnvironmentProjection implements ProcessEnvironmentProjec
     /** @var list<array{instance_id: int, except_process_id: int}> */
     public array $projected = [];
 
-    public function project(Instance $instance, int $exceptProcessId): void
+    public function project(Instance $instance, int $exceptProcessId, ?string $app = null): void
     {
         $this->projected[] = ['instance_id' => $instance->id, 'except_process_id' => $exceptProcessId];
     }

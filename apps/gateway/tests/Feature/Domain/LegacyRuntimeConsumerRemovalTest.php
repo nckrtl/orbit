@@ -28,7 +28,7 @@ it('lists Instance Route sites without leftover Instance or Workspace tables', f
     $sites = new DevelopmentSiteRepository()->forNode($node);
 
     expect($sites->pluck('scope')->all())
-        ->toBe(["app-instance-{$instance->id}"])
+        ->toBe(["app-instance-{$instance->id}-app-web"])
         ->and(Schema::hasTable('instances'))
         ->toBeTrue()
         ->and(Schema::hasTable('workspaces'))

@@ -21,6 +21,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
@@ -71,6 +72,28 @@ beforeEach(function (): void {
         'status' => InstanceState::Active,
     ]);
 });
+
+it('admits an internally selected app preset on a multi-app Instance without widening public selectors', function (string $preset): void {
+    $this->orbitApp->update(['apps' => [
+        ['name' => 'web', 'path' => 'apps/web', 'web_root' => 'public', 'type' => 'laravel-app'],
+        ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+    ]]);
+    $data = new AddProcessData(
+        targetType: ProcessTargetType::Instance, targetId: $this->instance->id, name: $preset,
+        runtime: ProcessRuntime::Systemd, command: ProcessPresets::command($preset),
+        image: null, workingDirectory: null, environment: [], ports: [], volumes: [],
+        restartPolicy: 'on-failure', start: false, preset: $preset, app: 'docs',
+    );
+    $action = new AddProcessAction($this->targets, $this->runtime, app(ProcessAdmissionLock::class));
+    $result = $action->execute($data);
+    $again = $action->execute($data);
+    expect($result['created'])->toBeTrue()->and($again['created'])->toBeFalse()
+        ->and($result['process']->app)->toBe('docs')
+        ->and($result['process']->working_directory)->toBe('/home/orbit/apps/docs/apps/docs')
+        ->and($result['process']->runtime_config['environment_file'])->toBe('/home/orbit/apps/docs/apps/docs/.env')
+        ->and($this->instance->processes()->where('app', 'web')->count())->toBe(0);
+    expect(fn () => $this->targets->resolve(ProcessTargetType::Instance, $this->instance->id))->toThrow(ResourceOperationException::class);
+})->with(['vp-dev', 'annotator']);
 
 it('adds a stopped systemd process idempotently with the target defaults', function (): void {
     $data = new AddProcessData(
@@ -518,7 +541,7 @@ it('uses the node managed user and Instance certificate scope for app-dev target
     expect($instanceTarget->user)
         ->toBe('nckrtl')
         ->and($instanceTarget->certificateScope)
-        ->toBe("app-instance-{$this->instance->id}");
+        ->toBe("app-instance-{$this->instance->id}-app-web");
 
     $removalTarget = $this->targets->forRemoval(Process::query()->create([
         'owner_type' => Instance::MorphAlias,

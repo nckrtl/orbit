@@ -4,7 +4,8 @@ description: "What a Route records, how Orbit projects its private traffic path 
 covers:
   - apps/gateway/app/{Domain,Actions,Infrastructure,Data}/Routes/**
   - apps/gateway/app/Http/{Controllers/Api/RoutesController.php,Requests/Routes/**}
-  - apps/gateway/app/Models/{Route,RouteTarget,RouteCustomProxy}.php
+  - apps/gateway/app/Models/{Route,RouteTarget,RouteCustomProxy,InstanceRename}.php
+  - apps/gateway/database/migrations/{*_create_instance_rename_journals,*_rename_app_domain_to_project_and_instance}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentCaddyConfigRenderer,DevelopmentSiteRepository,NativeDevelopmentProjectionOperationLock}.php
   - apps/gateway/app/Domain/AppDev/{DevelopmentServerEndpoint,AgentationEndpoint,PrivateDnsAnswerExpiry}.php
   - apps/gateway/app/Infrastructure/Clusters/NativeClusterRouterOperationLock.php
@@ -391,7 +392,9 @@ For Laravel, convergence writes the new `APP_URL` into the selected app's stored
 
 Before changing anything, the Gateway validates the Instance, any supplied branch, and the normalized domain's availability. A branch mismatch or `route.domain_conflict` in a combined request changes neither branch record nor Route. A domain request without the Instance's own single-target Project Route returns `instance.route_required`; custom proxy and analytics Routes are not candidates. The changed branch record is committed only after the requested domain converges successfully.
 
-The journal records Instance ID, resolved app name, normalized destination domain, branch value and whether branch was supplied before preparation. These fields define retry identity; a different app, domain or branch presence/value during recovery returns `route.domain_change_conflict`. Branch-only work shares the Instance operation owner and cannot run through an incomplete domain replacement. Another owner returns `instance.lifecycle_busy`. An identical completed retry, including a lost response, returns the current Instance without another Route replacement or branch mutation.
+Project reconciliation, generic Route convergence and Instance removal check for an unfinished rename under the shared Instance owner locks, before acceptance or projection work. They return `instance.lifecycle_busy` until the matching rename finishes. Only that rename may converge its recorded app, original Route and destination domain. Bulk Node and Cluster changes check the same durable owner during each Route preflight under its Instance locks, before projecting any Route. Execution rechecks the owner under those locks. Generated proposals and pending target replacements use the recorded Route app; missing ownership is refused rather than treated as `web`.
+
+The durable rename journal records Instance ID, resolved app name, normalized destination domain, branch value and whether branch was supplied before preparation. It retains the original Route ID through replacement cleanup, then records domain convergence before the atomic branch and completion transaction. These fields define retry identity; a different app, domain or branch presence/value during recovery returns `route.domain_change_conflict`. Branch-only work shares the Instance operation owner and cannot run through an incomplete domain replacement. Another owner returns `instance.lifecycle_busy`. An identical completed retry, including a lost response, returns the current Instance without another Route replacement or branch mutation.
 
 For a combined request, all local source, app and domain checks precede remote mutation. The branch record stays unchanged until domain convergence and cleanup succeed. Before cutover, failure restores only the selected app's old projection and leaves the old branch record. After cutover, recovery keeps the selected app's new domain and continues forward; the branch record remains old until convergence completes. Orbit commits the requested branch record and completed-operation receipt in one transaction.
 

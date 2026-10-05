@@ -204,11 +204,16 @@ final readonly class DevelopmentCaddyConfigRenderer
 
     private function hibernationWake(DevelopmentSite $site): ?string
     {
-        if (preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $site->scope, $matches) !== 1) {
+        if ($site->environment !== 'development') {
             return null;
         }
-
-        $id = $matches[1];
+        $id = $site->instanceId;
+        if ($id === null && preg_match('/\Aapp-instance-([1-9][0-9]*)\z/D', $site->scope, $matches) === 1) {
+            $id = (int) $matches[1];
+        }
+        if ($id === null) {
+            return null;
+        }
         $key = RuntimeHibernation::key((int) $id);
         $log = RuntimeHibernation::accessLogPath($key);
         $host = parse_url($this->gatewayOrigin, PHP_URL_HOST);

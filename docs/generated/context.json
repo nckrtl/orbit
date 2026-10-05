@@ -2223,6 +2223,7 @@
                 "Instance",
                 "Node",
                 "Node agent",
+                "Process",
                 "Role"
             ],
             "governing_adrs": []

@@ -364,7 +364,7 @@ it('reports only stuck provisioning instead of inspecting an unsettled Instance'
         ->and($report->issues[0]->resourceId)->toBe($instance->id);
 });
 
-it('accepts an active monorepo default without a Route or PHP runtime', function (): void {
+it('reports a missing Route for an active serving monorepo without PHP runtime', function (): void {
     $node = instance_probe_node();
     $project = instance_probe_orbit_app();
     $project->update(['type' => ProjectType::Monorepo]);
@@ -379,10 +379,11 @@ it('accepts an active monorepo default without a Route or PHP runtime', function
 
     $report = new InstanceDoctorProbe(instance_probe_healthy_inspector())->inspect(instance_probe_context($node));
 
-    expect($instance->requiresRoute())->toBeFalse()
+    expect($instance->requiresRoute())->toBeTrue()
         ->and($instance->servesPhp())->toBeFalse()
         ->and($report->checked)->toBe(1)
-        ->and($report->issues)->toBe([]);
+        ->and(array_map(static fn ($issue): string => $issue->code, $report->issues))
+        ->toBe(['instance.route_association_mismatch']);
 });
 
 it('accepts source_resolved for a task workspace that is not visitable', function (): void {
@@ -993,6 +994,7 @@ function instance_probe_instance(
     Project $project,
     Node $node,
     InstanceState $status = InstanceState::Active,
+    bool $withRoute = true,
 ): Instance {
     NodeRole::query()->firstOrCreate(
         ['node_id' => $node->id, 'role' => RoleName::AppDev],
@@ -1000,7 +1002,7 @@ function instance_probe_instance(
     );
     $suffix = $project->instances()->count() + 1;
 
-    return Instance::query()->create([
+    $instance = Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
         'name' => "development-{$suffix}",
@@ -1010,6 +1012,20 @@ function instance_probe_instance(
         'starting_commit' => str_repeat((string) $suffix, 40),
         'status' => $status,
     ]);
+    if ($withRoute && $status === InstanceState::Active && $instance->requiresRoute()) {
+        $route = Route::query()->create([
+            'project_id' => $project->id,
+            'domain' => "web.{$instance->name}.{$project->slug}.test",
+            'node_id' => $node->id,
+            'provenance' => RouteProvenance::Explicit,
+            'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+        $route->update(['status' => RouteStatus::Active]);
+    }
+
+    return $instance;
 }
 
 function instance_probe_orbit_app(): Project
@@ -1187,7 +1203,7 @@ function instance_probe_private_cluster_route(): array
         'status' => LifecycleStatus::Active,
     ]);
     $workload->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
-    $instance = instance_probe_instance(instance_probe_app(), $workload);
+    $instance = instance_probe_instance(instance_probe_app(), $workload, withRoute: false);
     $instance->update(['source_is_laravel' => true]);
     $route = Route::query()->create([
         'project_id' => $instance->project_id,

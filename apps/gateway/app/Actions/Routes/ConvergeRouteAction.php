@@ -24,6 +24,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceRename;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -53,6 +54,7 @@ final readonly class ConvergeRouteAction
         bool $allowGenerated = false,
         ?RoutePlacement $placement = null,
         bool $deferPlacementWithdrawal = false,
+        ?InstanceRename $renameOwner = null,
     ): Route {
         if ($route->isAnalyticsTracking() && $placement instanceof RoutePlacement) {
             return $this->convergeTrackingPlacement($route, $placement, $deferPlacementWithdrawal);
@@ -69,7 +71,7 @@ final readonly class ConvergeRouteAction
                 $publication,
                 $allowGenerated,
                 $placement,
-            ));
+            ), $publication === null && $placement === null ? $renameOwner : null, $route, $domain);
         } catch (PlacementWithdrawalPending $pending) {
             if (! $pending->restores() && $deferPlacementWithdrawal) {
                 return Route::query()->with('targets')->findOrFail($pending->routeId);
@@ -132,12 +134,23 @@ final readonly class ConvergeRouteAction
      */
     public function assertConvergible(Route $route, string $domain, bool $allowGenerated = false): void
     {
+        $targetIds = $route->isAnalyticsTracking() ? $this->trackingInstanceIds($route) : $this->targetIds($route);
+        $this->environmentOperations->run($targetIds, function () use ($route, $domain, $allowGenerated, $targetIds): void {
+            InstanceRename::assertAvailable($targetIds);
+            $this->assertConvergibleOwned($route, $domain, $allowGenerated, $targetIds);
+        });
+    }
+
+    /** @param list<int> $targetIds */
+    private function assertConvergibleOwned(Route $route, string $domain, bool $allowGenerated, array $targetIds): void
+    {
         $route = $this->storedRoute($route->id);
 
         if (! $route instanceof Route || $route->isAnalyticsTracking()) {
             return;
         }
 
+        $this->assertTargetsUnchanged($route, $targetIds);
         $domain = RouteDomain::validate($domain);
 
         if ($route->replaced_by_route_id !== null) {
@@ -212,11 +225,15 @@ final readonly class ConvergeRouteAction
      * @param  callable(): TResult  $operation
      * @return TResult
      */
-    private function owned(array $targetIds, callable $operation): mixed
+    private function owned(array $targetIds, callable $operation, ?InstanceRename $renameOwner = null, ?Route $renameRoute = null, ?string $renameDomain = null): mixed
     {
         return $this->environmentOperations->run(
             $targetIds,
-            fn (): mixed => $this->owner->run($operation(...)),
+            function () use ($targetIds, $operation, $renameOwner, $renameRoute, $renameDomain): mixed {
+                InstanceRename::assertAvailable($targetIds, $renameOwner, $renameRoute, $renameDomain);
+
+                return $this->owner->run($operation(...));
+            },
         );
     }
 
@@ -537,10 +554,11 @@ final readonly class ConvergeRouteAction
                     RouteReplacementStep::LaravelUrl,
                     function () use ($targets, $replacement): void {
                         foreach ($targets as $instance) {
-                            if ($instance->source_is_laravel) {
+                            if ($instance->runtimeForApp($replacement->app)['laravel']) {
                                 $this->configuration->configureLaravelUrl(
                                     $instance,
                                     "https://{$replacement->domain}",
+                                    $replacement->app,
                                 );
                             }
                         }
@@ -677,7 +695,7 @@ final readonly class ConvergeRouteAction
                 app(RouteReconciliationGuard::class)->refuse();
             }
 
-            if ($target->source_is_laravel === null) {
+            if ($target->runtimeForApp($route->app)['laravel'] === null) {
                 new InstanceSourceProfileGuard()->refuseMissing();
             }
         }
@@ -745,6 +763,7 @@ final readonly class ConvergeRouteAction
 
             $replacement = Route::query()->create([
                 'project_id' => $locked->project_id,
+                'app' => $locked->app,
                 'node_id' => $placement instanceof RoutePlacement ? $placement->nodeId : $locked->node_id,
                 'cluster_id' => $placement instanceof RoutePlacement ? $placement->clusterId : $locked->cluster_id,
                 'generation_basis_node_id' => $locked->generation_basis_node_id,
@@ -761,6 +780,7 @@ final readonly class ConvergeRouteAction
             foreach ($locked->targets as $target) {
                 $replacement->targets()->create([
                     'instance_id' => $target->instance_id,
+                    'app' => $replacement->app,
                     'position' => $target->position,
                 ]);
             }
@@ -896,10 +916,11 @@ final readonly class ConvergeRouteAction
                     RouteReplacementStep::LaravelUrl,
                     function () use ($targets, $candidate): void {
                         foreach ($targets as $instance) {
-                            if ($instance->source_is_laravel) {
+                            if ($instance->runtimeForApp($candidate->app)['laravel']) {
                                 $this->configuration->configureLaravelUrl(
                                     $instance,
                                     "https://{$candidate->domain}",
+                                    $candidate->app,
                                 );
                             }
                         }
@@ -1052,10 +1073,11 @@ final readonly class ConvergeRouteAction
                         $instance,
                         InstanceEnvironmentRouteDomain::Candidate,
                     );
-                } elseif ($instance->source_is_laravel) {
+                } elseif ($instance->runtimeForApp($candidate->app)['laravel']) {
                     $this->configuration->configureLaravelUrl(
                         $instance,
                         "https://{$candidate->domain}",
+                        $candidate->app,
                     );
                 }
 
@@ -1144,10 +1166,11 @@ final readonly class ConvergeRouteAction
                         $instance,
                         InstanceEnvironmentRouteDomain::Authoritative,
                     );
-                } elseif ($instance->source_is_laravel) {
+                } elseif ($instance->runtimeForApp($retired->app)['laravel']) {
                     $this->configuration->configureLaravelUrl(
                         $instance,
                         "https://{$retired->domain}",
+                        $retired->app,
                     );
                 }
             }
@@ -1213,10 +1236,11 @@ final readonly class ConvergeRouteAction
                         $instance,
                         InstanceEnvironmentRouteDomain::Candidate,
                     );
-                } elseif ($instance->source_is_laravel) {
+                } elseif ($instance->runtimeForApp($replacement->app)['laravel']) {
                     $this->configuration->configureLaravelUrl(
                         $instance,
                         "https://{$replacement->domain}",
+                        $replacement->app,
                     );
                 }
 
@@ -1278,10 +1302,11 @@ final readonly class ConvergeRouteAction
                         $instance,
                         InstanceEnvironmentRouteDomain::Authoritative,
                     );
-                } elseif ($instance->source_is_laravel && $old instanceof Route) {
+                } elseif ($old instanceof Route && $instance->runtimeForApp($old->app)['laravel']) {
                     $this->configuration->configureLaravelUrl(
                         $instance,
                         "https://{$old->domain}",
+                        $old->app,
                     );
                 }
             }

@@ -48,6 +48,8 @@ final readonly class DevelopmentSite
         public bool $upstreamSystemRoots = false,
         public ?int $annotatorPort = null,
         public ?string $applicationPath = null,
+        public ?string $app = null,
+        public ?int $instanceId = null,
     ) {}
 
     public function asSecondary(): self
@@ -70,12 +72,16 @@ final readonly class DevelopmentSite
 
     public function poolName(): string
     {
-        return "orbit-{$this->scope}";
+        return $this->app !== null && $this->instanceId !== null && $this->environment !== 'production'
+            ? "orbit-instance-{$this->instanceId}-{$this->app}"
+            : "orbit-{$this->scope}";
     }
 
     public function socketPath(): string
     {
-        return $this->productionPhpSocket ?? "/run/php/{$this->poolName()}.sock";
+        return $this->productionPhpSocket ?? ($this->app !== null && $this->instanceId !== null
+            ? "/run/php/orbit-{$this->instanceId}-{$this->app}.sock"
+            : "/run/php/{$this->poolName()}.sock");
     }
 
     public function usesDedicatedPhpRuntime(): bool

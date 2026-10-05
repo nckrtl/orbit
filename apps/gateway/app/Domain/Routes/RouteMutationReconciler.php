@@ -444,11 +444,15 @@ final readonly class RouteMutationReconciler
         $domain = $route->domain;
 
         if ($route->provenance === RouteProvenance::Generated) {
+            if (! is_string($route->app)) {
+                throw new ResourceOperationException('app.required', 'The generated Route requires recorded app ownership.', 409);
+            }
             if ($firstTarget instanceof Instance) {
                 $domain = $this->state->generatedDomain(
                     $firstTarget->project->slug,
                     $firstTarget->name,
                     $placement->effectiveTld,
+                    $firstTarget->appConfiguration($route->app)['name'],
                 );
             } else {
                 $domain = $this->rebaseRetainedDomain(

@@ -23,13 +23,15 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Filesystem\Filesystem;
+use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 
 it('observes private Route projections without application HTTP checks', function (string $root, string $relative): void {
     [$instance, $route] = private_route_inspector_standalone();
     $instance->update(['root' => $root]);
     $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\n", '', 1, false),
+        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\nphp=1\n", '', 1, false),
     ]);
 
     $observation = private_route_inspector($ssh)->inspect($instance, $route);
@@ -53,10 +55,86 @@ it('observes private Route projections without application HTTP checks', functio
         ->not->toContain((string) $instance->checkout_path);
 })->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
+it('runs the native per-app route pool socket and literal cached URL checks without executing PHP', function (): void {
+    $root = sys_get_temp_dir().'/orbit-doctor-runtime-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    foreach (['bin', 'checkout/bootstrap/cache', 'php/8.5/fpm/pool.d', 'caddy'] as $directory) {
+        $files->ensureDirectoryExists($root.'/'.$directory);
+    }
+    file_put_contents($root.'/bin/sudo', "#!/bin/sh\nexec \"\$@\"\n");
+    chmod($root.'/bin/sudo', 0755);
+    $socket = stream_socket_server('unix://'.$root.'/socket');
+    try {
+        [$instance, $route] = private_route_inspector_standalone();
+        $instance->update(['checkout_path' => $root.'/checkout', 'selected_php_version' => '8.5']);
+        $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "caddy=1\n", '', 1, false)]);
+        private_route_inspector($ssh)->inspect($instance, $route);
+        $command = $ssh->commands[0];
+        $arguments = array_slice($command->arguments, 1);
+        $arguments[11] = $root.'/socket';
+        $url = $command->arguments[7];
+        file_put_contents($root.'/checkout/.env', "APP_URL=\"{$url}\"\n");
+        file_put_contents($root.'/php/8.5/fpm/pool.d/orbit-scopes.conf', "[{$command->arguments[11]}]\nlisten = {$root}/socket\nchdir = {$root}/checkout\n");
+        file_put_contents($root.'/caddy/Caddyfile', $route->domain);
+        $run = static function () use ($command, $arguments, $root, $instance, $route): PrivateRouteProjectionObservation {
+            $local = new Process($arguments, env: ['PATH' => $root.'/bin:'.getenv('PATH')]);
+            $local->setInput(str_replace(['/etc/php/', '/etc/caddy/'], [$root.'/php/', $root.'/caddy/'], $command->input));
+            $local->mustRun();
+
+            return private_route_inspector(new AppDevFakeSshExecutor([new CommandResult(0, $local->getOutput(), '', 1, false)]))->inspect($instance, $route);
+        };
+        $cache = $root.'/checkout/bootstrap/cache/config.php';
+        file_put_contents($cache, "<?php return ['app' => ['url' => '{$url}']];");
+        expect($run()->laravelUrlMatches)->toBeTrue()->and($run()->phpFpmProjectionMatches)->toBeTrue();
+        file_put_contents($cache, "<?php file_put_contents('{$root}/executed', 'unsafe'); return ['app' => ['url' => '{$url}' . '/drift']];");
+        expect($run()->laravelUrlMatches)->toBeFalse()->and(file_exists($root.'/executed'))->toBeFalse();
+        file_put_contents($cache, "<?php return ['app' => ['url' => 'https://sibling.test']];");
+        expect($run()->laravelUrlMatches)->toBeFalse();
+        unlink($cache);
+        expect($run()->laravelUrlMatches)->toBeTrue();
+        file_put_contents($root.'/php/8.5/fpm/pool.d/orbit-scopes.conf', "[{$command->arguments[11]}]\nlisten = {$root}/socket\nchdir = {$root}/sibling\n");
+        expect($run()->phpFpmProjectionMatches)->toBeFalse();
+    } finally {
+        if (is_resource($socket)) {
+            fclose($socket);
+        }
+        $files->deleteDirectory($root);
+    }
+});
+
+it('does not inspect dedicated production PHP with development shared pools', function (): void {
+    $root = sys_get_temp_dir().'/orbit-doctor-production-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($root.'/caddy');
+    $files->ensureDirectoryExists($root.'/checkout');
+    try {
+        [$instance, $route] = private_route_inspector_standalone();
+        $instance->node->roles()->update(['role' => RoleName::AppProd]);
+        $instance->update(['environment' => 'production', 'checkout_path' => $root.'/checkout', 'selected_php_version' => '8.5',
+            'production_user' => 'orbit-production', 'production_home' => $root, 'production_php_pool' => 'orbit-production',
+            'production_php_socket' => $root.'/production.sock', 'production_php_service' => 'orbit-production-php8.5-fpm.service']);
+        $instance = $instance->fresh(['node.roles', 'project']);
+        $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "caddy=1\n", '', 1, false)]);
+        private_route_inspector($ssh)->inspect($instance, $route);
+        $command = $ssh->commands[0];
+        expect($command->arguments[10])->toBe('');
+        $files->ensureDirectoryExists(dirname($command->arguments[8]));
+        file_put_contents($command->arguments[8], 'APP_URL='.$command->arguments[7]."\n");
+        file_put_contents($root.'/caddy/Caddyfile', $route->domain);
+        $local = new Process(array_slice($command->arguments, 1));
+        $local->setInput(str_replace(['/etc/php/', '/etc/caddy/'], [$root.'/missing-development-php/', $root.'/caddy/'], $command->input));
+        $local->mustRun();
+        $observation = private_route_inspector(new AppDevFakeSshExecutor([new CommandResult(0, $local->getOutput(), '', 1, false)]))->inspect($instance, $route);
+        expect($observation->phpFpmProjectionMatches)->toBeTrue()->and($observation->laravelUrlMatches)->toBeTrue()->and($observation->workloadCaddyMatches)->toBeTrue();
+    } finally {
+        $files->deleteDirectory($root);
+    }
+});
+
 it('reports a bounded private projection mismatch from remote observations', function (): void {
     [$instance, $route] = private_route_inspector_standalone();
     $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "caddy=0\ntls=0\ndns=0\nfirewall=1\nlaravel=0\n", '', 1, false),
+        new CommandResult(0, "caddy=0\ntls=0\ndns=0\nfirewall=1\nlaravel=0\nphp=1\n", '', 1, false),
     ]);
 
     $observation = private_route_inspector($ssh)->inspect($instance, $route);
@@ -83,7 +161,7 @@ it('fails closed when private Route inspection cannot run', function (): void {
 it('inspects Router Caddy on a selected Cluster Route', function (): void {
     [$instance, $route, $router] = private_route_inspector_cluster();
     $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\n", '', 1, false),
+        new CommandResult(0, "caddy=1\ntls=1\ndns=1\nfirewall=1\nlaravel=1\nphp=1\n", '', 1, false),
         new CommandResult(0, "caddy=0\ntls=1\nfirewall=1\n", '', 1, false),
     ]);
 

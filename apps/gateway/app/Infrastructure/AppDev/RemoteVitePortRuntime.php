@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\ViteEnvironmentProjection;
 use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Processes\ProcessOperationException;
@@ -14,7 +15,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
 
-final readonly class RemoteVitePortRuntime implements VitePortRuntime
+final readonly class RemoteVitePortRuntime implements ViteEnvironmentProjection, VitePortRuntime
 {
     public function __construct(
         private DevelopmentSshExecutor $ssh,
@@ -145,8 +146,12 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
 
     public function prepare(Process $process, Instance $instance): void
     {
-        $applicationDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path;
-        $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id);
+        $app = $instance->appConfiguration($process->app)['name'];
+        $applicationDirectory = $instance->applicationDirectory($app);
+        $qualifiedApp = $instance->usesAppViteIdentity($app) ? $app : null;
+        $ownership = SystemdProcessRenderer::viteEnvironmentMarker($instance->id, $qualifiedApp);
+        $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id, $qualifiedApp);
+        $port = $instance->runtimeForApp($app)['vite_port'];
         $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['bash', '-c', <<<'BASH'
             set -euo pipefail
@@ -155,13 +160,59 @@ final readonly class RemoteVitePortRuntime implements VitePortRuntime
             test -d "$1/node_modules"
             sudo install -d -m 0755 /etc/orbit/vite
             test ! -L "$2"
-            if sudo test -e "$2"; then
-                sudo grep -Fx -- "# Orbit Instance $3" "$2" >/dev/null
-            fi
+            for owned in "$2" "$2.pending"; do
+                if sudo test -L "$owned"; then exit 1; fi
+                if sudo test -e "$owned"; then
+                    sudo test -f "$owned"
+                    test "$(sudo grep -c '^# Orbit Instance ' "$owned")" = 1
+                    sudo grep -Fx -- "# Orbit Instance $3" "$owned" >/dev/null
+                    if [ "$5" != '' ]; then
+                        test "$(sudo grep -c '^# Orbit App ' "$owned")" = 1
+                        sudo grep -Fx -- "# Orbit App $5" "$owned" >/dev/null
+                    else
+                        test "$(sudo grep -c '^# Orbit App ' "$owned" || true)" = 0
+                    fi
+                fi
+            done
             sudo rm -f -- "$4"
             sudo install -m 0600 /dev/stdin "$2.pending"
             sudo mv -T -- "$2.pending" "$2"
-            BASH, 'orbit-vite-environment', $applicationDirectory, $path, (string) $instance->id, $marker], input: "# Orbit Instance {$instance->id}\nORBIT_DEV_SERVER_PORT={$instance->vite_port}\n", timeout: 15), 'vite-environment', 'vite.environment_failed');
+            BASH, 'orbit-vite-environment', $applicationDirectory, $path, (string) $instance->id, $marker, $qualifiedApp ?? ''], input: "{$ownership}\nORBIT_DEV_SERVER_PORT={$port}\n", timeout: 15), 'vite-environment', 'vite.environment_failed');
+    }
+
+    public function stageEnvironment(Instance $instance, string $app): void
+    {
+        $instance->appConfiguration($app);
+        $port = $instance->runtimeForApp($app)['vite_port'];
+        if (! is_int($port)) {
+            throw new \InvalidArgumentException('An app runtime file requires its recorded Vite port.');
+        }
+        $qualifiedApp = $instance->usesAppViteIdentity($app) ? $app : null;
+        $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id, $qualifiedApp);
+        $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['sudo', 'python3', '-c', <<<'PYTHON'
+            import os, pathlib, sys, tempfile
+            path, identifier, app, port = sys.argv[1:]
+            target = pathlib.Path(path)
+            target.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
+            if target.parent.resolve() != target.parent or target.is_symlink(): raise SystemExit(1)
+            directory = target.parent.stat()
+            if directory.st_uid != os.geteuid() or directory.st_mode & 0o022: raise SystemExit(1)
+            header = '# Orbit Instance ' + identifier
+            app_header = ['# Orbit App ' + app] if app else []
+            if target.exists():
+                if not target.is_file() or target.stat().st_uid != os.geteuid(): raise SystemExit(1)
+                lines = target.read_text().splitlines()
+                if [line for line in lines if line.startswith('# Orbit Instance ')] != [header] or [line for line in lines if line.startswith('# Orbit App ')] != app_header: raise SystemExit(1)
+            descriptor, temporary = tempfile.mkstemp(prefix='.orbit-vite-', dir=target.parent)
+            try:
+                with os.fdopen(descriptor, 'w') as handle:
+                    handle.write('\n'.join([header, *app_header]) + '\nORBIT_DEV_SERVER_PORT=' + port + '\n')
+                    handle.flush()
+                    os.fsync(handle.fileno())
+                os.replace(temporary, target)
+            finally:
+                if os.path.exists(temporary): os.unlink(temporary)
+            PYTHON, $path, (string) $instance->id, $qualifiedApp ?? '', (string) $port]), 'vite-environment-migration', 'vite.environment_failed');
     }
 
     public function project(Instance $instance): void

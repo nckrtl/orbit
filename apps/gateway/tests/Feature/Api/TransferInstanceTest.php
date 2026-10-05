@@ -82,7 +82,7 @@ beforeEach(function (): void {
         'project_id' => $project->id,
         'cluster_id' => $sourceCluster->id,
         'generation_basis_node_id' => $this->sourceNode->id,
-        'domain' => 'web.transfer-api.dev.orbit',
+        'domain' => 'web.web.transfer-api.dev.orbit',
         'provenance' => RouteProvenance::Generated,
         'publication' => RoutePublication::Private,
         'status' => RouteStatus::Pending,
@@ -179,7 +179,7 @@ it('transfers the Instance and records sanitized activity', function (): void {
         ->assertJsonPath('data.node_id', $this->destinationNode->id)
         ->assertJsonPath('data.name', 'web')
         ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/transfer-api/web')
-        ->assertJsonPath('data.domain', 'web.transfer-api.other.orbit')
+        ->assertJsonPath('data.domain', 'web.web.transfer-api.other.orbit')
         ->assertJsonPath('data.transfer.status', 'completed')
         ->assertJsonPath('data.transfer.cleanup_completed', true)
         ->assertJsonPath('data.transfer.sqlite_selected', false);

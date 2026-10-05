@@ -19,6 +19,7 @@ use Illuminate\Support\Carbon;
  * @property int $id
  * @property string $owner_type
  * @property int $owner_id
+ * @property string|null $app
  * @property string|null $source_definition_id
  * @property string $name
  * @property ProcessRuntime $runtime
@@ -41,6 +42,7 @@ final class Process extends Model
     protected $fillable = [
         'owner_type',
         'owner_id',
+        'app',
         'source_definition_id',
         'name',
         'runtime',
@@ -61,6 +63,16 @@ final class Process extends Model
     protected $hidden = [
         'runtime_config',
     ];
+
+    protected static function booted(): void
+    {
+        self::creating(static function (self $process): void {
+            if (Instance::isMorphType($process->owner_type)) {
+                $owner = Instance::query()->findOrFail($process->owner_id);
+                $process->app = $owner->appConfiguration($process->app)['name'];
+            }
+        });
+    }
 
     public function isVpDev(): bool
     {

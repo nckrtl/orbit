@@ -7,6 +7,7 @@ use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\AgentThreadSendLease;
 use App\Models\Annotation;
+use App\Models\AppRuntimeMigration;
 use App\Models\Cluster;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -24,6 +25,7 @@ use App\Models\InstanceDeployStep;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
+use App\Models\InstanceRename;
 use App\Models\InstanceTransfer;
 use App\Models\JevDecision;
 use App\Models\Node;
@@ -95,6 +97,9 @@ it('partitions every persisted model across doctor dispositions', function (): v
         InstanceRemoval::class,
         InstanceRemovalMember::class,
         InstanceTransfer::class,
+        // Recovery journals are resumed by their lifecycle actions, not mutated by Doctor.
+        AppRuntimeMigration::class,
+        InstanceRename::class,
         JevDecision::class,
         ProjectUpdate::class,
         ProblemFingerprint::class,

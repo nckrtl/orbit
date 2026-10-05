@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\AppDev;
 
+use App\Actions\Instances\MigrateAppRuntimeAction;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ClusterRouterTransition;
@@ -14,6 +15,7 @@ use App\Domain\Routes\RouteKind;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Infrastructure\Routes\IngressSiteRepository;
+use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceTransfer;
@@ -393,7 +395,7 @@ final readonly class DevelopmentSiteRepository
         }
 
         $member = InstanceRemovalMember::query()
-            ->where('route_id', $route->id)
+            ->where(static fn ($query) => $query->where('route_id', $route->id)->orWhereJsonContains('route_ids', $route->id))
             ->where('environment', 'development')
             ->whereNull('row_deleted_at')
             ->whereNull('route_cleared_at')
@@ -409,11 +411,13 @@ final readonly class DevelopmentSiteRepository
 
         $usesRouterProjection = $router instanceof Node && ! $router->is($instance->node);
         $node = $usesRouterProjection ? $router : $instance->node;
+        $app = $instance->appConfiguration($route->app)['name'];
+        $scope = "app-instance-{$instance->id}".($instance->usesAppRuntimeIdentity($app) ? "-app-{$app}" : '');
 
         return new DevelopmentSite(
             nodeId: $node->id,
             nodeAddress: $node->wireguard_ip ?? '',
-            scope: $usesRouterProjection ? "route-{$route->id}-router" : "app-instance-{$instance->id}",
+            scope: $usesRouterProjection ? "route-{$route->id}-router" : $scope,
             checkoutPath: '',
             documentRoot: '',
             phpVersion: null,
@@ -456,9 +460,9 @@ final readonly class DevelopmentSiteRepository
             ->values();
     }
 
-    private function annotationPort(Instance $instance, string $preset, ?int $port): ?int
+    private function annotationPort(Instance $instance, string $preset, ?int $port, string $app): ?int
     {
-        $withdrawing = $instance->processes()->where('runtime_config->preset', $preset)->whereNotNull('endpoint_withdrawal_started_at')->exists();
+        $withdrawing = $instance->processes()->where('app', $app)->where('runtime_config->preset', $preset)->whereNotNull('endpoint_withdrawal_started_at')->exists();
 
         return $withdrawing ? null : $port;
     }
@@ -468,28 +472,39 @@ final readonly class DevelopmentSiteRepository
         Route $route,
         bool $domainChange = false,
     ): DevelopmentSite {
+        $migration = AppRuntimeMigration::query()->where('node_id', $instance->node_id)->where('phase', 'activating')->whereNull('published_at')->first();
+        if ($migration instanceof AppRuntimeMigration) {
+            $instance = MigrateAppRuntimeAction::candidate($instance, $migration);
+        }
         $checkoutPath = $instance->placedOnAppProd()
             ? "{$instance->production_home}/current"
             : ($instance->development_release_layout ? $instance->checkout_path.'/current' : $instance->checkout_path);
 
+        $app = $instance->appConfiguration($route->app)['name'];
+        $runtime = $instance->runtimeForApp($app);
+        $scoped = ! $instance->placedOnAppProd() && $instance->usesAppRuntimeIdentity($app);
+        $scope = $scoped ? "app-instance-{$instance->id}-app-{$app}" : "app-instance-{$instance->id}";
+
         return new DevelopmentSite(
             nodeId: $instance->node_id,
             nodeAddress: $instance->node->wireguard_ip ?? '',
-            scope: "app-instance-{$instance->id}",
+            scope: $scope,
+            app: $scoped ? $app : null,
+            instanceId: $instance->id,
             checkoutPath: $checkoutPath,
-            documentRoot: $instance->relativeWebRoot() ?? '',
-            applicationPath: $instance->applicationPath(),
-            phpVersion: $instance->selected_php_version,
+            documentRoot: $instance->relativeWebRoot($app) ?? '',
+            applicationPath: $instance->applicationPath($app),
+            phpVersion: $instance->servesPhpForApp($app) ? $runtime['php_version'] : null,
             domain: $route->domain,
             environment: $instance->defaultAppEnv(),
             productionUser: $instance->production_user,
             productionHome: $instance->production_home,
             projectSlug: $instance->project->slug,
-            certificateScope: $domainChange ? "app-instance-{$instance->id}-hostname-change" : null,
+            certificateScope: $domainChange ? (! $scoped ? "app-instance-{$instance->id}-hostname-change" : "app-instance-{$instance->id}-hostname-change-app-{$app}") : null,
             productionPhpSocket: $instance->production_php_socket,
-            vitePort: $instance->vite_port,
-            agentationPort: $this->annotationPort($instance, 'agentation-mcp', $instance->agentation_port),
-            annotatorPort: $this->annotationPort($instance, 'annotator', $instance->annotator_port),
+            vitePort: $runtime['vite_port'],
+            agentationPort: $this->annotationPort($instance, 'agentation-mcp', $runtime['agentation_port'], $app),
+            annotatorPort: $this->annotationPort($instance, 'annotator', $runtime['annotator_port'], $app),
         );
     }
 
@@ -559,9 +574,9 @@ final readonly class DevelopmentSiteRepository
             checkoutPath: $localInstance->placedOnAppProd()
                 ? "{$localInstance->production_home}/current"
                 : ($localInstance->development_release_layout ? $localInstance->checkout_path.'/current' : ($localInstance->checkout_path ?? '')),
-            documentRoot: $localInstance->relativeWebRoot() ?? '',
-            applicationPath: $localInstance->applicationPath(),
-            phpVersion: $localInstance->selected_php_version,
+            documentRoot: $localInstance->relativeWebRoot($route->app) ?? '',
+            applicationPath: $localInstance->applicationPath($route->app),
+            phpVersion: $localInstance->servesPhpForApp($localInstance->appConfiguration($route->app)['name']) ? $localInstance->runtimeForApp($route->app)['php_version'] : null,
             domain: $route->domain,
             upstreamAddresses: $addresses,
             environment: $localInstance->defaultAppEnv(),

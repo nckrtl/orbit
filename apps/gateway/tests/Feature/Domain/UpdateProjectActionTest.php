@@ -257,7 +257,7 @@ describe('UpdateProjectAction', function (): void {
                 function (InstanceEnvironmentContext $context, string $contents): InstanceEnvironmentWriteResult {
                     expect($context->routeDomain)
                         ->toBe(Route::query()->findOrFail($context->routeId)->domain)
-                        ->toBeIn(['shop.test', 'docs.shop.test']);
+                        ->toBeIn(['web.shop.test', 'web.docs.shop.test']);
 
                     return InstanceEnvironmentWriteResult::changed();
                 },
@@ -288,30 +288,30 @@ describe('UpdateProjectAction', function (): void {
             ->and(ProjectUpdate::query()->latest('id')->value('status'))
             ->toBe(ProjectUpdateStatus::Publishing)
             ->and($renderedDomains)
-            ->toContain('shop.test');
+            ->toContain('web.shop.test');
 
         app(UpdateProjectAction::class)->execute($this->fixture->project->refresh(), $data);
 
         expect($this->fixture->project->refresh()->slug)
             ->toBe('shop')
             ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('status', 'active')->pluck('domain')->all())
-            ->toBe(['shop.test', 'docs.shop.test'])
+            ->toBe(['web.shop.test', 'web.docs.shop.test'])
             ->and(Route::query()->whereKey($targetlessRouteId)->exists())
             ->toBeFalse()
-            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'shop.preview')->value('status'))
+            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'web.shop.preview')->value('status'))
             ->toBe(RouteStatus::Pending)
-            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'shop.preview')->value('generation_basis_node_id'))
+            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'web.shop.preview')->value('generation_basis_node_id'))
             ->toBe($basisNode->id)
-            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'shop.preview')->value('replacement_step'))
+            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'web.shop.preview')->value('replacement_step'))
             ->toBeNull()
-            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'shop.preview')->firstOrFail()->targets()->exists())
+            ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('domain', 'web.shop.preview')->firstOrFail()->targets()->exists())
             ->toBeFalse()
             ->and(Route::query()->where('project_id', $this->fixture->project->id)->whereNotNull('replaces_route_id')->count())
             ->toBe(0)
             ->and(Route::query()->where('project_id', $this->fixture->project->id)->where('status', 'pending')->count())
             ->toBe(1)
             ->and($renderedDomains)
-            ->toContain('docs.shop.test');
+            ->toContain('web.docs.shop.test');
     });
 
     it('reports slug projection failure without publishing a partial slug', function (): void {

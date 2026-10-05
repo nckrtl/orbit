@@ -38,7 +38,7 @@ final readonly class ViteProcessLifecycle
         $instance = Instance::query()->with('node')->findOrFail($process->owner_id);
         $this->owner->synchronized($instance->node_id, function () use ($process, $instance, $launch, $stop, $start, $restart, $explicitStart): void {
             try {
-                $port = $this->ports->assign($instance);
+                $port = $this->ports->assign($instance, app: $process->app);
                 if ($port === null) {
                     throw new ProcessOperationException('vite-prepare', 'vite.development_required', 'The Vite preset requires a development Instance.');
                 }
@@ -59,7 +59,7 @@ final readonly class ViteProcessLifecycle
                 $deadline = ($this->clock)() + 50;
                 for ($attempt = 0; $attempt < 3; $attempt++) {
                     if (! $owned) {
-                        $port = $this->ports->assign($instance, recheck: true);
+                        $port = $this->ports->assign($instance, recheck: true, app: $process->app);
                     }
                     $instance->refresh();
                     $this->runtime->prepare($process, $instance);
@@ -86,7 +86,7 @@ final readonly class ViteProcessLifecycle
                         break;
                     }
                     $stop();
-                    $replacement = $this->ports->assign($instance, recheck: true);
+                    $replacement = $this->ports->assign($instance, recheck: true, app: $process->app);
                     if ($replacement === $port) {
                         break;
                     }

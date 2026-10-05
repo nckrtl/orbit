@@ -70,11 +70,11 @@ function rename_migration_rows(): object
         'started_at' => now(),
         'status' => 'succeeded',
     ]);
-    InstanceEnvironmentValue::query()->create([
+    InstanceEnvironmentValue::withoutEvents(static fn () => InstanceEnvironmentValue::query()->create([
         'instance_id' => $instance->id,
         'env_key' => 'APP_URL',
         'env_value' => 'https://{{instance.domain}}/{{instance.environment}}',
-    ]);
+    ]));
     DB::table('activity_log')->insert([
         'description' => 'renamed the domain',
         'subject_type' => Project::class,

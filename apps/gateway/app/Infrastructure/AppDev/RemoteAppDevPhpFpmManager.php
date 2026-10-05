@@ -73,7 +73,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         $plan = PhpFpmPublicationPlan::from(
             installed: $installedProjection,
             desiredPoolVersions: $desiredPoolVersions,
-            poolPattern: '/^\[(orbit-(?:instance|workspace|app-instance)-[1-9][0-9]*)\]$/m',
+            poolPattern: '/^\[(orbit-(?:instance|workspace|app-instance)-[1-9][0-9]*(?:-[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?)\]$/m',
         );
 
         $transitionSites = $desiredSites

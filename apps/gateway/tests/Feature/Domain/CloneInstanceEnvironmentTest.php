@@ -108,7 +108,7 @@ it('copies independent encrypted values and resolves placeholders through the ex
 
 it('clones and deploys an Instance without a route', function (): void {
     [$candidate, $reservedTarget, $targetRoute] = clone_environment_fixture('lifecycle');
-    $candidate->project->update(['type' => 'monorepo']);
+    $candidate->project->update(['type' => 'node-package', 'root' => null]);
     $candidate->update(['branch' => 'main', 'source_is_laravel' => false]);
     $candidate->routes()->delete();
     $targetRoute->delete();
@@ -449,6 +449,7 @@ function clone_environment_node(string $name, int $address): Node
 {
     $node = Node::query()->create([
         'name' => "clone-environment-{$name}",
+        'tld' => "node-{$address}.clone.test",
         'status' => LifecycleStatus::Active,
         'platform' => 'linux',
         'public_ssh_host' => "192.0.2.{$address}",

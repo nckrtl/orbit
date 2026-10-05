@@ -22,6 +22,8 @@ Task fixtures include a GitHub feedback fixup with `fixup_problem: review:{revie
 
 Process response fixtures include `user`, which is null when the Process uses its derived account. When an explicit account is selected, the response includes that name both in `user` and in `runtime_config.user`; see [Node accounts](/reference/processes-and-schedules#node-account).
 
+Instance create, list, and show fixtures record generated domains that begin with the app name, including single-app Projects: `web.dev.acme.test` for Instance `dev`, and `web.acme.test` for Instance `default`. The nested Route, scalar `domain`, and `url` must agree. Re-record these responses together when domain generation changes; explicit domains stay as supplied. A multi-app Instance has no scalar authoritative Route or effective root selected from its first app. The [Route contract](/reference/routes) owns app association and domain generation.
+
 Instance create, list, and show fixtures include `annotator_port` and `annotator_url`. Both are null without an assigned annotator port; an Instance with a port but no Route still has a null URL. Re-record these fixtures when either field changes, regenerate the OpenAPI schema, and replay the Instance CLI contracts. Human detail output shows the annotator properties only when a port is assigned, while JSON retains the nullable fields. The web API types must also be regenerated from the same OpenAPI schema.
 
 ## Record a fixture

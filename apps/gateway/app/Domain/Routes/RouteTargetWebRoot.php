@@ -10,9 +10,13 @@ use App\Models\Instance;
 
 final readonly class RouteTargetWebRoot
 {
-    public static function assertSupported(Instance $instance): void
+    public static function assertSupported(Instance $instance, ?string $app = null): void
     {
-        self::assertSupportedRoot($instance->root ?? $instance->project->root);
+        $root = $instance->relativeWebRoot($app);
+        if ($root === '.') {
+            return;
+        }
+        self::assertSupportedRoot($root);
     }
 
     public static function assertSupportedRoot(?string $root, ?string $message = null): void

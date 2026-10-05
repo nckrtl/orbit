@@ -41,9 +41,11 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
+use App\Models\InstanceRename;
 use App\Models\InstanceTransfer;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
@@ -74,6 +76,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true, bool $requirePreActivation = false): InstanceRemoval
     {
+        AppRuntimeMigration::assertInstanceAvailable($instance);
+        if (InstanceRename::query()->where('instance_id', $instance->id)->where('phase', '!=', 'complete')->exists()) {
+            throw new ResourceOperationException('instance.lifecycle_busy', 'Finish the Instance rename before removal.', 409);
+        }
         $instanceId = $instance->id;
         $instanceName = $instance->name;
         $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
@@ -290,8 +296,8 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                     ->get()
                     ->keyBy('id');
                 $routeIds = $members
-                    ->map(static fn (Instance $member): ?int => $member->routes->first()?->id)
-                    ->filter();
+                    ->flatMap(static fn (Instance $member): array => $member->routes->pluck('id')->all())
+                    ->unique()->values();
                 $lockedRoutes = Route::query()
                     ->with('targets')
                     ->whereKey($routeIds)
@@ -317,9 +323,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         $this->conflict($snapshot);
                     }
 
-                    $route = $member->routes->first();
-
-                    if (! $route instanceof Route) {
+                    if ($member->routes->isEmpty()) {
                         if (RouteTarget::query()->where('instance_id', $member->id)->exists()) {
                             $this->conflict($snapshot);
                         }
@@ -327,15 +331,11 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                         continue;
                     }
 
-                    $lockedRoute = $lockedRoutes->get($route->id);
-
-                    if (
-                        ! $lockedRoute instanceof Route
-                        || ! $this->removableRouteState($lockedRoute, $lockedMember)
-                        || $lockedRoute->targets->count() !== 1
-                        || $lockedRoute->targets->sole()->instance_id !== $lockedMember->id
-                    ) {
-                        $this->conflict($snapshot);
+                    foreach ($member->routes as $route) {
+                        $lockedRoute = $lockedRoutes->get($route->id);
+                        if (! $lockedRoute instanceof Route || ! $this->removableRouteState($lockedRoute, $lockedMember) || $lockedRoute->targets->count() !== 1 || $lockedRoute->targets->sole()->instance_id !== $lockedMember->id || $lockedRoute->app !== $route->app) {
+                            $this->conflict($snapshot);
+                        }
                     }
                 }
 
@@ -359,13 +359,14 @@ final readonly class RemoveInstanceAction implements InstanceRemover
                             'instance_id' => $member->id,
                             'project_id' => $member->project_id,
                             'node_id' => $member->node_id,
-                            'route_id' => $member->routes->first()?->id,
+                            'route_id' => $member->routes->count() === 1 ? $member->routes->sole()->id : null,
+                            'route_ids' => $member->routes->pluck('id')->all(),
                             'name' => $member->name,
                             'environment' => $member->defaultAppEnv(),
                             'source_layout' => $inventory->layout,
                             'repository_identity' => $inventory->repositoryIdentity,
                             'checkout_path' => $inventory->checkoutPath,
-                            'root' => $member->effectiveRoot(),
+                            'root' => $member->removalRoot(),
                             'branch' => $inventory->branch,
                             'starting_commit' => $member->starting_commit,
                             'source_commit' => $inventory->startingCommit,
@@ -459,6 +460,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function assertSupported(Instance $instance): void
     {
+        InstanceRename::assertAvailable([$instance->id]);
         if (InstanceTransfer::query()
             ->where('instance_id', $instance->id)
             ->open()
@@ -671,35 +673,19 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             return null;
         }
 
-        if ($instance->routes->count() !== 1) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.remove_refused',
-                message: "Instance [{$instance->name}] does not have one removable Route.",
-                status: 409,
-            );
+        foreach ($instance->routes as $route) {
+            if (! $this->removableRouteState($route, $instance) || $route->project_id !== $instance->project_id || $route->targets->count() !== 1 || $route->targets->sole()->instance_id !== $instance->id || $route->app === null) {
+                throw new ResourceOperationException('instance.remove_refused', "Instance [{$instance->name}] app Route is not safe to remove.", 409);
+            }
+            $instance->appConfiguration($route->app);
         }
 
-        $route = $instance->routes->sole();
-
-        if (
-            ! $this->removableRouteState($route, $instance)
-            || $route->project_id !== $instance->project_id
-            || $route->targets->count() !== 1
-            || $route->targets->sole()->instance_id !== $instance->id
-        ) {
-            throw new ResourceOperationException(
-                errorCode: 'instance.remove_refused',
-                message: "Instance [{$instance->name}] Route is not safe to remove.",
-                status: 409,
-            );
-        }
-
-        return $route;
+        return $instance->routes->count() === 1 ? $instance->routes->sole() : null;
     }
 
     private function productionRoute(Instance $instance): ?Route
     {
-        if ($this->withoutRoute($instance)) {
+        if ($this->withoutRoute($instance) || $instance->routes->isEmpty()) {
             return null;
         }
 
@@ -902,7 +888,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function clearRoute(InstanceRemovalMember $member): void
     {
-        $outcome = $member->route_id === null ? 'none' : $this->routes->clearRouteTarget($member);
+        $outcome = $member->route_id === null && ($member->route_ids ?? []) === [] ? 'none' : $this->routes->clearRouteTarget($member);
         $member->update(['route_cleared_at' => now(), 'route_outcome' => $outcome]);
     }
 
@@ -931,7 +917,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
         // A routed create can publish part of its runtime before activation.
         // An unrouted task workspace has no pool, site, or certificate to withdraw.
-        if ($member->runtime_published || $member->route_id !== null) {
+        if ($member->runtime_published || $member->route_id !== null || ($member->route_ids ?? []) !== []) {
             $this->routes->cleanupRuntime($member);
         }
         $member->update(['runtime_cleaned_at' => now()]);

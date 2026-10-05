@@ -6,8 +6,10 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppDev\ViteEnvironmentProjection;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
+use App\Domain\Processes\ProcessEnvironmentProjection;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePublication;
@@ -43,6 +45,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $route->loadMissing('cluster.routerAssignment.node');
         // Creation stores the publication record once the certificate its sites name exists, and
         // before its first render.
+        $this->certificates->upgradeInstanceApp($instance, $route);
         $this->certificates->convergeInstance($instance, $route);
         $route->publishSites();
 
@@ -56,6 +59,12 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         );
         $this->php->converge($instance->node);
         $this->caddy->build($instance->node);
+        $app = $instance->appConfiguration($route->app)['name'];
+        if ($instance->processes()->where('app', $app)->where('runtime_config->preset', 'vp-dev')->exists()) {
+            app(ViteEnvironmentProjection::class)->stageEnvironment($instance, $app);
+        }
+        app(ProcessEnvironmentProjection::class)->project($instance, 0, $app);
+        $this->certificates->retireLegacyInstance($instance);
 
         $router = $route->cluster?->routerAssignment?->node;
 
@@ -69,6 +78,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
         if ($router instanceof Node && $router->is($instance->node)) {
             $this->dns->converge();
+            $instance->recordAppRuntime($app, ['app_identity_ready' => true]);
 
             return;
         }
@@ -82,11 +92,12 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
         // DNS is deliberately last. A failed earlier projection is never reachable by name.
         $this->dns->converge();
+        $instance->recordAppRuntime($app, ['app_identity_ready' => true]);
     }
 
     public function prepareWorkloadCertificate(Instance $instance, Route $current, Route $candidate): void
     {
-        $this->certificates->convergeInstanceHostnameChange($instance, $candidate->domain);
+        $this->certificates->convergeInstanceHostnameChange($instance, $candidate->domain, $candidate->app);
     }
 
     public function retireSource(InstanceTransfer $transfer): void
@@ -258,6 +269,8 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
             $built[] = $router;
         }
 
+        $instance->unsetRelation('routes');
+        app(ProcessEnvironmentProjection::class)->project($instance, 0, $instance->appConfiguration($route->app)['name']);
         $this->certificates->removeHostnameChange($instance, $route);
         $this->removeOldPlacementRouterCertificate($route, $built);
         $this->removeRetiringRouterCertificate($route, $built);
@@ -342,6 +355,8 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function rollbackCaddy(Instance $instance, Route $route): void
     {
+        $instance->unsetRelation('routes');
+        app(ProcessEnvironmentProjection::class)->project($instance, 0, $instance->appConfiguration($route->app)['name']);
         $instance->loadMissing('node');
         $this->caddy->build($instance->node);
         $router = $this->router($instance, $route);

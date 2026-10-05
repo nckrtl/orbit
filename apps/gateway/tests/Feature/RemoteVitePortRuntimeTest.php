@@ -93,6 +93,9 @@ it('prepares Vite using application-local dependencies and publishes its environ
             [$sandbox.'/bin/vp', $sandbox.'/environment', $sandbox.'/run'],
             $argument,
         ), $command->arguments);
+        if ($arguments[0] === 'sudo') {
+            $arguments[0] = $sandbox.'/bin/sudo';
+        }
         $local = new LocalProcess($arguments, env: ['PATH' => $sandbox.'/bin:'.getenv('PATH')], input: $command->input, timeout: 10);
         $local->run();
 
@@ -103,13 +106,20 @@ it('prepares Vite using application-local dependencies and publishes its environ
         if ($missing !== null) {
             expect(fn () => $runtime->prepare(new Process, $instance))
                 ->toThrow(fn (RuntimeConvergenceException $exception): bool => $exception->errorCode === 'vite.environment_failed');
-            expect(file_exists($sandbox.'/environment/app-instance-'.$instance->id.'.env'))->toBeFalse();
+            expect(file_exists($sandbox.'/environment/app-instance-'.$instance->id.'-web.env'))->toBeFalse();
         } else {
             $runtime->prepare(new Process, $instance);
-            $environment = $sandbox.'/environment/app-instance-'.$instance->id.'.env';
-            expect(file_get_contents($environment))->toBe("# Orbit Instance {$instance->id}\nORBIT_DEV_SERVER_PORT=5210\n")
+            $environment = $sandbox.'/environment/app-instance-'.$instance->id.'-web.env';
+            expect(file_get_contents($environment))->toBe("# Orbit Instance {$instance->id}\n# Orbit App web\nORBIT_DEV_SERVER_PORT=5210\n")
                 ->and(fileperms($environment) & 0o777)->toBe(0o600)
                 ->and(file_exists($environment.'.pending'))->toBeFalse();
+            $runtime->stageEnvironment($instance, 'web');
+            $foreign = "# Orbit Instance {$instance->id}\n# Orbit App docs\nORBIT_DEV_SERVER_PORT=5333\n";
+            file_put_contents($environment, $foreign);
+            expect(fn () => $runtime->stageEnvironment($instance, 'web'))->toThrow(RuntimeConvergenceException::class)
+                ->and(file_get_contents($environment))->toBe($foreign);
+            expect(fn () => $runtime->prepare(new Process, $instance))->toThrow(RuntimeConvergenceException::class)
+                ->and(file_get_contents($environment))->toBe($foreign);
         }
     } finally {
         $filesystem->deleteDirectory($sandbox);
@@ -117,7 +127,7 @@ it('prepares Vite using application-local dependencies and publishes its environ
 })->with([
     'nested Laravel dependencies only in the app' => ['server/web/public', true, '/server/web', null],
     'root public Laravel app' => ['public', true, '', null],
-    'non Laravel retains checkout dependencies' => ['server/web/public', false, '', null],
+    'non Laravel uses the configured app directory' => ['server/web/public', false, '/server/web', null],
     'nested app missing manifest' => ['server/web/public', true, '/server/web', 'package.json'],
     'nested app missing dependencies' => ['server/web/public', true, '/server/web', 'node_modules'],
 ]);

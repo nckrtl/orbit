@@ -537,6 +537,7 @@ it('refuses missing configuration before remote work', function (): void {
 it('preflights from encrypted-size metadata before decrypting or writing', function (): void {
     DB::table('instance_environment_values')->insert([
         'instance_id' => $this->instance->id,
+        'app' => 'web',
         'env_key' => 'BROKEN',
         'env_value' => 'not-ciphertext',
         'created_at' => now(),

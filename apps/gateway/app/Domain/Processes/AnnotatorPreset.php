@@ -21,10 +21,10 @@ final readonly class AnnotatorPreset
     /** @return list<string> */
     public static function forTarget(ProcessTarget $target): array
     {
-        if ($target->instance?->annotator_port === null) {
+        if ($target->instance === null || $target->port('annotator_port') === null) {
             throw new \InvalidArgumentException('The annotator requires an assigned port.');
         }
 
-        return [...self::command(), '--port', (string) $target->instance->annotator_port, '--store', AnnotatorEndpoint::store($target->instance->id), '--allow-origin', 'https://'.($target->routeDomain ?? 'unrouted.invalid'), '--allow-origin', 't3code://app', '--allow-origin', 't3code-dev://app'];
+        return [...self::command(), '--port', (string) $target->port('annotator_port'), '--store', AnnotatorEndpoint::store($target->instance->id, $target->instance->usesAppStoreIdentity($target->app) ? $target->app : null), '--allow-origin', 'https://'.($target->routeDomain ?? 'unrouted.invalid'), '--allow-origin', 't3code://app', '--allow-origin', 't3code-dev://app'];
     }
 }

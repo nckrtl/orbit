@@ -14,6 +14,7 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 
 final readonly class RemoteDevelopmentInstanceConfigurator implements DevelopmentInstanceConfigurator
 {
@@ -23,12 +24,14 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         private ComposerSourceClassifier $classifier,
     ) {}
 
-    public function inspect(Instance $instance): DevelopmentSourceProfile
+    public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
     {
         $instance->loadMissing(['project', 'node']);
 
-        // An unrouted monorepo is a source checkout, not a single PHP application.
-        if ($instance->project->type === ProjectType::Monorepo && ! $instance->routes()->exists()) {
+        $configuration = $instance->appConfiguration($app);
+        $app = $configuration['name'];
+        $type = ProjectType::from($configuration['type']);
+        if ($type === ProjectType::Monorepo && ! $instance->routes()->where('routes.app', $app)->exists()) {
             return new DevelopmentSourceProfile(null, false);
         }
 
@@ -36,7 +39,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->applicationDirectory(), $account->user],
+                arguments: ['bash', '-seu', '--', $instance->applicationDirectory($app), $account->user],
                 input: <<<'BASH'
                     checkout=$1
                     managed_user=$2
@@ -70,10 +73,10 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
             errorCode: 'app-dev.source_classification_failed',
         );
 
-        return $this->profile(trim($result->stdout), $instance->project->type);
+        return $this->profile(trim($result->stdout), $type);
     }
 
-    public function configureLaravelUrl(Instance $instance, string $url): void
+    public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void
     {
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
@@ -132,6 +135,19 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                         if updated != original or not env.exists(): atomic(env, updated, mode)
                         elif env.stat().st_mode & 0o007: os.chmod(env, mode)
 
+                        testing = root / '.env.testing'
+                        safe_regular(testing)
+                        if testing.exists():
+                            content = testing.read_bytes()
+                            matches = list(re.finditer(rb'(?m)^APP_URL=.*$', content))
+                            if len(matches) > 1: raise SystemExit(42)
+                            if matches:
+                                match = matches[0]
+                                content = content[:match.start()] + replacement + content[match.end():]
+                            else:
+                                content += (b'' if content.endswith(b'\n') else b'\n') + replacement + b'\n'
+                            atomic(testing, content, testing.stat().st_mode & 0o770)
+
                         cache = root / 'bootstrap' / 'cache' / 'config.php'
                         safe_regular(cache)
                         if cache.exists():
@@ -166,12 +182,18 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
                             match = matches[0]
                             updated = original[:match.start()] + b"'" + escaped + b"'" + original[match.end():]
                             if updated != original: atomic(cache, updated, cache.stat().st_mode & 0o777)
-                        PYTHON, $instance->applicationDirectory(), $account->user],
+                        PYTHON, $instance->applicationDirectory($app), $account->user],
                 protectedInput: ProtectedInput::fromString($url),
             ),
             step: 'laravel-url',
             errorCode: 'app-dev.laravel_url_configuration_failed',
         );
+        if ($instance->exists) {
+            InstanceEnvironmentValue::query()->updateOrCreate(
+                ['instance_id' => $instance->id, 'app' => $instance->appConfiguration($app)['name'], 'env_key' => 'APP_URL'],
+                ['env_value' => $url],
+            );
+        }
     }
 
     private function profile(string $result, ProjectType $projectType): DevelopmentSourceProfile

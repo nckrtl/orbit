@@ -2976,7 +2976,7 @@ it('fails closed before source resolution when the stored App default branch is 
 it('fails closed before active removal when stored source identity is incomplete', function (): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'dev');
     $instance->project->update(['type' => 'monorepo']);
-    $instance->update(['status' => InstanceState::Active]);
+    $instance->update(['status' => InstanceState::Active, 'task_workspace_routed' => false]);
 
     expect(fn () => orb178_remove_source($this->removal, $instance, true))
         ->toThrow(RuntimeConvergenceException::class);

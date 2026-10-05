@@ -11,6 +11,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
 
@@ -23,10 +24,51 @@ final readonly class RemoteAppDevCertificateManager
         private DevelopmentSiteRepository $sites = new DevelopmentSiteRepository,
     ) {}
 
+    public function upgradeInstanceApp(Instance $instance, Route $route): void
+    {
+        if ($instance->placedOnAppProd()) {
+            return;
+        }
+        $app = $instance->appConfiguration($route->app)['name'];
+        if ($instance->usesAppRuntimeIdentity($app)) {
+            return;
+        }
+        if (InstanceTransfer::query()->where('instance_id', $instance->id)->whereNotIn('id', InstanceTransfer::query()->closed()->select('id'))->exists()
+            || $instance->processes()->where('app', $app)->whereNotNull('endpoint_withdrawal_started_at')->exists()
+            || $instance->routes()->where('routes.app', $app)->whereNotNull('replaces_route_id')->exists()) {
+            return; // Existing operations retain their original scopes until they close.
+        }
+        $candidate = clone $instance;
+        $runtime = $candidate->app_runtime ?? [];
+        $runtime[$app]['vite_environment_identity'] ??= $instance->usesAppViteIdentity($app);
+        $runtime[$app]['app_identity'] = true;
+        $candidate->app_runtime = $runtime;
+        $this->convergeInstance($candidate, $route);
+        foreach ($instance->routes()->where('routes.app', $app)->whereNotNull('replaces_route_id')->get() as $replacement) {
+            $this->convergeInstanceHostnameChange($candidate, $replacement->domain, $app);
+        }
+        $instance->recordAppRuntime($app, ['app_identity' => true, 'app_identity_ready' => false, 'vite_environment_identity' => $runtime[$app]['vite_environment_identity']]);
+    }
+
+    public function retireLegacyInstance(Instance $instance): void
+    {
+        if ($instance->placedOnAppProd()
+            || array_any($instance->effectiveApps(), static fn (array $app): bool => ! $instance->usesAppRuntimeIdentity($app['name']))
+            || InstanceTransfer::query()->where('instance_id', $instance->id)->whereNotIn('id', InstanceTransfer::query()->closed()->select('id'))->exists()
+            || $instance->processes()->whereNotNull('endpoint_withdrawal_started_at')->exists()) {
+            return;
+        }
+        foreach (["app-instance-{$instance->id}", "app-instance-{$instance->id}-hostname-change"] as $scope) {
+            if (! $this->sites->forNode($instance->node)->contains(static fn (DevelopmentSite $site): bool => $site->loadsCertificate($scope))) {
+                $this->remove($instance->node, $scope);
+            }
+        }
+    }
+
     public function convergeInstance(Instance $instance, Route $route): void
     {
         $instance->loadMissing('node');
-        $this->converge($instance->node, "app-instance-{$instance->id}", $route->domain);
+        $this->converge($instance->node, $this->instanceScope($instance, $route->app), $route->domain);
     }
 
     public function convergeRouteRouter(Route $route, Node $router): void
@@ -44,12 +86,12 @@ final readonly class RemoteAppDevCertificateManager
         $this->converge($node, "route-{$route->id}", $route->domain);
     }
 
-    public function convergeInstanceHostnameChange(Instance $instance, string $domain): void
+    public function convergeInstanceHostnameChange(Instance $instance, string $domain, ?string $app = null): void
     {
         $instance->loadMissing('node');
         $this->converge(
             $instance->node,
-            "app-instance-{$instance->id}-hostname-change",
+            $this->instanceScope($instance, $app, staging: true),
             $domain,
         );
     }
@@ -59,11 +101,11 @@ final readonly class RemoteAppDevCertificateManager
         $this->converge($router, "route-{$route->id}-router-hostname-change", $route->domain);
     }
 
-    public function instanceCertificateExists(Instance $instance): bool
+    public function instanceCertificateExists(Instance $instance, ?string $app = null): bool
     {
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
-        $scope = "app-instance-{$instance->id}";
+        $scope = $this->instanceScope($instance, $app);
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
@@ -94,10 +136,23 @@ final readonly class RemoteAppDevCertificateManager
         };
     }
 
+    public function removeApp(Instance $instance, Route $route): void
+    {
+        $this->remove($instance->node, $this->instanceScope($instance, $route->app));
+    }
+
     public function removeInstance(Instance $instance): void
     {
         $instance->loadMissing('node');
-        $this->remove($instance->node, "app-instance-{$instance->id}");
+        if ($instance->placedOnAppProd()) {
+            $this->remove($instance->node, "app-instance-{$instance->id}");
+
+            return;
+        }
+        foreach ($instance->effectiveApps() as $app) {
+            $this->remove($instance->node, $this->instanceScope($instance, $app['name']));
+            $this->remove($instance->node, $this->instanceScope($instance, $app['name'], staging: true));
+        }
     }
 
     public function removeRouteRouter(Route $route, Node $router): void
@@ -123,12 +178,25 @@ final readonly class RemoteAppDevCertificateManager
     public function removeHostnameChange(Instance $instance, Route $route): void
     {
         $instance->loadMissing('node');
-        $this->remove($instance->node, "app-instance-{$instance->id}-hostname-change");
+        $this->remove($instance->node, $this->instanceScope($instance, $route->app, staging: true));
         $router = $route->cluster?->routerAssignment?->node;
 
         if ($router instanceof Node && ! $router->is($instance->node)) {
             $this->remove($router, "route-{$route->id}-router-hostname-change");
         }
+    }
+
+    private function instanceScope(Instance $instance, ?string $app, bool $staging = false): string
+    {
+        if ($instance->placedOnAppProd()) {
+            return "app-instance-{$instance->id}".($staging ? '-hostname-change' : '');
+        }
+        $name = $instance->appConfiguration($app)['name'];
+        if (! $instance->usesAppRuntimeIdentity($name)) {
+            return "app-instance-{$instance->id}".($staging ? '-hostname-change' : '');
+        }
+
+        return "app-instance-{$instance->id}".($staging ? '-hostname-change' : '')."-app-{$name}";
     }
 
     private function converge(Node $node, string $scope, string $domain): void

@@ -8,6 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\AnnotatorServerInstallation;
 use App\Models\Instance;
 use App\Models\Node;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
@@ -59,6 +60,7 @@ it('serves the installed injection asset and admits only the rendered page and T
     fclose($socket);
     $instance = new Instance(['annotator_port' => $port]);
     $instance->id = 1;
+    $instance->setRelation('project', new Project(['root' => 'public']));
     $target = new ProcessTarget(node: new Node, user: 'orbit', checkoutPath: $root, instance: $instance, routeDomain: 'site.test');
     $arguments = AnnotatorPreset::forTarget($target);
     $arguments[1] = $root.'/current/bin/serve.mjs';

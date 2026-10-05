@@ -109,7 +109,6 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 ->lockForUpdate()
                 ->findOrFail($instanceId);
             $this->assertProductionTarget($instance);
-            $processTarget = $this->processTargets->forPreparation($instance);
 
             if ($instance->runtime_definitions_captured_at !== null) {
                 return $instance;
@@ -131,7 +130,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 ->filter($this->isForProduction(...));
 
             foreach ($processDefinitions as $definition) {
-                $this->captureProcess($instance, $definition, $processTarget);
+                $this->captureProcess($instance, $definition, $this->processTargets->forPreparation($instance, $definition->app));
             }
 
             foreach ($scheduleDefinitions as $definition) {
@@ -188,6 +187,7 @@ final readonly class InstantiateProjectRuntimeDefinitionsAction
                 'owner_type' => Instance::MorphAlias,
                 'owner_id' => $instance->id,
                 'source_definition_id' => $definition->id,
+                'app' => $definition->app,
                 'name' => $definition->name,
                 ...$attributes,
                 'desired_state' => DesiredProcessState::Stopped,

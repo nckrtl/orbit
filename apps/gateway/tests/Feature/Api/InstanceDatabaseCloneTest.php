@@ -59,12 +59,12 @@ beforeEach(function (): void {
     {
         public bool $laravel = true;
 
-        public function inspect(Instance $instance): DevelopmentSourceProfile
+        public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
         {
             return new DevelopmentSourceProfile('8.5', $this->laravel);
         }
 
-        public function configureLaravelUrl(Instance $instance, string $url): void {}
+        public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void {}
     };
     app()->instance(DevelopmentInstanceConfigurator::class, $this->configuration);
     app()->instance(DevelopmentRouteProjector::class, new class implements DevelopmentRouteProjector
@@ -248,7 +248,7 @@ describe('instance:create database clone', function (): void {
             ->toContain("GRANT ALL PRIVILEGES ON `acme\\_feature\\_x\\_test%`.* TO 'acme_feature_x'@'%';")
             ->and(DatabaseConnectionTarget::query()->where('instance_id', $instance->id)->sole()->database_connection_id)->toBe($clone->id)
             ->and($this->environment->reads)->toBe(1)
-            ->and($env['APP_URL'])->toStartWith('https://feature-x.')
+            ->and($env['APP_URL'])->toStartWith('https://web.feature-x.')
             ->and($env)->toMatchArray([
                 'APP_KEY' => 'base64:kept',
                 'DB_CONNECTION' => 'mysql',

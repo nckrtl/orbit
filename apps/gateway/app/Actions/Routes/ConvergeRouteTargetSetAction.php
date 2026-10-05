@@ -18,6 +18,7 @@ use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\Instance;
+use App\Models\InstanceRename;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
@@ -49,6 +50,7 @@ final readonly class ConvergeRouteTargetSetAction
     /** @param list<int> $expectedOwnerIds */
     private function convergeOwned(int $routeId, SetRouteTargetsData $proposal, array $expectedOwnerIds): Route
     {
+        InstanceRename::assertAvailable($expectedOwnerIds);
         $route = Route::query()
             ->with(['targets.instance.project', 'targets.instance.node', 'cluster.routerAssignment.node'])
             ->findOrFail($routeId);

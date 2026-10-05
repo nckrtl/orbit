@@ -15,6 +15,9 @@ use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Processes\ProcessEnvironmentProjection;
+use App\Domain\Processes\ProcessPresets;
+use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RoutePlacement;
@@ -40,6 +43,7 @@ use App\Infrastructure\Nodes\RemotePhpPackageManager;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -52,6 +56,7 @@ use App\Models\Instance;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
@@ -82,7 +87,7 @@ it('uses one local workload site when Router and workload roles share a Node', f
             ->and(mb_substr_count($configuration, "https://{$route->domain}"))
             ->toBe(1)
             ->and($configuration)
-            ->toContain("php_fastcgi unix//run/php/orbit-app-instance-{$instance->id}.sock")
+            ->toContain("php_fastcgi unix//run/php/orbit-{$instance->id}-web.sock")
             ->not->toContain('reverse_proxy 127.0.0.1:5173')
             ->toContain('forward_auth')
             ->toContain('/api/v1/runtime-activations/app-instance/'.$instance->id)
@@ -91,8 +96,8 @@ it('uses one local workload site when Router and workload roles share a Node', f
             ->toContain('try_files /app-instance-'.$instance->id.'.awake')
             ->toContain('tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt')
             ->not->toContain('tls_trust_pool')
-            ->not->toContain("orbit-certificates/app-instance-{$instance->id}/current/root.pem")
-            ->not->toContain('reverse_proxy https://')->and($arguments)->toContain("app-instance-{$instance->id}")
+            ->not->toContain("orbit-certificates/app-instance-{$instance->id}-app-web/current/root.pem")
+            ->not->toContain('reverse_proxy https://')->and($arguments)->toContain("app-instance-{$instance->id}-app-web")
             ->not->toContain("route-{$route->id}-router", 'ufw', 's_client')->and($processes->invocations)->toHaveCount(
                 1,
             );
@@ -116,8 +121,8 @@ it('renders old and candidate hostname sites with separate certificate scopes be
         ->toBe(['feature.acme.test', 'next.acme.test'])
         ->and($workloadSites->map->certificateDirectory()->all())
         ->toBe([
-            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}/current",
-            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}-hostname-change/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}-app-web/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}-hostname-change-app-web/current",
         ])
         ->and($routerSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
@@ -174,7 +179,7 @@ it('retires a transferred generated Route without inventing an old Router certif
 
         $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
         expect($deletions->map(static fn (RemoteCommand $command): string => $command->arguments[3])->values()->all())
-            ->toBe(["app-instance-{$instance->id}", "route-{$sourceRoute->id}-router"]);
+            ->toBe(["app-instance-{$instance->id}-app-web", "app-instance-{$instance->id}-hostname-change-app-web", "route-{$sourceRoute->id}-router"]);
         $firstDeletion = $deletions->keys()->first();
         $caddyHosts = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result'))
             ->keys()->map(fn (int $index): string => $ssh->hosts[$index])->unique()->sort()->values()->all();
@@ -203,7 +208,7 @@ it('preserves a Router certificate still serving the transferred explicit Route'
         $projector->retireSource($transfer);
         $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
         expect($deletions->map(static fn (RemoteCommand $command): string => $command->arguments[3])->values()->all())
-            ->toBe(["app-instance-{$instance->id}"]);
+            ->toBe(["app-instance-{$instance->id}-app-web", "app-instance-{$instance->id}-hostname-change-app-web"]);
         expect(new DevelopmentSiteRepository()->forNode($router)->map->certificateDirectory()->all())
             ->toBe(["/etc/caddy/orbit-certificates/route-{$route->id}-router/current"]);
     } finally {
@@ -233,11 +238,12 @@ it('cleans the recorded Router after the source Node changes Cluster membership'
 
         $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
         expect($deletions->map(fn (RemoteCommand $command, int $index): array => [$ssh->hosts[$index], $command->arguments[3]])->values()->all())->toBe([
-            ['10.44.0.10', "app-instance-{$instance->id}"],
+            ['10.44.0.10', "app-instance-{$instance->id}-app-web"],
+            ['10.44.0.10', "app-instance-{$instance->id}-hostname-change-app-web"],
             ['10.44.0.20', "route-{$route->id}-router"],
         ]);
         expect(new DevelopmentSiteRepository()->forNode($destination)->map->certificateDirectory()->all())
-            ->toBe(["/etc/caddy/orbit-certificates/app-instance-{$instance->id}/current"]);
+            ->toBe(["/etc/caddy/orbit-certificates/app-instance-{$instance->id}-app-web/current"]);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
@@ -297,8 +303,8 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         ->toBe(['feature.acme.test', 'next.acme.test'])
         ->and($workloadSites->map->certificateDirectory()->all())
         ->toBe([
-            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}/current",
-            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}-hostname-change/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}-app-web/current",
+            "/etc/caddy/orbit-certificates/app-instance-{$instance->id}-hostname-change-app-web/current",
         ])
         ->and($routerSites->pluck('domain')->all())
         ->toBe(['feature.acme.test', 'next.acme.test'])
@@ -326,6 +332,64 @@ it('preserves the ready hostname candidate across an interrupted DNS publication
         ->toContain("host-record=next.acme.test,{$router->wireguard_ip}")
         ->not->toContain("host-record=feature.acme.test,{$router->wireguard_ip}");
 });
+
+it('reprojects selected per-app route Process origins through native cleanup and rollback', function (bool $rollback): void {
+    [$instance, $route] = orb127_route_projection_models();
+    $instance->project->update(['apps' => [
+        ['name' => 'web', 'path' => 'apps/web', 'web_root' => 'public', 'type' => 'laravel-app'],
+        ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+    ]]);
+    $route->update(['status' => RouteStatus::Active]);
+    $sibling = Route::query()->create(['project_id' => $route->project_id, 'app' => 'docs', 'cluster_id' => $route->cluster_id, 'domain' => 'docs.acme.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $sibling->targets()->create(['instance_id' => $instance->id, 'app' => 'docs', 'position' => 0]);
+    $sibling->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => InstanceState::Active]);
+    $replacement = Route::query()->create(['project_id' => $route->project_id, 'app' => 'web', 'cluster_id' => $route->cluster_id, 'domain' => 'next.acme.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending', 'replaces_route_id' => $route->id, 'replacement_step' => RouteReplacementStep::Reserved]);
+    $replacement->targets()->create(['instance_id' => $instance->id, 'app' => 'web', 'position' => 0]);
+    $route->update(['replaced_by_route_id' => $replacement->id]);
+    foreach (['web' => ['vp-dev', 'annotator'], 'docs' => ['vp-dev']] as $app => $presets) {
+        foreach ($presets as $preset) {
+            Process::query()->create(['owner_type' => 'instance', 'owner_id' => $instance->id, 'app' => $app, 'name' => $app.'-'.$preset, 'runtime' => 'systemd', 'working_directory' => $instance->applicationDirectory($app), 'runtime_config' => ['preset' => $preset, 'command' => ProcessPresets::command($preset)], 'desired_state' => $preset === 'vp-dev' ? 'running' : 'stopped', 'status' => 'active']);
+        }
+    }
+    $instance->recordAppRuntime('web', ['annotator_port' => 4848]);
+    $instance->recordAppRuntime('docs', ['annotator_port' => 4849]);
+    $before = $instance->processes()->get()->map->getAttributes()->all();
+    $instance->load('routes.targets');
+    if ($rollback) {
+        $replacement->update(['status' => RouteStatus::Failed, 'failed_step' => 'workload-caddy', 'error_code' => 'route.domain_change_failed']);
+    } else {
+        $route->update(['status' => RouteStatus::Retiring]);
+        $replacement->update(['status' => RouteStatus::Activating, 'replacement_step' => RouteReplacementStep::DatabaseCutover]);
+    }
+    $units = [];
+    $projection = Mockery::mock(ProcessEnvironmentProjection::class);
+    $projection->shouldReceive('project')->once()->withArgs(function (Instance $owner, int $except, ?string $app) use (&$units): bool {
+        expect($except)->toBe(0)->and($app)->toBe('web');
+        foreach ($owner->processes()->where('app', $app)->get() as $process) {
+            $units[$process->runtime_config['preset']] = new SystemdProcessRenderer()->render($process, new ProcessTargetResolver()->forInspection($process), new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+        }
+
+        return true;
+    });
+    app()->instance(ProcessEnvironmentProjection::class, $projection);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+    try {
+        if ($rollback) {
+            $projector->rollbackCaddy($instance, $replacement);
+        } else {
+            orb_domain_change_cleanup($projector, [$instance], $replacement);
+        }
+        $domain = $rollback ? $route->domain : $replacement->domain;
+        expect($units['vp-dev'])->toContain('ORBIT_DEV_SERVER_ORIGIN=https://'.$domain)
+            ->and($units['annotator'])->toContain('--allow-origin')->toContain('https://'.$domain)
+            ->and(implode('', $units))->not->toContain('docs.acme.test')
+            ->and($instance->processes()->get()->map->getAttributes()->all())->toBe($before)
+            ->and($sibling->refresh()->domain)->toBe('docs.acme.test');
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with(['forward' => false, 'rollback' => true]);
 
 it('serves every hostname-change site from a certificate the flow wrote for that domain', function (): void {
     [$instance, $route, $workload, $router] = orb127_route_projection_models();
@@ -365,15 +429,15 @@ it('serves every hostname-change site from a certificate the flow wrote for that
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
             $ssh,
             [
-                $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
+                $workload->wireguard_ip => ["app-instance-{$instance->id}-app-web" => 'feature.acme.test'],
                 $router->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
             ],
         );
 
         expect($mismatches)->toBe([])
-            ->and($served[$workload->wireguard_ip])->toBe(['next.acme.test' => "app-instance-{$instance->id}"])
+            ->and($served[$workload->wireguard_ip])->toBe(['next.acme.test' => "app-instance-{$instance->id}-app-web"])
             ->and($served[$router->wireguard_ip])->toBe(['next.acme.test' => "route-{$replacement->id}-router"])
-            ->and($disk[$workload->wireguard_ip])->toBe(["app-instance-{$instance->id}" => 'next.acme.test'])
+            ->and($disk[$workload->wireguard_ip])->toBe(["app-instance-{$instance->id}-app-web" => 'next.acme.test'])
             ->and($disk[$router->wireguard_ip])->toBe(["route-{$replacement->id}-router" => 'next.acme.test']);
     } finally {
         new Filesystem()->deleteDirectory($home);
@@ -418,7 +482,7 @@ it('withdraws a failed domain change before removing its certificates and retrie
     [$projector, $ssh, $processes, $home] = orb127_route_projector();
     app()->instance(RouteDomainProjector::class, $projector);
     $disk = [
-        $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
+        $workload->wireguard_ip => ["app-instance-{$instance->id}-app-web" => 'feature.acme.test'],
         $router->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
     ];
     // Private DNS publication runs after the Router Caddy step, so the rollback has to withdraw
@@ -435,7 +499,7 @@ it('withdraws a failed domain change before removing its certificates and retrie
             ->and($route->refresh()->status)->toBe(RouteStatus::Active)
             ->and($route->replaced_by_route_id)->toBeNull()
             ->and(Route::query()->where('domain', 'next.acme.test')->exists())->toBeFalse()
-            ->and($served[$workload->wireguard_ip])->toBe(['feature.acme.test' => "app-instance-{$instance->id}"])
+            ->and($served[$workload->wireguard_ip])->toBe(['feature.acme.test' => "app-instance-{$instance->id}-app-web"])
             ->and($served[$router->wireguard_ip])->toBe(['feature.acme.test' => "route-{$route->id}-router"])
             ->and($afterRollback)->toBe($disk);
 
@@ -565,7 +629,7 @@ it('removes the retiring Router certificate from the Router that served it when 
         [$mismatches, $disk, $served] = orb_hostname_change_certificate_replay(
             $ssh,
             [
-                $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
+                $workload->wireguard_ip => ["app-instance-{$instance->id}-app-web" => 'feature.acme.test'],
                 $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
             ],
         );
@@ -589,7 +653,7 @@ it('moves a Route to another Cluster through its stored transition and restores 
     app()->instance(RouteDomainProjector::class, $projector);
     $placement = new RoutePlacement(nodeId: null, clusterId: $cluster->id, effectiveTld: null);
     $disk = [
-        $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
+        $workload->wireguard_ip => ["app-instance-{$instance->id}-app-web" => 'feature.acme.test'],
         $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
     ];
     // Private DNS publication runs after the candidate Router build, so the restore has to withdraw
@@ -622,7 +686,7 @@ it('moves a Route to another Cluster through its stored transition and restores 
             ->and($served[$oldRouter->wireguard_ip])->toBe([])
             ->and($afterMove[$newRouter->wireguard_ip])->toBe(["route-{$route->id}-router" => 'feature.acme.test'])
             ->and($afterMove[$oldRouter->wireguard_ip])->toBe([])
-            ->and($afterMove[$workload->wireguard_ip])->toBe(["app-instance-{$instance->id}" => 'feature.acme.test']);
+            ->and($afterMove[$workload->wireguard_ip])->toBe(["app-instance-{$instance->id}-app-web" => 'feature.acme.test']);
     } finally {
         new Filesystem()->deleteDirectory($home);
     }
@@ -636,7 +700,7 @@ it('replaces a Router through its stored router rows and restores a failed repla
     [$projector, $ssh, $processes, $home] = orb127_route_projector();
     $action = orb_router_replacement_action();
     $disk = [
-        $workload->wireguard_ip => ["app-instance-{$instance->id}" => 'feature.acme.test'],
+        $workload->wireguard_ip => ["app-instance-{$instance->id}-app-web" => 'feature.acme.test'],
         $oldRouter->wireguard_ip => ["route-{$route->id}-router" => 'feature.acme.test'],
     ];
     $cluster = Cluster::query()->findOrFail($oldRouter->cluster_id);
@@ -681,8 +745,8 @@ it('serves a crash-left pending domain change from its staging certificate on th
     [$projector, $ssh, $processes, $home] = orb127_route_projector();
     $disk = [
         $workload->wireguard_ip => [
-            "app-instance-{$instance->id}" => 'feature.acme.test',
-            "app-instance-{$instance->id}-hostname-change" => 'next.acme.test',
+            "app-instance-{$instance->id}-app-web" => 'feature.acme.test',
+            "app-instance-{$instance->id}-hostname-change-app-web" => 'next.acme.test',
         ],
         $oldRouter->wireguard_ip => [
             "route-{$route->id}-router" => 'feature.acme.test',
@@ -860,7 +924,7 @@ it('hydrates only requested workload and Router routes while global inventory st
         ->toBe($globalSites->where('nodeId', $workload->id)->values()->map($siteIdentity)->all())
         ->and($workloadSites->pluck('scope')->all())
         ->toHaveCount(2)
-        ->toContain("app-instance-{$pendingInstance->id}", "app-instance-{$activeInstance->id}")
+        ->toContain("app-instance-{$pendingInstance->id}-app-web", "app-instance-{$activeInstance->id}-app-web")
         ->and($workloadSites->pluck('domain'))
         ->not->toContain($failedRoute->domain, $unrelatedRoute->domain)->and($retrievedRoutes)->toContain(
             $pendingRoute->id,
@@ -911,7 +975,7 @@ it('projects a dedicated Router over reachable LAN with separate keys and preser
         $routerConfiguration = app(NodeCaddyfileRenderer::class)->render($router)->content;
 
         expect($arguments)
-            ->toContain("app-instance-{$instance->id}", "route-{$route->id}-router")
+            ->toContain("app-instance-{$instance->id}-app-web", "route-{$route->id}-router")
             ->and($firewall?->arguments)
             ->toBe([
                 'sudo',
@@ -1002,8 +1066,8 @@ it('retains active workload and Router sites while publishing a second Route on 
 
         expect($workloadConfiguration)
             ->toContain(
-                "/etc/caddy/orbit-certificates/app-instance-{$firstInstance->id}/current/cert.pem",
-                "/etc/caddy/orbit-certificates/app-instance-{$secondInstance->id}/current/cert.pem",
+                "/etc/caddy/orbit-certificates/app-instance-{$firstInstance->id}-app-web/current/cert.pem",
+                "/etc/caddy/orbit-certificates/app-instance-{$secondInstance->id}-app-web/current/cert.pem",
             )
             ->and($routerConfiguration)
             ->toContain(
@@ -1116,7 +1180,7 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
             'for path in "$php_root"/*/fpm/pool.d/orbit-scopes.conf',
         ),
         'certificate' => static fn (RemoteCommand $command): bool => (
-            ($command->arguments[3] ?? null) === "app-instance-{$instance->id}"
+            ($command->arguments[3] ?? null) === "app-instance-{$instance->id}-app-web"
         ),
         'firewall' => static fn (RemoteCommand $command): bool => ($command->arguments[1] ?? null) === 'ufw',
         'dns' => null,

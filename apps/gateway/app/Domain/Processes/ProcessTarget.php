@@ -21,7 +21,20 @@ final readonly class ProcessTarget
         public bool $productionReleaseLayout = false,
         public ?string $routeDomain = null,
         public bool $onDemandHostStart = false,
+        public ?string $app = null,
     ) {
         $this->defaultWorkingDirectory = $checkoutPath;
+    }
+
+    public function port(string $kind): ?int
+    {
+        $value = $this->instance?->runtimeForApp($this->app)[$kind] ?? null;
+
+        return is_int($value) ? $value : null;
+    }
+
+    public function usesAppIdentity(): bool
+    {
+        return $this->app !== null && ($this->instance?->usesAppRuntimeIdentity($this->app) ?? false);
     }
 }

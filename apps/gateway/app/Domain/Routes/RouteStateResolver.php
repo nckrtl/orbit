@@ -67,7 +67,7 @@ final readonly class RouteStateResolver
         }
     }
 
-    public function generatedDomain(string $projectSlug, string $instanceName, ?string $tld): string
+    public function generatedDomain(string $projectSlug, string $instanceName, ?string $tld, string $app = 'web'): string
     {
         if ($tld === null) {
             throw new ResourceOperationException(
@@ -79,6 +79,6 @@ final readonly class RouteStateResolver
 
         $prefix = $instanceName === 'default' ? $projectSlug : "{$instanceName}.{$projectSlug}";
 
-        return RouteDomain::validate("{$prefix}.{$tld}");
+        return RouteDomain::validate("{$app}.{$prefix}.{$tld}");
     }
 }

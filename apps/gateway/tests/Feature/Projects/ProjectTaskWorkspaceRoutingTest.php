@@ -16,6 +16,8 @@ use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
+
+require_once __DIR__.'/../../Support/RuntimeGuardIsolation.php';
 use Illuminate\Support\Str;
 
 beforeEach(function (): void {
@@ -252,9 +254,14 @@ it('seeds legacy orbit Projects unrouted, preserves task checks, and backfills w
     $migration = require database_path('migrations/2026_10_06_000000_add_task_workspace_routing.php');
     assert($migration instanceof Migration);
     owned_interrupted_creation_removal_migration()->down();
-    $migration->down();
-    $migration->up();
-    owned_interrupted_creation_removal_migration()->up();
+    $guards = take_app_runtime_guards();
+    try {
+        $migration->down();
+        $migration->up();
+    } finally {
+        restore_app_runtime_guards($guards);
+        owned_interrupted_creation_removal_migration()->up();
+    }
 
     expect(Project::query()->findOrFail($orbit->id)->task_workspace_routed)->toBeFalse()
         ->and(Project::query()->findOrFail($orbit->id)->task_check)->toBe('composer check')

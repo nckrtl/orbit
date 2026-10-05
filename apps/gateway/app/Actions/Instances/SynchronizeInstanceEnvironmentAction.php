@@ -19,6 +19,7 @@ use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironment;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
 
 final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnvironmentSynchronizer, InstanceRouteEnvironmentSynchronizer
@@ -36,6 +37,8 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
 
     public function execute(Instance $instance): InstanceEnvironmentResult
     {
+        AppRuntimeMigration::assertInstanceAvailable($instance);
+
         return $this->operations->run(
             [$instance->id],
             fn (): InstanceEnvironmentResult => $this->synchronize(
@@ -47,6 +50,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
     public function synchronizeRouteDomain(
         Instance $instance,
         InstanceEnvironmentRouteDomain $domain,
+        ?string $app = null,
     ): InstanceEnvironmentResult {
         return $this->operations->run(
             [$instance->id],
@@ -55,6 +59,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
                     $instance->refresh(),
                     $domain,
                     requireActiveNode: true,
+                    app: $app,
                 ),
             ),
         );

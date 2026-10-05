@@ -14,7 +14,7 @@ final readonly class RouteAssociationGuard
 {
     public function assertTargetAssignable(Route $route, Instance $instance): void
     {
-        $association = $this->lockedAssociation($instance);
+        $association = $this->lockedAssociation($instance, $route->app);
 
         if (! $association instanceof RouteTarget || $association->route_id === $route->id) {
             return;
@@ -27,9 +27,9 @@ final readonly class RouteAssociationGuard
         );
     }
 
-    public function assertTargetUnassociated(Instance $instance): void
+    public function assertTargetUnassociated(Instance $instance, ?string $app = null): void
     {
-        $association = $this->lockedAssociation($instance);
+        $association = $this->lockedAssociation($instance, $app);
 
         if (! $association instanceof RouteTarget) {
             return;
@@ -68,9 +68,11 @@ final readonly class RouteAssociationGuard
         }
     }
 
-    private function lockedAssociation(Instance $instance): ?RouteTarget
+    private function lockedAssociation(Instance $instance, ?string $app): ?RouteTarget
     {
+        $app = $instance->appConfiguration($app)['name'];
         $association = RouteTarget::query()
+            ->where('app', $app)
             ->where('instance_id', $instance->id)
             ->lockForUpdate()
             ->first();

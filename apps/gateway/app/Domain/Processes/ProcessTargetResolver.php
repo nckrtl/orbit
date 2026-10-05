@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
@@ -17,13 +18,14 @@ use SensitiveParameter;
 
 final readonly class ProcessTargetResolver
 {
-    public function resolve(ProcessTargetType $type, int $id): ProcessTarget
+    public function resolve(ProcessTargetType $type, int $id, ?string $app = null): ProcessTarget
     {
         return match ($type) {
             ProcessTargetType::Instance => $this->forAdmission(
                 Instance::query()
                     ->with('node')
                     ->findOrFail($id),
+                $app,
             ),
             ProcessTargetType::Node => $this->forNodeAdmission(
                 Node::query()->findOrFail($id),
@@ -31,12 +33,13 @@ final readonly class ProcessTargetResolver
         };
     }
 
-    public function forAdmission(Instance $instance): ProcessTarget
+    public function forAdmission(Instance $instance, ?string $app = null): ProcessTarget
     {
+        AppRuntimeMigration::assertInstanceAvailable($instance);
         $instance->loadMissing('node');
         $this->ensureActiveInstance($instance);
 
-        return $this->instanceContext($instance);
+        return $this->instanceContext($instance, app: $app);
     }
 
     public function forNodeAdmission(Node $node): ProcessTarget
@@ -48,7 +51,7 @@ final readonly class ProcessTargetResolver
 
     public function forProcess(#[SensitiveParameter] Process $process): ProcessTarget
     {
-        return $this->forAdmissionOwner($this->owner($process));
+        return $this->forAdmissionOwner($this->owner($process), $process->app);
     }
 
     public function forInstallation(#[SensitiveParameter] Process $process): ProcessTarget
@@ -67,10 +70,10 @@ final readonly class ProcessTargetResolver
             );
         }
 
-        return $this->forPreparation($owner);
+        return $this->forPreparation($owner, $process->app);
     }
 
-    public function forPreparation(Instance $instance): ProcessTarget
+    public function forPreparation(Instance $instance, ?string $app = null): ProcessTarget
     {
         $instance->loadMissing('node');
         $this->ensureLinux($instance->node);
@@ -85,7 +88,7 @@ final readonly class ProcessTargetResolver
             );
         }
 
-        return $this->instanceContext($instance);
+        return $this->instanceContext($instance, app: $app);
     }
 
     public function forStart(#[SensitiveParameter] Process $process): ProcessTarget
@@ -94,7 +97,7 @@ final readonly class ProcessTargetResolver
             throw new ResourceOperationException('process.removal_pending', 'Finish removing this Process before creating or starting it again.', 409);
         }
 
-        return $this->forAdmissionOwner($this->owner($process));
+        return $this->forAdmissionOwner($this->owner($process), $process->app);
     }
 
     public function forInspection(#[SensitiveParameter] Process $process): ProcessTarget
@@ -103,7 +106,7 @@ final readonly class ProcessTargetResolver
 
         return $owner instanceof Node
             ? $this->nodeContext($owner)
-            : $this->instanceContext($owner);
+            : $this->instanceContext($owner, app: $process->app);
     }
 
     public function forRemoval(#[SensitiveParameter] Process $process): ProcessTarget
@@ -132,14 +135,14 @@ final readonly class ProcessTargetResolver
             );
         }
 
-        return $this->instanceContext($owner, allowRemovingRole: true);
+        return $this->instanceContext($owner, allowRemovingRole: true, app: $process->app);
     }
 
-    private function forAdmissionOwner(Instance|Node $owner): ProcessTarget
+    private function forAdmissionOwner(Instance|Node $owner, ?string $app): ProcessTarget
     {
         return $owner instanceof Node
             ? $this->forNodeAdmission($owner)
-            : $this->forAdmission($owner);
+            : $this->forAdmission($owner, $app);
     }
 
     private function owner(#[SensitiveParameter] Process $process): Instance|Node
@@ -180,9 +183,10 @@ final readonly class ProcessTargetResolver
         );
     }
 
-    private function instanceContext(Instance $instance, bool $allowRemovingRole = false): ProcessTarget
+    private function instanceContext(Instance $instance, bool $allowRemovingRole = false, ?string $app = null): ProcessTarget
     {
         $this->ensureLinux($instance->node);
+        $app = $instance->appConfiguration($app)['name'];
 
         $appDevPlacement = $instance->placedOnAppDev()
             || ($allowRemovingRole && $instance->node->roles()
@@ -196,10 +200,10 @@ final readonly class ProcessTargetResolver
                 ->exists());
 
         if ($appDevPlacement) {
-            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : $instance->checkout_path;
+            $workingDirectory = $instance->applicationDirectory($app);
             $environmentFile = "{$workingDirectory}/.env";
             $user = $instance->node->user;
-            $certificateScope = "app-instance-{$instance->id}";
+            $certificateScope = "app-instance-{$instance->id}".($instance->usesAppRuntimeIdentity($app) ? "-app-{$app}" : '');
             $productionReleaseLayout = false;
         } elseif ($appProdPlacement) {
             $home = $instance->production_home;
@@ -214,7 +218,7 @@ final readonly class ProcessTargetResolver
             }
 
             $productionReleaseLayout = true;
-            $workingDirectory = $instance->source_is_laravel === true ? $instance->applicationDirectory() : "{$home}/current";
+            $workingDirectory = $instance->runtimeForApp($app)['laravel'] === true ? $instance->applicationDirectory($app) : "{$home}/current";
             $environmentFile = "{$home}/.env";
             $certificateScope = null;
         } else {
@@ -237,22 +241,23 @@ final readonly class ProcessTargetResolver
             instance: $instance,
             environmentFile: $environmentFile,
             productionReleaseLayout: $productionReleaseLayout,
-            routeDomain: $this->developmentRouteDomain($instance),
+            routeDomain: $this->developmentRouteDomain($instance, $app),
+            app: $app,
             onDemandHostStart: new DevelopmentHibernationPolicy()->usesOnDemandHostStart($instance),
         );
     }
 
-    private function developmentRouteDomain(Instance $instance): ?string
+    private function developmentRouteDomain(Instance $instance, string $app): ?string
     {
         if (! $instance->placedOnAppDev()) {
             return null;
         }
 
         $instance->loadMissing('routes');
-        $authoritative = $instance->authoritativeRoute();
+        $authoritative = $instance->authoritativeRoute($app);
         $domain = $authoritative instanceof Route
             ? $authoritative->domain
-            : $instance->routes->sortBy('id')->first()?->domain;
+            : null;
 
         return is_string($domain) && $domain !== '' ? $domain : null;
     }

@@ -12,6 +12,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\NodeRoleDependencySet;
 use App\Domain\Nodes\NodeRoleOperationException;
 use App\Domain\Processes\ProcessOperationException;
+use App\Domain\Processes\ProcessPresets;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
@@ -99,7 +100,7 @@ it('installs the Gateway annotator files and deletes only a removed Process stor
     $files = json_decode($installed->input, true, flags: JSON_THROW_ON_ERROR);
     expect($files['bin/serve.mjs'])->toBe(file_get_contents(base_path('../../packages/agent-annotation/bin/serve.mjs')))
         ->and($files)->toHaveKeys(['bin/store.mjs', 'bin/lifecycle.mjs', 'bin/SKILL.md', 'bin/QUEUE-SKILL.md']);
-    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'install', '-d', '-m', '0700', '-o', 'nckrtl', AnnotatorEndpoint::store($this->instance->id)]))->toBeTrue();
+    expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'install', '-d', '-m', '0700', '-o', 'nckrtl', AnnotatorEndpoint::store($this->instance->id, 'web')]))->toBeTrue();
     $this->ssh->commands = [];
     $this->manager->remove($process);
     expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => in_array('rm', $command->arguments, true)))->toBeFalse();
@@ -108,7 +109,7 @@ it('installs the Gateway annotator files and deletes only a removed Process stor
     $this->manager->remove($process);
     $arguments = array_map(fn (RemoteCommand $command): array => $command->arguments, $this->ssh->commands);
     $stop = array_search(['sudo', 'systemctl', 'disable', '--now', new SystemdProcessRenderer()->unitName($process)], $arguments, true);
-    $deleteStore = array_search(['sudo', 'rm', '-rf', '--', AnnotatorEndpoint::store($this->instance->id)], $arguments, true);
+    $deleteStore = array_search(['sudo', 'rm', '-rf', '--', AnnotatorEndpoint::store($this->instance->id, 'web')], $arguments, true);
     expect($stop)->not->toBeFalse()->and($deleteStore)->not->toBeFalse()->and($stop)->toBeLessThan($deleteStore);
 });
 
@@ -169,6 +170,79 @@ it('reprojects sleeping and cold worker and Vite units without activation or che
     }
     expect($checkout->restored)->toBe([])->and($worker->refresh()->desired_state->value)->toBe('running')->and($vite->refresh()->desired_state->value)->toBe('running');
 })->with([false, true]);
+
+it('reprojects only selected per-app route units without waking sleeping or stopped Processes', function (): void {
+    $this->instance->project->update(['apps' => [
+        ['name' => 'web', 'path' => 'apps/web', 'web_root' => 'public', 'type' => 'laravel-app'],
+        ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+    ]]);
+    foreach (['web' => 'new.web.test', 'docs' => 'docs.test'] as $app => $domain) {
+        $route = Route::query()->create(['project_id' => $this->instance->project_id, 'app' => $app, 'node_id' => $this->instance->node_id, 'domain' => $domain, 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $this->instance->id, 'app' => $app, 'position' => 0]);
+        $route->update(['status' => 'active']);
+    }
+    $paths = [];
+    foreach (['web' => ['vp-dev', 'annotator'], 'docs' => ['vp-dev']] as $app => $presets) {
+        foreach ($presets as $preset) {
+            $process = runtime_manager_systemd_process($this->instance);
+            $process->update(['name' => $app.'-'.$preset, 'app' => $app, 'working_directory' => $this->instance->applicationDirectory($app), 'runtime_config' => ['preset' => $preset, 'command' => ProcessPresets::command($preset)], 'desired_state' => $preset === 'vp-dev' ? 'running' : 'stopped']);
+            $paths[new SystemdProcessRenderer()->unitPath($process)] = $process->id;
+        }
+    }
+    $this->instance->recordAppRuntime('web', ['annotator_port' => 4848]);
+    $this->instance->recordAppRuntime('docs', ['annotator_port' => 4849]);
+    $before = $this->instance->processes()->get()->map->getAttributes()->all();
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($paths): void {
+        if (array_slice($command->arguments, 0, 3) === ['sudo', 'cat', '--'] && isset($paths[$command->arguments[3]])) {
+            $this->ssh->responses[] = process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID=".$paths[$command->arguments[3]]."\n");
+        }
+    };
+    $this->manager->project($this->instance, 0, 'web');
+    $units = collect($this->ssh->commands)->filter(fn (RemoteCommand $command): bool => ($command->arguments[4] ?? null) === '/dev/stdin')->pluck('input');
+    expect($units)->toHaveCount(2)->and(implode('', $units->all()))->toContain('ORBIT_DEV_SERVER_ORIGIN=https://new.web.test')->toContain('--allow-origin')->not->toContain('docs.test');
+    foreach ($this->ssh->commands as $command) {
+        expect($command->arguments)->not->toContain('start')->not->toContain('restart')->not->toContain('stop')->not->toContain('enable')->not->toContain('disable');
+    }
+    expect($this->instance->processes()->get()->map->getAttributes()->all())->toBe($before);
+});
+
+it('uses the independent Vite file identity for per-app route cleanup and refuses sibling markers', function (bool $qualified): void {
+    $this->instance->recordAppRuntime('web', ['app_identity' => true, 'vite_environment_identity' => $qualified]);
+    $process = runtime_manager_systemd_process($this->instance);
+    $process->update(['runtime_config' => ['preset' => 'vp-dev', 'command' => ['/usr/local/bin/vp']]]);
+    $path = new SystemdProcessRenderer()->unitPath($process);
+    $this->ssh->beforeExecute = function (RemoteCommand $command) use ($path, $process): void {
+        if ($command->arguments === ['sudo', 'cat', '--', $path]) {
+            $this->ssh->responses[] = process_runtime_result(stdout: "[Unit]\nX-Orbit-Process-ID={$process->id}\n");
+        }
+    };
+    $this->manager->remove($process);
+    $command = collect($this->ssh->commands)->first(fn (RemoteCommand $command): bool => ($command->arguments[3] ?? null) === 'orbit-remove-vite-environment');
+    expect($command)->not->toBeNull()->and($command->arguments[4])->toBe(SystemdProcessRenderer::viteEnvironmentPath($this->instance->id, $qualified ? 'web' : null));
+    $root = sys_get_temp_dir().'/orbit-vite-cleanup-'.bin2hex(random_bytes(8));
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($root.'/bin');
+    file_put_contents($root.'/bin/sudo', "#!/bin/sh\nexec \"\$@\"\n");
+    chmod($root.'/bin/sudo', 0755);
+    $target = $root.'/environment.env';
+    $sibling = $root.'/sibling.env';
+    file_put_contents($sibling, SystemdProcessRenderer::viteEnvironmentMarker($this->instance->id, 'docs')."\nPORT=1\n");
+    file_put_contents($target, SystemdProcessRenderer::viteEnvironmentMarker($this->instance->id, $qualified ? 'docs' : null)."\nPORT=2\n");
+    try {
+        $arguments = $command->arguments;
+        $arguments[4] = $target;
+        $local = new Symfony\Component\Process\Process($arguments, env: ['PATH' => $root.'/bin:'.getenv('PATH')]);
+        $local->run();
+        expect($local->isSuccessful())->toBe(! $qualified)->and(file_exists($target))->toBe($qualified)->and(file_exists($sibling))->toBeTrue();
+        if ($qualified) {
+            file_put_contents($target, SystemdProcessRenderer::viteEnvironmentMarker($this->instance->id, 'web')."\nPORT=2\n");
+            $local->mustRun();
+            expect(file_exists($target))->toBeFalse();
+        }
+    } finally {
+        $files->deleteDirectory($root);
+    }
+})->with(['legacy Vite with upgraded certificates' => false, 'qualified Vite' => true]);
 
 it('does not create an annotator unit when installing the server files fails', function (): void {
     $this->instance->update(['annotator_port' => 4848]);
@@ -254,16 +328,16 @@ it('installs and manages a systemd process through fixed SSH argv', function ():
         ->and($this->ssh->commands[2]->input)
         ->toContain("X-Orbit-Process-ID={$process->id}")
         ->toContain(
-            "Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/cert.pem",
+            "Environment=VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}-app-web/current/cert.pem",
         )
         ->toContain(
-            "Environment=VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/key.pem",
+            "Environment=VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}-app-web/current/key.pem",
         )
         ->toContain(
-            "\"VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/cert.pem\"",
+            "\"VITE_DEV_SERVER_CERT=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}-app-web/current/cert.pem\"",
         )
         ->toContain(
-            "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}/current/key.pem\"",
+            "\"VITE_DEV_SERVER_KEY=/home/orbit/.orbit/certificates/app-instance-{$this->instance->id}-app-web/current/key.pem\"",
         )
         ->and($logs)
         ->toBe("line one\nline two\n")
@@ -2005,6 +2079,7 @@ function runtime_manager_systemd_process(Instance $instance): Process
     return Process::query()->create([
         'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
+        'app' => 'web',
         'name' => 'queue',
         'runtime' => ProcessRuntime::Systemd,
         'working_directory' => $instance->checkout_path,

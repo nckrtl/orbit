@@ -28,6 +28,7 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Domain\Projects\LifecyclePhase;
+use App\Domain\Projects\ProjectApps;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -137,6 +138,7 @@ final readonly class CreateInstanceAction
             $created = true;
         }
 
+        app(MigrateAppRuntimeAction::class)->execute($requestedNode);
         try {
             $result = ($this->environmentOperations ?? app(InstanceEnvironmentOperationLock::class))->run(
                 [$instance->id],
@@ -416,8 +418,7 @@ final readonly class CreateInstanceAction
         if (
             ! is_string($project->default_branch)
             || ! GitBranchName::isValid($project->default_branch)
-            || ! is_string($project->root)
-            || ! ProjectRoot::isValid($project->root, $project->type)
+
         ) {
             throw new ResourceOperationException(
                 errorCode: 'project.source_defaults_incomplete',
@@ -425,6 +426,7 @@ final readonly class CreateInstanceAction
             );
         }
 
+        ProjectApps::validate($project->configuredApps());
         GitRepositoryOrigin::validate($project->repository_url);
     }
 

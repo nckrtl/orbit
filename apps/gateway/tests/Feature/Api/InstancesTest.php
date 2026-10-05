@@ -4,8 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\Instances\CreateInstanceAction;
 use App\Actions\Routes\ConvergeRouteAction;
+use App\Actions\Routes\RemoveRouteAction;
+use App\Actions\Routes\SetRouteTargetAction;
+use App\Actions\Routes\UpdateRouteAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Data\Instances\InstanceData;
+use App\Data\Routes\UpdateRouteData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -58,7 +62,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\NativeInstanceRemovalProjector;
-use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Metrics\NativeMetricsFleetReconciler;
 use App\Infrastructure\Metrics\NativeServiceMetricsLifecycle;
 use App\Infrastructure\Metrics\ServiceMetricsNode;
@@ -79,15 +82,18 @@ use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
+use App\Models\InstanceRename;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
+use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\RouteTarget;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
@@ -135,14 +141,14 @@ beforeEach(function (): void {
 
         public bool $laravel = false;
 
-        public function inspect(Instance $instance): DevelopmentSourceProfile
+        public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile
         {
             $this->inspections++;
 
             return new DevelopmentSourceProfile($this->phpVersion, $this->laravel);
         }
 
-        public function configureLaravelUrl(Instance $instance, string $url): void
+        public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void
         {
             $this->configurations++;
             $this->urls[] = $url;
@@ -595,6 +601,122 @@ describe('development Instance rename', function (): void {
         $this->renameInstance = Instance::query()->sole();
     });
 
+    it('freezes per-app route rename branch presence and value before failed preparation', function (): void {
+        $payload = ['branch' => 't3code/login', 'domain' => 'login.acme.test'];
+        $this->routeProjection->shouldReceive('prepareWorkloadCertificate')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Preparation failed.', 502));
+        $url = '/api/v1/instances/'.$this->renameInstance->id.'/rename';
+        $this->postJson($url, $payload)->assertStatus(502);
+        $journal = InstanceRename::query()->sole();
+        expect($journal->app)->toBe('web')->and($journal->domain)->toBe('login.acme.test')
+            ->and($journal->branch_supplied)->toBeTrue()->and($journal->branch)->toBe('t3code/login')->and($journal->phase)->toBe('requested');
+        foreach ([['domain' => $payload['domain']], ['branch' => 'different', 'domain' => $payload['domain']], ['branch' => $payload['branch']]] as $changed) {
+            $this->postJson($url, $changed)->assertConflict()->assertJsonPath('error.code', 'route.domain_change_conflict');
+        }
+        $this->deleteJson('/api/v1/instances/'.$this->renameInstance->id)->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy');
+        app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+        $this->postJson($url, $payload)->assertOk();
+        expect($journal->refresh()->phase)->toBe('complete')->and($this->renameInstance->refresh()->branch)->toBe('t3code/login');
+    });
+
+    it('keeps interrupted per-app route rename ownership across slug and generic Route mutations', function (bool $afterCleanup): void {
+        $instance = $this->renameInstance;
+        $instance->recordAppRuntime('web', ['laravel' => true]);
+        InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'app' => 'web', 'env_key' => 'APP_URL', 'env_value' => 'https://'.$instance->authoritativeRoute('web')->domain]);
+        $payload = ['branch' => 't3code/login', 'domain' => 'owned-rename.acme.test'];
+        $url = '/api/v1/instances/'.$instance->id.'/rename';
+        $event = 'eloquent.updated: '.InstanceRename::class;
+        if ($afterCleanup) {
+            Event::listen($event, static function (InstanceRename $journal): void {
+                if ($journal->phase === 'complete') {
+                    throw new ResourceOperationException('route.domain_change_failed', 'Interrupted completion.', 502);
+                }
+            });
+        } else {
+            $this->routeProjection->shouldReceive('prepareWorkloadCertificate')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Interrupted preparation.', 502));
+        }
+        try {
+            $this->postJson($url, $payload)->assertStatus(502);
+        } finally {
+            if ($afterCleanup) {
+                Event::forget($event);
+            }
+        }
+        app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+        app()->instance(DevelopmentRouteProjector::class, Mockery::mock(DevelopmentRouteProjector::class)->shouldIgnoreMissing());
+        expect(InstanceRename::query()->sole()->phase)->toBe($afterCleanup ? 'domain_converged' : 'requested');
+        $before = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
+        $urls = $this->configuration->urls;
+        $environment = InstanceEnvironmentValue::query()->get()->map->getAttributes()->all();
+        $this->patchJson('/api/v1/projects/'.$instance->project_id, ['slug' => 'competing-slug'])->assertConflict()->assertJsonPath('error.code', 'instance.lifecycle_busy');
+        $current = $instance->refresh()->authoritativeRoute('web');
+        foreach ([
+            fn () => app(ConvergeRouteAction::class)->execute($current, 'competing.acme.test', allowGenerated: true),
+            fn () => app(UpdateRouteAction::class)->execute($current, new UpdateRouteData(true, 'competing.acme.test', false, null), allowGenerated: true),
+            fn () => app(RemoveRouteAction::class)->execute($current),
+            fn () => app(SetRouteTargetAction::class)->execute($current, $instance->id),
+            fn () => app(ConvergeRouteAction::class)->execute($current, 'competing.acme.test', allowGenerated: true, renameOwner: InstanceRename::query()->sole()),
+        ] as $competing) {
+            expect($competing)->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.lifecycle_busy'));
+        }
+        expect($instance->project->fresh()->slug)->toBe('acme')
+            ->and(Route::query()->orderBy('id')->get()->map->getAttributes()->all())->toBe($before)
+            ->and(InstanceEnvironmentValue::query()->get()->map->getAttributes()->all())->toBe($environment)
+            ->and($this->configuration->urls)->toBe($urls)
+            ->and(ProjectUpdate::query()->count())->toBe(0);
+        app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+        $this->postJson($url, $payload)->assertOk();
+        expect($instance->refresh()->authoritativeRoute('web')->domain)->toBe($payload['domain'])
+            ->and(InstanceEnvironmentValue::query()->where('instance_id', $instance->id)->where('app', 'web')->where('env_key', 'APP_URL')->sole()->env_value)->toBe('https://'.$payload['domain'])
+            ->and($this->configuration->urls[array_key_last($this->configuration->urls)])->toBe('https://'.$payload['domain'])
+            ->and(InstanceRename::query()->sole()->phase)->toBe('complete');
+    })->with(['preparation rolled back' => false, 'domain converged' => true]);
+
+    it('commits the per-app route rename branch and completion receipt atomically', function (): void {
+        $event = 'eloquent.updated: '.InstanceRename::class;
+        Event::listen($event, static function (InstanceRename $journal): void {
+            if ($journal->phase === 'complete') {
+                throw new ResourceOperationException('route.domain_change_failed', 'Completion transaction interrupted.', 502);
+            }
+        });
+        $url = '/api/v1/instances/'.$this->renameInstance->id.'/rename';
+        $payload = ['branch' => 't3code/login', 'domain' => 'login.acme.test'];
+        try {
+            $this->postJson($url, $payload)->assertStatus(502);
+            expect($this->renameInstance->refresh()->branch)->toBe('dev')
+                ->and(InstanceRename::query()->sole()->phase)->toBe('domain_converged')
+                ->and(Route::query()->sole()->domain)->toBe($payload['domain']);
+        } finally {
+            Event::forget($event);
+        }
+        $routeId = Route::query()->sole()->id;
+        $this->postJson($url, ['domain' => $payload['domain']])->assertConflict()->assertJsonPath('error.code', 'route.domain_change_conflict');
+        $this->postJson($url, $payload)->assertOk();
+        expect($this->renameInstance->refresh()->branch)->toBe('t3code/login')
+            ->and(InstanceRename::query()->sole()->phase)->toBe('complete')->and(Route::query()->sole()->id)->toBe($routeId);
+    });
+
+    it('returns the completed per-app route rename after a lost response without inspecting or preparing again', function (): void {
+        $event = 'eloquent.retrieved: '.Instance::class;
+        Event::listen($event, static function (): void {
+            if (InstanceRename::query()->where('phase', 'complete')->exists()) {
+                throw new ResourceOperationException('route.domain_change_failed', 'Lost completion response.', 502);
+            }
+        });
+        $url = '/api/v1/instances/'.$this->renameInstance->id.'/rename';
+        $payload = ['branch' => 't3code/login', 'domain' => 'login.acme.test'];
+        try {
+            $this->postJson($url, $payload)->assertStatus(502);
+        } finally {
+            Event::forget($event);
+        }
+        expect(InstanceRename::query()->sole()->phase)->toBe('complete')->and($this->renameInstance->refresh()->branch)->toBe('t3code/login');
+        $routeId = Route::query()->sole()->id;
+        $calls = $this->renameTransport->calls;
+        $this->renameTransport->exitCode = 42;
+        $this->postJson($url, $payload)->assertOk();
+        expect($this->renameTransport->calls)->toBe($calls)->and(Route::query()->sole()->id)->toBe($routeId);
+    });
+
     it('records branch-only, domain-only and combined renames and makes retries no-ops', function (array $payload): void {
         $id = $this->renameInstance->id;
         $this->renameInstance->update(['source_is_laravel' => true]);
@@ -605,7 +727,7 @@ describe('development Instance rename', function (): void {
         expect($this->renameInstance->only(array_keys($before)))->toBe($before)
             ->and($this->renameInstance->branch)->toBe($payload['branch'] ?? 'dev')
             ->and($this->renameInstance->branch_override)->toBe($payload['branch'] ?? null)
-            ->and(Route::query()->sole()->domain)->toBe($payload['domain'] ?? 'dev.acme.test')
+            ->and(Route::query()->sole()->domain)->toBe($payload['domain'] ?? 'web.dev.acme.test')
             ->and(Route::query()->sole()->provenance)->toBe(RouteProvenance::Generated);
         if (isset($payload['domain'])) {
             expect($this->configuration->urls)->toBe(['https://'.$payload['domain'], 'https://'.$payload['domain']])
@@ -627,7 +749,7 @@ describe('development Instance rename', function (): void {
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['branch' => 't3code/login', 'domain' => 'login.acme.test'])
             ->assertConflict()->assertJsonPath('error.code', $code);
         expect($this->renameInstance->refresh()->getAttributes())->toBe($before)
-            ->and(Route::query()->sole()->domain)->toBe('dev.acme.test');
+            ->and(Route::query()->sole()->domain)->toBe('web.dev.acme.test');
     })->with([[42, 'instance.branch_not_checked_out'], [75, 'instance.lifecycle_busy']]);
 
     it('refuses a domain conflict before recording the checked-out branch', function (): void {
@@ -681,6 +803,9 @@ describe('development Instance rename', function (): void {
         $this->routeProjection->shouldReceive('cleanup')->once()->andThrow(new ResourceOperationException('route.domain_change_failed', 'Injected cleanup failure.', 502));
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)->assertStatus(502);
         expect($this->renameInstance->refresh()->branch)->toBe('dev')->and(Route::query()->count())->toBe(2);
+        foreach ([['domain' => $payload['domain']], ['domain' => $payload['domain'], 'branch' => 'different'], ['branch' => $payload['branch']]] as $changed) {
+            $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $changed)->assertConflict()->assertJsonPath('error.code', 'route.domain_change_conflict');
+        }
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', ['domain' => 'other.acme.test'])->assertConflict()->assertJsonPath('error.code', 'route.domain_change_conflict');
         app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
         $this->postJson('/api/v1/instances/'.$this->renameInstance->id.'/rename', $payload)->assertOk();
@@ -702,10 +827,11 @@ describe('development Instance rename', function (): void {
         $beforeRoutes = Route::query()->orderBy('id')->get()->map->getAttributes()->all();
         $beforeValue = $value->refresh()->getAttributes();
         $original = Route::query()->whereNull('replaces_route_id')->sole();
-        expect(fn () => app(ConvergeRouteAction::class)->assertConvergible($original, 'dev.acme.test', allowGenerated: true))
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('route.domain_change_conflict'));
+        // Generic preflight has no rename owner authorization; the matching rename below validates its own request identity.
+        expect(fn () => app(ConvergeRouteAction::class)->assertConvergible($original, 'web.dev.acme.test', allowGenerated: true))
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.lifecycle_busy'));
         $this->configuration->urls = [];
-        $this->postJson("/api/v1/instances/{$id}/rename", ['branch' => 't3code/login', 'domain' => 'dev.acme.test'])
+        $this->postJson("/api/v1/instances/{$id}/rename", ['branch' => 't3code/login', 'domain' => 'web.dev.acme.test'])
             ->assertConflict()->assertJsonPath('error.code', 'route.domain_change_conflict');
         expect($this->renameInstance->refresh()->branch)->toBe('dev')
             ->and($this->renameInstance->branch_override)->toBeNull()
@@ -1079,7 +1205,7 @@ it('creates an active checkout Instance on a standalone Node with inherited root
             'node_id' => $this->node->id,
             'cluster_id' => null,
             'generation_basis_node_id' => $this->node->id,
-            'domain' => 'dev.acme.test',
+            'domain' => 'web.dev.acme.test',
             'provenance' => 'generated',
             'publication' => 'private',
             'status' => 'active',
@@ -1470,7 +1596,7 @@ it('keeps explicit branch selection separate from default identity and Route ide
         ->assertJsonPath('data.checkout_path', '/srv/orbit/apps/acme/default')
         ->assertJsonPath('data.selected_branch', 'release')
         ->assertJsonPath('data.branch_override', 'release')
-        ->assertJsonPath('data.domain', 'acme.test');
+        ->assertJsonPath('data.domain', 'web.acme.test');
 });
 
 it('retains explicit override intent when it equals the Project default branch', function (): void {
@@ -1651,7 +1777,7 @@ it('refuses unavailable generated naming before source mutation and completes on
     $this->node->update(['tld' => 'test']);
     $this->postJson('/api/v1/instances', $payload)->assertCreated();
 
-    expect(Route::query()->sole()->domain)->toBe('dev.acme.test');
+    expect(Route::query()->sole()->domain)->toBe('web.dev.acme.test');
 });
 
 it('uses the active Cluster TLD before the Node TLD while Cluster membership selects scope', function (): void {
@@ -1677,7 +1803,7 @@ it('uses the active Cluster TLD before the Node TLD while Cluster membership sel
     ])->assertCreated();
 
     expect(Route::query()->sole()->domain)
-        ->toBe('acme.cluster.test')
+        ->toBe('web.acme.cluster.test')
         ->and(Route::query()->sole()->cluster_id)
         ->toBe($cluster->id);
 
@@ -1695,7 +1821,7 @@ it('uses the active Cluster TLD before the Node TLD while Cluster membership sel
     ])->assertCreated();
 
     expect(Route::query()->sole()->domain)
-        ->toBe('feature.acme.cluster.test')
+        ->toBe('web.feature.acme.cluster.test')
         ->and(Route::query()->sole()->cluster_id)
         ->toBe($cluster->id);
 });
@@ -1786,7 +1912,7 @@ it('reconciles Cluster activation for an active Instance Route without moving pl
             'status' => RouteStatus::Active,
             'node_id' => null,
             'cluster_id' => $cluster->id,
-            'domain' => 'dev.acme.orbit',
+            'domain' => 'web.dev.acme.orbit',
         ])
         ->and($firstRouter->roles()->where('role', RoleName::Router)->sole()->status)
         ->toBe(LifecycleStatus::Active)
@@ -3118,9 +3244,10 @@ final class RecoveredSourceProfileEnvironmentAccess implements InstanceEnvironme
     }
 }
 
-it('creates or resumes an unrouted monorepo default and runs setup once', function (bool $resume): void {
-    $this->orbitApp->update(['type' => ProjectType::Monorepo, 'slug' => 'orbit']);
-    app()->bind(DevelopmentInstanceConfigurator::class, RemoteDevelopmentInstanceConfigurator::class);
+it('creates or resumes a serving named monorepo default and runs setup once', function (bool $resume): void {
+    $this->orbitApp->update(['type' => ProjectType::Monorepo, 'slug' => 'orbit', 'apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'monorepo']]]);
+    $this->configuration->phpVersion = null;
+    $this->configuration->laravel = false;
     ProjectLifecycleStep::query()->create([
         'project_id' => $this->orbitApp->id,
         'phase' => 'setup',
@@ -3158,8 +3285,8 @@ it('creates or resumes an unrouted monorepo default and runs setup once', functi
         ->and($instance->error_code)->toBeNull()
         ->and($instance->selected_php_version)->toBeNull()
         ->and($instance->source_is_laravel)->toBeFalse()
-        ->and($instance->routes()->count())->toBe(0)
-        ->and($this->projection->convergences)->toBe(0)
+        ->and($instance->routes()->count())->toBe(1)
+        ->and($this->projection->convergences)->toBe(1)
         ->and(array_column($transport->inputs, 'command'))->toBe(['composer install --working-dir=apps/gateway']);
 
     if ($resume) {

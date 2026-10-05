@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 use App\Actions\Annotations\AnnotationStoreAction;
 use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Instances\RenameInstanceAction;
 use App\Actions\Processes\CascadeInstanceProcessesAction;
 use App\Actions\Processes\RemoveProcessAction;
 use App\Actions\Schedules\AddScheduleAction;
 use App\Data\Annotations\AnnotationInput;
+use App\Data\Instances\RenameInstanceData;
 use App\Data\Schedules\AddScheduleData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -30,6 +33,7 @@ use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteDomainProjector;
 use App\Domain\Routes\RouteProvenance;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStateResolver;
@@ -47,6 +51,7 @@ use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
+use App\Models\InstanceRename;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Process;
@@ -56,6 +61,7 @@ use App\Models\Route;
 use App\Models\Schedule;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\Schedules\FakeScheduleRuntimeAccountResolver;
@@ -85,6 +91,79 @@ beforeEach(function (): void {
         $this->orb183Content,
         app(RouteStateResolver::class),
     );
+});
+
+it('refuses a per-app route rename that becomes incomplete while removal waits for its owner lock', function (): void {
+    $instance = orb181_coordinator_instance();
+    $path = $instance->checkout_path;
+    $instance->recordAppRuntime('web', ['app_identity' => true, 'vite_environment_identity' => true, 'annotator_store_identity' => true, 'laravel' => false]);
+    $domain = 'lock-wait-rename.test';
+    app()->instance(DevelopmentInstanceBranchInspector::class, Mockery::mock(DevelopmentInstanceBranchInspector::class)->shouldIgnoreMissing());
+    app()->instance(RouteDomainProjector::class, Mockery::mock(RouteDomainProjector::class)->shouldIgnoreMissing());
+    $event = 'eloquent.updated: '.InstanceRename::class;
+    Event::listen($event, static function (InstanceRename $journal): void {
+        if ($journal->phase === 'complete') {
+            throw new ResourceOperationException('route.domain_change_failed', 'Interrupted completion while removal waits.', 502);
+        }
+    });
+    $this->orb212EnvironmentLock->beforeAcquire = function () use ($instance, $domain): void {
+        expect(InstanceRename::query()->count())->toBe(0);
+        try {
+            app(RenameInstanceAction::class)->execute($instance, new RenameInstanceData(domain: $domain));
+            throw new RuntimeException('Rename unexpectedly completed.');
+        } catch (Throwable $exception) {
+            if (! $exception instanceof ResourceOperationException || $exception->errorCode !== 'route.domain_change_failed') {
+                throw $exception;
+            }
+        }
+        expect(InstanceRename::query()->sole()->phase)->toBe('domain_converged');
+    };
+    try {
+        expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.lifecycle_busy'));
+    } finally {
+        Event::forget($event);
+    }
+    expect(InstanceRemoval::query()->count())->toBe(0)->and(InstanceRemovalMember::query()->count())->toBe(0)
+        ->and($this->orb181Finalizer->calls)->toBeEmpty()->and($this->orb181Projector->calls)->toBeEmpty()
+        ->and($this->orb181Lock->acceptedWhileHeld)->toBeFalse()
+        ->and($instance->refresh()->status)->toBe(InstanceState::Active)->and($instance->checkout_path)->toBe($path)
+        ->and($instance->authoritativeRoute('web')->domain)->toBe($domain);
+    app(RenameInstanceAction::class)->execute($instance, new RenameInstanceData(domain: $domain));
+    expect(InstanceRename::query()->sole()->phase)->toBe('complete')->and($instance->refresh()->status)->toBe(InstanceState::Active);
+});
+
+it('per-app route removal freezes both app owners and retries partial withdrawal', function (): void {
+    $instance = orb181_coordinator_instance();
+    $instance->update(['status' => InstanceState::SourceResolved]);
+    $instance->project->update(['apps' => [
+        ['name' => 'web', 'path' => 'apps/web', 'type' => 'laravel-app', 'web_root' => 'public'],
+        ['name' => 'docs', 'path' => 'apps/docs', 'type' => 'laravel-app', 'web_root' => 'public'],
+    ]]);
+    $instance->unsetRelation('project');
+    $docs = Route::query()->create([
+        'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'domain' => 'docs.main.removal.test', 'app' => 'docs', 'publication' => RoutePublication::Private,
+        'provenance' => RouteProvenance::Explicit, 'status' => RouteStatus::Pending,
+    ]);
+    $docs->targets()->create(['instance_id' => $instance->id, 'app' => 'docs', 'position' => 0]);
+    $docs->update(['status' => RouteStatus::Active]);
+    $instance->update(['status' => InstanceState::Active]);
+    $ids = $instance->routes()->orderBy('routes.id')->pluck('routes.id')->all();
+    $this->orb181Projector->failAfterRoute = $ids[0];
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(InstanceRemovalException::class);
+    $member = InstanceRemovalMember::query()->sole();
+    expect($member->route_ids)->toBe($ids)
+        ->and($member->route_id)->toBeNull()
+        ->and($member->runtime_cleaned_at)->toBeNull()
+        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeTrue()
+        ->and(Route::query()->whereKey($docs->id)->exists())->toBeTrue();
+    expect(fn () => $member->update(['route_ids' => [$docs->id]]))
+        ->toThrow(QueryException::class);
+    $this->orb181Projector->failAfterRoute = null;
+    $removal = $this->orb181Coordinator->execute($instance->refresh(), false);
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and(Route::query()->whereIn('id', $ids)->count())->toBe(0)
+        ->and(Instance::query()->whereKey($instance->id)->exists())->toBeFalse();
 });
 
 it('refuses newly dirty teardown before acceptance and requires an explicit force retry', function (): void {
@@ -1123,7 +1202,7 @@ function orb181_coordinator_instance(
         'status' => InstanceState::SourceResolved,
     ]);
     if (! $withRoute) {
-        $instance->update(['status' => InstanceState::Active]);
+        $instance->update(['status' => InstanceState::Active, 'task_workspace_routed' => false]);
 
         return $instance->load(['project', 'node', 'routes.targets']);
     }
@@ -1478,15 +1557,28 @@ final class Orb181CoordinatorProjector implements InstanceRemovalProjector
 
     public bool $failRuntime = false;
 
+    public ?int $failAfterRoute = null;
+
     public function clearRouteTarget(InstanceRemovalMember $member): string
     {
         $this->calls[] = "route:{$member->instance_id}";
-        $route = Route::query()->find($member->route_id);
-
-        if (! $route instanceof Route) {
-            return 'deleted';
+        $retained = false;
+        foreach ($member->route_ids ?? ($member->route_id === null ? [] : [$member->route_id]) as $id) {
+            $route = Route::query()->find($id);
+            if (! $route instanceof Route) {
+                continue;
+            }
+            $retained = $this->clearOneRoute($route, $member) === 'retained' || $retained;
+            if ($this->failAfterRoute === $id) {
+                throw new ResourceOperationException('instance.runtime_interrupted', 'Partial app withdrawal interrupted.', 502);
+            }
         }
 
+        return $retained ? 'retained' : 'deleted';
+    }
+
+    private function clearOneRoute(Route $route, InstanceRemovalMember $member): string
+    {
         $route->targets()->where('instance_id', $member->instance_id)->delete();
 
         if ($route->targets()->exists()) {
@@ -1553,11 +1645,16 @@ final class Orb181CoordinatorLock implements AppDevSourceOperationLock
 
 final class Orb212CoordinatorEnvironmentLock implements InstanceEnvironmentOperationLock
 {
+    public ?Closure $beforeAcquire = null;
+
     /** @var list<list<int>> */
     public array $owners = [];
 
     public function run(array $instanceIds, Closure $operation): mixed
     {
+        $before = $this->beforeAcquire;
+        $this->beforeAcquire = null;
+        $before?->__invoke();
         $owners = array_values(array_unique(array_map(intval(...), $instanceIds)));
         sort($owners, SORT_NUMERIC);
         $this->owners[] = $owners;

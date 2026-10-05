@@ -3373,6 +3373,7 @@ export interface components {
             summary?: string;
             expected?: boolean | string | null;
             observed?: boolean | string | null;
+            app?: string | null;
         };
         FirewallRule: {
             id?: number;

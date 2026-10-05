@@ -21,6 +21,7 @@ use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\ProxyCli\ProxyCliProcessOwnership;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
 use App\Models\Process;
 use App\Models\RouteCustomProxy;
@@ -60,6 +61,9 @@ final readonly class RemoveProcessAction
     public function execute(#[SensitiveParameter] Process $process, bool $removedByOwningRole = false): Process
     {
         return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
+            if ($fresh->owner_type === Instance::MorphAlias && $fresh->owner instanceof Instance) {
+                AppRuntimeMigration::assertInstanceAvailable($fresh->owner);
+            }
             if (! $removedByOwningRole) {
                 app(AnalyticsProcessOwnership::class)->assertRemovable($fresh);
                 app(ProxyCliProcessOwnership::class)->assertRemovable($fresh);
@@ -74,7 +78,7 @@ final readonly class RemoveProcessAction
                 );
             }
 
-            if ($fresh->isAgentationMcp() && Process::query()->where('owner_type', $fresh->owner_type)->where('owner_id', $fresh->owner_id)->where('id', '!=', $fresh->id)->get()->contains(fn (Process $process): bool => $process->isAntigravityWatch())) {
+            if ($fresh->isAgentationMcp() && Process::query()->where('owner_type', $fresh->owner_type)->where('owner_id', $fresh->owner_id)->where('app', $fresh->app)->where('id', '!=', $fresh->id)->get()->contains(fn (Process $process): bool => $process->isAntigravityWatch())) {
                 throw new ResourceOperationException(
                     errorCode: 'process.has_dependent',
                     message: "Process [{$fresh->name}] is still required by an antigravity-watch Process.",
@@ -104,8 +108,8 @@ final readonly class RemoveProcessAction
                     $fresh->update(['endpoint_withdrawn_at' => now()]);
                 }
                 $annotator = $fresh->isAnnotator();
-                $this->agentationPorts->release($fresh->owner, $annotator ? 'annotator_port' : 'agentation_port');
-                $this->agentationUrls->forget($fresh->owner, annotator: $annotator);
+                $this->agentationPorts->release($fresh->owner, $annotator ? 'annotator_port' : 'agentation_port', $fresh->app);
+                $this->agentationUrls->forget($fresh->owner, annotator: $annotator, app: $fresh->app);
                 if ($annotator && $fresh->owner->status === InstanceState::Active) {
                     app(ProcessEnvironmentProjection::class)->project($fresh->owner, $fresh->id);
                 }

@@ -125,9 +125,18 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         });
     }
 
-    public function project(Instance $instance, int $exceptProcessId): void
+    public function project(Instance $instance, int $exceptProcessId, ?string $app = null): void
     {
-        foreach ($instance->processes()->where('id', '!=', $exceptProcessId)->where('runtime', ProcessRuntime::Systemd)->whereNull('endpoint_withdrawal_started_at')->get() as $process) {
+        $query = $instance->processes()->where('id', '!=', $exceptProcessId)->where('runtime', ProcessRuntime::Systemd)->whereNull('endpoint_withdrawal_started_at');
+        if ($app !== null) {
+            $instance->appConfiguration($app);
+            $query->where('app', $app);
+        }
+        $except = $instance->processes()->find($exceptProcessId);
+        if ($except instanceof Process) {
+            $query->where('app', $except->app);
+        }
+        foreach ($query->get() as $process) {
             $this->lease->run($process, function (Process $fresh): void {
                 $target = $this->targets->forInspection($fresh);
                 if (! $this->runtimeExistsAndIsOwned($fresh, 'inspect-runtime', 'process.environment_projection_failed', $target)) {
@@ -328,8 +337,11 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
             throw new ProcessOperationException('install-annotator', $exception->errorCode, $exception->getMessage(), previous: $exception);
         }
         $this->executeSuccessfully($process, $installation->arguments, 'install-annotator', 'process.annotator_install_failed', $installation->input, target: $target);
-        $store = AnnotatorEndpoint::store($process->owner_id);
+        $store = AnnotatorEndpoint::store($process->owner_id, $target->instance?->usesAppStoreIdentity($target->app) ? $target->app : null);
         $this->executeSuccessfully($process, ['sudo', 'install', '-d', '-m', '0700', '-o', $target->user, $store], 'prepare-annotator-store', 'process.annotator_install_failed', target: $target);
+        if ($target->instance?->usesAppStoreIdentity($target->app)) {
+            return;
+        }
         $this->executeSuccessfully($process, ['bash', '-seu', '--', $target->checkoutPath.'/.orbit/annotator', $store], 'restore-annotator-store', 'process.annotator_install_failed', <<<'BASH'
             staged=$1
             store=$2
@@ -346,7 +358,7 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         if (! $process->isAnnotator() || $process->status !== LifecycleStatus::Removing) {
             return;
         }
-        $this->executeSuccessfully($process, ['sudo', 'rm', '-rf', '--', AnnotatorEndpoint::store($process->owner_id)], 'remove-annotator-store', 'process.remove_failed', target: $target);
+        $this->executeSuccessfully($process, ['sudo', 'rm', '-rf', '--', AnnotatorEndpoint::store($process->owner_id, $target->instance?->usesAppStoreIdentity($target->app) ? $target->app : null)], 'remove-annotator-store', 'process.remove_failed', target: $target);
     }
 
     private function removeViteEnvironment(Process $process, ProcessTarget $target): void
@@ -354,15 +366,26 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         if (! $process->isVpDev()) {
             return;
         }
-        $path = SystemdProcessRenderer::viteEnvironmentPath($process->owner_id);
+        $app = $target->app !== null && $target->instance?->usesAppViteIdentity($target->app) ? $target->app : null;
+        $path = SystemdProcessRenderer::viteEnvironmentPath($process->owner_id, $app);
         $this->executeSuccessfully($process, ['bash', '-c', <<<'BASH'
             set -euo pipefail
-            if sudo test -e "$1"; then
-                test ! -L "$1"
-                sudo grep -Fx -- "# Orbit Instance $2" "$1" >/dev/null
-                sudo rm -f -- "$1" "$1.pending"
-            fi
-            BASH, 'orbit-remove-vite-environment', $path, (string) $process->owner_id], 'remove-vite-environment', 'vite.environment_cleanup_failed', target: $target);
+            for owned in "$1" "$1.pending"; do
+                if sudo test -L "$owned"; then exit 1; fi
+                if sudo test -e "$owned"; then
+                    sudo test -f "$owned"
+                    test "$(sudo grep -c '^# Orbit Instance ' "$owned")" = 1
+                    sudo grep -Fx -- "# Orbit Instance $2" "$owned" >/dev/null
+                    if [ "$3" != '' ]; then
+                        test "$(sudo grep -c '^# Orbit App ' "$owned")" = 1
+                        sudo grep -Fx -- "# Orbit App $3" "$owned" >/dev/null
+                    else
+                        test "$(sudo grep -c '^# Orbit App ' "$owned" || true)" = 0
+                    fi
+                fi
+            done
+            sudo rm -f -- "$1" "$1.pending"
+            BASH, 'orbit-remove-vite-environment', $path, (string) $process->owner_id, $app ?? ''], 'remove-vite-environment', 'vite.environment_cleanup_failed', target: $target);
     }
 
     private function removeDockerArtifacts(#[SensitiveParameter] Process $process, ProcessTarget $target): void

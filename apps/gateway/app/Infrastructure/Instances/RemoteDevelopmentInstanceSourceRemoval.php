@@ -793,7 +793,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             || $member->environment !== $instance->defaultAppEnv()
             || $member->source_layout !== $instance->source_layout
             || $member->checkout_path !== $instance->checkout_path
-            || $member->root !== $instance->effectiveRoot()
+            || $member->root !== $instance->removalRoot()
             || $member->starting_commit !== null && $member->branch !== $instance->branch
             || $member->starting_commit !== $instance->starting_commit
             || $member->repository_identity !== $instance->project->repository_identity

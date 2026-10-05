@@ -20,13 +20,18 @@ use SensitiveParameter;
 
 final readonly class SystemdProcessRenderer
 {
-    public static function viteEnvironmentPath(int $instanceId): string
+    public static function viteEnvironmentMarker(int $instanceId, ?string $app = null): string
+    {
+        return "# Orbit Instance {$instanceId}".($app === null ? '' : "\n# Orbit App {$app}");
+    }
+
+    public static function viteEnvironmentPath(int $instanceId, ?string $app = null): string
     {
         if ($instanceId < 1) {
             throw new InvalidArgumentException('A Vite environment requires a persisted Instance.');
         }
 
-        return "/etc/orbit/vite/app-instance-{$instanceId}.env";
+        return "/etc/orbit/vite/app-instance-{$instanceId}".($app === null ? '' : "-{$app}").'.env';
     }
 
     public function unitName(Process $process): string
@@ -94,7 +99,7 @@ final readonly class SystemdProcessRenderer
             ...$environmentFileLine,
             ...$this->managedEnvironmentDirectives($process),
             ...$environmentProjection['directives'],
-            ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
+            ...($process->isVpDev() ? ['EnvironmentFile='.self::viteEnvironmentPath((int) $target->instance?->id, $target->app !== null && $target->instance?->usesAppViteIdentity($target->app) ? $target->app : null), 'UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY'] : []),
             'ExecStart='
                 .implode(
                     ' ',
@@ -202,31 +207,31 @@ final readonly class SystemdProcessRenderer
             $commandValues[] = "ORBIT_DEV_SERVER_ORIGIN={$origin}";
             $commandValues[] = "ORBIT_DEV_SERVER_HOST={$target->routeDomain}";
             $commandValues[] = 'ORBIT_DEV_SERVER_PATH='.DevelopmentServerEndpoint::PATH;
-            $port = $target->instance?->vite_port;
+            $port = $target->port('vite_port');
 
             if (is_int($port)) {
                 $directives[] = 'Environment=ORBIT_DEV_SERVER_PORT='.(string) $port;
                 $commandValues[] = 'ORBIT_DEV_SERVER_PORT='.(string) $port;
             }
 
-            if (is_int($target->instance?->annotator_port)) {
+            if (is_int($target->port('annotator_port'))) {
                 $annotatorOrigin = AnnotatorEndpoint::queue($target->routeDomain);
                 $directives[] = 'Environment='.AnnotatorEndpoint::URL_KEY.'='.$this->escapeDirectivePath($annotatorOrigin);
                 $commandValues[] = AnnotatorEndpoint::URL_KEY.'='.$annotatorOrigin;
             }
 
-            if (is_int($target->instance?->agentation_port)) {
+            if (is_int($target->port('agentation_port'))) {
                 $agentationOrigin = AgentationEndpoint::origin($target->routeDomain);
                 $directives[] = 'Environment='.AgentationEndpoint::URL_KEY.'='.$this->escapeDirectivePath($agentationOrigin);
-                $directives[] = 'Environment='.AgentationEndpoint::PORT_KEY.'='.(string) $target->instance->agentation_port;
+                $directives[] = 'Environment='.AgentationEndpoint::PORT_KEY.'='.(string) $target->port('agentation_port');
                 $commandValues[] = AgentationEndpoint::URL_KEY.'='.$agentationOrigin;
-                $commandValues[] = AgentationEndpoint::PORT_KEY.'='.(string) $target->instance->agentation_port;
+                $commandValues[] = AgentationEndpoint::PORT_KEY.'='.(string) $target->port('agentation_port');
             }
         }
 
-        if (is_int($target->instance?->annotator_port)) {
-            $directives[] = 'Environment='.AnnotatorEndpoint::PORT_KEY.'='.(string) $target->instance->annotator_port;
-            $commandValues[] = AnnotatorEndpoint::PORT_KEY.'='.(string) $target->instance->annotator_port;
+        if (is_int($target->port('annotator_port'))) {
+            $directives[] = 'Environment='.AnnotatorEndpoint::PORT_KEY.'='.(string) $target->port('annotator_port');
+            $commandValues[] = AnnotatorEndpoint::PORT_KEY.'='.(string) $target->port('annotator_port');
             if ($target->routeDomain === null) {
                 $directives[] = 'UnsetEnvironment='.AnnotatorEndpoint::URL_KEY;
             }

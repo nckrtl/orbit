@@ -38,6 +38,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $production_php_pool
  * @property string|null $production_php_socket
  * @property array<string, array{path: string, web_root: ?string}>|null $app_overrides
+ * @property array<string, array{php_version?: ?string, laravel?: ?bool, vite_port?: ?int, agentation_port?: ?int, annotator_port?: ?int, step?: string, app_identity?: bool, app_identity_ready?: bool, vite_environment_identity?: bool, annotator_store_identity?: bool}>|null $app_runtime
  * @property string|null $root
  * @property string|null $branch
  * @property string|null $deployment_branch
@@ -132,6 +133,7 @@ final class Instance extends Model
         'production_php_socket',
         'root',
         'app_overrides',
+        'app_runtime',
         'branch',
         'deployment_branch',
         'branch_override',
@@ -182,6 +184,20 @@ final class Instance extends Model
     protected static function booted(): void
     {
         self::saving(static function (self $instance): void {
+            $apps = $instance->effectiveApps();
+            if (count($apps) === 1 && $instance->isDirty(['selected_php_version', 'source_is_laravel', 'vite_port', 'agentation_port', 'annotator_port'])) {
+                $runtime = $instance->app_runtime ?? [];
+                $name = $apps[0]['name'];
+                $runtime[$name] = [
+                    ...($runtime[$name] ?? []),
+                    ...($instance->isDirty('selected_php_version') ? ['php_version' => $instance->selected_php_version] : []),
+                    ...($instance->isDirty('source_is_laravel') ? ['laravel' => $instance->source_is_laravel] : []),
+                    ...($instance->isDirty('vite_port') ? ['vite_port' => $instance->vite_port] : []),
+                    ...($instance->isDirty('agentation_port') ? ['agentation_port' => $instance->agentation_port] : []),
+                    ...($instance->isDirty('annotator_port') ? ['annotator_port' => $instance->annotator_port] : []),
+                ];
+                $instance->app_runtime = $runtime;
+            }
             if ($instance->isDirty('app_overrides')) {
                 ProjectApps::effective($instance->project->configuredApps(), $instance->app_overrides);
             } elseif ($instance->app_overrides === null || $instance->isDirty('root')) {
@@ -230,13 +246,17 @@ final class Instance extends Model
         return $this->belongsToMany(Route::class, 'route_targets')->withPivot('position');
     }
 
-    public function authoritativeRoute(): ?Route
+    public function authoritativeRoute(?string $app = null): ?Route
     {
+        $app = $this->appConfiguration($app)['name'];
         $this->loadMissing('routes');
 
-        return $this->routes->first(
-            static fn (Route $route): bool => $route->isAuthoritative(),
-        );
+        $routes = $this->routes->filter(static fn (Route $route): bool => $route->app === $app && $route->isAuthoritative());
+        if ($routes->count() > 1) {
+            throw new ResourceOperationException('route.instance_already_associated', 'The app has more than one authoritative Route.', 409);
+        }
+
+        return $routes->isEmpty() ? null : $routes->sole();
     }
 
     /** @return HasMany<InstanceDeployStep, $this> */
@@ -325,9 +345,61 @@ final class Instance extends Model
 
     public function requiresRoute(): bool
     {
-        $this->loadMissing('project');
+        return $this->task_workspace_routed !== false && array_any($this->effectiveApps(), ProjectApps::isServing(...));
+    }
 
-        return $this->project->type === ProjectType::LaravelApp;
+    /** @return array{php_version: ?string, laravel: ?bool, vite_port: ?int, agentation_port: ?int, annotator_port: ?int} */
+    public function runtimeForApp(?string $app = null): array
+    {
+        $name = $this->appConfiguration($app)['name'];
+        $runtime = $this->app_runtime[$name] ?? [];
+
+        return [
+            'php_version' => array_key_exists('php_version', $runtime) ? $runtime['php_version'] : (count($this->effectiveApps()) === 1 ? $this->selected_php_version : null),
+            'laravel' => array_key_exists('laravel', $runtime) ? $runtime['laravel'] : (count($this->effectiveApps()) === 1 ? $this->source_is_laravel : null),
+            'vite_port' => array_key_exists('vite_port', $runtime) ? $runtime['vite_port'] : (count($this->effectiveApps()) === 1 ? $this->vite_port : null),
+            'agentation_port' => array_key_exists('agentation_port', $runtime) ? $runtime['agentation_port'] : (count($this->effectiveApps()) === 1 ? $this->agentation_port : null),
+            'annotator_port' => array_key_exists('annotator_port', $runtime) ? $runtime['annotator_port'] : (count($this->effectiveApps()) === 1 ? $this->annotator_port : null),
+        ];
+    }
+
+    public function usesAppViteIdentity(string $app): bool
+    {
+        $this->appConfiguration($app);
+
+        return ($this->app_runtime[$app]['vite_environment_identity'] ?? $this->usesAppRuntimeIdentity($app)) === true;
+    }
+
+    public function usesAppRuntimeIdentity(string $app): bool
+    {
+        $this->appConfiguration($app);
+
+        return ($this->app_runtime[$app]['app_identity'] ?? true) === true;
+    }
+
+    public function usesAppStoreIdentity(?string $app): bool
+    {
+        $app = $this->appConfiguration($app)['name'];
+
+        return ($this->app_runtime[$app]['annotator_store_identity'] ?? true) === true;
+    }
+
+    /** @param array<string, mixed> $values */
+    public function recordAppRuntime(string $app, array $values): void
+    {
+        $this->appConfiguration($app);
+        $runtime = $this->app_runtime ?? [];
+        $runtime[$app] = [...($runtime[$app] ?? []), ...$values];
+        $this->update(['app_runtime' => $runtime]);
+    }
+
+    public function servesPhpForApp(string $app): bool
+    {
+        $configuration = $this->appConfiguration($app);
+        $type = ProjectType::from($configuration['type']);
+
+        return $type === ProjectType::LaravelApp
+            || $type === ProjectType::Monorepo && $this->runtimeForApp($app)['laravel'] === true;
     }
 
     public function servesPhp(): bool
@@ -429,6 +501,11 @@ final class Instance extends Model
         return $root;
     }
 
+    public function removalRoot(): string
+    {
+        return count($this->effectiveApps()) === 1 ? ($this->effectiveRoot() ?? $this->applicationPath()) : '.';
+    }
+
     /** @return list<array{name: string, path: string, web_root: ?string, type: string}> */
     public function effectiveApps(): array
     {
@@ -522,6 +599,7 @@ final class Instance extends Model
     {
         return [
             'app_overrides' => 'array',
+            'app_runtime' => 'array',
             'vite_port' => 'integer',
             'agentation_port' => 'integer',
             'annotator_port' => 'integer',

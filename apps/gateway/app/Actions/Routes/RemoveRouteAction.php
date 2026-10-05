@@ -18,6 +18,7 @@ use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Models\InstanceRename;
 use App\Models\Route;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -83,6 +84,7 @@ final readonly class RemoveRouteAction
     /** @param list<int> $expectedTargetIds */
     private function executeOwned(Route $route, array $expectedTargetIds, bool $allowTracking): Route
     {
+        InstanceRename::assertAvailable($expectedTargetIds);
         $locked = $this->lockAndGuard($route, $expectedTargetIds);
 
         if ($locked->targets->isNotEmpty()) {

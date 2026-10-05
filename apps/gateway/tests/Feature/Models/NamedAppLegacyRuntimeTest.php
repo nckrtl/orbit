@@ -14,6 +14,8 @@ use App\Models\NodeRole;
 use App\Models\Project;
 use Illuminate\Support\Facades\Schema;
 
+require_once __DIR__.'/../../Support/RuntimeGuardIsolation.php';
+
 function named_app_runtime_project(array $attributes = []): Project
 {
     return Project::query()->create([
@@ -33,6 +35,7 @@ it('preserves persisted named app runtime directories document roots and product
     $beforeLink = ProductionApplicationPaths::render($program, $effective);
     $beforeDirectory = ApplicationDirectory::resolve('/home/site/current', $effective);
     $migration = require database_path('migrations/2026_10_12_000000_add_named_apps_to_projects.php');
+    $runtimeGuards = take_app_runtime_guards();
     Schema::table('projects', fn ($table) => $table->dropColumn('apps'));
     Schema::table('instances', fn ($table) => $table->dropColumn('app_overrides'));
     $legacy = Instance::query()->findOrFail($instance->id);
@@ -54,6 +57,7 @@ it('preserves persisted named app runtime directories document roots and product
         expect($after->relativeWebRoot())->toBe($documentRoot);
     } finally {
         $migration->up();
+        restore_app_runtime_guards($runtimeGuards);
     }
 })->with([
     'public' => ['public', null, '', 'public', 'link=.env', '../../.env'],

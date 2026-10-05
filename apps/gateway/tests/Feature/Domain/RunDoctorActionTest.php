@@ -322,6 +322,7 @@ describe('RunDoctorAction', function (): void {
             'default_branch' => 'main',
             'root' => 'public',
         ]);
+        $workload->roles()->create(['role' => RoleName::AppProd, 'status' => LifecycleStatus::Active]);
         $user = "orbit-app-{$project->id}";
         $instance = Instance::query()->create([
             'project_id' => $project->id,

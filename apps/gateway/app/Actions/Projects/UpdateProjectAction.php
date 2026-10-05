@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Projects;
 
+use App\Actions\Instances\MigrateAppRuntimeAction;
 use App\Data\Projects\ProjectData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
@@ -27,6 +28,8 @@ use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
 use App\Models\Instance;
+use App\Models\InstanceRename;
+use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectUpdate;
 use Illuminate\Database\UniqueConstraintViolationException;
@@ -65,6 +68,11 @@ final readonly class UpdateProjectAction
                 ? "A Route targets an Instance that inherits root [{$effectiveRoot}], which is not a web root. Send a web root with the change."
                 : null;
             $this->assertRouteTargetRootCompatibility($project, $effectiveRoot, $message);
+        }
+
+        if ($data->hasReconcilableChanges()) {
+            $ownerIds = array_values($project->instances()->pluck('id')->map(static fn (mixed $id): int => StoredInteger::from($id))->all());
+            $this->operations->run($ownerIds, fn () => InstanceRename::assertProjectAvailable($project));
         }
 
         if ($data->code !== null) {
@@ -108,6 +116,11 @@ final readonly class UpdateProjectAction
             return $project;
         }
 
+        if ($data->slugProvided) {
+            foreach (Node::query()->whereIn('id', $project->instances()->select('node_id'))->orderBy('id')->get() as $node) {
+                app(MigrateAppRuntimeAction::class)->execute($node);
+            }
+        }
         $result = $this->operations->run(
             $instanceIds,
             fn (): Project => $this->applyProjectCommands($this->executeOwned($project->fresh() ?? $project, $data), $data),
@@ -166,6 +179,7 @@ final readonly class UpdateProjectAction
 
     private function executeOwned(Project $project, UpdateProjectData $data): Project
     {
+        InstanceRename::assertProjectAvailable($project);
         $update = $this->reserve($project, $data);
 
         try {

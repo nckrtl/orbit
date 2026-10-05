@@ -75,7 +75,7 @@ beforeEach(function (): void {
         'other.orbit',
     );
     $this->instance = orb245_instance($this->orbitApp, $this->sourceNode, 'web', 'checkout');
-    $this->route = orb245_route($this->instance, 'web.shop.dev.orbit', RouteProvenance::Generated);
+    $this->route = orb245_route($this->instance, 'web.web.shop.dev.orbit', RouteProvenance::Generated);
     $this->process = Process::query()->create([
         'owner_type' => Instance::MorphAlias,
         'owner_id' => $this->instance->id,
@@ -171,7 +171,7 @@ it('reassigns the annotator port at destination and preserves its environment UR
     $result = $this->action->execute($this->instance, $this->data);
     expect($result['instance']->annotator_port)->toBe(4849)
         ->and($result['instance']->node_id)->toBe($this->destinationNode->id)
-        ->and($this->writer->contents)->toContain('ANNOTATOR_URL="https://web.shop.other.orbit/__orbit/annotator/annotations"');
+        ->and($this->writer->contents)->toContain('ANNOTATOR_URL="https://web.web.shop.other.orbit/__orbit/annotator/annotations"');
 });
 
 it('refuses transfer when schedules target the Instance', function (): void {
@@ -238,7 +238,7 @@ it('transfers a development Instance to another app-dev Node in the same Cluster
         ->and($instance->checkout_path)->toBe('/srv/orbit/apps/shop/web')
         ->and($instance->source_layout)->toBe('checkout')
         ->and($route?->id)->toBe($this->route->id)
-        ->and($route?->domain)->toBe('web.shop.dev.orbit')
+        ->and($route?->domain)->toBe('web.web.shop.dev.orbit')
         ->and($route?->cluster_id)->toBe($this->sourceCluster->id)
         ->and($transfer->status)->toBe(InstanceTransferStatus::Completed)
         ->and($transfer->current_step)->toBe(InstanceTransferStep::Completed)
@@ -251,9 +251,9 @@ it('transfers a development Instance to another app-dev Node in the same Cluster
         ->and($this->process->desired_state)->toBe(DesiredProcessState::Running)
         ->and($this->process->working_directory)->toBe('/srv/orbit/apps/shop/web')
         ->and($this->writer->path)->toBe('/srv/orbit/apps/shop/web'.$suffix)
-        ->and($this->writer->domain)->toBe('web.shop.dev.orbit')
+        ->and($this->writer->domain)->toBe('web.web.shop.dev.orbit')
         ->and($this->writer->contents)
-        ->toBe("APP_KEY=\"base64:stored-app-key\"\nAPP_URL=\"https://web.shop.dev.orbit/development\"\nNEW_FROM_ENV=\"imported\"\n");
+        ->toBe("APP_KEY=\"base64:stored-app-key\"\nAPP_URL=\"https://web.web.shop.dev.orbit/development\"\nNEW_FROM_ENV=\"imported\"\n");
 })->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
 it('transfers a development Instance across Clusters and replaces a generated domain', function (): void {
@@ -265,7 +265,7 @@ it('transfers a development Instance across Clusters and replaces a generated do
 
     expect($instance->node_id)->toBe($this->destinationNode->id)
         ->and($route?->id)->not->toBe($this->route->id)
-        ->and($route?->domain)->toBe('web.shop.other.orbit')
+        ->and($route?->domain)->toBe('web.web.shop.other.orbit')
         ->and($route?->cluster_id)->toBe($this->destinationCluster->id)
         ->and($route?->provenance)->toBe(RouteProvenance::Generated)
         ->and(Route::query()->whereKey($this->route->id)->exists())->toBeFalse();
@@ -303,7 +303,7 @@ it('finalizes a generated Route replacement so environment access and immediate 
         ->and($route->replaced_by_route_id)->toBeNull();
     $context = new InstanceEnvironmentContextResolver()->resolve($forward['instance'], true);
     expect($context->nodeId)->toBe($this->destinationNode->id)
-        ->and($context->routeDomain)->toBe('web.shop.other.orbit');
+        ->and($context->routeDomain)->toBe('web.web.shop.other.orbit');
 
     $reverse = $this->action->execute($forward['instance'], new TransferInstanceData(
         nodeId: $this->sourceNode->id,
@@ -316,7 +316,7 @@ it('finalizes a generated Route replacement so environment access and immediate 
         ->and($reverse['transfer']->status)->toBe(InstanceTransferStatus::Completed)
         ->and($reverse['instance']->routes)->toHaveCount(1);
     expect(new InstanceEnvironmentContextResolver()->resolve($reverse['instance'], true)->routeDomain)
-        ->toBe('web.shop.dev.orbit');
+        ->toBe('web.web.shop.dev.orbit');
 });
 
 it('owns the source Cluster Router before waiting for the environment lock shared with Cluster updates', function (): void {
@@ -453,7 +453,7 @@ it('recalculates destination path and generated domain for an explicit rename', 
 
     expect($instance->name)->toBe('preview')
         ->and($instance->checkout_path)->toBe('/srv/orbit/apps/shop/preview')
-        ->and($route?->domain)->toBe('preview.shop.other.orbit');
+        ->and($route?->domain)->toBe('web.preview.shop.other.orbit');
 });
 
 it('rejects a colliding rename identity and leaves the original name unchanged', function (): void {
@@ -487,7 +487,7 @@ it('resumes a SourceCaptured transfer after source process artifacts were remove
         'requested_name' => null,
         'destination_name' => 'web',
         'destination_path' => '/srv/orbit/apps/shop/web',
-        'destination_domain' => 'web.shop.other.orbit',
+        'destination_domain' => 'web.web.shop.other.orbit',
         'sqlite_source_path' => null,
         'source_layout' => InstanceSourceLayout::Checkout,
         'source_path' => $this->instance->checkout_path,

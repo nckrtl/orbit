@@ -45,7 +45,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? '', ...($instance->annotator_port === null ? [] : [AnnotatorEndpoint::store($instance->id)])],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? '', ...($instance->annotator_port === null ? [] : [AnnotatorEndpoint::forInstance($instance)])],
                 input: $this->captureScript(),
             ),
             step: 'app-instance-transfer-capture',
@@ -129,7 +129,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
                         $transfer->source_path,
                         $transfer->source_layout->value,
                         $common ?? '',
-                        ...(Instance::query()->whereKey($transfer->instance_id)->whereNotNull('annotator_port')->exists() ? [AnnotatorEndpoint::store($transfer->instance_id ?? throw $this->failed())] : []),
+                        ...(Instance::query()->whereKey($transfer->instance_id)->whereNotNull('annotator_port')->exists() ? [AnnotatorEndpoint::forInstance(Instance::query()->findOrFail($transfer->instance_id ?? throw $this->failed()))] : []),
                     ],
                     input: $this->cleanupScript(),
                 ),

@@ -11,5 +11,6 @@ interface InstanceRouteEnvironmentSynchronizer
     public function synchronizeRouteDomain(
         Instance $instance,
         InstanceEnvironmentRouteDomain $domain,
+        ?string $app = null,
     ): InstanceEnvironmentResult;
 }

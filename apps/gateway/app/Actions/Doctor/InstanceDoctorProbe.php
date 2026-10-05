@@ -11,6 +11,7 @@ use App\Domain\Doctor\DoctorFamilyProbe;
 use App\Domain\Doctor\DoctorInspectionException;
 use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
+use App\Domain\Doctor\InstanceAppStateInspector;
 use App\Domain\Doctor\InstanceDoctorIssueCode;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
@@ -18,6 +19,7 @@ use App\Domain\Doctor\PublicRouteEdgeInspector;
 use App\Domain\Instances\InstanceProvisionProgress;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Projects\ProjectApps;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
@@ -38,6 +40,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         private ?PublicRouteEdgeInspector $publicEdge = null,
         private ?PrivateRouteProjectionInspector $privateProjection = null,
         private PublicRouteEligibility $eligibility = new PublicRouteEligibility,
+        private ?InstanceAppStateInspector $apps = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -179,6 +182,20 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 $issues[] = $this->inspectionFailedIssue($instance);
             }
 
+            if (! $instance->placedOnAppProd() && $instance->status === InstanceState::Active && $this->apps instanceof InstanceAppStateInspector) {
+                foreach ($instance->effectiveApps() as $app) {
+                    try {
+                        $appObservation = $this->apps->inspectApp($instance, $app['name']);
+                        if (! $appObservation->pathMatches) {
+                            $issues[] = $this->appIssue($instance, $app['name'], InstanceDoctorIssueCode::CheckoutMissing, 'App directory is absent or unsafe.');
+                        } elseif (! $appObservation->sourceProfileMatches) {
+                            $issues[] = $this->appIssue($instance, $app['name'], InstanceDoctorIssueCode::SourceIdentityMismatch, 'App source profile differs from its recorded PHP/Laravel profile.');
+                        }
+                    } catch (\Throwable) {
+                        $issues[] = $this->appIssue($instance, $app['name'], InstanceDoctorIssueCode::InspectionFailed, 'App source could not be inspected.', DoctorIssueKind::Unverifiable);
+                    }
+                }
+            }
             $issues = [...$issues, ...$this->privateRouteIssues($instance, $context), ...$this->publicRouteIssues($instance, $context)];
 
             if (count($issues) > $instanceIssueOffset) {
@@ -207,6 +224,11 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         }
 
         return DoctorFamilyReportData::fromIssues(DoctorFamily::Instance, $rows->count(), $issues);
+    }
+
+    private function appIssue(Instance $instance, string $app, InstanceDoctorIssueCode $code, string $summary, DoctorIssueKind $kind = DoctorIssueKind::Drift): DoctorIssueData
+    {
+        return new DoctorIssueData($code, $kind, 'instance', $instance->id, $instance->name, "App [{$app}]: {$summary}", true, $kind === DoctorIssueKind::Drift ? false : null, $app);
     }
 
     private function isProvisioning(Instance $instance, InstanceState $settled): bool
@@ -265,6 +287,13 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             ->get();
 
         $issues = [];
+        if ($instance->status === InstanceState::Active && ! $instance->placedOnAppProd() && $instance->requiresRoute()) {
+            foreach ($instance->effectiveApps() as $app) {
+                if (ProjectApps::isServing($app) && ! $instance->routes()->where('routes.app', $app['name'])->whereIn('routes.status', ['active', 'activating'])->exists()) {
+                    $issues[] = $this->projectionIssue($instance, InstanceDoctorIssueCode::RouteAssociationMismatch, $app['name']);
+                }
+            }
+        }
 
         foreach ($routes as $route) {
             $cluster = $route->cluster;
@@ -315,6 +344,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                 'laravelUrlMatches' => InstanceDoctorIssueCode::LaravelUrlMismatch,
                 'targetSetMatches' => InstanceDoctorIssueCode::TargetSetMismatch,
                 'associationMatches' => InstanceDoctorIssueCode::RouteAssociationMismatch,
+                'phpFpmProjectionMatches' => InstanceDoctorIssueCode::PhpFpmProjectionMismatch,
             ];
 
             $inspectionFailed = false;
@@ -329,11 +359,13 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
                     continue;
                 }
 
-                $issues[] = $this->projectionIssue($instance, $code);
+                $issues[] = $this->projectionIssue($instance, $code, $route->app);
             }
 
             if ($inspectionFailed) {
-                $issues[] = $this->inspectionFailedIssue($instance);
+                $issue = $this->inspectionFailedIssue($instance);
+                $issue->app = $route->app;
+                $issues[] = $issue;
             }
         }
 
@@ -415,7 +447,7 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
         return $issues;
     }
 
-    private function projectionIssue(Instance $instance, InstanceDoctorIssueCode $code): DoctorIssueData
+    private function projectionIssue(Instance $instance, InstanceDoctorIssueCode $code, ?string $app = null): DoctorIssueData
     {
         return new DoctorIssueData(
             $code,
@@ -423,9 +455,10 @@ final readonly class InstanceDoctorProbe implements DoctorFamilyProbe
             'instance',
             $instance->id,
             $instance->name,
-            'Instance projection does not match managed intent.',
+            $app === null ? 'Instance projection does not match managed intent.' : "Instance [{$instance->name}] app [{$app}] projection does not match managed intent.",
             'matching',
             'mismatch',
+            app: $app,
         );
     }
 

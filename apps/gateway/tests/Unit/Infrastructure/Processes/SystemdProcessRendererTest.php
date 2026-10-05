@@ -8,9 +8,18 @@ use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use App\Models\Project;
+
+function systemd_renderer_instance(array $attributes): Instance
+{
+    $instance = new Instance([...$attributes, 'app_runtime' => ['web' => ['app_identity' => false, 'annotator_store_identity' => false]]]);
+    $instance->setRelation('project', new Project(['apps' => [['name' => 'web', 'path' => '.', 'web_root' => 'public', 'type' => 'laravel-app']]]));
+
+    return $instance;
+}
 
 it('renders the annotator command and projects its concrete URL and port into every systemd Process', function (): void {
-    $instance = new Instance(['annotator_port' => 4849]);
+    $instance = systemd_renderer_instance(['annotator_port' => 4849]);
     $instance->id = 6;
     $target = new ProcessTarget(node: new Node, user: 'orbit', checkoutPath: '/home/orbit/apps/site', instance: $instance, routeDomain: 'site.test');
     $process = new Process(['name' => 'annotator', 'working_directory' => $target->checkoutPath, 'runtime_config' => ['preset' => 'annotator', 'command' => ['/usr/bin/false']], 'restart_policy' => 'on-failure']);
@@ -343,7 +352,7 @@ it('pins the Route development-server origin after the app environment file', fu
         'restart_policy' => 'never',
     ]);
     $process->id = 11;
-    $instance = new Instance(['vite_port' => 5173]);
+    $instance = systemd_renderer_instance(['vite_port' => 5173]);
     $target = new ProcessTarget(
         node: new Node(['name' => 'dev']),
         user: 'orbit',
@@ -373,7 +382,7 @@ it('pins the Route development-server origin after the app environment file', fu
 });
 
 it('expands only the preset port and gives its owned environment file precedence', function (): void {
-    $instance = new Instance(['vite_port' => 5210]);
+    $instance = systemd_renderer_instance(['vite_port' => 5210]);
     $instance->id = 64;
     $process = new Process(['name' => 'assets', 'runtime_config' => ['preset' => 'vp-dev', 'command' => ['/usr/local/bin/vp', 'dev'], 'environment_file' => '/apps/main/.env'], 'working_directory' => '/apps/main', 'restart_policy' => 'on-failure']);
     $process->id = 9;
@@ -384,7 +393,7 @@ it('expands only the preset port and gives its owned environment file precedence
 });
 
 it('projects AGENTATION_URL and expands the Agentation HTTP port', function (): void {
-    $instance = new Instance(['agentation_port' => 4749]);
+    $instance = systemd_renderer_instance(['agentation_port' => 4749]);
     $instance->id = 12;
     $process = new Process([
         'name' => 'agentation',
@@ -417,7 +426,7 @@ it('projects AGENTATION_URL and expands the Agentation HTTP port', function (): 
 });
 
 it('projects AGENTATION_URL onto the Antigravity watcher unit', function (): void {
-    $instance = new Instance(['agentation_port' => 4747]);
+    $instance = systemd_renderer_instance(['agentation_port' => 4747]);
     $process = new Process([
         'name' => 'watch',
         'runtime_config' => ['preset' => 'antigravity-watch', 'command' => ['/usr/local/bin/agy']],

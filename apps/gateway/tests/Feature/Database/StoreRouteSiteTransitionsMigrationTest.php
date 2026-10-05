@@ -92,6 +92,7 @@ function store_route_site_transitions_route(Node $node, string $name, RouteStatu
     ]);
     $id = DB::table('routes')->insertGetId([
         'kind' => 'app',
+        'app' => 'web',
         'project_id' => $project->id,
         'node_id' => $node->id,
         'domain' => "{$name}.backfill.test",
@@ -103,6 +104,7 @@ function store_route_site_transitions_route(Node $node, string $name, RouteStatu
     ]);
     DB::table('route_targets')->insert([
         'route_id' => $id,
+        'app' => 'web',
         'instance_id' => $instance->id,
         'position' => 0,
         'created_at' => now(),

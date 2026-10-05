@@ -267,6 +267,8 @@ The migration seeds false for existing Projects with slug `orbit` and true for o
 
 ### Update lifecycle
 
+An unfinished [Instance rename](/reference/routes) owns its Route and URL until it completes. Project reconciliation checks that owner under the shared Instance locks and returns `instance.lifecycle_busy` before changing the Project or projecting a new slug. Retry the matching rename first, including after its domain has converged but its completion transaction failed.
+
 The Gateway applies `slug`, `repository_url`, `default_branch`, and `apps` as one recorded operation:
 
 | Status | Work |

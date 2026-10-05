@@ -19,6 +19,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
+use App\Models\InstanceRename;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
@@ -37,6 +38,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function preflightSlug(Project $project, string $newSlug): array
     {
+        InstanceRename::assertProjectAvailable($project);
         $routes = [];
 
         foreach ($project->routes()->with(['targets.instance.node', 'generationBasisNode'])->orderBy('id')->get() as $route) {
@@ -58,6 +60,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
             $routes[] = [
                 'route_id' => $route->id,
+                'app' => $route->app,
                 'previous_domain' => $route->domain,
                 'proposed_domain' => $proposed,
                 'instance_id' => $target?->id,
@@ -69,6 +72,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function prepareSlug(Project $project, string $newSlug, array $inventory): array
     {
+        InstanceRename::assertProjectAvailable($project);
         $prepared = [];
 
         foreach ($this->rows($inventory['routes'] ?? null) as $proposal) {
@@ -80,6 +84,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
             $replacement = Route::query()->create([
                 'project_id' => $current->project_id,
+                'app' => $current->app,
                 'node_id' => $current->node_id,
                 'cluster_id' => $current->cluster_id,
                 'generation_basis_node_id' => $current->generation_basis_node_id,
@@ -103,7 +108,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
             $prepared[] = [
                 ...$proposal,
                 'replacement_id' => $replacement->id,
-                'previous_env' => $this->storedUrl(StoredValue::integer($proposal['instance_id'] ?? null)),
+                'previous_env' => $this->storedUrl(StoredValue::integer($proposal['instance_id'] ?? null), $current->app),
             ];
         }
 
@@ -112,6 +117,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function publishSlug(Project $project, string $newSlug, array $prepared): void
     {
+        InstanceRename::assertProjectAvailable($project);
         foreach ($this->rows($prepared['routes'] ?? null) as $row) {
             $replacement = Route::query()->with('targets.instance')->find(StoredValue::integer($row['replacement_id'] ?? null));
             $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
@@ -126,7 +132,8 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
             $domain = is_string($row['proposed_domain'] ?? null)
                 ? $row['proposed_domain']
                 : $replacement?->domain;
-            $authoritative = $current ?? $instance->authoritativeRoute();
+            $app = $instance->appConfiguration(is_string($row['app'] ?? null) ? $row['app'] : $replacement?->app)['name'];
+            $authoritative = $current ?? $instance->authoritativeRoute($app);
 
             if (! is_string($domain) || ! $authoritative instanceof Route) {
                 throw new ResourceOperationException(
@@ -138,7 +145,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
             try {
                 if ($instance->placementEnvironment() === 'development' && $replacement instanceof Route) {
-                    $this->environment->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Candidate);
+                    $this->environment->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Candidate, $app);
                 }
 
                 $this->routes->execute(
@@ -148,7 +155,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
                 );
 
                 if ($instance->placementEnvironment() === 'development' && ! $replacement instanceof Route) {
-                    $this->environment->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Authoritative);
+                    $this->environment->synchronizeRouteDomain($instance, InstanceEnvironmentRouteDomain::Authoritative, $app);
                 }
             } catch (Throwable $exception) {
                 throw new ResourceOperationException(
@@ -217,6 +224,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
     public function rollbackSlug(Project $project, array $prepared): void
     {
+        InstanceRename::assertProjectAvailable($project);
         foreach ($this->rows($prepared['routes'] ?? null) as $row) {
             $replacement = Route::query()->find(StoredValue::integer($row['replacement_id'] ?? null));
             $current = Route::query()->find(StoredValue::integer($row['route_id'] ?? null));
@@ -234,7 +242,8 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
             $previous = $row['previous_env'] ?? null;
 
             if ($instance instanceof Instance && is_string($previous)) {
-                $this->writeStoredUrl($instance->id, $previous);
+                $app = $instance->appConfiguration(is_string($row['app'] ?? null) ? $row['app'] : $current?->app)['name'];
+                $this->writeStoredUrl($instance->id, $previous, $app);
             }
         }
     }
@@ -313,7 +322,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
         if ($node instanceof Node) {
             $name = $instance instanceof Instance ? $instance->name : 'default';
 
-            return $this->domains->generatedDomain($newSlug, $name, $this->domains->forNode($node)->effectiveTld);
+            return $this->domains->generatedDomain($newSlug, $name, $this->domains->forNode($node)->effectiveTld, $route->app ?? throw new ResourceOperationException('app.not_found', 'A generated Route has no app association.', 409));
         }
 
         if (str_starts_with($route->domain, $project->slug.'.')) {
@@ -323,7 +332,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
         return str_replace($project->slug, $newSlug, $route->domain);
     }
 
-    private function storedUrl(int $instanceId): ?string
+    private function storedUrl(int $instanceId, ?string $app): ?string
     {
         if ($instanceId < 1) {
             return null;
@@ -331,16 +340,18 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
         $value = InstanceEnvironmentValue::query()
             ->where('instance_id', $instanceId)
+            ->where('app', $app)
             ->where('env_key', 'APP_URL')
             ->first();
 
         return $value instanceof InstanceEnvironmentValue ? $value->env_value : null;
     }
 
-    private function writeStoredUrl(int $instanceId, string $url): void
+    private function writeStoredUrl(int $instanceId, string $url, string $app): void
     {
         $value = InstanceEnvironmentValue::query()
             ->where('instance_id', $instanceId)
+            ->where('app', $app)
             ->where('env_key', 'APP_URL')
             ->first();
 
@@ -352,6 +363,7 @@ final readonly class NativeProjectUpdateProjectionMutator implements ProjectUpda
 
         InstanceEnvironmentValue::query()->create([
             'instance_id' => $instanceId,
+            'app' => $app,
             'env_key' => 'APP_URL',
             'env_value' => $url,
         ]);

@@ -150,9 +150,10 @@ final readonly class CreateRouteAction
         return $result;
     }
 
-    public function ensureForInstance(Instance $instance, ?string $domain): Route
+    public function ensureForInstance(Instance $instance, ?string $domain, ?string $app = null): Route
     {
         $instance->refresh()->loadMissing(['project', 'node']);
+        $app = $instance->appConfiguration($app)['name'];
 
         if (! in_array(
             $instance->status,
@@ -171,9 +172,15 @@ final readonly class CreateRouteAction
             );
         }
 
-        $existing = Route::query()
-            ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
-            ->first();
+        $existing = $instance->authoritativeRoute($app);
+        if (! $existing instanceof Route) {
+            $candidates = Route::query()->where('app', $app)->whereNull('replaces_route_id')
+                ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))->get();
+            if ($candidates->count() > 1) {
+                throw new ResourceOperationException('route.instance_already_associated', 'The app has more than one provisioning Route.', 409);
+            }
+            $existing = $candidates->isEmpty() ? null : $candidates->sole();
+        }
 
         if ($existing instanceof Route) {
             $expectedProvenance = $domain === null ? RouteProvenance::Generated : RouteProvenance::Explicit;
@@ -206,6 +213,7 @@ final readonly class CreateRouteAction
                 $instance->project->slug,
                 $instance->name,
                 $placement->effectiveTld,
+                $app,
             )
             : RouteDomain::validate($domain);
 
@@ -218,6 +226,7 @@ final readonly class CreateRouteAction
             clusterId: $placement->clusterId,
             generationBasisNodeId: $provenance === RouteProvenance::Generated ? $instance->node_id : null,
             instance: $instance,
+            app: $app,
         );
     }
 
@@ -420,8 +429,9 @@ final readonly class CreateRouteAction
         ?int $generationBasisNodeId,
         Instance $instance,
         RouteStatus $initialStatus = RouteStatus::Pending,
+        ?string $app = null,
     ): Route {
-        RouteTargetWebRoot::assertSupported($instance);
+        RouteTargetWebRoot::assertSupported($instance, $app);
 
         try {
             $route = DB::transaction(function () use (
@@ -434,11 +444,14 @@ final readonly class CreateRouteAction
                 $generationBasisNodeId,
                 $instance,
                 $initialStatus,
+                $app,
             ): Route {
-                $this->associations->assertTargetUnassociated($instance);
+                $app ??= $instance->appConfiguration()['name'];
+                $this->associations->assertTargetUnassociated($instance, $app);
 
                 $route = Route::query()->create([
                     'kind' => RouteKind::App,
+                    'app' => $app,
                     'project_id' => $projectId,
                     'node_id' => $nodeId,
                     'cluster_id' => $clusterId,
@@ -455,6 +468,7 @@ final readonly class CreateRouteAction
                     ->targets()
                     ->create([
                         'instance_id' => $instance->id,
+                        'app' => $app,
                         'position' => 0,
                     ]);
 

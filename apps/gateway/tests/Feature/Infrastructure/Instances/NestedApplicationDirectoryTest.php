@@ -2,14 +2,20 @@
 
 declare(strict_types=1);
 
+use App\Actions\Routes\CreateRouteAction;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Instances\ComposerSourceClassifier;
+use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\InstancePhpVersionCatalog;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Doctor\NativeInstanceAppStateInspector;
+use App\Infrastructure\Instances\NativeDevelopmentInstanceProvisioner;
 use App\Infrastructure\Instances\RemoteDevelopmentInstanceConfigurator;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -21,6 +27,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -85,7 +92,85 @@ it('refuses application metadata reached through a linked parent directory', fun
     }
 });
 
-/** @return array{RemoteDevelopmentInstanceConfigurator, Instance, ManagedUserAccount} */
+it('converges per-app route APP_URL files and cached URLs without rewriting a sibling', function (): void {
+    $checkout = sys_get_temp_dir().'/orbit-per-app-source-'.Str::uuid();
+    $files = new Filesystem;
+    foreach (['web', 'docs'] as $app) {
+        $directory = $checkout.'/apps/'.$app;
+        $files->ensureDirectoryExists($directory.'/bootstrap/cache');
+        $files->ensureDirectoryExists($directory.'/public');
+        file_put_contents($directory.'/composer.json', '{"require":{"php":"~8.4.0","laravel/framework":"^13.0"}}');
+        file_put_contents($directory.'/artisan', '<?php');
+        file_put_contents($directory.'/.env.example', "APP_NAME={$app}\nAPP_URL=http://old.test\n");
+        file_put_contents($directory.'/.env.testing', "APP_ENV=testing\nAPP_URL=http://old.test\n");
+        file_put_contents($directory.'/bootstrap/cache/config.php', "<?php return ['app' => ['url' => 'http://old.test']];");
+    }
+    try {
+        [$configuration, $instance, , $ssh] = nested_application_configurator($checkout, 'public');
+        $instance->project->update(['slug' => 'two-apps', 'apps' => [
+            ['name' => 'web', 'path' => 'apps/web', 'web_root' => 'public', 'type' => 'laravel-app'],
+            ['name' => 'docs', 'path' => 'apps/docs', 'web_root' => 'public', 'type' => 'laravel-app'],
+        ]]);
+        $instance->node->update(['tld' => 'test']);
+        $instance->node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
+        $ports = Mockery::mock(VitePortRuntime::class);
+        $ports->shouldReceive('selectPort')->andReturnUsing(static function (Node $node, int $preferred, array $excluded): int {
+            while (in_array($preferred, $excluded, true)) {
+                $preferred++;
+            }
+
+            return $preferred;
+        });
+        app()->instance(VitePortRuntime::class, $ports);
+        $projection = new class implements DevelopmentRouteProjector
+        {
+            public function converge(Instance $instance, Route $route): void
+            {
+                $route->publishSites();
+            }
+        };
+        $lock = new class implements DevelopmentProjectionOperationLock
+        {
+            public function run(Closure $operation): mixed
+            {
+                return $operation();
+            }
+        };
+        $provisioner = new NativeDevelopmentInstanceProvisioner(app(CreateRouteAction::class), $configuration, $projection, $lock);
+        $active = $provisioner->complete($instance, null);
+        foreach (['web', 'docs'] as $app) {
+            $url = 'https://'.$active->authoritativeRoute($app)->domain;
+            $directory = $checkout.'/apps/'.$app;
+            expect(file_get_contents($directory.'/.env'))->toBe("APP_NAME={$app}\nAPP_URL={$url}\n")
+                ->and(file_get_contents($directory.'/.env.testing'))->toBe("APP_ENV=testing\nAPP_URL={$url}\n")
+                ->and(file_get_contents($directory.'/bootstrap/cache/config.php'))->toBe("<?php return ['app' => ['url' => '{$url}']];")
+                ->and($instance->environmentValues()->where('app', $app)->where('env_key', 'APP_URL')->first()->env_value)->toBe($url);
+        }
+        $inspector = new NativeInstanceAppStateInspector($ssh, $configuration);
+        expect($inspector->inspectApp($active, 'web')->sourceProfileMatches)->toBeTrue()
+            ->and($inspector->inspectApp($active, 'docs')->sourceProfileMatches)->toBeTrue();
+        file_put_contents($checkout.'/apps/docs/composer.json', '{"require":{"php":"~5.0.0","laravel/framework":"^13.0"}}');
+        expect($inspector->inspectApp($active, 'docs')->pathMatches)->toBeTrue()
+            ->and($inspector->inspectApp($active, 'docs')->sourceProfileMatches)->toBeFalse()
+            ->and($inspector->inspectApp($active, 'web')->sourceProfileMatches)->toBeTrue();
+        $files->deleteDirectory($checkout.'/apps/docs/public');
+        expect($inspector->inspectApp($active, 'docs')->pathMatches)->toBeFalse();
+        $files->moveDirectory($checkout.'/apps/web', $checkout.'/apps/web-missing');
+        expect($inspector->inspectApp($active, 'web')->pathMatches)->toBeFalse();
+        $files->moveDirectory($checkout.'/apps/web-missing', $checkout.'/apps/web');
+        $docs = file_get_contents($checkout.'/apps/docs/.env');
+        $docsCache = file_get_contents($checkout.'/apps/docs/bootstrap/cache/config.php');
+        $configuration->configureLaravelUrl($active, 'https://custom.web.test', 'web');
+        expect(file_get_contents($checkout.'/apps/docs/.env'))->toBe($docs)
+            ->and(file_get_contents($checkout.'/apps/docs/bootstrap/cache/config.php'))->toBe($docsCache)
+            ->and(file_get_contents($checkout.'/apps/web/.env'))->toContain('APP_URL=https://custom.web.test')
+            ->and($instance->environmentValues()->where('app', 'docs')->where('env_key', 'APP_URL')->first()->env_value)->toBe('https://docs.feature.two-apps.test');
+    } finally {
+        $files->deleteDirectory($checkout);
+    }
+});
+
+/** @return array{RemoteDevelopmentInstanceConfigurator, Instance, ManagedUserAccount, DevelopmentSshExecutor} */
 function nested_application_configurator(string $checkout, string $root): array
 {
     $owner = posix_getpwuid(posix_geteuid());
@@ -136,5 +221,7 @@ function nested_application_configurator(string $checkout, string $root): array
     $project = Project::query()->create(['name' => 'Nested', 'slug' => 'nested-'.Str::lower(Str::random(8)), 'repository_url' => 'https://example.test/nested.git', 'root' => $root]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => $checkout, 'branch' => 'feature', 'starting_commit' => str_repeat('a', 40), 'status' => 'source_resolved']);
 
-    return [new RemoteDevelopmentInstanceConfigurator(new DevelopmentSshExecutor($ssh, $keys, $hosts), $accounts, new ComposerSourceClassifier(new InstancePhpVersionCatalog)), $instance, $account];
+    $development = new DevelopmentSshExecutor($ssh, $keys, $hosts);
+
+    return [new RemoteDevelopmentInstanceConfigurator($development, $accounts, new ComposerSourceClassifier(new InstancePhpVersionCatalog)), $instance, $account, $development];
 }

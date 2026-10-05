@@ -66,6 +66,7 @@ final readonly class RegisterInstanceAction
     private function performRegistration(Node $caller, RegisterInstanceData $data): array
     {
         $this->assertPlacement($caller);
+        app(MigrateAppRuntimeAction::class)->execute($caller);
 
         if ($data->domain !== null) {
             RouteDomain::validate($data->domain);

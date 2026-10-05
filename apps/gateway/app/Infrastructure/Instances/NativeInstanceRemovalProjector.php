@@ -38,6 +38,21 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
 
     public function clearRouteTarget(InstanceRemovalMember $member): string
     {
+        $ids = $member->route_ids ?? ($member->route_id === null ? [] : [$member->route_id]);
+        $outcome = 'deleted';
+        foreach ($ids as $id) {
+            $projection = clone $member;
+            $projection->route_id = $id;
+            if ($this->clearRecordedRoute($projection) === 'retained') {
+                $outcome = 'retained';
+            }
+        }
+
+        return $outcome;
+    }
+
+    private function clearRecordedRoute(InstanceRemovalMember $member): string
+    {
         $instance = Instance::query()->with('node')->findOrFail($member->instance_id);
         $route = $member->route_id === null
             ? null
@@ -105,7 +120,7 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
             $member->environment === 'development'
             && $route->sites_published
             && ($removedTarget
-            || $this->certificates->instanceCertificateExists($instance))
+            || $this->certificates->instanceCertificateExists($instance, $route->app))
         ) {
             $this->caddy->build($this->servingNode($route, $instance));
             $this->dns->converge();
@@ -202,7 +217,7 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
             $this->caddy->build($serving);
         }
 
-        $this->certificates->removeInstance($instance);
+        $this->certificates->removeApp($instance, $route);
 
         if ($hadTransition) {
             $this->certificates->removeHostnameChange($instance, $route);

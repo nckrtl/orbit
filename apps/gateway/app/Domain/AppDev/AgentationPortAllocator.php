@@ -10,40 +10,56 @@ use App\Models\Instance;
 use App\Models\Node;
 use Illuminate\Support\Facades\DB;
 
-/** Shared allocation for the Instance annotation servers. */
+/** Shared allocation for app-owned annotation servers. */
 final readonly class AgentationPortAllocator
 {
-    public function assign(Instance $instance, string $column = 'agentation_port'): int
+    public function assign(Instance $instance, string $column = 'agentation_port', ?string $app = null): int
     {
-        return DB::transaction(function () use ($instance, $column): int {
+        $app = $instance->appConfiguration($app)['name'];
+
+        return DB::transaction(function () use ($instance, $column, $app): int {
             Node::query()->whereKey($instance->node_id)->lockForUpdate()->firstOrFail();
-            $recorded = $instance->getAttribute($column);
+            $recorded = $instance->runtimeForApp($app)[$column] ?? null;
             if (is_int($recorded) && $recorded >= $this->minimum($column)) {
-                $this->retain($instance, $column);
+                $this->retain($instance, $column, $app);
 
                 return $recorded;
             }
-            $port = $this->nextAvailable((int) $instance->node_id, $instance->id, $column);
-            $instance->forceFill([$column => $port])->save();
-            $this->retain($instance, $column);
+            $port = $this->nextAvailable($instance->node_id, $instance->id, $column, app: $app);
+            $instance->recordAppRuntime($app, [$column => $port]);
+            if (count($instance->effectiveApps()) === 1) {
+                $instance->forceFill([$column => $port])->save();
+            }
+            $this->retain($instance, $column, $app);
 
             return $port;
         });
     }
 
     /** @param list<int> $reserved */
-    public function nextAvailable(int $nodeId, int $ignoreInstanceId, string $column = 'agentation_port', array $reserved = []): int
+    public function nextAvailable(int $nodeId, int $ignoreInstanceId, string $column = 'agentation_port', array $reserved = [], ?string $app = null): int
     {
-        $used = Instance::query()->where('node_id', $nodeId)->get(['id', 'agentation_port', 'annotator_port'])
-            ->flatMap(static fn (Instance $instance): array => [
-                ...($instance->id === $ignoreInstanceId && $column === 'agentation_port' ? [] : [$instance->agentation_port]),
-                ...($instance->id === $ignoreInstanceId && $column === 'annotator_port' ? [] : [$instance->annotator_port]),
-            ])->all();
-        $used = [...$used, ...DB::table('annotation_port_assignments')->where('node_id', $nodeId)
-            ->where(fn ($query) => $query->where('instance_id', '!=', $ignoreInstanceId)->orWhere('kind', '!=', $column))
-            ->pluck('port')->map(static fn (mixed $port): int => StoredInteger::from($port))->all()];
+        if ($ignoreInstanceId > 0 && $app === null) {
+            $app = Instance::query()->findOrFail($ignoreInstanceId)->appConfiguration()['name'];
+        }
+        $used = DB::table('annotation_port_assignments')->where('node_id', $nodeId)
+            ->where(static fn ($query) => $query->where('instance_id', '!=', $ignoreInstanceId)->orWhere('app', '!=', $app)->orWhere('kind', '!=', $column))
+            ->pluck('port')->map(static fn (mixed $port): int => StoredInteger::from($port))->all();
+        $used = [...$used, ...DB::table('vite_port_assignments')->where('node_id', $nodeId)->pluck('port')->map(static fn (mixed $port): int => StoredInteger::from($port))->all()];
+        foreach (Instance::query()->with('project')->where('node_id', $nodeId)->get() as $instance) {
+            foreach ($instance->effectiveApps() as $configuration) {
+                foreach (['vite_port', 'agentation_port', 'annotator_port'] as $kind) {
+                    if ($instance->id === $ignoreInstanceId && $configuration['name'] === $app && $kind === $column) {
+                        continue;
+                    }
+                    $port = $instance->runtimeForApp($configuration['name'])[$kind] ?? null;
+                    if (is_int($port)) {
+                        $used[] = $port;
+                    }
+                }
+            }
+        }
         $port = $this->minimum($column);
-
         while (in_array($port, $used, true) || in_array($port, $reserved, true)) {
             if ($port >= 65_535) {
                 $name = $column === 'annotator_port' ? 'annotator' : 'agentation';
@@ -55,34 +71,37 @@ final readonly class AgentationPortAllocator
         return $port;
     }
 
-    public function release(Instance $instance, string $column = 'agentation_port'): void
+    public function release(Instance $instance, string $column = 'agentation_port', ?string $app = null): void
     {
         $this->minimum($column);
-        DB::transaction(function () use ($instance, $column): void {
+        $app = $instance->appConfiguration($app)['name'];
+        DB::transaction(function () use ($instance, $column, $app): void {
             Node::query()->whereKey($instance->node_id)->lockForUpdate()->firstOrFail();
-            $this->releaseOnNode($instance, $instance->node_id, $column);
-            $instance->forceFill([$column => null])->save();
+            $this->releaseOnNode($instance, $instance->node_id, $column, $app);
+            $instance->recordAppRuntime($app, [$column => null]);
+            if (count($instance->effectiveApps()) === 1) {
+                $instance->forceFill([$column => null])->save();
+            }
         });
     }
 
     /** Retain the old placement's port until its Caddy proxy has been withdrawn. */
-    public function retain(Instance $instance, string $column): void
+    public function retain(Instance $instance, string $column, ?string $app = null): void
     {
         $this->minimum($column);
-        $port = $instance->getAttribute($column);
+        $app = $instance->appConfiguration($app)['name'];
+        $port = $instance->runtimeForApp($app)[$column] ?? null;
         if (! is_int($port)) {
             return;
         }
-        DB::table('annotation_port_assignments')->updateOrInsert(
-            ['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'kind' => $column],
-            ['port' => $port],
-        );
+        DB::table('annotation_port_assignments')->updateOrInsert(['instance_id' => $instance->id, 'node_id' => $instance->node_id, 'app' => $app, 'kind' => $column], ['port' => $port]);
     }
 
-    public function releaseOnNode(Instance $instance, int $nodeId, string $column): void
+    public function releaseOnNode(Instance $instance, int $nodeId, string $column, ?string $app = null): void
     {
         $this->minimum($column);
-        DB::table('annotation_port_assignments')->where('instance_id', $instance->id)->where('node_id', $nodeId)->where('kind', $column)->delete();
+        $app = $instance->appConfiguration($app)['name'];
+        DB::table('annotation_port_assignments')->where('instance_id', $instance->id)->where('node_id', $nodeId)->where('app', $app)->where('kind', $column)->delete();
     }
 
     private function minimum(string $column): int

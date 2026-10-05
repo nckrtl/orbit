@@ -25010,6 +25010,12 @@
               "string",
               "null"
             ]
+          },
+          "app": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

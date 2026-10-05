@@ -8,7 +8,7 @@ use App\Models\Instance;
 
 interface DevelopmentInstanceConfigurator
 {
-    public function inspect(Instance $instance): DevelopmentSourceProfile;
+    public function inspect(Instance $instance, ?string $app = null): DevelopmentSourceProfile;
 
-    public function configureLaravelUrl(Instance $instance, string $url): void;
+    public function configureLaravelUrl(Instance $instance, string $url, ?string $app = null): void;
 }

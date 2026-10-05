@@ -20,6 +20,8 @@ Recording a development [Instance branch rename](/cli/instance#orbit-instanceren
 
 The [annotator Process preset](/reference/agentation#annotator-process) installs Gateway-owned server files and their verified injection asset, not a package through a Tool Manager. It creates no Tool intent and does not adopt or remove the Node's existing Node.js runtime. Its private file publication and environment projection stay separate from Tool operations.
 
+Development app runtime migration is also separate from Tool operations. It records its plan in a [journal for the Node](/reference/assigned-vite-ports#migrate-port-reservations). The plan covers endpoint reservations, owned systemd references, Vite environment files, and annotator stores. It does not scan installed packages, create Tool intent, or adopt a Node.js runtime. The Gateway binds runtime migration and Tool managers to separate services; sharing a Node does not transfer ownership between them.
+
 ## Where Tools run
 
 The Gateway manages Tools only on an active Node that it manages over SSH. That Node runs a supported platform, has a verified WireGuard address, and has a stored SSH host fingerprint. Ubuntu supports the existing managers. [macOS Nodes](/reference/node-provisioning#macos-nodes) support Homebrew formulae, casks, and Vite+ global packages in the enrolled account's existing installations. Any other Node gets `tool.node_inactive` or `tool.node_unmanaged` (HTTP 409) before the Gateway changes anything.

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Process;
 use SensitiveParameter;
 
@@ -40,6 +41,14 @@ final readonly class ProcessSpecification
                 'ports' => $data->ports,
                 'volumes' => $data->volumes,
             ];
+
+        if ($data->preset === AntigravityWatchPreset::NAME && $target->instance !== null) {
+            $parents = $target->instance->processes()->where('app', $target->app)->where('runtime_config->preset', AgentationMcpPreset::NAME)->get();
+            if ($parents->count() !== 1) {
+                throw new ResourceOperationException('process.preset_dependency_missing', 'The watcher requires its app’s Agentation HTTP Process.');
+            }
+            $runtimeConfig['agentation_process_id'] = $parents->sole()->id;
+        }
 
         return [
             'runtime' => $data->runtime,

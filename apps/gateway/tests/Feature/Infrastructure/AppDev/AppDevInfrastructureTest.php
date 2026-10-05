@@ -199,11 +199,11 @@ it('renders isolated pools and private Caddy listeners for every active Instance
     expect($sites)
         ->toHaveCount(1)
         ->and($sites->sole()->scope)
-        ->toBe("app-instance-{$instance->id}")
+        ->toBe("app-instance-{$instance->id}-app-web")
         ->and($fpm)
         ->toContain(
-            "[orbit-app-instance-{$instance->id}]",
-            "listen = /run/php/orbit-app-instance-{$instance->id}.sock",
+            "[orbit-instance-{$instance->id}-web]",
+            "listen = /run/php/orbit-{$instance->id}-web.sock",
             'listen.group = caddy',
             'env[PATH] = /usr/local/bin:/opt/orbit/composer/vendor/bin:/usr/bin:/bin',
             'php_admin_value[opcache.validate_timestamps] = 1',
@@ -220,8 +220,8 @@ it('renders isolated pools and private Caddy listeners for every active Instance
         )->toContain(
             "https://{$route->domain}",
             'bind 0.0.0.0',
-            "php_fastcgi unix//run/php/orbit-app-instance-{$instance->id}.sock",
-            "tls /etc/caddy/orbit-certificates/app-instance-{$instance->id}/current/cert.pem",
+            "php_fastcgi unix//run/php/orbit-{$instance->id}-web.sock",
+            "tls /etc/caddy/orbit-certificates/app-instance-{$instance->id}-app-web/current/cert.pem",
         )
         ->not->toContain(
             ':80',
@@ -296,7 +296,7 @@ it('hydrates only Instance Route sites and never reads leftover Instance or Work
     expect($nodeSites->map($siteIdentity)->all())
         ->toBe($globalSites->where('nodeId', $node->id)->values()->map($siteIdentity)->all())
         ->and($nodeSites->pluck('scope')->all())
-        ->toBe(["app-instance-{$instance->id}"])
+        ->toBe(["app-instance-{$instance->id}-app-web"])
         ->and($nodeSites->sole()->phpVersion)
         ->toBe($instance->selected_php_version)
         ->and(Schema::hasTable('instances'))
@@ -744,16 +744,16 @@ it('uses a nondefault managed home for app-dev certificate converge and removal'
     $manager->removeInstance($instance);
 
     expect($ssh->commands)
-        ->toHaveCount(3)
+        ->toHaveCount(4)
         ->and($ssh->commands[0]->arguments)
-        ->toContain("app-instance-{$instance->id}", 'acme.app-dev.orbit', 'nckrtl', '/srv/users/nckrtl')
+        ->toContain("app-instance-{$instance->id}-app-web", 'acme.app-dev.orbit', 'nckrtl', '/srv/users/nckrtl')
         ->and($ssh->commands[0]->input)
         ->toContain('managed_home=$7', 'root="$managed_home/.orbit/certificates/$scope"')
         ->not->toContain('/home/orbit/.orbit/certificates')->and($ssh->commands[2]->arguments)->toBe([
             'bash',
             '-seu',
             '--',
-            "app-instance-{$instance->id}",
+            "app-instance-{$instance->id}-app-web",
             'nckrtl',
             'nckrtl',
             '/srv/users/nckrtl',
@@ -781,7 +781,7 @@ it('reuses only current app-dev leaves with the exact RSA extension policy', fun
     $root = sys_get_temp_dir().'/orbit-app-dev-certificate-policy-'.(string) Str::uuid();
     $rootCertificate = create_app_dev_certificate_reuse_fixture(
         root: $root,
-        scope: "app-instance-{$instance->id}",
+        scope: "app-instance-{$instance->id}-app-web",
         domain: $route->domain,
         keyUsage: $keyUsage,
         keyAlgorithm: $keyAlgorithm,

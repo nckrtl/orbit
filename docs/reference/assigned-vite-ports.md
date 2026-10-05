@@ -63,7 +63,7 @@ UnsetEnvironment=VITE_DEV_SERVER_CERT VITE_DEV_SERVER_KEY
 ExecStart=/usr/local/bin/vp dev --host=127.0.0.1 --port=${ORBIT_DEV_SERVER_PORT} --strictPort --base=/__orbit/vite/
 ```
 
-Orbit writes `ORBIT_DEV_SERVER_PORT` to the selected app's environment file before each start. The file carries both Instance ID and app name ownership markers; it cannot be adopted or removed by a sibling Process.
+Orbit writes `ORBIT_DEV_SERVER_PORT` to the selected app's environment file before each start. A qualified file carries both Instance ID and app name ownership markers; it cannot be adopted or removed by a sibling Process. Writers and cleanup check both markers on existing files and pending files, and refuse symlinks. Until migration publishes the Vite file identity, units and cleanup still use the owned Instance-only file, even when certificate identities have already advanced. Certificate readiness alone does not change the Vite file path.
 
 Migration associates the recorded port with `web`, stages `app-instance-<id>-web.env`, rewrites the existing Vite unit and verifies it before removing the former Instance-only runtime file. Pending port changes and transfer reservations migrate with the same app. Process removal removes only its app runtime file; the Vite assignment survives Process replacement and is released on app or Instance removal after proxy withdrawal. Systemd reads it at start, so a new port needs no unit change. The removed certificate variables keep Vite on plain HTTP; Caddy terminates TLS.
 
