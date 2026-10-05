@@ -2,12 +2,12 @@
 title: "Project Documents"
 description: "Native Project folders, versioned files, editing, private S3 storage, and the shared API, CLI, SDK, MCP, and web contract."
 covers:
-  - apps/gateway/app/Actions/ProjectDocuments/**
+  - apps/gateway/app/{Actions,Jobs}/ProjectDocuments/**
   - apps/gateway/app/Data/ProjectDocuments/**
   - apps/gateway/app/Http/Requests/ProjectDocuments/**
   - apps/gateway/app/Infrastructure/ProjectDocuments/**
   - apps/gateway/app/Models/ProjectDocument*.php
-  - apps/gateway/app/Console/Commands/*DocumentProbe*.php
+  - apps/gateway/app/Console/Commands/*Document{Probe,Cleanup}*.php
   - apps/gateway/database/migrations/*_create_project_document*_table*.php
   - apps/web/src/{api/documents.ts,pages/ProjectDocuments.tsx}
 ---
@@ -138,7 +138,29 @@ Storage tests must cover an abandoned upload whose object has been deleted and w
 
 A crash before PUT leaves an active intent that expires; a crash after PUT but before publication leaves an uncommitted object that expires. A crash after publication preserves the committed version; a crash after abandonment but before deletion resumes deletion from the tombstone. A failed upload or failed publication, including a late revision conflict, abandons the intent atomically and schedules the same cleanup. Reconciliation never resumes uploads or publishes intent bytes on a writer's behalf.
 
-While the cleanup gate below is running, reconciliation runs at least every five minutes and retries pending deletions with bounded backoff. It never deletes a committed version because it is old or because a bucket listing briefly omitted it. Removal tombstones retain the exact keys until deletion succeeds; DeleteObject of an absent key counts as success. Abandoned-upload fences remain after success to prevent late PUT leaks. Unknown bucket objects without an intent or tombstone are reported for operator reconciliation, not automatically deleted.
+#### Transfer published keys on removal
+
+File, recursive subtree, and Project removal transfer each published key from its upload row to a durable removal tombstone in the same metadata transaction. Lock the affected entries, versions, upload rows, and cleanup records using the same ordering as publication and abandonment. Record the exact version key in its tombstone before removing versions and entries. After removing the versions, require that no committed version or active intent still references that key, then delete its matching `published` upload row before committing. This retires publication authority, not body bytes.
+
+Do not turn a published upload into an abandoned upload or discard an abandoned intent or fence.
+
+The transaction commits the removal, tombstone, and retirement of the published row together. A failed consistency check or rollback preserves the entries, versions, and published rows and rolls back newly created tombstones. Process death before commit cannot leave a partial handoff; death after commit leaves durable tombstones for the worker. No provider access occurs in this transaction, and no queued payload substitutes for committed work. Removing a Project uses its enclosing removal transaction, not a separately committed handoff. Active uploads become permanently abandoned with retained fences in that same transaction.
+
+Already-retained published rows from earlier removal remain recoverable. A `published` row with an exact-key removal tombstone and no committed version or active intent referencing that key is a pending handoff, not deletion authority. Before DELETE, the worker holds the execution lock with a valid permit and completes that handoff in a database transaction under the publication/removal locks: reload the row and tombstone, recheck references, and delete only the matching published row. It preserves the tombstone and any retained fence. Then commit and recheck the full exact-key authorization before contacting the provider outside the transaction.
+
+A rollback or crash before that compatibility transaction commits leaves both records for retry and sends no DELETE. A crash after commit leaves the tombstone for retry. Neither an absent bucket key, a missing Project/entry identity, nor a bucket listing justifies retiring a published row. A published row without a committed version or matching tombstone is an unresolved consistency difference. Conflicting committed or active references refuse handoff and deletion. Implement this compatibility path with the later deletion worker; it does not require reopening accepted metadata-removal slices.
+
+The scheduler runs `project-documents:cleanup:work` at least every five minutes. This deletion command is separate from the operator's read-only `project-documents:cleanup:reconcile`. While the cleanup gate below is running, the worker retries pending deletions with bounded backoff. It never deletes a committed version because it is old or because a bucket listing briefly omitted it. Removal tombstones retain the exact keys until deletion succeeds; DeleteObject of an absent key counts as success. Abandoned-upload fences remain after success to prevent late PUT leaks. Unknown bucket objects without an intent or tombstone are reported for operator reconciliation, not automatically deleted.
+
+Each worker run claims at most 100 due records, ordered by next attempt time and ID, with ten-minute expiring claims for process death. It expires active intents in batches of at most 100 using the publication/abandonment lock above. Each claimed key receives at most one DELETE per run, outside a database transaction, with a two-second connect timeout, a 30-second request timeout, no redirects, and no provider retries.
+
+Only a 2xx DELETE counts as success, including an absent key; a provider failure or redirect leaves durable work pending. Failures back off exponentially from five minutes to at most one hour. Retained fences become due again after five minutes even when absent and not pending.
+
+A paused run performs no provider deletion and does not consume attempts or retire work. Scheduling bounds work, not deletion time; eventual cleanup needs a running scheduler, reachable storage, and usable credentials.
+
+Before each DELETE, the worker holds the cleanup-execution lock, checks the current-generation permit, and reloads the durable authorization for that exact key at the configured destination. Authorization requires either a removal tombstone or an abandoned intent with its retained fence, and no committed version or active/published intent referencing the key. A queued payload, report, prefix, or bucket listing is never deletion authority. Inconsistent references refuse deletion and surface a sanitized cleanup error.
+
+All scheduled, queued, manual, and late-writer cleanup uses this same path; request handlers only enqueue durable work. A successful removal deletion may retire its tombstone; a retained fence and abandoned intent never retire. Probe reconciliation uses only its separate journal and cannot authorize document-body keys.
 
 There is no automatic purge of archived files or old versions. Cleanup failures remain visible in storage status as `pending_cleanup_count`, `oldest_pending_cleanup_at`, and `last_cleanup_error_code`, without keys or provider secrets. The same job handles Project-removal cleanup.
 
@@ -148,9 +170,35 @@ If a committed body is missing or fails its stored digest check, return `project
 
 Cleanup is fail-closed. A local permit under `/run/orbit/project-documents/`, outside the database and backups, controls every scheduled or queued document-body deletion, including removal and abandoned-intent cleanup. A synchronous configuration probe may delete only its own fresh random probe key; it cannot delete document keys. Missing or invalid permit means paused. Gateway service startup clears the permit before API, scheduler, or queue workers can run. The permit is bound to that service-start generation; queued jobs check it immediately before each deletion. Restoring a database must use the procedure below, not copy a snapshot underneath running workers.
 
-Local Gateway Artisan commands are `project-documents:cleanup:pause`, `project-documents:cleanup:status`, `project-documents:cleanup:reconcile`, and `project-documents:cleanup:resume --report=ID`. These are operator recovery commands, not public API/MCP operations. Pause removes the permit under an exclusive cleanup-execution lock and waits for in-flight deletions to finish; each deletion holds that lock from its gate check through the provider result. Once pause returns, no deletion can start. Pause is idempotent; commands fail closed if their lock or state files cannot be read or written.
+Run the local commands as the Gateway service account, from the Gateway install directory, using `php artisan COMMAND`. They are operator recovery commands, not public API/MCP operations. They never prompt or print keys, bodies, credentials, provider diagnostics, or recovery-backup paths. Each emits one JSON object on stdout; sanitized diagnostics go to stderr. Success exits 0, invalid arguments exit 2, and state, inventory, provider, or authorization failures exit 1. Failure includes `error_code` and never reports running without a valid permit.
+
+| Command | Success output beyond the shared status fields | Boundary |
+| --- | --- | --- |
+| `project-documents:cleanup:pause` | None. | Remove the permit, invalidate the report, and rotate the generation under the execution lock. |
+| `project-documents:cleanup:status` | None. | Inspect local state and database counts only; no provider access. |
+| `project-documents:cleanup:reconcile` | `report_id`, `report_path`, `report_state` (`complete` or `incomplete`), `difference_count`. | Require paused state; inventory without mutation or deletion. A complete scan with differences succeeds but cannot authorize resume. |
+| `project-documents:cleanup:resume --report=ID` | None. | Require an unchanged, complete, difference-free report from the current generation; atomically grant its permit. |
+| `project-documents:cleanup:work` | `claimed_count`, `deleted_count`, `failed_count`. | Run one bounded durable batch; paused is a successful no-op. |
+
+The shared status fields are `cleanup_state`, `cleanup_generation`, `reconciliation_report_id`, `pending_cleanup_count`, `oldest_pending_cleanup_at`, and `last_cleanup_error_code`. IDs and generations are opaque strings; times are UTC ISO 8601 or null. When no valid generation can be read, status reports paused with null generation and exits 1. A report ID is an identifier, not a path; resume rejects path traversal and arbitrary file input.
+
+Pause removes the permit under an exclusive cleanup-execution lock and waits for in-flight deletions to finish; each deletion holds that lock from its gate check through the provider result. Once pause returns, no deletion can start. Pause is idempotent in effect: every successful call leaves cleanup paused and invalidates prior reports. Commands fail closed if their lock or state files cannot be read or written. Use one stable lock file; replacing or unlinking that file cannot be used to create independent locks. A failed pause is not permission to restore: stop the services and repair local state before proceeding.
 
 Status reports `cleanup_state` (`paused` or `running`), `cleanup_generation`, `reconciliation_report_id` (nullable), and pending-cleanup counts, without keys or credentials. The storage-show API adds these same gate fields. A pause or service restart invalidates any prior reconciliation report. Resume refuses without a completed report from the current generation, with unchanged database and bucket inventory since reconciliation. An invalid report returns a local nonzero exit status and leaves the gate paused.
+
+### Local state and startup ordering
+
+Keep the generation, permit, and stable execution lock under `/run/orbit/project-documents/`, in a mode-0700 directory with mode-0600 files owned by the Gateway service account. Never include them in backups. The permit names the generation and authorized report ID. Missing, malformed, stale, incorrectly owned, symlinked, or permissively readable state is invalid. Every worker reads the current files inside the execution lock rather than caching authorization. A missing runtime directory is paused, not an instruction to recreate an old permit.
+
+Actual Gateway service startup runs the invalidation hook under that same lock before accepting API traffic or starting scheduler and queue consumers. It removes the permit and report association and creates a fresh unpredictable generation atomically. Wire this ordering into the installed service lifecycle for the Gateway PHP-FPM pool and every scheduler/queue entry point, including independently restarted consumers.
+
+A consumer restart may conservatively pause the whole gate. Do not rely on a first scheduled job, an operator remembering pause, or a boot-only `/run` cleanup. Per-request application boot must not rotate a healthy generation. Hook failure prevents that service from starting; a manual consumer without established startup state remains paused. Tests must exercise the installed startup wiring, not only call the hook in isolation.
+
+### Private reconciliation reports
+
+Store reports at `$ORBIT_HOME/project-document-recovery/reports/{ID}.json`, outside the restored metadata database and outside web-served directories. The report directory is mode 0700 and reports are mode 0600, owned by the Gateway service account. Reject symlinks, wrong ownership, and broader permissions on reads as well as writes. Publish completed reports atomically; a partial file, modified report, unknown schema, or untrusted report cannot authorize resume. Maintain the completed report's integrity binding in the current local generation state. Only the latest completed report in that generation is eligible; pause and startup invalidate eligibility without needing to erase earlier reports.
+
+A report contains `schema_version`, `report_id`, `cleanup_generation`, start/completion times, `report_state`, destination, database and bucket fingerprint algorithms/values, inventory counts, size and digest results for each version, and all missing, corrupt, inconsistent, or unreferenced keys. These detailed keys and object markers stay in private reports, never storage-show, Activity, general logs, or command output. Reports contain no credentials, body bytes, Authorization headers, or provider response bodies. Their nonsecret path and ID may appear in local command output. Treat reports and any operator resolution records as private recovery material, not attachments to shared agent transcripts.
 
 The operator follows this sequence for installation, restart, or restore:
 
@@ -164,19 +212,55 @@ Restore the database and required bucket objects with workers stopped. Start the
 
 #### 3. Inventory without deletion
 
-Run reconcile while paused. It inventories committed versions, active/abandoned intents, removal tombstones, and bucket objects. It verifies referenced sizes/digests and reports missing, corrupt, and unreferenced objects. Reconcile never deletes, publishes, or automatically adopts objects. Detailed key reports are local files readable only by the Gateway operator.
+Run reconcile while paused and with document mutations and cleanup-state mutations stopped. It reads a consistent database inventory and all pages of the dedicated bucket listing, including unknown keys and reserved probes. Tracked reserved probes are classified separately and never become document deletion candidates. It inventories committed versions, active/published/abandoned intents, retained fences, and removal tombstones.
+
+Reconcile classifies a published row with its committed version as live publication authority. A published row with an exact-key removal tombstone but no committed or active reference is recorded as a pending handoff to removal cleanup. It is accounted-for work, not an unknown object or a difference requiring operator disposal, but remains ineligible for DELETE until the worker commits the handoff above. Reconcile records both rows without changing them. A published row with neither version nor tombstone, or a tombstone conflicting with committed or active references, is an unresolved consistency difference regardless of whether the object exists.
+
+It verifies every committed body's size and SHA-256 using bounded streaming, without retaining body bytes. Missing or corrupt committed bytes and inconsistent database references are differences. An absent active intent, absent fence, or absent removal key is recorded but is not itself a difference; the absence never retires durable recovery state. A present fenced or removal key is accounted-for cleanup work, not an unknown object. Unknown objects are differences, not deletion candidates. Reconcile never deletes, publishes, or automatically adopts objects.
+
+Each provider call has a two-second connect timeout and 30-second request timeout, no redirects or automatic retries. Pagination must reach the end without repeated or missing continuation progress. A list/read failure, interrupted scan, invalid response, unverifiable committed body, or observed inventory change produces an incomplete report and exit 1, with no eligible report association. A confirmed missing or digest-mismatched body is a completed verification with a difference, not a provider success assumption. Reports with differences remain ineligible even if the scan completed. Repeat inventories at scan completion to detect changes; a listing is not a transactional provider snapshot.
 
 #### 4. Resolve differences
 
 Resolve every difference before resume: restore missing committed bytes; recover newer metadata from a matching database backup; or explicitly preserve unmatched objects in a separate operator-owned recovery backup before removing them explicitly. A newer bucket is not proof that unreferenced bytes are disposable.
 
-Rerun reconcile after each repair. Its completed report records the database fingerprint, bucket inventory fingerprint, and operator resolution of all differences outside the restored database.
+Rerun reconcile after each repair. Record the operator resolution of each earlier difference outside the restored database in a JSON file encoded as UTF-8 with mode 0600 and supply it with `project-documents:cleanup:reconcile --resolution-file=PATH`. The file contains the prior report ID and, for each resolved difference, its key, action (`restore_bytes`, `restore_metadata`, or `preserve_then_remove`), and evidence reference. For preserve-then-remove, record the private recovery-backup location and verified size/SHA-256. Reconcile copies these records into its private report; it does not execute them. Reject invalid resolution input with exit 2.
+
+Resolution records document operator actions, not waivers: the new full scan must still verify every committed body and show zero differences. A supplied claim cannot make missing, corrupt, inconsistent, or unmatched objects eligible for resume. Never edit a completed report to make it clean.
 
 #### 5. Authorize cleanup
 
 Run resume with that report ID. Under the same execution lock, it rechecks the fingerprints and generation, writes the permit atomically, and reports running. Only then enable document mutations and normal scheduled cleanup. If any comparison or provider check fails, it remains paused; reconcile again rather than bypassing the gate.
 
-A database fingerprint covers document entries, versions, intents, tombstones, and storage destination; a bucket fingerprint covers object keys, sizes, and provider modification/version markers. The report records verification of body digests separately. This gate does not promise safety for an unsupported database replacement while services remain running. The supported restore procedure pauses before replacement and the startup hook always resets authorization before any job.
+### Fingerprints and refusal outcomes
+
+Use versioned canonical inventories and lowercase SHA-256 fingerprints. Serialize fixed-order fields as UTF-8 JSON arrays with explicit nulls, decimal integers, UTC timestamps, and no insignificant whitespace; sort database rows by table then numeric ID and bucket rows by exact key bytes. Preserve key bytes without path normalization. Record the serialization schema and algorithm so an unsupported schema refuses resume rather than comparing unlike inventories.
+
+| Inventory | Required fields |
+| --- | --- |
+| Destination | Exact endpoint, signing region, and bucket; no credential values or ciphertext. Credential rotation still requires a fresh provider check at resume. |
+| Entries | ID, Project ID, parent ID, kind, name, sibling scope, revision, current-version ID, archive time, creation/update times. |
+| Versions | ID, entry ID, upload ID, version number, media type, size, SHA-256, exact storage key, author Node ID, creation time. |
+| Upload intents | ID, Project/entry IDs, exact storage key, state, creation/update times; include live published rows, published rows awaiting handoff, and permanently retained abandoned rows. |
+| Tombstones and fences | ID, exact storage key, retained-fence flag, pending flag, attempt count, next attempt time, last error code, creation/update times, and any added claim/retry fields affecting worker eligibility. |
+| Bucket objects | Every key, size, last-modified marker, ETag and provider version marker when supplied; encode unavailable markers as null. ETag is an inventory marker, never proof of SHA-256. |
+
+The report also records each published key's classification and the exact tombstone paired with a pending handoff. Both records remain in the database fingerprint until handoff commits; the deleted published row is absent from subsequent inventories. Compatibility retirement before resume changes that fingerprint and requires a fresh reconcile. After resume, the authorized worker may perform the transactional handoff as normal durable cleanup, but it must still pass the unchanged no committed/active/published-reference guard before DELETE. Permanent abandoned rows and fences remain in every inventory even after successful deletion.
+
+The report records streamed body-digest verification separately from the bucket fingerprint. Resume holds the execution lock throughout its checks and permit write, requires paused state, validates report integrity/schema/generation and zero differences, recomputes both complete fingerprints, and verifies committed sizes/digests again using current credentials. It does not send PUT or DELETE as a reachability probe. Inventory equality alone cannot stand in for digest verification. Any mismatch or provider failure refuses resume and leaves the permit absent. Keep writes and external bucket changes stopped until resume completes; no fingerprint protocol makes concurrent out-of-band provider writes transactional.
+
+| Failure | Local `error_code` | Outcome and operator action |
+| --- | --- | --- |
+| Invalid arguments or resolution input | `project_documents.cleanup_input_invalid` | Exit 2; correct input. No permit is granted. |
+| Lock, state, permissions, or atomic-write failure | `project_documents.cleanup_state_unavailable` | Exit 1; treat cleanup as paused, repair local access, and rerun pause/status. Do not replace a database after a failed pause. |
+| Reconcile or resume requires paused state | `project_documents.cleanup_not_paused` | Exit 1; run pause before recovery. No new authorization is granted. |
+| Unknown, incomplete, changed, invalidated, or tampered report | `project_documents.cleanup_report_invalid` | Exit 1; remain paused and reconcile again. |
+| Complete report still has differences | `project_documents.cleanup_unresolved` | Resume exits 1; remain paused, repair, and rerun reconcile. |
+| Database or bucket fingerprint/digest changed | `project_documents.cleanup_inventory_changed` | Exit 1; remain paused and reconcile again. |
+| Provider cannot complete list/read/delete | `project_documents.storage_unavailable` | Exit 1 for recovery commands; remain paused. Worker failures retain pending work and back off without invalidating otherwise valid running authorization. |
+| Key has conflicting durable references | `project_documents.cleanup_reference_conflict` | Refuse DELETE and retain work; pause and investigate metadata consistency. |
+
+Startup or pause invalidation always wins over stale queued work. A worker's gate failure is a no-op for provider access, not a successful deletion. Status and API responses expose only sanitized counts and error codes; they never return report contents. This gate does not promise safety for an unsupported database replacement while services remain running. The supported restore procedure pauses before replacement and the startup hook always resets authorization before any job.
 
 ## API contract
 
