@@ -596,8 +596,7 @@
               "decisions/0182-start-tasks-from-project-task-definitions",
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
-              "decisions/0196-derive-application-directory-from-web-root",
-              "decisions/0197-native-project-documents-with-private-s3-storage"
+              "decisions/0196-derive-application-directory-from-web-root"
             ]
           }
         ]
@@ -632,6 +631,10 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0197-native-project-documents-with-private-s3-storage",
+      "destination": "/reference/project-documents#why-it-works-this-way"
+    },
     {
       "source": "/decisions/0195-request-topologies-for-review-with-an-operator-container",
       "destination": "/reference/incus-topologies#the-reviewer-requests-discovery"

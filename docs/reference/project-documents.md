@@ -14,7 +14,7 @@ covers:
 
 # Project Documents
 
-Project Documents are folders and versioned files owned by one [Project](/reference/projects). They hold notes, specifications, and attachments outside Git. They belong to the Project, not an Instance, branch, task, checkout, or Node. The [in-progress decision](/decisions/0197-native-project-documents-with-private-s3-storage) records this feature's storage and editing boundary.
+Project Documents are folders and versioned files owned by one [Project](/reference/projects). They hold notes, specifications, and attachments outside Git. They belong to the Project, not an Instance, branch, task, checkout, or Node. Orbit owns their metadata, history, authorization, and client operations; Linear and other external document services are not backends. The [storage and editing rationale](/reference/project-documents#why-it-works-this-way) explains this boundary.
 
 Every supported action is available to agents. The web app is another client of the same API, not a separate source of truth. Documents do not replace maintained repository documentation or automatically enter an agent's context. An agent explicitly lists, searches, and reads them. This feature has no collaboration cursor, rich-text editor, public sharing, external URL import, OCR, embeddings, or document-to-task automation.
 
@@ -134,7 +134,7 @@ A writer paused beyond the cutoff must recheck intent state before PUT and again
 
 An absent abandoned object is not counted as pending cleanup, but its fence is not discarded and still blocks destination changes. Reconciliation continues to use the unchanged destination and its current credentials, including after credential rotation.
 
-Storage tests must cover an abandoned upload whose object has been deleted and whose pending count is zero: changing endpoint, region, or bucket still returns `project_documents.storage_in_use`; a delayed PUT to that original destination cannot publish and is deleted by reconciliation.
+An abandoned upload whose object has been deleted and whose pending count is zero still reserves its destination: changing endpoint, region, or bucket returns `project_documents.storage_in_use`. A delayed PUT to that original destination cannot publish and is deleted by the worker's retained-fence reconciliation.
 
 A crash before PUT leaves an active intent that expires; a crash after PUT but before publication leaves an uncommitted object that expires. A crash after publication preserves the committed version; a crash after abandonment but before deletion resumes deletion from the tombstone. A failed upload or failed publication, including a late revision conflict, abandons the intent atomically and schedules the same cleanup. Reconciliation never resumes uploads or publishes intent bytes on a writer's behalf.
 
@@ -148,7 +148,7 @@ The transaction commits the removal, tombstone, and retirement of the published 
 
 Already-retained published rows from earlier removal remain recoverable. A `published` row with an exact-key removal tombstone and no committed version or active intent referencing that key is a pending handoff, not deletion authority. Before DELETE, the worker holds the execution lock with a valid permit and completes that handoff in a database transaction under the publication/removal locks: reload the row and tombstone, recheck references, and delete only the matching published row. It preserves the tombstone and any retained fence. Then commit and recheck the full exact-key authorization before contacting the provider outside the transaction.
 
-A rollback or crash before that compatibility transaction commits leaves both records for retry and sends no DELETE. A crash after commit leaves the tombstone for retry. Neither an absent bucket key, a missing Project/entry identity, nor a bucket listing justifies retiring a published row. A published row without a committed version or matching tombstone is an unresolved consistency difference. Conflicting committed or active references refuse handoff and deletion. Implement this compatibility path with the later deletion worker; it does not require reopening accepted metadata-removal slices.
+A rollback or crash before that compatibility transaction commits leaves both records for retry and sends no DELETE. A crash after commit leaves the tombstone for retry. Neither an absent bucket key, a missing Project/entry identity, nor a bucket listing justifies retiring a published row. A published row without a committed version or matching tombstone is an unresolved consistency difference. Conflicting committed or active references refuse handoff and deletion. The deletion worker performs this compatibility handoff before applying its normal exact-key authorization.
 
 The scheduler runs `project-documents:cleanup:work` at least every five minutes. This deletion command is separate from the operator's read-only `project-documents:cleanup:reconcile`. While the cleanup gate below is running, the worker retries pending deletions with bounded backoff. It never deletes a committed version because it is old or because a bucket listing briefly omitted it. Removal tombstones retain the exact keys until deletion succeeds; DeleteObject of an absent key counts as success. Abandoned-upload fences remain after success to prevent late PUT leaks. Unknown bucket objects without an intent or tombstone are reported for operator reconciliation, not automatically deleted.
 
@@ -388,6 +388,10 @@ The Project detail page has a Documents section with root browsing, folder navig
 
 Infinite pagination retains the current folder and filters. Automatic page loading pauses while any list, destination-picker, or history request is fetching, including a refresh, so it cannot cancel refreshed data. On a phone, content starts near the top, filters and secondary actions use a sheet/menu, and there is no wide fixed table or stacked filter wall. A desktop may use a table and side detail panel.
 
+### Large-tree browsing limitation
+
+Pagination bounds response rows, not database work. The Gateway currently loads all entries in the Project before filtering and sorting a list or search page, and resolves ancestors and current versions with per-entry queries. Version-history paging loads the file's complete history before slicing it. Large Projects and long histories can therefore increase memory use, query count, and latency even for a small page. There is no tested Project-size or latency guarantee. Database-bounded pagination and batched ancestor/version resolution are deferred; infinite scrolling does not remove this server-side limitation.
+
 ### Editing and pending requests
 
 Editable files open a plain-text editor with explicit Save. There is no autosave.
@@ -404,8 +408,26 @@ The Gateway settings page configures storage with write-only credential fields a
 
 ### Metadata in Orbit, bodies in private object storage
 
-The database provides atomic hierarchy and revision checks, while a dedicated private bucket holds bounded immutable bytes without expanding database backups into a blob store. The Gateway proxies every body operation so authorization, redaction, limits, and errors stay the same across clients. Presigned URLs and direct browser uploads would create a second authorization and publication protocol; local Node files would tie Project data to an Instance's lifetime. Version immutability plus durable cleanup makes the database/S3 failure boundary explicit rather than pretending they share a transaction.
+The database provides atomic hierarchy and revision checks, while a dedicated private bucket holds bounded immutable bytes without expanding database backups into a blob store. Database body columns would grow backups with attachments. Git commits would couple drafts to repository history; local Node files would tie Project data to an Instance's lifetime. An external document service would leave authorization, history, and agent access outside Orbit's contract.
+
+The Gateway proxies every body operation so authorization, redaction, limits, and errors stay the same across API, CLI, SDK, MCP, and web. Documents are core operations using existing peer identity and serving-Node grants, not an extension or a separate login. Presigned URLs and direct browser uploads would create a second authorization and publication protocol. Only the Gateway needs bucket credentials, and the dedicated destination keeps document cleanup separate from application backups.
+
+Orbit versions name exact immutable bytes in committed metadata. Mutable object keys or provider bucket versioning cannot atomically identify that history alongside the entry revision. Rename and move therefore change metadata, not object keys. History consumes bucket capacity until permanent file or Project removal; automatic age-based purging would weaken the promised recovery boundary.
 
 ### Small native editor, not a planning environment
 
-Project Documents make notes and attachments available beside the Project without requiring a Git commit for each draft. The plain-text editor is a narrow exception to Orbit's no-editor boundary, not an IDE or chat/planning interface. Explicit save, optimistic concurrency, name/path search, and byte limits provide a complete agent contract without collaborative editing, indexing services, or unbounded tool output. Base64 JSON costs bandwidth, but keeps one generated API/MCP contract and avoids a separate upload-session protocol for small bounded files.
+Project Documents serve [Agents operate, humans steer](/mission#principles) and [One way, one name](/mission#principles): humans and agents use the same Project tree and explicit revision checks. The plain-text editor is a narrow exception to [Where Orbit stops](/mission#where-orbit-stops), because native notes need human editing alongside the agent API. It is not an IDE or chat/planning interface. Documents do not replace maintained repository documentation or automatically enter agent context.
+
+Explicit save and optimistic concurrency expose conflicts instead of silently losing another writer's changes. Name/path search avoids body extraction, OCR, embeddings, and private-content indexes. Collaborative rich-text editing and semantic search would add merge, rendering, and indexing systems beyond this notes-and-attachments boundary.
+
+Base64 JSON adds roughly one-third transfer overhead, but keeps one generated API/MCP contract for bounded files. Multipart uploads, resumable sessions, and unlimited files would add transport state for larger artifacts outside this feature. The direct MCP endpoint supports bounded downloads; its search endpoint's smaller result cap is not bypassed.
+
+### Durable recovery, not a shared S3 transaction
+
+The database and S3 cannot commit together. A durable intent before PUT and atomic publication after PUT make the failure windows visible without holding database locks through provider requests. Publication and abandonment compete for the same lock; permanently retained abandoned fences catch late PUTs even after a successful DELETE. Treating absence as permission to discard a fence would leak delayed bytes and make a destination change unsafe. The cost is permanent recovery state and a destination that cannot migrate while any fence remains.
+
+Removal transfers publication authority to an exact-key tombstone in the metadata transaction. Only the authorized worker can finish legacy handoffs and delete unreferenced keys. A queued payload, age cutoff, bucket prefix, or listing never authorizes deletion. Unknown objects remain operator recovery work, not automatic garbage collection; a newer bucket may contain data missing from a restored database.
+
+The cleanup permit lives outside database backups and is invalidated before services start. Otherwise an older restored database could authorize deletion of newer bucket objects on its first scheduled tick. Private, integrity-bound reports verify complete database and bucket inventories plus every committed size and digest. Resume repeats those checks rather than trusting a listing, ETag, or an operator resolution claim. Pause waits for in-flight deletion under the stable execution lock; startup and stale jobs cannot reuse earlier authorization.
+
+Synthetic probes use their own durable encrypted journal because a failed configuration transaction must not erase cleanup authority. Their generated keys contain no user bodies, so exact tracked probe cleanup remains separate from the document restore gate. Neither probe nor document reconciliation promises deletion by a fixed deadline: both require scheduling, reachable storage, and usable credentials. Recovery needs paired database and bucket backups, the probe journal, and the encryption key; metadata alone cannot recreate body bytes.

@@ -719,36 +719,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0197-native-project-documents-with-private-s3-storage.md",
-            "title": "Native Project Documents with private S3 storage",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/e2e",
-                "apps/gateway",
-                "apps/web",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Extension",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Project Documents",
-                "Subtask",
-                "Task",
-                "Task workspace",
-                "Tool"
-            ],
-            "governing_adrs": [
-                "0197"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -794,8 +764,7 @@
                 "0182",
                 "0190",
                 "0191",
-                "0196",
-                "0197"
+                "0196"
             ]
         },
         {
@@ -1857,9 +1826,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0197"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/projects.md",
