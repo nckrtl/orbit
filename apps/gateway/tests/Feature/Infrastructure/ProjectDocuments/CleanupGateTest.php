@@ -194,7 +194,10 @@ describe('local cleanup commands and storage status', function (): void {
         expect($storage['cleanup_state'])->toBe('paused');
         expect($storage['cleanup_generation'])->toBe($paused['cleanup_generation']);
         expect($storage['reconciliation_report_id'])->toBeNull();
-        expect(Artisan::all())->not->toHaveKeys(['project-documents:cleanup:resume', 'project-documents:cleanup:work', 'project-documents:cleanup:reconcile']);
+        expect(Artisan::all())->not->toHaveKey('project-documents:cleanup:work');
+        expect(Artisan::call('project-documents:cleanup:resume'))->toBe(2);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error_code'])->toBe('project_documents.cleanup_input_invalid');
+        expect($gate->status()->state)->toBe('paused');
     });
 
     it('returns a sanitized nonzero status for unreadable state without reporting running', function (): void {

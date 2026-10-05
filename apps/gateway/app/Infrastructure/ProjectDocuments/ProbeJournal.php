@@ -93,6 +93,35 @@ final readonly class ProbeJournal
         $statement->closeCursor();
     }
 
+    /**
+     * Read only; inventory must not create or modify the probe journal.
+     *
+     * @return list<string>
+     */
+    public function inventoryKeys(ProjectDocumentStorage $storage): array
+    {
+        $directory = config()->string('orbit.home').'/project-document-probes';
+        $path = $directory.'/journal.sqlite';
+        clearstatcache();
+        if (@lstat($directory) === false) {
+            return [];
+        }
+        foreach ([$directory, $path] as $item) {
+            $stat = @lstat($item);
+            $isDirectory = $item === $directory;
+            if ($stat === false || $stat['uid'] !== posix_geteuid()
+                || ($stat['mode'] & 0170000) !== ($isDirectory ? 0040000 : 0100000)
+                || ($stat['mode'] & 07777) !== ($isDirectory ? 0700 : 0600)) {
+                throw $this->unavailable();
+            }
+        }
+        $database = new PDO('sqlite:file:'.$path.'?mode=ro', options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+        $statement = $database->prepare('SELECT id FROM probes WHERE endpoint = ? AND region = ? AND bucket = ? ORDER BY id');
+        $statement->execute([$storage->endpoint, $storage->region, $storage->bucket]);
+
+        return array_values(array_map(fn (mixed $id): string => 'orbit-document-probes/'.(is_string($id) ? $id : throw $this->unavailable()), $statement->fetchAll(PDO::FETCH_COLUMN)));
+    }
+
     private function database(): PDO
     {
         $directory = config()->string('orbit.home').'/project-document-probes';

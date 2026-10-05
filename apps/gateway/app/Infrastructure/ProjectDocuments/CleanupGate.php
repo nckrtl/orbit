@@ -78,6 +78,53 @@ final readonly class CleanupGate
         });
     }
 
+    /**
+     * Clear earlier eligibility before scanning. The callback publishes its report before returning a binding.
+     *
+     * @param  Closure(string): ?array{id: string, sha256: string}  $scan
+     */
+    public function reconcile(Closure $scan): void
+    {
+        $this->locked(function () use ($scan): void {
+            $state = $this->pausedState();
+            $state['report_id'] = null;
+            $state['report_sha256'] = null;
+            $this->writeState('generation.json', $state);
+            $binding = $scan($state['generation']);
+            if ($binding !== null) {
+                if (preg_match('/\A[a-f0-9]{64}\z/D', $binding['id']) !== 1 || preg_match('/\A[a-f0-9]{64}\z/D', $binding['sha256']) !== 1) {
+                    throw $this->unavailable();
+                }
+                $state['report_id'] = $binding['id'];
+                $state['report_sha256'] = $binding['sha256'];
+                $this->writeState('generation.json', $state);
+            }
+        });
+    }
+
+    /** @param Closure(string, string): void $verify */
+    public function resume(string $id, Closure $verify): void
+    {
+        $this->locked(function () use ($id, $verify): void {
+            $state = $this->pausedState();
+            if (preg_match('/\A[a-f0-9]{64}\z/D', $id) !== 1 || $state['report_id'] !== $id || $state['report_sha256'] === null) {
+                throw new ResourceOperationException('project_documents.cleanup_report_invalid', 'Reconcile again before resuming.', 409);
+            }
+            $verify($state['generation'], $state['report_sha256']);
+            $this->writeState('permit.json', $state);
+        });
+    }
+
+    /** @return array{schema_version: int, generation: string, report_id: ?string, report_sha256: ?string, lock_device: int, lock_inode: int} */
+    private function pausedState(): array
+    {
+        if ($this->readStatus()->state !== 'paused') {
+            throw new ResourceOperationException('project_documents.cleanup_not_paused', 'Pause cleanup before recovery.', 409);
+        }
+
+        return $this->readState($this->directory().'/generation.json');
+    }
+
     private function directory(): string
     {
         return rtrim(config()->string('orbit.document_cleanup_runtime'), '/');
@@ -211,7 +258,14 @@ final readonly class CleanupGate
 
     private function writeGeneration(string $generation): void
     {
-        $path = $this->directory().'/generation.json';
+        $lock = $this->validatePath($this->directory().'/execution.lock', false);
+        $this->writeState('generation.json', ['schema_version' => 1, 'generation' => $generation, 'report_id' => null, 'report_sha256' => null, 'lock_device' => $lock['dev'], 'lock_inode' => $lock['ino']]);
+    }
+
+    /** @param array<string, int|string|null> $state */
+    private function writeState(string $name, array $state): void
+    {
+        $path = $this->directory().'/'.$name;
         if ($this->exists($path)) {
             $this->validatePath($path, false);
         }
@@ -221,8 +275,7 @@ final readonly class CleanupGate
             throw $this->unavailable();
         }
         try {
-            $lock = $this->validatePath($this->directory().'/execution.lock', false);
-            $bytes = json_encode(['schema_version' => 1, 'generation' => $generation, 'report_id' => null, 'report_sha256' => null, 'lock_device' => $lock['dev'], 'lock_inode' => $lock['ino']], JSON_THROW_ON_ERROR);
+            $bytes = json_encode($state, JSON_THROW_ON_ERROR);
             if (! @chmod($temporary, 0600) || @fwrite($handle, $bytes) !== strlen($bytes)
                 || ! @fflush($handle) || ! @fsync($handle) || ! @rename($temporary, $path)) {
                 throw $this->unavailable();
