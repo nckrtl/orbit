@@ -61,7 +61,7 @@ The Gateway observes each Node once over SSH before it runs the family probes. T
 
 A failed SSH command makes the Node unreachable, and the `node` family reports `node.ssh_unreachable`. A malformed or truncated observation makes the `node` family report `node.inspection_failed` instead. In both cases the other families treat the Node as unreachable. Database-only checks still run: Node and role lifecycle, role conflicts, Route status, and database connections. Each other family with resources on that Node reports one `*.node_unreachable` issue instead of its checks. The `role` family does this only when the Node has an active role. The `route` family does this only when the Node serves a custom proxy Route. The tool family does this only when the Node has a Tool row. An unreachable Node does not run the inventory scan, so it has no `tool.inventory_scan` issue. With no Tool rows the tool family reports nothing.
 
-For a nested Laravel root such as `apps/site/public`, Doctor uses the same [application directory](/reference/projects#application-directory) as the runtime. It checks that app's environment, cached APP_URL, PHP-FPM working directory, and production release `.env` link; Git identity and checkout-layout checks still cover the whole repository. Doctor does not infer a different app directory from discovered files.
+For a nested app with path `apps/site`, Doctor uses the same effective [application directory](/reference/projects#application-directory) as the runtime. It checks that app's environment, cached APP_URL, PHP-FPM working directory, and production release `.env` link where applicable; Git identity and checkout-layout checks still cover the whole repository. Doctor does not infer a different app directory from discovered files.
 
 Repository probes pass `-c core.hooksPath=/dev/null` and `-c core.fsmonitor=false` to Git. Doctor does not use a checkout's hooks or custom filesystem monitor while checking repository identity and source metadata. It leaves the stored Git configuration unchanged.
 
@@ -78,6 +78,14 @@ Each issue carries a stable code, a kind of `informational`, `drift`, or `unveri
 A family with no issues, or only informational issues, is `healthy`. A family with a drift issue and no unverifiable issue is `drift`. Any unverifiable issue makes the family `unverifiable`. A Node is `healthy` when every selected family is `healthy`. The report is `healthy` when every Node is `healthy`. Health ignores informational issues.
 
 The report never contains raw output, commands, paths, URLs, branch names, repository origins, credentials, setting values, private keys, environment values, configuration contents, or exception text. A Route issue names the Route's domain as its resource name.
+
+### Named-app checks
+
+Doctor enumerates every effective app of each eligible Instance. It checks source-profile association and containment, the expected Route for each serving app, Caddy's composed document root, the app's certificate and DNS projection, selected PHP version, pool and socket association and working directory, environment projection and Laravel cached APP_URL. Non-serving packages and unrouted task workspaces require no serving Route or FPM pool. Existing single-app production Instances also retain their release-link and dedicated-runtime checks. A pool or environment that belongs to a sibling app is drift, not a valid observation for this app.
+
+App-scoped issues add `app` as the exact app name in API, SDK, CLI JSON and MCP reports; other issues have null `app`. The SDK property is `$app`. Human Resource cells include the Instance name and app name so repeated codes remain distinct. Existing `instance` issue codes and families remain; missing or shared pools use the existing association codes, wrong Route ownership uses `instance.route_association_mismatch`, and inaccessible observations use `instance.inspection_failed`. Process and Schedule findings retain their resource ID and also carry their stored app. There are no new named-app Doctor codes.
+
+Repository identity and checkout layout are checked once per Instance, not once per app. `checked` still counts persisted Instances, Processes, Schedules and Routes in their existing families, not app observations. App records are typed configuration owned by a Project, not a new Doctor resource family. Issues sort by resource ID, then app name, then code. The existing bounded-value and secret-redaction rules remain; app names may appear but paths, environment keys and values may not. A Route replacement or Instance-wide operation cannot make Doctor infer a primary Route from list order.
 
 ### Informational package discoveries
 

@@ -33,7 +33,9 @@ The request accepts no path, Cluster, Route, or Process input. The caller needs 
 
 ## Eligibility
 
-Both Nodes must be active Linux Nodes with an active `app-dev` role, and each must belong to an active Cluster. The two Clusters may differ. The Instance must be an active development Instance with one authoritative Route, and not in removal. The destination must be another Node that the Project does not [exclude](/reference/development-node-exclusions). No Schedule may target the Instance. Orbit checks before reserving and again under the Process admission lock immediately before cutover, so a Schedule created during a transfer also prevents cutover.
+Both Nodes must be active Linux Nodes with an active `app-dev` role, and each must belong to an active Cluster. The two Clusters may differ. The Instance must be active development and not in removal. Every serving app must have exactly one active authoritative single-target app Route; no app association may be in replacement or reconciliation. Non-serving packages and task workspaces whose recorded mode is unrouted require no app Routes. Orbit checks the whole effective app list, never an Instance-wide primary Route.
+
+The destination must be another Node that the Project does not [exclude](/reference/development-node-exclusions). No Schedule may target the Instance. Orbit checks before reserving and again under the Process admission lock immediately before cutover, so a Schedule created during a transfer also prevents cutover.
 
 The Gateway reserves `<destination-apps-root>/<project-slug>/<name>`. It refuses an occupied or unsafe path with `instance.destination_exists`. Retry with another `--name`. A name that another Instance of the Project uses returns `instance.identity_conflict`.
 
@@ -53,26 +55,32 @@ The Gateway stages the transfer archive on disk, not in a size-limited `/tmp`. A
 
 When the request selects a SQLite file, the checkout archive excludes that file and its `-wal` and `-shm` files. The SQLite step installs the consistent snapshot at the selected path, so the database contents come from the snapshot rather than an inconsistent archive copy.
 
-Stopping Processes before the final checkout copy prevents their writes from being missed. The `annotator` preset also transfers its private store at `/var/lib/orbit/annotator/instance-{id}`. Capture adds the store to the checkout archive under `.orbit/annotator`; destination runtime installation restores it outside the checkout and removes that staging directory. Pausing the source unit does not delete its store. Source cleanup deletes the old store only after cutover, so rollback can restart the source with its annotations. Apart from that managed store and the selected SQLite file, Orbit copies no other database or data path.
+Stopping all source Processes before the final checkout copy prevents their writes from being missed. Capture enumerates each app with an annotator and snapshots its owned `/var/lib/orbit/annotator/instance-{id}-{app}` store. Store archive identity is `(transfer_id, attempt, instance_id, app)`, separate from the checkout archive. It uses Gateway disk staging at `<transfer-staging>/<transfer-id>/<attempt>/annotator/<app>.tar`, not a shared `.orbit/annotator` directory in source code. Missing or foreign required stores return `instance.transfer_failed` before cutover. Apps without an annotator require no store archive.
 
-Orbit imports the source `.env` into the [stored environment](/reference/environment-variables). For a Laravel root of `apps/site/public`, that file is `<source-checkout>/apps/site/.env`; transfer closes its permissions and synchronizes the destination's `apps/site/.env`, not an unrelated repository-root file. Transfer copies the entire checkout, keeps the effective web root, relocates explicit Process working directories, and rebuilds derived Process environment-file paths from the destination [application directory](/reference/projects#application-directory). A key that is already stored keeps its stored value. An unreadable source `.env` refuses the transfer. If a failure occurs before cutover, Orbit removes environment keys imported by that transfer along with the other prepared destination state.
+Destination restoration stages each archive beside its final store as `instance-{id}-{app}.transfer-{transfer-id}-{attempt}`. It verifies the archive manifest, ownership and containment and refuses a foreign existing final or staging path with `instance.transfer_cleanup_conflict`. It journals each app's restored store before atomically publishing that store and installing its stopped unit. No sibling app's store is overwritten. Pausing the source leaves its stores intact. Source cleanup deletes each old owned store only after destination cutover and source proxy retirement. Apart from these stores and the selected SQLite file, transfer copies no other database or data path.
 
-Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. The destination gets its own [Vite port](/reference/assigned-vite-ports), and Orbit releases the source port after cleanup.
+Before cutover, rollback removes only this attempt's owned destination stores, staging paths and archive receipts, and then restores source Processes to their recorded state. A retry after rollback captures every app store afresh; it cannot replay an archive from before source Processes restarted. Lost cleanup responses verify the recorded identities before removal. After cutover, retry completes restoration verification and source cleanup from the journal without recapturing or deleting destination annotations. Gateway archives are released only after their owning attempt completes or rollback confirms source restoration.
 
-An assigned annotator port is reassigned under the destination Node lock at cutover. The source assignment stays in `annotation_port_assignments` until source Caddy retirement succeeds, including after a failed destination activation or interrupted cleanup. Another Instance cannot claim that port while the old proxy may still exist. Allocation skips both annotator and Agentation assignments on that Node. The destination units use the new port and Route domain, and the stored `ANNOTATOR_URL` placeholder stays unchanged. See [Annotator Process](/reference/agentation#annotator-process).
+Orbit imports each app's source `.env` into that app's [stored environment](/reference/environment-variables), preserving already stored values. With app path `apps/site`, it closes permissions on `<source-checkout>/apps/site/.env` and synchronizes the destination's corresponding file. Transfer copies the whole checkout and override map, relocates explicit Process working directories and rebuilds each app's derived runtime paths. A missing required or unreadable source environment file refuses transfer. Precutover failure removes only keys imported by that attempt, scoped by app, with the other prepared destination state.
+
+Transfer prepares all app Routes, pools, app-qualified certificates, preset runtime files and annotator stores before Instance-wide cutover. It reserves destination ports per app and retains every source reservation until source proxy retirement. Each app retains its Route provenance, source profile and Process/Schedule association. A rename of the transferred Instance recomputes all generated app domains but leaves explicit app domains unchanged; this transfer name input is not `instance:rename`. Failed transfer rolls back all prepared app projections before cutover and retries forward after cutover, using the existing transfer journal. It never adopts an app's certificate, runtime file or store from another Instance.
+
+Process records keep their IDs, definitions, and desired states. Orbit stops their source units, creates them on the destination, and leaves no duplicate. Each app gets a destination [Vite port](/reference/assigned-vite-ports), and every source assignment remains reserved until its proxy and runtime cleanup are confirmed.
+
+Preparation reserves each app's destination Agentation and annotator ports under the destination Node lock, before activating its runtime. Allocation excludes all Vite, Agentation and annotator reservations on that Node, including another kind on the same Instance/app pair and retained transfer or withdrawal reservations. Source assignments remain reserved until source Caddy retirement succeeds, including interrupted cleanup. Destination units use their own app's reserved port and authoritative domain; stored endpoint placeholders stay unchanged. Retrying the same attempt reuses its recorded destination reservations; prepublication rollback releases only that attempt's prepared destination reservations. See [Annotator Process](/reference/agentation#annotator-process).
 
 ## Route
 
 An explicit domain keeps its Route. The Route moves to the destination Node and Cluster.
 
-A generated domain uses the destination Cluster TLD: `<project-slug>.<tld>` for `default`, and `<name>.<project-slug>.<tld>` otherwise. When that domain is the same, the Route keeps its ID. When it changes, Orbit creates a replacement Route and releases the old domain after cleanup. A domain that another Route owns returns `route.domain_conflict`.
+Every generated app domain uses the destination Cluster TLD: `<app>.<project-slug>.<tld>` for `default`, and `<app>.<name>.<project-slug>.<tld>` otherwise. For app `web` of Project `drift`, these are `web.drift.test` and `web.main.drift.test` on Instance `main` with TLD `test`. Preflight validates every proposed domain before preparing any replacement. When that domain is the same, the Route keeps its ID. When it changes, Orbit creates a replacement Route and releases the old domain after cleanup. A domain that another Route owns returns `route.domain_conflict`.
 
 ## Failure and retry
 
 Cutover is the moment the destination becomes authoritative.
 
-- A failure before cutover restarts the source Processes and keeps the source Route.
-- It also deletes the destination checkout, the destination Vite port, and a replacement Route that is not active yet.
+- A failure before cutover restores source Processes to their recorded state and keeps every source app Route.
+- It removes the owned destination checkout, app stores, runtime files, all prepared endpoint reservations and every unpublished replacement app Route.
 - Keys imported into the stored environment are removed; keys that were already stored before the transfer remain.
 - After cutover, recovery only goes forward. Orbit never restarts the source. It finishes the Route, runtime, and cleanup without copying the source again.
 
@@ -88,7 +96,7 @@ If a Schedule targets the Instance before reservation or is added before cutover
 
 Orbit records the source Cluster's Router on the transfer before cutover, and cleanup uses that record.
 
-Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node, path, domain, and whether cleanup finished. It does not depend on an HTTP response from the application.
+Cleanup deletes the old checkout or worktree and its runtime files, certificates, and firewall rules on the old workload and Router. The result reports the destination Node and checkout path, all app domains in `app_runtime`, and whether cleanup finished. It does not depend on an HTTP response from the application.
 
 ## Failure codes
 
@@ -97,7 +105,7 @@ The Gateway returns these codes before or during a transfer.
 | Code | Cause |
 | --- | --- |
 | `instance.confirmation_required` | The call has no consent. |
-| `instance.lifecycle_conflict` | The Instance is not active, or its Route is not ready. |
+| `instance.lifecycle_conflict` | The Instance is not active, or a required app Route is missing, not active, shared or reconciling. |
 | `schedule.target_in_use` | A Schedule targets the Instance. Remove it or retarget it away from the Instance before trying the transfer again. |
 | `instance.production_refused` | The Instance is a production Instance. |
 | `instance.removal_conflict` | The Instance is being removed. |
@@ -112,7 +120,7 @@ The Gateway returns these codes before or during a transfer.
 | `instance.transfer_retry_conflict` | A different request tried to resume an open transfer. |
 | `instance.transfer_failed` | The transfer failed before cutover and the source is authoritative. |
 | `instance.transfer_cleanup_incomplete` | The destination is authoritative, and cleanup needs the identical retry. |
-| `instance.transfer_source_router_unknown` | The source Route has no Router, so Orbit cannot record one for the transfer. |
+| `instance.transfer_source_router_unknown` | A required source app Route has no Router that Orbit can record for cleanup. |
 | `instance.transfer_cleanup_conflict` | The recorded placement or Route changed, so cleanup stops. |
 | `instance.clone_sqlite_unconfirmed` | Orbit cannot confirm the SQLite copy. Retry. |
 | `sqlite.seed_preflight_failed`, `sqlite.seed_transfer_failed`, `sqlite.seed_failed` | The SQLite snapshot failed its checks, its copy, or its install. |

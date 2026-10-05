@@ -297,7 +297,7 @@ The Instance root is the Node's [apps root](/reference/node-settings#derive-the-
 
 The Instance root and each checkout must stay world-traversable, mode `0755` as Orbit creates them. Otherwise the agent leaves the checkout out. Orbit removes the world bits from an Instance `.env` when it configures the Laravel URL, after registration or transfer, and on each agent converge. Agent converge independently closes environment permissions for the Instances under the Node's apps root; it does not rely on registration or transfer having run.
 
-For Laravel, it uses the shared [application directory](/reference/projects#application-directory): root `apps/site/public` means `<checkout>/apps/site/.env`, not only `<checkout>/.env`. Root `public` and non-Laravel Instances keep the checkout-root path. It closes only regular environment files, without following symlinks or discovering apps by scanning the repository. A converge that cannot close a `.env` logs a warning and continues.
+For every configured app, it uses the shared [application directory](/reference/projects#application-directory): app path `apps/site` means `<checkout>/apps/site/.env`, while `.` selects the checkout root. It closes each app's regular environment files without following symlinks or discovering apps by scanning the repository. A converge that cannot close a `.env` logs a warning and continues.
 
 The Gateway converges the agent at these points.
 

@@ -65,11 +65,11 @@ The same sweep deletes `vendor` and `node_modules` when all of these are true:
 - No checkout file outside `vendor`, `node_modules`, and `.git` changed in that window.
 - No desired-running Process has `keep_alive`.
 
-For a Laravel Instance, dependency inspection, pruning, and restoration use its [application directory](/reference/projects#application-directory). Root `apps/site/public` means `apps/site/vendor` and `apps/site/node_modules` inside the checkout; Composer and Vite+ install commands run in `apps/site`. Root `public` and non-Laravel Instances keep checkout-root dependency paths. Hibernation does not prune sibling dependency trees. Source activity still covers the whole checkout, so edits outside the application directory also prevent pruning.
+Dependency inspection, pruning and restoration enumerate every effective app's [application directory](/reference/projects#application-directory), for every type. App path `apps/site` means `apps/site/vendor` and `apps/site/node_modules`; install commands run in that app's directory. App path `.` selects the checkout root. Orbit does not prune unrelated directories outside configured apps. Source activity covers the whole checkout, so edits in any app or elsewhere prevent pruning of the whole Instance.
 
 Orbit deletes `vendor` only next to `composer.json` and `composer.lock`. It deletes `node_modules` only next to `package.json` and exactly one JavaScript lockfile. It never follows a symlink and keeps every lockfile. Then it writes the cold marker. The [dependency inventory](/reference/instance-dependencies) stays, because it reads lockfiles.
 
-The `annotator` preset also sleeps with its Instance and refuses keep-alive. Creating a stopped annotator or removing it rewrites the systemd units of its siblings without activation, so desired-running sleeping workers and Vite stay stopped and cold dependencies are not restored. Its port and store survive hibernation. Wake waits for `/health` on its assigned loopback port; a timeout reports `hibernation.annotator_not_ready`.
+The `annotator` preset also sleeps with its Instance and refuses keep-alive. Creating a stopped annotator or removing it rewrites the systemd units of its siblings within that app without activation, so desired-running sleeping workers and Vite stay stopped and cold dependencies are not restored. Its port and store survive hibernation. Wake enumerates every app's desired-running annotator and waits for `/health` on each assigned loopback port; a timeout reports `hibernation.annotator_not_ready`.
 
 ## Wake
 

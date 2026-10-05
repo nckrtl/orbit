@@ -25,6 +25,7 @@ The Schedule UUID is its public identity. It is also the only value that names t
 | --- | --- |
 | `id` | An immutable UUID. |
 | `target_type`, `target_id` | Exactly one `node` or `instance` target. |
+| `app` | Stored app name for an Instance target; null for a Node target. Omission on create selects the sole app, never the first of several. |
 | `name` | Unique within the target. 1 through 63 lowercase ASCII letters or digits, with hyphens only between them. |
 | `calendar` | One printable ASCII line of at most 255 bytes. The host Node's `systemd-analyze calendar` must accept it. |
 | `command` | One non-empty UTF-8 line of at most 4,096 bytes, without NUL, carriage return, or line feed. |
@@ -56,7 +57,7 @@ Each operation except Complete records one Activity entry. The entry names the S
 
 ## Execution context
 
-The caller picks only the target. The Gateway derives the host Node, the user, the working directory, and the shell from the target's placement.
+The caller picks the target and, for an Instance, its app. API and MCP use `app`, the CLI uses `--app=NAME`, and SDK requests and response DTOs use `$app`. Several apps with no selector return `app.required`; an unknown name returns `app.not_found`; a Node target with a selector returns `app.selector_unsupported` (all HTTP 422). Definition and copy selectors follow [App target](/reference/processes-and-schedules#app-target). The Gateway derives the host Node, user and shell from placement and the working directory from the selected app's effective path.
 
 | Target | User | Working directory | Shell |
 | --- | --- | --- | --- |
@@ -64,7 +65,7 @@ The caller picks only the target. The Gateway derives the host Node, the user, t
 | Instance on `app-dev` | The Node's managed user | The Instance's application directory in its checkout | The user's login shell, with `-lc` |
 | Instance on `app-prod` | The Instance's production user | The Instance's application directory under `<production-home>/current` | `/bin/bash -c`, without a login |
 
-For Laravel, the [application directory](/reference/projects#application-directory) is the effective web root without its trailing `/public`. With root `apps/site/public`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` on `app-prod`, so `php artisan schedule:run` finds that app's `artisan` and `.env`. Root `public` keeps the checkout or release root. Node Schedule working directories do not change. Instances that are not Laravel apps keep their checkout or release root.
+The selected app's [application directory](/reference/projects#application-directory) is its effective `path`. With app path `apps/site`, a Schedule runs in `<checkout>/apps/site` on `app-dev` or `<production-home>/current/apps/site` in supported single-app production, so `php artisan schedule:run` finds that app's `artisan` and `.env`. App path `.` keeps the checkout or release root. Node Schedule working directories do not change. Multi-app production preparation is refused before installing copies; each copied definition retains its stored app.
 
 The target Node must be an active Linux Node with a WireGuard address. An Instance target must be active. A production Schedule resolves `current` each time it runs, so a new release changes later runs. A production Instance needs a selected release before it can install a Schedule, even with a disabled timer.
 

@@ -33,9 +33,9 @@ A clone leaves the home prepared, with no `current` link. The application must p
 
 The Gateway lists retained releases as the production user from a directory that user can access. A private SSH home does not prevent reading the first clone's empty selection. Failed scans and invalid release receipts still stop the operation.
 
-The web root is the Instance root, or else the Project root, inside `current`. A root such as `public` serves `<home>/current/public`. A nested root such as `apps/site/public` serves `<home>/current/apps/site/public`; its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). Root `public` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
+The sole production app's effective path and web root compose inside `current`. Path `.` and web root `public` serve `<home>/current/public`; path `apps/site` and web root `public` serve `<home>/current/apps/site/public`. Its [application directory](/reference/projects#application-directory) is `<home>/current/apps/site`. The release's `apps/site/.env` links to `<home>/.env`, with a relative target calculated from that depth (in this example, `../../../../.env`). App path `.` keeps the release-root `.env` link with target `../../.env`. Caddy resolves the `current` link before it passes a script path to PHP-FPM, so a request after a switch loads its PHP files from the new release.
 
-With root `server/web/public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing, rollback validation, and [Doctor](/cli/doctor) check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
+With app path `server/web` and web root `public`, both the initial clone and later releases link `server/web/.env` with target `../../../../.env`. Orbit does not create a second link at the release root. Release selection, retained-release listing, rollback validation, and [Doctor](/cli/doctor) check the link in that same application directory. Source classification reads that directory's `composer.json` and `artisan`, while ownership and Git identity checks still cover the whole release.
 
 ## Development defaults
 
@@ -51,7 +51,7 @@ The existing checkout directory is the release home. Its `.git` repository stays
 
 Orbit writes ownership receipts before creating layout directories, registering releases, or staging `current`. A retry can complete those interrupted operations after validating the receipts and Git registration. It refuses foreign or ambiguous paths instead of adopting or deleting them.
 
-A visitable default serves its Project or Instance web root through `current` after migration; a default without a Route is still deployed. Before switching a visitable default, Orbit validates the candidate's web root and grants Caddy access, so a request does not wait for permissions to catch up with the new link. The shared Git directory stays private even when it is outside the selected worktree; its access changes use the same recovery snapshot.
+A visitable default serves every app's effective web root through `current`; an unrouted default is still deployed. Before switching, Orbit validates all serving app paths and web roots, stages every app's environment files at their corresponding paths, and grants Caddy access, so a request does not wait for permissions to catch up with the new link. The shared Git directory stays private even when it is outside the selected worktree; its access changes use the same recovery snapshot.
 
 A candidate starts at the current release's commit. Orbit reflinks its files with `cp --reflink=always`, excluding worktree metadata, then resets tracked code to the newest default-branch commit. This carries dependency and cache folders at any depth without framework-specific folder names. Internal absolute symlinks become relative links in the copy; links outside the release are refused. Releases must share a filesystem that supports reflinks; Orbit refuses a copy fallback. No candidate writes into the live release. Project development deploy steps run in list order in the candidate directory.
 
@@ -65,7 +65,7 @@ A failed candidate is removed without changing `current`. Cleanup never prunes t
 
 ## Deploy steps
 
-All development and production deploy steps run at the release's repository root, not at a nested application's directory. For root `apps/site/public`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.
+All development and production deploy steps run at the release's repository root, not at a nested application's directory. For app path `apps/site`, an Artisan step must say `cd apps/site && php artisan migrate --force`. Changing the web root does not change the scope of a repository-owned command.
 
 A deploy step is a named command that runs during a deployment. Each production Instance stores its own steps. A Project stores a separate ordered development deploy list, shared by its development deployments and independent of setup and teardown. Storing a step does not start a deployment.
 
@@ -130,7 +130,7 @@ The Gateway flushes output while a command runs. Before each phase event, it wri
 A deployment reads the branch and the steps once, when it starts. Then it runs these phases in order.
 
 1. **Source preparation.** The Gateway clones the repository into a new release as the production user and checks out the latest commit of the branch. A branch that moves later does not change this release.
-2. **Environment sync.** The Gateway writes the stored configuration into `<home>/.env`, as [synchronization](/reference/environment-variables#synchronize) does. This needs exactly one Route on the Instance. An Instance without a Route fails here with `env.owner_unavailable`.
+2. **Environment sync.** The Gateway synchronizes the sole production app's configuration into `<home>/.env`. [Synchronization](/reference/environment-variables#synchronize) requires that app's authoritative Route for stored domain placeholders. An unavailable required Route returns `env.reference_unavailable`.
 3. **Before activation.** The Gateway runs each `before_activation` step in order, from the new release, as the production user, with a non-interactive shell.
 4. **Activation.** The Gateway replaces `current` atomically with a link to the new release.
 5. **PHP refresh.** The Gateway reconciles and confirms the dedicated FPM runtime, then resets that service's OPcache and waits for completion.

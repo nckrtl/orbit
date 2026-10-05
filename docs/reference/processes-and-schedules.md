@@ -32,6 +32,16 @@ Instance Processes, Docker Processes, presets, and Project definitions reject `u
 
 `process:create` and `process:list` take exactly one owner: `--instance`, `--node`, or `--project` for a definition. The API sends `target_type` as `instance` or `node` with a positive `target_id`. Start, stop, restart, logs, and destroy take the Process ID and use that record's owner.
 
+## App target
+
+An Instance Process, Instance Schedule, Process definition or Schedule definition stores one app name. API and MCP use top-level `app`; CLI create and definition create/update use `--app=NAME`; PHP SDK requests and response DTOs use `$app`. Lists expose the stored `app` and accept an optional app filter. An omitted create selector resolves and stores the sole app of the Project. Several apps return `app.required` (422); an unknown app returns `app.not_found` (422). A null selector is invalid, not omitted. A Node-owned Process or Schedule stores null and rejects a supplied selector with `app.selector_unsupported` (422). Definitions validate against the owning Project's app list and copy the stored selector to production records.
+
+The app is part of the immutable create specification. An identical retry with another app returns existing `process.name_taken` or `schedule.retry_conflict` (409). Names remain unique within the existing owner and kind, not per app. Start, stop, restart, run, logs and removal by resource ID derive the app from that record and accept no selector override. Migration assigns `web` to existing Instance-owned records and definitions; Records owned by Nodes retain null app. App removal is refused while these references exist.
+
+Default Instance working directories and environment files use the selected app's effective path for every type. Explicit Process working directories still override the default; Docker keeps `/app`. Presets resolve their working directory, derived origins, certificate identity and assigned ports from the same selected app. Vite and Agentation endpoint ports are unique per Instance/app pair on the Node; an endpoint is exposed only on that app's Route. Creating an annotator or Agentation Process updates stored keys and sibling systemd projections only within its app.
+
+Instance-wide lifecycle and hibernation still operate on all apps under the shared Instance lock. No consumer selects the first Route.
+
 ## Runtimes
 
 A Process uses one of two runtimes. Each runtime takes a complete specification.
@@ -47,11 +57,11 @@ The systemd unit is `orbit-process-{id}-{name}.service`, and the Docker containe
 
 ## Environment of a systemd Process
 
-The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads the Instance's `.env` file: in the [application directory](/reference/projects#application-directory) of the checkout on `app-dev`, or in the production home on `app-prod`. With root `apps/site/public`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. Root `public` keeps the checkout or release root. An explicit working directory overrides this default; Docker's `/app` default and Node Process defaults stay unchanged. Instances that are not Laravel apps keep their checkout or release root as the default working directory.
+The unit sets `PATH` and `NODE_USE_SYSTEM_CA=1`. An Instance Process then reads its selected app's `.env` file: in that app's [application directory](/reference/projects#application-directory) on `app-dev`, or in the production home for supported single-app production. With app path `apps/site`, the default working directory is `<checkout>/apps/site` in development or `<production-home>/current/apps/site` in production. App path `.` keeps the checkout or release root. An explicit working directory overrides this default; Docker's `/app` default and Node Process defaults stay unchanged.
 
 A Process can also store an environment map in its specification. The unit receives each pair as an `Environment=` directive, never on `ExecStart`. The unit file under `/etc/systemd/system` is written with mode `0644`, so these values sit in plain text that every local user on the Node can read. For the proxycli collector that includes its management key and tokens. WireGuard membership and Node access are the security boundary. Gateway-owned features store such a map, for example the [proxycli](/reference/proxycli) collector. The public create API does not accept one for systemd. The derived keys always win: `PATH`, `NODE_USE_SYSTEM_CA`, `VITE_DEV_SERVER_CERT`, `VITE_DEV_SERVER_KEY`, the `ORBIT_DEV_SERVER_*` keys, and the Agentation keys.
 
-A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of the Instance's certificate files under `~/.orbit/certificates/app-instance-{id}/current/`. The `vp-dev` preset does not receive them. When the Instance has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives the Agentation keys when it has an Agentation port. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
+A development Process also receives `VITE_DEV_SERVER_CERT` and `VITE_DEV_SERVER_KEY`, the paths of its app's certificate files under `~/.orbit/certificates/app-instance-{id}-app-{app}/current/`. The `vp-dev` preset does not receive them. When its selected app has a Route, it receives `ORBIT_DEV_SERVER_ORIGIN`, `ORBIT_DEV_SERVER_HOST`, and `ORBIT_DEV_SERVER_PATH` for the [development-server endpoint](/reference/routes#development-server-endpoint), and `ORBIT_DEV_SERVER_PORT` only when `vite_port` is assigned. It also receives the Agentation keys when it has an Agentation port. These derived values are not secret. The unit carries them both as `Environment=` directives and on `ExecStart` through `/usr/bin/env`.
 
 ## Presets
 
@@ -110,7 +120,7 @@ Systemd replacement installs a checked candidate unit and restores the earlier u
 
 ## Project definitions
 
-A Project holds Process definitions and Schedule definitions. A definition has a UUID, a name that is unique within the Project and kind, an `environments` list, and a `spec`.
+A Project holds Process definitions and Schedule definitions. A definition has a UUID, a name that is unique within the Project and kind, an `app` selector, an `environments` list, and a `spec`. The app is a top-level field, not hidden inside `spec`.
 
 | Field | Contract |
 | --- | --- |

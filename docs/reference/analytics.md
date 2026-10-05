@@ -101,15 +101,33 @@ A failure stops convergence at the `clickhouse-config` step, before Plausible ru
 
 `orbit node:role:remove NODE analytics` removes the `plausible` Process, the Caddy site, the certificate, the DNS record, and the role's firewall rules. It deletes the stored `SECRET_KEY_BASE` and the role settings. It never touches the two databases or their Processes. Remove those Processes yourself to remove the data. Orbit does not back up or prune Plausible's event data. Removal fails with `analytics.tracking_hosts_exist` while any Instance has a tracking host.
 
+## Single-app boundary
+
+Tracking and stats remain single-app only in this group. Enable, show and stats requests on a Project with several apps return `app.analytics_multi_app_unsupported` (HTTP 409) before deriving a domain or contacting Plausible. They accept no `app` selector: CLI/MCP schemas reject that option/argument and API requests with it return `validation.failed`. SDK analytics requests retain their Instance selector without `$app`. The sole app must have an authoritative Route; enable without it returns existing `analytics.domain_required`. There is no primary-app fallback.
+
+Adding a second Project app is refused with `app.analytics_multi_app_unsupported` while any of its Instances owns a tracking host. Removing the tracked app's name is refused with `project.app_in_use`, even when the replacement list still has one app. Disable tracking on every affected Instance before changing the app list.
+
+Disable is always allowed as cleanup, including a multi-app Instance with inconsistent stored tracking. It removes recorded hosts without resolving an app domain or selecting a Plausible site. It clears the stored app binding only after every tracking Route is withdrawn and deleted. Incomplete disable retains its binding and host records for identical retry; those records still block adding a second app.
+
+### Migration and domain changes
+
+Stored tracking configuration associates an Instance with its sole app name. Migration records `web` on existing tracking configurations, preserving tracking Route IDs, host names, publication, scope and credentials. `analytics_tracking` Route `app` remains null because it is not an application target Route; its owning Instance's tracking configuration supplies the app association. Analytics enable/show responses add `app` as the sole name; SDK `InstanceAnalyticsResponse` exposes `$app` and emits `app`. Disable returns that name for a sole app and null during multi-app cleanup. Analytics-specific `domain` is derived from `app_runtime[app].domain`, not a removed scalar Instance field.
+
+Migration or a change to the sole app's domain updates the returned CNAME targets, snippet `data-domain` and stats site selection to that app's new authoritative domain. Existing tracking hosts remain explicit and keep their names. Orbit does not rename or copy sites or recorded events in Plausible. The operator must create the site for the new domain, update external CNAMEs and replace the snippet; until that site exists, stats return `analytics.stats_site_missing`, never another site's counts. An unchanged explicit app domain needs no new Plausible site. Tracking placement follows that app's Route replacement checkpoints and never a first Route.
+
+### Web behavior
+
+The web app shows tracking controls and the stats panel only for single-app Projects. For multiple apps it displays the unsupported-analytics explanation, makes no stats read and offers no enable control. If inconsistent stored hosts exist, it still offers Disable and calls only cleanup. The app editor displays the same adding-second-app guard and requires tracking to be disabled first. A race or stale view displays the API's 409 code rather than selecting an app automatically.
+
 ## Publish a tracking host
 
 A tracking host is a Route of kind `analytics_tracking` that belongs to one Instance. It proxies only Plausible's script and event paths.
 
-`orbit instance:analytics:enable INSTANCE` publishes `analytics.<instance domain>`. The analytics role must be active (`analytics.role_missing`). The Instance must already serve a domain (`analytics.domain_required`). `--host=HOST` names another host. You can repeat it up to ten times. The command sets the exact host set, so it removes a host that you leave out. A host that another Route owns fails with `analytics.host_taken`.
+`orbit instance:analytics:enable INSTANCE` publishes `analytics.<sole-app-domain>`. The analytics role must be active (`analytics.role_missing`). Its sole app must already have an authoritative domain (`analytics.domain_required`). `--host=HOST` names another host. You can repeat it up to ten times. The command sets the exact host set, so it removes a host that you leave out. A host that another Route owns fails with `analytics.host_taken`.
 
-A tracking Route copies the Node, Cluster, and publication of the Instance's own Route when you create it.
+A tracking Route copies the Node, Cluster and publication of the sole app's authoritative Route when created.
 
-| The Instance's Route | Who serves the tracking host |
+| The sole app's Route | Who serves the tracking host |
 | --- | --- |
 | Node-scoped | The Instance's own Node, behind whatever edge fronts that Node. |
 | Cluster-scoped and private | The Cluster's Router. |
@@ -129,13 +147,13 @@ The host answers two paths and nothing else:
 
 The serving Node reaches Plausible over WireGuard. While the analytics role converges, the host keeps its Caddy site and its private DNS record. A tracking Route has no target and no upstream of its own. `route:update`, `route:target:set`, and `route:target:unset` refuse it with `route.kind_unsupported`, and `route:create` cannot create one. `route:destroy` refuses direct removal with `route.tracking_managed`; disable analytics on the Instance instead. If the Route kind is not valid for the analytics removal path, the Gateway returns `route.kind_invalid`.
 
-`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. So the record is a `CNAME` from the tracking host to the Instance's own domain. The answer also carries the script tag for the first host. Its `data-domain` is the Instance's own domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the Project.
+`orbit instance:analytics:show INSTANCE` returns each host with its Route, script URL, event URL, and the DNS record to create. The Gateway knows no public address. The record is a `CNAME` from the tracking host to the sole app's authoritative domain. The answer carries the script tag for the first tracking host, not a first application Route; its `data-domain` is that same sole app domain. `orbit instance:analytics:disable INSTANCE` removes the hosts. You still create the site in Plausible and add the script tag to the Project.
 
 An Instance with a tracking host cannot be removed (`analytics.tracking_hosts_exist`). Disable its analytics first.
 
 ## Instance page panel
 
-The Orbit web Instance page shows live visitors, visitors for Plausible's day, 7 days, and 30 days, and the top ten pages. It shows the panel when the analytics role is active and the Instance has a tracking host. The Plausible site is the Instance's own domain. When the Gateway cannot read the Stats API, the panel says so and shows no counts. See [Instance analytics stats](/reference/instance-analytics-stats).
+The Orbit web Instance page shows live visitors, visitors for Plausible's day, 7 days, and 30 days, and the top ten pages. It shows the panel only for a single-app Project when the analytics role is active and the Instance has a tracking host. The Plausible site is that app's authoritative domain from `app_runtime`, not a scalar Instance domain. When the Gateway cannot read the Stats API, the panel says so and shows no counts. See [Instance analytics stats](/reference/instance-analytics-stats).
 
 ## Why it works this way
 
@@ -165,7 +183,7 @@ General path proxying on any Route is rejected, because nothing else needs it an
 
 ### A tracking host that mirrors the Instance's Route
 
-The fleet does not have to own its public edge. A tracking host mirrors the Instance's authoritative Route, including its scope and publication, so it works behind a CDN or another proxy without changing how the Instance is served. Always making tracking hosts public and Cluster-scoped is rejected, because it would demand an Ingress and a Cluster that the fleet does not otherwise need. A host under the Instance's own domain also keeps requests first-party, so content blockers that list Plausible's domains do not drop them.
+The fleet does not have to own its public edge. A tracking host mirrors the sole app's authoritative Route, including its scope and publication, so it works behind a CDN or another proxy without changing how the Instance is served. Always making tracking hosts public and Cluster-scoped is rejected, because it would demand an Ingress and a Cluster that the fleet does not otherwise need. A host under the sole app's domain also keeps requests first-party, so content blockers that list Plausible's domains do not drop them.
 
 ### The operator owns the Plausible site
 

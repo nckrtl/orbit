@@ -13,9 +13,9 @@ The Gateway keeps an inventory of the resolved dependencies of each Instance. It
 
 ## What the inventory holds
 
-The inventory belongs to one Instance. Two Instances of a Project can resolve different versions.
+The inventory belongs to one Instance/app pair. Two Instances of a Project, or two apps in an Instance, can resolve different versions.
 
-For a Laravel Instance, the dependency directory is its [application directory](/reference/projects#application-directory), not its web root. With root `apps/site/public`, a development scan reads `<checkout>/apps/site`, and a production scan reads `<home>/releases/<selected-release>/apps/site`. Root `public` keeps the checkout or release root. Non-Laravel Instances still read the repository root.
+For every type, the dependency directory is the selected app's effective [application directory](/reference/projects#application-directory), not its web root. With app path `apps/site`, a development scan reads `<checkout>/apps/site`, and a supported single-app production scan reads `<home>/releases/<selected-release>/apps/site`. App path `.` selects the checkout or release root.
 
 A scan reads only that directory; it does not combine manifests from the repository root or sibling apps. The response's `source.project_root` names the directory actually read. When the CLI selects by directory, it identifies the Instance, not an arbitrary dependency tree within it. Orbit reads only these files:
 
@@ -46,15 +46,33 @@ orbit instance:dependencies:scan --all
 | --- | --- |
 | none | The registered Instance whose checkout or production home holds the current directory, on the caller's Node. |
 | `--project=DOMAIN` | The one Instance behind that Route domain. It takes precedence over the directory. |
-| `--all` | Every Instance that `instance:list` returns, scanned one by one in list order. |
+| `--app=NAME` | Select one exact app within the resolved Instance. Required for directory selection on a multi-app Project; a Route domain supplies its own app. |
+| `--all` | Every accessible Instance, in list order, and every effective app within it in name order, including non-serving packages and unrouted workspaces. |
 
-No match or more than one match fails before any work, with `dependencies.target_not_found` or `dependencies.target_ambiguous`. `--all` with `--project` returns `dependencies.target_conflict`. An `--all` scan continues after a failed Instance, and Ctrl-C marks the rest as skipped.
+No match or more than one match fails before any work, with `dependencies.target_not_found` or `dependencies.target_ambiguous`. `--all` with `--project` or `--app` returns `dependencies.target_conflict` before any request. An `--all` scan continues after a failed app, including sibling apps. Ctrl-C marks all remaining app entries as skipped. Single-target omission selects the sole app or returns `app.required`; unknown app names return `app.not_found`, and disagreement with a Route domain returns `app.selector_conflict`.
 
-Human output shows each ecosystem's state, counts, and times. An unknown count shows as an em dash, and verified absence shows zero. `--json` returns the typed inventory, or for `--all`, a document with `succeeded`, `summary`, `instances`, and `request_id`. The exit status is zero only when every scanned ecosystem succeeds.
+Human output labels each Instance and app before its ecosystems, counts and times. An unknown count shows as an em dash, and verified absence shows zero. Single-target `--json` returns the [typed app inventory](/reference/instance-dependency-contracts#responses). `--all` returns exactly `succeeded`, `summary`, `instances`, and `request_id`, as shown below. Each `inventory` is that typed inventory or null if the request failed or was skipped; request failures carry the stable `error_code`. A successfully returned inventory with failed ecosystems has status `failed`, its inventory intact, and null aggregate error code.
+
+```json
+{
+  "succeeded": false,
+  "summary": {"instances":1,"apps":2,"scanned":0,"failed":1,"skipped":1},
+  "instances": [{
+    "instance_id":12,
+    "apps":[
+      {"app":"admin","status":"failed","error_code":"dependencies.source_unavailable","inventory":null},
+      {"app":"web","status":"skipped","error_code":null,"inventory":null}
+    ]
+  }],
+  "request_id":"request-correlation-id"
+}
+```
+
+`summary.instances` counts selected Instances; `apps` counts selected Instance/app pairs. `scanned` counts pairs whose ecosystems succeeded; `failed` counts pairs with a failed request or ecosystem; `skipped` counts cancelled pairs. These last three counts sum to `apps`. An empty selection succeeds with zero counts. `succeeded` and exit status zero require every selected app/ecosystem to succeed and no skips. API and MCP return an unaggregated response for each app; this aggregate is the CLI `--all` result, whose SDK inventories preserve their `app` identity.
 
 ## Refresh rules
 
-Each ecosystem keeps its last successful observation and its latest attempt, separately.
+Each Instance/app/ecosystem keeps its last successful observation and latest attempt separately. Migration assigns `web` to existing observations and attempt histories.
 
 | Condition | Result |
 | --- | --- |
@@ -79,7 +97,7 @@ orbit instance:dependencies:update
 orbit instance:dependencies:update --project=commander.test
 ```
 
-The Gateway runs these steps as the Node's user in the same dependency directory used by scans. For a Laravel root of `apps/site/public`, that is `<checkout>/apps/site`; presence checks, Composer, Vite+, and the final scan all use that directory. These commands do not update repository-root or sibling manifests. Unlike dependency updates, repository-owned setup, deploy, and task-check commands keep their [repository-root scope](/reference/projects#application-directory):
+The Gateway runs these steps as the Node's user in the same dependency directory used by scans. For app path `apps/site`, that is `<checkout>/apps/site`; presence checks, Composer, Vite+, and the final scan all use that directory. These commands do not update repository-root or sibling manifests. Unlike dependency updates, repository-owned setup, deploy, and task-check commands keep their [repository-root scope](/reference/projects#application-directory):
 
 1. It inspects both ecosystems. A refusal stops the whole update before any package command. See the refusals below.
 2. It runs `composer update --no-interaction --no-ansi --no-progress --no-audit` for a Composer project. Regular and development packages move within their constraints.
@@ -108,7 +126,7 @@ The CLI uses these Gateway routes. Each needs an [access grant](/cli/node) to th
 | `GET /api/v1/instances/resolve?domain=DOMAIN` | Find the Instance behind a Route domain. |
 | `GET /api/v1/instances/resolve-directory?directory=PATH` | Find the Instance that holds a directory on the caller's Node. |
 
-`POST` takes an empty JSON object. HTTP 200 means the operation ran, not that it succeeded. Check `succeeded`, each step's `status`, and each ecosystem's state.
+Reads accept `?app=NAME`; `POST` takes `{"app":"web"}` or an empty object for a single-app Project. The request targets only that app. SDK requests use `$app`, MCP uses `app`, and CLI uses `--app=NAME`. HTTP 200 means the operation ran, not that it succeeded. Check `succeeded`, each step's `status`, and each ecosystem's state.
 
 ## Nightly scan
 
@@ -128,9 +146,9 @@ Put the timezone in the calendar expression. Size the timeout for the fleet. A f
 
 These reasons explain the design. Check them before you propose a change.
 
-### Inventory per Instance
+### Inventory per Instance and app
 
-Instances of one Project can run different source. One version per Project or per package identity was rejected. Shared package identities still allow fleet-wide queries.
+Instances of one Project can run different source, and apps have independent manifests. One version per Project or per package identity was rejected. Shared package identities still allow fleet-wide queries.
 
 ### Lockfiles, not installed files
 

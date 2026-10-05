@@ -20,7 +20,7 @@ Every production Instance starts as a clone. The Gateway copies a candidate Inst
 
 ## Prepare the Node
 
-The destination Node needs its own TLD for the preview domain. Set it when you add the Node:
+A serving app's destination Node needs its own TLD for the preview domain; a package without a web root needs no TLD. Set it when you add the Node:
 
 ```bash
 orbit node:add production production.example --role=app-prod --tld=prod.orbit
@@ -40,11 +40,12 @@ The CLI calls `POST /api/v1/instances/{candidate}/clone`.
 | --- | --- |
 | `node_id` | Destination Node with an active `app-prod` role. Required. |
 | `name` | Name of the new Instance. Required. |
-| `preview_name` | Name that the preview domain starts with. Required. |
+| `app` | Exact candidate app name. Omission resolves the sole app; unknown names return `app.not_found`. A multi-app Project is refused before Node/source work. |
+| `preview_name` | Name that the sole serving app's preview domain starts with. Required when its web root is non-null; prohibited for a non-serving package. |
 | `branch` | Branch to deploy. It must exist in the repository. It defaults to the candidate's branch, or its deployment branch for a production candidate. |
 | `sqlite_source_path` | Absolute path to one SQLite database on the candidate. Optional. |
 
-The request accepts no Project, commit, Unix user, or path. The candidate decides the Project. Laravel-package Projects use their declared Project type for source classification; they do not need an `artisan` application to clone. The caller needs an [access grant](/cli/node) to both Nodes.
+The request accepts no Project, commit, Unix user, or path. The candidate decides the Project. Laravel-package apps use their declared app type for source classification; they do not need an `artisan` application to clone. The caller needs an [access grant](/cli/node) to both Nodes.
 
 The result names the new Instance, its branch, its preview domain, and its selected release, which is empty.
 
@@ -60,7 +61,7 @@ A checkout's hooks and custom filesystem monitor do not run during that check. T
 
 The destination must be an active Linux Node with an active `app-prod` role. The Project can have one production Instance per Node. In an active Cluster, the Cluster needs an active Router.
 
-Orbit inspects the destination checkout as its production user from a directory that user can access. A private SSH account home does not prevent source classification. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) derived from the effective web root; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
+Orbit inspects the destination checkout as its production user from a directory that user can access. A private SSH account home does not prevent source classification. For a nested Laravel app, classification uses `composer.json` and `artisan` in the [application directory](/reference/projects#application-directory) selected by the sole app's effective path; Git identity checks still use the complete repository. Foreign file ownership, unsafe source metadata, and failed directory scans still stop the clone.
 
 ## What the clone gets
 
@@ -72,13 +73,16 @@ The new Instance gets its own copy of each part below.
 | Environment | Every stored candidate value, encrypted again for the new Instance. Then Orbit sets `APP_ENV=production` and `APP_DEBUG=false`. You can change them later. |
 | Processes and Schedules | Copies of the Project's production [definitions](/reference/processes-and-schedules#production-copies), installed stopped. Candidate-specific Processes and Schedules do not copy. |
 | PHP | A [dedicated PHP-FPM service](/reference/php-runtime#production-runtime) with Orbit defaults, when the source uses PHP. |
-| Route | For `laravel-app`, one private preview Route. Other types get no Route. |
+| Route | One explicit private preview Route for the sole app with a non-null web root; no Route for a non-serving package. |
+| Apps | The Project's sole app and the candidate's recorded app override map. The app name remains unchanged; paths are not rediscovered. |
 
 Before the clone completes, Orbit renders the new Instance's stored values and writes its `.env` in the production home. The first deployment links that file from the release's application directory, including a nested path such as `apps/site/.env`. It copies no `.env` file from the candidate, and no cached configuration, dependencies, logs, caches, or PHP-FPM tuning. Stored values such as `APP_KEY` copy as they are. References such as `{{instance.domain}}` resolve against the new Instance.
 
 ## Preview domain
 
-The preview domain is `<preview-name>.<node-tld>`. For example, `shop.com` on a Node with TLD `prod.orbit` gives `shop.com.prod.orbit`. Orbit never uses the Cluster TLD here.
+Production cloning remains single-app only; a Project with several apps returns `app.production_multi_app_unsupported` (409) before candidate inspection, destination reservation or preview construction. The request for a serving sole app is, for example, `{"node_id":9,"name":"primary","app":"web","preview_name":"shop.com"}`. API and MCP use `app` and `preview_name`; CLI uses `--app=web --preview-name=shop.com`; SDK `CloneInstanceRequest` uses `$app` and `$previewName`. There is no production preview map or first-app fallback. For a non-serving package, omit `preview_name`; no TLD is needed and no Route is reserved. Wrong presence or type returns existing `validation.failed`.
+
+The preview domain is `<preview-name>.<node-tld>`. It does not add the app label: it is an explicit operator-chosen prefix associated with the resolved sole app. For example, `shop.com` on a Node with TLD `prod.orbit` gives `shop.com.prod.orbit`. Orbit never uses the Cluster TLD here.
 
 Orbit stores the preview as an explicit private Route, so a later TLD change does not rename it. On a standalone Node the Route has Node scope. In an active Cluster it has Cluster scope, and private DNS points to the Router. Cloning publishes no public listener. Replace the preview with the production domain through a separate [Route](/reference/routes) change.
 
@@ -98,7 +102,9 @@ Cloning never stops the candidate's Processes or Schedules, pauses queues, or ch
 
 ## Retry
 
-The Gateway records the clone request and each finished step. An identical request resumes an interrupted clone, even when the candidate has moved to a newer commit. A request that changes the candidate, Node, name, preview, branch, or SQLite path returns `instance.clone_retry_conflict`. After completion, an identical request returns the same Instance and changes nothing. `instance:create` does not create or resume a production Instance.
+The Gateway records the clone request and each finished step. An identical request resumes an interrupted clone, even when the candidate has moved to a newer commit. The recorded request includes the resolved app, normalized preview name or absence, candidate override map snapshot, Node, name, branch and SQLite path. A changed app or other input returns `instance.clone_retry_conflict`. Omitted `app` resolves to the same sole name for retry; map key order does not change override identity. An identical retry uses the captured effective paths, not changed candidate settings.
+
+After completion, an identical request returns the same Instance and changes nothing. `instance:create` does not create or resume a production Instance.
 
 While a clone is incomplete, removal of its candidate returns `instance.clone_in_progress`.
 

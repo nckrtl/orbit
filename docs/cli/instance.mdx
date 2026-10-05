@@ -11,7 +11,7 @@ covers:
   - packages/php-sdk/src/Responses/Instances/**
 ---
 
-An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. The [Project type](/reference/projects#project-types) decides whether it gets a Route.
+An Instance is one copy of a Project on one Node. On an `app-dev` Node it owns a checkout or worktree. On an `app-prod` Node it owns a Unix user and a production home with releases. Each [app type](/reference/projects#project-types) and web root decide its serving runtime and Route.
 
 [Applications](/domains/applications) walks through the lifecycle. [Production release layout](/reference/deployments), [Instance setup and teardown](/reference/instance-setup), [Instance cloning](/reference/instance-cloning), [Instance transfer](/reference/instance-transfer), [Instance removal](/reference/instance-removal), and [Database connections](/reference/database-connections) own the contracts behind these commands.
 
@@ -90,8 +90,8 @@ orbit instance:create <project> <node> <name> [options]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--root=PATH` | the Project root | Relative web-root override for this Instance. |
-| `--domain=HOST` | generated | Explicit Route domain for the development source. Without it, Orbit generates a domain from the active Cluster TLD, then the Node TLD. |
+| `--app-overrides=JSON` | `{}` | Map of app names to path and web-root overrides. |
+| `--app-domains=JSON` | `{}` | Map of app names to explicit domains; omitted serving apps get generated domains. |
 | `--branch=BRANCH` | see [branch selection](/domains/applications#create-a-development-instance) | Explicit source branch. |
 
 Development placement and branch selection follow the requested name.
@@ -104,13 +104,13 @@ Development placement and branch selection follow the requested name.
 
 ```bash
 orbit instance:create 4 7 default
-orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.test
+orbit instance:create 4 7 feature-one --branch=release --app-domains='{"web":"feature.example.test"}'
 orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
 A requested origin branch keeps its existing selection behavior. Orbit does not reset an existing local branch to the default commit. A missing fetched `default_branch` when required returns `instance.branch_resolution_failed`, not a different fallback branch. An invalid Git branch name returns `validation.failed` before source changes.
 
-A create that fails before activation removes its owned resources and Instance row without teardown. The response keeps the original error code. Once cleanup completes, a new create can select a different branch. If an interruption or incomplete cleanup leaves a pre-activation Instance, an identical retry resumes it; a retry that changes the root or `--branch` returns `instance.placement_conflict`. Incomplete cleanup reports `details.cleanup = "incomplete"` and a recovery command. [`instance:destroy`](#orbit-instancedestroy) accepts `reserved`, `checkout_prepared`, and `source_resolved` for [pre-activation removal](/reference/instance-removal#pre-activation-removal).
+A create that fails before activation removes its owned resources and Instance row without teardown. The response keeps the original error code. Once cleanup completes, a new create can select a different branch. If an interruption or incomplete cleanup leaves a pre-activation Instance, an identical retry resumes it; a retry that changes the override map, domain map or `--branch` returns `instance.placement_conflict`. Incomplete cleanup reports `details.cleanup = "incomplete"` and a recovery command. [`instance:destroy`](#orbit-instancedestroy) accepts `reserved`, `checkout_prepared`, and `source_resolved` for [pre-activation removal](/reference/instance-removal#pre-activation-removal).
 
 <Note>
 The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful create response also means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
@@ -123,7 +123,7 @@ A failed setup step removes the new Instance after the teardown steps run. See [
 Record a Git branch that is already checked out, change the Instance's Route domain, or do both. Only an active development checkout is eligible. This command does not rename the Instance, move its directory, change its starting commit, or run Git commands that alter the checkout.
 
 ```bash
-orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
+orbit instance:rename <instance> [--branch=BRANCH] [--app=NAME --domain=HOST] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -133,7 +133,8 @@ orbit instance:rename <instance> [--branch=BRANCH] [--domain=HOST] [--json]
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--branch=BRANCH` | unchanged | Record this local branch. Symbolic `HEAD` must already name it. |
-| `--domain=HOST` | unchanged | Replace the domain of the Instance's own single-target Project Route, including a generated Route. |
+| `--app=NAME` | sole app when there is one | Select the app whose domain changes. Required for a multi-app Project; prohibited without `--domain`. |
+| `--domain=HOST` | unchanged | Replace only the selected app's authoritative single-target Route, including a generated Route. |
 | `--json` | off | Return one Instance JSON document, or one error document, without prompts or progress. |
 
 Supply at least one of `--branch` and `--domain`. Supplied values must be nonempty strings. The command needs no `--yes` or `--force`: it records intent and converges the Route without discarding source. In a terminal, an omitted Instance selector uses the shared Instance selection prompt; in noninteractive or JSON mode it returns `instance.id_invalid`. There is no implicit branch or domain selection.
@@ -144,8 +145,8 @@ Rename the branch locally before recording it. Orbit checks the managed checkout
 # In the Instance checkout:
 git branch -m t3code/login-redirect
 orbit instance:rename 1 --branch=t3code/login-redirect
-orbit instance:rename 1 --domain=login-redirect.acme.test
-orbit instance:rename 1 --branch=t3code/login-redirect --domain=login-redirect.acme.test --json
+orbit instance:rename 1 --app=web --domain=login-redirect.acme.test
+orbit instance:rename 1 --branch=t3code/login-redirect --app=web --domain=login-redirect.acme.test --json
 ```
 
 A changed branch updates `selected_branch` and `branch_override`. Recording the already recorded branch is a no-op that preserves its existing override. A domain-only request does not change either branch field. The domain follows [Route replacement](/reference/routes#change-an-instance-route-domain); Laravel's stored `APP_URL`, `.env`, and cached configuration follow it. Generated provenance stays generated, so a later Project slug or effective-TLD change can recompute the domain.
@@ -154,7 +155,7 @@ All supplied fields, checkout identity, the supplied branch, and domain availabi
 
 ### Human output
 
-The command shows truthful waiting feedback during the synchronous request, then the shared Instance detail tree. Project and Node labels use their slug and name. It does not show a Process selector or invent remote progress stages. The following abbreviated example shows the fields affected by a combined rename; the full tree also has the usual ID, placement, root, and Vite-port fields:
+The command shows truthful waiting feedback during the synchronous request, then the shared Instance detail tree. Project and Node labels use their slug and name. It does not show a Process selector or invent remote progress stages. The following abbreviated example shows the fields affected by a combined rename; the full tree includes placement and an Apps subtree with effective paths and endpoint ports:
 
 ```text
 ┌  Instance: dev
@@ -167,18 +168,19 @@ The command shows truthful waiting feedback during the synchronous request, then
 │
 ├  Branch override   t3code/login-redirect
 │
-├  Domain            login-redirect.acme.test
-│
-└  URL               https://login-redirect.acme.test
+└  Apps
+   └  web
+      ├  Domain      login-redirect.acme.test
+      └  URL         https://login-redirect.acme.test
 ```
 
 A refusal shows the stable error code and a useful message, with no success tree. For example, `instance.branch_not_checked_out` tells the caller to check out the requested branch first. Success exits with status `0`; a refusal or failed convergence exits with status `1`.
 
 ### JSON and API output
 
-The API is `POST /api/v1/instances/{instance}/rename` with optional `branch` and `domain`, for example `{"branch":"t3code/login-redirect","domain":"login-redirect.acme.test"}`. At least one field is required; null, empty, and wrong-type values are invalid. The MCP tool is `instance-rename`, with `instance_id` and the same optional fields.
+The API is `POST /api/v1/instances/{instance}/rename`, for example `{"branch":"t3code/login-redirect","app":"web","domain":"login-redirect.acme.test"}`. `branch` and `domain` are optional but at least one is required. `app` selects a domain target and is prohibited without `domain`. Null, empty and wrong-type fields are invalid. MCP `instance-rename` uses `instance_id` and the same fields; SDK `RenameInstanceRequest` uses `$instanceId`, `$branch`, `$app` and `$domain`.
 
-Success returns the full Instance shape used by `GET /api/v1/instances/{instance}` and `instance:show --json`, including Project and Node identities, source and placement fields, `route`, `domain`, `url`, removal and transfer state, deploy steps, and `request_id`. It has no rename-specific envelope. This abbreviated JSON example selects fields from that response, not a separate response schema:
+Success returns the full Instance shape used by `GET /api/v1/instances/{instance}` and `instance:show --json`, including Project and Node identities, source and placement fields, effective `apps`, `app_overrides`, `app_runtime`, removal and transfer state, deploy steps, and `request_id`. It has no rename-specific envelope. This abbreviated JSON example selects fields from that response, not a separate response schema. [Instance runtime output](/reference/projects#instance-app-runtime-output) defines all required runtime members, including the full Route and source profile:
 
 ```json
 {
@@ -191,8 +193,11 @@ Success returns the full Instance shape used by `GET /api/v1/instances/{instance
   "selected_branch": "t3code/login-redirect",
   "branch_override": "t3code/login-redirect",
   "status": "active",
-  "domain": "login-redirect.acme.test",
-  "url": "https://login-redirect.acme.test"
+  "apps": [{"name":"web","path":".","web_root":"public","type":"laravel-app"}],
+  "app_overrides": {},
+  "app_runtime": {
+    "web": {"domain":"login-redirect.acme.test","url":"https://login-redirect.acme.test"}
+  }
 }
 ```
 
@@ -202,7 +207,8 @@ Failures use the existing error shape, with the stable code under `error.code`, 
 
 | Code | Meaning |
 | --- | --- |
-| `validation.failed` | Neither field was supplied, or a supplied value is null, empty, wrong-type, or an invalid Git branch name. |
+| `validation.failed` | Neither branch nor domain was supplied, app was supplied without domain, or a supplied value is null, empty, wrong-type, or an invalid Git branch name. |
+| `app.required`, `app.not_found` | Domain rename needs an app selector on a multi-app Project, or the selected app does not exist. |
 | `instance.id_invalid` | The CLI Instance selector is missing in noninteractive mode or is not a positive numeric ID. |
 | `instance.rename_unsupported` | The Instance is production or is not a development checkout, including linked worktrees. |
 | `instance.rename_inactive` | The development checkout is not active and is not being removed. |
@@ -212,7 +218,7 @@ Failures use the existing error shape, with the stable code under `error.code`, 
 | `instance.route_required` | A domain was supplied, but there is no own single-target Project Route. |
 | `route.domain_invalid` | The requested domain is invalid. |
 | `route.domain_conflict` | Another Route owns the normalized domain, or it is a reserved domain. |
-| `route.domain_change_conflict` | A different domain replacement is already in progress. |
+| `route.domain_change_conflict` | A rename with a different resolved app, domain or branch presence/value is already in progress. |
 | `instance.source_profile_missing` | Domain convergence lacks the recorded source profile needed for URL synchronization. |
 | `env.owner_changed` | Route targets or environment ownership changed while acquiring the operation owner. |
 | `route.reconciliation_required` | An incompatible Route or placement reconciliation is in progress. |
@@ -234,8 +240,8 @@ orbit instance:register [options]
 | `--include-worktrees` | off | Adopt the checkout and every linked worktree as one preflighted set. |
 | `--project=ID` | resolved from the origin | Existing numeric Project ID. |
 | `--name=NAME` | inferred | Non-default Instance name. |
-| `--root=PATH` | the Project root | Relative web-root override for this Instance. |
-| `--domain=HOST` | generated | Explicit Route domain for the primary source. |
+| `--app-overrides=JSON` | `{}` | Map of app names to path and web-root overrides, inherited by registration. |
+| `--app-domains=JSON` | `{}` | Map of app names to explicit domains; omitted serving apps get generated domains, as on create. |
 | `--yes` | off | Confirm transfer of the source into Orbit ownership without prompting. |
 | `--setup` | off | Run the Project setup steps after adoption. A failed step leaves the Instance and the checkout in place. |
 
@@ -253,7 +259,7 @@ orbit instance:register --path=/srv/orbit/apps/acme/main --include-worktrees --y
 
 ## orbit instance:list
 
-List Instances with their Project, Node, status, Route domain, `vite_port`, and `removal` progress. JSON also includes `annotator_port` and `annotator_url`; both are null when no annotator port is assigned, and the URL is null without a Route.
+List Instances with their Project, Node, status, app domains and removal progress. JSON returns effective `apps`, `app_overrides` and name-keyed `app_runtime`, including each app's Route, source profile and endpoint ports/URLs. It exposes no scalar primary domain or port. See [Instance runtime output](/reference/projects#instance-app-runtime-output).
 
 ```bash
 orbit instance:list [--json]
@@ -261,7 +267,7 @@ orbit instance:list [--json]
 
 ## orbit instance:show
 
-Show one Instance. When the `annotator` Process has an assigned port, human output includes `Annotator port` and `Annotator URL`. The URL uses the Instance's Route, for example `https://commander.test/__orbit/annotator`; without a Route, the display is an em dash. JSON keeps the `annotator_port` and `annotator_url` fields even when they are null. See [Annotator Process](/reference/agentation#annotator-process).
+Show one Instance with an Apps subtree. Each app shows its effective paths, authoritative Route, source profile and endpoint ports/URLs. For app `web`, the annotator URL might be `https://web.commander.test/__orbit/annotator`; without that app's Route or port it is an em dash. JSON returns nullable members under `app_runtime.<app>`, not scalar Instance annotator fields. [Instance runtime output](/reference/projects#instance-app-runtime-output) defines the exact response; [Annotator Process](/reference/agentation#annotator-process) owns its runtime.
 
 Production output includes the recorded user, home, selected branch, and deploy steps in phase and placement order.
 
@@ -278,7 +284,7 @@ orbit instance:show <instance> [--json]
 Return the end of the Instance's application log, `storage/logs/laravel.log` or the newest `laravel-*.log`, or follow new lines as they are written. Stored environment values and credential-shaped data are redacted. [Instance logs](/reference/instance-logs) describes the file and the redaction.
 
 ```bash
-orbit instance:logs <instance> [--lines=COUNT] [--follow] [--json]
+orbit instance:logs <instance> [--app=NAME] [--lines=COUNT] [--follow] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -287,10 +293,11 @@ orbit instance:logs <instance> [--lines=COUNT] [--follow] [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `--app=NAME` | sole app | App whose Laravel log is read or followed. Several apps require a selector. |
 | `--lines=COUNT` | `100` | Number of lines, from 1 through 1,000. With `--follow`, the number of earlier lines to print first. |
 | `--follow` | off | Keep printing new lines until Ctrl-C. |
 
-`--follow` works as it does for [`process:logs`](/cli/process#orbit-processlogs): the CLI opens a [live log stream](/reference/live-logs), and it polls the one-shot read every 5 seconds when the Gateway cannot open one. A production Instance log is always read over SSH: the CLI prints `Following over SSH; polling every 5 seconds.` and polls from the start. The JSON output has the same shapes, with reason `ssh_only` in the notice. Without `--follow`, `--json` returns `{ id, name, lines, logs, request_id }`.
+`--follow` works as it does for [`process:logs`](/cli/process#orbit-processlogs): the CLI opens a [live log stream](/reference/live-logs), and it polls the one-shot read every 5 seconds when the Gateway cannot open one. A production Instance log is always read over SSH: the CLI prints `Following over SSH; polling every 5 seconds.` and polls from the start. The JSON output has the same shapes, with reason `ssh_only` in the notice. Without `--follow`, `--json` returns `{ id, name, app, lines, logs, request_id }`. Live stream creation and fallback polls retain the same app selector.
 
 ```bash
 orbit instance:logs 12 --lines=50
@@ -434,7 +441,7 @@ orbit instance:teardown-step:destroy <name> --project=<id> [--yes] [--json]
 Clone a candidate into a prepared production Instance. The candidate supplies source, stored environment values, and an optional SQLite snapshot. The Project supplies production Process and Schedule definitions.
 
 ```bash
-orbit instance:clone <candidate> <node> <name> --preview-name=NAME [options]
+orbit instance:clone <candidate> <node> <name> [--app=NAME] [--preview-name=NAME] [options]
 ```
 
 | Argument | Required | Meaning |
@@ -445,11 +452,12 @@ orbit instance:clone <candidate> <node> <name> --preview-name=NAME [options]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--preview-name=NAME` | required | Preview name that the Gateway combines with the destination Node TLD. |
+| `--app=NAME` | sole candidate app | Select the candidate's sole app. Multi-app production cloning is refused. |
+| `--preview-name=NAME` | required for serving apps | Preview prefix combined with the Node TLD. Prohibited for a non-serving package. |
 | `--branch=BRANCH` | the candidate branch | Target branch that must exist in the Project repository. |
 | `--sqlite-source-path=PATH` | none | Absolute path to one SQLite database on the candidate to seed `database.sqlite`. |
 
-Give the production Node a TLD with `node:add --tld` first: `shop.com` on a Node with TLD `prod.orbit` becomes the preview `shop.com.prod.orbit`. The candidate must be clean, and its commit must be in the Project repository.
+For a serving app, give the production Node a TLD with `node:add --tld` first: `shop.com` on a Node with TLD `prod.orbit` becomes the preview `shop.com.prod.orbit`. The candidate must be clean, and its commit must be in the Project repository.
 
 ```bash
 orbit node:add production production.example --role=app-prod --tld=prod.orbit
@@ -460,12 +468,12 @@ Cloning ends with an active Instance and no release. Update its environment, rec
 
 ## orbit instance:update
 
-Change the deployment branch of a production Instance. The Gateway stores the branch and does not change deploy steps or start a deployment.
+Change a production Instance's deployment branch, or replace a development Instance's app override map. These are separate mutations and cannot be combined. Branch storage starts no deployment; overrides use the [Instance override update lifecycle](/reference/projects#instance-override-update-lifecycle), including environment preflight, runtime reconciliation and recorded recovery.
 
 The human result shows the accepted deployment branch and the currently selected source branch. JSON returns the existing Instance response; its `selected_branch` describes the source, not the newly stored deployment setting.
 
 ```bash
-orbit instance:update <instance> --branch=BRANCH [--json]
+orbit instance:update <instance> [--branch=BRANCH | --app-overrides=JSON] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -474,9 +482,10 @@ orbit instance:update <instance> --branch=BRANCH [--json]
 
 | Option | Meaning |
 | --- | --- |
-| `--branch=BRANCH` | Deployment branch. A later Project default change does not replace it. |
+| `--branch=BRANCH` | Production deployment branch. A later Project default change does not replace it. |
+| `--app-overrides=JSON` | Replace the whole development override map; `{}` clears it. Production override edits are refused. |
 
-The Gateway refuses a development Instance with a bounded conflict before it stores a branch.
+The Gateway refuses branch updates on development and override updates on production before mutation. API `PATCH /api/v1/instances/{instance}`, SDK `UpdateInstanceRequest` and MCP `instance-update` use `deployment_branch` or `app_overrides`, respectively `$deploymentBranch` or `$appOverrides`. Lost responses and identical override retries do not restart already reconciled runtimes.
 
 ## orbit instance:deploy-step:create
 
@@ -711,7 +720,7 @@ An unknown attachment returns `database.attachment_missing`.
 
 ## orbit instance:analytics:enable
 
-Publish the tracking hosts that send an Instance's visits to the analytics role.
+Publish tracking hosts for the Instance's sole app. Multi-app Projects return `app.analytics_multi_app_unsupported` (409); this command accepts no `--app` selector. Disable existing tracking before adding another Project app.
 
 ```bash
 orbit instance:analytics:enable <instance> [--host=HOST]... [--json]
@@ -723,19 +732,20 @@ orbit instance:analytics:enable <instance> [--host=HOST]... [--json]
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `--host=HOST` | `analytics.<instance domain>` | A tracking host. Repeat it for more, up to ten. |
+| `--host=HOST` | `analytics.<sole-app-domain>` | A tracking host. Repeat it for more, up to ten. |
 
 ```bash
 orbit instance:analytics:enable 12
 orbit instance:analytics:enable 12 --host=stats.example.com --host=analytics.shop.example.com
 ```
 
-The command sets the exact host set: the Gateway publishes each named host that is missing and removes each tracking host of the Instance that you did not name. Naming the hosts that already exist changes nothing. Each host is a Route that answers only `/js/*` and `/api/event`, served wherever the Instance's own domain is served; the [Analytics role](/reference/analytics#publish-a-tracking-host) page owns that contract.
+The command sets the exact host set: the Gateway publishes each named host that is missing and removes each tracking host of the Instance that you did not name. Naming the hosts that already exist changes nothing. Each host is a Route that answers only `/js/*` and `/api/event`, served wherever the sole app's authoritative domain is served; the [Analytics role](/reference/analytics#publish-a-tracking-host) page owns that contract.
 
-Human output lists each host with its Route and status, the DNS record to create for it, and the script tag to add to the Project. JSON returns `instance_id`, `enabled`, `domain`, `dashboard_url`, `hosts`, and `snippet`. You still create the site in Plausible yourself.
+Human output lists each host with its Route and status, the DNS record to create for it, and the script tag to add to the Project. JSON returns `instance_id`, `app`, `enabled`, `domain`, `dashboard_url`, `hosts`, and `snippet`; the analytics-specific domain is the sole app's domain from `app_runtime`, not a scalar Instance domain. You still create the site in Plausible yourself.
 
 | Error code | Meaning |
 | --- | --- |
+| `app.analytics_multi_app_unsupported` | The Project has several apps; enable/show/stats remain single-app only. |
 | `analytics.role_missing` | No Node has an active analytics role. |
 | `analytics.domain_required` | The Instance does not serve a domain yet. |
 | `analytics.host_taken` | Another Route already uses a named host. |
@@ -749,7 +759,7 @@ Show the tracking hosts of an Instance.
 orbit instance:analytics:show <instance> [--json]
 ```
 
-The output has the same shape as [`instance:analytics:enable`](#orbit-instanceanalyticsenable). An Instance without tracking hosts reports tracking as disabled, with no hosts and no script tag.
+The output has the same shape as [`instance:analytics:enable`](#orbit-instanceanalyticsenable). A single-app Instance without tracking hosts reports tracking as disabled, with no hosts and no script tag. Show on a multi-app Project returns `app.analytics_multi_app_unsupported`, not a guessed app domain.
 
 ## orbit instance:analytics:disable
 

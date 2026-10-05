@@ -315,7 +315,6 @@
                 "packages/php-sdk"
             ],
             "concepts": [
-                "Cluster",
                 "Deployment",
                 "Gateway",
                 "Instance",
@@ -324,8 +323,7 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule",
-                "Tool"
+                "Schedule"
             ],
             "governing_adrs": []
         },
@@ -495,6 +493,7 @@
                 "Cluster",
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Process",
                 "Project",
@@ -577,6 +576,7 @@
                 "Extension",
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Node agent",
                 "Process",
@@ -700,15 +700,18 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Deployment",
                 "Doctor",
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Node agent",
                 "Process",
                 "Project",
                 "Route",
                 "Schedule",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": [
@@ -813,7 +816,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Tool"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -897,6 +901,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Route"
             ],
             "governing_adrs": []
@@ -1430,6 +1435,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -1490,6 +1496,7 @@
             "concepts": [
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Project",
                 "Route"
@@ -1508,7 +1515,8 @@
                 "Instance",
                 "Node",
                 "Node agent",
-                "Process"
+                "Process",
+                "Route"
             ],
             "governing_adrs": []
         },
@@ -1598,7 +1606,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1764,11 +1773,11 @@
                 "Doctor",
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Process",
                 "Project",
                 "Role",
-                "Route",
                 "Schedule"
             ],
             "governing_adrs": []
@@ -1853,6 +1862,7 @@
                 "Doctor",
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Process",
                 "Project",
@@ -1863,9 +1873,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0196"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/proxycli.md",
@@ -1900,11 +1908,13 @@
                 "Doctor",
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -2044,6 +2054,7 @@
                 "Extension",
                 "Gateway",
                 "Instance",
+                "Named app",
                 "Node",
                 "Node agent",
                 "Process",
