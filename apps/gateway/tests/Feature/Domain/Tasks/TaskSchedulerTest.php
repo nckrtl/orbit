@@ -151,6 +151,7 @@ function scheduler_instance(Project $project, Node $node, string $name): Instanc
         'node_id' => $node->id,
         'name' => $name,
         'checkout_path' => "/tmp/tasks-{$project->slug}-{$name}",
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
     ]);
 }

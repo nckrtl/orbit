@@ -287,6 +287,7 @@ it('still returns the created group, and fails it when the first implementer can
         'node_id' => $node->id,
         'name' => 'workspace',
         'checkout_path' => '/tmp/tasks-spawn-failure',
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
     ]);
 

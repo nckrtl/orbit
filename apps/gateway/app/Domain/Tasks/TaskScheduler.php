@@ -142,6 +142,7 @@ final readonly class TaskScheduler
         private TaskSandboxGroupLifecycle $sandboxes,
         private TaskSandboxWarmPool $warmPool,
         private TaskPullRequestMerger $merger,
+        private DeliverablePathChecker $deliverablePaths,
     ) {}
 
     /**
@@ -4865,7 +4866,12 @@ final readonly class TaskScheduler
             return;
         }
 
-        $group = $task->parent()->with('taskable')->first();
+        $this->recordSubtaskStart($task);
+        $group = $task->parent()->with(['project', 'taskable'])->first();
+        if ($group instanceof Task && ! $this->validateImplementerDeliverablePaths($task, $group)) {
+            return;
+        }
+
         $threadId = null;
         try {
             if ($group instanceof Task) {
@@ -4890,6 +4896,32 @@ final readonly class TaskScheduler
 
         $task->implementer_agent_thread_id = $threadId;
         $task->save();
+    }
+
+    /** No thread is reserved or spawned until its deliverables pass on the actual review base. */
+    private function validateImplementerDeliverablePaths(Task $task, Task $group): bool
+    {
+        $base = TaskReviewBase::commit($task);
+        if ($base === '') {
+            $this->requestAssistance($task, $group, 'Deliverable path validation cannot start the implementer: the review base is unresolved.');
+
+            return false;
+        }
+
+        try {
+            $errors = $this->deliverablePaths->check($group->project, $task->deliverables ?? [], $base);
+        } catch (ResourceOperationException $exception) {
+            $this->requestAssistance($task, $group, "Deliverable path validation could not read base {$base}: ".$exception->getMessage());
+
+            return false;
+        }
+        if ($errors !== []) {
+            $this->requestAssistance($task, $group, 'Deliverable path validation failed before implementer start. '.implode(' ', $errors));
+
+            return false;
+        }
+
+        return true;
     }
 
     /**

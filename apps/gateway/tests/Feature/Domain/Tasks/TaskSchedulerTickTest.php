@@ -131,6 +131,7 @@ function tick_group(): Task
         'node_id' => $node->id,
         'name' => 'task-21',
         'checkout_path' => '/srv/orbit/apps/tick-app/task-21',
+        'starting_commit' => str_repeat('a', 40),
         'branch' => 'task-21',
         'status' => 'source_resolved',
     ]);
@@ -6580,6 +6581,7 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
         'node_id' => $node->id,
         'name' => $slug,
         'checkout_path' => '/tmp/tasks-'.$slug,
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
     $group = Task::topLevel()->create([
