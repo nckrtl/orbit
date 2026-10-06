@@ -24,6 +24,7 @@ use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
@@ -660,6 +661,90 @@ it('provisioning failures raise assistance only after the configured threshold a
     app(TaskScheduler::class)->claimAvailable();
     expect($group->fresh()->assistance_requested)->toBeTrue()
         ->and($group->fresh()->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason);
+});
+
+it('notifies Coder once after committing threshold assistance and does not resend on another failure', function (): void {
+    config(['orbit.tasks.provisioning_failure_threshold' => 2]);
+    $group = queued_group(scheduler_app('notify-threshold'), 'Notify threshold');
+    $cause = 'RuntimeException: node-7 unreachable';
+    $reason = TaskScheduler::ProvisioningFailedReason.' '.$cause;
+    app()->instance(InstanceProvisioning::class, new class($cause) implements InstanceProvisioning
+    {
+        public function __construct(private string $cause) {}
+
+        public function provision(InstanceProvisionIntent $intent): InstanceProvisionFailure
+        {
+            return new InstanceProvisionFailure($this->cause);
+        }
+    });
+    $notifications = [];
+    mock(CoderSettleNotifier::class)->shouldReceive('assistance')->once()
+        ->withArgs(function (Task $notified, string $notifiedReason) use ($group, $reason, &$notifications): bool {
+            expect(DB::transactionLevel())->toBe(1);
+            expect($notified->fresh()->assistance_requested)->toBeTrue();
+            $notifications[] = [$notified->id, $notifiedReason];
+
+            return $notified->id === $group->id && $notifiedReason === $reason;
+        });
+    $scheduler = app(TaskScheduler::class);
+
+    expect($scheduler->claimAvailable())->toBe(0);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+    expect($notifications)->toBeEmpty();
+    DB::transaction(function () use ($scheduler, $group, &$notifications): void {
+        expect($scheduler->claimAvailable())->toBe(0);
+        expect($group->fresh()->assistance_requested)->toBeTrue();
+        expect($notifications)->toBeEmpty();
+    });
+    expect($notifications)->toBe([[$group->id, $reason]]);
+    expect($scheduler->claimAvailable())->toBe(0);
+    expect($notifications)->toHaveCount(1);
+    expect($group->fresh()->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()->assistance_reason)->toBe($reason);
+    expect(Cache::get('tasks:provisioning-failures:'.$group->id)['failures'])->toBe(3);
+});
+
+it('preserves a direction hold without threshold notification when releasing a failed reservation', function (bool $newDirection): void {
+    config(['orbit.tasks.provisioning_failure_threshold' => 1]);
+    $group = queued_group(scheduler_app('notify-direction'), 'Direction hold');
+    $direction = TaskAssistance::attributes(AssistanceKind::Direction, 'Which branch?', 'Choose a branch.');
+    if (! $newDirection) {
+        $group->update($direction);
+    }
+    $group->update(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now()]);
+    $reserved = $group->fresh();
+    if ($newDirection) {
+        $group->update($direction);
+    }
+    mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
+
+    DB::transaction(fn (): mixed => (new ReflectionMethod(TaskScheduler::class, 'releaseProvisioningFailure'))
+        ->invoke(app(TaskScheduler::class), $reserved, new InstanceProvisionFailure('node-7 unreachable')));
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
+        ->and($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_kind)->toBe(AssistanceKind::Direction)
+        ->and($group->fresh()->assistance_question)->toBe('Which branch?')
+        ->and($group->fresh()->assistance_reason)->toBe('Choose a branch.');
+})->with(['inherited direction' => false, 'direction added during provisioning' => true]);
+
+it('does not notify Coder when threshold assistance rolls back', function (): void {
+    config(['orbit.tasks.provisioning_failure_threshold' => 1]);
+    $group = queued_group(scheduler_app('notify-rollback'), 'Rollback threshold');
+    app()->instance(InstanceProvisioning::class, new NullInstanceProvisioning);
+    mock(CoderSettleNotifier::class)->shouldNotReceive('assistance');
+
+    expect(fn () => DB::transaction(function () use ($group): void {
+        expect(app(TaskScheduler::class)->claimAvailable())->toBe(0);
+        expect($group->fresh()->assistance_requested)->toBeTrue();
+        throw new RuntimeException('Roll back threshold assistance.');
+    }))->toThrow(RuntimeException::class, 'Roll back threshold assistance.');
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
+        ->and($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->fresh()->assistance_kind)->toBeNull()
+        ->and($group->fresh()->assistance_reason)->toBeNull();
+    DB::transaction(fn (): null => null);
 });
 
 it('provisioning failures raise assistance at a minimum threshold of one', function (): void {

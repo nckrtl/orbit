@@ -2223,7 +2223,11 @@ final readonly class TaskScheduler
             $group->save();
             $threshold = config('orbit.tasks.provisioning_failure_threshold', 3);
             if ($failures >= max(1, is_numeric($threshold) ? (int) $threshold : 3)) {
-                TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+                $wasAsking = $group->assistance_requested;
+                $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+                if (! $wasAsking && $applied) {
+                    DB::afterCommit(fn () => $this->coder->assistance($group, $reason));
+                }
             }
         });
     }
