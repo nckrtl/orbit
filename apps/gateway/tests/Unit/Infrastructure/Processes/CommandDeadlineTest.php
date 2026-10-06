@@ -209,3 +209,46 @@ it('holds time back from work for what must follow it, even after that work ran 
     expect($deadline->holding(90.0, static fn (): float => $deadline->cap(9_999.0)))->toBe(80.0)
         ->and($deadline->cap(9_999.0))->toBe(170.0);
 });
+
+it('keeps nested forward work usable while time is held for rollback', function (float $now, float $initial, float $insideRemaining, float $outsideRemaining): void {
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0 - $now, CommandDeadline::CleanupReserveSeconds);
+
+    $inside = $deadline->holding(150.0, static function () use ($deadline, &$now, $initial): float {
+        return $deadline->withinForwardWork(60.0, static function () use ($deadline, &$now, $initial): float {
+            expect($deadline->cap(9999.0))->toBe($initial);
+            $now += 1.0;
+
+            return $deadline->cap(9999.0);
+        });
+    });
+
+    expect($inside)->toBe($insideRemaining)->and($deadline->cap(9999.0))->toBe($outsideRemaining);
+})->with([
+    'local budget fits' => [0.0, 60.0, 59.0, 549.0],
+    'parent forward work has five seconds left' => [395.0, 5.0, 4.0, 154.0],
+]);
+
+it('retains the rollback hold after a caught local forward-work expiry', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    $heldRemaining = $deadline->holding(150.0, static function () use ($deadline, &$now): float {
+        expect(function () use ($deadline, &$now): float {
+            return $deadline->withinForwardWork(60.0, static function () use ($deadline, &$now): float {
+                $now = 60.0;
+
+                return $deadline->cap(10.0);
+            });
+        })->toThrow(ResourceOperationException::class);
+
+        return $deadline->cap(9999.0);
+    });
+
+    expect($heldRemaining)->toBe(340.0)->and($deadline->cap(9999.0))->toBe(490.0);
+});
