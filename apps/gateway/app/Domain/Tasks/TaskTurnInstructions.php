@@ -21,7 +21,7 @@ final readonly class TaskTurnInstructions
         $gate = $check === null ? '' : ' Orbit runs '.$check.' again at handoff with access you do not have, such as sudo. When it fails for you only because you lack that access, hand off anyway.';
         $confirm = $deliverables === [] ? '' : ' Add --deliverable=ID=evidence for each deliverable of this subtask ('.self::ids($deliverables).'), where the evidence says where or how it is met. Orbit refuses the handoff without them, then checks file and command deliverables against your diff and its own run.';
 
-        return self::origin().' '.self::autonomy().' Workspaces start without a topology. If discovery needs one, ask the reviewer through a blocked consult. Never acquire or release a topology yourself. When the brief is complete'.$passes.', end your turn with '.self::command($threadId, '--outcome=ready_for_review --summary="What you changed"').'.'.$gate.$confirm.' '.self::blocked($threadId);
+        return self::origin().' '.self::autonomy().' Workspaces start without a topology. If discovery needs one, ask the reviewer through a blocked consult. Never acquire or release a topology yourself. Before ready_for_review, you can dry-run a privileged declared command deliverable via tasks-deliverable-probe and read its receipt with tasks-check-show. Run the declared deliverable exactly as stored; do not supply extra arguments or a free-form filter. Request probes sequentially, at most three per completion attempt. Probes do not count as handoff and do not replace the handoff check. When the brief is complete'.$passes.', end your turn with '.self::command($threadId, '--outcome=ready_for_review --summary="What you changed"').'.'.$gate.$confirm.' '.self::blocked($threadId);
     }
 
     /**

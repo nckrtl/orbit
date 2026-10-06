@@ -855,7 +855,7 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace's repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested, writes the output to `$(git rev-parse --git-path orbit)/check.log`, and writes `$(git rev-parse --git-path orbit)/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
-Setup steps, baseline checks, handoff checks, and command deliverables inherit a host `TMPDIR` owned by the managed user: `/tmp/orbit-check-<uid>-<random>`. That directory is unique to the check and is removed when the check ends, including when an operator cancels it. Agent bash commands and documentation lookup processes use `<absolute-workspace-git-dir>/orbit/tmp/agent-<uid>` instead. The separate directories prevent restrictive tool caches created by either Unix user from blocking the other role.
+Setup steps, baseline checks, handoff checks, deliverable probes, and command deliverables inherit a host `TMPDIR` owned by the managed user: `/tmp/orbit-check-<uid>-<random>`. That directory is unique to the check and is removed when the check ends, including when an operator cancels it. Agent bash commands and documentation lookup processes use `<absolute-workspace-git-dir>/orbit/tmp/agent-<uid>` instead. The separate directories prevent restrictive tool caches created by either Unix user from blocking the other role.
 
 The check directory has mode `0711` and no inherited sharing ACL, so another user can traverse to a child that grants it access while temporary files can retain private permissions. With a listable `/tmp`, a local user who learns the directory name can open a child created with the default umask; files a tool writes as private stay private. The agent directory has mode `0700` and no inherited sharing ACL.
 
@@ -894,7 +894,7 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 A deliverable probe is a dry-run of one declared `command` deliverable while its subtask is `running`. The Gateway action accepts the subtask's implementer thread or an operator. It uses the stored command and directory verbatim, with no extra arguments or free-form filter. It starts the check runner with an empty Project command, no setup steps, and only that deliverable in the command payload. A probe does not run the Project check.
 
-By default, a probe runs only against the working tree. With `base=true`, its payload also includes the deliverable's declared `fails_on_base` and `paths` fields. That enables the declared start-commit run; it does not invent base-run requirements for other commands. Probes use the same managed user and host `TMPDIR` as other checks.
+By default, a probe runs only against the working tree. With `base=true`, its payload also includes the deliverable's declared `fails_on_base` and `paths` fields. That enables the declared start-commit run; it does not invent base-run requirements for other commands. Probes run as the same managed user as other checks, with a unique host `TMPDIR` at `/tmp/orbit-check-<uid>-<random>`. Use this path to dry-run a privileged command deliverable before `ready_for_review` when the agent account cannot run it directly.
 
 The action refuses an unknown deliverable with HTTP 404, a file or review deliverable with HTTP 422, and a request while any baseline, handoff, or probe check runs in the group with HTTP 409. Each subtask can request at most three probes per completion attempt, across all its deliverables. A fourth request answers HTTP 429. A new completion attempt resets that allowance.
 
@@ -908,7 +908,16 @@ An ended watched pull request holds all new execution, but completion can still 
 
 When the probe finishes, the Gateway stores its exit code and output on the check and writes a JSON receipt in the comment body. The receipt contains `check_id`, `kind`, `deliverable`, `command`, `directory`, `managed_user`, `uid`, `tmpdir`, `head`, `tree`, `exit_code`, `output_tail`, `started_at`, and `finished_at`. It also contains `base_exit_code` when base-run evidence exists. The output tail is at most 16 KiB. The probe exit comes from the declared command's evidence, not from the empty Project command.
 
-A probe never gates handoff or counts as a handoff attempt. Its result does not advance `completion_attempt`, set completion reminder fields, or request assistance. The scheduler records probe results separately and excludes probes when selecting handoff results or counting handoff retries. A later handoff still needs its own check; failing handoffs keep the reminder and assistance behavior described above. API, MCP, and CLI probe entry points are not part of this domain action.
+A probe never gates handoff or counts as a handoff attempt. Its result does not advance `completion_attempt`, set completion reminder fields, or request assistance. The scheduler records probe results separately and excludes probes when selecting handoff results or counting handoff retries. A later handoff still needs its own check; failing handoffs keep the reminder and assistance behavior described above. Probes do not count as handoff: the implementer must still submit `ready_for_review` after completing the brief.
+
+Start the probe with `tasks:deliverable:probe` and read its receipt with `tasks:check:show`. The MCP tools are `tasks-deliverable-probe` and `tasks-check-show`; the CLI commands are `orbit tasks:deliverable:probe <group> <task> <deliverable>` and `orbit tasks:check:show <group> <task> <check>`. The probe returns the check ID. Read that check until it reaches a terminal status before starting another probe.
+
+| Operation | Route | Access |
+| --- | --- | --- |
+| `tasks:deliverable:probe` | `POST /api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe` | Gateway |
+| `tasks:check:show` | `GET /api/v1/task-groups/{group}/tasks/{task}/checks/{check}` | Any authorized peer |
+
+The POST accepts only `base` (default `false`). It accepts no command override or filter. Each admitted POST reserves a new check and consumes quota, even an exact retry. HTTP 502 `tasks.probe_start_pending` includes the reserved `check_id` in `error.details`; inspect that check instead of retrying the POST. HTTP 409 `tasks.probe_check_running` refuses concurrent checks and HTTP 429 `tasks.probe_limit` refuses more than three probes per completion attempt.
 
 ### Baseline check
 
