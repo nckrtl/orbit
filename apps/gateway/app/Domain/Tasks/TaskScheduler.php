@@ -7,7 +7,10 @@ namespace App\Domain\Tasks;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
+use App\Actions\Tasks\RetryRedMainBaselineAction;
+use App\Actions\Tasks\RetryRedMainHandoffAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
+use App\Actions\Tasks\RetryTaskHandoffAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Projects\LifecyclePhase;
@@ -120,6 +123,9 @@ final readonly class TaskScheduler
         private RequestEndedPullRequestAssistanceAction $endedPullRequests,
         private TaskTurnFetcher $turnFetcher,
         private RetryTaskBaselineAction $retryBaseline,
+        private RetryRedMainBaselineAction $retryRedMainBaseline,
+        private RetryRedMainHandoffAction $retryRedMainHandoff,
+        private RetryTaskHandoffAction $retryHandoff,
         private TaskPullRequestReviewWatcher $reviewWatcher,
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
@@ -233,6 +239,25 @@ final readonly class TaskScheduler
                             $task->refresh();
                             $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                         }
+                    } catch (AgentDriverException $exception) {
+                        $this->recordCommunicationFailure($task, $group, $exception->getMessage());
+
+                        continue;
+                    }
+                }
+                if ($task->status === TaskStatus::Running && $task->assistance_requested
+                    && $task->assistance_kind === AssistanceKind::Failure && $group->assistance_kind !== AssistanceKind::Direction
+                    && $task->consult_comment_id === null && $task->direction_relay_comment_id === null
+                    && ! TaskExecutionHold::active($group)) {
+                    try {
+                        if ($task->handoff_retry !== null) {
+                            $this->retryHandoff->recover($task);
+                        } elseif ($task->resolution_delivered_comment_id === null
+                            && ! $this->retryRedMainBaseline->execute($task)) {
+                            $this->retryRedMainHandoff->execute($task);
+                        }
+                        $task->refresh();
+                        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                     } catch (AgentDriverException $exception) {
                         $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 

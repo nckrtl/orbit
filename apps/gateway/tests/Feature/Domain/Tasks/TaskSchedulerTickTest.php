@@ -30,6 +30,8 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
@@ -45,6 +47,7 @@ use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestWatcher;
+use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskReviewReadStatus;
@@ -6555,6 +6558,185 @@ it('never resets a failed baseline workspace after an implementer has started el
 
     $this->assertDatabaseHas('tasks', ['id' => $task->id, 'assistance_requested' => true, 'resolution_delivered_comment_id' => null]);
     $this->assertDatabaseHas('tasks', ['id' => $group->id, 'assistance_requested' => true]);
+});
+
+/** Historical retry shapes with real task records and isolated remote boundaries. */
+function tick_red_main_retry(TaskCheckKind $kind, string $head, string $tip): array
+{
+    $group = tick_baseline_group('red-main-'.$kind->value, 'composer check', [], '10.51.0.10');
+    $group->project->update(['repository_url' => 'https://github.com/acme/orbit.git']);
+    $group->taskable->update(['branch' => 'task-retry', 'starting_commit' => $head]);
+    TaskAssistance::apply($group, AssistanceKind::Failure, null, 'Historical failed check.');
+    $task = $group->tasks()->sole();
+    $task->update(['subtask_start_commit' => $head]);
+    TaskAssistance::apply($task, AssistanceKind::Failure, null, 'Historical failed check.');
+    $receipt = null;
+    if ($kind === TaskCheckKind::Handoff) {
+        test_link_agent_threads($group);
+        $task->refresh();
+        $receipt = TaskComment::query()->create([
+            'task_group_id' => $group->id, 'task_id' => $task->id, 'agent_thread_id' => $task->implementer_agent_thread_id,
+            'type' => 'ready_for_review', 'author' => 'implementer', 'body' => 'Candidate ready.', 'posted_at' => now(),
+            'completion_attempt' => $task->completion_attempt, 'receipt_hash' => hash('sha256', 'tick retry receipt'),
+        ]);
+    }
+    $failed = TaskCheck::query()->create([
+        'task_id' => $task->id, 'task_comment_id' => $receipt?->id, 'kind' => $kind, 'status' => TaskCheckStatus::Failed,
+        'pid' => 1432, 'process_started' => 'historical', 'head_before' => $head, 'tree_before' => str_repeat('b', 40),
+        'started_at' => now(), 'exit_code' => 1, 'output' => 'Historical failure retained.',
+    ]);
+    $driver = new FakeAgentDriver('pi');
+    $driver->observation = new AgentObservation(AgentThreadState::Done);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    app()->instance(AgentSpawner::class, new NullAgentSpawner);
+    app()->instance(TaskWorkspaceDiffReader::class, new NullTaskWorkspaceDiffReader);
+    $state = (object) [
+        'head' => $head, 'tree' => str_repeat('b', 40), 'tip' => $tip, 'launches' => 0, 'advances' => 0, 'resets' => 0,
+        'loseReply' => false, 'reading' => TaskCheckReading::running(), 'payload' => null,
+        'runs' => [['name' => 'Gateway', 'conclusion' => 'success']],
+    ];
+    $checks = mock(TaskCheckRunner::class);
+    $checks->shouldReceive('snapshot')->andReturnUsing(fn () => new TaskWorkspaceSnapshot($state->head, $state->tree, branch: 'task-retry', indexTree: $state->tree));
+    $checks->shouldReceive('start')->andReturnUsing(function (Instance $instance, ?string $command, array $setup, ?array $payload = null) use ($state): TaskCheckProcess {
+        expect($command)->toBe('composer check')->and($setup)->toBe([]);
+        $state->launches++;
+        $state->payload = $payload;
+        if ($state->loseReply) {
+            throw new TaskCheckException('Reply lost after launch.');
+        }
+
+        return new TaskCheckProcess(5000, 'recovered', $state->head, $state->tree);
+    });
+    $checks->shouldReceive('read')->andReturnUsing(fn () => $state->reading);
+    $bases = mock(TaskBaseBranchFetcher::class);
+    $bases->shouldReceive('fetchForTurn');
+    $bases->shouldReceive('defaultTip')->andReturnUsing(fn () => $state->tip);
+    $bases->shouldReceive('isAncestor')->andReturnTrue();
+    $bases->shouldReceive('resetToDefault')->andReturnUsing(function () use ($state): string {
+        $state->resets++;
+
+        return $state->head = $state->tip;
+    });
+    $bases->shouldReceive('advanceCandidate')->andReturnUsing(function () use ($state): TaskWorkspaceSnapshot {
+        $state->advances++;
+        $state->head = $state->tip;
+        $state->tree = str_repeat('c', 40);
+
+        return new TaskWorkspaceSnapshot($state->head, $state->tree, branch: 'task-retry', indexTree: $state->tree);
+    });
+    GitHubTestSupport::storeApp();
+    Http::preventStrayRequests();
+    Http::fake([
+        'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
+        'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_tick_fixture'], 201),
+        'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => fn () => Http::response(['check_runs' => $state->runs]),
+    ]);
+    app(TaskExtensionState::class)->enable();
+
+    return [$task, $state, $driver, $failed];
+}
+
+it('automatically retries a superseded baseline through tick without a human resolution', function (string $head, string $tip): void {
+    [$task, $state, , $failed] = tick_red_main_retry(TaskCheckKind::Baseline, $head, $tip);
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $task->id, 'subtask_start_commit' => $tip, 'assistance_requested' => false]);
+    $resolution = $task->comments()->where('type', 'resolution')->sole();
+    expect($resolution->author)->toBe('gateway')->and($resolution->body)->toContain($head.' → '.$tip);
+    expect($failed->fresh()->output)->toBe('Historical failure retained.');
+    expect($state->resets)->toBe(1)->and($state->launches)->toBe(1)->and($state->advances)->toBe(0);
+
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+
+    expect($state->resets)->toBe(1)->and($state->launches)->toBe(1);
+    expect($task->comments()->where('type', 'resolution')->count())->toBe(1);
+    expect($task->checks()->count())->toBe(2);
+})->with([
+    '1293 ADR retirement baseline' => ['82fcdd38462a074aed2967de32fab703c5bc894d', 'e43566fefdce199eaacf5d2ddad4b56fa1a2a55a'],
+    '1286 CLI isolation baseline' => ['328cd91b42156a3bb2d52c949574cfa30ada461c', 'f843defd6803b66f9a238c247ef4ee7ad2d0a6a2'],
+    '1298 check 1421 baseline' => ['e43566fefdce199eaacf5d2ddad4b56fa1a2a55a', 'f843defd6803b66f9a238c247ef4ee7ad2d0a6a2'],
+]);
+
+it('automatically recovers a superseded handoff through tick and reuses its check after restart', function (): void {
+    $head = '328cd91b42156a3bb2d52c949574cfa30ada461c';
+    $tip = 'f843defd6803b66f9a238c247ef4ee7ad2d0a6a2';
+    [$task, $state] = tick_red_main_retry(TaskCheckKind::Handoff, $head, $tip);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($state->advances)->toBe(1)->and($state->launches)->toBe(1)->and($state->resets)->toBe(0);
+    expect($task->fresh()->handoff_retry['phase'])->toBe('running');
+    expect(TaskReviewBase::commit($task->fresh()))->toBe($head);
+
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+    $state->reading = TaskCheckReading::finished(0, $tip, str_repeat('c', 40), [], 'passed');
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $task->id, 'status' => 'reviewing', 'assistance_requested' => false]);
+    expect($state->advances)->toBe(1)->and($state->launches)->toBe(1);
+    expect($task->checks()->count())->toBe(2);
+    expect($task->comments()->where('type', 'resolution')->count())->toBe(0);
+});
+
+it('keeps failure assistance when tick cannot verify a green superseding tip', function (TaskCheckKind $kind, ?string $conclusion): void {
+    [$task, $state] = tick_red_main_retry($kind, '328cd91b42156a3bb2d52c949574cfa30ada461c', 'f843defd6803b66f9a238c247ef4ee7ad2d0a6a2');
+    $state->runs = [['name' => 'Gateway', 'conclusion' => $conclusion]];
+
+    app(TaskScheduler::class)->tick();
+
+    $this->assertDatabaseHas('tasks', ['id' => $task->id, 'assistance_requested' => true, 'assistance_kind' => 'failure']);
+    expect($state->launches)->toBe(0)->and($state->advances)->toBe(0)->and($state->resets)->toBe(0);
+    expect($task->comments()->where('type', 'resolution')->count())->toBe(0);
+    expect($task->fresh()->handoff_retry)->toBeNull();
+})->with([
+    'baseline red' => [TaskCheckKind::Baseline, 'failure'], 'baseline pending' => [TaskCheckKind::Baseline, null],
+    'handoff red' => [TaskCheckKind::Handoff, 'failure'], 'handoff pending' => [TaskCheckKind::Handoff, null],
+]);
+
+it('keeps automatic retry blocked by task or group direction and pending consultation', function (TaskCheckKind $kind, string $hold): void {
+    [$task, $state] = tick_red_main_retry($kind, '328cd91b42156a3bb2d52c949574cfa30ada461c', 'f843defd6803b66f9a238c247ef4ee7ad2d0a6a2');
+    if ($hold === 'consult') {
+        $consult = TaskComment::query()->create(['task_group_id' => $task->parent_id, 'task_id' => $task->id, 'type' => 'assistance_requested', 'author' => 'operator', 'body' => 'Consult before retry.', 'posted_at' => now()]);
+        $task->update(['consult_comment_id' => $consult->id]);
+    } else {
+        TaskAssistance::apply($hold === 'task' ? $task : $task->parent, AssistanceKind::Direction, 'Preserve candidate.', 'Preserve candidate.');
+    }
+
+    app(TaskScheduler::class)->tick();
+
+    expect($state->launches)->toBe(0)->and($state->advances)->toBe(0)->and($state->resets)->toBe(0);
+    expect($task->fresh()->assistance_requested)->toBeTrue();
+    Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/check-runs'));
+})->with([
+    'baseline task direction' => [TaskCheckKind::Baseline, 'task'], 'baseline group direction' => [TaskCheckKind::Baseline, 'group'],
+    'handoff task direction' => [TaskCheckKind::Handoff, 'task'], 'handoff group direction' => [TaskCheckKind::Handoff, 'group'],
+    'baseline consult' => [TaskCheckKind::Baseline, 'consult'], 'handoff consult' => [TaskCheckKind::Handoff, 'consult'],
+]);
+
+it('never duplicates an uncertain handoff launch across tick restarts', function (): void {
+    [$task, $state] = tick_red_main_retry(TaskCheckKind::Handoff, '328cd91b42156a3bb2d52c949574cfa30ada461c', 'f843defd6803b66f9a238c247ef4ee7ad2d0a6a2');
+    $state->loseReply = true;
+
+    app(TaskScheduler::class)->tick();
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+
+    expect($state->launches)->toBe(1)->and($task->fresh()->handoff_retry['phase'])->toBe('start_requested');
+    expect($task->fresh()->assistance_requested)->toBeTrue();
+    expect($task->checks()->count())->toBe(1);
+    $intent = $task->fresh()->handoff_retry;
+    TaskCheck::query()->create([
+        'task_id' => $task->id, 'task_comment_id' => $intent['receiptId'], 'kind' => 'handoff', 'status' => 'running',
+        'pid' => 5000, 'process_started' => 'recovered', 'head_before' => $state->head, 'tree_before' => $state->tree, 'started_at' => now(),
+    ]);
+
+    app()->forgetInstance(TaskScheduler::class);
+    app(TaskScheduler::class)->tick();
+
+    expect($state->launches)->toBe(1)->and($task->fresh()->handoff_retry['phase'])->toBe('running');
 });
 
 /**

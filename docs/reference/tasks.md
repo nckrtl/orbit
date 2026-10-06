@@ -910,7 +910,9 @@ Orbit records the retry request with the resolution before moving the workspace.
 
 The action applies only to a managed task and subtask that are both `running`. The subtask must ask for assistance, with no direction assistance on either row. Its latest baseline must have failed, with no running check and no implementer ever started anywhere in the task. The action creates one `gateway` resolution naming the old and green tips, then calls `RetryTaskBaselineAction::queue` and `recover`.
 
-Recovery fetches again and checks the current tip's ancestry and green status before resetting the untouched workspace to that exact verified SHA. Ref movement before the reset is refused. A pending retry request prevents another automatic resolution. An unchanged, unrelated, red, or pending tip leaves assistance set and does not authorize a reset. This action does not change Project checks or merge rules, and it does not merge a pull request. Calling it from `tasks:tick` is not part of this action's implementation.
+Recovery fetches again and checks the current tip's ancestry and green status before resetting the untouched workspace to that exact verified SHA. Ref movement before the reset is refused. A pending retry request prevents another automatic resolution. An unchanged, unrelated, red, or pending tip leaves assistance set and does not authorize a reset.
+
+Before skipping a running subtask held for failure, `tasks:tick` considers this automatic baseline retry. It queues the same retry an operator resolution requests when the fetched default tip is a verified green strict descendant of the failed check's tip. A later tick resumes a committed retry request without another resolution. The operator resolution path remains available. Direction assistance and pending consults prevent automatic retry. Project checks and merge rules stay unchanged; nothing auto-merges.
 
 ### Recover a superseded handoff
 
@@ -924,7 +926,9 @@ Operator direction publication and handoff recovery share the existing execution
 
 Before starting the ordinary full handoff check, recovery commits `start_requested`. A restart reconciles a matching persisted check. If launch may have occurred but no check receipt was saved, it keeps assistance and requires reconciliation; it never blindly launches another check.
 
-A passed unchanged check must still satisfy the ordinary deliverable verifier before normal review admission. Admission re-reads and locks the task, group and persisted intent after remote observation; a new direction or changed ownership stops admission. Clearing failure assistance, recording completion and entering review commit together, so an interruption rolls back the whole transition. Failed, lost or changed checks retain assistance. These actions do not add a scheduler sweep; `tasks:tick` integration is separate work.
+A passed unchanged check must still satisfy the ordinary deliverable verifier before normal review admission. Admission re-reads and locks the task, group and persisted intent after remote observation; a new direction or changed ownership stops admission. Clearing failure assistance, recording completion and entering review commit together, so an interruption rolls back the whole transition. Failed, lost or changed checks retain assistance.
+
+`tasks:tick` also considers this handoff retry before skipping a running subtask held for failure. It resumes an existing persisted intent before considering a new retry. Each later tick reads the same recovered check; it does not launch another check while that check is running or its launch is uncertain. The candidate advances only to the pinned green strict descendant, preserving its files and original regression base. Normal checks and deliverable verification still gate review. Direction assistance, pending consults and active workers keep recovery blocked. This retry does not merge a pull request.
 
 ## Review a subtask
 
