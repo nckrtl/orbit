@@ -31,11 +31,25 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function inspect(Instance $instance): RuntimeDependencyState
     {
+        $states = [];
+        foreach ($instance->effectiveApps() as $app) {
+            $states[$app['name']] = $this->inspectApp($instance, $app['name']);
+        }
+        if (count($states) === 1) {
+            return array_first($states);
+        }
+
+        return new RuntimeDependencyState(false, false, false, false,
+            ($states === [] ? null : max(array_map(static fn (RuntimeDependencyState $state): ?int => $state->sourceTreeLastActivityUnix, $states))), $states);
+    }
+
+    private function inspectApp(Instance $instance, string $app): RuntimeDependencyState
+    {
         $checkout = $this->checkout($instance);
         $result = $this->ssh->execute(
             $this->connection($instance->node),
             new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', $checkout, $this->application($instance)],
+                ['sudo', 'bash', '-seu', '--', $checkout, $this->application($instance, $app), ...array_values(array_map(fn (array $configuration): string => $this->application($instance, $configuration['name']), array_filter($instance->effectiveApps(), static fn (array $configuration): bool => $configuration['name'] !== $app)))],
                 self::inspectScript(),
             ),
         );
@@ -51,6 +65,13 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
     }
 
     public function prune(Instance $instance, RuntimeDependencyState $state): void
+    {
+        foreach ($instance->effectiveApps() as $app) {
+            $this->pruneApp($instance, $app['name'], $this->stateForApp($instance, $state, $app['name']));
+        }
+    }
+
+    private function pruneApp(Instance $instance, string $app, RuntimeDependencyState $state): void
     {
         $this->checkout($instance);
         $targets = [];
@@ -70,7 +91,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
         $result = $this->ssh->execute(
             $this->connection($instance->node),
             new RemoteCommand(
-                ['sudo', 'bash', '-seu', '--', $this->application($instance), ...$targets],
+                ['sudo', 'bash', '-seu', '--', $this->application($instance, $app), ...$targets],
                 self::pruneScript(),
             ),
         );
@@ -87,8 +108,27 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function restore(Instance $instance, RuntimeDependencyState $state): void
     {
+        foreach ($instance->effectiveApps() as $app) {
+            $this->restoreApp($instance, $app['name'], $this->stateForApp($instance, $state, $app['name']));
+        }
+    }
+
+    private function stateForApp(Instance $instance, RuntimeDependencyState $state, string $app): RuntimeDependencyState
+    {
+        if (isset($state->apps[$app])) {
+            return $state->apps[$app];
+        }
+        if (count($instance->effectiveApps()) === 1 && $state->apps === []) {
+            return $state;
+        }
+
+        throw new HibernationException('hibernation.checkout_inspect_failed', 'Dependency inspection must cover every app.');
+    }
+
+    private function restoreApp(Instance $instance, string $app, RuntimeDependencyState $state): void
+    {
         $this->checkout($instance);
-        $checkout = $this->application($instance);
+        $checkout = $this->application($instance, $app);
         $account = $this->accounts->resolve($instance->node);
 
         if ($state->restorableVendor()) {
@@ -147,10 +187,10 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
         return $path->value;
     }
 
-    private function application(Instance $instance): string
+    private function application(Instance $instance, string $app): string
     {
         $checkout = $this->checkout($instance);
-        $path = StoragePath::tryParse($instance->dependencyDirectory());
+        $path = StoragePath::tryParse($instance->applicationDirectory($app));
         if ($path === null || ($path->value !== $checkout && ! str_starts_with($path->value, $checkout.'/'))) {
             throw new HibernationException(
                 errorCode: 'hibernation.checkout_path_invalid',
@@ -257,11 +297,22 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
                 fi
             done
 
-            source_mtime=$(find "$repository" \
-                \( -name vendor -o -name node_modules -o -name .git \) -prune -o \
-                -type f ! -type l -printf '%T@\n' 2>/dev/null | sort -n | tail -1)
-            source_mtime=${source_mtime%.*}
-            printf 'source_mtime=%s\n' "${source_mtime:-0}"
+            shift 2
+            python3 - "$repository" "$checkout" "$@" <<'PY'
+            import os, stat, sys
+            repository = sys.argv[1]
+            excluded = {os.path.join(repository, '.git')}
+            for application in sys.argv[2:]:
+                excluded.update(os.path.join(application, directory) for directory in ('vendor', 'node_modules'))
+            latest = 0
+            for directory, children, files in os.walk(repository, followlinks=False):
+                children[:] = [child for child in children if os.path.join(directory, child) not in excluded]
+                for file in files:
+                    metadata = os.lstat(os.path.join(directory, file))
+                    if stat.S_ISREG(metadata.st_mode):
+                        latest = max(latest, int(metadata.st_mtime))
+            print('source_mtime=' + str(latest))
+            PY
             BASH;
     }
 

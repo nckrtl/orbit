@@ -23,18 +23,19 @@ use Illuminate\Support\Str;
  * @property string|null $requested_name
  * @property string $destination_name
  * @property string $destination_path
- * @property string $destination_domain
+ * @property string|null $destination_domain
  * @property string|null $sqlite_source_path
  * @property InstanceSourceLayout $source_layout
  * @property string $source_path
  * @property string|null $common_repository_path
- * @property int $source_route_id
+ * @property int|null $source_route_id
  * @property int|null $destination_route_id
  * @property InstanceTransferStatus $status
  * @property InstanceTransferStep $current_step
  * @property InstanceTransferStep|null $failed_step
  * @property string|null $error_code
  * @property array<string, mixed>|null $recovery_evidence
+ * @property array<string, array{source_route_id: ?int, destination_route_id: ?int, destination_domain: ?string, source_router_node_id: ?int, source_app_identity?: bool, imported_environment_keys: list<string>, annotator?: array{source_store: string, archive?: string, attempt?: string, restored_store?: string, staging_store?: string, ownership_receipt?: string}, ports?: array<string, int>}>|null $app_journal
  * @property list<string>|null $imported_environment_keys
  * @property Carbon|null $cutover_at
  * @property Carbon|null $completed_at
@@ -77,6 +78,7 @@ final class InstanceTransfer extends Model
         'error_code',
         'recovery_evidence',
         'imported_environment_keys',
+        'app_journal',
         'cutover_at',
         'completed_at',
     ];
@@ -141,6 +143,7 @@ final class InstanceTransfer extends Model
             'failed_step' => InstanceTransferStep::class,
             'recovery_evidence' => 'array',
             'imported_environment_keys' => 'array',
+            'app_journal' => 'array',
             'cutover_at' => 'immutable_datetime',
             'completed_at' => 'immutable_datetime',
         ];

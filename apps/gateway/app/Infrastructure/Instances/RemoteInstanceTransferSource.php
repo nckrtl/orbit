@@ -27,6 +27,7 @@ use App\Models\InstanceTransfer;
 use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Throwable;
 
 final readonly class RemoteInstanceTransferSource implements InstanceTransferSource
@@ -42,10 +43,20 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
     {
         $instance->loadMissing('node');
         $layout = InstanceSourceLayout::from($instance->source_layout);
+        $transfer = InstanceTransfer::query()->where('instance_id', $instance->id)->open()->first();
+        foreach ($instance->processes as $process) {
+            if ($process->isAnnotator()) {
+                $app = $instance->appConfiguration($process->app)['name'];
+                if (! isset($transfer?->app_journal[$app]['annotator'])) {
+                    throw $this->failed();
+                }
+            }
+        }
+        $archives = $transfer === null ? [] : $this->captureAnnotators($instance, $transfer);
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? '', ...($instance->annotator_port === null ? [] : [AnnotatorEndpoint::forInstance($instance)])],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $layout->value, $sqliteSourcePath ?? '', ...array_merge(...array_map(fn (array $app): array => [$instance->applicationDirectory($app['name']).'/.env', $instance->applicationDirectory($app['name']).'/.env.testing'], $instance->effectiveApps()))],
                 input: $this->captureScript(),
             ),
             step: 'app-instance-transfer-capture',
@@ -66,6 +77,8 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             detached: $facts['detached'] === '1',
             archiveIdentity: $facts['archive'],
             refs: $facts['refs'] === '' ? [] : explode(' ', $facts['refs']),
+            transferId: $transfer?->id,
+            annotatorArchives: $archives,
         );
     }
 
@@ -79,6 +92,9 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
         try {
             $this->uploadArchive($destination, $archive, $path, $capture);
+            foreach ($capture->annotatorArchives as $app => $entry) {
+                $this->restoreAnnotator($source, $destination, $capture, $app, $entry);
+            }
         } finally {
             if (is_file($archive)) {
                 unlink($archive);
@@ -97,6 +113,11 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
     public function discardDestination(Node $node, StoragePath $path): void
     {
+        $transfer = InstanceTransfer::query()->where('destination_node_id', $node->id)->where('destination_path', $path->value)->whereNull('cutover_at')->open()->first();
+        if ($transfer !== null) {
+            $this->removePreparedStores($node, $transfer);
+            $this->removeArchives($transfer);
+        }
         $this->ssh->execute(
             $node,
             new RemoteCommand(
@@ -113,11 +134,53 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         );
     }
 
+    public function verifyDestination(InstanceTransfer $transfer): void
+    {
+        $arguments = ['bash', '-seu', '--'];
+        if ($transfer->app_journal === null || $transfer->instance_id === null) {
+            throw new RuntimeConvergenceException('app-instance-transfer-verify-annotator', 'instance.transfer_cleanup_conflict', 'The destination restoration journal is missing.');
+        }
+        foreach ($transfer->app_journal as $app => $entry) {
+            $annotator = $entry['annotator'] ?? null;
+            if ($annotator === null) {
+                continue;
+            }
+            $store = AnnotatorEndpoint::store($transfer->instance_id, $app);
+            if (! isset($annotator['restored_store'], $annotator['attempt']) || $annotator['restored_store'] !== $store) {
+                throw new RuntimeConvergenceException('app-instance-transfer-verify-annotator', 'instance.transfer_cleanup_conflict', 'The destination app store receipt is missing or foreign.');
+            }
+            $arguments[] = $store;
+            $arguments[] = "{$transfer->id}:{$annotator['attempt']}:{$transfer->instance_id}:{$app}";
+        }
+        if (count($arguments) === 3) {
+            return;
+        }
+        $this->ssh->execute(Node::query()->findOrFail($transfer->destination_node_id), new RemoteCommand(
+            $arguments,
+            'sudo python3 - "$(id -u)" "$@" <<\'PY\''."\n".AnnotatorTransferProgram::verify()."\nPY",
+        ), step: 'app-instance-transfer-verify-annotator', errorCode: 'instance.transfer_cleanup_conflict');
+    }
+
     public function cleanupSource(InstanceTransfer $transfer): TransferCleanupResult
     {
         $source = Node::query()->findOrFail($transfer->source_node_id);
         $common = $transfer->common_repository_path;
+        if ($transfer->app_journal === null) {
+            return new TransferCleanupResult(false, true, ['app-journal']);
+        }
+        foreach ($transfer->app_journal as $app => $entry) {
+            if (isset($entry['annotator'])) {
+                $store = $entry['annotator']['source_store'];
+                $expected = AnnotatorEndpoint::store($transfer->instance_id ?? throw $this->failed(), $app);
+                $legacy = count($transfer->app_journal) === 1 ? AnnotatorEndpoint::store($transfer->instance_id ?? throw $this->failed()) : null;
+                if ($store !== $expected && $store !== $legacy) {
+                    return new TransferCleanupResult(false, true, ['annotator-store-ownership']);
+                }
+            }
+        }
 
+        // Validate every app first, including when this adapter is called outside the action.
+        $this->verifyDestination($transfer);
         try {
             $this->ssh->execute(
                 $source,
@@ -129,7 +192,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
                         $transfer->source_path,
                         $transfer->source_layout->value,
                         $common ?? '',
-                        ...(Instance::query()->whereKey($transfer->instance_id)->whereNotNull('annotator_port')->exists() ? [AnnotatorEndpoint::forInstance(Instance::query()->findOrFail($transfer->instance_id ?? throw $this->failed()))] : []),
+                        ...array_values(array_map(static fn (array $entry): string => $entry['annotator']['source_store'], array_filter($transfer->app_journal ?? [], static fn (array $entry): bool => isset($entry['annotator'])))),
                     ],
                     input: $this->cleanupScript(),
                 ),
@@ -140,7 +203,190 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             return new TransferCleanupResult(false, true, ['source-placement']);
         }
 
+        try {
+            $this->removePreparedStores(Node::query()->findOrFail($transfer->destination_node_id), $transfer, rollback: false);
+            $this->removeArchives($transfer);
+        } catch (Throwable) {
+            return new TransferCleanupResult(false, true, ['annotator-archives']);
+        }
+
         return new TransferCleanupResult(true, true);
+    }
+
+    /** @return array<string, array{source_store: string, archive: string, attempt: string, restored_store?: string, staging_store?: string, ownership_receipt?: string}> */
+    private function captureAnnotators(Instance $instance, InstanceTransfer $transfer): array
+    {
+        $journal = $transfer->app_journal ?? [];
+        if ($transfer->cutover_at !== null || $transfer->source_node_id !== $instance->node_id) {
+            throw $this->failed();
+        }
+        foreach ($journal as $entry) {
+            if (isset($entry['annotator']['restored_store']) || isset($entry['annotator']['staging_store']) || isset($entry['annotator']['ownership_receipt'])) {
+                throw $this->failed(); // Prepared receipts must survive until rollback, never recapture.
+            }
+        }
+        $archives = [];
+        foreach ($journal as $app => &$entry) {
+            if (! isset($entry['annotator'])) {
+                continue;
+            }
+            $store = $entry['annotator']['source_store'];
+            if ($store !== AnnotatorEndpoint::forInstance($instance, $app)) {
+                throw $this->failed();
+            }
+            $attempt = $entry['annotator']['attempt'] ?? (string) Str::uuid();
+            $archive = $entry['annotator']['archive'] ?? "/tmp/orbit-transfer-{$transfer->id}-{$attempt}-{$app}.tar";
+            $entry['annotator'] = [...$entry['annotator'], 'source_store' => $store, 'archive' => $archive, 'attempt' => $attempt];
+            $transfer->update(['app_journal' => $journal]);
+            $this->ssh->execute($instance->node, new RemoteCommand(
+                ['bash', '-seu', '--', $store, $archive],
+                <<<'BASH'
+                    store=$1
+                    archive=$2
+                    test -d "$store" && test ! -L "$store" && test -O "$store"
+                    test "$(realpath -e -- "$store")" = "$store"
+                    umask 077
+                    test ! -L "$archive"
+                    if [ -e "$archive" ]; then test -f "$archive" && test -O "$archive"; fi
+                    python3 - "$store" <<'PY'
+                    import os, stat, sys
+                    def fail(error):
+                        raise error
+                    for directory, children, files in os.walk(sys.argv[1], onerror=fail, followlinks=False):
+                        for name in children + files:
+                            metadata = os.lstat(os.path.join(directory, name))
+                            if metadata.st_uid != os.geteuid() or not (stat.S_ISDIR(metadata.st_mode) or stat.S_ISREG(metadata.st_mode)):
+                                raise RuntimeError('foreign annotator content')
+                            if stat.S_ISREG(metadata.st_mode) and metadata.st_nlink != 1:
+                                raise RuntimeError('linked annotator content')
+                    PY
+                    tar --owner=0 --group=0 --exclude=./.orbit-transfer-owner -cf "$archive" -C "$store" .
+                    BASH,
+            ), step: 'app-instance-transfer-capture-annotator', errorCode: 'instance.transfer_failed');
+            $archives[$app] = $entry['annotator'];
+        }
+        unset($entry);
+
+        return $archives;
+    }
+
+    /** @param array{source_store: string, archive: string, attempt: string, restored_store?: string, staging_store?: string, ownership_receipt?: string} $entry */
+    private function restoreAnnotator(Node $source, Node $destination, TransferSourceCapture $capture, string $app, array $entry): void
+    {
+        $transferId = $capture->transferId ?? throw $this->failed();
+        $transfer = InstanceTransfer::query()->findOrFail($transferId);
+        if ($transfer->instance_id !== $capture->instanceId || $transfer->source_node_id !== $source->id || $transfer->destination_node_id !== $destination->id || ! isset($transfer->app_journal[$app]['annotator'])) {
+            throw $this->failed();
+        }
+        $directory = storage_path("app/transfer-staging/{$transferId}/{$entry['attempt']}/annotator");
+        new Filesystem()->ensureDirectoryExists($directory, 0700);
+        if (realpath($directory) !== $directory) {
+            throw $this->failed();
+        }
+        $local = $directory.'/'.$app.'.tar';
+        if (file_exists($local) || is_link($local)) {
+            if (! is_file($local) || is_link($local) || fileowner($local) !== posix_geteuid() || ! unlink($local)) {
+                throw $this->failed();
+            }
+        }
+        $file = fopen($local, 'x');
+        if ($file === false || ! chmod($local, 0600)) {
+            throw $this->failed();
+        }
+        fclose($file);
+        $remote = "/tmp/orbit-transfer-{$transferId}-{$entry['attempt']}-{$app}-restore.tar";
+        $store = AnnotatorEndpoint::store($capture->instanceId, $app);
+        $owner = "{$transferId}:{$entry['attempt']}:{$capture->instanceId}:{$app}";
+        $journal = $transfer->app_journal ?? [];
+        $staged = $store.'.transfer-'.$transferId.'-'.$entry['attempt'];
+        $receipt = $staged.'.owner';
+        $journal[$app]['annotator'] = [...($journal[$app]['annotator'] ?? $entry), 'restored_store' => $store, 'staging_store' => $staged, 'ownership_receipt' => $receipt];
+        $transfer->update(['app_journal' => $journal]);
+        try {
+            $this->copyArchive($this->scpFromRemote($source, $entry['archive'], $local), 'app-instance-transfer-download-annotator');
+            $this->ssh->execute($destination, new RemoteCommand(
+                ['bash', '-seu', '--', $remote],
+                <<<'BASH'
+                    umask 077
+                    test ! -L "$1"
+                    if [ -e "$1" ]; then
+                        test -f "$1" && test -O "$1"
+                    else
+                        set -C
+                        : > "$1"
+                    fi
+                    BASH,
+            ), step: 'app-instance-transfer-reserve-annotator-archive', errorCode: 'instance.transfer_cleanup_conflict');
+            $this->copyArchive($this->scpToRemote($destination, $local, $remote), 'app-instance-transfer-upload-annotator');
+            $this->ssh->execute($destination, new RemoteCommand(
+                ['bash', '-seu', '--', $remote, $store, $staged, $receipt, $owner],
+                'sudo python3 - "$@" "$(id -u)" "$(id -g)" <<\'PY\''."\n".AnnotatorTransferProgram::restore()."\nPY",
+            ), step: 'app-instance-transfer-restore-annotator', errorCode: 'instance.transfer_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            if (trim($exception->result->stdout ?? '') === 'OWNERSHIP_CONFLICT') {
+                throw new RuntimeConvergenceException('app-instance-transfer-restore-annotator', 'instance.transfer_cleanup_conflict', 'The app annotator destination has foreign ownership.', previous: $exception);
+            }
+            throw $exception;
+        } finally {
+            unlink($local);
+        }
+    }
+
+    private function removePreparedStores(Node $node, InstanceTransfer $transfer, bool $rollback = true): void
+    {
+        foreach ($transfer->app_journal ?? [] as $app => $entry) {
+            $annotator = $entry['annotator'] ?? null;
+            if (! isset($annotator['restored_store'], $annotator['attempt'])) {
+                continue;
+            }
+            $store = AnnotatorEndpoint::store($transfer->instance_id ?? throw $this->failed(), $app);
+            if ($annotator['restored_store'] !== $store) {
+                throw $this->failed();
+            }
+            $owner = "{$transfer->id}:{$annotator['attempt']}:{$transfer->instance_id}:{$app}";
+            $staged = $store.'.transfer-'.$transfer->id.'-'.$annotator['attempt'];
+            $receipt = $staged.'.owner';
+            if (($annotator['staging_store'] ?? $staged) !== $staged || ($annotator['ownership_receipt'] ?? $receipt) !== $receipt) {
+                throw $this->failed();
+            }
+            $this->ssh->execute($node, new RemoteCommand(
+                ['bash', '-seu', '--', $store, $staged, $receipt, $owner, $rollback ? 'rollback' : 'complete'],
+                'parent=$(dirname "$1"); if [ ! -e "$parent" ] && [ ! -L "$parent" ]; then exit 0; fi'."\n".
+                'sudo python3 - "$1" "$2" "$3" "$4" "$(id -u)" "$5" <<\'PY\''."\n".AnnotatorTransferProgram::cleanup()."\nPY",
+            ), step: 'app-instance-transfer-discard-annotator', errorCode: 'instance.transfer_failed');
+        }
+    }
+
+    private function removeArchives(InstanceTransfer $transfer): void
+    {
+        foreach ($transfer->app_journal ?? [] as $app => $entry) {
+            $annotator = $entry['annotator'] ?? null;
+            if (! isset($annotator['archive'], $annotator['attempt'])) {
+                continue;
+            }
+            $archive = "/tmp/orbit-transfer-{$transfer->id}-{$annotator['attempt']}-{$app}.tar";
+            if ($annotator['archive'] !== $archive) {
+                throw $this->failed();
+            }
+            foreach ([$transfer->source_node_id => $archive, $transfer->destination_node_id => substr($archive, 0, -4).'-restore.tar'] as $nodeId => $path) {
+                $this->ssh->execute(Node::query()->findOrFail($nodeId), new RemoteCommand(
+                    ['bash', '-seu', '--', $path],
+                    <<<'BASH'
+                        archive=$1
+                        if [ -e "$archive" ] || [ -L "$archive" ]; then
+                          test -f "$archive" && test ! -L "$archive" && test -O "$archive"
+                          rm -f -- "$archive"
+                        fi
+                        BASH,
+                ), step: 'app-instance-transfer-cleanup-annotator-archive', errorCode: 'instance.transfer_failed');
+            }
+        }
+        $directory = storage_path('app/transfer-staging/'.$transfer->id);
+        if (is_dir($directory)) {
+            if (realpath($directory) !== $directory || ! new Filesystem()->deleteDirectory($directory)) {
+                throw $this->failed();
+            }
+        }
     }
 
     private function stageArchive(Node $source, TransferSourceCapture $capture): string
@@ -187,9 +433,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
         TransferSourceCapture $capture,
     ): void {
         $instance = Instance::query()->with('project')->findOrFail($capture->instanceId);
-        $environmentDirectory = $instance->source_is_laravel === true
-            ? ApplicationDirectory::resolvePath($path->value, $instance->applicationPath())
-            : $path->value;
+        $environmentFiles = array_merge(...array_map(static fn (array $app): array => [ApplicationDirectory::resolvePath($path->value, $app['path']).'/.env', ApplicationDirectory::resolvePath($path->value, $app['path']).'/.env.testing'], $instance->effectiveApps()));
         $remoteArchive = "/tmp/orbit-transfer-{$capture->instanceId}.tar";
         $this->copyArchive(
             $this->scpToRemote($destination, $archive, $remoteArchive),
@@ -208,7 +452,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
                     $capture->head,
                     $capture->branch ?? '',
                     $capture->detached ? '1' : '0',
-                    $environmentDirectory.'/.env',
+                    ...$environmentFiles,
                 ],
                 input: $this->materializeScript(),
             ),
@@ -316,7 +560,15 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             source=$1
             layout=$2
             sqlite_source=$3
-            annotator_store=${4:-}
+            shift 3
+            for environment in "$@"; do
+              case "$environment" in "$source"/*) ;; *) exit 20 ;; esac
+              if [ -e "$environment" ] || [ -L "$environment" ]; then
+                test -f "$environment" && test ! -L "$environment"
+                test "$(realpath -e -- "$environment")" = "$environment"
+                chmod o-rwx -- "$environment"
+              fi
+            done
             archive="/tmp/orbit-transfer-$(basename "$source")-$$.tar"
             cd -- "$source"
             head=$(git rev-parse HEAD)
@@ -348,10 +600,6 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
               rm -f -- "$archive.bundle"
             else
               tar "${exclusions[@]}" -cf "$archive" .
-            fi
-            if [ -n "$annotator_store" ] && [ -d "$annotator_store" ]; then
-              test ! -e .orbit/annotator
-              tar --transform='s,^\./,./.orbit/annotator/,;s,^\.$,./.orbit/annotator,' -rf "$archive" -C "$annotator_store" .
             fi
             printf 'head=%s\nbranch=%s\ndetached=%s\narchive=%s\ncommon=%s\nrefs=%s\n' \
               "$head" "$branch" "$detached" "$archive" "$common" "$refs"
@@ -399,12 +647,15 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
               workspace_git -C "$destination" reset --mixed --quiet "$head"
             fi
             # Other local users, the Node agent included, never read an Instance's environment (ADR 0151).
-            environment=${6:-$destination/.env}
-            case "$environment" in "$destination"/*) ;; *) exit 20 ;; esac
-            if [ -f "$environment" ] && [ ! -L "$environment" ]; then
-              test "$(realpath -e -- "$environment")" = "$environment"
-              chmod o-rwx -- "$environment"
-            fi
+            shift 5
+            for environment in "$@"; do
+              case "$environment" in "$destination"/*) ;; *) exit 20 ;; esac
+              if [ -e "$environment" ] || [ -L "$environment" ]; then
+                test -f "$environment" && test ! -L "$environment"
+                test "$(realpath -e -- "$environment")" = "$environment"
+                chmod o-rwx -- "$environment"
+              fi
+            done
             BASH;
     }
 
@@ -414,10 +665,15 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
             source=$1
             layout=$2
             common=$3
-            annotator_store=${4:-}
-            if [ -n "$annotator_store" ]; then
-              sudo rm -rf -- "$annotator_store"
-            fi
+            shift 3
+            for annotator_store in "$@"; do
+              if [ -e "$annotator_store" ] || [ -L "$annotator_store" ]; then
+                test -d "$annotator_store" && test ! -L "$annotator_store"
+                test "$(realpath -e -- "$annotator_store")" = "$annotator_store"
+                test -O "$annotator_store"
+                rm -rf -- "$annotator_store"
+              fi
+            done
             if [ ! -e "$source" ] && [ ! -L "$source" ]; then
               exit 0
             fi

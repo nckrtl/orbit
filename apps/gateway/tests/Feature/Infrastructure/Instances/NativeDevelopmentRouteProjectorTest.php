@@ -192,6 +192,47 @@ it('retires a transferred generated Route without inventing an old Router certif
     }
 });
 
+it('per-app transfer retires every owned app certificate without deleting still-used Router certificates', function (bool $sourceWebUsesAppIdentity): void {
+    [$instance, $webRoute, $source, $router] = orb127_route_projection_models();
+    $webRoute->update(['status' => RouteStatus::Active]);
+    $instance->project->update(['apps' => [
+        ['name' => 'web', 'type' => 'laravel-app', 'path' => 'apps/web', 'web_root' => 'public'],
+        ['name' => 'docs', 'type' => 'laravel-app', 'path' => 'apps/docs', 'web_root' => 'public'],
+    ]]);
+    $instance->refresh()->update(['app_overrides' => [], 'app_runtime' => [
+        'web' => ['php_version' => '8.5', 'laravel' => true], 'docs' => ['php_version' => '8.5', 'laravel' => true],
+    ]]);
+    $docsRoute = Route::query()->create([
+        'app' => 'docs', 'project_id' => $instance->project_id, 'cluster_id' => $source->cluster_id,
+        'domain' => 'docs.acme.test', 'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private, 'status' => RouteStatus::Pending,
+    ]);
+    $docsRoute->targets()->create(['app' => 'docs', 'instance_id' => $instance->id, 'position' => 0]);
+    $docsRoute->update(['status' => RouteStatus::Active]);
+    $destination = Node::query()->create([
+        'name' => 'transfer-destination', 'cluster_id' => $source->cluster_id, 'status' => LifecycleStatus::Active, 'platform' => 'linux',
+        'wireguard_ip' => '10.44.0.30', 'public_ssh_host' => '192.0.2.30', 'user' => 'orbit',
+    ]);
+    $destination->roles()->create(['role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
+    $transfer = orb368_projection_transfer($instance, $webRoute, $webRoute, $source, $destination, $router);
+    $webEntry = $transfer->app_journal['web'];
+    $webEntry['source_app_identity'] = $sourceWebUsesAppIdentity;
+    $transfer->update(['app_journal' => ['web' => $webEntry, 'docs' => [
+        'source_route_id' => $docsRoute->id, 'destination_route_id' => $docsRoute->id, 'destination_domain' => $docsRoute->domain,
+        'source_router_node_id' => $router->id, 'source_app_identity' => true, 'imported_environment_keys' => [],
+    ]]]);
+    [$projector, $ssh, , $home] = orb127_route_projector();
+    try {
+        $projector->retireSource($transfer);
+        $deletions = collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'sudo rm -rf -- "/etc/caddy/orbit-certificates/$scope"'));
+        expect($deletions->map(static fn (RemoteCommand $command): string => $command->arguments[3])->values()->all())->toBe([
+            "app-instance-{$instance->id}".($sourceWebUsesAppIdentity ? '-app-web' : ''), "app-instance-{$instance->id}-hostname-change".($sourceWebUsesAppIdentity ? '-app-web' : ''),
+            "app-instance-{$instance->id}-app-docs", "app-instance-{$instance->id}-hostname-change-app-docs",
+        ]);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with([true, false]);
+
 it('preserves a Router certificate still serving the transferred explicit Route', function (): void {
     [$instance, $route, $source, $router] = orb127_route_projection_models();
     $destination = Node::query()->create([
@@ -1542,6 +1583,12 @@ function orb368_projection_transfer(
         'source_path' => $instance->checkout_path,
         'source_route_id' => $sourceRoute->id,
         'destination_route_id' => $destinationRoute->id,
+        'app_journal' => ['web' => [
+            'source_route_id' => $sourceRoute->id, 'destination_route_id' => $destinationRoute->id,
+            'destination_domain' => $destinationRoute->domain, 'source_router_node_id' => $sourceRouter->id,
+            'source_app_identity' => $instance->usesAppRuntimeIdentity('web'),
+            'imported_environment_keys' => [],
+        ]],
         'status' => InstanceTransferStatus::InProgress,
         'current_step' => InstanceTransferStep::DestinationActivated,
         'cutover_at' => now(),

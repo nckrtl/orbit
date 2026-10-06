@@ -339,17 +339,6 @@ final readonly class RemoteProcessRuntimeManager implements ProcessEnvironmentPr
         $this->executeSuccessfully($process, $installation->arguments, 'install-annotator', 'process.annotator_install_failed', $installation->input, target: $target);
         $store = AnnotatorEndpoint::store($process->owner_id, $target->instance?->usesAppStoreIdentity($target->app) ? $target->app : null);
         $this->executeSuccessfully($process, ['sudo', 'install', '-d', '-m', '0700', '-o', $target->user, $store], 'prepare-annotator-store', 'process.annotator_install_failed', target: $target);
-        if ($target->instance?->usesAppStoreIdentity($target->app)) {
-            return;
-        }
-        $this->executeSuccessfully($process, ['bash', '-seu', '--', $target->checkoutPath.'/.orbit/annotator', $store], 'restore-annotator-store', 'process.annotator_install_failed', <<<'BASH'
-            staged=$1
-            store=$2
-            if [ -d "$staged" ] && [ ! -L "$staged" ]; then
-              cp -a -- "$staged/." "$store/"
-              rm -rf -- "$staged"
-            fi
-            BASH, target: $target);
     }
 
     private function removeAnnotatorStore(Process $process, ProcessTarget $target): void

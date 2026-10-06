@@ -21,5 +21,7 @@ interface InstanceTransferSource
 
     public function discardDestination(Node $node, StoragePath $path): void;
 
+    public function verifyDestination(InstanceTransfer $transfer): void;
+
     public function cleanupSource(InstanceTransfer $transfer): TransferCleanupResult;
 }

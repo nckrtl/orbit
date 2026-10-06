@@ -6,12 +6,14 @@ namespace App\Domain\Hibernation;
 
 final readonly class RuntimeDependencyState
 {
+    /** @param array<string, self> $apps */
     public function __construct(
         public bool $vendorReconstructable,
         public bool $vendorPresent,
         public bool $nodeModulesReconstructable,
         public bool $nodeModulesPresent,
         public ?int $sourceTreeLastActivityUnix = null,
+        public array $apps = [],
     ) {}
 
     public function prunableVendor(): bool
@@ -36,11 +38,23 @@ final readonly class RuntimeDependencyState
 
     public function hasPrunable(): bool
     {
+        foreach ($this->apps as $state) {
+            if ($state->hasPrunable()) {
+                return true;
+            }
+        }
+
         return $this->prunableVendor() || $this->prunableNodeModules();
     }
 
     public function hasRestorable(): bool
     {
+        foreach ($this->apps as $state) {
+            if ($state->hasRestorable()) {
+                return true;
+            }
+        }
+
         return $this->restorableVendor() || $this->restorableNodeModules();
     }
 }

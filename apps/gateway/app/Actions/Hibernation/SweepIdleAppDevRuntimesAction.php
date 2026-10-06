@@ -116,8 +116,9 @@ final readonly class SweepIdleAppDevRuntimesAction
         }
 
         $this->admissions->run([(int) $instance->id], function () use ($instance, $key, $state): void {
-            $this->checkouts->prune($instance, $state);
+            // Cold is recovery intent: wake must restore even when pruning stops between apps.
             $this->markers->markCold($instance->node, $key);
+            $this->checkouts->prune($instance, $state);
         });
 
         return true;

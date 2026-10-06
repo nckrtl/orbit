@@ -109,38 +109,53 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
     {
         $transfer->load(['sourceNode', 'instance.node']);
         $source = $transfer->sourceNode;
-        $sourceRouter = Node::query()->find($transfer->source_router_node_id);
-        if (! $sourceRouter instanceof Node || $transfer->cutover_at === null) {
+        if ($transfer->cutover_at === null) {
             throw new RuntimeConvergenceException(
                 step: 'source-cleanup',
                 errorCode: 'instance.transfer_source_router_unknown',
                 message: 'The original Router must be recorded before retiring source projections.',
             );
         }
-        $destinationRoute = Route::query()->with('cluster.routerAssignment.node')
-            ->findOrFail($transfer->destination_route_id ?? $transfer->source_route_id);
-        $destinationRouter = $destinationRoute->cluster?->routerAssignment?->node;
-        $nodes = collect([$source, $sourceRouter, $transfer->instance->node]);
-        if ($destinationRouter instanceof Node) {
-            $nodes->push($destinationRouter);
-        }
+        foreach ($transfer->app_journal ?? [] as $app => $entry) {
+            if ($entry['source_route_id'] === null) {
+                continue;
+            }
+            $sourceRouter = Node::query()->find($entry['source_router_node_id']);
+            if (! $sourceRouter instanceof Node) {
+                throw new RuntimeConvergenceException('source-cleanup', 'instance.transfer_source_router_unknown', 'The app source Router is unavailable.');
+            }
+            $destinationRoute = Route::query()->with('cluster.routerAssignment.node')
+                ->findOrFail($entry['destination_route_id']);
+            $destinationRouter = $destinationRoute->cluster?->routerAssignment?->node;
+            $nodes = collect([$source, $sourceRouter, $transfer->instance->node]);
+            if ($destinationRouter instanceof Node) {
+                $nodes->push($destinationRouter);
+            }
 
-        foreach ($nodes->unique('id') as $node) {
-            $this->caddy->build($node);
-        }
-        $this->php->converge($source);
-        $this->dns->converge();
+            foreach ($nodes->unique('id') as $node) {
+                $this->caddy->build($node);
+            }
+            $this->php->converge($source);
+            $this->dns->converge();
 
-        $sourceInstance = clone $transfer->instance;
-        $sourceInstance->setRelation('node', $source);
-        if (! $this->usesCertificate($source, "app-instance-{$sourceInstance->id}")) {
-            $this->certificates->removeInstance($sourceInstance);
-        }
-        new RemoteAppDevRouteFirewallManager($this->ssh)->remove($source, $transfer->source_route_id);
-        if (! $this->usesCertificate($sourceRouter, "route-{$transfer->source_route_id}-router")) {
+            $sourceInstance = clone $transfer->instance;
+            $sourceInstance->setRelation('node', $source);
+            $identity = $entry['source_app_identity'] ?? throw new RuntimeConvergenceException('source-cleanup', 'instance.transfer_cleanup_conflict', 'The app source certificate identity is not recorded.');
+            $runtime = $sourceInstance->app_runtime ?? [];
+            $runtime[$app] = [...($runtime[$app] ?? []), 'app_identity' => $identity];
+            $sourceInstance->app_runtime = $runtime;
             $oldRoute = new Route;
-            $oldRoute->id = $transfer->source_route_id;
-            $this->certificates->removeRouteRouter($oldRoute, $sourceRouter);
+            $oldRoute->id = $entry['source_route_id'];
+            $oldRoute->app = $app;
+            $scope = $sourceInstance->usesAppRuntimeIdentity($app) ? "app-instance-{$sourceInstance->id}-app-{$app}" : "app-instance-{$sourceInstance->id}";
+            if (! $this->usesCertificate($source, $scope)) {
+                $this->certificates->removeApp($sourceInstance, $oldRoute);
+                $this->certificates->removeHostnameChange($sourceInstance, $oldRoute);
+            }
+            new RemoteAppDevRouteFirewallManager($this->ssh)->remove($source, $entry['source_route_id']);
+            if (! $this->usesCertificate($sourceRouter, "route-{$entry['source_route_id']}-router")) {
+                $this->certificates->removeRouteRouter($oldRoute, $sourceRouter);
+            }
         }
     }
 

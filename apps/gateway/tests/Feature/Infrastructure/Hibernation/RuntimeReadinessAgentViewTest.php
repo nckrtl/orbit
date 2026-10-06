@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AgentView\AgentProcessView;
+use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\Hibernation\RemoteInstanceRuntimeReadiness;
@@ -96,6 +97,45 @@ it('waits for annotator health on the retained port and reports an endpoint time
         expect(fn () => $readiness->waitUntilReady($instance, [$process]))->toThrow(fn (HibernationException $exception) => expect($exception->errorCode)->toBe('hibernation.annotator_not_ready'));
     }
     expect($ssh->commands)->toHaveCount(1)->and($ssh->commands[0]->arguments[2])->toContain("'/health'")->and($ssh->commands[0]->arguments[3])->toBe('4851');
+})->with([true, false]);
+
+it('per-app hibernation wake readiness checks every app Vite annotator and Agentation endpoint', function (bool $docsHealthy): void {
+    $node = agent_view_node();
+    $web = agent_view_instance_process($node, 'template');
+    $instance = Instance::query()->firstOrFail();
+    $instance->project->update(['apps' => [
+        ['name' => 'web', 'type' => 'laravel-app', 'path' => 'apps/web', 'web_root' => 'public'],
+        ['name' => 'docs', 'type' => 'node-package', 'path' => 'apps/docs', 'web_root' => null],
+    ]]);
+    $instance->refresh()->update(['app_runtime' => [
+        'web' => ['vite_port' => 5173, 'annotator_port' => 4851, 'agentation_port' => 4747],
+        'docs' => ['vite_port' => 5174, 'annotator_port' => 4852, 'agentation_port' => 4748],
+    ]]);
+    $processes = [];
+    foreach (['web', 'docs'] as $index => $app) {
+        foreach (['vp-dev', 'agentation-mcp', 'annotator'] as $preset) {
+            $process = $web->replicate();
+            $process->fill(['app' => $app, 'name' => $preset.'-'.$app, 'runtime_config' => ['preset' => $preset, 'command' => ['/usr/bin/true']]]);
+            $process->save();
+            $processes[] = $process;
+        }
+    }
+    $vite = Mockery::mock(VitePortRuntime::class);
+    foreach ([5173, 5174] as $port) {
+        $vite->shouldReceive('ready')->once()->with(Mockery::type(Process::class), Mockery::type(Instance::class), $port)->andReturnTrue();
+    }
+    app()->instance(VitePortRuntime::class, $vite);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, 'ready', '', 1, false), new CommandResult(0, 'ready', '', 1, false),
+        new CommandResult(0, 'ready', '', 1, false), new CommandResult($docsHealthy ? 0 : 1, $docsHealthy ? 'ready' : 'waiting', '', 1, false),
+    ]);
+    $readiness = new RemoteInstanceRuntimeReadiness(new CountingStatusRuntimeManager, $ssh, new AgentViewReadinessKeys, new AgentViewReadinessKnownHosts, timeoutSeconds: 1);
+    if ($docsHealthy) {
+        $readiness->waitUntilReady($instance, $processes);
+    } else {
+        expect(fn () => $readiness->waitUntilReady($instance, $processes))->toThrow(fn (HibernationException $e) => expect($e->errorCode)->toBe('hibernation.annotator_not_ready'));
+    }
+    expect(array_map(static fn ($command): string => $command->arguments[3], $ssh->commands))->toBe(['4747', '4851', '4748', '4852']);
 })->with([true, false]);
 
 describe('wake readiness with a Gateway view of the Node agent', function (): void {

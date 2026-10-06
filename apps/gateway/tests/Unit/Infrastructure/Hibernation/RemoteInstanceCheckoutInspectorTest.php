@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\LocalRuntimeDependencies;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -14,6 +15,7 @@ use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
@@ -195,6 +197,71 @@ function checkout_inspector(AppDevFakeSshExecutor $ssh, int $timeout = 1_800): R
     );
 }
 
+it('per-app hibernation prunes and restores both app dependency directories and protects whole-repository edits', function (): void {
+    $repository = sys_get_temp_dir().'/orbit-per-app-hibernation-'.Str::uuid();
+    $instance = checkout_instance();
+    $instance->project->forceFill(['apps' => [
+        ['name' => 'web', 'type' => 'laravel-app', 'path' => 'apps/web', 'web_root' => 'public'],
+        ['name' => 'docs', 'type' => 'node-package', 'path' => 'apps/docs', 'web_root' => null],
+    ]]);
+    $instance->forceFill(['root' => null, 'app_overrides' => [], 'checkout_path' => $repository]);
+    foreach (['web', 'docs'] as $app) {
+        mkdir($repository.'/apps/'.$app.'/vendor', 0700, true);
+        mkdir($repository.'/apps/'.$app.'/node_modules');
+        foreach (['composer.json', 'composer.lock', 'package.json', 'pnpm-lock.yaml'] as $file) {
+            file_put_contents($repository.'/apps/'.$app.'/'.$file, '{}');
+            touch($repository.'/apps/'.$app.'/'.$file, 100);
+        }
+    }
+    mkdir($repository.'/vendor');
+    file_put_contents($repository.'/vendor/unowned.txt', 'outside configured dependency directories');
+    touch($repository.'/vendor/unowned.txt', 600);
+    file_put_contents($repository.'/repository-edit.txt', 'outside all apps');
+    touch($repository.'/repository-edit.txt', 500);
+    $ssh = new AppDevFakeSshExecutor;
+    $inspector = checkout_inspector($ssh);
+    try {
+        $inspector->inspect($instance);
+        $inspectCommands = $ssh->commands;
+        $inspect = static function (array $commands): array {
+            return array_map(static function ($command): CommandResult {
+                $process = new Process(array_slice($command->arguments, 1), input: $command->input);
+                $process->mustRun();
+
+                return new CommandResult(0, $process->getOutput(), '', 1, false);
+            }, $commands);
+        };
+        $ssh = new AppDevFakeSshExecutor($inspect($inspectCommands));
+        $inspector = checkout_inspector($ssh);
+        $state = $inspector->inspect($instance);
+        expect(array_keys($state->apps))->toBe(['docs', 'web'])
+            ->and($state->sourceTreeLastActivityUnix)->toBe(600)->and($state->hasPrunable())->toBeTrue();
+        $inspector->prune($instance, $state);
+        foreach (array_slice($ssh->commands, 2) as $command) {
+            new Process(array_slice($command->arguments, 1), input: $command->input)->mustRun();
+        }
+        foreach (['web', 'docs'] as $app) {
+            expect(is_dir($repository.'/apps/'.$app.'/vendor'))->toBeFalse()
+                ->and(is_dir($repository.'/apps/'.$app.'/node_modules'))->toBeFalse()
+                ->and(is_file($repository.'/apps/'.$app.'/composer.lock'))->toBeTrue();
+        }
+        expect(is_dir($repository.'/vendor'))->toBeTrue();
+        $ssh = new AppDevFakeSshExecutor($inspect($inspectCommands));
+        $inspector = checkout_inspector($ssh);
+        $state = $inspector->inspect($instance);
+        expect($state->hasRestorable())->toBeTrue();
+        $inspector->restore($instance, $state);
+        foreach (['docs', 'web'] as $index => $app) {
+            expect($ssh->commands[2 + $index * 2]->arguments)->toContain('--working-dir='.$repository.'/apps/'.$app)
+                ->and($ssh->commands[3 + $index * 2]->arguments)->toContain($repository.'/apps/'.$app)
+                ->and($ssh->commands[3 + $index * 2]->input)->toContain('vp install --frozen-lockfile');
+        }
+        expect(fn () => $inspector->prune($instance, LocalRuntimeDependencies::inspect(true, true, true, false, true, ['pnpm-lock.yaml'], true, false)))->toThrow(HibernationException::class);
+    } finally {
+        new Filesystem()->deleteDirectory($repository);
+    }
+});
+
 function checkout_instance(): Instance
 {
     $node = new Node([
@@ -211,6 +278,7 @@ function checkout_instance(): Instance
         'checkout_path' => '/home/orbit/apps/docs',
     ]);
     $instance->setRelation('node', $node);
+    $instance->setRelation('project', new Project(['name' => 'Docs', 'slug' => 'docs', 'type' => 'laravel-app', 'root' => 'public']));
 
     return $instance;
 }

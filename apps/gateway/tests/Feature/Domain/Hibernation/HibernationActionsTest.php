@@ -19,6 +19,7 @@ use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessTargetResolver;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Hibernation\RemoteInstanceCheckoutInspector;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\DockerProcessRenderer;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
@@ -33,10 +34,13 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Schedule;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
+use Symfony\Component\Process\Process as ShellProcess;
 use Tests\Support\FakeInstanceCheckoutInspector;
 use Tests\Support\FakeInstanceRuntimeReadiness;
 use Tests\Support\FakeVitePortRuntime;
+use Tests\Support\Orb245Accounts;
 use Tests\Support\ProcessesApiFakeRuntimeManager;
 
 beforeEach(function (): void {
@@ -542,16 +546,131 @@ it('keeps the cold marker and skips the awake marker when restore fails', functi
         ->toBe([]);
 });
 
+it('per-app hibernation preserves cold recovery intent through partial pruning lost responses and Gateway exit', function (string $failure): void {
+    $sandbox = sys_get_temp_dir().'/orbit-1166-prune-'.bin2hex(random_bytes(8));
+    $snapshot = $sandbox.'-crashed-cold.json';
+    $this->instance->project->update(['apps' => array_map(static fn (string $app): array => [
+        'name' => $app, 'type' => 'laravel-app', 'path' => 'apps/'.$app, 'web_root' => 'public',
+    ], ['docs', 'web'])]);
+    $this->instance->update(['checkout_path' => $sandbox]);
+    foreach (['docs', 'web'] as $app) {
+        $path = $sandbox.'/apps/'.$app;
+        foreach (['vendor', 'node_modules'] as $dependency) {
+            new Filesystem()->ensureDirectoryExists($path.'/'.$dependency, 0700);
+            file_put_contents($path.'/'.$dependency.'/present', $app);
+        }
+        foreach (['composer.json', 'composer.lock', 'package.json', 'package-lock.json'] as $file) {
+            file_put_contents($path.'/'.$file, '{}');
+            touch($path.'/'.$file, Carbon::now()->subDays(8)->getTimestamp());
+        }
+    }
+    $web = hibernation_action_process($this->instance, 'web-vite', DesiredProcessState::Running, app: 'web');
+    $docs = hibernation_action_process($this->instance, 'docs-vite', DesiredProcessState::Running, app: 'docs');
+    hibernation_age_process($web);
+    hibernation_age_process($docs);
+    $key = RuntimeHibernation::key((int) $this->instance->id);
+    $restores = [];
+    $ssh = Mockery::mock(SshExecutor::class);
+    $ssh->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($failure, $snapshot, $sandbox, $key, &$restores): CommandResult {
+        if (in_array('/usr/bin/composer', $command->arguments, true)) {
+            expect($this->runtime->started)->toBeEmpty();
+            $directory = substr(array_last($command->arguments), strlen('--working-dir='));
+            new Filesystem()->ensureDirectoryExists($directory.'/vendor', 0700);
+            $restores[] = basename($directory).':vendor';
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+        if (str_contains($command->input ?? '', '/usr/local/bin/vp install')) {
+            expect($this->runtime->started)->toBeEmpty();
+            $directory = array_last($command->arguments);
+            new Filesystem()->ensureDirectoryExists($directory.'/node_modules', 0700);
+            $restores[] = basename($directory).':node_modules';
+
+            return new CommandResult(0, '', '', 1, false);
+        }
+        $prune = str_contains($command->input ?? '', 'rm -rf -- "$path"');
+        if ($prune) {
+            expect($this->markers->cold)->toBe([$key]);
+            if ($failure === 'later-app' && $command->arguments[4] === $sandbox.'/apps/web') {
+                return new CommandResult(1, '', 'Injected later-app failure', 1, false);
+            }
+        }
+        $process = new ShellProcess(array_slice($command->arguments, 1));
+        $process->setInput($command->input)->run();
+        if ($prune && $command->arguments[4] === $sandbox.'/apps/docs') {
+            if ($failure === 'crash') {
+                file_put_contents($snapshot, json_encode($this->markers->cold, JSON_THROW_ON_ERROR));
+                exit(86);
+            }
+            if ($failure === 'lost-response') {
+                return new CommandResult(1, '', 'Injected lost prune response', 1, false);
+            }
+        }
+
+        return new CommandResult($process->getExitCode() ?? 1, $process->getOutput(), $process->getErrorOutput(), 1, false);
+    });
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/test/id');
+    $hosts = Mockery::mock(KnownHostsStore::class);
+    $hosts->shouldReceive('path')->andReturn('/test/known-hosts');
+    app()->instance(InstanceCheckoutInspector::class, new RemoteInstanceCheckoutInspector($ssh, $keys, $hosts, new Orb245Accounts));
+    try {
+        if ($failure === 'crash') {
+            $pid = pcntl_fork();
+            if ($pid === -1) {
+                throw new RuntimeException('Could not fork the disposable prune crash fixture.');
+            }
+            if ($pid === 0) {
+                app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now());
+                exit(87);
+            }
+            pcntl_waitpid($pid, $status);
+            expect(pcntl_wexitstatus($status))->toBe(86);
+            $this->markers->cold = json_decode(file_get_contents($snapshot), true, flags: JSON_THROW_ON_ERROR);
+            unlink($snapshot);
+        } else {
+            expect(fn () => app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now()))->toThrow(HibernationException::class);
+        }
+        expect($this->markers->cold)->toBe([$key]);
+        foreach (['vendor', 'node_modules'] as $dependency) {
+            expect(is_dir($sandbox.'/apps/docs/'.$dependency))->toBeFalse();
+            expect(is_dir($sandbox.'/apps/web/'.$dependency))->toBeTrue();
+        }
+        expect(app(SweepIdleAppDevRuntimesAction::class)->execute(Carbon::now())->pruned)->toBe(0);
+        expect($this->runtime->started)->toBeEmpty();
+
+        app(ActivateInstanceRuntimeAction::class)->execute($this->instance->refresh());
+
+        expect($restores)->toBe(['docs:vendor', 'docs:node_modules']);
+        foreach (['docs', 'web'] as $app) {
+            foreach (['vendor', 'node_modules'] as $dependency) {
+                expect(is_dir($sandbox.'/apps/'.$app.'/'.$dependency))->toBeTrue();
+            }
+        }
+        expect($this->runtime->started)->toBe([$web->id, $docs->id]);
+        expect($this->readiness->waited)->toBeTrue();
+        expect($this->markers->cold)->toBeEmpty();
+        expect($this->markers->awake)->toBe([$key]);
+    } finally {
+        if (is_file($snapshot) && ! is_link($snapshot) && fileowner($snapshot) === posix_geteuid()) {
+            unlink($snapshot);
+        }
+        new Filesystem()->deleteDirectory($sandbox);
+    }
+})->with(['later-app', 'lost-response', 'crash']);
+
 function hibernation_action_process(
     Instance $instance,
     string $name,
     DesiredProcessState $desired,
     string $restartPolicy = 'on-failure',
     bool $keepAlive = false,
+    ?string $app = null,
 ): Process {
     return Process::query()->create([
         'owner_type' => Instance::MorphAlias,
         'owner_id' => $instance->id,
+        'app' => $app,
         'name' => $name,
         'runtime' => 'systemd',
         'working_directory' => $instance->checkout_path,

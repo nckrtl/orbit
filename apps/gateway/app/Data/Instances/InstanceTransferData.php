@@ -23,7 +23,7 @@ final class InstanceTransferData extends Data
         public int $destinationNodeId,
         public string $destinationName,
         public string $destinationPath,
-        public string $destinationDomain,
+        public ?string $destinationDomain,
         public bool $sqliteSelected,
         public string $status,
         public string $currentStep,

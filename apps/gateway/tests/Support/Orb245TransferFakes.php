@@ -167,6 +167,8 @@ final class Orb245TransferSource implements InstanceTransferSource
         }
     }
 
+    public function verifyDestination(InstanceTransfer $transfer): void {}
+
     public function cleanupSource(InstanceTransfer $transfer): TransferCleanupResult
     {
         $this->calls[] = 'cleanup';
@@ -307,6 +309,11 @@ final class Orb245EnvironmentReader implements InstanceEnvironmentReader
 
 final class Orb245EnvironmentWriter implements InstanceEnvironmentWriter
 {
+    /** @var array<string, array{path: string, contents: string}> */
+    public array $apps = [];
+
+    public ?Closure $onWrite = null;
+
     public ?string $contents = null;
 
     public ?string $path = null;
@@ -320,6 +327,8 @@ final class Orb245EnvironmentWriter implements InstanceEnvironmentWriter
         InstanceEnvironmentContext $context,
         string $contents,
     ): InstanceEnvironmentWriteResult {
+        ($this->onWrite)?->__invoke($context);
+        $this->apps[$context->app] = ['path' => $context->path, 'contents' => $contents];
         $this->contents = $contents;
         $this->path = $context->path;
         $this->domain = $context->routeDomain;

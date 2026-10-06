@@ -10,6 +10,7 @@ final readonly class TransferSourceCapture
 {
     /**
      * @param  list<string>  $refs
+     * @param  array<string, array{source_store: string, archive: string, attempt: string, restored_store?: string, staging_store?: string, ownership_receipt?: string}>  $annotatorArchives
      */
     public function __construct(
         public int $instanceId,
@@ -22,5 +23,7 @@ final readonly class TransferSourceCapture
         public bool $detached,
         public string $archiveIdentity,
         public array $refs,
+        public ?string $transferId = null,
+        public array $annotatorArchives = [],
     ) {}
 }

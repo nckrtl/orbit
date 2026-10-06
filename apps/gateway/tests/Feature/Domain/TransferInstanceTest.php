@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\TransferInstanceAction;
+use App\Data\Instances\InstanceTransferData;
 use App\Data\Instances\TransferInstanceData;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\Environment\InstanceEnvironmentContextResolver;
 use App\Domain\Instances\Environment\InstanceEnvironmentImporter;
@@ -14,6 +16,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\Environment\InstanceEnvironmentValidator;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\Transfer\InstanceTransferSource;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
 use App\Domain\Nodes\RoleName;
@@ -42,7 +45,9 @@ use App\Models\Node;
 use App\Models\Process;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use App\Models\Schedule;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Orb245Accounts;
 use Tests\Support\Orb245DestinationGuard;
@@ -55,6 +60,7 @@ use Tests\Support\Orb245SqliteSeeder;
 use Tests\Support\Orb245TransferRuntime;
 use Tests\Support\Orb245TransferSource;
 use Tests\Support\Orb368RouterLock;
+use Tests\Support\PerAppAnnotatorTransferFixture;
 
 beforeEach(function (): void {
     $this->orbitApp = Project::query()->create([
@@ -105,34 +111,7 @@ beforeEach(function (): void {
     $this->projection = new Orb245Projection;
     $this->environmentLock = new Orb245EnvironmentLock;
     $this->routerLock = new Orb368RouterLock;
-    $this->action = new TransferInstanceAction(
-        $this->accounts,
-        app(StorageRootResolver::class),
-        app(NodeSettingsNormalizer::class),
-        app(ManagedCheckoutOverlap::class),
-        $this->destinationGuard,
-        $this->environmentLock,
-        new Orb245SourceLock,
-        $this->sources,
-        $this->runtime,
-        $this->sqlite,
-        new InstanceEnvironmentContextResolver,
-        $this->reader,
-        new InstanceEnvironmentImporter,
-        new InstanceEnvironmentStore(
-            new InstanceEnvironmentContextResolver,
-            new InstanceEnvironmentValidator,
-        ),
-        new InstanceEnvironmentRenderer,
-        $this->writer,
-        new RouteStateResolver,
-        $this->projection,
-        $this->projection,
-        app(DevelopmentProjectionOperationLock::class),
-        $this->routerLock,
-        app(ScheduleTargetUseGuard::class),
-        app(ProcessAdmissionLock::class),
-    );
+    $this->action = orb1166_transfer_action($this, $this->sources);
     $this->data = new TransferInstanceData(
         nodeId: $this->destinationNode->id,
         name: null,
@@ -495,6 +474,7 @@ it('resumes a SourceCaptured transfer after source process artifacts were remove
         'source_route_id' => $this->route->id,
         'status' => InstanceTransferStatus::InProgress,
         'current_step' => InstanceTransferStep::SourceCaptured,
+        'app_journal' => ['web' => ['source_route_id' => $this->route->id, 'destination_route_id' => null, 'destination_domain' => 'web.web.shop.other.orbit', 'source_router_node_id' => $this->sourceCluster->routerAssignment->node_id, 'imported_environment_keys' => []]],
     ]);
     $this->runtime->processArtifactsRemoved = true;
 
@@ -657,16 +637,17 @@ it('refuses an unreadable env instead of silently transferring without it', func
         ->and(InstanceTransfer::query()->sole()->status)->toBe(InstanceTransferStatus::Failed);
 });
 
-it('imports no environment values when the source env is missing', function (): void {
+it('refuses transfer without a required source environment file', function (): void {
     $this->reader->failure = new ResourceOperationException(
         'env.import_source_missing',
         'The recorded Instance environment file does not exist.',
         404,
     );
 
-    $this->action->execute($this->instance, $this->data);
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
 
-    expect($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL']);
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->instance->environmentValues()->pluck('env_key')->all())->toBe(['APP_KEY', 'APP_URL']);
 });
 
 it('imports source .env without overwriting stored keys and rebuilds destination values', function (): void {
@@ -838,7 +819,9 @@ it('rolls back previously imported env keys after retry adds new imports', funct
         'env_key' => 'IMPORTED_A',
         'env_value' => 'one',
     ]);
-    $transfer->update(['imported_environment_keys' => ['IMPORTED_A']]);
+    $journal = $transfer->app_journal;
+    $journal['web']['imported_environment_keys'] = ['IMPORTED_A'];
+    $transfer->update(['imported_environment_keys' => ['IMPORTED_A'], 'app_journal' => $journal]);
     $this->reader->contents = "IMPORTED_B=two\n";
 
     expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))
@@ -982,6 +965,402 @@ function orb245_clustered_app_dev(string $role, string $address, string $tld): a
     return [$cluster, $node];
 }
 
+function orb1166_transfer_action(object $test, InstanceTransferSource $source): TransferInstanceAction
+{
+    return new TransferInstanceAction(
+        $test->accounts,
+        app(StorageRootResolver::class),
+        app(NodeSettingsNormalizer::class),
+        app(ManagedCheckoutOverlap::class),
+        $test->destinationGuard,
+        $test->environmentLock,
+        new Orb245SourceLock,
+        $source,
+        $test->runtime,
+        $test->sqlite,
+        new InstanceEnvironmentContextResolver,
+        $test->reader,
+        new InstanceEnvironmentImporter,
+        new InstanceEnvironmentStore(new InstanceEnvironmentContextResolver, new InstanceEnvironmentValidator),
+        new InstanceEnvironmentRenderer,
+        $test->writer,
+        new RouteStateResolver,
+        $test->projection,
+        $test->projection,
+        app(DevelopmentProjectionOperationLock::class),
+        $test->routerLock,
+        app(ScheduleTargetUseGuard::class),
+        app(ProcessAdmissionLock::class),
+    );
+}
+
+it('per-app transfer reclaims stores and checkout after a Gateway exits before the materialization checkpoint', function (string $lastApp, bool $restoreFails): void {
+    orb1166_apps($this);
+    $fixture = new PerAppAnnotatorTransferFixture($this->instance, $this->destinationNode);
+    $this->destinationNode->update(['settings' => ['apps' => ['path' => $fixture->sandbox.'/destination-root']]]);
+    $action = orb1166_transfer_action($this, $fixture->transport->source());
+    $snapshot = $fixture->sandbox.'/crashed-journal.json';
+    $fixture->transport->afterAnnotatorRestore = static function ($command) use ($snapshot, $lastApp): void {
+        if (str_ends_with($command->arguments[4], '-'.$lastApp)) {
+            file_put_contents($snapshot, json_encode(InstanceTransfer::query()->sole()->getRawOriginal(), JSON_THROW_ON_ERROR));
+            exit(86); // Exit bypasses the action's exception handler and rollback.
+        }
+    };
+    try {
+        $pid = pcntl_fork();
+        if ($pid === -1) {
+            throw new RuntimeException('Could not fork the disposable Gateway crash fixture.');
+        }
+        if ($pid === 0) {
+            $action->execute($this->instance, $this->data);
+            exit(87);
+        }
+        pcntl_waitpid($pid, $status);
+        expect(pcntl_wexitstatus($status))->toBe(86);
+        // SQLite :memory: is copied by fork. Replay the actual child's persisted row, not invented recovery state.
+        $attributes = json_decode(file_get_contents($snapshot), true, flags: JSON_THROW_ON_ERROR);
+        foreach (['app_journal', 'recovery_evidence', 'imported_environment_keys'] as $column) {
+            if (is_string($attributes[$column] ?? null)) {
+                $attributes[$column] = json_decode($attributes[$column], true, flags: JSON_THROW_ON_ERROR);
+            }
+        }
+        $transfer = InstanceTransfer::query()->create($attributes);
+        expect($transfer->current_step)->toBe(InstanceTransferStep::SourceCaptured);
+        expect(is_dir($transfer->destination_path))->toBeTrue();
+        $old = $transfer->app_journal;
+        $oldStore = $fixture->transport->storePath($fixture->destination->wireguard_ip, 'instance-'.$this->instance->id.'-'.$lastApp);
+        expect(file_get_contents($oldStore.'/annotations.json'))->toBe('durable '.$lastApp);
+        $fixture->transport->afterAnnotatorRestore = null;
+        if ($restoreFails) {
+            $this->runtime->onRestore = static function (): void {
+                throw new ResourceOperationException('instance.transfer_failed', 'Injected source restoration failure.', 409);
+            };
+            expect(fn () => $action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+            expect($transfer->refresh()->recovery_evidence['rollback_pending'])->toBeTrue();
+            expect($transfer->app_journal)->toBe($old);
+            expect(is_dir($transfer->destination_path))->toBeTrue();
+            expect(file_get_contents($oldStore.'/annotations.json'))->toBe('durable '.$lastApp);
+            foreach ($old as $entry) {
+                expect(is_file($entry['annotator']['archive']))->toBeTrue();
+            }
+            $this->runtime->onRestore = null;
+        }
+        $fixture->transport->beforeAnnotatorCapture = function () use ($fixture, $transfer, $old): void {
+            expect(is_dir($transfer->destination_path))->toBeFalse();
+            expect($this->runtime->calls)->toContain('restore');
+            expect($transfer->refresh()->recovery_evidence['rollback_pending'] ?? false)->toBeFalse();
+            foreach ($old as $entry) {
+                foreach (['restored_store', 'staging_store', 'ownership_receipt'] as $field) {
+                    if (isset($entry['annotator'][$field])) {
+                        expect(file_exists($fixture->transport->storePath($fixture->destination->wireguard_ip, basename($entry['annotator'][$field]))))->toBeFalse();
+                    }
+                }
+            }
+        };
+
+        $result = $action->execute($this->instance->refresh(), $this->data);
+
+        expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed);
+        foreach (['docs', 'web'] as $app) {
+            $entry = $result['transfer']->app_journal[$app]['annotator'];
+            expect($entry['attempt'])->not->toBe($old[$app]['annotator']['attempt']);
+            $store = $fixture->transport->storePath($fixture->destination->wireguard_ip, 'instance-'.$this->instance->id.'-'.$app);
+            expect(file_get_contents($store.'/annotations.json'))->toBe('durable '.$app);
+            expect(file_get_contents($store.'/.orbit-transfer-owner'))->toContain($entry['attempt']);
+            expect(is_dir($fixture->transport->storePath($fixture->source->wireguard_ip, 'instance-'.$this->instance->id.'-'.$app)))->toBeFalse();
+        }
+        expect(is_dir($result['transfer']->destination_path))->toBeTrue();
+        expect($this->runtime->calls)->toContain('restore', 'pause', 'activate', 'cleanup');
+    } finally {
+        $fixture->dispose();
+    }
+})->with(['docs', 'web'])->with([false, true]);
+
+it('per-app transfer refuses missing or foreign destination ownership on forward retry without deleting any source copy', function (string $app, string $damage, string $phase): void {
+    orb1166_apps($this);
+    $fixture = new PerAppAnnotatorTransferFixture($this->instance, $this->destinationNode);
+    $this->destinationNode->update(['settings' => ['apps' => ['path' => $fixture->sandbox.'/destination-root']]]);
+    $action = orb1166_transfer_action($this, $fixture->transport->source());
+    if ($phase === 'activation') {
+        $this->runtime->onCall = static function (string $operation): void {
+            if ($operation === 'activate') {
+                throw new ResourceOperationException('instance.transfer_failed', 'Injected activation failure.', 409);
+            }
+        };
+    } else {
+        $this->projection->failRetirementOnce = true;
+    }
+    try {
+        expect(fn () => $action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+        $this->runtime->onCall = null;
+        $transfer = InstanceTransfer::query()->sole();
+        $journal = $transfer->app_journal;
+        foreach (['docs', 'web'] as $name) {
+            $store = $fixture->transport->storePath($fixture->destination->wireguard_ip, 'instance-'.$this->instance->id.'-'.$name);
+            file_put_contents($store.'/annotations.json', 'new destination '.$name);
+        }
+        $store = $fixture->transport->storePath($fixture->destination->wireguard_ip, 'instance-'.$this->instance->id.'-'.$app);
+        if (in_array($damage, ['absent-store', 'foreign-store'], true)) {
+            new Filesystem()->deleteDirectory($store);
+            if ($damage === 'foreign-store') {
+                new Filesystem()->ensureDirectoryExists($store, 0700);
+                file_put_contents($store.'/annotations.json', 'foreign');
+                file_put_contents($store.'/.orbit-transfer-owner', 'foreign');
+            }
+        } elseif ($damage === 'absent-marker') {
+            unlink($store.'/.orbit-transfer-owner');
+        } else {
+            file_put_contents($store.'/.orbit-transfer-owner', 'foreign');
+        }
+        $before = $this->runtime->calls;
+
+        expect(fn () => $action->execute($this->instance->refresh(), $this->data))
+            ->toThrow(fn (RuntimeConvergenceException $error) => expect($error->errorCode)->toBe('instance.transfer_cleanup_conflict'));
+
+        expect($transfer->refresh()->status)->toBe(InstanceTransferStatus::Failed);
+        expect($transfer->completed_at)->toBeNull();
+        expect($transfer->cutover_at)->not->toBeNull();
+        expect($transfer->app_journal)->toBe($journal);
+        expect(InstanceTransfer::query()->open()->exists())->toBeTrue();
+        expect(is_dir($transfer->source_path))->toBeTrue();
+        expect(array_slice($this->runtime->calls, count($before)))->not->toContain('activate', 'cleanup');
+        foreach (['docs', 'web'] as $name) {
+            $entry = $journal[$name]['annotator'];
+            $old = $fixture->transport->storePath($fixture->source->wireguard_ip, basename($entry['source_store']));
+            expect(file_get_contents($old.'/annotations.json'))->toBe('durable '.$name);
+            expect(is_file($entry['archive']))->toBeTrue();
+        }
+        if ($damage === 'absent-store') {
+            expect(is_dir($store))->toBeFalse();
+        } else {
+            expect(file_get_contents($store.'/annotations.json'))->toBe($damage === 'foreign-store' ? 'foreign' : 'new destination '.$app);
+        }
+    } finally {
+        $fixture->dispose();
+    }
+})->with(['docs', 'web'])->with(['absent-store', 'foreign-store', 'absent-marker', 'foreign-marker'])->with(['activation', 'retirement']);
+
+it('per-app transfer verifies forward completion after released receipts and preserves new destination annotations', function (string $phase, bool $lostResponse): void {
+    orb1166_apps($this);
+    $fixture = new PerAppAnnotatorTransferFixture($this->instance, $this->destinationNode);
+    $this->destinationNode->update(['settings' => ['apps' => ['path' => $fixture->sandbox.'/destination-root']]]);
+    $action = orb1166_transfer_action($this, $fixture->transport->source());
+    if ($phase === 'activation') {
+        $this->runtime->onCall = static function (string $operation): void {
+            if ($operation === 'activate') {
+                throw new ResourceOperationException('instance.transfer_failed', 'Injected activation failure.', 409);
+            }
+        };
+    } else {
+        $this->projection->failRetirementOnce = true;
+    }
+    try {
+        expect(fn () => $action->execute($this->instance, $this->data))->toThrow(ResourceOperationException::class);
+        $this->runtime->onCall = null;
+        $transfer = InstanceTransfer::query()->sole();
+        $journal = $transfer->app_journal;
+        $fixture->transport->beforeAnnotatorCapture = static function (): void {
+            throw new RuntimeException('Forward recovery must never recapture.');
+        };
+        foreach (['docs', 'web'] as $app) {
+            $store = $fixture->transport->storePath($fixture->destination->wireguard_ip, 'instance-'.$this->instance->id.'-'.$app);
+            file_put_contents($store.'/annotations.json', 'new destination '.$app);
+        }
+        if ($lostResponse) {
+            $fixture->transport->lostAnnotatorCompletionResponse = true;
+            expect(fn () => $action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+            expect($transfer->refresh()->status)->toBe(InstanceTransferStatus::Failed);
+            foreach ($journal as $entry) {
+                $receipt = $fixture->transport->storePath($fixture->destination->wireguard_ip, basename($entry['annotator']['ownership_receipt']));
+                expect(file_exists($receipt))->toBeFalse();
+            }
+            foreach (['docs', 'web'] as $app) {
+                $store = $fixture->transport->storePath($fixture->destination->wireguard_ip, 'instance-'.$this->instance->id.'-'.$app);
+                file_put_contents($store.'/annotations.json', 'after lost response '.$app);
+            }
+        }
+
+        $result = $action->execute($this->instance->refresh(), $this->data);
+
+        expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed);
+        expect(is_dir($transfer->source_path))->toBeFalse();
+        foreach (['docs', 'web'] as $app) {
+            $entry = $result['transfer']->app_journal[$app]['annotator'];
+            expect($entry['attempt'])->toBe($journal[$app]['annotator']['attempt']);
+            $store = $fixture->transport->storePath($fixture->destination->wireguard_ip, basename($entry['restored_store']));
+            expect(file_get_contents($store.'/annotations.json'))->toBe(($lostResponse ? 'after lost response ' : 'new destination ').$app);
+            expect(file_get_contents($store.'/.orbit-transfer-owner'))->toContain($entry['attempt']);
+            expect(is_file($entry['archive']))->toBeFalse();
+        }
+    } finally {
+        $fixture->dispose();
+    }
+})->with(['activation', 'retirement'])->with([false, true]);
+
+function orb1166_apps(object $test): Route
+{
+    $test->orbitApp->update(['apps' => [
+        ['name' => 'web', 'type' => 'laravel-app', 'path' => 'apps/web', 'web_root' => 'public'],
+        ['name' => 'docs', 'type' => 'laravel-app', 'path' => 'apps/docs', 'web_root' => 'public'],
+    ]]);
+    $test->instance->refresh()->update(['app_overrides' => [], 'app_runtime' => [
+        'web' => ['laravel' => true, 'vite_port' => 5173, 'annotator_port' => 4848, 'agentation_port' => 4747],
+        'docs' => ['laravel' => true, 'vite_port' => 5174, 'annotator_port' => 4849, 'agentation_port' => 4748],
+    ]]);
+
+    return orb245_route($test->instance, 'docs.web.shop.dev.orbit', RouteProvenance::Generated, 'docs');
+}
+
+it('per-app transfer validates every serving Route before reservation', function (string $failure): void {
+    $docs = orb1166_apps($this);
+    $this->instance->load('routes.targets');
+    $docs = $this->instance->routes->firstWhere('app', 'docs');
+    match ($failure) {
+        'missing' => $this->instance->setRelation('routes', $this->instance->routes->reject(static fn (Route $route): bool => $route->app === 'docs')),
+        'inactive' => $docs->setAttribute('status', RouteStatus::Failed),
+        'replacing' => $docs->setAttribute('replaced_by_route_id', $this->route->id),
+        'shared' => $docs->setRelation('targets', $docs->targets->push(new RouteTarget(['instance_id' => 999, 'app' => 'docs', 'position' => 1]))),
+    };
+    expect(fn () => $this->action->execute($this->instance, $this->data))->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.lifecycle_conflict'));
+    expect(InstanceTransfer::query()->exists())->toBeFalse()->and($this->sources->calls)->toBeEmpty();
+})->with(['missing', 'inactive', 'replacing', 'shared']);
+
+it('per-app transfer preflights a sibling destination domain before remote work', function (): void {
+    orb1166_apps($this);
+    $other = orb245_instance($this->orbitApp, $this->destinationNode, 'other', 'checkout');
+    orb245_route($other, 'docs.web.shop.other.orbit', RouteProvenance::Explicit, 'docs');
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))->toThrow(fn (ResourceOperationException $e) => expect($e->errorCode)->toBe('route.domain_conflict'));
+    expect(InstanceTransfer::query()->exists())->toBeFalse()->and($this->sources->calls)->toBeEmpty();
+});
+
+it('per-app transfer cuts over all Routes environments and endpoint reservations and retries cleanup forward', function (): void {
+    $docs = orb1166_apps($this);
+    $this->instance->recordAppRuntime('web', ['app_identity' => false, 'vite_environment_identity' => false]);
+    $this->instance->environmentValues()->create(['app' => 'docs', 'env_key' => 'APP_URL', 'env_value' => 'https://{{instance.domain}}']);
+    $this->projection->failRetirementOnce = true;
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = InstanceTransfer::query()->sole();
+    expect(array_keys($transfer->app_journal))->toBe(['docs', 'web'])
+        ->and($transfer->cutover_at)->not->toBeNull()
+        ->and($this->instance->refresh()->node_id)->toBe($this->destinationNode->id)
+        ->and($transfer->app_journal['web']['source_app_identity'])->toBeFalse()
+        ->and($this->instance->usesAppRuntimeIdentity('web'))->toBeTrue()
+        ->and($this->instance->usesAppViteIdentity('web'))->toBeTrue();
+    foreach (['web' => $this->route, 'docs' => $docs] as $app => $old) {
+        $entry = $transfer->app_journal[$app];
+        expect($entry['source_route_id'])->toBe($old->id)
+            ->and($entry['destination_domain'])->toBe($app.'.web.shop.other.orbit')
+            ->and(Route::query()->findOrFail($entry['destination_route_id'])->app)->toBe($app)
+            ->and($this->writer->apps[$app]['path'])->toBe('/srv/orbit/apps/shop/web/apps/'.$app)
+            ->and($this->writer->apps[$app]['contents'])->toContain('https://'.$app.'.web.shop.other.orbit')
+            ->and(DB::table('annotation_port_assignments')->where('instance_id', $this->instance->id)->where('node_id', $this->sourceNode->id)->where('app', $app)->count())->toBe(2);
+    }
+    $ports = DB::table('annotation_port_assignments')->where('node_id', $this->destinationNode->id)->pluck('port')->all();
+    $ports = [...$ports, ...DB::table('vite_port_assignments')->where('node_id', $this->destinationNode->id)->pluck('port')->all()];
+    expect(array_unique($ports))->toHaveCount(6);
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+    expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+        ->and(Route::query()->whereIn('id', [$this->route->id, $docs->id])->exists())->toBeFalse()
+        ->and($this->instance->refresh()->authoritativeRoute('web')->domain)->toBe('web.web.shop.other.orbit')
+        ->and($this->instance->authoritativeRoute('docs')->domain)->toBe('docs.web.shop.other.orbit')
+        ->and(DB::table('annotation_port_assignments')->where('instance_id', $this->instance->id)->where('node_id', $this->sourceNode->id)->exists())->toBeFalse()
+        ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
+});
+
+it('per-app transfer rollback owns imports and reservations for every app without deleting stored sibling keys', function (): void {
+    $docs = orb1166_apps($this);
+    $this->instance->environmentValues()->create(['app' => 'docs', 'env_key' => 'NEW_FROM_ENV', 'env_value' => 'retained']);
+    $this->writer->onWrite = static function ($context): void {
+        if ($context->app === 'docs') {
+            throw new ResourceOperationException('test.write_failed', 'Failed docs write.', 409);
+        }
+    };
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+    $transfer = InstanceTransfer::query()->sole();
+    expect($this->instance->refresh()->node_id)->toBe($this->sourceNode->id)
+        ->and($this->route->refresh()->status)->toBe(RouteStatus::Active)
+        ->and($docs->refresh()->status)->toBe(RouteStatus::Active)
+        ->and($this->instance->environmentValues()->where('app', 'web')->where('env_key', 'NEW_FROM_ENV')->exists())->toBeFalse()
+        ->and($this->instance->environmentValues()->where('app', 'docs')->where('env_key', 'NEW_FROM_ENV')->value('env_value'))->toBe('retained')
+        ->and($transfer->app_journal['web']['imported_environment_keys'])->toBe([])
+        ->and($transfer->app_journal['docs']['imported_environment_keys'])->toBe([])
+        ->and(DB::table('annotation_port_assignments')->where('node_id', $this->destinationNode->id)->exists())->toBeFalse()
+        ->and(DB::table('vite_port_assignments')->where('node_id', $this->destinationNode->id)->exists())->toBeFalse();
+});
+
+it('per-app transfer rechecks retry ownership under the Instance lock before creating a journal', function (): void {
+    orb1166_apps($this);
+    $this->environmentLock->beforeRun = function (): void {
+        $this->environmentLock->beforeRun = null;
+        $this->action->execute($this->instance->refresh(), $this->data);
+    };
+    $result = $this->action->execute($this->instance->refresh(), $this->data);
+    expect($result['created'])->toBeFalse()->and(InstanceTransfer::query()->count())->toBe(1)
+        ->and($this->sources->calls)->toBe(['capture', 'materialize', 'cleanup']);
+});
+
+it('per-app transfer journals annotator ownership and relocates each app derived environment path', function (): void {
+    orb1166_apps($this);
+    foreach (['web', 'docs'] as $app) {
+        $this->instance->processes()->create([
+            'app' => $app, 'name' => 'annotator-'.$app, 'runtime' => 'systemd',
+            'working_directory' => $this->instance->checkout_path.'/apps/'.$app,
+            'runtime_config' => ['preset' => 'annotator', 'environment_file' => $this->instance->checkout_path.'/apps/'.$app.'/.env'],
+            'desired_state' => 'running', 'status' => 'active', 'restart_policy' => 'always',
+        ]);
+    }
+    $this->sources->failMaterialize = true;
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+    $journal = InstanceTransfer::query()->sole()->app_journal;
+    foreach (['web', 'docs'] as $app) {
+        expect($journal[$app]['annotator']['source_store'])->toBe('/var/lib/orbit/annotator/instance-'.$this->instance->id.'-'.$app);
+    }
+    $native = new NativeInstanceTransferRuntime(Mockery::mock(ProcessRuntimeManager::class), Mockery::mock(ScheduleRuntimeManager::class));
+    $native->relocate($this->instance, $this->destinationNode, $this->instance->checkout_path, '/srv/orbit/apps/shop/relocated');
+    foreach ($this->instance->processes()->where('runtime_config->preset', 'annotator')->get() as $process) {
+        expect($process->working_directory)->toBe('/srv/orbit/apps/shop/relocated/apps/'.$process->app)
+            ->and($process->runtime_config['environment_file'])->toBe('/srv/orbit/apps/shop/relocated/apps/'.$process->app.'/.env');
+    }
+});
+
+it('per-app transfer rollback removes every unpublished replacement Route', function (): void {
+    $docs = orb1166_apps($this);
+    $this->runtime->onPause = function (Instance $instance): void {
+        Schedule::query()->create([
+            'target_type' => Instance::MorphAlias, 'target_id' => $instance->id, 'app' => 'docs',
+            'host_node_id' => $this->sourceNode->id, 'name' => 'late', 'calendar' => '*-*-* 02:00:00',
+            'command' => 'true', 'timeout_seconds' => 60, 'desired_timer_state' => 'enabled', 'status' => 'active',
+        ]);
+    };
+    expect(fn () => $this->action->execute($this->instance->refresh(), $this->data))->toThrow(ResourceOperationException::class);
+    expect(Route::query()->count())->toBe(2)->and($this->route->refresh()->replaced_by_route_id)->toBeNull()
+        ->and($docs->refresh()->replaced_by_route_id)->toBeNull();
+    foreach (InstanceTransfer::query()->sole()->app_journal as $entry) {
+        expect($entry['destination_route_id'])->toBeNull();
+    }
+});
+
+it('per-app transfer preserves non-serving package and unrouted workspace exceptions without choosing a Route', function (bool $unrouted): void {
+    $apps = $unrouted ? [
+        ['name' => 'web', 'type' => 'laravel-app', 'path' => 'apps/web', 'web_root' => 'public'],
+        ['name' => 'docs', 'type' => 'node-package', 'path' => 'apps/docs', 'web_root' => null],
+    ] : [['name' => 'web', 'type' => 'node-package', 'path' => '.', 'web_root' => null]];
+    $project = Project::query()->create(['name' => 'Unrouted', 'slug' => 'unrouted', 'repository_url' => 'https://example.test/unrouted.git', 'apps' => $apps]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $this->sourceNode->id, 'name' => 'main',
+        'checkout_path' => '/srv/orbit/apps/unrouted/main', 'source_layout' => 'checkout', 'status' => 'active', 'provisioning_step' => 'active',
+        'task_workspace_routed' => $unrouted ? false : null,
+        'app_runtime' => array_fill_keys(array_column($apps, 'name'), ['laravel' => false]),
+    ]);
+    $result = $this->action->execute($instance, $this->data);
+    expect($result['transfer']->status)->toBe(InstanceTransferStatus::Completed)
+        ->and($result['instance']->routes)->toBeEmpty()
+        ->and(InstanceTransferData::fromModel($result['transfer'])->destinationDomain)->toBeNull();
+    foreach ($result['transfer']->app_journal as $entry) {
+        expect($entry['source_route_id'])->toBeNull()->and($entry['destination_route_id'])->toBeNull();
+    }
+})->with([true, false]);
+
 function orb245_instance(Project $project, Node $node, string $name, string $layout): Instance
 {
     return Instance::query()->create([
@@ -999,11 +1378,12 @@ function orb245_instance(Project $project, Node $node, string $name, string $lay
     ]);
 }
 
-function orb245_route(Instance $instance, string $domain, RouteProvenance $provenance): Route
+function orb245_route(Instance $instance, string $domain, RouteProvenance $provenance, string $app = 'web'): Route
 {
     $route = Route::query()->create([
         'project_id' => $instance->project_id,
         'cluster_id' => $instance->node->cluster_id,
+        'app' => $app,
         'generation_basis_node_id' => $provenance === RouteProvenance::Generated ? $instance->node_id : null,
         'domain' => $domain,
         'provenance' => $provenance,
@@ -1012,6 +1392,7 @@ function orb245_route(Instance $instance, string $domain, RouteProvenance $prove
     ]);
     $route->targets()->create([
         'instance_id' => $instance->id,
+        'app' => $app,
         'position' => 0,
     ]);
     $route->update(['status' => RouteStatus::Active]);

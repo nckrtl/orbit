@@ -25478,7 +25478,10 @@
             "type": "string"
           },
           "destination_domain": {
-            "type": "string"
+            "type": [
+              "string",
+              "null"
+            ]
           },
           "sqlite_selected": {
             "type": "boolean"

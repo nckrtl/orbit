@@ -3485,7 +3485,7 @@ export interface components {
             destination_node_id?: number;
             destination_name?: string;
             destination_path?: string;
-            destination_domain?: string;
+            destination_domain?: string | null;
             sqlite_selected?: boolean;
             status?: string;
             current_step?: string;

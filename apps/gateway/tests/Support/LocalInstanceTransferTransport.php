@@ -30,6 +30,9 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
     /** @var list<int> */
     public array $stagedModes = [];
 
+    /** @var list<RemoteCommand> */
+    public array $commands = [];
+
     public ?string $failure = null;
 
     public ?string $targetBase = null;
@@ -37,6 +40,20 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
     public int $snapshotCopyFailures = 0;
 
     public bool $lostDiscardResponse = false;
+
+    public bool $lostAnnotatorRestoreResponse = false;
+
+    public ?string $annotatorFailure = null;
+
+    public ?string $annotatorFailureApp = null;
+
+    public bool $annotatorPublicationConflict = false;
+
+    public bool $lostAnnotatorCompletionResponse = false;
+
+    public ?Closure $afterAnnotatorRestore = null;
+
+    public ?Closure $beforeAnnotatorCapture = null;
 
     public ?Closure $onDiscard = null;
 
@@ -129,12 +146,32 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
+        $this->commands[] = $command;
+        if (str_contains($command->input ?? '', 'tar --owner=0 --group=0')) {
+            ($this->beforeAnnotatorCapture)?->__invoke($command);
+        }
         $arguments = $command->arguments;
         $input = $command->input;
         foreach ($arguments as $index => $argument) {
             if (str_starts_with($argument, '/var/lib/orbit/annotator/instance-')) {
-                $arguments[$index] = $this->sandbox.'/annotator-store';
-                $input = str_replace('sudo rm -rf -- "$annotator_store"', 'rm -rf -- "$annotator_store"', $input ?? '');
+                $arguments[$index] = $this->storePath($connection->host, basename($argument));
+                $input = str_replace('sudo install -d -m 0700 -o "$(id -un)" -- "$store"', 'mkdir -p -- "$store"; chmod 0700 -- "$store"', $input ?? '');
+            }
+        }
+        if (str_contains($input ?? '', 'sudo python3 -')) {
+            $input = str_replace('sudo python3 -', 'python3 -', $input ?? '');
+            if (str_contains($input, 'libc.renameat2') && $this->annotatorPublicationConflict && ($this->annotatorFailureApp === null || str_ends_with($command->arguments[4], '-'.$this->annotatorFailureApp))) {
+                $input = preg_replace_callback('/^([ \t]*)sync_parent\(staged\)$/m', static fn (array $match): string => $match[0]."\n".$match[1]."store.mkdir(mode=0o700)\n".$match[1]."(store / 'foreign.json').write_text('foreign')", $input) ?? $input;
+            }
+            if (str_contains($input, 'libc.renameat2') && $this->annotatorFailure !== null && ($this->annotatorFailureApp === null || str_ends_with($command->arguments[4], '-'.$this->annotatorFailureApp))) {
+                $point = match ($this->annotatorFailure) {
+                    'receipt' => 'os.link(pending, receipt, follow_symlinks=False)',
+                    'creation' => 'staged.mkdir(mode=0o700)',
+                    'extraction' => 'os.chown(destination, uid, gid)',
+                    'publication' => 'sync_parent(staged)',
+                    'published' => 'archive.unlink()',
+                };
+                $input = preg_replace_callback('/^([ \t]*)'.preg_quote($point, '/').'$/m', static fn (array $match): string => $match[0]."\n".$match[1]."raise RuntimeError('Injected annotator interruption')", $input) ?? $input;
             }
         }
         if (str_contains($command->input ?? '', 'archive=$1'."\n")) {
@@ -169,6 +206,19 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
         $process = new Process($arguments, input: $input);
         $process->run();
         $stdout = $process->getOutput();
+        if ($process->isSuccessful() && $this->lostAnnotatorCompletionResponse && str_contains($command->input ?? '', 'rollback = sys.argv[6]') && array_last($command->arguments) === 'complete' && str_ends_with($command->arguments[3], '-web')) {
+            $this->lostAnnotatorCompletionResponse = false;
+
+            return new CommandResult(1, '', 'Injected lost preparation receipt cleanup response.', 1, false);
+        }
+        if ($process->isSuccessful() && str_contains($command->input ?? '', 'libc.renameat2')) {
+            ($this->afterAnnotatorRestore)?->__invoke($command);
+        }
+        if ($process->isSuccessful() && $this->lostAnnotatorRestoreResponse && str_contains($command->input ?? '', 'libc.renameat2')) {
+            $this->lostAnnotatorRestoreResponse = false;
+
+            return new CommandResult(1, '', 'Injected lost annotator restore response.', 1, false);
+        }
 
         if ($snapshot !== null && $actualSnapshot !== null) {
             $stdout = str_replace($actualSnapshot, $snapshot, $stdout);
@@ -195,6 +245,11 @@ final class LocalInstanceTransferTransport implements ProcessRunner, SqliteSnaps
         }
 
         return new CommandResult((int) $process->getExitCode(), $stdout, $process->getErrorOutput(), 1, false);
+    }
+
+    public function storePath(string $host, string $identity): string
+    {
+        return $this->sandbox.'/stores/'.$host.'/'.$identity;
     }
 
     private function localPath(string $path): string

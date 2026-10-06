@@ -44,7 +44,7 @@ final readonly class RemoteInstanceRuntimeReadiness implements InstanceRuntimeRe
             if ($process->isVpDev()) {
                 $instance->refresh()->load('node');
                 $runtime = app(VitePortRuntime::class);
-                while (! $runtime->ready($process, $instance, $instance->vite_port ?? 0)) {
+                while (! $runtime->ready($process, $instance, $instance->runtimeForApp($process->app)['vite_port'] ?? 0)) {
                     if (time() >= $deadline) {
                         throw new HibernationException('hibernation.development_server_not_ready', 'The owned Vite endpoint did not become ready before the wake timeout.');
                     }
@@ -55,11 +55,11 @@ final readonly class RemoteInstanceRuntimeReadiness implements InstanceRuntimeRe
             }
             if ($process->isAnnotator()) {
                 $instance->refresh()->load('node');
-                $this->waitUntilAgentationReady($instance, $deadline, annotator: true);
+                $this->waitUntilAgentationReady($instance, $deadline, $process->app, annotator: true);
             }
             if ($process->isAgentationMcp()) {
                 $instance->refresh()->load('node');
-                $this->waitUntilAgentationReady($instance, $deadline);
+                $this->waitUntilAgentationReady($instance, $deadline, $process->app);
             }
         }
     }
@@ -107,9 +107,10 @@ final readonly class RemoteInstanceRuntimeReadiness implements InstanceRuntimeRe
         return $viewed;
     }
 
-    private function waitUntilAgentationReady(Instance $instance, int $deadline, bool $annotator = false): void
+    private function waitUntilAgentationReady(Instance $instance, int $deadline, ?string $app, bool $annotator = false): void
     {
-        $port = (string) ($annotator ? $instance->annotator_port : ($instance->agentation_port ?? AgentationEndpoint::PORT));
+        $runtime = $instance->runtimeForApp($app);
+        $port = (string) ($annotator ? ($runtime['annotator_port'] ?? 0) : ($runtime['agentation_port'] ?? AgentationEndpoint::PORT));
         $remaining = max(1, $deadline - time());
         $result = $this->ssh->execute(
             $this->connection($instance->node, (float) ($remaining + 5)),
