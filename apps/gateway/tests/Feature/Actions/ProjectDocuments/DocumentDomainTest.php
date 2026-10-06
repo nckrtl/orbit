@@ -53,16 +53,17 @@ function domain_documents_project(string $slug = 'documents'): Project
     return Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/example/'.$slug.'.git']);
 }
 
-/** @return object{objects: array<string, string>, calls: array, fail: bool, corrupt: bool, afterPut: Closure|null, beforePut: Closure|null} */
+/** @return object{objects: array<string, string>, calls: array, fail: bool, corrupt: bool, afterPut: Closure|null, beforePut: Closure|null, requests: array} */
 function domain_documents_provider(): object
 {
     ProjectDocumentStorage::query()->findOrFail(1)->update([
         'endpoint' => 'https://documents.example.test', 'region' => 'test-1', 'bucket' => 'test-documents',
         'access_key_id' => 'private-key', 'secret_access_key' => 'private-secret',
     ]);
-    $provider = (object) ['objects' => [], 'calls' => [], 'fail' => false, 'corrupt' => false, 'afterPut' => null, 'beforePut' => null];
+    $provider = (object) ['objects' => [], 'calls' => [], 'fail' => false, 'corrupt' => false, 'afterPut' => null, 'beforePut' => null, 'requests' => []];
     config(['filesystems.disks.documents.handler' => function (CommandInterface $command, RequestInterface $request) use ($provider): PromiseInterface {
         $provider->calls[] = $command->toArray();
+        $provider->requests[] = $request;
         if ($provider->fail) {
             return Create::rejectionFor(new RuntimeException('private-secret provider diagnostic'));
         }
@@ -262,7 +263,7 @@ describe('immutable bodies and publication', function (): void {
         expect($intent->refresh()->state)->toBe('abandoned');
         expect(ProjectDocumentCleanup::query()->first()->storage_key)->toBe($remote['key']);
     });
-    it('stores private opaque objects and immutable history with author and current linkage', function (): void {
+    it('stores opaque objects without an object ACL and immutable history with author and current linkage', function (): void {
         $project = domain_documents_project();
         $provider = domain_documents_provider();
         $author = Node::query()->create(['name' => 'author', 'public_ssh_host' => '192.0.2.10', 'wireguard_ip' => '10.44.0.10']);
@@ -277,7 +278,8 @@ describe('immutable bodies and publication', function (): void {
         expect($first->size_bytes)->toBe(21);
         expect($first->created_by_node_id)->toBe($author->id);
         expect($first->storage_key)->not->toContain('dangerous.html');
-        expect($provider->calls[0]['ACL'])->toBe('private');
+        expect($provider->calls[0])->not->toHaveKey('ACL');
+        expect($provider->requests[0]->hasHeader('x-amz-acl'))->toBeFalse();
         expect($provider->calls[0]['ContentType'])->toBe('application/octet-stream');
         expect($provider->calls[0]['ContentDisposition'])->toBe('attachment');
         expect($first->toArray())->not->toHaveKeys(['storage_key', 'upload_id']);
