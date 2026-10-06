@@ -51,7 +51,7 @@ final readonly class CommandVocabulary
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
-        'tasks' => ['cancel', 'complete', 'status'],
+        'tasks' => ['cancel', 'complete', 'probe', 'status'],
         'tool' => ['adopt', 'scan'],
     ];
 
@@ -122,7 +122,7 @@ final readonly class CommandVocabulary
      */
     public static function routeRequiresMatchingCommand(string $routeName, array $commandNames): bool
     {
-        if (in_array($routeName, ['instance:dependencies:show', 'project:document:destroy', 'project:document:version:list'], true)) {
+        if (in_array($routeName, ['instance:dependencies:show', 'project:document:destroy', 'project:document:version:list', 'tasks:check:cancel'], true)) {
             return false;
         }
 

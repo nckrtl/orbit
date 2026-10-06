@@ -57,6 +57,16 @@ A request field the API validates as a boolean is a JSON `boolean` in `docs/open
 
 The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.
 
+### Deliverable probe and check-read schemas
+
+The catalogue publishes `tasks:deliverable:probe` as `POST /api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe` and `tasks:check:show` as `GET /api/v1/task-groups/{group}/tasks/{task}/checks/{check}`. Their operation IDs are `tasks-deliverable-probe` and `tasks-check-show`, which also name their generated [MCP tools](/reference/mcp#deliverable-probes-and-check-reads). The [deliverable probe contract](/reference/tasks#deliverable-probes) owns execution rules; [CLI Tasks](/cli/tasks#orbit-tasksdeliverableprobe) owns the command inputs and output.
+
+The generator gives `group`, `task`, and `check` numeric ID schemas and `deliverable` the declared ID pattern and length limit. The probe Form Request publishes only the optional JSON boolean `base`. Its raw JSON validation rejects unknown body fields, including free-form filters and extra command arguments; the generated MCP input schema also rejects additional properties.
+
+Both responses use `TaskCheckData`, including `id`, `kind`, `status`, nullable `exit_code`, `deliverable_evidence`, `output_tail`, and `receipt`, alongside the existing check fields. The check-read action returns the probe's stored receipt. Its explicit controller response mapping keeps this typed schema in the generated catalogue even though the controller delegates the read to an action. Non-probe checks have a null receipt. The probe creation schema advertises HTTP 201 only, not idempotent HTTP 200 reuse: every admitted POST creates a reservation and consumes quota. It publishes HTTP 429 `tasks.probe_limit` and HTTP 502 `tasks.probe_start_pending`, whose error details require a positive integer `check_id` for inspection and recovery. Clients inspect that retained check rather than retrying the POST.
+
+`DeliverableProbeApiTest` checks HTTP and MCP execution, numeric check IDs, probe evidence and receipt fields, retained-start error correlation, creation/recovery response schemas, rejected body inputs, and presence of both tools in the generated manifest. `ToolManifestCoverageTest` and `McpToolSchemaTest` protect route coverage and served input schemas. After changing this slice, regenerate OpenAPI, the MCP manifest, and web API types, then run their freshness checks.
+
 ### Feedback fixups keep the Tasks schema
 
 [GitHub feedback fixups](/reference/tasks#review-fixup-lifecycle) add the `review:{reviewer_id}` identity to the existing `fixup_problem` string and put provenance and findings in the existing `brief`. They add no public field, input, endpoint, or merge operation. Regenerate OpenAPI, then check the recorded review-fixup response with `bin/api-fixtures --check`, regenerate MCP/task-action manifests, and regenerate web API types. Unchanged schema output is a checked result, not a reason to skip the generators.

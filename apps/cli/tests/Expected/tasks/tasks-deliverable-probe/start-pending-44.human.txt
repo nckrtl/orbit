@@ -1,0 +1,13 @@
+Starting probe...
+
+┌  Probe deliverable
+│
+├  ● Starting probe
+│
+└  Operation failed.
+
+The probe is reserved; its start will be rec
+overed: Lost accepted start reply.
+check_id: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67
+a844

@@ -617,6 +617,10 @@ Route::prefix('v1')->group(function (): void {
             ->whereNumber('group')->whereNumber('task')->name('tasks:subtask:cancel');
         Route::post('task-groups/{group}/tasks/{task}/check/cancel', [TaskGroupsController::class, 'cancelCheck'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:check:cancel');
+        Route::post('task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe', [TaskGroupsController::class, 'probeDeliverable'])
+            ->whereNumber('group')->whereNumber('task')->where('deliverable', '[a-z0-9]+(?:-[a-z0-9]+)*')->name('tasks:deliverable:probe');
+        Route::get('task-groups/{group}/tasks/{task}/checks/{check}', [TaskGroupsController::class, 'showCheck'])
+            ->whereNumber('group')->whereNumber('task')->whereNumber('check')->name('tasks:check:show');
         Route::post('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'storeComment'])
             ->whereNumber('group')->whereNumber('task')->name('tasks:comment:create');
         Route::get('task-groups/{group}/tasks/{task}/comments', [TaskGroupsController::class, 'comments'])

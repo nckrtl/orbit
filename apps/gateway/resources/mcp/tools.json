@@ -7169,13 +7169,56 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
           }
         },
         "additionalProperties": false,
         "required": [
           "group",
           "task"
+        ]
+      }
+    },
+    {
+      "name": "tasks-check-show",
+      "extension": "tasks",
+      "title": "Show a task check and its receipt",
+      "description": "Returns a task check by ID, including its kind, status, exit code, deliverable evidence, output tail, and probe receipt when present. The check must belong to the named subtask and group.",
+      "method": "GET",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/checks/{check}",
+      "path_inputs": [
+        "group",
+        "task",
+        "check"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
+          },
+          "check": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric task check ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task",
+          "check"
         ]
       }
     },
@@ -7201,7 +7244,9 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
           },
           "type": {
             "type": "string",
@@ -7260,7 +7305,9 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
           }
         },
         "additionalProperties": false,
@@ -8061,6 +8108,52 @@
       }
     },
     {
+      "name": "tasks-deliverable-probe",
+      "extension": "tasks",
+      "title": "Probe a declared command deliverable",
+      "description": "Starts a dry-run of one declared command deliverable on a running subtask. Uses the stored command and directory without extra arguments or a free-form filter. Set base=true to include its declared start-commit check. Returns the check ID; read the result with tasks-check-show. Each admitted request creates a new reservation and consumes probe quota; an exact retry does not reuse a check. HTTP 429 tasks.probe_limit refuses an exhausted attempt. HTTP 502 tasks.probe_start_pending retains error.details.check_id for a reserved start that the Gateway will recover; inspect that check instead of retrying the POST.",
+      "method": "POST",
+      "path": "/api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe",
+      "path_inputs": [
+        "group",
+        "task",
+        "deliverable"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Task group ID."
+          },
+          "task": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
+          },
+          "deliverable": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+            "description": "Declared deliverable ID."
+          },
+          "base": {
+            "type": "boolean",
+            "description": "Include the declared start-commit check"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "group",
+          "task",
+          "deliverable"
+        ]
+      }
+    },
+    {
       "name": "tasks-list",
       "extension": "tasks",
       "title": "List Task groups",
@@ -8210,7 +8303,9 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
           }
         },
         "additionalProperties": false,
@@ -8348,7 +8443,9 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
           }
         },
         "additionalProperties": false,
@@ -8380,7 +8477,9 @@
             "description": "Numeric Task group ID."
           },
           "task": {
-            "type": "string"
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric subtask ID."
           },
           "title": {
             "type": "string",

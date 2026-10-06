@@ -66,6 +66,12 @@ final class GatewayFailureRenderer
             return $safe;
         }
 
+        if ($code === 'tasks.probe_start_pending') {
+            $checkId = $details['check_id'] ?? null;
+
+            return is_int($checkId) && $checkId > 0 ? ['check_id' => $checkId] : [];
+        }
+
         if ($code === 'env.configuration_invalid') {
             return self::environmentConfigurationDetails($details);
         }
@@ -190,10 +196,11 @@ final class GatewayFailureRenderer
             }
         }
 
-        $id = $humanDetails['id'] ?? null;
-
-        if (is_int($id) && $id > 0) {
-            $humanDetails['id'] = (string) $id;
+        foreach (['id', 'check_id'] as $field) {
+            $id = $humanDetails[$field] ?? null;
+            if (is_int($id) && $id > 0) {
+                $humanDetails[$field] = (string) $id;
+            }
         }
 
         $output = $command->getOutput();

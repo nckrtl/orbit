@@ -26,7 +26,7 @@ function fixture_path(string $name): string
  * @param  class-string  $request  The SDK request class that sends this route.
  * @param  string  $route  The route as `METHOD /api/v1/path`.
  */
-function record_fixture(TestResponse $response, string $name, string $request, string $route): void
+function record_fixture(TestResponse $response, string $name, string $request, string $route, bool $recordRequestIdHeader = false): void
 {
     $recorded = [
         'schema' => 1,
@@ -39,6 +39,9 @@ function record_fixture(TestResponse $response, string $name, string $request, s
     // A test that generates its own request id still records the fixed one, so the file is stable.
     if (is_object($recorded['body']) && isset($recorded['body']->meta->request_id)) {
         $recorded['body']->meta->request_id = fixture_request_id();
+    }
+    if ($recordRequestIdHeader) {
+        $recorded['headers'] = ['X-Orbit-Request-Id' => $response->headers->get('X-Orbit-Request-Id')];
     }
     $path = fixture_path($name);
 
@@ -55,6 +58,6 @@ function record_fixture(TestResponse $response, string $name, string $request, s
 
     $stored = json_decode((string) file_get_contents($path), flags: JSON_THROW_ON_ERROR);
 
-    expect(['status' => $recorded['status'], 'body' => $recorded['body']])
-        ->toEqual(['status' => $stored->status, 'body' => $stored->body], "Fixture {$name} is out of date. Review the change, then run ORBIT_FIXTURES=record vendor/bin/pest --filter=Fixtures in apps/gateway and bin/cli-contract {$name}.");
+    expect(['status' => $recorded['status'], 'body' => $recorded['body'], ...($recordRequestIdHeader ? ['headers' => $recorded['headers']] : [])])
+        ->toEqual(['status' => $stored->status, 'body' => $stored->body, ...($recordRequestIdHeader ? ['headers' => (array) $stored->headers] : [])], "Fixture {$name} is out of date. Review the change, then run ORBIT_FIXTURES=record vendor/bin/pest --filter=Fixtures in apps/gateway and bin/cli-contract {$name}.");
 }

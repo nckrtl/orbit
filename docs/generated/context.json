@@ -1070,6 +1070,7 @@
                 "Access grant",
                 "Activity",
                 "Cluster",
+                "Deliverable",
                 "Doctor",
                 "Extension",
                 "Gateway",
@@ -2074,6 +2075,7 @@
             ],
             "concepts": [
                 "Activity",
+                "Deliverable",
                 "Deployment",
                 "Extension",
                 "Gateway",

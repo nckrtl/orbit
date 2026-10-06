@@ -28,6 +28,8 @@ A task is one feature. A subtask is one ordered child of that task, and a subtas
 | [`tasks:subtask:cancel`](#orbit-taskssubtaskcancel) | Cancel a Todo or running subtask. |
 | [`tasks:comment:create`](#orbit-taskscommentcreate) | Ask for assistance on a subtask or resolve a request. |
 | [`tasks:comment:list`](#orbit-taskscommentlist) | List a subtask's comments. |
+| [`tasks:deliverable:probe`](#orbit-tasksdeliverableprobe) | Dry-run one declared command deliverable and return its check ID. |
+| [`tasks:check:show`](#orbit-taskscheckshow) | Read a check's result, deliverable evidence, output tail, and probe receipt by ID. |
 | [`tasks:question:list`](#orbit-tasksquestionlist) | List the questions agents asked, across tasks. |
 | [`tasks:agents`](#orbit-tasksagents) | List a task's agent threads. |
 | [`tasks:definition:list`](#orbit-tasksdefinitionlist) | List task definitions. This command does not start a task. |
@@ -289,6 +291,37 @@ orbit tasks:comment:list [group] [subtask] [--json]
 ```
 
 Human output prints one header line for each comment, with its time, type, author, review attempt, and commit when present. The full body follows, indented by two spaces.
+
+## orbit tasks:deliverable:probe
+
+Start a dry-run of one declared command deliverable on a running subtask. The Gateway uses the stored command and directory without extra arguments or a free-form filter. A probe does not run the Project check or setup steps and does not replace a handoff check. The [deliverable probe rules](/reference/tasks#deliverable-probes) own eligibility, exclusions, limits, and receipt fields.
+
+```bash
+orbit tasks:deliverable:probe [group] [subtask] [deliverable] [--base] [--json]
+```
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `group`, `subtask` | select in a terminal | Numeric task group and subtask IDs. |
+| `deliverable` | prompt in a terminal | Declared command deliverable ID, at most 64 characters. |
+| `--base` | off | Include the deliverable's declared start-commit check using its `fails_on_base` and `paths` fields. |
+| `--json` | off | Return the check record with `request_id`. |
+
+The response contains the new check's `id`, `kind` (`probe`), and `status`. Starting a probe does not wait for its result. Read it later with `tasks:check:show`. An unknown deliverable receives HTTP 404, a non-command deliverable receives HTTP 422, and a running check anywhere in the group receives HTTP 409. Each admitted POST creates a new reservation and consumes the per-attempt probe allowance; an exact retry does not reuse a check. HTTP 429 `tasks.probe_limit` refuses an exhausted allowance. HTTP 502 `tasks.probe_start_pending` keeps the reserved check's positive integer `check_id` in the CLI error details, together with the request ID. Read that check with `tasks:check:show` instead of retrying the POST; the Gateway recovers its reserved start.
+
+With `--json` or `-n`, a missing deliverable fails with `tasks.deliverable_required`. Invalid explicit IDs fail with `tasks.deliverable_invalid`. In a terminal, the deliverable prompt rejects invalid IDs and lets you correct them before starting a probe; Ctrl-C cancels without starting one. No option accepts a command, filter, or extra command arguments.
+
+## orbit tasks:check:show
+
+Read one baseline, handoff, or probe check by its numeric ID. The check must belong to the named subtask and task group; a mismatch receives HTTP 404.
+
+```bash
+orbit tasks:check:show [group] [subtask] [check] [--json]
+```
+
+The CLI selects an omitted group or subtask in a terminal and prompts for an omitted check ID. With `--json` or `-n`, a missing check ID fails with `tasks.check_required`; an explicit value that is not a positive integer fails with `tasks.check_invalid`. The check ID prompt rejects invalid values and lets you correct them until you submit a positive integer or cancel.
+
+Human output shows the check ID, kind, status, exit code, times, labeled deliverable evidence, output tail, and a labeled probe receipt when present. Long command, path, and receipt values wrap to the terminal width; nested JSON is reserved for `--json`. JSON returns `id`, `kind`, `status`, `exit_code`, `started_at`, `finished_at`, `changed_paths`, `failed_step`, `output`, `deliverable_evidence`, `output_tail`, `receipt`, and `request_id`. Results not yet recorded are null. A probe receipt includes its declared deliverable and execution details; other check kinds return a null `receipt`. The [Tasks check contract](/reference/tasks#deliverable-probes) owns probe receipt fields and result semantics.
 
 ## orbit tasks:question:list
 

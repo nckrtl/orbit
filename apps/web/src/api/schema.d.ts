@@ -3258,6 +3258,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/task-groups/{group}/tasks/{task}/checks/{check}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a task check and its receipt
+         * @description Returns a task check by ID, including its kind, status, exit code, deliverable evidence, output tail, and probe receipt when present. The check must belong to the named subtask and group.
+         */
+        get: operations["tasks-check-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/task-groups/{group}/tasks/{task}/comments": {
         parameters: {
             query?: never;
@@ -3276,6 +3296,26 @@ export interface paths {
          * @description Ask for assistance on a subtask or resolve a request.
          */
         post: operations["tasks-comment-create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Probe a declared command deliverable
+         * @description Starts a dry-run of one declared command deliverable on a running subtask. Uses the stored command and directory without extra arguments or a free-form filter. Set base=true to include its declared start-commit check. Returns the check ID; read the result with tasks-check-show. Each admitted request creates a new reservation and consumes probe quota; an exact retry does not reuse a check. HTTP 429 tasks.probe_limit refuses an exhausted attempt. HTTP 502 tasks.probe_start_pending retains error.details.check_id for a reserved start that the Gateway will recover; inspect that check instead of retrying the POST.
+         */
+        post: operations["tasks-deliverable-probe"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4143,7 +4183,7 @@ export interface components {
         TaskCheck: {
             id?: number;
             /** @enum {string} */
-            kind?: "baseline" | "handoff";
+            kind?: "baseline" | "handoff" | "probe";
             /** @enum {string} */
             status?: "running" | "passed" | "failed" | "changed" | "lost" | "cancelled";
             started_at?: string;
@@ -4152,6 +4192,13 @@ export interface components {
             changed_paths?: string[];
             failed_step?: string | null;
             output?: string | null;
+            deliverable_evidence?: {
+                [key: string]: unknown;
+            } | null;
+            output_tail?: string | null;
+            receipt?: {
+                [key: string]: unknown;
+            } | null;
         };
         AgentThread: {
             id?: number;
@@ -17462,7 +17509,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric subtask ID. */
+                task: number;
             };
             cookie?: never;
         };
@@ -17529,7 +17577,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric subtask ID. */
+                task: number;
             };
             cookie?: never;
         };
@@ -17622,7 +17671,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric subtask ID. */
+                task: number;
             };
             cookie?: never;
         };
@@ -17698,7 +17748,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric subtask ID. */
+                task: number;
             };
             cookie?: never;
         };
@@ -17758,6 +17809,63 @@ export interface operations {
             };
         };
     };
+    "tasks-check-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                /** @description Numeric subtask ID. */
+                task: number;
+                /** @description Numeric task check ID. */
+                check: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskCheck"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A disabled extension returns HTTP 409 (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "tasks-comment-list": {
         parameters: {
             query?: never;
@@ -17765,7 +17873,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric subtask ID. */
+                task: number;
             };
             cookie?: never;
         };
@@ -17819,7 +17928,8 @@ export interface operations {
             path: {
                 /** @description Numeric Task group ID. */
                 group: number;
-                task: string;
+                /** @description Numeric subtask ID. */
+                task: number;
             };
             cookie?: never;
         };
@@ -17898,6 +18008,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "tasks-deliverable-probe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Task group ID. */
+                group: number;
+                /** @description Numeric subtask ID. */
+                task: number;
+                /** @description Declared deliverable ID. */
+                deliverable: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Include the declared start-commit check */
+                    base?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Created. */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["TaskCheck"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The declared deliverable does not exist (`tasks.probe_not_found`), or a path record is missing. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A check already runs in the group (`tasks.probe_check_running`), the subtask or workspace is not running (`tasks.probe_not_running`), or the extension is disabled (`extension.disabled`). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The deliverable is not a command (`tasks.probe_not_command`), or the narrow JSON body is invalid (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The completion attempt already used its three probes (`tasks.probe_limit`). Each admitted POST consumes quota, including a retained reservation. */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The probe is reserved but its start is pending recovery (`tasks.probe_start_pending`). Read the retained `error.details.check_id` with tasks-check-show; do not retry the POST to recover this reservation. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"] & {
+                        error?: {
+                            details: {
+                                check_id: number;
+                            };
+                        };
+                    };
                 };
             };
         };

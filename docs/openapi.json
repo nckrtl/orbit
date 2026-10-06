@@ -24945,9 +24945,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric subtask ID."
           }
         ],
         "x-orbit-extension": "tasks",
@@ -25062,9 +25063,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric subtask ID."
           }
         ],
         "x-orbit-extension": "tasks",
@@ -25265,9 +25267,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric subtask ID."
           }
         ],
         "x-orbit-extension": "tasks",
@@ -25394,9 +25397,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric subtask ID."
           }
         ],
         "x-orbit-extension": "tasks",
@@ -25484,6 +25488,115 @@
         ]
       }
     },
+    "/api/v1/task-groups/{group}/tasks/{task}/checks/{check}": {
+      "get": {
+        "operationId": "tasks-check-show",
+        "summary": "Show a task check and its receipt",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric subtask ID."
+          },
+          {
+            "name": "check",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric task check ID."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Returns a task check by ID, including its kind, status, exit code, deliverable evidence, output tail, and probe receipt when present. The check must belong to the named subtask and group.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskCheck"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/checks/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ShowTaskCheckRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowTaskCheckRequest(groupId: 1, taskId: 1, checkId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/task-groups/{group}/tasks/{task}/comments": {
       "get": {
         "operationId": "tasks-comment-list",
@@ -25507,9 +25620,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric subtask ID."
           }
         ],
         "x-orbit-extension": "tasks",
@@ -25606,9 +25720,10 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "minimum": 1
             },
-            "description": ""
+            "description": "Numeric subtask ID."
           }
         ],
         "x-orbit-extension": "tasks",
@@ -25751,6 +25866,192 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\CreateTaskCommentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateTaskCommentRequest(\n    groupId: 1,\n    taskId: 1,\n    type: 'value',\n    commentBody: 'value',\n    author: 'value',\n))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe": {
+      "post": {
+        "operationId": "tasks-deliverable-probe",
+        "summary": "Probe a declared command deliverable",
+        "tags": [
+          "Tasks"
+        ],
+        "parameters": [
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Task group ID."
+          },
+          {
+            "name": "task",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric subtask ID."
+          },
+          {
+            "name": "deliverable",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 64,
+              "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+            },
+            "description": "Declared deliverable ID."
+          }
+        ],
+        "x-orbit-extension": "tasks",
+        "description": "Starts a dry-run of one declared command deliverable on a running subtask. Uses the stored command and directory without extra arguments or a free-form filter. Set base=true to include its declared start-commit check. Returns the check ID; read the result with tasks-check-show. Each admitted request creates a new reservation and consumes probe quota; an exact retry does not reuse a check. HTTP 429 tasks.probe_limit refuses an exhausted attempt. HTTP 502 tasks.probe_start_pending retains error.details.check_id for a reserved start that the Gateway will recover; inspect that check instead of retrying the POST.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "base": {
+                    "type": "boolean",
+                    "description": "Include the declared start-commit check"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/TaskCheck"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The declared deliverable does not exist (`tasks.probe_not_found`), or a path record is missing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A check already runs in the group (`tasks.probe_check_running`), the subtask or workspace is not running (`tasks.probe_not_running`), or the extension is disabled (`extension.disabled`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The deliverable is not a command (`tasks.probe_not_command`), or the narrow JSON body is invalid (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The completion attempt already used its three probes (`tasks.probe_limit`). Each admitted POST consumes quota, including a retained reservation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "The probe is reserved but its start is pending recovery (`tasks.probe_start_pending`). Read the retained `error.details.check_id` with tasks-check-show; do not retry the POST to recover this reservation.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "object",
+                          "properties": {
+                            "details": {
+                              "type": "object",
+                              "properties": {
+                                "check_id": {
+                                  "type": "integer",
+                                  "minimum": 1
+                                }
+                              },
+                              "required": [
+                                "check_id"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "details"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/deliverables/1/probe\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"base\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Tasks\\ProbeTaskDeliverableRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ProbeTaskDeliverableRequest(groupId: 1, taskId: 1, deliverableId: 'value'))->dto();\n"
           }
         ]
       }
@@ -29380,7 +29681,8 @@
             "type": "string",
             "enum": [
               "baseline",
-              "handoff"
+              "handoff",
+              "probe"
             ]
           },
           "status": {
@@ -29426,6 +29728,26 @@
               "string",
               "null"
             ]
+          },
+          "deliverable_evidence": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "output_tail": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "receipt": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
           }
         }
       },

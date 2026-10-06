@@ -12,6 +12,7 @@ use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleMode;
 use App\Support\Console\PromptAborted;
 use App\Support\Console\PromptContext;
+use App\Support\GatewayFailureRenderer;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -27,10 +28,13 @@ use Orbit\Sdk\Requests\Tasks\CreateTaskCommentRequest;
 use Orbit\Sdk\Requests\Tasks\CreateTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskGroupsRequest;
 use Orbit\Sdk\Requests\Tasks\ListTaskQuestionsRequest;
+use Orbit\Sdk\Requests\Tasks\ProbeTaskDeliverableRequest;
+use Orbit\Sdk\Requests\Tasks\ShowTaskCheckRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateSubtaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskGroupRequest;
+use Orbit\Sdk\Responses\Tasks\TaskCheckResponse;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\Request;
@@ -53,6 +57,62 @@ afterEach(function (): void {
     MockClient::destroyGlobal();
     new Filesystem()->deleteDirectory($this->orbitHome);
     app()->forgetInstance(GatewayConfigRepository::class);
+});
+
+describe('deliverable probe CLI', function (): void {
+    it('keeps the reserved check id and request id in human and JSON pending-start errors', function (): void {
+        foreach ([true, false] as $json) {
+            MockClient::destroyGlobal();
+            MockClient::global(gateway_fixture_mock('tasks/tasks-deliverable-probe/start-pending'));
+            expect(Artisan::call('tasks:deliverable:probe', ['group' => '1', 'subtask' => '2', 'deliverable' => 'test', '--json' => $json]))->toBe(1);
+            $output = Artisan::output();
+            if ($json) {
+                $error = json_decode($output, true, flags: JSON_THROW_ON_ERROR)['error'];
+                expect($error['code'])->toBe('tasks.probe_start_pending')->and($error['details'])->toBe(['check_id' => 1])
+                    ->and($error['request_id'])->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+            } else {
+                expect($output)->toContain('check_id: 1', '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+            }
+        }
+    });
+
+    it('keeps only a positive integer reserved check id', function (mixed $id, array $expected): void {
+        expect(GatewayFailureRenderer::safeDetails('tasks.probe_start_pending', ['check_id' => $id, 'output' => 'secret']))->toBe($expected);
+    })->with([[8, ['check_id' => 8]], [PHP_INT_MAX, ['check_id' => PHP_INT_MAX]], [0, []], [-1, []], ['8', []], [8.0, []], [true, []], [null, []], [[], []]]);
+
+    it('exposes help and transports the check id, evidence and receipt', function (string $command, string $requestClass, array $arguments, bool $base): void {
+        $data = [
+            'id' => 8, 'kind' => 'probe', 'status' => 'passed', 'started_at' => '2026-10-06T12:00:00Z',
+            'finished_at' => '2026-10-06T12:00:01Z', 'exit_code' => 0, 'changed_paths' => [], 'failed_step' => null,
+            'output' => 'passed', 'output_tail' => 'passed', 'deliverable_evidence' => ['commands' => ['test' => ['exit_code' => 0]]],
+            'receipt' => ['check_id' => 8, 'kind' => 'probe', 'deliverable' => 'test', 'exit_code' => 0],
+        ];
+        $mock = MockClient::global([$requestClass => MockResponse::make(['data' => $data, 'meta' => ['request_id' => '4f20d3c2-b6d5-42ce-823a-b784dcbd93fb']])]);
+        expect(Artisan::call($command, [...$arguments, '--help' => true]))->toBe(0)
+            ->and(Artisan::output())->toContain($command);
+        foreach ([true, false] as $json) {
+            expect(Artisan::call($command, [...$arguments, '--json' => $json]))->toBe(0);
+            if ($json) {
+                $result = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
+                expect($result['id'])->toBe(8)->and($result['kind'])->toBe('probe')->and($result['exit_code'])->toBe(0)
+                    ->and($result['receipt'])->toBe($data['receipt'])->and($result['deliverable_evidence'])->toBe($data['deliverable_evidence']);
+            } else {
+                expect(Artisan::output())->toContain('Check: 8', 'probe', 'passed', 'Receipt', 'Output tail');
+            }
+        }
+        $mock->assertSent(static function (Request $request) use ($base): bool {
+            if ($request instanceof ProbeTaskDeliverableRequest) {
+                return $request->resolveEndpoint() === '/api/v1/task-groups/1/tasks/2/deliverables/test/probe'
+                    && $request->body()->all() === json_encode(['base' => $base], JSON_THROW_ON_ERROR);
+            }
+
+            return $request instanceof ShowTaskCheckRequest && $request->resolveEndpoint() === '/api/v1/task-groups/1/tasks/2/checks/8';
+        });
+    })->with([
+        ['tasks:deliverable:probe', ProbeTaskDeliverableRequest::class, ['group' => '1', 'subtask' => '2', 'deliverable' => 'test'], false],
+        ['tasks:deliverable:probe', ProbeTaskDeliverableRequest::class, ['group' => '1', 'subtask' => '2', 'deliverable' => 'test', '--base' => true], true],
+        ['tasks:check:show', ShowTaskCheckRequest::class, ['group' => '1', 'subtask' => '2', 'check' => '8'], false],
+    ]);
 });
 
 describe('omitted and invalid input', function (): void {
@@ -116,6 +176,10 @@ describe('omitted and invalid input', function (): void {
         'comment without author' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'resolution', '--body' => 'B'], 'tasks.comment_author_required'],
         'comment with an invalid thread' => ['tasks:comment:create', ['group' => '1', 'subtask' => '2', '--type' => 'resolution', '--body' => 'B', '--author' => 'nick', '--agent-thread' => 'x'], 'tasks.agent_thread_invalid'],
         'comment list without subtask' => ['tasks:comment:list', ['group' => '1'], 'tasks.subtask_required'],
+        'probe without deliverable' => ['tasks:deliverable:probe', ['group' => '1', 'subtask' => '2'], 'tasks.deliverable_required'],
+        'probe with invalid deliverable' => ['tasks:deliverable:probe', ['group' => '1', 'subtask' => '2', 'deliverable' => '../test'], 'tasks.deliverable_invalid'],
+        'show without check' => ['tasks:check:show', ['group' => '1', 'subtask' => '2'], 'tasks.check_required'],
+        'show with invalid check' => ['tasks:check:show', ['group' => '1', 'subtask' => '2', 'check' => '-1'], 'tasks.check_invalid'],
     ]);
 
     it('refuses a subtasks file that is not an array of titled briefs', function (string $contents): void {
@@ -402,6 +466,24 @@ describe('requests', function (): void {
 });
 
 describe('prompts', function (): void {
+    it('lets invalid probe and check ids be corrected before sending a request', function (string $scenario, string $invalid, string $valid, string $error, string $fixture, string $requestClass): void {
+        $mock = MockClient::global(gateway_fixture_mock($fixture));
+        [$status, $display] = task_prompt_run($scenario, [...str_split($invalid), Key::ENTER, ...array_fill(0, strlen($invalid), Key::BACKSPACE), ...str_split($valid), Key::ENTER], fn () => $mock->assertNothingSent());
+        expect($status)->toBe(0)->and($display)->toContain($error);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof $requestClass);
+        $mock->assertSentCount(1);
+    })->with([
+        ['probe-input', '../test', 'test', 'Deliverable ID must be lowercase', 'tasks/tasks-deliverable-probe/created', ProbeTaskDeliverableRequest::class],
+        ['check-input', '-1', '1', 'Check ID must be a positive integer', 'tasks/tasks-check-show/passed', ShowTaskCheckRequest::class],
+    ]);
+
+    it('cancels an invalid probe or check prompt without a request', function (string $scenario, string $invalid): void {
+        $mock = MockClient::global([]);
+        [$status] = task_prompt_run($scenario, [...str_split($invalid), Key::ENTER, Key::CTRL_C], fn () => $mock->assertNothingSent());
+        expect($status)->toBe(1);
+        $mock->assertNothingSent();
+    })->with([['probe-input', '../test'], ['check-input', '-1']]);
+
     it('selects a group by its stable ID from the offered statuses', function (): void {
         $mock = task_prompt_mock();
         [$status, $display] = task_prompt_run('select-backlog', [Key::DOWN, Key::ENTER]);
@@ -487,9 +569,9 @@ function task_prompt_mock(): MockClient
  * @param  list<string>  $keys
  * @return array{int, string}
  */
-function task_prompt_run(string $scenario, array $keys): array
+function task_prompt_run(string $scenario, array $keys, ?Closure $beforeRead = null): array
 {
-    $command = new TaskPromptsCommand(new TaskPromptsTerminal($keys));
+    $command = new TaskPromptsCommand(new TaskPromptsTerminal($keys, $beforeRead));
     $command->setLaravel(app());
     $tester = new CommandTester($command);
     $status = $tester->execute(['--scenario' => $scenario]);
@@ -527,6 +609,16 @@ final class TaskPromptsCommand extends TaskCommand
             assert($connector !== null);
 
             switch ($this->option('scenario')) {
+                case 'probe-input':
+                    $id = $this->promptDeliverableId();
+                    $check = $this->sendWithProgress($connector, new ProbeTaskDeliverableRequest(1, 2, $id), TaskCheckResponse::class, ['Probe deliverable', 'Starting probe', 'Started probe']);
+
+                    return $check instanceof TaskCheckResponse ? $this->renderCheck($check) : self::FAILURE;
+                case 'check-input':
+                    $id = $this->promptCheckId();
+                    $check = $this->sendWithProgress($connector, new ShowTaskCheckRequest(1, 2, $id), TaskCheckResponse::class, ['Show check', 'Loading check', 'Loaded check']);
+
+                    return $check instanceof TaskCheckResponse ? $this->renderCheck($check) : self::FAILURE;
                 case 'select-backlog':
                     $id = $this->selectGroup($connector, ['backlog']);
                     $this->line("selected {$id}");
@@ -706,13 +798,15 @@ describe('assistance columns', function (): void {
 final class TaskPromptsTerminal extends Terminal
 {
     /** @param list<string> $keys */
-    public function __construct(private array $keys)
+    public function __construct(private array $keys, private readonly ?Closure $beforeRead = null)
     {
         parent::__construct();
     }
 
     public function read(): string
     {
+        ($this->beforeRead)?->__invoke();
+
         return array_shift($this->keys) ?? throw new PromptAborted('Input ended.');
     }
 

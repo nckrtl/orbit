@@ -1,0 +1,48 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTaskCheckRequest",
+    "route": "GET /api/v1/task-groups/{group}/tasks/{task}/checks/{check}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "kind": "probe",
+            "status": "failed",
+            "started_at": "2026-10-06T12:00:00+00:00",
+            "finished_at": "2026-10-06T12:00:00+00:00",
+            "exit_code": 1,
+            "changed_paths": [],
+            "failed_step": null,
+            "output": "Declared test failed. Inspect the assertion before retrying.\n",
+            "deliverable_evidence": {
+                "commands": {
+                    "test": {
+                        "exit_code": 1,
+                        "base_exit_code": 1
+                    }
+                }
+            },
+            "output_tail": "Declared test failed. Inspect the assertion before retrying.\n",
+            "receipt": {
+                "kind": "probe",
+                "deliverable": "test",
+                "command": "vendor/bin/pest --filter=ExactTest",
+                "directory": "apps/gateway",
+                "check_id": 1,
+                "managed_user": "orbit-worker",
+                "uid": 1001,
+                "tmpdir": "/tmp/orbit-check-1001-deliverable-probe",
+                "head": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "exit_code": 1,
+                "output_tail": "Declared test failed. Inspect the assertion before retrying.\n",
+                "started_at": "2026-10-06T12:00:00+00:00",
+                "finished_at": "2026-10-06T12:00:00+00:00",
+                "base_exit_code": 1
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

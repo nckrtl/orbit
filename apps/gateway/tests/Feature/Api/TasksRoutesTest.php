@@ -87,6 +87,8 @@ it('exposes the tasks routes with stable methods', function (): void {
         'tasks:subtask:destroy' => ['api/v1/task-groups/{group}/tasks/{task}', ['DELETE']],
         'tasks:subtask:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/cancel', ['POST']],
         'tasks:check:cancel' => ['api/v1/task-groups/{group}/tasks/{task}/check/cancel', ['POST']],
+        'tasks:deliverable:probe' => ['api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe', ['POST']],
+        'tasks:check:show' => ['api/v1/task-groups/{group}/tasks/{task}/checks/{check}', ['GET', 'HEAD']],
         'tasks:comment:create' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['POST']],
         'tasks:comment:list' => ['api/v1/task-groups/{group}/tasks/{task}/comments', ['GET', 'HEAD']],
         'tasks:cancel' => ['api/v1/task-groups/{group}/cancel', ['POST']],

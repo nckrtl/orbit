@@ -229,6 +229,7 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::allowsCommand('node:settings'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('doctor'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('profile'))->toBeTrue();
+        expect(CommandVocabulary::allowsCommand('tasks:deliverable:probe'))->toBeTrue();
         expect(CommandVocabulary::allowsCommand('workspace:new'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('workspace:php'))->toBeFalse();
         expect(CommandVocabulary::allowsCommand('instance:deployment-config'))->toBeFalse();
@@ -253,6 +254,7 @@ describe('command vocabulary', function (): void {
         expect(CommandVocabulary::routeRequiresMatchingCommand('metrics:list', $commands))->toBeTrue();
         expect($commands)->not->toContain('metrics:list');
         expect(CommandVocabulary::routeRequiresMatchingCommand('schedule:complete', $commands))->toBeFalse();
+        expect(CommandVocabulary::routeRequiresMatchingCommand('tasks:check:cancel', ['tasks:check:show']))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:show', ['instance:dependencies:scan']))->toBeFalse();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:update']))->toBeTrue();
         expect(CommandVocabulary::routeRequiresMatchingCommand('instance:dependencies:update', ['instance:dependencies:scan']))->toBeTrue();

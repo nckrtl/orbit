@@ -93,7 +93,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `project` | `archive`, `download`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
-| `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |
+| `tasks` | `cancel`, `complete`, `probe`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, probes a declared command deliverable with `tasks:deliverable:probe`, or reports task assistance and state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 
 `doctor` and `profile` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
@@ -116,7 +116,7 @@ Five commands end in a noun.
 
 The Gateway lives in `apps/gateway`, and it records each route name as the Activity command. A named route must carry the name of its CLI command when two conditions hold. Its name without the last segment is the prefix of a CLI command, and its last segment is allowed for that family. `CommandSurfaceTest` checks every named route in `routes/api.php`.
 
-Some routes have no CLI command. `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board.
+Some routes have no CLI command. `instance:dependencies:show` reads the stored dependency inventory for the API and SDK. The CLI has `instance:dependencies:scan` and `instance:dependencies:update`, as [Instance dependencies](/reference/instance-dependencies) describes. `tasks:agent-stream` is a server-sent event stream for the web task board. `tasks:check:cancel` cancels a running check through the API and MCP; it has no CLI command. `tasks:check:show` reads a check ID, result, deliverable evidence, output tail, and probe receipt through the API, CLI, and MCP.
 
 `tasks:definition:list`, `tasks:definition:show`, `tasks:definition:create`, `tasks:definition:update`, and `tasks:definition:destroy` read and write [task definitions](/reference/tasks#definition-operations) on the API, the CLI, and MCP.
 

@@ -16,7 +16,7 @@ function gateway_fixture_path(string $name): string
     return base_path('../../packages/php-sdk/fixtures/'.$name.'.json');
 }
 
-/** @return array{schema: int, request: class-string, route: string, status: int, body: string} The body stays JSON text so `{}` and `[]` reach the CLI as the Gateway sent them. */
+/** @return array{schema: int, request: class-string, route: string, status: int, headers: array<string, string>, body: string} The body stays JSON text so `{}` and `[]` reach the CLI as the Gateway sent them. */
 function gateway_fixture(string $name): array
 {
     $path = gateway_fixture_path($name);
@@ -31,6 +31,7 @@ function gateway_fixture(string $name): array
         'request' => $fixture->request,
         'route' => $fixture->route,
         'status' => $fixture->status,
+        'headers' => isset($fixture->headers) ? (array) $fixture->headers : [],
         'body' => json_encode($fixture->body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
     ];
 }
@@ -46,7 +47,7 @@ function gateway_fixture_mock(string ...$names): array
     ];
     foreach ($names as $name) {
         $fixture = gateway_fixture($name);
-        $mocks[$fixture['request']] = MockResponse::make($fixture['body'], $fixture['status'], ['Content-Type' => 'application/json']);
+        $mocks[$fixture['request']] = MockResponse::make($fixture['body'], $fixture['status'], ['Content-Type' => 'application/json', ...$fixture['headers']]);
     }
 
     return $mocks;

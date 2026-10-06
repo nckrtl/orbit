@@ -1,0 +1,65 @@
+Loading check...
+
+┌  Show check
+│
+├  ● Loaded check
+│
+└  Loaded check.
+
+
+┌  Check: 1
+│
+├  Kind            probe
+│
+├  Status          failed
+│
+├  Exit code       1
+│
+├  Started         2026-10-06 12:00
+│
+├  Finished        2026-10-06 12:00
+│
+├  Failed step     —
+│
+└  Changed paths   —
+
+Deliverable evidence
+  test
+    Exit code: 1
+    Base exit code: 1
+
+┌  Receipt
+│
+├  Check ID         1
+│
+├  Kind             probe
+│
+├  Deliverable      test
+│
+├  Command          vendor/bin/pest --filter=ExactTest
+│
+├  Directory        apps/gateway
+│
+├  Managed user     orbit-worker
+│
+├  UID              1001
+│
+├  TMPDIR           /tmp/orbit-check-1001-deliverable-probe
+│
+├  HEAD             aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+│
+├  Tree             bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+│
+├  Exit code        1
+│
+├  Base exit code   1
+│
+├  Started          2026-10-06 12:00
+│
+└  Finished         2026-10-06 12:00
+
+Output tail
+  Declared test failed. Inspect the assertion before retrying.
+
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

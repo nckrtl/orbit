@@ -12,6 +12,7 @@ use App\Support\Console\ConsoleWriter;
 use App\Support\Console\TerminalText;
 use App\Support\ExtensionCommandVisibility;
 use App\Support\GatedExtensionCommand;
+use Closure;
 use DateTimeImmutable;
 use JsonException;
 use Laravel\Prompts\MultiSelectPrompt;
@@ -25,6 +26,7 @@ use Orbit\Sdk\Requests\Tasks\ShowTaskGroupRequest;
 use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentResponse;
+use Orbit\Sdk\Responses\Tasks\TaskCheckResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
@@ -164,14 +166,34 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return $value;
     }
 
-    protected function promptText(string $label, int $max, bool $multiline = false, string $default = ''): string
+    /** @param (Closure(string): ?string)|null $validateValue */
+    protected function promptText(string $label, int $max, bool $multiline = false, string $default = '', ?Closure $validateValue = null): string
     {
-        $validate = static fn (string $value): ?string => self::textError($value, $label, $max);
+        $validate = static fn (string $value): ?string => self::textError($value, $label, $max) ?? ($validateValue !== null ? $validateValue($value) : null);
         $answer = $this->commandPrompts()->run(static fn (): TextPrompt|TextareaPrompt => $multiline
             ? new TextareaPrompt(TerminalText::safe($label), default: $default, required: "{$label} is required.", validate: $validate, rows: 8)
             : new TextPrompt(TerminalText::safe($label), default: $default, required: "{$label} is required.", validate: $validate));
 
         return is_string($answer) ? $answer : '';
+    }
+
+    protected static function deliverableIdError(string $value): ?string
+    {
+        return preg_match('/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/', $value) === 1
+            ? null : 'Deliverable ID must be lowercase letters, digits, and hyphens.';
+    }
+
+    protected function promptDeliverableId(): string
+    {
+        return $this->promptText('Deliverable', 64, validateValue: self::deliverableIdError(...));
+    }
+
+    protected function promptCheckId(): int
+    {
+        $value = $this->promptText('Check ID', 20, validateValue: static fn (string $value): ?string => filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false
+                ? 'Check ID must be a positive integer.' : null);
+
+        return (int) $value;
     }
 
     /** @param array<string, string> $choices */
@@ -353,6 +375,102 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         $this->writeHumanMessage("Request ID: {$group->requestId}");
 
         return self::SUCCESS;
+    }
+
+    /** @return array{int, int}|null */
+    protected function resolveSubtaskTarget(GatewayConnector $connector, ?int $groupId, ?int $subtaskId): ?array
+    {
+        $groupId ??= $this->selectGroup($connector);
+        if ($groupId === null) {
+            return null;
+        }
+        if ($subtaskId === null) {
+            $group = $this->loadGroup($connector, $groupId);
+            if (! $group instanceof TaskGroupResponse) {
+                return null;
+            }
+            $subtaskId = $this->selectSubtask($group);
+        }
+
+        return [$groupId, $subtaskId];
+    }
+
+    protected function renderCheck(TaskCheckResponse $check): int
+    {
+        if ($this->option('json') === true) {
+            $this->writeJson($check->toArray());
+
+            return self::SUCCESS;
+        }
+        ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Check: {$check->id}", [
+            'Kind' => $check->kind, 'Status' => $check->status, 'Exit code' => $check->exitCode,
+            'Started' => self::time($check->startedAt), 'Finished' => self::time($check->finishedAt),
+            'Failed step' => $check->failedStep, 'Changed paths' => $check->changedPaths,
+            ...(is_string($check->deliverableEvidence['start'] ?? null) ? ['Start commit' => $check->deliverableEvidence['start']] : []),
+        ]));
+        if ($check->deliverableEvidence !== null) {
+            $items = [];
+            $commands = $check->deliverableEvidence['commands'] ?? [];
+            if (is_array($commands)) {
+                foreach ($commands as $id => $command) {
+                    if (! is_array($command)) {
+                        continue;
+                    }
+                    $label = is_string($command['id'] ?? null) ? $command['id'] : (string) $id;
+                    $items[] = ['label' => $label, 'fields' => self::checkDisplayFields($command, [
+                        'command' => 'Command', 'directory' => 'Directory', 'fails_on_base' => 'Must fail on base',
+                        'paths' => 'Paths', 'passed' => 'Passed', 'exit_code' => 'Exit code',
+                        'base_started' => 'Base started', 'base_exit_code' => 'Base exit code',
+                        'base_timed_out' => 'Base timed out', 'base_timeout_seconds' => 'Base timeout (seconds)',
+                    ])];
+                }
+            }
+            if ($items !== []) {
+                ConsoleWriter::write($this->output, $this->humanRenderer()->properties([
+                    ['title' => 'Deliverable evidence', 'items' => $items],
+                ]));
+            }
+        }
+        if ($check->receipt !== null) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Receipt', self::checkDisplayFields($check->receipt, [
+                'check_id' => 'Check ID', 'kind' => 'Kind', 'deliverable' => 'Deliverable', 'command' => 'Command',
+                'directory' => 'Directory', 'managed_user' => 'Managed user', 'uid' => 'UID', 'tmpdir' => 'TMPDIR',
+                'head' => 'HEAD', 'tree' => 'Tree', 'exit_code' => 'Exit code', 'base_exit_code' => 'Base exit code',
+                'started_at' => 'Started', 'finished_at' => 'Finished',
+            ])));
+        }
+        if ($check->outputTail !== null) {
+            $this->writeText('Output tail', $check->outputTail);
+        }
+        $this->writeHumanMessage("Request ID: {$check->requestId}");
+
+        return self::SUCCESS;
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $data
+     * @param  array<string, string>  $labels
+     * @return array<string, scalar|null|list<scalar|null>>
+     */
+    private static function checkDisplayFields(array $data, array $labels): array
+    {
+        $fields = [];
+        foreach ($labels as $key => $label) {
+            if (! array_key_exists($key, $data)) {
+                continue;
+            }
+            $value = $data[$key];
+            if (in_array($key, ['started_at', 'finished_at'], true) && is_string($value)) {
+                $value = self::time($value);
+            }
+            if (is_scalar($value) || $value === null) {
+                $fields[$label] = $value;
+            } elseif (is_array($value) && array_is_list($value)) {
+                $fields[$label] = array_values(array_filter($value, static fn (mixed $item): bool => is_scalar($item) || $item === null));
+            }
+        }
+
+        return $fields;
     }
 
     protected function renderSubtask(SubtaskResponse $task): int

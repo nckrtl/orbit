@@ -1,0 +1,45 @@
+Loading check...
+
+┌  Show check
+│
+├  ● Loaded check
+│
+└  Loaded check.
+
+
+┌  Check: 1
+│
+├  Kind            probe
+│
+├  Status          running
+│
+├  Exit code       —
+│
+├  Started         2026-10-06 12:00
+│
+├  Finished        —
+│
+├  Failed step     —
+│
+├  Changed paths   —
+│
+└  Start commit    cccccccccccccccccccccccccccccccccccccccc
+
+Deliverable evidence
+  test
+    Command: vendor/bin/pest --filter=ExactTest
+    Directory: apps/gateway
+    Must fail on base: yes
+    Paths: apps/gateway/tests/Feature/ExactTest.php
+
+┌  Receipt
+│
+├  Kind          probe
+│
+├  Deliverable   test
+│
+├  Command       vendor/bin/pest --filter=ExactTest
+│
+└  Directory     apps/gateway
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

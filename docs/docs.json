@@ -514,8 +514,10 @@
               "PATCH /api/v1/task-groups/{group}/tasks/{task}",
               "POST /api/v1/task-groups/{group}/tasks/{task}/cancel",
               "POST /api/v1/task-groups/{group}/tasks/{task}/check/cancel",
+              "GET /api/v1/task-groups/{group}/tasks/{task}/checks/{check}",
               "GET /api/v1/task-groups/{group}/tasks/{task}/comments",
               "POST /api/v1/task-groups/{group}/tasks/{task}/comments",
+              "POST /api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe",
               "GET /api/v1/task-questions",
               "GET /api/v1/tasks/status"
             ]

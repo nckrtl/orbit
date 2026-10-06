@@ -14,6 +14,8 @@ covers:
 
 The web app is Orbit's live view of the fleet. It is a static single-page app that reads the Gateway API and follows [realtime events](/reference/events). Its TypeScript API schema is generated from the Gateway OpenAPI document (`docs/openapi.json`) with `bun run types` in `apps/web`. Operation descriptions and request-field comments in that schema follow the OpenAPI document, including argument and option text that [API reference generation](/reference/api-reference) reads from the CLI command classes. Regenerate the schema after an OpenAPI change and commit it with the app.
 
+The generated API schema includes `tasks:deliverable:probe`, `tasks:check:show`, and the check ID, kind, result, deliverable evidence, output tail, and probe receipt fields. These types track the [probe and check-read catalogue](/reference/api-reference#deliverable-probe-and-check-read-schemas); they add no web controls or probe workflow.
+
 The generated API schema also includes the Project development deploy step operations and their `required` boolean. These types describe the [API contract](/reference/deployments#development-deploy-steps); they do not add web controls or start deployments.
 
 The generated API schema includes show and update operations for Project Documents storage on the Gateway, with their redacted `DocumentStorage` response. Credential fields are update inputs only, never response properties. These types describe the [storage contract](/reference/project-documents#private-s3-boundary); they do not add storage settings controls to the web app.

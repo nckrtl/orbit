@@ -14,7 +14,11 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class TaskCheckData extends Data
 {
-    /** @param list<string> $changedPaths */
+    /**
+     * @param  list<string>  $changedPaths
+     * @param  array<string, mixed>|null  $deliverableEvidence
+     * @param  array<array-key, mixed>|null  $receipt
+     */
     public function __construct(
         public int $id,
         public TaskCheckKind $kind,
@@ -25,9 +29,13 @@ final class TaskCheckData extends Data
         public array $changedPaths,
         public ?string $failedStep,
         public ?string $output,
+        public ?array $deliverableEvidence,
+        public ?string $outputTail,
+        public ?array $receipt,
     ) {}
 
-    public static function fromModel(TaskCheck $check): self
+    /** @param array<array-key, mixed>|null $receipt */
+    public static function fromModel(TaskCheck $check, ?array $receipt = null): self
     {
         return new self(
             id: $check->id,
@@ -39,6 +47,9 @@ final class TaskCheckData extends Data
             changedPaths: $check->changed_paths ?? [],
             failedStep: $check->failed_step,
             output: $check->output,
+            deliverableEvidence: $check->deliverable_evidence,
+            outputTail: $check->output,
+            receipt: $receipt,
         );
     }
 }

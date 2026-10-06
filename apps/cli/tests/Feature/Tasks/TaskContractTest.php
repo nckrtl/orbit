@@ -37,10 +37,10 @@ afterEach(function (): void {
 });
 
 /** @param array<string, mixed> $arguments */
-function run_task_contract(string $fixture, string $command, array $arguments, int $exitCode): void
+function run_task_contract(string $fixture, string $command, array $arguments, int $exitCode, ?string $expectedFixture = null): void
 {
     $fixture = Str::after($fixture, 'tasks/');
-    [$family, $case] = explode('/', $fixture, 2);
+    $expectedFixture ??= $fixture;
 
     foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
         // A global mock keeps its first responses, so replace it for every replay.
@@ -48,7 +48,7 @@ function run_task_contract(string $fixture, string $command, array $arguments, i
         MockClient::global(gateway_fixture_mock("tasks/{$fixture}"));
 
         expect(Artisan::call($command, [...$arguments, ...$mode]))->toBe($exitCode);
-        expect_output(Artisan::output(), "tasks/{$family}/{$case}.{$extension}");
+        expect_output(Artisan::output(), "tasks/{$expectedFixture}.{$extension}");
     }
 }
 
@@ -127,6 +127,34 @@ describe('tasks contract', function (): void {
         'a number field' => ['[{"id":"docs","type":"review","description":1}]'],
         'invalid JSON' => ['[{'],
     ]);
+
+    it('renders probe creation and retained-start failure', function (): void {
+        run_task_contract('tasks-deliverable-probe/created', 'tasks:deliverable:probe', ['group' => '1', 'subtask' => '2', 'deliverable' => 'test', '--base' => true], 0);
+        run_task_contract('tasks-deliverable-probe/start-pending', 'tasks:deliverable:probe', ['group' => '1', 'subtask' => '2', 'deliverable' => 'test'], 1);
+    });
+
+    it('wraps probe creation and retained-start errors in a narrow terminal', function (): void {
+        putenv('COLUMNS=44');
+        run_task_contract('tasks-deliverable-probe/created', 'tasks:deliverable:probe', ['group' => '1', 'subtask' => '2', 'deliverable' => 'test', '--base' => true], 0, 'tasks-deliverable-probe/created-44');
+        run_task_contract('tasks-deliverable-probe/start-pending', 'tasks:deliverable:probe', ['group' => '1', 'subtask' => '2', 'deliverable' => 'test'], 1, 'tasks-deliverable-probe/start-pending-44');
+    });
+
+    it('renders running, passed and failed checks with readable wrapped evidence', function (string $case, int $columns): void {
+        putenv('COLUMNS='.$columns);
+        foreach (['human.txt' => [], 'json' => ['--json' => true]] as $extension => $mode) {
+            MockClient::destroyGlobal();
+            MockClient::global(gateway_fixture_mock($case));
+            expect(Artisan::call('tasks:check:show', ['group' => '1', 'subtask' => '2', 'check' => '1', ...$mode]))->toBe(0);
+            $output = Artisan::output();
+            expect_output($output, $case.'-'.$columns.'.'.$extension);
+            if ($extension === 'human.txt') {
+                expect($output)->not->toContain('"check_id"', '"commands"', '"exit_code"');
+                foreach (explode("\n", $output) as $line) {
+                    expect(mb_strwidth($line))->toBeLessThanOrEqual($columns);
+                }
+            }
+        }
+    })->with(['tasks/tasks-check-show/running', 'tasks/tasks-check-show/passed', 'tasks/tasks-check-show/failed'])->with([120, 44]);
 
     it('renders comments and agent threads', function (): void {
         run_task_contract('tasks-comment-create/created', 'tasks:comment:create', ['group' => '1', 'subtask' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);

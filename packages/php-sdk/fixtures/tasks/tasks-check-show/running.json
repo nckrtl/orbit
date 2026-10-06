@@ -1,0 +1,43 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTaskCheckRequest",
+    "route": "GET /api/v1/task-groups/{group}/tasks/{task}/checks/{check}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "kind": "probe",
+            "status": "running",
+            "started_at": "2026-10-06T12:00:00+00:00",
+            "finished_at": null,
+            "exit_code": null,
+            "changed_paths": [],
+            "failed_step": null,
+            "output": null,
+            "deliverable_evidence": {
+                "start": "cccccccccccccccccccccccccccccccccccccccc",
+                "commands": [
+                    {
+                        "id": "test",
+                        "command": "vendor/bin/pest --filter=ExactTest",
+                        "directory": "apps/gateway",
+                        "fails_on_base": true,
+                        "paths": [
+                            "apps/gateway/tests/Feature/ExactTest.php"
+                        ]
+                    }
+                ]
+            },
+            "output_tail": null,
+            "receipt": {
+                "kind": "probe",
+                "deliverable": "test",
+                "command": "vendor/bin/pest --filter=ExactTest",
+                "directory": "apps/gateway"
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

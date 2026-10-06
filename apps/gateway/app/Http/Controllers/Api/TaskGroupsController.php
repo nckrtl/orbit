@@ -12,6 +12,8 @@ use App\Actions\Tasks\CreateTaskAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Actions\Tasks\DestroyTaskAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
+use App\Actions\Tasks\RunTaskDeliverableProbeAction;
+use App\Actions\Tasks\ShowTaskCheckAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\UpdateTaskAction;
@@ -27,10 +29,12 @@ use App\Http\Requests\Tasks\CreateTaskGroupRequest;
 use App\Http\Requests\Tasks\CreateTaskRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
+use App\Http\Requests\Tasks\RunTaskDeliverableProbeRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
 use App\Http\Requests\Tasks\UpdateTaskRequest;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -108,6 +112,26 @@ final class TaskGroupsController extends Controller
 
         return response()->json([
             'data' => TaskCheckData::fromModel($action->execute($group, $task))->toArray(),
+            'meta' => $this->meta($request),
+        ]);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function probeDeliverable(RunTaskDeliverableProbeRequest $request, Task $group, Task $task, string $deliverable, RunTaskDeliverableProbeAction $action): JsonResponse
+    {
+        abort_unless($task->parent_id === $group->id, 404);
+
+        return response()->json([
+            'data' => TaskCheckData::fromModel($action->execute($group, $task, $deliverable, $request->base()))->toArray(),
+            'meta' => $this->meta($request),
+        ], 201);
+    }
+
+    #[RequiresNodeAccess(ServingNode::Gateway)]
+    public function showCheck(Request $request, Task $group, Task $task, TaskCheck $check, ShowTaskCheckAction $action): JsonResponse
+    {
+        return response()->json([
+            'data' => $action->execute($group, $task, $check)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

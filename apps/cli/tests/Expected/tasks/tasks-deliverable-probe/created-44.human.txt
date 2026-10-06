@@ -1,0 +1,38 @@
+Starting probe...
+
+┌  Probe deliverable
+│
+├  ● Started probe
+│
+└  Started probe.
+
+
+┌  Check: 1
+│
+├  Kind            probe
+│
+├  Status          running
+│
+├  Exit code       —
+│
+├  Started         2026-10-06 12:00
+│
+├  Finished        —
+│
+├  Failed step     —
+│
+├  Changed paths   —
+│
+└  Start commit    ccccccccccccccccccccccccc
+                   ccccccccccccccc
+
+Deliverable evidence
+  test
+    Command: vendor/bin/pest --filter=ExactT
+    est
+    Directory: apps/gateway
+    Must fail on base: yes
+    Paths: apps/gateway/tests/Feature/ExactT
+    est.php
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67
+a844

@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 201 concrete public Gateway API operations:
+The SDK models exactly 203 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -23,7 +23,7 @@ The SDK models exactly 201 concrete public Gateway API operations:
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
 - GitHub App: install, show, and destroy.
 - proxycli: enable, disable, status, provider list, provider show, account update, and model list.
-- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy.
+- Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, deliverable probe and check show, question list, agent thread list, and task definition list, show, create, update, and destroy.
 
 The four abstract request bases are implementation details, not extra Gateway
 operations. Keep the public API typed and small.

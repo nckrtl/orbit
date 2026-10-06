@@ -79,6 +79,19 @@ A Node.js client reads extra CAs from `NODE_EXTRA_CA_CERTS`. Point it at the Orb
 
 [GitHub feedback consumption](/reference/tasks#trusted-github-feedback) runs in the Tasks scheduler, not through a new tool. Existing task tools return its fixup identity and findings in the ordinary subtask fields. The reviewer allowlist is Gateway configuration, not an MCP input. Feedback adds no review-submission, dismissal, re-review-request, or merge tool. Regenerating the catalogue and task-action manifest must preserve that boundary.
 
+## Deliverable probes and check reads
+
+The Tasks catalogue includes these generated tools when the tasks extension is enabled. Both use the caller's ordinary Gateway access and the same HTTP validation as the [CLI commands](/cli/tasks#orbit-tasksdeliverableprobe).
+
+| Tool | Inputs | API operation |
+| --- | --- | --- |
+| `tasks-deliverable-probe` | Numeric `group` and `task`, declared `deliverable` ID, optional boolean `base` (default false). | `POST /api/v1/task-groups/{group}/tasks/{task}/deliverables/{deliverable}/probe` |
+| `tasks-check-show` | Numeric `group`, `task`, and `check`. | `GET /api/v1/task-groups/{group}/tasks/{task}/checks/{check}` |
+
+`tasks-deliverable-probe` returns the new check's `id`, `kind` (`probe`), and status. It starts only the stored command deliverable; it accepts no command override, free-form filter, or extra command arguments. Set `base` to the JSON boolean `true` to include the deliverable's declared start-commit check. The [deliverable probe rules](/reference/tasks#deliverable-probes) own eligibility, exclusions, limits, and non-command refusal. Every admitted POST creates a new reservation, including an exact retry; it consumes probe quota rather than reusing a check. Exhausted quota returns HTTP 429 `tasks.probe_limit`. A start awaiting recovery returns HTTP 502 `tasks.probe_start_pending` and retains `error.details.check_id`; read that check with `tasks-check-show` instead of retrying the POST.
+
+Use the returned ID as `check` in `tasks-check-show`. This read also accepts baseline and handoff check IDs. It returns `id`, `kind`, `status`, `exit_code`, `deliverable_evidence`, `output_tail`, times, and the probe `receipt` when present. The check must belong to the supplied subtask and group. The [CLI check read](/cli/tasks#orbit-taskscheckshow) lists the full response fields.
+
 ## Keep the catalogue current
 
 `bin/mcp-tools` generates `apps/gateway/resources/mcp/tools.json` from `docs/openapi.json`. The same run writes `apps/gateway/resources/tasks/actions.json`, the operation ids marked `x-orbit-task-action`, and `--check` fails when either file is stale. Tool descriptions also come from the OpenAPI document. The `tasks-create` and `tasks-update` descriptions follow the [Tasks contract](/reference/tasks#tasks-and-subtasks), with Project ownership and the status, subtask, deliverable, and Coder notification requirements. Each generated operation records its extension slug, or `null` for an untagged (core) operation. The normal MCP server and `OrbitSearchServer` filter that metadata against the Gateway enabled set before building their catalogues. The `route-create` tool accepts either `instance_id` and `domain` for an app Route or `node_id`, `domain`, and one of `upstream` or `process_id` for a custom proxy. It does not accept `project_id` or `cluster_id` on creation. After a change to a route, form request, data class, or operation description, regenerate both:

@@ -650,8 +650,11 @@ SUMMARIES = {
     'tasks:list': 'List Task groups', 'tasks:question:list': 'List task questions', 'tasks:create': 'Create a Task group', 'tasks:show': 'Show a Task group', 'tasks:update': 'Update a Task group',
     'tasks:subtask:create': 'Create a subtask', 'tasks:subtask:update': 'Update a subtask', 'tasks:subtask:destroy': 'Destroy a subtask', 'tasks:subtask:cancel': 'Cancel a todo or running subtask',
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
+    'tasks:deliverable:probe': 'Probe a declared command deliverable', 'tasks:check:show': 'Show a task check and its receipt',
 }
 DESCRIPTIONS = {
+    'tasks:deliverable:probe': 'Starts a dry-run of one declared command deliverable on a running subtask. Uses the stored command and directory without extra arguments or a free-form filter. Set base=true to include its declared start-commit check. Returns the check ID; read the result with tasks-check-show. Each admitted request creates a new reservation and consumes probe quota; an exact retry does not reuse a check. HTTP 429 tasks.probe_limit refuses an exhausted attempt. HTTP 502 tasks.probe_start_pending retains error.details.check_id for a reserved start that the Gateway will recover; inspect that check instead of retrying the POST.',
+    'tasks:check:show': 'Returns a task check by ID, including its kind, status, exit code, deliverable evidence, output tail, and probe receipt when present. The check must belong to the named subtask and group.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
@@ -772,6 +775,9 @@ PARAM_SCHEMAS = {
     'process': ({'type': 'integer', 'minimum': 1}, 'Numeric Process ID.'),
     'session': ({'type': 'integer', 'minimum': 1}, 'Numeric task agent session ID within this group.'),
     'group': ({'type': 'integer', 'minimum': 1}, 'Numeric Task group ID.'),
+    'task': ({'type': 'integer', 'minimum': 1}, 'Numeric subtask ID.'),
+    'check': ({'type': 'integer', 'minimum': 1}, 'Numeric task check ID.'),
+    'deliverable': ({'type': 'string', 'maxLength': 64, 'pattern': '^[a-z0-9]+(?:-[a-z0-9]+)*$'}, 'Declared deliverable ID.'),
     'schedule': ({'type': 'string', 'format': 'uuid'}, 'Schedule UUID.'),
     'step': ({'type': 'string', 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'}, 'Deploy step name.'),
     'key': ({'type': 'string', 'pattern': '^[A-Za-z_][A-Za-z0-9_]{0,254}$'}, 'Environment key.'),
@@ -1488,6 +1494,7 @@ CTRL_DATA_OVERRIDES = {
     'DatabaseConnectionsController@users': ('DatabaseUserData', True),
     'ProxyCliController@models': ('ProxyCliModelData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
+    'TaskGroupsController@showCheck': ('TaskCheckData', False),
     'TasksController@status': ('TasksStatusData', False),
 }
 SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
@@ -1764,8 +1771,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             data = {'type': 'array', 'items': data}
         if controllers.get(action, {}).get('created'):
             responses['201'] = envelope(data, 'Created.')
-            # Development deploy step creation refuses duplicate names, including exact retries.
-            if route['name'] not in ('project:dev-deploy-step:create', 'project:document:create'):
+            # These creations do not return existing records on an exact retry.
+            if route['name'] not in ('project:dev-deploy-step:create', 'project:document:create', 'tasks:deliverable:probe'):
                 responses['200'] = envelope(data, 'The request succeeded; an exact retry returned the existing record.')
         else:
             responses['200'] = envelope(data, 'The request succeeded.')
@@ -1822,6 +1829,17 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['422'] = error_response('The extension slug is unknown (`validation.failed`).')
     if body_schema is not None or stream:
         responses['422'] = error_response('The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).')
+    if route['name'] == 'tasks:deliverable:probe':
+        responses['404'] = error_response('The declared deliverable does not exist (`tasks.probe_not_found`), or a path record is missing.')
+        responses['409'] = error_response('A check already runs in the group (`tasks.probe_check_running`), the subtask or workspace is not running (`tasks.probe_not_running`), or the extension is disabled (`extension.disabled`).')
+        responses['422'] = error_response('The deliverable is not a command (`tasks.probe_not_command`), or the narrow JSON body is invalid (`validation.failed`).')
+        responses['429'] = error_response('The completion attempt already used its three probes (`tasks.probe_limit`). Each admitted POST consumes quota, including a retained reservation.')
+        responses['502'] = error_response('The probe is reserved but its start is pending recovery (`tasks.probe_start_pending`). Read the retained `error.details.check_id` with tasks-check-show; do not retry the POST to recover this reservation.')
+        responses['502']['content']['application/json']['schema'] = {'allOf': [{'$ref': '#/components/schemas/Error'}, {
+            'type': 'object', 'properties': {'error': {'type': 'object', 'properties': {
+                'details': {'type': 'object', 'properties': {'check_id': {'type': 'integer', 'minimum': 1}}, 'required': ['check_id']},
+            }, 'required': ['details']}},
+        }]}
     if route['name'] in ('tasks:definition:create', 'tasks:definition:update'):
         responses['422'] = error_response('The definition breaks a validation rule (`tasks.definition_invalid`). `details.rules` names each failing rule and the subtask key it concerns. A malformed body returns `validation.failed`.')
     if route['name'] == 'tasks:definition:create':
