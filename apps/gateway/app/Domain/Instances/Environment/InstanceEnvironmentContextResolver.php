@@ -21,6 +21,24 @@ final readonly class InstanceEnvironmentContextResolver
     public function resolve(Instance $instance, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
         InstanceAppProjection::assertAvailable([$instance->id]);
+
+        return $this->publishedContext($instance, $requireActiveNode, $lockRoute, $app);
+    }
+
+    /** Only the recorded owner may inspect its still-published environment configuration. */
+    public function resolveForProjection(Instance $instance, string $projectionId, string $app): InstanceEnvironmentContext
+    {
+        $projection = InstanceAppProjection::query()->find($projectionId);
+        if (! $projection instanceof InstanceAppProjection || $projection->active_instance_id !== $instance->id
+            || $projection->node_id !== $instance->node_id || $projection->completion !== null) {
+            $this->conflict();
+        }
+
+        return $this->publishedContext($instance, true, true, $app);
+    }
+
+    private function publishedContext(Instance $instance, bool $requireActiveNode, bool $lockRoute, ?string $app): InstanceEnvironmentContext
+    {
         $app = $instance->appConfiguration($app)['name'];
         if ($instance->status !== InstanceState::Active || $instance->provisioning_step !== 'active' || $instance->placementEnvironment() === null) {
             $this->conflict();
