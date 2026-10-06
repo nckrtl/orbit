@@ -564,7 +564,7 @@ When the workspace is ready, the task becomes `running`, and its first subtask s
 
 These reasons clear when the task starts, waits for capacity, or moves to `backlog`. Each release applies only while the claim still holds that reservation, so a claim never overwrites a newer claim or a cancel.
 
-A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The next claim finds it by name and branch and resumes it on its Node. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
+A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The next claim finds it by name and branch and resumes it on its Node. If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
 
 ### Start a subtask
 
@@ -855,11 +855,13 @@ Each Project stores one task check command in `task_check`. Orbit runs it on the
 
 The Gateway installs `$(git rev-parse --git-path orbit)/check` and starts it over SSH as a detached process group. The check records HEAD and a hash of the whole working tree, uncommitted and untracked files included, without touching the Git index. It runs the command in a login shell at the workspace's repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested, writes the output to `$(git rev-parse --git-path orbit)/check.log`, and writes `$(git rev-parse --git-path orbit)/check.json` when the command ends. The subtask stays `running` while the check runs. There is no time limit.
 
-Setup steps, baseline checks, handoff checks, and command deliverables inherit a workspace-local `TMPDIR`: `<absolute-workspace-git-dir>/orbit/tmp/check-<uid>`. Agent bash commands and documentation lookup processes use `<absolute-workspace-git-dir>/orbit/tmp/agent-<uid>` instead. The separate directories prevent restrictive tool caches created by either Unix user from blocking the other role. Each role's directory has mode `0700` and no inherited sharing ACL, so temporary files can retain private permissions.
+Setup steps, baseline checks, handoff checks, and command deliverables inherit a host `TMPDIR` owned by the managed user: `/tmp/orbit-check-<uid>-<random>`. That directory is unique to the check and is removed when the check ends, including when an operator cancels it. Agent bash commands and documentation lookup processes use `<absolute-workspace-git-dir>/orbit/tmp/agent-<uid>` instead. The separate directories prevent restrictive tool caches created by either Unix user from blocking the other role.
 
-Checkout inspection and the access grants before and after a check skip the resolved temp subtrees, including those in linked-worktree common metadata. The parent retains the workspace's sharing ACL. Temp files stay outside the tracked tree and disappear with the workspace. Orbit does not change host-wide caches or application PHPStan configuration.
+The check directory has mode `0711` and no inherited sharing ACL, so another user can traverse to a child that grants it access while temporary files can retain private permissions. With a listable `/tmp`, a local user who learns the directory name can open a child created with the default umask; files a tool writes as private stay private. The agent directory has mode `0700` and no inherited sharing ACL.
 
-Tests that switch Unix users need fixtures with traversable ancestors; granting access on a fixture cannot open a private `TMPDIR` parent. When it inherits a workspace role directory, Gateway test bootstrap gives the test process a fresh canonical `/tmp/orbit-gateway-tests-<random>` fixture root with mode `0755`, replacing `TMPDIR` only inside that test process. Pi's cross-user test uses a fresh `/tmp/pi-shared-fixture-<random>` root instead of its inherited agent `TMPDIR`. Tests grant access on their own fixtures and clean them up. Tool caches outside those test processes still use the private workspace role directories.
+Checkout inspection and the access grants before and after a check skip the resolved workspace temp subtrees, including those in linked-worktree common metadata. The parent retains the workspace's sharing ACL. Agent temp files stay outside the tracked tree and disappear with the workspace. The check `TMPDIR` lives under `/tmp`, outside the ACL-shared checkout, and is not reused as the agent directory. Orbit does not change host-wide caches or application PHPStan configuration.
+
+Tests that switch Unix users need fixtures with traversable ancestors; granting access on a fixture cannot open a private `0700` `TMPDIR` parent. The check `TMPDIR` is already traversable. When a test process inherits a workspace role directory or that check directory, Gateway test bootstrap gives it a fresh canonical `/tmp/orbit-gateway-tests-<random>` fixture root with mode `0755`, replacing `TMPDIR` only inside that test process. Pi's cross-user test uses a fresh `/tmp/pi-shared-fixture-<random>` root instead of its inherited agent `TMPDIR`. Tests grant access on their own fixtures and clean them up. Tool caches outside those test processes still use the private role directories.
 
 The check process runs as the Node's managed user, the account the Gateway connects as. A Project check can need that account's passwordless sudo, ACL tools, or access to the `caddy` account. The Gateway writes metadata only into administration directories owned by the managed user, without following symbolic links. It validates a linked worktree's `.git` pointer and its return pointer before opening that worktree's private administration directory. Status, cancel, and the workspace snapshot run as the same user. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) explains the choice and its cost.
 
@@ -970,7 +972,7 @@ After that reminder, the Gateway waits for a newer stopped reviewer turn. When t
 
 Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
-After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head. It stores `pr_url` and moves the task to `settling`.
+After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head. Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. It stores `pr_url` and moves the task to `settling`.
 
 A failed push or open keeps the subtask in `reviewing` and keeps its commit. It retries after 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The fifth failure asks for assistance with a reason that starts with `Approved commit publication failed: `. The reason names Git's error. When GitHub refuses a push that changes `.github/workflows/`, it names the missing `Workflows` permission. A later success clears only that reason.
 
@@ -1317,6 +1319,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
 | `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
+| `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
 | `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
@@ -1432,6 +1435,8 @@ An agent states its outcome with `"$(git rev-parse --git-path orbit)/turn"`, the
 
 One check decides for every driver, because it does not depend on tool output. It runs detached, and the process state shows whether it still runs. A time limit would fail a slow check that is not broken, so an operator cancels a check that hangs. The workspace is not copied, because nobody edits it between handoff and review, and the tree comparison catches an edit.
 
+The check `TMPDIR` is created under `/tmp` with mode `0711`, not under the ACL-shared workspace tree, and the check removes that exact directory when it ends. A private `0700` ancestor in that tree blocked cross-user fixtures even when children granted access.
+
 ### Deliverables are checked, not read
 
 Orbit cannot check prose, so a subtask names typed items. The check script runs each command itself. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `file` path accepts a glob, including `{a,b}` or `{php}` alternation. A command's `paths` list is exact files, because a glob could match a file made to satisfy the base run.
@@ -1486,7 +1491,7 @@ The approval commit must hold only the work that the implementer handed off. So 
 
 ### Orbit commits and pushes
 
-Orbit holds the branch, the receipts, and the GitHub App, so it commits after approval and publishes itself. It pushes the stored commit, not `HEAD`, because `HEAD` can move after the approval. It pushes after every approval, so a lost clone loses no approved work. Retries back off, so a failing Node or GitHub is not called every 10 seconds.
+Orbit holds the branch, the receipts, and the GitHub App, so it commits after approval and publishes itself. It pushes the stored commit, not `HEAD`, because `HEAD` can move after the approval. It pushes after every approval, so a lost clone loses no approved work. Retries back off, so a failing Node or GitHub is not called every 10 seconds. Publication requests configured reviewers so GitHub emits `review_requested` and the fleet reviewer wakes. That request is optional and soft-fails, because an empty reviewer list must not block settle.
 
 ### A watched pull request is not the reviewed pull request
 

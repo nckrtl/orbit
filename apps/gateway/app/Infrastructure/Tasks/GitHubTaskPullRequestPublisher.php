@@ -7,6 +7,7 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
+use App\Domain\GitHub\GitHubOpenedPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
@@ -14,12 +15,14 @@ use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskReviewRequestLogins;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Task;
+use Illuminate\Support\Facades\Log;
 use SensitiveParameter;
 
 /**
@@ -54,10 +57,46 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         try {
             $token = $this->access->token($repository);
             $this->pushBranch($instance, $branch, $token, $commit);
+            $opened = $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
+            $this->requestReviewers($token, $repository, $opened);
 
-            return $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
+            return $opened->url;
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The pull request could not be opened: '.$exception->getMessage(), previous: $exception);
+        }
+    }
+
+    private function requestReviewers(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubOpenedPullRequest $opened): void
+    {
+        $configured = config('orbit.tasks.review_request_logins');
+        $logins = TaskReviewRequestLogins::withoutAuthor(
+            is_array($configured) ? array_values(array_filter($configured, is_string(...))) : [],
+            $opened->authorLogin,
+        );
+        if ($logins === []) {
+            return;
+        }
+
+        $number = $opened->number ?? $repository->pullRequestNumber($opened->url);
+        if ($number === null) {
+            Log::warning('The task pull request reviewers could not be requested.', [
+                'reason' => 'The pull request number could not be resolved.',
+                'repository' => $repository->owner.'/'.$repository->name,
+                'url' => $opened->url,
+            ]);
+
+            return;
+        }
+
+        try {
+            $this->github->requestPullRequestReviewers($token, $repository, $number, $logins);
+        } catch (GitHubApiException $exception) {
+            Log::warning('The task pull request reviewers could not be requested.', [
+                'reason' => $exception->getMessage(),
+                'repository' => $repository->owner.'/'.$repository->name,
+                'pull_request' => $number,
+                'reviewers' => $logins,
+            ]);
         }
     }
 

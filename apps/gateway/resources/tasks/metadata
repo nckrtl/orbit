@@ -10,6 +10,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import tempfile
 
 DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 FILE_FLAGS = os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
@@ -176,14 +177,13 @@ def perform(checkout, operation, payload):
             installed = metadata.publish(metadata.checkout, '.mcp.json', payload['config'].encode() + b'\n', missing=True)
             return 'installed\n' if installed else 'present\n'
         if operation == 'tmpdir':
-            orbit = metadata.orbit(create=True)
-            temporary = metadata.directory(orbit, 'tmp', owned=False, create=True)
-            directory = metadata.directory(temporary, f'check-{os.geteuid()}', create=True)
-            # Workspace sharing ACLs must not leak into role-private temporary files.
+            # Allocate outside the ACL-shared checkout so stripping defaults cannot lock the root.
+            path = tempfile.mkdtemp(prefix=f'orbit-check-{os.geteuid()}-', dir='/tmp')
+            directory = metadata.keep(os.open(path, DIRECTORY_FLAGS))
+            metadata.require_owner(directory)
             subprocess.run(['setfacl', '-b', '-k', f'/proc/self/fd/{directory}'],
                            pass_fds=(directory,), check=True)
-            os.fchmod(directory, 0o700)
-            metadata.verify()
+            os.fchmod(directory, 0o711)
             return os.readlink(f'/proc/self/fd/{directory}')
         if operation in {'check', 'snapshot', 'turn'}:
             orbit = metadata.orbit(create=True)

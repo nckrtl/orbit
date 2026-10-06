@@ -28,4 +28,12 @@ final class GitHubApiException extends RuntimeException
     {
         return new self('GitHub refused the request.');
     }
+
+    public static function reviewersRefused(int $status, string $message): self
+    {
+        return new self(
+            'GitHub refused the reviewer request ('.$status.'): '.($message !== '' ? $message : 'no message').'.',
+            $status,
+        );
+    }
 }
