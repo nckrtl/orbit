@@ -33,7 +33,6 @@ return [
         'documents' => [
             'driver' => 'documents',
             'version' => 'latest',
-            'visibility' => 'private',
             'signature_version' => 'v4',
             'use_path_style_endpoint' => true,
             'retries' => 0,

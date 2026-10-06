@@ -311,14 +311,15 @@ describe('Project document storage', function (): void {
         expect($response->getContent().Activity::query()->get()->toJson())->not->toContain('replacement-access', 'replacement-secret', 'lost-key-access', 'lost-key-secret');
     });
 
-    it('keeps writes through the dedicated disk private', function (): void {
+    it('does not send an object ACL when writing through the dedicated disk', function (): void {
         document_storage_gateway();
         $provider = document_storage_provider();
         $this->putJson('/api/v1/project-document-storage', document_storage_input())->assertOk();
 
         Storage::disk('documents')->put('test-private-document', 'private test body');
         expect($provider->calls[3]['operation'])->toBe('PutObject');
-        expect($provider->calls[3]['command']['ACL'])->toBe('private');
+        expect($provider->calls[3]['command'])->not->toHaveKey('ACL');
+        expect($provider->calls[3]['request']->hasHeader('x-amz-acl'))->toBeFalse();
         Storage::disk('documents')->delete('test-private-document');
         expect($provider->calls[4]['command']['Key'])->toBe('test-private-document');
     });
