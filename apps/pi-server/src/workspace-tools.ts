@@ -19,6 +19,8 @@ import {
     offloadToolOutput,
 } from "./tool-output.ts";
 
+import { workspaceTmpdir } from "./workspace-tmpdir.ts";
+
 const READ_DESCRIPTION =
     "Read the contents of a file. Supports text files and images (jpg, png, gif, webp, bmp). Images are sent as attachments. Text over 8,192 bytes is stored under .git/orbit/tool-output/ and the result contains the path, the byte and line counts, and a short preview of the first lines. Use offset and limit to read a smaller range.";
 
@@ -145,7 +147,7 @@ function createOffloadingBashTool(options: WorkspaceToolOptions) {
                     },
                     signal,
                     timeout,
-                    env: sessionEnv(ctx),
+                    env: { ...sessionEnv(ctx), TMPDIR: workspaceTmpdir(options.cwd) },
                 });
                 status = { kind: "exit", code: result.exitCode };
             } catch (error) {

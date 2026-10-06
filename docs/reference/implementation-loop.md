@@ -269,8 +269,9 @@ Requests stay in `requests.json` until the worker records their outcome, so an i
 The worker removes these variables from its environment and from every command, so setup settings cannot select a project runtime:
 
 - names that start with `ORBIT_`, `APP_`, or `DB_`;
-- `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`;
-- `TMPDIR`, `TMP`, and `TEMP`.
+- `DATABASE_URL`, `CACHE_STORE`, `SESSION_DRIVER`, and `QUEUE_CONNECTION`.
+
+It keeps `TMPDIR`, `TMP`, and `TEMP`. Those names choose where nested Pest and Composer write temporary files, not which application, database, or cache the project uses. Stripping them forced those tools onto shared `/tmp`, which collides under concurrent worktrees and exhausts inodes.
 
 It sets `PAO_DISABLE=1`, so the commands print their normal output even when an agent session queued the refresh.
 
@@ -288,7 +289,7 @@ Every cache command accepts `--repository=PATH`. `seed`, `refresh`, and `warm` a
 
 ### Recover a failed refresh
 
-`bin/tia-cache status --json --remote` reports the remote `main`, whether a worker holds the lock, the pending requests, which projects are current, each project's command results with log paths, the failed projects in `failures`, the open correctness failures, whether a refresh is `needed`, and `refresh_log`. A successful status command reports state. It does not mean that the checks passed.
+`bin/tia-cache status --json --remote` reports the remote `main`, whether a worker holds the lock, the pending requests, which projects are current, each project's command results with log paths, the failed projects in `failures`, the open correctness failures, whether a refresh is `needed`, and `refresh_log`. A failed check records the command's stdout and stderr in `error`, trimmed to the tail when the output is large, and keeps the full output in the named log. A successful status command reports state. It does not mean that the checks passed.
 
 The worker sorts failures into two kinds.
 

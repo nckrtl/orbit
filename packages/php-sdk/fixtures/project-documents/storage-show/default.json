@@ -1,0 +1,25 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\ProjectDocuments\\ShowProjectDocumentStorageRequest",
+    "route": "GET /api/v1/project-document-storage",
+    "status": 200,
+    "body": {
+        "data": {
+            "configured": true,
+            "endpoint": "https://documents.example.test",
+            "region": "test-1",
+            "bucket": "document-tests",
+            "credentials_configured": true,
+            "updated_at": "2026-01-01T00:00:00+00:00",
+            "pending_cleanup_count": 0,
+            "oldest_pending_cleanup_at": null,
+            "last_cleanup_error_code": null,
+            "cleanup_state": "paused",
+            "cleanup_generation": null,
+            "reconciliation_report_id": null
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

@@ -19,6 +19,10 @@ if (is_string($configuredHome) && $configuredHome !== '') {
 
 return [
     'home' => rtrim(string: $orbitHome, characters: '/'),
+    // Private ephemeral authorization, never in ORBIT_HOME or database backups.
+    'document_cleanup_runtime' => env('APP_ENV') === 'testing'
+        ? env('ORBIT_DOCUMENT_CLEANUP_RUNTIME', '/run/orbit/project-documents')
+        : '/run/orbit/project-documents',
     'gateway_checkout' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit-gateway'),
         characters: '/',

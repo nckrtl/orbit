@@ -9,10 +9,14 @@ gateway application.
 During monorepo development, `apps/cli` consumes this package through a
 Composer path repository with symlinking enabled.
 
-The SDK exposes exactly 186 public Gateway operations. It preserves typed
+The SDK exposes exactly 201 public Gateway operations. It preserves typed
 payloads, bounded responses, structured errors, and request IDs without
 applying Gateway policy. It does not define command-line presentation or
 remote execution behavior.
+
+## Project Documents
+
+Project Documents requests live in `Orbit\Sdk\Requests\ProjectDocuments`. Responses preserve the API envelope through `toArray()`, including its request ID and page cursor. Mutations require the caller's observed revision and never retry a conflict. `DownloadProjectDocumentResponse::decodedBytes()` verifies size and SHA-256 before returning bytes. Storage credentials are write-only inputs; no response returns credentials or object keys.
 
 ## Project runtime definitions
 

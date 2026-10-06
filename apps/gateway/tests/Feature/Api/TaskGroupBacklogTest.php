@@ -598,6 +598,9 @@ describe('subtask deliverables', function (): void {
         $group = backlog_group($this, []);
         $deliverables = [
             ['id' => 'reference-page', 'type' => 'file', 'description' => 'Docs across directories', 'path' => 'docs/**/*.md', 'change' => 'any'],
+            ['id' => 'pantry-sync', 'type' => 'file', 'description' => 'Pantry sync types', 'path' => 'app/{Data,Enums}/PantrySync/**/*.php', 'change' => 'any'],
+            ['id' => 'integration', 'type' => 'file', 'description' => 'Integration screens', 'path' => 'resources/js/**/*Pantry*Integration*.{php,tsx}', 'change' => 'any'],
+            ['id' => 'tasks-domain', 'type' => 'file', 'description' => 'Task domain', 'path' => 'apps/gateway/app/Domain/Tasks/**/*.{php}', 'change' => 'any'],
             ['id' => 'layout-repro', 'type' => 'command', 'description' => 'Reproduce the layout regression', 'command' => 'vendor/bin/pest tests/Feature/HomeScreenTest.php', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['apps/gateway/tests/Feature/HomeScreenTest.php']],
         ];
         $created = $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", [

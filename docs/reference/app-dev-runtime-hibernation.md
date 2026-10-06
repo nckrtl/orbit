@@ -24,6 +24,8 @@ Hibernation applies to a Process that meets every condition:
 
 Restart policy does not matter. Hibernation never touches Node Processes, production Instances, Schedules, PHP-FPM services or pools, or Caddy socket paths.
 
+The Gateway's [Project Document cleanup gate](/reference/project-documents#local-state-and-startup-ordering) is separate from Instance hibernation. Its local runtime directory, `orbit.document_cleanup_runtime`, changes no hibernation threshold or wake behavior. Restarting a Gateway consumer invalidates document-body cleanup authorization; waking an Instance does not grant it.
+
 The [Pi server](/reference/pi-server) remains a Node Process when it runs as `orbit-worker`, so hibernation never stops it. `ORBIT_TASKS_WORKER_USER` configures [checkout ACLs](/reference/instance-setup#checkout-access), not the idle window or Process eligibility. Sharing a task checkout with the worker does not change the hibernation settings below.
 
 ## Keep a Process running

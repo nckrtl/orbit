@@ -152,6 +152,31 @@ describe('task definition routes', function (): void {
             ->and(Task::query()->count())->toBe(0);
     });
 
+    it('stores file deliverable brace-alternation globs', function (): void {
+        task_definition_gateway();
+        $project = task_definition_project('brace-globs');
+        $deliverables = [
+            ['id' => 'pantry-sync', 'type' => 'file', 'description' => 'Pantry sync types', 'path' => 'app/{Data,Enums}/PantrySync/**/*.php', 'change' => 'any'],
+            ['id' => 'integration', 'type' => 'file', 'description' => 'Integration screens', 'path' => 'resources/js/**/*Pantry*Integration*.{php,tsx}', 'change' => 'any'],
+            ['id' => 'tasks-domain', 'type' => 'file', 'description' => 'Task domain', 'path' => 'apps/gateway/app/Domain/Tasks/**/*.{php}', 'change' => 'any'],
+        ];
+
+        $this->postJson("/api/v1/projects/{$project->id}/task-definitions", task_definition_payload([
+            'name' => 'brace-globs',
+            'subtasks' => [
+                ['key' => 'docs', 'title' => 'Write the docs', 'kind' => 'agent', 'deliverables' => $deliverables],
+            ],
+        ]))->assertCreated()->assertJsonPath('data.subtasks.0.deliverables', $deliverables);
+
+        $this->putJson("/api/v1/projects/{$project->id}/task-definitions/brace-globs", task_definition_payload([
+            'name' => 'brace-globs',
+            'title' => 'Keep the globs',
+            'subtasks' => [
+                ['key' => 'docs', 'title' => 'Write the docs', 'kind' => 'agent', 'deliverables' => $deliverables],
+            ],
+        ]))->assertOk()->assertJsonPath('data.subtasks.0.deliverables', $deliverables);
+    });
+
     it('returns 409 tasks.definition_exists when the Project already uses the name', function (): void {
         task_definition_gateway();
         $project = task_definition_project();

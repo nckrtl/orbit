@@ -20,6 +20,9 @@ final readonly class DocsImpact
     ];
 
     private const array NON_CLI_COMMAND_OWNERS = [
+        'project-documents:cleanup:work' => 'docs/reference/project-documents.md',
+        'project-documents:probes:reconcile' => 'docs/reference/project-documents.md',
+        'project-documents:probes:repair' => 'docs/reference/project-documents.md',
         'tasks:tick' => 'docs/reference/tasks.md',
         'annotations:dispatch' => 'docs/reference/agent-annotation.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity.mdx',

@@ -1,0 +1,22 @@
+Sending request...
+
+┌  Document: note.txt
+│
+├  ID           1
+│
+├  Kind         file
+│
+├  Revision     1
+│
+├  Archived     no
+│
+├  Version      1
+│
+├  Media type   text/plain
+│
+├  Size         6
+│
+├  SHA256       b640e840b19d378660b32fb51ae18d67dccb4a8596a29e7bd72c1b2ae5928f41
+│
+└  Request ID   0198e15c-bf97-7c23-8f1f-61b8fe67a844
+

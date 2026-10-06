@@ -30,6 +30,20 @@ return [
      */
 
     'disks' => [
+        'documents' => [
+            'driver' => 'documents',
+            'version' => 'latest',
+            'visibility' => 'private',
+            'signature_version' => 'v4',
+            'use_path_style_endpoint' => true,
+            'retries' => 0,
+            'http' => ['connect_timeout' => 2, 'timeout' => 5, 'read_timeout' => 5, 'allow_redirects' => false],
+            'request_checksum_calculation' => 'when_required',
+            'response_checksum_validation' => 'when_required',
+            'throw' => true,
+            'report' => false,
+        ],
+
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),

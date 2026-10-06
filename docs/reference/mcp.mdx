@@ -16,7 +16,7 @@ The Project's [development deploy steps](/reference/deployments#development-depl
 
 ## Endpoints
 
-Both endpoints speak MCP over streamable HTTP and offer the same catalogue.
+Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Their JSON-RPC envelopes are limited to 15 MiB (15,728,640 bytes), checked after active-peer authorization and before parsing. An oversized envelope receives HTTP 413 without invoking a tool. Dispatched API requests still apply their own limits and Node access checks. This envelope limit admits the full 10 MiB decoded [Project Document upload](/reference/project-documents#content-and-versions), including base64 and JSON-RPC overhead.
 
 | Endpoint | Tools it lists | Use it when |
 | --- | --- | --- |
@@ -36,6 +36,8 @@ The caller is the Node whose WireGuard address the connection comes from. There 
 ## Tools
 
 A tool's name is the operation ID in the [API reference](/api/overview), `<family>-<verb>`, such as `node-list`, `instance-show`, or `process-restart`. Its input is one object with the operation's path parameters, query parameters, and JSON body fields. An input the API validates as a boolean is a JSON `boolean` in the tool schema. The caller sends that value as a JSON boolean. The Gateway serves each tool's input schema exactly as `bin/mcp-tools` generated it in `resources/mcp/tools.json`, with empty schemas encoded as JSON objects (`{}`), not lists (`[]`). The server puts each value where the operation expects it. A `GET` tool is marked read-only, and a `DELETE` tool is marked destructive.
+
+`project-document-storage-show` and `project-document-storage-update` expose the Gateway-wide [Project Documents storage configuration](/reference/project-documents#private-s3-boundary). Both require Gateway access and take no Project selector. Update accepts `endpoint`, `region`, `bucket`, and the paired write-only fields `access_key_id` and `secret_access_key`. Omitting both credential fields preserves them. Results contain only redacted configuration and cleanup status; show does not probe the provider. Update verifies access before saving and returns `project_documents.storage_unavailable` without provider diagnostics on failure.
 
 `tool-scan` reads the enrolled account's Homebrew formulae, casks, and Vite+ global packages for one Node. Its only input is `node_id`. The call does not create a Tool row.
 

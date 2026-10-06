@@ -70,6 +70,7 @@
             "pages": [
               "domains/applications",
               "reference/projects",
+              "reference/project-documents",
               "reference/routes",
               "reference/environment-variables",
               "reference/database-connections",
@@ -320,6 +321,8 @@
             "group": "Projects",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/project-document-storage",
+              "PUT /api/v1/project-document-storage",
               "GET /api/v1/projects",
               "POST /api/v1/projects",
               "DELETE /api/v1/projects/{project}",
@@ -329,6 +332,19 @@
               "POST /api/v1/projects/{project}/dev-deploy-steps",
               "DELETE /api/v1/projects/{project}/dev-deploy-steps/{step}",
               "PATCH /api/v1/projects/{project}/dev-deploy-steps/{step}",
+              "GET /api/v1/projects/{project}/documents",
+              "POST /api/v1/projects/{project}/documents",
+              "GET /api/v1/projects/{project}/documents/search",
+              "DELETE /api/v1/projects/{project}/documents/{entry}",
+              "GET /api/v1/projects/{project}/documents/{entry}",
+              "PATCH /api/v1/projects/{project}/documents/{entry}",
+              "POST /api/v1/projects/{project}/documents/{entry}/archive",
+              "GET /api/v1/projects/{project}/documents/{entry}/content",
+              "PUT /api/v1/projects/{project}/documents/{entry}/content",
+              "GET /api/v1/projects/{project}/documents/{entry}/download",
+              "POST /api/v1/projects/{project}/documents/{entry}/restore",
+              "POST /api/v1/projects/{project}/documents/{entry}/restore-version",
+              "GET /api/v1/projects/{project}/documents/{entry}/versions",
               "GET /api/v1/projects/{project}/excluded-nodes",
               "DELETE /api/v1/projects/{project}/excluded-nodes/{node}",
               "POST /api/v1/projects/{project}/excluded-nodes/{node}",
@@ -620,6 +636,10 @@
     {
       "source": "/decisions/0198-post-direction-requests-to-opsbot-immediately",
       "destination": "/reference/tasks#direction-wakes-opsbot-immediately"
+    },
+    {
+      "source": "/decisions/0197-native-project-documents-with-private-s3-storage",
+      "destination": "/reference/project-documents#why-it-works-this-way"
     },
     {
       "source": "/decisions/0195-request-topologies-for-review-with-an-operator-container",

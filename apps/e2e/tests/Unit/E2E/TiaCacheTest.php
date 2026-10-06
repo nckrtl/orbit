@@ -12,6 +12,7 @@ it('shares real Pest results across worktrees and isolates cache maintenance', f
     $temporary = $repository.'/orbit_tia_'.bin2hex(random_bytes(8));
     $files = new Filesystem;
     $files->makeDirectory($temporary, 0700, true);
+    // Cache maintenance keeps TMPDIR, so nested Pest writes here instead of shared /tmp.
     // Cache maintenance runs this suite with its own TIA directory; the fixture's bootstrap and seeding cases need defaults.
     $environment = ['TMPDIR' => $temporary, 'PYTHONDONTWRITEBYTECODE' => '1', 'ORBIT_TIA_DIRECTORY' => false, 'ORBIT_MAIN_CACHE_STORE' => false];
     // The fixture starts its own Pest runner, outside this suite's worker state.
