@@ -17,6 +17,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentObservation;
@@ -73,6 +74,11 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Activity;
 use App\Models\AgentThread;
@@ -91,11 +97,13 @@ use Illuminate\Support\Facades\Log;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
+use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\FakeAgentDriver;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskWorkspaceTopology;
 use Tests\Support\NullAgentSnapshotReader;
+use Tests\Support\ResolvedVp;
 
 use function Pest\Laravel\mock;
 
@@ -2027,6 +2035,48 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
 
     expect($check->fresh()?->status)->toBe(TaskCheckStatus::Passed)
         ->and($spawner->events)->toBe(['implementer:1']);
+});
+
+it('releases the baseline claim and retries after a VP_HOME probe failure', function (): void {
+    $project = scheduler_app('vp-probe-retry');
+    $instance = scheduler_instance($project, scheduler_node('vp-probe-node', '10.44.0.100'), 'vp-probe');
+    $group = queued_group($project, 'VP_HOME probe retry', $instance);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    $probe = new AppDevFakeSshExecutor([
+        new CommandResult(42, '', '', 1, false),
+        new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false),
+    ]);
+    $transport = new AppDevFakeSshExecutor([
+        new CommandResult(0, json_encode([
+            'pid' => 4100, 'started' => 'started', 'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40),
+        ], JSON_THROW_ON_ERROR), '', 1, false),
+    ]);
+    app()->instance(TaskCheckRunner::class, new RemoteTaskCheckRunner(
+        new DevelopmentSshExecutor(
+            $transport,
+            app(SshKeyProvider::class),
+            app(KnownHostsStore::class),
+        ),
+        ResolvedVp::manager(probe: $probe),
+        app(TiaBaselineSetup::class),
+    ));
+
+    app(TaskScheduler::class)->claimNext();
+
+    expect(TaskCheck::query()->count())->toBe(0);
+    expect($transport->commands)->toBeEmpty();
+    expect($group->tasks()->firstOrFail()->communication_failures)->toBe(1);
+    expect($group->fresh()?->assistance_requested)->toBeFalse();
+    expect($spawner->events)->toBe([]);
+
+    test_pass_baseline();
+
+    expect(TaskCheck::query()->sole()->pid)->toBe(4100);
+    expect($transport->commands)->toHaveCount(1);
+    expect($probe->commands)->toHaveCount(2);
+    expect($group->tasks()->firstOrFail()->communication_failures)->toBe(0);
+    expect($group->fresh()?->assistance_requested)->toBeFalse();
 });
 
 it('runs a custom baseline command without inferring dependency installs', function (): void {

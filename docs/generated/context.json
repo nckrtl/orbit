@@ -1585,7 +1585,8 @@
                 "Route",
                 "Task",
                 "Task check",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2037,6 +2038,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": []

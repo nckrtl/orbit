@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LinuxHost;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ResolvedVp;
 
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/orbit-workspace-tmpdir-'.bin2hex(random_bytes(8));
@@ -66,7 +67,7 @@ function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), app(TiaBaselineSetup::class));
+    ), ResolvedVp::manager(), app(TiaBaselineSetup::class));
 }
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor

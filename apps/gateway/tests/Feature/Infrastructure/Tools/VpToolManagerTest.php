@@ -2,20 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
+use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
+use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
+use App\Infrastructure\Tools\VpInventoryInspector;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -120,6 +124,188 @@ describe(VpToolManager::class, function (): void {
         'oversized' => [str_repeat('a', times: 215), false],
     ]);
 
+    it('skips cache-only vite-plus homes and lets inventory return Complete', function (string $platform): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $node = vp_tool_node($platform, []);
+        $manager->existingBinary($node);
+
+        [$result, $binary] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '');
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect(trim($result->stdout))->toBe($binary);
+
+        $inventorySsh = new ToolManagerFakeSshExecutor([$result, vp_result("[]\n")]);
+        $runner = new RemoteToolCommandRunner(
+            ssh: $inventorySsh,
+            keys: vp_tool_keys(),
+            knownHosts: vp_tool_known_hosts(),
+        );
+        $versions = new SemverVersionNormalizer;
+        $inspector = new VpInventoryInspector($runner, new VpToolManager($runner, $versions), $versions);
+
+        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
+        expect($inventorySsh->arguments()[1])->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
+    })->with(['linux', 'macos']);
+
+    it('uses the scan-resolved Linux home for mutations beside a cache-only home', function (string $operation): void {
+        [$probeManager, $probeSsh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $node = vp_tool_node('linux', []);
+        $probeManager->existingBinary($node);
+        [$scopeResult, $binary] = vp_tool_run_scope_fixture($probeSsh->commands[0]->input ?? '');
+        expect($scopeResult->exitCode)->toBe(0, $scopeResult->stderr);
+
+        $ssh = new ToolManagerFakeSshExecutor([$scopeResult, vp_result("[]\n"), $scopeResult, vp_result()]);
+        $runner = new RemoteToolCommandRunner($ssh, vp_tool_keys(), vp_tool_known_hosts());
+        $versions = new SemverVersionNormalizer;
+        $manager = new VpToolManager($runner, $versions);
+        $inspector = new VpInventoryInspector($runner, $manager, $versions);
+
+        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
+        $manager->{$operation}($node, 'typescript');
+
+        expect($ssh->arguments()[1])->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
+        expect($ssh->arguments()[2])->toBe(['/bin/bash', '-seu', '--', 'orbit']);
+        expect($ssh->commands[2]->input)->toBe($probeSsh->commands[0]->input);
+        expect(array_slice($ssh->arguments()[3], 0, 3))->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary]);
+        expect(array_slice($ssh->arguments()[3], 3, 3))->toBe([$operation, '-g', 'typescript']);
+    })->with(['install', 'update', 'remove']);
+
+    it('preserves the managed opt home explicitly for Linux mutations', function (string $operation): void {
+        $scope = vp_result("/opt/orbit/vite-plus/bin/vp\n");
+        $ssh = new ToolManagerFakeSshExecutor([$scope, vp_result("[]\n"), $scope, vp_result()]);
+        $runner = new RemoteToolCommandRunner($ssh, vp_tool_keys(), vp_tool_known_hosts());
+        $versions = new SemverVersionNormalizer;
+        $manager = new VpToolManager($runner, $versions);
+        $inspector = new VpInventoryInspector($runner, $manager, $versions);
+        $node = vp_tool_node('linux', []);
+
+        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
+        $manager->{$operation}($node, 'typescript');
+
+        expect(array_slice($ssh->arguments()[1], 0, 3))->toBe(['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp']);
+        expect(array_slice($ssh->arguments()[3], 0, 3))->toBe(['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp']);
+        expect(array_slice($ssh->arguments()[3], 3, 3))->toBe([$operation, '-g', 'typescript']);
+    })->with(['install', 'update', 'remove']);
+
+    it('does not mutate when the Linux scope cannot be resolved', function (string $operation, int $exitCode, string $step): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result(exitCode: $exitCode)]);
+
+        expect(fn () => $manager->{$operation}(vp_tool_node('linux', []), 'typescript'))
+            ->toThrow(function (ToolManagerException $exception) use ($step): void {
+                expect($exception->step)->toBe($step);
+            });
+
+        expect($ssh->arguments())->toBe([['/bin/bash', '-seu', '--', 'orbit']]);
+    })->with(['install', 'update', 'remove'])->with([
+        'absent' => [42, 'manager-absent'],
+        'conflicting' => [43, 'manager-conflict'],
+        'probe failure' => [1, 'manager-probe'],
+    ]);
+
+    it('keeps genuine vite-plus scope conflicts at exit 43', function (string $platform, string $fixture): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $manager->existingBinary(vp_tool_node($platform, []));
+
+        [$result] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture);
+
+        expect($result->exitCode)->toBe(43, $result->stderr);
+    })->with(['linux', 'macos'])->with([
+        'symlinked home' => 'symlink',
+        'non-directory home' => 'file',
+        'wrong home owner' => 'scope-owner',
+        'non-executable binary' => 'not-executable',
+        'wrong binary owner' => 'binary-owner',
+        'dangling binary symlink' => 'binary-symlink',
+    ]);
+
+    it('reports cache-only vite-plus homes without a real store as absent', function (string $platform): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $manager->existingBinary(vp_tool_node($platform, []));
+
+        [$result] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'absent');
+
+        expect($result->exitCode)->toBe(42, $result->stderr);
+    })->with(['linux', 'macos']);
+
+    it('materializes the real vite-plus store and exports VP_HOME for every home', function (string $fixture): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture, materialize: true);
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect($launcher)->toContain('exec "'.$binary.'" "$@"')
+            ->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+    })->with(['cache-only', 'opt-store', 'home-store']);
+
+    it('keeps canonical VP_HOME launchers compatible with application role convergence', function (RoleName $role, string $fixture): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture, materialize: true, convergeRole: $role);
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+    })->with([RoleName::AppDev, RoleName::AppProd])->with(['opt-store', 'cache-only', 'home-store']);
+
+    it('publishes and migrates VP_HOME role launchers without accepting foreign ones', function (RoleName $role, string $fixture): void {
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture('', $fixture, materialize: true, convergeRole: $role, roleOnly: true);
+
+        if ($fixture === 'foreign-launcher') {
+            expect($result->exitCode)->not->toBe(0);
+            expect($result->stderr)->toContain('launcher conflict');
+            expect($launcher)->toBe("#!/bin/sh\nexit 0\n");
+        } elseif ($fixture === 'legacy-failure') {
+            expect($result->exitCode)->not->toBe(0);
+            expect($launcher)->toBe("#!/bin/sh\nexec \"$binary\" \"\$@\"\n");
+        } else {
+            expect($result->exitCode)->toBe(0, $result->stderr);
+            expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+        }
+    })->with([RoleName::AppDev, RoleName::AppProd])->with(['opt-store', 'opt-legacy', 'cache-only', 'legacy-launchers', 'legacy-failure', 'foreign-launcher']);
+
+    it('upgrades only exact managed legacy launchers to export VP_HOME', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'legacy-launchers', materialize: true);
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+    });
+
+    it('restores legacy launchers when the VP_HOME runtime verification fails', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'legacy-failure', materialize: true);
+
+        expect($result->exitCode)->not->toBe(0);
+        expect($launcher)->toBe("#!/bin/sh\nexec \"$binary\" \"\$@\"\n");
+    });
+
+    it('refuses a changed launcher rather than upgrading it for VP_HOME', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, , $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'foreign-launcher', materialize: true);
+
+        expect($result->exitCode)->not->toBe(0);
+        expect($result->stderr)->toContain('launcher conflict');
+        expect($launcher)->toBe("#!/bin/sh\nexit 0\n");
+    });
+
+    it('rejects a wrong-owner cache-only vite-plus home before materializing launchers', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, , $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'scope-owner', materialize: true);
+
+        expect($result->exitCode)->toBe(1, $result->stderr);
+        expect($result->stderr)->toContain('Orbit Vite Plus directory conflict:');
+        expect($launcher)->toBe('');
+    });
+
     it('materializes the protected VP scope with fixed bootstrap input', function (): void {
         [$manager, $ssh] = vp_tool_manager([vp_result()]);
 
@@ -213,7 +399,7 @@ describe(VpToolManager::class, function (): void {
     ]);
 
     it('uses the approved fixed VP argv through the complete lifecycle', function (): void {
-        [$manager, $ssh] = vp_tool_manager([
+        [$manager, $ssh] = vp_linux_tool_manager([
             vp_result("2.4.1\nextra line ignored\n"),
             vp_result('"5.8.2"'."\n"),
             vp_result('[{"name":"typescript","version":"5.7.3"}]'."\n"),
@@ -238,26 +424,37 @@ describe(VpToolManager::class, function (): void {
         expect($removalPlan->packages)->toBe(['typescript']);
         expect($removalPlan->removesOnly('typescript'))->toBeTrue();
         expect($ssh->arguments())->toBe([
-            ['/usr/local/bin/vp', '--version'],
-            ['/usr/local/bin/vp', 'info', 'typescript', 'version', '--json'],
-            ['/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', '--version'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'info', 'typescript', 'version', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
             [
-                '/usr/local/bin/vp',
+                'env',
+                'VP_HOME=/opt/orbit/vite-plus',
+                '/opt/orbit/vite-plus/bin/vp',
                 'install',
                 '-g',
                 'typescript',
                 '--node',
                 'lts',
             ],
+            ['/bin/bash', '-seu', '--', 'orbit'],
             [
-                '/usr/local/bin/vp',
+                'env',
+                'VP_HOME=/opt/orbit/vite-plus',
+                '/opt/orbit/vite-plus/bin/vp',
                 'update',
                 '-g',
                 'typescript',
                 '--reinstall-node-mismatch',
             ],
-            ['/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
-            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
         ]);
     });
 
@@ -271,7 +468,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('returns null when the installed package list is empty', function (): void {
-        [$manager, $ssh] = vp_tool_manager([
+        [$manager, $ssh] = vp_linux_tool_manager([
             vp_result("[]\n"),
         ]);
 
@@ -279,12 +476,13 @@ describe(VpToolManager::class, function (): void {
 
         expect($version)->toBeNull();
         expect($ssh->arguments())->toBe([
-            ['/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', 'typescript', '--json'],
         ]);
     });
 
     it('rejects an empty top-level object for installed packages', function (): void {
-        [$manager] = vp_tool_manager([
+        [$manager] = vp_linux_tool_manager([
             vp_result("{}\n"),
         ]);
 
@@ -293,7 +491,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('rejects a numeric-key top-level object for installed packages', function (): void {
-        [$manager] = vp_tool_manager([
+        [$manager] = vp_linux_tool_manager([
             vp_result('{"0":{"name":"typescript","version":"5.7.3"}}'."\n"),
         ]);
 
@@ -302,7 +500,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('returns null when the installed package list contains only substring matches', function (): void {
-        [$manager] = vp_tool_manager([
+        [$manager] = vp_linux_tool_manager([
             vp_result('[{"name":"typescript-eslint","version":"8.0.0"}]'),
         ]);
 
@@ -310,7 +508,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('fails closed on an invalid manager-version result', function (CommandResult $result, string $step): void {
-        [$manager] = vp_tool_manager([$result]);
+        [$manager] = vp_linux_tool_manager([$result]);
 
         expect(fn () => $manager->managerVersion(vp_tool_node()))
             ->toThrow(function (ToolManagerException $exception) use ($step): void {
@@ -331,7 +529,7 @@ describe(VpToolManager::class, function (): void {
     ]);
 
     it('fails closed on invalid candidate-version JSON output', function (CommandResult $result, string $step): void {
-        [$manager] = vp_tool_manager([$result]);
+        [$manager] = vp_linux_tool_manager([$result]);
 
         expect(fn () => $manager->candidateVersion(vp_tool_node(), 'typescript', ToolOperation::Install))
             ->toThrow(function (ToolManagerException $exception) use ($step): void {
@@ -354,7 +552,7 @@ describe(VpToolManager::class, function (): void {
     ]);
 
     it('fails closed on invalid installed-version JSON output', function (CommandResult $result, string $step): void {
-        [$manager] = vp_tool_manager([$result]);
+        [$manager] = vp_linux_tool_manager([$result]);
 
         expect(fn () => $manager->installedVersion(vp_tool_node(), 'typescript'))
             ->toThrow(function (ToolManagerException $exception) use ($step): void {
@@ -386,7 +584,7 @@ describe(VpToolManager::class, function (): void {
     ): void {
         $stdoutSentinel = 'secret mutation stdout';
         $stderrSentinel = 'secret mutation stderr';
-        [$manager, $ssh] = vp_tool_manager([
+        [$manager, $ssh] = vp_linux_tool_manager([
             vp_result($stdoutSentinel, exitCode: 14, stderr: $stderrSentinel),
         ]);
 
@@ -401,14 +599,14 @@ describe(VpToolManager::class, function (): void {
                     ->and($exception->getMessage())
                     ->not->toContain($stdoutSentinel, $stderrSentinel);
             });
-        expect($ssh->arguments())->toBe([$arguments]);
+        expect($ssh->arguments())->toBe([['/bin/bash', '-seu', '--', 'orbit'], ['env', 'VP_HOME=/opt/orbit/vite-plus', ...$arguments]]);
     })->with([
         'install' => [
             static function (VpToolManager $manager, Node $node): void {
                 $manager->install($node, 'typescript');
             },
             [
-                '/usr/local/bin/vp',
+                '/opt/orbit/vite-plus/bin/vp',
                 'install',
                 '-g',
                 'typescript',
@@ -422,7 +620,7 @@ describe(VpToolManager::class, function (): void {
                 $manager->update($node, 'typescript');
             },
             [
-                '/usr/local/bin/vp',
+                '/opt/orbit/vite-plus/bin/vp',
                 'update',
                 '-g',
                 'typescript',
@@ -432,25 +630,26 @@ describe(VpToolManager::class, function (): void {
         ],
         'removal plan' => [
             static fn (VpToolManager $manager, Node $node) => $manager->planRemoval($node, 'typescript'),
-            ['/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
+            ['/opt/orbit/vite-plus/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
             'removal-plan',
         ],
         'remove' => [
             static function (VpToolManager $manager, Node $node): void {
                 $manager->remove($node, 'typescript');
             },
-            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
             'remove',
         ],
     ]);
 
     it('remove executes exactly one VP removal command without replanning', function (): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        [$manager, $ssh] = vp_linux_tool_manager([vp_result()]);
 
         $manager->remove(vp_tool_node(), 'typescript');
 
         expect($ssh->arguments())->toBe([
-            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
         ]);
     });
 
@@ -539,21 +738,21 @@ describe(VpToolManager::class, function (): void {
 
         expect($ssh->arguments())->toBe([
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, '--version'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, '--version'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'info', '@openai/codex', 'version', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'info', '@openai/codex', 'version', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'list', '-g', '@openai/codex', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', '@openai/codex', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'list', '-g', 'pnpm', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', 'pnpm', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'install', '-g', '@openai/codex', '--node', 'lts'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'install', '-g', '@openai/codex', '--node', 'lts'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'update', '-g', '@openai/codex', '--reinstall-node-mismatch'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'update', '-g', '@openai/codex', '--reinstall-node-mismatch'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'remove', '-g', '--dry-run', '@openai/codex'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'remove', '-g', '--dry-run', '@openai/codex'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'remove', '-g', '@openai/codex'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'remove', '-g', '@openai/codex'],
         ]);
     });
 
@@ -611,6 +810,21 @@ function vp_tool_manager(array $results): array
 }
 
 /**
+ * @param  list<CommandResult>  $results
+ * @return array{VpToolManager, ToolManagerFakeSshExecutor}
+ */
+function vp_linux_tool_manager(array $results): array
+{
+    $probedResults = [];
+    foreach ($results as $result) {
+        $probedResults[] = vp_result("/opt/orbit/vite-plus/bin/vp\n");
+        $probedResults[] = $result;
+    }
+
+    return vp_tool_manager($probedResults);
+}
+
+/**
  * @param  list<array{0: 'gateway'|'vpn'|'app-dev'|'app-prod', 1: 'provisioning'|'active'|'failed'|'removing'}>  $roles
  */
 function vp_tool_node(string $platform = 'linux', array $roles = [['app-dev', 'active']], string $user = 'orbit'): Node
@@ -651,6 +865,160 @@ function vp_result(
         durationMs: 10,
         truncated: $truncated,
     );
+}
+
+/**
+ * Runs the emitted Bash against disposable homes, with account lookup and ownership stubs.
+ * Materialization publishes launchers only inside the fixture, with no sudo or network access.
+ *
+ * @return array{CommandResult, string, string}
+ */
+function vp_tool_run_scope_fixture(
+    string $program,
+    string $fixture = 'cache-only',
+    bool $materialize = false,
+    ?RoleName $convergeRole = null,
+    bool $roleOnly = false,
+): array {
+    $root = sys_get_temp_dir().'/orbit-vp-cache-'.bin2hex(random_bytes(4));
+    $home = $root.'/home';
+    $orbit = $root.'/orbit';
+    $scope = $home.'/.vite-plus';
+    $store = match ($fixture) {
+        'opt-store', 'opt-legacy' => $orbit.'/vite-plus',
+        'home-store' => $scope,
+        default => $home.'/.local/share/vite-plus',
+    };
+    $account = trim((string) shell_exec('id -un'));
+    mkdir($scope.'/package_manager/npm/cache', 0755, true);
+    mkdir($orbit.'/vite-plus/package_manager/npm/cache', 0755, true);
+    mkdir($root.'/launchers', 0755, true);
+    if ($fixture !== 'absent') {
+        mkdir($store.'/bin', 0755, true);
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+            file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\nexit 0\n");
+            chmod($store.'/bin/'.$binary, 0755);
+            if (in_array($fixture, ['legacy-launchers', 'legacy-failure', 'opt-legacy'], true)) {
+                file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\ntest \"\$VP_HOME\" = \"$store\"\n");
+                $legacyExport = $fixture === 'opt-legacy' ? "export VP_HOME=$store\n" : '';
+                file_put_contents($root.'/launchers/'.$binary, "#!/bin/sh\n".$legacyExport."exec \"$store/bin/$binary\" \"\$@\"\n");
+                chmod($root.'/launchers/'.$binary, 0755);
+                if ($fixture === 'legacy-failure' && $binary === 'npx') {
+                    file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\nexit 1\n");
+                }
+            }
+        }
+    }
+    if ($fixture === 'foreign-launcher') {
+        file_put_contents($root.'/launchers/vp', "#!/bin/sh\nexit 0\n");
+        chmod($root.'/launchers/vp', 0755);
+    }
+    if ($fixture === 'symlink' || $fixture === 'file') {
+        rename($scope, $home.'/cache');
+        if ($fixture === 'symlink') {
+            symlink($home.'/cache', $scope);
+        } else {
+            file_put_contents($scope, 'not a directory');
+        }
+    }
+    if (in_array($fixture, ['not-executable', 'binary-owner', 'binary-symlink'], true)) {
+        mkdir($scope.'/bin', 0755, true);
+        if ($fixture === 'binary-symlink') {
+            symlink($root.'/missing', $scope.'/bin/vp');
+        } else {
+            file_put_contents($scope.'/bin/vp', "#!/bin/sh\nexit 0\n");
+            chmod($scope.'/bin/vp', $fixture === 'not-executable' ? 0644 : 0755);
+        }
+    }
+    $wrongOwnerPath = match ($fixture) {
+        'scope-owner' => $scope,
+        'binary-owner' => $scope.'/bin/vp',
+        default => $root.'/unused',
+    };
+    $stubs = [
+        'getent' => "#!/bin/sh\nprintf '%s\\n' '{$account}:x:1:1::{$home}:/bin/sh'\n",
+        'dscacheutil' => "#!/bin/sh\nprintf '%s\\n' 'dir: {$home}'\n",
+        'stat' => <<<SH
+            #!/bin/sh
+            path=
+            for path do :; done
+            if [ "\$path" = '{$orbit}' ]; then
+                printf 'root:root\n'
+            elif [ "\${path%/*}" = '{$root}/launchers' ] && [ "\$2" = '%U:%G' ]; then
+                printf 'root:root\n'
+            elif [ "\$path" = '{$wrongOwnerPath}' ]; then
+                printf 'other:other\n'
+            elif [ "\$1" = '-f' ]; then
+                printf '%s\n' '{$account}'
+            else
+                exec /usr/bin/stat "\$@"
+            fi
+            SH,
+        'sudo' => "#!/bin/sh\nshift 3\nexec \"\$@\"\n",
+        'curl' => "#!/bin/sh\nprintf 'unexpected installer invocation\\n' >&2\nexit 99\n",
+    ];
+    foreach ($stubs as $name => $contents) {
+        file_put_contents($root.'/'.$name, $contents);
+        chmod($root.'/'.$name, 0755);
+    }
+    if ($convergeRole !== null) {
+        $roleProgram = (new NodeRolePrerequisiteCommandFactory)->make(
+            new Node,
+            $convergeRole,
+            new ManagedUserAccount($account, $account, $home),
+        )->input ?? '';
+        $runtimeStart = strpos($roleProgram, 'if { [ -e /opt/orbit ]');
+        if ($runtimeStart === false) {
+            throw new RuntimeException('Could not isolate the application-role JavaScript runtime.');
+        }
+        $runtime = substr($roleProgram, $runtimeStart);
+        $runtime = str_replace(
+            'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -c \'curl -fsSL https://bun.com/install | bash\'',
+            'true',
+            $runtime,
+        );
+        mkdir($orbit.'/bun/bin', 0755, true);
+        file_put_contents($orbit.'/bun/bin/bun', "#!/bin/sh\nexit 0\n");
+        chmod($orbit.'/bun/bin/bun', 0755);
+        $program = ($roleOnly
+            ? "managed_user=\$1\nmanaged_group=$(id -gn)\nmanaged_home=".escapeshellarg($home)."\n"
+            : $program."\n").$runtime;
+    }
+    $program = strtr($program, [
+        '/usr/bin/getent' => $root.'/getent',
+        'getent passwd' => $root.'/getent passwd',
+        '/usr/bin/dscacheutil' => $root.'/dscacheutil',
+        '/usr/bin/stat' => $root.'/stat',
+        'stat -c' => $root.'/stat -c',
+        '/opt/orbit' => $orbit,
+        '/usr/local/bin' => $root.'/launchers',
+        'chown root:root' => 'true',
+        'sudo -u' => $root.'/sudo -u',
+        'curl -fsSL' => $root.'/curl -fsSL',
+    ]);
+    $script = $root.'/program.sh';
+    file_put_contents($script, $program);
+    $pipes = [];
+    $process = proc_open(
+        ['bash', '-seu', '--', $account],
+        [0 => ['file', $script, 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
+
+    try {
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $status = proc_close($process);
+        $launcher = $materialize && is_file($root.'/launchers/vp')
+            ? (string) file_get_contents($root.'/launchers/vp')
+            : '';
+
+        return [vp_result((string) $stdout, $status, (string) $stderr), $store.'/bin/vp', $launcher];
+    } finally {
+        exec('rm -rf -- '.escapeshellarg($root));
+    }
 }
 
 function vp_tool_keys(): SshKeyProvider
