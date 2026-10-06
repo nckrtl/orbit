@@ -16,9 +16,15 @@ covers:
 
 The Gateway owns the environment configuration of every Instance. It stores each key and value encrypted, and it writes the Instance's `.env` file only when you synchronize. A value never appears in a response, an Activity entry, an error, or a log. [`env`](/cli/env) lists the commands.
 
+`ORBIT_DOCUMENT_CLEANUP_RUNTIME` selects the private local directory for isolated Project Document cleanup-gate fixtures when `APP_ENV=testing`; other environments ignore this override. Its default is `/run/orbit/project-documents/`. Never point it into `ORBIT_HOME`, a checkout, a web directory, or a backup. Installed Gateway services use the default runtime directory. This setting is not an Instance environment value or deletion authorization. See [the restore-time cleanup gate](/reference/project-documents#restore-time-cleanup-gate).
+
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 
+`ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are settings in the Gateway's own environment. They are not Instance keys. See [Tasks: OpsBot direction webhook](/reference/tasks#opsbot-direction-webhook). The Gateway never returns the secret. Setting Instance keys with those names does not configure the Gateway.
+
 Reviewer trust is not an Instance environment setting. The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. A task workspace's `.env`, task definition, or branch cannot grant [GitHub feedback authority](/reference/tasks#trusted-github-feedback).
+
+The logins requested as reviewers on a published task pull request are also Gateway configuration. The operator sets `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` in the Gateway's `.env`. Unset or empty requests no one. See [Tasks configuration](/reference/tasks#configuration).
 
 The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overrides the memory limit for every VM it creates or clones, for example `2GiB`. When unset, the harness uses the [per-Node defaults](/reference/incus-topologies#capacity). It does not read this setting from an Instance's `.env`.
 

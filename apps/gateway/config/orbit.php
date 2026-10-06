@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use App\Domain\Tasks\TaskReviewRequestLogins;
 use App\Domain\Tasks\TaskReviewTrust;
 
 $implementerEffort = env('ORBIT_TASKS_IMPLEMENTER_EFFORT');
@@ -19,6 +20,10 @@ if (is_string($configuredHome) && $configuredHome !== '') {
 
 return [
     'home' => rtrim(string: $orbitHome, characters: '/'),
+    // Private ephemeral authorization, never in ORBIT_HOME or database backups.
+    'document_cleanup_runtime' => env('APP_ENV') === 'testing'
+        ? env('ORBIT_DOCUMENT_CLEANUP_RUNTIME', '/run/orbit/project-documents')
+        : '/run/orbit/project-documents',
     'gateway_checkout' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit-gateway'),
         characters: '/',
@@ -63,6 +68,9 @@ return [
         // from `owner/repo:id,id;owner/repo:id`. Empty disables review feedback. No logins, wildcards, roles, or
         // branch-provided settings.
         'github_reviewers' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_GITHUB_REVIEWERS')),
+        // Comma-separated GitHub logins requested as reviewers after a task pull request is opened or reused.
+        // Unset or empty requests no one. The pull request author is omitted at request time.
+        'review_request_logins' => TaskReviewRequestLogins::parseEnv(env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS')),
         'worker_user' => env('ORBIT_TASKS_WORKER_USER'),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
@@ -77,6 +85,8 @@ return [
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
+        'opsbot_webhook_url' => env('ORBIT_OPSBOT_WEBHOOK_URL'),
+        'opsbot_webhook_secret' => env('ORBIT_OPSBOT_WEBHOOK_SECRET'),
     ],
     // The outer loop neither counts nor files a listed fingerprint or a source path under a prefix.
     'problems' => [

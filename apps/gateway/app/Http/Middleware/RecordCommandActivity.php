@@ -555,6 +555,11 @@ final readonly class RecordCommandActivity
     {
         $command = $request->route()?->getName();
 
+        if (is_string($command) && str_starts_with($command, 'project:document:')) {
+            // Body parsing belongs after Node access, and document bytes never enter Activity.
+            return [];
+        }
+
         if ($command === 'doctor') {
             return $this->doctorInput($request);
         }

@@ -25,6 +25,7 @@ use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Http\Middleware\ValidateDocumentPostSize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Logging\GatewayExceptionStatus;
@@ -34,6 +35,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Middleware\ValidatePostSize;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Validation\ValidationException;
@@ -63,9 +65,14 @@ return Application::configure(basePath: dirname(__DIR__))
         $schedule->command('annotations:dispatch')->everyTenSeconds()->withoutOverlapping();
         $schedule->command('orbit:deploy-development-defaults')->everyMinute()->withoutOverlapping(90);
         $schedule->command('orbit:activity-finalize-interrupted')->everyFiveMinutes()->withoutOverlapping(10);
+        $schedule->command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10);
+        $schedule->command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);
     })
     ->withCommands()
     ->withMiddleware(function (Middleware $middleware): void {
+        $middleware->replace(ValidatePostSize::class, ValidateDocumentPostSize::class);
+        $middleware->trimStrings(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
+        $middleware->convertEmptyStringsToNull(except: [ValidateDocumentPostSize::preservesExactJson(...)]);
         $middleware->prepend(GuardBrowserOrigins::class);
         $middleware->prepend(EnsureRequestId::class);
         $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class, RequireEnabledExtension::class]);

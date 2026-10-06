@@ -292,6 +292,49 @@ describe('TaskCheckWorkerUser', function (): void {
 });
 
 describe('TaskWorkspaceAcl', function (): void {
+    it('preserves populated private workspace temp caches across repeated inspection', function (bool $linked): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $seed = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'tmp-seed');
+        $instance = $seed;
+        if ($linked) {
+            $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'tmp-linked');
+            orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $instance->checkout_path, $seed->starting_commit]);
+            $instance->update(['seed_repository' => $seed->checkout_path, 'source_layout' => 'worktree']);
+            // Common metadata traversal must also protect another linked workspace's caches.
+            orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $this->appsRoot.'/tmp-other', $seed->starting_commit]);
+        }
+        $git = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', '--absolute-git-dir'])->stdout);
+        $common = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout);
+        $metadata = array_unique([$git, $common, ...($linked ? [$common.'/worktrees/tmp-other'] : [])]);
+        $before = [];
+        foreach ($metadata as $directory) {
+            $cache = $directory.'/orbit/tmp/check-'.posix_geteuid().'/phpstan';
+            $this->files->makeDirectory($cache, 0700, true);
+            file_put_contents($cache.'/result', 'private');
+            chmod($cache.'/result', 0600);
+            foreach ([$directory.'/orbit/tmp', dirname($cache), $cache, $cache.'/result'] as $path) {
+                $before[$path] = orb76_run(['getfacl', '-cp', $path])->stdout;
+            }
+        }
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $failure = null;
+            try {
+                $this->source->inspectPrepared($instance);
+            } catch (RuntimeConvergenceException $exception) {
+                $failure = $exception;
+            }
+            foreach ($before as $path => $permissions) {
+                expect(orb76_run(['getfacl', '-cp', $path])->stdout)->toBe($permissions);
+            }
+            if ($failure !== null) {
+                throw new RuntimeException($failure->result?->stderr ?? $failure->getMessage(), previous: $failure);
+            }
+        }
+        // Ordinary checkout sharing still works; only the resolved temp subtrees are excluded.
+        expect(orb76_run(['getfacl', '-cp', $instance->checkout_path])->stdout)->toContain('user:nobody:rwx');
+    })->with(['normal checkout (former recursive fast path)' => false, 'linked worktrees' => true]);
+
     it('trusts only the managed checkout for worker Git and removes that trust on teardown', function (string $operation): void {
         config()->set('orbit.tasks.worker_user', null);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-trust');

@@ -68,6 +68,10 @@ Use `create` and `destroy` when the Gateway owns the resource lifecycle. Use `ad
 
 `cluster:router` and `route:target` use `set` and `unset`, because each holds one slot. `extension` uses `enable` and `disable` for the Gateway-owned switch; `instance:analytics`, `metrics`, and `metrics:exporter` use `enable` and `disable`. `proxycli` uses `setup` and `teardown` for its fleet resources, while `proxycli:status` and `proxycli:models` remain family-specific reads. `tasks` uses `create` for tasks and `status` for assistance; its extension switch is `extension:enable tasks` or `extension:disable tasks`. `schedule:enable` turns a Schedule on. A Project target selects a definition and never creates a Process or Schedule.
 
+[Project Documents](/reference/project-documents#cli-contract) use `project:document:<verb>`. Content operations use `read`, `write`, `upload`, and `download`; browsing adds `search` and `versions`; lifecycle operations add `archive`, `restore`, and `restore-version`. `update` renames or moves an entry. Permanent removal uses CLI `remove` and HTTP operation `project-document-destroy`. HTTP `project-document-version-list` maps to CLI `versions`. These are transport names for the same operations, not extra endpoints.
+
+The Gateway names its [Project Documents storage](/reference/project-documents#private-s3-boundary) routes `project:document-storage:show` and `project:document-storage:update`. Storage belongs to the Gateway, so neither operation takes a Project selector. `update` accepts partial changes after initial configuration and can rotate credentials; there is no `destroy`, `disable`, or `unset` operation for this configuration.
+
 ## Family-specific actions
 
 Some families have actions outside the pairs above. Each action belongs only to the family that lists it.
@@ -86,6 +90,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
+| `project` | `archive`, `download`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
 | `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |

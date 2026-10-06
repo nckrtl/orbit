@@ -1500,6 +1500,18 @@ NDJSON_SCHEMA = {'oneOf': [
 
 def data_schema_for(route):
     action = route['action']
+    if action.startswith('ProjectDocumentsController@'):
+        verb = action.split('@')[1]
+        if verb in ('index', 'search'):
+            return ref('DocumentEntryData'), True
+        if verb == 'versions':
+            return ref('DocumentVersionData'), True
+        if verb in ('read', 'download'):
+            field = 'content_text' if verb == 'read' else 'content_base64'
+            return {'type': 'object', 'properties': {'entry_id': {'type': 'integer'}, 'revision': {'type': 'integer'}, 'version': ref('DocumentVersionData'), field: {'type': 'string'}}, 'required': ['entry_id', 'revision', 'version', field], 'additionalProperties': False}, False
+        if verb == 'destroy':
+            return {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'removed': {'type': 'boolean'}, 'cleanup_pending': {'type': 'boolean'}}, 'required': ['id', 'removed', 'cleanup_pending'], 'additionalProperties': False}, False
+        return ref('DocumentEntryData'), False
     if action in RESPONSE_OVERRIDES:
         return RESPONSE_OVERRIDES[action], False
     if action in CTRL_DATA_OVERRIDES:
@@ -1569,6 +1581,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     env_route = '/environment/' in path or ('/database-connections/' in path and '/instances/' in path)
     for p in params:
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
+        if p == 'entry' and route['name'].startswith('project:document:'):
+            sch, desc = {'type': 'integer', 'minimum': 1}, 'Numeric Project Document entry ID.'
         if p == 'instance' and env_route:
             sch, desc = ENV_INSTANCE
         if p == 'name' and str(route.get('name') or '').startswith('tasks:definition:'):
@@ -1645,6 +1659,21 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             props['name'].update({'maxLength': 63, 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'})
     if route['name'] in ('tasks:definition:create', 'tasks:definition:update') and body_schema:
         correct_task_definition_body(body_schema)
+    if route['name'] in ('project:document:create', 'project:document:write') and body_schema:
+        props = body_schema['properties']
+        props['content_text'].update({'maxLength': 1048576, 'description': 'Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB.'})
+        props['content_base64'].update({'maxLength': 13981016, 'description': 'Canonical RFC 4648 base64; decoded size is at most 10 MiB.'})
+        content_choices = [{'required': ['content_text'], 'not': {'required': ['content_base64']}}, {'required': ['content_base64'], 'not': {'required': ['content_text']}}]
+        if route['name'] == 'project:document:create':
+            body_schema['oneOf'] = [
+                {'properties': {'kind': {'const': 'folder'}}, 'not': {'anyOf': [{'required': [field]} for field in ('content_text', 'content_base64', 'media_type')]}},
+                {'properties': {'kind': {'const': 'file'}}, 'oneOf': content_choices},
+            ]
+        else:
+            body_schema['oneOf'] = content_choices
+        body_schema['additionalProperties'] = False
+    if route['name'] == 'project:document:update' and body_schema:
+        body_schema['anyOf'] = [{'required': ['name']}, {'required': ['parent_id']}]
     if body_schema is not None:
         if 'oneOf' not in body_schema:
             body_schema['additionalProperties'] = False
@@ -1736,12 +1765,20 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if controllers.get(action, {}).get('created'):
             responses['201'] = envelope(data, 'Created.')
             # Development deploy step creation refuses duplicate names, including exact retries.
-            if route['name'] != 'project:dev-deploy-step:create':
+            if route['name'] not in ('project:dev-deploy-step:create', 'project:document:create'):
                 responses['200'] = envelope(data, 'The request succeeded; an exact retry returned the existing record.')
         else:
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+    if route['name'].startswith('project:document:'):
+        op['description'] = 'Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.'
+        if route['name'] in ('project:document:list', 'project:document:search', 'project:document:version:list'):
+            meta = responses['200']['content']['application/json']['schema']['properties']
+            meta['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'}, {'type': 'object', 'properties': {'next_cursor': {'type': ['string', 'null']}}, 'required': ['next_cursor']}]}
+        if route['name'] == 'project:document:create':
+            responses.pop('200', None)
+            responses['201'] = envelope(ref('DocumentEntryData'), 'Created.')
     if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'):
         responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
     if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:log-streams'):
@@ -1797,6 +1834,17 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('No Node has the Metrics role (`metrics.assignment_missing`).')
         responses['422'] = error_response('The Node is not an active, WireGuard-managed Node (`node.metrics_unavailable`).')
         responses['502'] = error_response('Grafana or Prometheus did not answer, or Prometheus has no samples for this Node, as for a Node without an enabled exporter (`node.metrics_unreachable`).')
+    if route['name'].startswith('project:document:'):
+        responses['404'] = error_response('Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.')
+        responses['422'] = error_response('Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).')
+        if route['method'] != 'GET':
+            responses['409'] = error_response('Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.')
+        if route['name'] in ('project:document:read', 'project:document:download'):
+            responses['409'] = error_response('Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.')
+        if route['name'] in ('project:document:create', 'project:document:write', 'project:document:read', 'project:document:download', 'project:document:restore-version'):
+            responses['413'] = error_response('Decoded content or JSON request exceeds the documented limit (`project_documents.content_too_large`).')
+            responses['502'] = error_response('Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.')
+            responses['503'] = error_response('Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.')
     op['responses'] = responses
     request_schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema') if (stream or body_schema is not None) else None
     samples = [{'lang': 'bash', 'label': 'curl', 'source': bash_sample(route, path, request_schema, query, tag)}]

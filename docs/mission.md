@@ -19,7 +19,8 @@ Orbit does two jobs on the machines you add.
 These boundaries keep Orbit small and neutral.
 
 - Your agentic development environment (ADE) is where you think, plan, and steer.
-- Orbit is where work runs. It has no editor, chat, or planning interface, and plans arrive through the CLI or MCP.
+- Orbit is where work runs. It has no IDE, chat, or planning interface. Plans arrive through the CLI or MCP.
+- The plain-text editor for [Project Documents](/reference/project-documents) is a narrow exception for Project-owned notes. Agents use the same document API.
 - Orbit manages only the machines and resources you add.
 - Each Project defines its own way of working in its repository. The Orbit engine stays generic.
 
