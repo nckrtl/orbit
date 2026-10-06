@@ -19,6 +19,7 @@ use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\NullAgentSpawner;
 use App\Domain\Tasks\NullCoderSettleNotifier;
 use App\Domain\Tasks\NullTaskReviewDiff;
@@ -32,9 +33,11 @@ use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGitHubReviewConsumption;
@@ -72,8 +75,12 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\Pi\PiDriver;
-use App\Infrastructure\Tasks\TaskWorkspaceMetadata;
+use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -107,6 +114,7 @@ use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskPullRequestReviewWatcher;
 use Tests\Support\FakeTaskTurnReceipts;
 use Tests\Support\FakeTaskWorkspaceTopology;
+use Tests\Support\LocalShellSshExecutor;
 
 use function Pest\Laravel\mock;
 
@@ -5243,7 +5251,7 @@ it('supersedes an uncertain correction after completed direction without erasing
         ['id' => 'corrected', 'type' => 'file', 'description' => 'Corrected path.', 'path' => 'tests/CorrectedTest.php', 'change' => 'created'],
         ['id' => 'repro', 'type' => 'command', 'description' => 'Corrected regression.', 'command' => 'vendor/bin/pest tests/CorrectedTest.php', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['tests/CorrectedTest.php']],
     ];
-    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => 1, 'deliverables' => $contract]);
+    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => $failure === 'before-reservation' ? null : 1, 'deliverables' => $failure === 'before-reservation' ? [['id' => 'old', 'type' => 'review', 'description' => 'Previous contract.']] : $contract]);
     $group->update(['assistance_requested' => true]);
     AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
     $checkout = sys_get_temp_dir().'/orbit-correction-direction-'.bin2hex(random_bytes(6));
@@ -5292,26 +5300,19 @@ it('supersedes an uncertain correction after completed direction without erasing
     };
     tick_relay_runtime(new FakeTaskTurnReceipts, $dispatcher, $state);
     $preparations = [];
+    $keys = Mockery::mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/unused-local-fixture-key');
+    $hosts = Mockery::mock(KnownHostsStore::class);
+    $hosts->shouldReceive('path')->andReturn('/unused-local-fixture-known-hosts');
+    $nativeReceipts = new RemoteTaskTurnReceipts(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts));
     $receipts = Mockery::mock(TaskTurnReceipts::class);
-    $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode = null) use ($checkout, &$preparations): void {
+    $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode = null, ?string $context = null) use ($nativeReceipts, &$preparations): void {
         $preparations[] = $mode?->deliveryKey;
-        $turn = ['role' => $role->value, 'thread' => $threadId, 'delivery_key' => $mode?->deliveryKey, 'relay' => $mode?->relay ?? false, 'consult' => $mode?->consult ?? false, 'deliverables' => array_map(fn ($deliverable): array => $deliverable->toArray(), $deliverables)];
-        $payload = ['script' => base64_encode((string) file_get_contents(resource_path('tasks/turn'))), 'turn' => json_encode($turn, JSON_THROW_ON_ERROR), 'context' => null];
-        $program = "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().TaskWorkspaceMetadata::operation('turn', $payload);
-        (new Process(['bash', '-seu', '--', $checkout], input: $program))->mustRun();
+        $nativeReceipts->prepare($instance, $role, $final, $deliverables, $threadId, $mode, $context);
     });
-    $receipts->shouldReceive('hasLegacyTurn')->andReturn(false);
-    $receipts->shouldReceive('read')->andReturnUsing(function (Instance $instance, ?int $threadId) use ($checkout): ?TaskTurnReceipt {
-        if (! file_exists($checkout.'/.git/orbit/receipt.json')) {
-            return null;
-        }
-        $receipt = TaskTurnReceipt::parse((string) file_get_contents($checkout.'/.git/orbit/receipt.json'));
-
-        return $receipt->threadId === $threadId ? $receipt : null;
-    });
-    $receipts->shouldReceive('clear')->andReturnUsing(function () use ($checkout): void {
-        File::delete($checkout.'/.git/orbit/receipt.json');
-    });
+    $receipts->shouldReceive('hasLegacyTurn')->andReturnUsing($nativeReceipts->hasLegacyTurn(...));
+    $receipts->shouldReceive('read')->andReturnUsing($nativeReceipts->read(...));
+    $receipts->shouldReceive('clear')->andReturnUsing($nativeReceipts->clear(...));
     app()->instance(TaskTurnReceipts::class, $receipts);
     $crash = $failure === 'commit-crash';
     DB::beforeExecuting(function (string $sql) use (&$crash): void {
@@ -5321,15 +5322,39 @@ it('supersedes an uncertain correction after completed direction without erasing
         }
     });
     try {
-        $resolve = fn () => app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Resume corrected handoff.', 'author' => 'operator']);
-        if ($failure === 'commit-crash') {
-            expect($resolve)->toThrow(RuntimeException::class, 'Correction delivery commit crashed.');
+        $actor = $group->taskable->node;
+        $requestId = '53a762c6-4d7e-4cae-a9a7-7af51949e1cd';
+        if ($failure === 'before-reservation') {
+            $this->markAsGateway($actor);
+            $this->withServerVariables(['REMOTE_ADDR' => $actor->wireguard_ip]);
+            $handoff = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::ReadyForReview, 'body' => 'Invalid deliverable.', 'author' => 'implementer', 'posted_at' => now(), 'completion_attempt' => $task->completion_attempt]);
+            $task->update(['completion_handoff_comment_id' => $handoff->id]);
+            TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $handoff->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Failed, 'failed_step' => 'invalid_deliverable', 'pid' => 123, 'process_started' => 'check-start', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40), 'started_at' => now(), 'finished_at' => now()]);
+            $repository = Mockery::mock(DeliverablePathRepository::class);
+            $repository->shouldReceive('files')->once()->andReturn([]);
+            app()->instance(DeliverablePathRepository::class, $repository);
+            $this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", ['deliverables' => $contract])->assertOk();
+            expect($task->fresh()?->deliverable_correction_check_id)->not->toBeNull();
+            expect($task->fresh()?->deliverable_correction_resume)->toBeNull();
         } else {
-            $resolve();
+            $resolve = fn () => app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Resume corrected handoff.', 'author' => 'operator']);
+            if ($failure === 'commit-crash') {
+                expect($resolve)->toThrow(RuntimeException::class, 'Correction delivery commit crashed.');
+            } else {
+                $resolve();
+            }
+            expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
         }
-        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
         app(StoreTaskCommentAction::class)->execute($task, ['type' => 'assistance_requested', 'body' => 'Which approach is authoritative?', 'author' => 'operator']);
-        app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Use the reviewer direction.', 'author' => 'operator']);
+        if ($failure === 'before-reservation') {
+            $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", ['type' => 'resolution', 'body' => 'Use the reviewer direction.', 'author' => 'not-the-authenticated-caller'])->assertCreated();
+            $firstReservation = $task->fresh()?->deliverable_correction_resume;
+            $this->withHeader('X-Orbit-Request-Id', 'c0ccde43-30c9-44c0-973f-14a665fd2a16')->postJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}/comments", ['type' => 'resolution', 'body' => 'Repeated resolution must not reserve a new delivery.', 'author' => 'another-author'])->assertCreated();
+            expect($task->fresh()?->deliverable_correction_resume)->toBe($firstReservation);
+            expect($dispatcher->accepted)->toHaveCount(1);
+        } else {
+            app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Use the reviewer direction.', 'author' => 'operator']);
+        }
         expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
 
         if ($failure === 'lost-acceptance-direction-commit-crash') {
@@ -5347,11 +5372,16 @@ it('supersedes an uncertain correction after completed direction without erasing
         app(TaskScheduler::class)->tick();
 
         expect($task->fresh()?->direction_relay_comment_id)->toBeNull();
-        expect($dispatcher->accepted)->toHaveCount(3);
+        expect($dispatcher->accepted)->toHaveCount($failure === 'before-reservation' ? 2 : 3);
         $continuation = array_last($dispatcher->accepted)['message']['text'];
         $files = ['turn.json', 'receipt.json', 'run', 'run.json'];
         $before = array_map(fn (string $file): string => (string) file_get_contents($checkout.'/.git/orbit/'.$file), $files);
-        expect(json_decode($before[0], true)['deliverables'])->toBe($contract);
+        expect(json_decode($before[0], true)['deliverables'])->toBe([
+            ['id' => 'corrected', 'type' => 'file', 'description' => 'Corrected path.'],
+            ['id' => 'repro', 'type' => 'command', 'description' => 'Corrected regression.', 'fails_on_base' => true, 'paths' => ['tests/CorrectedTest.php']],
+        ]);
+        expect(json_decode($before[0], true)['thread'])->toBe($task->implementer_agent_thread_id);
+        expect(array_last($dispatcher->accepted)['threadId'])->toBe('implementer-thread');
         $prepared = $preparations;
         $calls = $dispatcher->calls;
         $state->implementer = 'running';
@@ -5361,13 +5391,22 @@ it('supersedes an uncertain correction after completed direction without erasing
         expect(array_map(fn (string $file): ?string => file_exists($checkout.'/.git/orbit/'.$file) ? (string) file_get_contents($checkout.'/.git/orbit/'.$file) : null, $files))->toBe($before);
         expect($preparations)->toBe($prepared);
         expect($dispatcher->calls)->toBe($calls);
-        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('superseded');
         expect($continuation)->toContain('The direction above is authoritative.');
         expect(json_decode(explode("\n```", explode("```json\n", $continuation)[1])[0], true))->toBe($contract);
+        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('superseded');
+        $audit = Activity::query()->where('description', 'deliverable correction superseded by direction')->sole();
+        expect($audit->properties?->get('comment_id'))->toBe($task->fresh()?->deliverable_correction_resume['comment_id']);
+        if ($failure === 'before-reservation') {
+            expect($audit->getRawOriginal('caller_node_id'))->toBe($actor->id);
+            expect($audit->caller_ip)->toBe($actor->wireguard_ip);
+            expect($audit->request_id)->toBe($requestId);
+            $this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", ['deliverables' => $contract])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+            expect($task->fresh()?->deliverables)->toBe($contract);
+        }
     } finally {
         File::deleteDirectory($checkout);
     }
-})->with(['lost-acceptance', 'commit-crash', 'lost-acceptance-direction-commit-crash']);
+})->with(['lost-acceptance', 'commit-crash', 'lost-acceptance-direction-commit-crash', 'before-reservation']);
 
 it('does not send a second implementer turn when an accepted relay answer lost its response', function (): void {
     [$group, $task] = tick_held_relay();

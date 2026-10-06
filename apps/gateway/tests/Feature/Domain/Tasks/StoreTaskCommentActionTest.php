@@ -228,7 +228,7 @@ it('replays a deliverable correction safely after prepare failures, lost replies
     }
 })->with(['prepare-before', 'prepare-after', 'send-replies-lost', 'commit-crash']);
 
-it('preserves intervening direction instead of reserving or retrying a correction', function (bool $pending): void {
+it('preserves intervening direction before delivering a correction', function (bool $pending): void {
     $task = blocked_task(TaskStatus::Running);
     $task->update(['deliverable_correction_check_id' => 1, 'deliverables' => [['id' => 'corrected', 'type' => 'review', 'description' => 'Corrected.']]]);
     $receipts = new FakeTaskTurnReceipts;
@@ -252,11 +252,16 @@ it('preserves intervening direction instead of reserving or retrying a correctio
     expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction);
     expect($task->fresh()?->parent->assistance_question)->toBe('Which approach is safe?');
     AgentThread::query()->where('external_id', 'reviewer-thread')->update(['task_id' => $task->id]);
-    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Ask the reviewer about the safe approach.', 'author' => 'operator']);
+    $resolution = app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Ask the reviewer about the safe approach.', 'author' => 'operator']);
     expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
     app(ResumeDeliverableCorrectionAction::class)->execute($task);
     expect($turns->threads)->toBe(['reviewer-thread']);
-    expect($task->fresh()?->deliverable_correction_resume)->toBe($resume);
+    if ($pending) {
+        expect($task->fresh()?->deliverable_correction_resume)->toBe($resume);
+    } else {
+        expect($task->fresh()?->deliverable_correction_resume['comment_id'])->toBe($resolution->id);
+        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
+    }
     expect($task->fresh()?->completion_attempt)->toBe(2);
 })->with(['before reservation' => false, 'pending retry' => true]);
 

@@ -79,14 +79,16 @@ final readonly class StoreTaskCommentAction
                     && $task->assistance_kind !== AssistanceKind::Direction) {
                     return $comment;
                 }
-                $deliverCorrection = $task->status === TaskStatus::Running
-                    && $task->assistance_kind !== AssistanceKind::Direction && $group->assistance_kind !== AssistanceKind::Direction
-                    && $task->direction_relay_comment_id === null && $task->consult_comment_id === null
-                    && $task->deliverable_correction_check_id !== null
+                $needsCorrection = $task->status === TaskStatus::Running && $task->deliverable_correction_check_id !== null
                     && ($task->deliverable_correction_resume === null || $task->deliverable_correction_resume['state'] === 'pending');
-                if ($deliverCorrection) {
+                if ($needsCorrection) {
+                    // Reserve the first authenticated resolution even when direction owns its delivery.
                     $this->correctionResume->reserve($task, $comment, $actor, $requestId);
-                } else {
+                }
+                $deliverCorrection = $needsCorrection
+                    && $task->assistance_kind !== AssistanceKind::Direction && $group->assistance_kind !== AssistanceKind::Direction
+                    && $task->direction_relay_comment_id === null && $task->consult_comment_id === null;
+                if (! $deliverCorrection) {
                     $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
                     $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
                     $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
