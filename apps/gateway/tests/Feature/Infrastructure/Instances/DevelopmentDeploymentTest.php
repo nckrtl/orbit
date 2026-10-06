@@ -20,6 +20,7 @@ use App\Models\Route;
 use Symfony\Component\Process\Process;
 use Tests\Support\DevelopmentDeploymentFixture;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ResolvedVp;
 
 beforeEach(function (): void {
     $this->fixture = new DevelopmentDeploymentFixture;
@@ -267,7 +268,7 @@ describe('real development release programs', function (): void {
         $consumer->update(['starting_commit' => $seed->commit, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
         $keys = Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock();
         $hosts = Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock();
-        $runner = new RemoteTaskCheckRunner(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts));
+        $runner = new RemoteTaskCheckRunner(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), ResolvedVp::manager());
         $setup = [[
             'name' => 'copy from seed',
             'command' => 'touch setup-started; while [ ! -f allow-setup ]; do sleep 0.05; done; cat "$ORBIT_SEED_PATH/.cache/warm" > copied-cache',

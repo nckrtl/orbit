@@ -4,7 +4,7 @@ description: "Where Tools run, the supported Tool Managers, how Orbit discovers,
 covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
-  - apps/gateway/app/Infrastructure/Tools/**
+  - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/NodeRolePrerequisiteCommandFactory.php}
   - apps/gateway/app/Models/{Tool,ToolManagerRecord}.php
   - apps/gateway/app/Data/Tools/**
   - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php
@@ -41,6 +41,8 @@ The Gateway has five managers, fixed in code. There is no plugin registry and no
 `apt` and `composer` are not offered on macOS, and `brew-cask` is not offered on Linux. Install, update, removal, and adoption return `tool.manager_unsupported` (HTTP 422) before a lock or SSH. An absent or conflicting scope still returns `tool.manager_unavailable` (HTTP 409).
 
 On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` scan and Linux materialization skip account-owned directories without `bin/vp`, such as a cache-only `~/.vite-plus/package_manager/npm` directory. They choose the first Vite+ store with `bin/vp` for the enrolled account, in this order: `/opt/orbit/vite-plus`, `~/.vite-plus`, then `~/.local/share/vite-plus`. Install, update, removal, and scan all use that store. A later store does not change the choice. The Gateway may install a missing Linux manager on first use.
+
+Orbit's `/usr/local/bin` Vite+ launchers export `VP_HOME` for every resolved store, not just `/opt/orbit/vite-plus`. Instance setup, teardown, and task checks also export it so project-local `vp` uses the same store. Tool materialization and application-role convergence publish the same launcher format. Both accept an exact, root-owned legacy launcher for that store and upgrade it with rollback on failed runtime verification; changed or foreign launchers remain conflicts.
 
 On macOS, `vp` is the enrolled account's existing Vite+ global store. The scope probe also skips account-owned directories without `bin/vp`. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway resolves that account's home from the machine and does not assume `/home`, `getent`, or a Linux bottle tag. It does not install, replace, or repin those scopes, and it does not check out a Homebrew revision.
 

@@ -279,10 +279,8 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             if [ -z "$vp_home" ]; then
                 vp_home="$managed_home/.local/share/vite-plus"
             fi
-            if [ "$vp_home" = /opt/orbit/vite-plus ]; then
-                vp_environment='VP_HOME=/opt/orbit/vite-plus'
-                launcher_environment='export VP_HOME=/opt/orbit/vite-plus'
-            fi
+            vp_environment="VP_HOME=$vp_home"
+            launcher_environment="export VP_HOME=\"$vp_home\""
             if { [ -e "$vp_home" ] || [ -L "$vp_home" ]; } \
                 && { [ -L "$vp_home" ] || [ ! -d "$vp_home" ]; }; then
                 printf 'Orbit Vite Plus directory conflict: %s\n' "$vp_home" >&2
@@ -292,22 +290,26 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             if [ ! -x "$vp_binary" ]; then
                 sudo -u "$managed_user" -H env -u VP_HOME bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'
                 test -x "$vp_binary"
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env setup
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env on
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env install lts
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env default lts
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" install -g --node lts pnpm
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env setup
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env on
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env install lts
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env default lts
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" install -g --node lts pnpm
             fi
             test -x "$vp_binary"
             test -x "$vp_home/bin/pnpm"
 
             launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-vp-runtime.XXXXXX")
             published_paths=
+            upgraded_binaries=
             rollback_vp_runtime() {
                 runtime_status=$?
                 if [ "$runtime_status" -ne 0 ]; then
                     for published_path in $published_paths; do
                         rm -f -- "$published_path"
+                    done
+                    for binary in $upgraded_binaries; do
+                        mv -f -- "$launcher_candidates/previous-$binary" "/usr/local/bin/$binary"
                     done
                 fi
                 rm -rf -- "$launcher_candidates"
@@ -331,11 +333,17 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             for binary in vp node pnpm npm npx; do
                 launcher="/usr/local/bin/$binary"
                 candidate="$launcher_candidates/$binary"
+                legacy="$launcher_candidates/legacy-$binary"
+                legacy_header='#!/bin/sh'
+                if [ "$vp_home" = /opt/orbit/vite-plus ]; then
+                    legacy_header="$legacy_header\\nexport VP_HOME=/opt/orbit/vite-plus"
+                fi
+                printf '%b\n' "$legacy_header" "exec \"$vp_home/bin/$binary\" \"\$@\"" > "$legacy"
                 if { [ -e "$launcher" ] || [ -L "$launcher" ]; } \
                     && { [ -L "$launcher" ] || [ ! -f "$launcher" ] \
                         || [ "$(stat -c '%U:%G' "$launcher")" != 'root:root' ] \
                         || [ "$(stat -c '%a' "$launcher")" != '755' ] \
-                        || ! cmp -s "$launcher" "$candidate"; }; then
+                        || { ! cmp -s "$launcher" "$candidate" && ! cmp -s "$launcher" "$legacy"; }; }; then
                     printf 'Orbit Vite Plus launcher conflict: %s\n' "$launcher" >&2
                     exit 1
                 fi
@@ -347,6 +355,10 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
                 if ! { [ -e "$launcher" ] || [ -L "$launcher" ]; }; then
                     mv "$candidate" "$launcher"
                     published_paths="$published_paths $launcher"
+                elif ! cmp -s "$launcher" "$candidate"; then
+                    cp -p -- "$launcher" "$launcher_candidates/previous-$binary"
+                    upgraded_binaries="$upgraded_binaries $binary"
+                    mv -f -- "$candidate" "$launcher"
                 fi
             done
 

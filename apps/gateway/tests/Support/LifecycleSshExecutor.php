@@ -75,7 +75,7 @@ final class LifecycleSshExecutor implements SshExecutor
         ];
     }
 
-    public function runner(?CommandDeadline $deadline = null): ProjectLifecycleRunner
+    public function runner(?CommandDeadline $deadline = null, string $vpHome = '/opt/orbit/vite-plus'): ProjectLifecycleRunner
     {
         return new ProjectLifecycleRunner(
             new ProjectLifecycleStepStore,
@@ -100,6 +100,7 @@ final class LifecycleSshExecutor implements SshExecutor
                 public function put(string $host, int $port, HostKey $key): void {}
             }),
             $deadline ?? new CommandDeadline,
+            ResolvedVp::manager($vpHome),
         );
     }
 }

@@ -81,6 +81,8 @@ Activation records `failed_step: setup` in the same transaction, so a Gateway in
 
 Each command runs with `bash -eu` at the repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
 
+Setup and teardown export `VP_HOME` to the Node's [resolved Vite+ store](/reference/tools#tool-managers). Project-local `vp` processes inherit that value even in these non-login shells, rather than using the default `~/.vite-plus`.
+
 Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
 An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.

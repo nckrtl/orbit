@@ -10,6 +10,7 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
@@ -20,6 +21,7 @@ final readonly class ProjectLifecycleRunner
         private ProjectLifecycleStepStore $steps,
         private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
+        private VpToolManager $vp,
     ) {}
 
     public function run(Instance $instance, LifecyclePhase $phase): bool
@@ -51,11 +53,14 @@ final readonly class ProjectLifecycleRunner
             throw new ResourceOperationException('instance.setup_unavailable', 'The lifecycle runner is unavailable.', 503);
         }
 
+        $vpHome = null;
+
         foreach ($steps as $step) {
             $input = null;
             $budget = 0.0;
 
             try {
+                $vpHome ??= dirname($this->vp->existingBinary($instance->node), 2);
                 $timeout = $this->deadline->cap($step->timeoutSeconds + 5.0);
                 $budget = $timeout - 5.0;
 
@@ -67,6 +72,7 @@ final readonly class ProjectLifecycleRunner
                     'checkout' => $checkout,
                     'command' => $step->command,
                     'environment' => [
+                        'VP_HOME' => $vpHome,
                         'ORBIT_SEED_PATH' => $phase === LifecyclePhase::Setup ? ($instance->seed_path ?? '') : '',
                         'ORBIT_SEED_COMMIT' => $phase === LifecyclePhase::Setup ? ($instance->seed_commit ?? '') : '',
                     ],

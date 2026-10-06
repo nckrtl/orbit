@@ -15,6 +15,7 @@ use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ResolvedVp;
 
 function per_project_baseline_checkout(): string
 {
@@ -50,7 +51,7 @@ function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRun
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), ResolvedVp::manager());
 }
 
 beforeEach(function (): void {

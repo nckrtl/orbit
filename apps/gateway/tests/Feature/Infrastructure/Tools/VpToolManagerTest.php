@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
@@ -12,6 +13,7 @@ use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
 use App\Domain\Tools\ToolOperation;
+use App\Infrastructure\Nodes\Roles\NodeRolePrerequisiteCommandFactory;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -225,14 +227,72 @@ describe(VpToolManager::class, function (): void {
         expect($result->exitCode)->toBe(42, $result->stderr);
     })->with(['linux', 'macos']);
 
-    it('materializes the real vite-plus store instead of a cache-only home', function (): void {
+    it('materializes the real vite-plus store and exports VP_HOME for every home', function (string $fixture): void {
         [$manager, $ssh] = vp_tool_manager([vp_result()]);
         $manager->materialize(vp_tool_node('linux', []));
 
-        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', materialize: true);
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture, materialize: true);
 
         expect($result->exitCode)->toBe(0, $result->stderr);
-        expect($launcher)->toContain('exec "'.$binary.'" "$@"');
+        expect($launcher)->toContain('exec "'.$binary.'" "$@"')
+            ->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+    })->with(['cache-only', 'opt-store', 'home-store']);
+
+    it('keeps canonical VP_HOME launchers compatible with application role convergence', function (RoleName $role, string $fixture): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture, materialize: true, convergeRole: $role);
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+    })->with([RoleName::AppDev, RoleName::AppProd])->with(['opt-store', 'cache-only', 'home-store']);
+
+    it('publishes and migrates VP_HOME role launchers without accepting foreign ones', function (RoleName $role, string $fixture): void {
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture('', $fixture, materialize: true, convergeRole: $role, roleOnly: true);
+
+        if ($fixture === 'foreign-launcher') {
+            expect($result->exitCode)->not->toBe(0);
+            expect($result->stderr)->toContain('launcher conflict');
+            expect($launcher)->toBe("#!/bin/sh\nexit 0\n");
+        } elseif ($fixture === 'legacy-failure') {
+            expect($result->exitCode)->not->toBe(0);
+            expect($launcher)->toBe("#!/bin/sh\nexec \"$binary\" \"\$@\"\n");
+        } else {
+            expect($result->exitCode)->toBe(0, $result->stderr);
+            expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+        }
+    })->with([RoleName::AppDev, RoleName::AppProd])->with(['opt-store', 'opt-legacy', 'cache-only', 'legacy-launchers', 'legacy-failure', 'foreign-launcher']);
+
+    it('upgrades only exact managed legacy launchers to export VP_HOME', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'legacy-launchers', materialize: true);
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect($launcher)->toContain('export VP_HOME="'.dirname($binary, 2).'"');
+    });
+
+    it('restores legacy launchers when the VP_HOME runtime verification fails', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'legacy-failure', materialize: true);
+
+        expect($result->exitCode)->not->toBe(0);
+        expect($launcher)->toBe("#!/bin/sh\nexec \"$binary\" \"\$@\"\n");
+    });
+
+    it('refuses a changed launcher rather than upgrading it for VP_HOME', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, , $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'foreign-launcher', materialize: true);
+
+        expect($result->exitCode)->not->toBe(0);
+        expect($result->stderr)->toContain('launcher conflict');
+        expect($launcher)->toBe("#!/bin/sh\nexit 0\n");
     });
 
     it('rejects a wrong-owner cache-only vite-plus home before materializing launchers', function (): void {
@@ -817,12 +877,18 @@ function vp_tool_run_scope_fixture(
     string $program,
     string $fixture = 'cache-only',
     bool $materialize = false,
+    ?RoleName $convergeRole = null,
+    bool $roleOnly = false,
 ): array {
     $root = sys_get_temp_dir().'/orbit-vp-cache-'.bin2hex(random_bytes(4));
     $home = $root.'/home';
     $orbit = $root.'/orbit';
     $scope = $home.'/.vite-plus';
-    $store = $home.'/.local/share/vite-plus';
+    $store = match ($fixture) {
+        'opt-store', 'opt-legacy' => $orbit.'/vite-plus',
+        'home-store' => $scope,
+        default => $home.'/.local/share/vite-plus',
+    };
     $account = trim((string) shell_exec('id -un'));
     mkdir($scope.'/package_manager/npm/cache', 0755, true);
     mkdir($orbit.'/vite-plus/package_manager/npm/cache', 0755, true);
@@ -832,7 +898,20 @@ function vp_tool_run_scope_fixture(
         foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
             file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\nexit 0\n");
             chmod($store.'/bin/'.$binary, 0755);
+            if (in_array($fixture, ['legacy-launchers', 'legacy-failure', 'opt-legacy'], true)) {
+                file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\ntest \"\$VP_HOME\" = \"$store\"\n");
+                $legacyExport = $fixture === 'opt-legacy' ? "export VP_HOME=$store\n" : '';
+                file_put_contents($root.'/launchers/'.$binary, "#!/bin/sh\n".$legacyExport."exec \"$store/bin/$binary\" \"\$@\"\n");
+                chmod($root.'/launchers/'.$binary, 0755);
+                if ($fixture === 'legacy-failure' && $binary === 'npx') {
+                    file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\nexit 1\n");
+                }
+            }
         }
+    }
+    if ($fixture === 'foreign-launcher') {
+        file_put_contents($root.'/launchers/vp', "#!/bin/sh\nexit 0\n");
+        chmod($root.'/launchers/vp', 0755);
     }
     if ($fixture === 'symlink' || $fixture === 'file') {
         rename($scope, $home.'/cache');
@@ -865,6 +944,8 @@ function vp_tool_run_scope_fixture(
             for path do :; done
             if [ "\$path" = '{$orbit}' ]; then
                 printf 'root:root\n'
+            elif [ "\${path%/*}" = '{$root}/launchers' ] && [ "\$2" = '%U:%G' ]; then
+                printf 'root:root\n'
             elif [ "\$path" = '{$wrongOwnerPath}' ]; then
                 printf 'other:other\n'
             elif [ "\$1" = '-f' ]; then
@@ -880,6 +961,29 @@ function vp_tool_run_scope_fixture(
         file_put_contents($root.'/'.$name, $contents);
         chmod($root.'/'.$name, 0755);
     }
+    if ($convergeRole !== null) {
+        $roleProgram = (new NodeRolePrerequisiteCommandFactory)->make(
+            new Node,
+            $convergeRole,
+            new ManagedUserAccount($account, $account, $home),
+        )->input ?? '';
+        $runtimeStart = strpos($roleProgram, 'if { [ -e /opt/orbit ]');
+        if ($runtimeStart === false) {
+            throw new RuntimeException('Could not isolate the application-role JavaScript runtime.');
+        }
+        $runtime = substr($roleProgram, $runtimeStart);
+        $runtime = str_replace(
+            'sudo -u "$managed_user" -H env BUN_INSTALL=/opt/orbit/bun bash -o pipefail -c \'curl -fsSL https://bun.com/install | bash\'',
+            'true',
+            $runtime,
+        );
+        mkdir($orbit.'/bun/bin', 0755, true);
+        file_put_contents($orbit.'/bun/bin/bun', "#!/bin/sh\nexit 0\n");
+        chmod($orbit.'/bun/bin/bun', 0755);
+        $program = ($roleOnly
+            ? "managed_user=\$1\nmanaged_group=$(id -gn)\nmanaged_home=".escapeshellarg($home)."\n"
+            : $program."\n").$runtime;
+    }
     $program = strtr($program, [
         '/usr/bin/getent' => $root.'/getent',
         'getent passwd' => $root.'/getent passwd',
@@ -892,16 +996,16 @@ function vp_tool_run_scope_fixture(
         'sudo -u' => $root.'/sudo -u',
         'curl -fsSL' => $root.'/curl -fsSL',
     ]);
+    $script = $root.'/program.sh';
+    file_put_contents($script, $program);
     $pipes = [];
     $process = proc_open(
         ['bash', '-seu', '--', $account],
-        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        [0 => ['file', $script, 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
         $pipes,
     );
 
     try {
-        fwrite($pipes[0], $program);
-        fclose($pipes[0]);
         $stdout = stream_get_contents($pipes[1]);
         $stderr = stream_get_contents($pipes[2]);
         fclose($pipes[1]);
