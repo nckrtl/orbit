@@ -2148,7 +2148,7 @@ final readonly class TaskScheduler
             if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
                 return;
             }
-            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
         } catch (Throwable $exception) {
             report($exception);
             $this->recordCommunicationFailure($task, $group, 'The consult answer could not be sent to the implementer. ('.class_basename($exception).').');
@@ -2165,6 +2165,7 @@ final readonly class TaskScheduler
             if ($locked->consult_comment_id === null) {
                 return;
             }
+            $this->correctionResume->supersede($locked, $receipt);
             $locked->update([
                 'consult_comment_id' => null,
                 'direction_answer_key' => null,
@@ -2331,7 +2332,7 @@ final readonly class TaskScheduler
             if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
                 return;
             }
-            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
         } catch (Throwable $exception) {
             // Keep this receipt's key. An uncertain response may still have been accepted, and a
             // rejected T3 command id stays rejected, so the same id is not replaced on this failure.
@@ -2388,6 +2389,7 @@ final readonly class TaskScheduler
             if ($locked->direction_relay_comment_id === null) {
                 return;
             }
+            $this->correctionResume->supersede($locked, $receipt);
             $locked->update([
                 'direction_relay_comment_id' => null,
                 'direction_answer_key' => null,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\GitHub\GitHubReviewState;
@@ -72,6 +73,7 @@ use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\Tasks\Pi\PiDriver;
+use App\Infrastructure\Tasks\TaskWorkspaceMetadata;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
@@ -90,9 +92,11 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Exceptions;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Laravel\Ai\Classification;
 use Laravel\Ai\Responses\Data\BooleanAnswer;
+use Symfony\Component\Process\Process;
 use Tests\Feature\Domain\Tasks\ApprovalObservationFixtures as FeedbackFixtures;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
@@ -5231,6 +5235,139 @@ it('replays a held direction review from the stored resolution after the flag wr
         ->and(TaskQuestion::query()->count())->toBe(1)
         ->and(data_get($opening, 'message.text'))->toContain('Follow ADR 0098.');
 });
+
+it('supersedes an uncertain correction after completed direction without erasing the newer real turn or receipt', function (string $failure): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $contract = [
+        ['id' => 'corrected', 'type' => 'file', 'description' => 'Corrected path.', 'path' => 'tests/CorrectedTest.php', 'change' => 'created'],
+        ['id' => 'repro', 'type' => 'command', 'description' => 'Corrected regression.', 'command' => 'vendor/bin/pest tests/CorrectedTest.php', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['tests/CorrectedTest.php']],
+    ];
+    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => 1, 'deliverables' => $contract]);
+    $group->update(['assistance_requested' => true]);
+    AgentThread::query()->where('task_group_id', $group->id)->where('role', 'reviewer')->update(['task_id' => $task->id]);
+    $checkout = sys_get_temp_dir().'/orbit-correction-direction-'.bin2hex(random_bytes(6));
+    File::ensureDirectoryExists($checkout.'/.git/orbit');
+    $group->taskable->update(['checkout_path' => $checkout]);
+    $state = (object) ['implementer' => 'idle', 'turnId' => 'turn-before'];
+    $dispatcher = new class($state, $checkout, $task->implementer_agent_thread_id, $failure) implements AgentCommandDispatcher
+    {
+        /** @var array<string, array<string, mixed>> */
+        public array $accepted = [];
+
+        /** @var list<string> */
+        public array $calls = [];
+
+        public ?string $correctionKey = null;
+
+        public function __construct(private object $state, private string $checkout, private ?int $threadId, private string $failure) {}
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $key = (string) $command['commandId'];
+            $this->calls[] = $key;
+            $implementer = ($command['threadId'] ?? null) === 'implementer-thread';
+            if ($implementer) {
+                $this->correctionKey ??= $key;
+            }
+            if (! isset($this->accepted[$key])) {
+                $this->accepted[$key] = $command;
+                $turn = json_decode((string) file_get_contents($this->checkout.'/.git/orbit/turn.json'), true);
+                $arguments = [$this->checkout.'/.git/orbit/turn', '--thread='.$turn['thread'], '--summary=Authoritative direction result.'];
+                $arguments = $implementer ? [...$arguments, '--outcome=ready_for_review', '--deliverable=corrected=Implemented', '--deliverable=repro=Passed'] : [...$arguments, '--outcome=answered', '--cause=scope'];
+                (new Process($arguments, cwd: $this->checkout))->mustRun();
+                if ($implementer) {
+                    $this->state->turnId = $key;
+                    $this->state->messageId = $key;
+                    file_put_contents($this->checkout.'/.git/orbit/run', $key);
+                    file_put_contents($this->checkout.'/.git/orbit/run.json', json_encode(['turn' => $key], JSON_THROW_ON_ERROR));
+                }
+            }
+            if ($implementer && $key === $this->correctionKey && str_starts_with($this->failure, 'lost-acceptance')) {
+                throw new AgentDriverException('Both correction send replies lost after acceptance.');
+            }
+
+            return ['sequence' => count($this->accepted), 'thread_id' => (string) $command['threadId']];
+        }
+    };
+    tick_relay_runtime(new FakeTaskTurnReceipts, $dispatcher, $state);
+    $preparations = [];
+    $receipts = Mockery::mock(TaskTurnReceipts::class);
+    $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode = null) use ($checkout, &$preparations): void {
+        $preparations[] = $mode?->deliveryKey;
+        $turn = ['role' => $role->value, 'thread' => $threadId, 'delivery_key' => $mode?->deliveryKey, 'relay' => $mode?->relay ?? false, 'consult' => $mode?->consult ?? false, 'deliverables' => array_map(fn ($deliverable): array => $deliverable->toArray(), $deliverables)];
+        $payload = ['script' => base64_encode((string) file_get_contents(resource_path('tasks/turn'))), 'turn' => json_encode($turn, JSON_THROW_ON_ERROR), 'context' => null];
+        $program = "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().TaskWorkspaceMetadata::operation('turn', $payload);
+        (new Process(['bash', '-seu', '--', $checkout], input: $program))->mustRun();
+    });
+    $receipts->shouldReceive('hasLegacyTurn')->andReturn(false);
+    $receipts->shouldReceive('read')->andReturnUsing(function (Instance $instance, ?int $threadId) use ($checkout): ?TaskTurnReceipt {
+        if (! file_exists($checkout.'/.git/orbit/receipt.json')) {
+            return null;
+        }
+        $receipt = TaskTurnReceipt::parse((string) file_get_contents($checkout.'/.git/orbit/receipt.json'));
+
+        return $receipt->threadId === $threadId ? $receipt : null;
+    });
+    $receipts->shouldReceive('clear')->andReturnUsing(function () use ($checkout): void {
+        File::delete($checkout.'/.git/orbit/receipt.json');
+    });
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $crash = $failure === 'commit-crash';
+    DB::beforeExecuting(function (string $sql) use (&$crash): void {
+        if ($crash && str_starts_with($sql, 'update') && str_contains($sql, 'completion_attempt') && str_contains($sql, 'deliverable_correction_resume')) {
+            $crash = false;
+            throw new RuntimeException('Correction delivery commit crashed.');
+        }
+    });
+    try {
+        $resolve = fn () => app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Resume corrected handoff.', 'author' => 'operator']);
+        if ($failure === 'commit-crash') {
+            expect($resolve)->toThrow(RuntimeException::class, 'Correction delivery commit crashed.');
+        } else {
+            $resolve();
+        }
+        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
+        app(StoreTaskCommentAction::class)->execute($task, ['type' => 'assistance_requested', 'body' => 'Which approach is authoritative?', 'author' => 'operator']);
+        app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Use the reviewer direction.', 'author' => 'operator']);
+        expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
+
+        if ($failure === 'lost-acceptance-direction-commit-crash') {
+            $crashDirection = true;
+            DB::beforeExecuting(function (string $sql) use (&$crashDirection): void {
+                if ($crashDirection && str_starts_with($sql, 'update') && str_contains($sql, 'review_handled_comment_id')) {
+                    $crashDirection = false;
+                    throw new RuntimeException('Direction delivery commit crashed.');
+                }
+            });
+            expect(fn () => app(TaskScheduler::class)->tick())->toThrow(RuntimeException::class, 'Direction delivery commit crashed.');
+            expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
+            expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
+        }
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->direction_relay_comment_id)->toBeNull();
+        expect($dispatcher->accepted)->toHaveCount(3);
+        $continuation = array_last($dispatcher->accepted)['message']['text'];
+        $files = ['turn.json', 'receipt.json', 'run', 'run.json'];
+        $before = array_map(fn (string $file): string => (string) file_get_contents($checkout.'/.git/orbit/'.$file), $files);
+        expect(json_decode($before[0], true)['deliverables'])->toBe($contract);
+        $prepared = $preparations;
+        $calls = $dispatcher->calls;
+        $state->implementer = 'running';
+        app(TaskScheduler::class)->tick();
+        app(ResumeDeliverableCorrectionAction::class)->execute($task);
+        app(ResumeDeliverableCorrectionAction::class)->execute($task);
+        expect(array_map(fn (string $file): ?string => file_exists($checkout.'/.git/orbit/'.$file) ? (string) file_get_contents($checkout.'/.git/orbit/'.$file) : null, $files))->toBe($before);
+        expect($preparations)->toBe($prepared);
+        expect($dispatcher->calls)->toBe($calls);
+        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('superseded');
+        expect($continuation)->toContain('The direction above is authoritative.');
+        expect(json_decode(explode("\n```", explode("```json\n", $continuation)[1])[0], true))->toBe($contract);
+    } finally {
+        File::deleteDirectory($checkout);
+    }
+})->with(['lost-acceptance', 'commit-crash', 'lost-acceptance-direction-commit-crash']);
 
 it('does not send a second implementer turn when an accepted relay answer lost its response', function (): void {
     [$group, $task] = tick_held_relay();

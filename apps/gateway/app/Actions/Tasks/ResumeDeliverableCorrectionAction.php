@@ -119,6 +119,34 @@ final readonly class ResumeDeliverableCorrectionAction
         });
     }
 
+    /** A direction continuation carries the corrected contract instead of replaying an older correction turn. */
+    public function continuationMessage(Task $task, string $answer): string
+    {
+        if (($task->deliverable_correction_resume['state'] ?? null) !== 'pending') {
+            return $answer;
+        }
+        $contract = json_encode($task->deliverables, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        return $answer."\n\nThe direction above is authoritative. This corrected deliverable list replaces the previous contract. Confirm every corrected deliverable at handoff:\n\n```json\n".$contract."\n```";
+    }
+
+    /** Called with the fresh locked task inside the transaction that finishes the authoritative continuation. */
+    public function supersede(Task $task, TaskComment $continuation): void
+    {
+        $resume = $task->deliverable_correction_resume;
+        if ($resume === null || $resume['state'] !== 'pending') {
+            return;
+        }
+        $task->update(['deliverable_correction_resume' => [...$resume, 'state' => 'superseded']]);
+        Activity::query()->create([
+            'log_name' => 'tasks', 'description' => 'deliverable correction superseded by direction',
+            'subject_type' => Task::class, 'subject_id' => $task->id,
+            'properties' => ['comment_id' => $resume['comment_id'], 'continuation_comment_id' => $continuation->id],
+            'caller_node_id' => $resume['caller_node_id'] ?? null, 'caller_ip' => $resume['caller_ip'] ?? null,
+            'request_id' => $resume['request_id'] ?? (string) Str::uuid(), 'command' => 'tasks:comment', 'status' => 'completed',
+        ]);
+    }
+
     private static function directionPending(Task $task, Task $group): bool
     {
         return $task->assistance_kind === AssistanceKind::Direction || $group->assistance_kind === AssistanceKind::Direction
