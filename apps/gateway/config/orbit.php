@@ -85,6 +85,8 @@ return [
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
+        'opsbot_webhook_url' => env('ORBIT_OPSBOT_WEBHOOK_URL'),
+        'opsbot_webhook_secret' => env('ORBIT_OPSBOT_WEBHOOK_SECRET'),
     ],
     // The outer loop neither counts nor files a listed fingerprint or a source path under a prefix.
     'problems' => [

@@ -1,4 +1,4 @@
-# ADR 0197: Keep delivery-line proofs as repository commands
+# ADR 0198: Keep delivery-line proofs as repository commands
 
 Orbit proves reproduction, task-group shape, pull-request head review, and post-merge live state with four read-only repository commands. The commands reuse existing task fields and `fails_on_base`. They add no proof field on a subtask.
 

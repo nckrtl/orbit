@@ -788,7 +788,7 @@ The consult limit counts consult records for the current `completion_attempt`. A
 
 ### Assistance and resolution
 
-A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task. Orbit posts the Coder `task_group.assistance_requested` webhook once. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
+A subtask that asks for assistance keeps its status and its Node slot. The flag, the kind, the question, and the reason show on the subtask and on the task. Orbit posts the Coder `task_group.assistance_requested` webhook once. When the kind is `direction`, it also posts that event to [OpsBot](#opsbot-direction-webhook) so OpsBot wakes immediately. An operator can also post an `assistance_requested` comment, which flags the subtask and the task at once as a direction request, with the comment body as its question.
 
 #### Direction requests
 
@@ -1239,6 +1239,14 @@ The Gateway posts signed events to Coder when `ORBIT_CODER_WEBHOOK_URL` and `ORB
 
 Every body holds `event`, `task_group_id`, and `title`. The Gateway signs `{unix timestamp}.{raw body}` with HMAC-SHA256 and sends the headers `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={hex}`, and `Content-Type: application/json`.
 
+## OpsBot direction webhook
+
+The Gateway posts one JSON object to OpsBot when a task or subtask starts asking for assistance of kind `direction` and both `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are set. There is no scheduled poll. A refused or failed post changes nothing in Orbit. If the URL or secret is unset, the Gateway skips that POST and leaves the rest of the task flow unchanged.
+
+The body is `event` `task_group.assistance_requested`, `task_group_id`, `title`, `kind`, `question`, and `reason`. The Gateway sends `Content-Type: application/json`, `Authorization: Bearer {secret}`, and `X-Automation-Key` set to the same secret.
+
+Settle, escalate, and assistance that is not `direction` stay on the [Coder webhook](#coder-settle-webhook) only. They do not go to OpsBot.
+
 Annotations, not task agents, use a Node's T3 connection. A Node whose settings hold a `t3` object uses its own `t3.token`, and its `t3.url` as the base URL when set. Such a Node never falls back to `ORBIT_T3_TOKEN`, and a missing token fails closed. Without that object, the Gateway calls `http://{wireguard_ip}:{ORBIT_T3_PORT}` with the bearer `ORBIT_T3_TOKEN`. The port default is `3773`.
 
 ## Cancel a stuck task
@@ -1315,6 +1323,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
 | `ORBIT_PI_PORT`, `ORBIT_PI_TOKEN`, `ORBIT_PI_PROVIDER` | The Pi server port, default `3774`, its bearer token, and the provider for plain model names |
 | `ORBIT_CODER_WEBHOOK_URL`, `ORBIT_CODER_WEBHOOK_SECRET` | The Coder webhook endpoint and its HMAC secret. The Gateway never returns the secret |
+| `ORBIT_OPSBOT_WEBHOOK_URL`, `ORBIT_OPSBOT_WEBHOOK_SECRET` | The OpsBot webhook endpoint and its bearer secret. The Gateway never returns the secret. Unset skips the direction POST |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 
@@ -1449,6 +1458,14 @@ The operator's answer goes through the reviewer, so the reviewer translates it i
 Assistance has a kind, so the operator finds the questions that need a person among failures that the operator only has to fix. A `blocked` status was rejected: the subtask would have to remember whether to return to `running` or `reviewing`, and every status filter, transition, and board lane would change. A kind marks the request without adding a lifecycle step.
 
 The existing `task_group.assistance_requested` webhook carries the kind and question. A separate `task_group.direction_requested` event was rejected because receivers would need a second subscription for the same assistance flag. Waiting on another task or pull request is not a third assistance kind: a dependency wait that resumes on its own is a separate feature. The operator answers through the CLI, MCP, or API; a web answer box is outside this feature.
+
+### Direction wakes OpsBot immediately
+
+A direction request needs a person now. A scheduled poll would leave the task waiting until the next check. The Gateway already posts assistance once on the Coder path, so it posts that same event to OpsBot at that moment.
+
+OpsBot is not a second Coder. Settle and escalate stay on the HMAC-signed Coder webhook. A failure is something the operator can find on the board; it does not wake OpsBot. Sending every assistance kind would page the operator for disk-full and push failures.
+
+OpsBot's contract is Bearer plus `X-Automation-Key`, not Orbit's HMAC headers. Reusing the Coder signature would fail at OpsBot. A missing URL or secret skips the post so a Gateway without OpsBot still runs tasks.
 
 ### Questions are records, not parsed comments
 
