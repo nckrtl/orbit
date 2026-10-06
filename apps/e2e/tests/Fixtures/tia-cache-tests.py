@@ -368,6 +368,26 @@ cache.warm_release(root, common, cache.cache_store(common), [])
             self.assertEqual('1', environment['PAO_DISABLE'])
             self.assertEqual('0', os.environ['PAO_DISABLE'])
 
+    def test_maintenance_environment_keeps_temporary_directories(self):
+        with patch.dict(os.environ, {
+            'TMPDIR': '/worktree-tmp', 'TMP': '/short-tmp', 'TEMP': '/legacy-tmp',
+            'DATABASE_URL': 'sqlite:///setup.sqlite',
+        }):
+            environment = cache.maintenance_environment()
+            self.assertEqual('/worktree-tmp', environment['TMPDIR'])
+            self.assertEqual('/short-tmp', environment['TMP'])
+            self.assertEqual('/legacy-tmp', environment['TEMP'])
+            self.assertNotIn('DATABASE_URL', environment)
+
+    def test_nested_command_uses_caller_temporary_directory(self):
+        private = self.root / 'private-tmp'
+        private.mkdir()
+        with patch.dict(os.environ, {'TMPDIR': str(private)}):
+            observed = cache.run(
+                self.root, sys.executable, '-c', 'import os; print(os.environ["TMPDIR"], end="")',
+            )
+        self.assertEqual(str(private), observed)
+
     def test_failed_run_keeps_last_successful_publication(self):
         self.publish()
         original = cache.publication_path(self.store, self.project).read_bytes()
@@ -515,12 +535,12 @@ from urllib.parse import urlparse
 blocked = (
     'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH', 'DB_URL', 'DB_DATABASE',
     'DATABASE_URL', 'CACHE_STORE', 'SESSION_DRIVER', 'QUEUE_CONNECTION',
-    'TMPDIR', 'TMP', 'TEMP',
 )
 observation = {
     'command': sys.argv[1:],
     'tia_directory': os.environ.get('ORBIT_TIA_DIRECTORY'),
     'blocked_present': [name for name in blocked if name in os.environ],
+    'temporary_directories': {name: os.environ.get(name) for name in ('TMPDIR', 'TMP', 'TEMP')},
     'path_finds_fixture': os.environ.get('PATH', '').split(os.pathsep)[0] == os.environ['TIA_CACHE_FIXTURE_BIN'],
     'composer_auth_available': os.environ.get('COMPOSER_AUTH') == 'disposable-composer-auth',
     'github_token_available': os.environ.get('GITHUB_TOKEN') == 'disposable-github-token',
@@ -529,7 +549,7 @@ observation = {
 with open(os.environ['TIA_CACHE_FIXTURE_OBSERVATIONS'], 'a') as stream:
     stream.write(json.dumps(observation) + '\n')
 
-for name in ('ORBIT_HOME', 'APP_BASE_PATH', 'TMPDIR', 'TMP', 'TEMP'):
+for name in ('ORBIT_HOME', 'APP_BASE_PATH'):
     if name in os.environ:
         destination = Path(os.environ[name]) / 'worker-touched'
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -674,8 +694,10 @@ else:
         self.assertEqual([], [name for name in (
             'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH', 'DB_URL', 'DB_DATABASE',
             'DATABASE_URL', 'CACHE_STORE', 'SESSION_DRIVER', 'QUEUE_CONNECTION',
-            'TMPDIR', 'TMP', 'TEMP',
         ) if name in process_environment])
+        self.assertEqual(str(temporary), process_environment['TMPDIR'])
+        self.assertEqual(str(short_temporary), process_environment['TMP'])
+        self.assertEqual(str(legacy_temporary), process_environment['TEMP'])
         self.assertEqual(str(fake_bin) + os.pathsep + os.environ['PATH'], process_environment['PATH'])
         self.assertTrue(process_environment.get('COMPOSER_AUTH') == environment['COMPOSER_AUTH'])
         self.assertTrue(process_environment.get('GITHUB_TOKEN') == environment['GITHUB_TOKEN'])
@@ -699,6 +721,9 @@ else:
             expected_cache = str(runtime_cache) if observation['command'][0] == 'test:affected' else None
             self.assertEqual(expected_cache, observation['tia_directory'])
             self.assertEqual([], observation['blocked_present'])
+            self.assertEqual({
+                'TMPDIR': str(temporary), 'TMP': str(short_temporary), 'TEMP': str(legacy_temporary),
+            }, observation['temporary_directories'])
             self.assertTrue(observation['path_finds_fixture'])
             self.assertTrue(observation['composer_auth_available'])
             self.assertTrue(observation['github_token_available'])
@@ -726,8 +751,11 @@ else:
                 'worker_blocked_present': [name for name in (
                     'ORBIT_HOME', 'APP_CONFIG_CACHE', 'APP_BASE_PATH',
                     'DB_URL', 'DB_DATABASE', 'DATABASE_URL', 'CACHE_STORE',
-                    'SESSION_DRIVER', 'QUEUE_CONNECTION', 'TMPDIR', 'TMP', 'TEMP',
+                    'SESSION_DRIVER', 'QUEUE_CONNECTION',
                 ) if name in process_environment],
+                'worker_temporary_directories': {
+                    name: process_environment.get(name) for name in ('TMPDIR', 'TMP', 'TEMP')
+                },
                 'worker_dependency_access': {
                     'path': process_environment.get('PATH') == environment['PATH'],
                     'composer_auth': process_environment.get('COMPOSER_AUTH') == environment['COMPOSER_AUTH'],
@@ -1084,6 +1112,43 @@ class MaintenanceQueueTest(unittest.TestCase):
                 self.assertEqual(0, cache.drain(self.common, self.store, cache.acquire_worker(self.store)))
             self.assertEqual(2, checks.call_count)
         self.assertEqual({}, cache.load_requests(self.store)['pending'])
+
+    def test_failed_command_includes_stdout_in_the_failure(self):
+        with self.assertRaises(cache.CommandFailure) as raised:
+            cache.run(
+                self.root, sys.executable, '-c',
+                'import sys; sys.stdout.write("pest failed on stdout\\n"); '
+                'sys.stderr.write("hint on stderr\\n"); sys.exit(2)',
+            )
+        self.assertIn('pest failed on stdout', str(raised.exception))
+        self.assertIn('hint on stderr', str(raised.exception))
+        self.assertEqual(2, raised.exception.exit_code)
+
+    def test_failed_logged_command_includes_stdout_in_the_failure(self):
+        cache.COMMAND_LOG = self.root / 'check.log'
+        cache.COMMAND_LOG.write_text('apps/docs: tia at fixture\n')
+        try:
+            with self.assertRaises(cache.CommandFailure) as raised:
+                cache.run(
+                    self.root, sys.executable, '-c',
+                    'print("visible pest failure"); raise SystemExit(1)',
+                    capture=False,
+                )
+            self.assertIn('visible pest failure', str(raised.exception))
+        finally:
+            cache.COMMAND_LOG = None
+
+    def test_failed_command_keeps_the_tail_of_huge_stdout(self):
+        with self.assertRaises(cache.CommandFailure) as raised:
+            cache.run(
+                self.root, sys.executable, '-c',
+                'import sys; sys.stdout.write("head-marker\\n" + ("x" * 80000) + "\\ntail-marker\\n"); '
+                'sys.exit(1)',
+            )
+        message = str(raised.exception)
+        self.assertIn('tail-marker', message)
+        self.assertNotIn('head-marker', message)
+        self.assertLessEqual(len(message), cache.FAILURE_OUTPUT_LIMIT)
 
     def test_command_timeout_stops_descendants_before_returning(self):
         marker = self.root / 'descendant-ready'
