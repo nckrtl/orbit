@@ -151,11 +151,8 @@ it('renders status exporter rows in JSON', function (): void {
 });
 
 it('renders the Gateway role conflict for a second enable while an assignment exists', function (): void {
-    $originalColumns = getenv('COLUMNS');
+    // afterEach restores the caller's COLUMNS.
     putenv('COLUMNS=120');
-    $this->beforeApplicationDestroyed(static function () use ($originalColumns): void {
-        putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
-    });
 
     $mock = MockClient::global([EnableMetricsRequest::class => metrics_cli_role_conflict_response()]);
 

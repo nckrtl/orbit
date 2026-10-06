@@ -76,6 +76,8 @@ it('sets up the fleet collector from a key file and never prints the key', funct
 });
 
 it('refuses a management key on the command line by requiring a file', function (): void {
+    MockClient::global([ListExtensionsRequest::class => proxycli_cli_extensions_response()]);
+
     [$exit, $output] = proxycli_cli_display('proxycli:setup', [
         '--node' => '4',
         '--cache-connection' => 'valkey',
