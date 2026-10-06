@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
@@ -25,11 +26,12 @@ beforeEach(function (): void {
 afterEach(function (): void {
     File::deleteDirectory($this->directory);
     foreach ($this->allocated as $path) {
-        if (is_string($path) && is_dir($path)) {
-            $real = realpath($path);
-            if (is_string($real) && str_starts_with($real, '/tmp/orbit-check-')) {
-                File::deleteDirectory($real);
-            }
+        if (! is_string($path) || $path === '' || ! is_dir($path)) {
+            continue;
+        }
+        $real = realpath($path);
+        if (is_string($real) && $real !== '/tmp' && str_starts_with($real, '/tmp/')) {
+            File::deleteDirectory($real);
         }
     }
 });
@@ -83,6 +85,60 @@ function tmpdir_can_switch_to_nobody(): bool
     return (new Process(['sudo', '-n', '-u', 'nobody', 'true']))->run() === 0;
 }
 
+function tmpdir_instance(string $checkout, string $name): Instance
+{
+    $project = Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'git@github.com:acme/'.$name.'.git', 'default_branch' => 'main']);
+    $node = Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => $name === 'first' ? '10.44.0.160' : '10.44.0.161', 'user' => 'orbit']);
+
+    return Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-'.$name,
+        'checkout_path' => $checkout,
+        'branch' => 'task-'.$name,
+        'status' => 'source_resolved',
+    ]);
+}
+
+function tmpdir_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
+{
+    for ($attempt = 0; $attempt < 150; $attempt++) {
+        $reading = $runner->read($instance, $process);
+        if ($reading->state !== 'running') {
+            return $reading;
+        }
+        usleep(100_000);
+    }
+
+    throw new RuntimeException('The check did not finish.');
+}
+
+function tmpdir_remove(string $path): bool
+{
+    $probe = new Process([
+        'python3', '-c', <<<'PYTHON'
+import importlib.machinery, importlib.util, sys
+loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+loader.exec_module(check)
+sys.exit(0 if check.remove_allocated_check_tmpdir(sys.argv[2]) else 1)
+PYTHON,
+        resource_path('tasks/check'),
+        $path,
+    ]);
+
+    return $probe->run() === 0;
+}
+
+function tmpdir_checkout(string $directory, string $name): string
+{
+    $checkout = $directory.'/'.$name;
+    (new Process(['git', 'init', '-q', $checkout]))->mustRun();
+    (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'start'], $checkout))->mustRun();
+
+    return $checkout;
+}
+
 describe('workspace TMPDIR', function (): void {
     it('gives test processes inheriting private TMPDIR a separate traversable fixture root', function (): void {
         $temporary = tmpdir_check_directory($this->directory);
@@ -122,7 +178,7 @@ describe('workspace TMPDIR', function (): void {
         $shared = $this->directory.'/prior-shared';
         File::ensureDirectoryExists($shared.'/phpstan');
         chmod($shared.'/phpstan', 0500);
-        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result"';
+        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && cp "$TMPDIR/phpstan/result" phpstan-result && getfacl -cp "$TMPDIR" > tmp-acl && stat -c %a:%u "$TMPDIR" > tmp-stat && printf %s "$TMPDIR"';
         // The old layout really fails on permissions, not on an assertion about the new path.
         expect((new Process(['bash', '-c', $analyse], null, ['TMPDIR' => $shared]))->run())->not->toBe(0);
         $prior = getenv('TMPDIR');
@@ -135,50 +191,29 @@ describe('workspace TMPDIR', function (): void {
             $runner = tmpdir_runner();
             $directories = [];
             foreach (['first', 'second'] as $name) {
-                $checkout = $this->directory.'/'.$name;
-                (new Process(['git', 'init', '-q', $checkout]))->mustRun();
-                (new Process(['git', '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'start'], $checkout))->mustRun();
+                $checkout = tmpdir_checkout($this->directory, $name);
                 File::ensureDirectoryExists($checkout.'/.git/orbit/tmp');
                 (new Process(['setfacl', '-m', 'd:u:nobody:rwX', $checkout.'/.git/orbit/tmp']))->mustRun();
-                $project = Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'git@github.com:acme/'.$name.'.git', 'default_branch' => 'main']);
-                $node = Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => $name === 'first' ? '10.44.0.160' : '10.44.0.161', 'user' => 'orbit']);
-                $instance = Instance::query()->create([
-                    'project_id' => $project->id,
-                    'node_id' => $node->id,
-                    'name' => 'task-'.$name,
-                    'checkout_path' => $checkout,
-                    'branch' => 'task-'.$name,
-                    'status' => 'source_resolved',
-                ]);
-                $process = $runner->start($instance, $analyse.' && printf %s "$TMPDIR" > check-tmp', [
-                    ['name' => 'setup', 'command' => $analyse.' && printf %s "$TMPDIR" > setup-tmp', 'timeout_seconds' => 10],
+                $instance = tmpdir_instance($checkout, $name);
+                $process = $runner->start($instance, $analyse.' > check-tmp', [
+                    ['name' => 'setup', 'command' => $analyse.' > setup-tmp', 'timeout_seconds' => 10],
                 ], ['start' => null, 'commands' => [
-                    ['id' => 'tmp', 'command' => $analyse.' && printf %s "$TMPDIR" > deliverable-tmp', 'directory' => '.'],
+                    ['id' => 'tmp', 'command' => $analyse.' > deliverable-tmp', 'directory' => '.'],
                 ]]);
-                $reading = null;
-                for ($attempt = 0; $attempt < 150; $attempt++) {
-                    $reading = $runner->read($instance, $process);
-                    if ($reading->state !== 'running') {
-                        break;
-                    }
-                    usleep(100_000);
-                }
-                expect($reading)->toBeInstanceOf(TaskCheckReading::class);
+                $reading = tmpdir_wait($runner, $instance, $process);
                 expect($reading->exitCode)->toBe(0);
                 $expected = file_get_contents($checkout.'/setup-tmp');
                 expect($expected)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
                     ->not->toContain($checkout)
                     ->not->toContain('.git');
-                expect(fileowner($expected))->toBe(posix_geteuid());
-                expect(fileperms($expected) & 0777)->toBe(0711);
+                expect(file_get_contents($checkout.'/tmp-stat'))->toBe('711:'.posix_geteuid()."\n");
                 foreach (['setup-tmp', 'check-tmp', 'deliverable-tmp'] as $file) {
                     expect(file_get_contents($checkout.'/'.$file))->toBe($expected);
                 }
-                expect(file_get_contents($expected.'/phpstan/result'))->toBe('analysed');
-                $permissions = (new Process(['getfacl', '-cp', $expected]))->mustRun()->getOutput();
-                expect($permissions)->not->toContain('default:')->not->toContain('user:nobody:');
+                expect(file_get_contents($checkout.'/phpstan-result'))->toBe('analysed');
+                expect(file_get_contents($checkout.'/tmp-acl'))->not->toContain('default:')->not->toContain('user:nobody:');
+                expect(is_dir($expected))->toBeFalse();
                 $directories[] = $expected;
-                $this->allocated[] = $expected;
             }
             expect($directories[0])->not->toBe($directories[1]);
         } finally {
@@ -232,4 +267,112 @@ describe('workspace TMPDIR', function (): void {
 
         expect((new Process(['sudo', '-n', '-u', 'nobody', 'test', '-r', $child.'/file']))->run())->toBe(0);
     })->skip(fn (): bool => ! tmpdir_can_switch_to_nobody(), 'setfacl and passwordless sudo -n -u nobody are required.');
+
+    it('removes the allocated TMPDIR after a passing check', function (): void {
+        $checkout = tmpdir_checkout($this->directory, 'pass');
+        $instance = tmpdir_instance($checkout, 'pass');
+        $runner = tmpdir_runner();
+
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 1 && test -d "$TMPDIR"');
+        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
+            usleep(50_000);
+        }
+        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+        $first = $runner->read($instance, $process);
+
+        expect($first->state)->toBe('running')
+            ->and($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+            ->and(is_dir($path))->toBeTrue();
+
+        $reading = tmpdir_wait($runner, $instance, $process);
+
+        expect($reading->exitCode)->toBe(0)
+            ->and(is_dir($path))->toBeFalse();
+    });
+
+    it('removes the allocated TMPDIR after a failing check', function (): void {
+        $checkout = tmpdir_checkout($this->directory, 'fail');
+        $instance = tmpdir_instance($checkout, 'fail');
+        $runner = tmpdir_runner();
+
+        $reading = tmpdir_wait($runner, $instance, $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && exit 2'));
+        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+
+        expect($reading->exitCode)->toBe(2)
+            ->and($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+            ->and(is_dir($path))->toBeFalse();
+    });
+
+    it('removes the allocated TMPDIR after a cancelled check', function (): void {
+        $checkout = tmpdir_checkout($this->directory, 'cancel');
+        $instance = tmpdir_instance($checkout, 'cancel');
+        $runner = tmpdir_runner();
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 30');
+        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
+            usleep(50_000);
+        }
+        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+        expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+            ->and(is_dir($path))->toBeTrue();
+
+        $runner->cancel($instance, $process);
+        $reading = tmpdir_wait($runner, $instance, $process);
+
+        expect($reading->state)->toBe('lost')
+            ->and(is_dir($path))->toBeFalse();
+    });
+
+    it('removes the allocated TMPDIR after a killed check', function (): void {
+        $checkout = tmpdir_checkout($this->directory, 'killed');
+        $instance = tmpdir_instance($checkout, 'killed');
+        $runner = tmpdir_runner();
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 30');
+        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
+            usleep(50_000);
+        }
+        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+        expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+            ->and(is_dir($path))->toBeTrue();
+
+        posix_kill($process->pid, SIGKILL);
+        $reading = tmpdir_wait($runner, $instance, $process);
+
+        expect($reading->state)->toBe('lost')
+            ->and(is_dir($path))->toBeFalse();
+    });
+
+    it('refuses to remove an unexpected TMPDIR path', function (): void {
+        $uid = posix_geteuid();
+        $root = realpath('/tmp');
+        $allocated = tmpdir_check_directory($this->directory);
+        $nested = $allocated.'/child';
+        mkdir($nested, 0700);
+        $sibling = $this->directory.'/orbit-check-'.$uid.'-nested';
+        mkdir($sibling, 0700);
+        $foreign = $root.'/orbit-gateway-tests-'.bin2hex(random_bytes(4));
+        mkdir($foreign, 0700);
+        $this->allocated[] = $foreign;
+        $escape = $allocated.'/../orbit-check-'.$uid.'-escape';
+        mkdir($escape, 0700);
+        $this->allocated[] = $escape;
+
+        expect(tmpdir_remove(''))->toBeFalse()
+            ->and(tmpdir_remove('/tmp'))->toBeFalse()
+            ->and(tmpdir_remove($root))->toBeFalse()
+            ->and(tmpdir_remove($root.'/orbit-check-'.$uid))->toBeFalse()
+            ->and(tmpdir_remove($root.'/orbit-check-'.$uid.'-'))->toBeFalse()
+            ->and(tmpdir_remove($sibling))->toBeFalse()
+            ->and(tmpdir_remove($foreign))->toBeFalse()
+            ->and(tmpdir_remove($nested))->toBeFalse()
+            ->and(tmpdir_remove($allocated.'/..'))->toBeFalse()
+            ->and(is_dir($allocated))->toBeTrue()
+            ->and(is_dir($nested))->toBeTrue()
+            ->and(is_dir($sibling))->toBeTrue()
+            ->and(is_dir($foreign))->toBeTrue()
+            ->and(is_dir($root))->toBeTrue();
+
+        expect(tmpdir_remove($allocated))->toBeTrue()
+            ->and(is_dir($allocated))->toBeFalse()
+            ->and(is_dir($nested))->toBeFalse();
+    });
 });

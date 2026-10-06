@@ -150,7 +150,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: $prefix.TaskWorkspaceMetadata::bashPreamble().
-                    // Start allocates a host TMPDIR for the detached check. Later SSH calls do not.
+                    // Start allocates a host TMPDIR for the detached check. The check removes it when it ends. Later SSH calls do not.
                     ($allocateTemporary
                         ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir').')"'."\nexport TMPDIR\n"
                         : '').
