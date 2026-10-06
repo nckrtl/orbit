@@ -387,7 +387,7 @@ describe('workspace TMPDIR', function (): void {
         $foreign = $root.'/orbit-gateway-tests-'.bin2hex(random_bytes(4));
         mkdir($foreign, 0700);
         $this->allocated[] = $foreign;
-        $escape = $allocated.'/../orbit-check-'.$uid.'-escape';
+        $escape = $allocated.'/../orbit-sibling-'.bin2hex(random_bytes(4));
         mkdir($escape, 0700);
         $this->allocated[] = $escape;
 
@@ -399,11 +399,13 @@ describe('workspace TMPDIR', function (): void {
             ->and(tmpdir_remove($sibling))->toBeFalse()
             ->and(tmpdir_remove($foreign))->toBeFalse()
             ->and(tmpdir_remove($nested))->toBeFalse()
+            ->and(tmpdir_remove($escape))->toBeFalse()
             ->and(tmpdir_remove($allocated.'/..'))->toBeFalse()
             ->and(is_dir($allocated))->toBeTrue()
             ->and(is_dir($nested))->toBeTrue()
             ->and(is_dir($sibling))->toBeTrue()
             ->and(is_dir($foreign))->toBeTrue()
+            ->and(is_dir($escape))->toBeTrue()
             ->and(is_dir($root))->toBeTrue();
 
         expect(tmpdir_remove($allocated))->toBeTrue()
