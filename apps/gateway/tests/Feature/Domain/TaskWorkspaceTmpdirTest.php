@@ -17,11 +17,20 @@ use Tests\Support\LocalShellSshExecutor;
 
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/orbit-workspace-tmpdir-'.bin2hex(random_bytes(8));
+    $this->allocated = [];
     File::ensureDirectoryExists($this->directory);
 });
 
 afterEach(function (): void {
     File::deleteDirectory($this->directory);
+    foreach ($this->allocated as $path) {
+        if (is_string($path) && is_dir($path)) {
+            $real = realpath($path);
+            if (is_string($real) && str_starts_with($real, '/tmp/orbit-check-')) {
+                File::deleteDirectory($real);
+            }
+        }
+    }
 });
 
 function tmpdir_runner(): RemoteTaskCheckRunner
@@ -57,8 +66,19 @@ function tmpdir_check_directory(string $checkout): string
     (new Process(['git', 'init', '-q', $checkout]))->mustRun();
     $metadata = new Process(['python3', resource_path('tasks/metadata'), $checkout, 'tmpdir']);
     $metadata->setInput('{}');
+    $path = rtrim($metadata->mustRun()->getOutput(), "\n");
+    test()->allocated[] = $path;
 
-    return $metadata->mustRun()->getOutput();
+    return $path;
+}
+
+function tmpdir_can_switch_to_nobody(): bool
+{
+    if ((new Process(['bash', '-c', 'command -v setfacl && command -v getfacl']))->run() !== 0) {
+        return false;
+    }
+
+    return (new Process(['sudo', '-n', '-u', 'nobody', 'true']))->run() === 0;
 }
 
 describe('workspace TMPDIR', function (): void {
@@ -74,12 +94,14 @@ describe('workspace TMPDIR', function (): void {
 
         expect($fixture['path'])->toStartWith(realpath('/tmp').'/orbit-gateway-tests-')->not->toBe($temporary);
         expect($fixture['mode'])->toBe(0755);
-        expect(fileperms($temporary) & 0777)->toBe(0700);
+        expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'.');
+        expect(fileowner($temporary))->toBe(posix_geteuid());
+        expect(fileperms($temporary) & 0777)->toBe(0711);
     });
 
     it('supports cross-user tests inheriting a private check TMPDIR', function (): void {
         $temporary = tmpdir_check_directory($this->directory);
-        expect(fileperms($temporary) & 0777)->toBe(0700);
+        expect(fileperms($temporary) & 0777)->toBe(0711);
         $process = new Process([
             PHP_BINARY, 'vendor/bin/pest',
             'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
@@ -89,7 +111,7 @@ describe('workspace TMPDIR', function (): void {
         $process->run();
 
         expect($process->getExitCode())->toBe(0, $process->getOutput().$process->getErrorOutput());
-        expect(fileperms($temporary) & 0777)->toBe(0700);
+        expect(fileperms($temporary) & 0777)->toBe(0711);
     });
 
     it('keeps restrictive prior shared caches out of setup and analyse in per-workspace tmp', function (): void {
@@ -141,7 +163,12 @@ describe('workspace TMPDIR', function (): void {
                 }
                 expect($reading)->toBeInstanceOf(TaskCheckReading::class);
                 expect($reading->exitCode)->toBe(0);
-                $expected = $checkout.'/.git/orbit/tmp/check-'.posix_geteuid();
+                $expected = file_get_contents($checkout.'/setup-tmp');
+                expect($expected)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'.')
+                    ->not->toContain($checkout)
+                    ->not->toContain('.git');
+                expect(fileowner($expected))->toBe(posix_geteuid());
+                expect(fileperms($expected) & 0777)->toBe(0711);
                 foreach (['setup-tmp', 'check-tmp', 'deliverable-tmp'] as $file) {
                     expect(file_get_contents($checkout.'/'.$file))->toBe($expected);
                 }
@@ -149,6 +176,7 @@ describe('workspace TMPDIR', function (): void {
                 $permissions = (new Process(['getfacl', '-cp', $expected]))->mustRun()->getOutput();
                 expect($permissions)->not->toContain('default:')->not->toContain('user:nobody:');
                 $directories[] = $expected;
+                $this->allocated[] = $expected;
             }
             expect($directories[0])->not->toBe($directories[1]);
         } finally {
@@ -166,4 +194,38 @@ describe('workspace TMPDIR', function (): void {
             }
         }
     });
+
+    it('lets another Unix user traverse the check TMPDIR to a granted child', function (): void {
+        $parent = $this->directory.'/acl-parent';
+        File::ensureDirectoryExists($parent);
+        (new Process(['setfacl', '-m', 'd:u:nobody:rwx,d:u:'.posix_geteuid().':rwx', $parent]))->mustRun();
+
+        $legacy = $parent.'/check-'.posix_geteuid();
+        mkdir($legacy, 0700);
+        (new Process(['setfacl', '-b', '-k', $legacy]))->mustRun();
+        chmod($legacy, 0700);
+        $legacyChild = $legacy.'/child';
+        mkdir($legacyChild, 0755);
+        file_put_contents($legacyChild.'/file', 'secret');
+        (new Process(['setfacl', '-m', 'u:nobody:rwx', $legacyChild]))->mustRun();
+        (new Process(['setfacl', '-m', 'u:nobody:r', $legacyChild.'/file']))->mustRun();
+
+        expect((new Process(['sudo', '-n', '-u', 'nobody', 'test', '-r', $legacyChild.'/file']))->run())->not->toBe(0);
+
+        $allocated = tmpdir_check_directory($this->directory);
+        expect($allocated)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'.')
+            ->not->toContain($parent);
+        expect(fileowner($allocated))->toBe(posix_geteuid());
+        expect(fileperms($allocated) & 0777)->toBe(0711);
+        $permissions = (new Process(['getfacl', '-cp', $allocated]))->mustRun()->getOutput();
+        expect($permissions)->not->toContain('default:');
+
+        $child = $allocated.'/child';
+        mkdir($child, 0755);
+        file_put_contents($child.'/file', 'shared');
+        (new Process(['setfacl', '-m', 'u:nobody:rwx', $child]))->mustRun();
+        (new Process(['setfacl', '-m', 'u:nobody:r', $child.'/file']))->mustRun();
+
+        expect((new Process(['sudo', '-n', '-u', 'nobody', 'test', '-r', $child.'/file']))->run())->toBe(0);
+    })->skip(fn (): bool => ! tmpdir_can_switch_to_nobody(), 'setfacl and passwordless sudo -n -u nobody are required.');
 });

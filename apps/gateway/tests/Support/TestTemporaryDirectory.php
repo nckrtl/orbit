@@ -22,7 +22,7 @@ final class TestTemporaryDirectory
         $directory = is_string($configured) && $configured !== '' ? $configured : '/tmp';
         // Cross-user fixtures cannot traverse a role-private workspace TMPDIR ancestor.
         // Preserve other callers' configured roots (including database safety probes).
-        if (preg_match('~/orbit/tmp/(?:agent|check)-[0-9]+$~', $directory) === 1) {
+        if (preg_match('~/(?:orbit/tmp/(?:agent|check)-[0-9]+|orbit-check-[0-9]+\.[^/]+)$~', $directory) === 1) {
             $directory = '/tmp/orbit-gateway-tests-'.bin2hex(random_bytes(12));
             if (! mkdir($directory, 0755)) {
                 throw new RuntimeException('Could not create the shared test fixture root.');
