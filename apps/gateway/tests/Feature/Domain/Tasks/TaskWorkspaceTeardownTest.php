@@ -137,6 +137,7 @@ it('keeps the source and record when teardown fails and a retry removes only the
 });
 
 it('keeps a swept workspace when teardown fails and retries only that workspace after the backoff', function (): void {
+    $this->freezeTime();
     app(TaskExtensionState::class)->enable();
     $world = task_teardown_world('sweep-retry', TaskGroupStatus::Cancelled);
     $world['harness']->exit = 1;
@@ -149,6 +150,8 @@ it('keeps a swept workspace when teardown fails and retries only that workspace 
         ->and($world['harness']->source->finalized)->toBe([])
         ->and(InstanceRemoval::query()->count())->toBe(0);
 
+    // Cross a real second boundary to prove the backoff clock stays frozen.
+    time_sleep_until(floor(microtime(true)) + 1);
     $this->travel(59)->seconds();
     expect(app(TaskScheduler::class)->removeAbandonedWorkspaces())->toBe(0)
         ->and(Instance::query()->find($world['workspace']->id))->not->toBeNull()
