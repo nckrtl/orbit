@@ -57,8 +57,105 @@ use App\Models\Route;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 use Tests\Support\FakeClusterRouterDnsSelectionReconciler;
+use Tests\Support\LinuxHost;
 use Tests\Support\SshNodeCaddyBuilds;
+
+it('scopes source access to the converging checkout while retaining other published sites', function (bool $releaseLayout): void {
+    [$instance, $route, $node] = orb127_route_projection_models(coLocated: true);
+    $instance->update(['development_release_layout' => $releaseLayout]);
+    $other = orb1289_other_published_checkout($instance, $route, '/home/orbit/apps/unrelated/feature');
+    [$projector, $ssh, $processes, $home] = orb127_route_projector();
+
+    try {
+        $projector->converge($instance, $route);
+
+        $access = collect($ssh->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'checkouts=()'));
+        expect($access->arguments)->toContain($releaseLayout ? $instance->checkout_path.'/current' : $instance->checkout_path)
+            ->not->toContain($other->checkout_path);
+        expect(new DevelopmentSiteRepository()->forNode($node)->pluck('domain')->all())->toContain($route->domain, 'unrelated.acme.test');
+        expect($processes->invocations)->toHaveCount(1);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+})->with(['checkout' => false, 'selected release' => true]);
+
+it('converges source access without changing another published checkout containing a foreign owned file', function (string $placement): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    [$instance, $route] = orb127_route_projection_models(coLocated: true);
+    $root = sys_get_temp_dir().'/orbit-source-access-'.Str::uuid();
+    mkdir("$root/target/public", 0700, true);
+    $otherCheckout = $placement === 'nested' ? "$root/target/.worktrees/unrelated" : "$root/unrelated";
+    mkdir("$otherCheckout/public", 0700, true);
+    $home = null;
+
+    try {
+        foreach (['target' => "$root/target", 'unrelated' => $otherCheckout] as $name => $checkout) {
+            new Process(['git', 'init', '--quiet', $checkout])->mustRun();
+            file_put_contents("$checkout/public/index.html", $name.' page');
+            file_put_contents("$checkout/.env", 'PRIVATE=value');
+        }
+        $instance->update(['checkout_path' => "$root/target"]);
+        $other = orb1289_other_published_checkout($instance, $route, $otherCheckout);
+        $otherRoute = Route::query()->where('domain', 'unrelated.acme.test')->sole();
+        [$projector, $ssh, $processes, $home] = orb127_route_projector(
+            static function (RemoteCommand $command): bool {
+                if (! str_contains($command->input ?? '', 'checkouts=()')) {
+                    return false;
+                }
+
+                new Process($command->arguments)->setInput($command->input)->mustRun();
+
+                return false;
+            },
+        );
+
+        $projector->converge($other, $otherRoute);
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$otherCheckout/public/index.html"])->mustRun()->getOutput())->toBe('unrelated page');
+        $foreignFile = "$otherCheckout/implementer-write.txt";
+        file_put_contents($foreignFile, 'foreign-owned implementer output');
+        new Process(['sudo', '-n', 'chown', 'root:root', $foreignFile])->mustRun();
+        // Implementer output must need a real ACL change, not repeat an inherited deny entry.
+        new Process(['sudo', '-n', 'setfacl', '-b', '--', $foreignFile])->mustRun();
+        expect(new Process(['setfacl', '-m', 'u:caddy:---', $foreignFile])->run())->not->toBe(0);
+        $before = new Process(['getfacl', '-R', '-p', $otherCheckout])->mustRun()->getOutput();
+        $processes->invocations = [];
+
+        $projector->converge($instance, $route);
+
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/target/public/index.html"])->mustRun()->getOutput())->toBe('target page');
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/target/.env"])->run())->not->toBe(0);
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$otherCheckout/public/index.html"])->mustRun()->getOutput())->toBe('unrelated page');
+        expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$otherCheckout/.env"])->run())->not->toBe(0);
+        expect(new Process(['getfacl', '-R', '-p', $otherCheckout])->mustRun()->getOutput())->toBe($before);
+        expect($route->refresh()->sites_published)->toBeTrue();
+        expect($processes->invocations)->toHaveCount(1);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+        if ($home !== null) {
+            new Filesystem()->deleteDirectory($home);
+        }
+    }
+})->with(['sibling checkout' => 'sibling', 'nested checkout' => 'nested']);
+
+function orb1289_other_published_checkout(Instance $instance, Route $route, string $checkout): Instance
+{
+    $other = $instance->replicate();
+    $other->fill(['name' => 'unrelated', 'checkout_path' => $checkout, 'development_release_layout' => false, 'status' => InstanceState::Active]);
+    $other->save();
+    $otherRoute = $route->replicate();
+    $otherRoute->fill(['domain' => 'unrelated.acme.test', 'status' => RouteStatus::Pending, 'sites_published' => false]);
+    $otherRoute->save();
+    $otherRoute->targets()->create(['instance_id' => $other->id, 'position' => 0]);
+    $otherRoute->update(['status' => RouteStatus::Active]);
+    $otherRoute->publishSites();
+
+    return $other;
+}
 
 it('uses one local workload site when Router and workload roles share a Node', function (): void {
     [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');

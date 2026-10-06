@@ -201,7 +201,9 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 
 Private DNS points the domain at the workload Node. Its Caddy terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the Instance's web root.
 
-Before the Gateway publishes a development Route, it gives Caddy read access to the web root and traversal access to its parent directories. Caddy cannot read the other source files. The web root must be inside the checkout. Symlinks in the web root are refused, except Laravel's `public/storage` link to the checkout's `storage/app/public`. When this preparation fails, the Gateway restores the previous permissions and reports `app-dev.source_access_failed` at step `source-access`.
+Before the Gateway publishes a development Route, it prepares Caddy access only for the converging Instance's checkout, not every checkout on the Node. It gives Caddy read access to the web root and traversal access to its parent directories. ACL traversal stops at nested Git checkouts, including linked worktrees, while keeping their parent directories traversable. Foreign-owned files in another checkout, whether separate or nested, do not block this preparation. That checkout's permissions stay unchanged, and Caddy can still read its published web root.
+
+Caddy cannot read the other source files. The web root must be inside the checkout. Nested checkout markers are refused inside the web root and Laravel's public-storage tree, and along the paths from the target checkout to those directories, before any ACL changes. The Gateway checks all nested content before serving it, because Caddy can follow links outside its root. Symlinks in the web root are refused, except Laravel's `public/storage` link to the checkout's `storage/app/public`. When this preparation fails, the Gateway restores the previous permissions and reports `app-dev.source_access_failed` at step `source-access`.
 
 ### Cluster scope
 

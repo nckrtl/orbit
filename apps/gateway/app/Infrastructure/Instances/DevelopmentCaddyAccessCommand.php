@@ -34,6 +34,24 @@ final readonly class DevelopmentCaddyAccessCommand
                 applications=()
                 storage=()
                 git_directories=()
+                protected_ancestors=()
+                # A nested repository belongs to another checkout, even when it is a linked worktree.
+                find_checkout_tree() {
+                    tree=$1
+                    shift
+                    find -P "$tree" \( -type d ! -path "$checkout" \( -exec test -e '{}/.git' \; -o -exec test -L '{}/.git' \; \) -prune \) -o "$@"
+                }
+                assert_checkout_path() {
+                    path=$1
+                    while [ "$path" != "$checkout" ]; do
+                        test "$path" != /
+                        if [ -e "$path/.git" ] || [ -L "$path/.git" ]; then
+                            printf 'Refusing intervening checkout boundary: %s\n' "$path" >&2
+                            exit 1
+                        fi
+                        path=$(dirname -- "$path")
+                    done
+                }
                 while [ "$#" -gt 0 ]; do
                     checkout=$1
                     relative_root=$2
@@ -72,7 +90,11 @@ final readonly class DevelopmentCaddyAccessCommand
                     test -d "$document_root"
                     test ! -L "$document_root"
                     test "$(realpath -e -- "$document_root")" = "$document_root"
+                    assert_checkout_path "$document_root"
 
+                    # A served tree cannot contain an unrelated checkout: Caddy roots are not sandboxes.
+                    nested_checkout=$(find -P "$document_root" -type d ! -path "$checkout" \( -exec test -e '{}/.git' \; -o -exec test -L '{}/.git' \; \) -print -quit)
+                    test -z "$nested_checkout"
                     storage_target=
                     links=$(find -P "$document_root" -type l -print0 | base64 -w0)
                     while IFS= read -r -d '' link; do
@@ -82,10 +104,22 @@ final readonly class DevelopmentCaddyAccessCommand
                         test "$(realpath -e -- "$link")" = "$expected_target"
                         test -d "$expected_target"
                         test "$(realpath -e -- "$expected_target")" = "$expected_target"
+                        assert_checkout_path "$expected_target"
+                        nested_checkout=$(find -P "$expected_target" -type d \( -exec test -e '{}/.git' \; -o -exec test -L '{}/.git' \; \) -print -quit)
+                        test -z "$nested_checkout"
                         nested=$(find -P "$expected_target" -type l -print -quit)
                         test -z "$nested"
                         storage_target=$expected_target
                     done < <(printf '%s' "$links" | base64 --decode)
+                    boundaries=$(find -P "$checkout" -type d ! -path "$checkout" \( -exec test -e '{}/.git' \; -o -exec test -L '{}/.git' \; \) -prune -print0 | base64 -w0)
+                    while IFS= read -r -d '' boundary; do
+                        ancestor=$(dirname -- "$boundary")
+                        while :; do
+                            protected_ancestors+=("$ancestor")
+                            if [ "$ancestor" = "$checkout" ]; then break; fi
+                            ancestor=$(dirname -- "$ancestor")
+                        done
+                    done < <(printf '%s' "$boundaries" | base64 --decode)
                     checkouts+=("$checkout")
                     roots+=("$document_root")
                     applications+=("$application")
@@ -109,7 +143,7 @@ final readonly class DevelopmentCaddyAccessCommand
                 }
                 trap finish EXIT
                 for checkout in "${checkouts[@]}"; do
-                    getfacl -R -P -p -- "$checkout" >> "$snapshot"
+                    find_checkout_tree "$checkout" ! -type l -exec getfacl -P -p -- {} + >> "$snapshot"
                     ancestor=$checkout
                     while [ "$ancestor" != / ]; do
                         ancestor=$(dirname -- "$ancestor")
@@ -129,8 +163,12 @@ final readonly class DevelopmentCaddyAccessCommand
                 # Keep source, Git metadata, and environment files outside the Web root private.
                 # Apply every deny before grants so nested Git worktrees retain their own Web roots.
                 for checkout in "${checkouts[@]}"; do
-                    setfacl -n -P -R -m u:caddy:--- "$checkout"
-                    find -P "$checkout" -type d -exec setfacl -m d:u:caddy:--- -- {} +
+                    find_checkout_tree "$checkout" ! -type l -exec setfacl -n -P -m u:caddy:--- -- {} +
+                    find_checkout_tree "$checkout" -type d -exec setfacl -m d:u:caddy:--- -- {} +
+                done
+                # Denying parent source access must not cut off an already-published nested site.
+                for ancestor in "${protected_ancestors[@]}"; do
+                    setfacl -m u:caddy:--x -- "$ancestor"
                 done
 
                 for index in "${!checkouts[@]}"; do
@@ -154,12 +192,12 @@ final readonly class DevelopmentCaddyAccessCommand
                         sudo -n setfacl -n -m "u:caddy:${caddy_acl%?}x,m::${mask%?}x" -- "$ancestor"
                     done
 
-                    setfacl -P -R -m u:caddy:r-X "$document_root"
-                    find -P "$document_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                    find_checkout_tree "$document_root" ! -type l -exec setfacl -P -m u:caddy:r-X -- {} +
+                    find_checkout_tree "$document_root" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
                     if [ -n "$storage_target" ]; then
                         setfacl -m u:caddy:--x "$application/storage" "$application/storage/app"
-                        setfacl -P -R -m u:caddy:r-X "$storage_target"
-                        find -P "$storage_target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
+                        find_checkout_tree "$storage_target" ! -type l -exec setfacl -P -m u:caddy:r-X -- {} +
+                        find_checkout_tree "$storage_target" -type d -exec setfacl -m d:u:caddy:r-x -- {} +
                     fi
                     sudo -n -u caddy python3 -c 'import os, sys; sys.exit(not os.access(sys.argv[1], os.R_OK | os.X_OK))' "$document_root"
                 done

@@ -49,7 +49,13 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $this->ssh->execute(
             $instance->node,
             new DevelopmentCaddyAccessCommand()->command(
-                new DevelopmentSiteRepository()->forNode($instance->node),
+                new DevelopmentSiteRepository()->forNode($instance->node)->filter(
+                    static fn (DevelopmentSite $site): bool => $site->checkoutPath === (
+                        $instance->development_release_layout
+                            ? $instance->checkout_path.'/current'
+                            : $instance->checkout_path
+                    ),
+                ),
             ),
             step: 'source-access',
             errorCode: 'app-dev.source_access_failed',

@@ -123,6 +123,83 @@ it('refuses unsafe Web root links before changing file access', function (string
     }
 })->with(['root', 'descendant']);
 
+it('refuses nested checkout markers and unsafe links in served trees before source access changes', function (string $servedTree, bool $unsafeLink): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+
+    try {
+        if ($servedTree === 'storage') {
+            mkdir("$root/checkout/public", 0700);
+            mkdir("$root/checkout/storage/app/public", 0700, true);
+            symlink('../storage/app/public', "$root/checkout/public/storage");
+            $webRoot = 'public';
+            $nested = "$root/checkout/storage/app/public/nested";
+        } else {
+            $webRoot = 'web/site';
+            $nested = "$root/checkout/web/site/nested";
+        }
+        mkdir($nested, 0755);
+        file_put_contents("$nested/.git", 'gitdir: /unrelated/metadata');
+        if ($unsafeLink) {
+            symlink('/etc/passwd', "$nested/leak");
+        }
+        $before = new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput();
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([
+            development_caddy_access_site("$root/checkout", $webRoot),
+        ]));
+
+        expect(new Process($command->arguments)->setInput($command->input)->run())->not->toBe(0);
+        expect(new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput())->toBe($before);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with([
+    'web root unsafe nested link' => ['web', true],
+    'public storage unsafe nested link' => ['storage', true],
+    'web root nested marker' => ['web', false],
+    'public storage nested marker' => ['storage', false],
+]);
+
+it('refuses intervening checkout markers on served paths before source access changes', function (string $servedTree): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $root = development_caddy_access_fixture();
+
+    try {
+        if ($servedTree === 'storage') {
+            mkdir("$root/checkout/public", 0700);
+            mkdir("$root/checkout/storage/app/public", 0700, true);
+            symlink('../storage/app/public', "$root/checkout/public/storage");
+            $webRoot = 'public';
+            $boundary = "$root/checkout/storage";
+            $publicFile = "$boundary/app/public/page.txt";
+        } else {
+            mkdir("$root/checkout/apps/site/public", 0700, true);
+            $webRoot = 'apps/site/public';
+            $boundary = "$root/checkout/apps/site";
+            $publicFile = "$boundary/public/page.txt";
+        }
+        file_put_contents("$boundary/.git", 'gitdir: /unrelated/metadata');
+        file_put_contents($publicFile, 'unrelated public content');
+        $before = new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput();
+        $command = new DevelopmentCaddyAccessCommand()->command(collect([
+            development_caddy_access_site("$root/checkout", $webRoot),
+        ]));
+
+        $process = new Process($command->arguments)->setInput($command->input);
+        expect($process->run())->not->toBe(0);
+        expect($process->getErrorOutput())->toContain('Refusing intervening checkout boundary: '.$boundary);
+        expect(new Process(['getfacl', '-R', '-p', $root])->mustRun()->getOutput())->toBe($before);
+    } finally {
+        new Filesystem()->deleteDirectory($root);
+    }
+})->with(['web root ancestor' => 'web', 'public storage ancestor' => 'storage']);
+
 it('permits only Laravel public storage without exposing private storage', function (string $relative): void {
     if (LinuxHost::delegate($this)) {
         return;
@@ -149,7 +226,7 @@ it('permits only Laravel public storage without exposing private storage', funct
     }
 })->with(['root public' => '', 'nested Laravel' => '/server/web']);
 
-it('keeps both Web roots readable when a Git worktree is nested inside another checkout', function (): void {
+it('keeps a published nested checkout readable when parent source access encounters foreign owned files', function (bool $linked): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -158,8 +235,15 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
 
     try {
         $nested = "$root/checkout/.worktrees/feature";
-        mkdir("$nested/public", 0o700, true);
-        new Process(['git', 'init', '--quiet', $nested])->mustRun();
+        if ($linked) {
+            new Process(['git', '-C', "$root/checkout", 'add', '.'])->mustRun();
+            new Process(['git', '-C', "$root/checkout", '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '-m', 'initial'])->mustRun();
+            new Process(['git', '-C', "$root/checkout", 'worktree', 'add', '--detach', $nested, 'HEAD'])->mustRun();
+            mkdir("$nested/public", 0o700);
+        } else {
+            mkdir("$nested/public", 0o700, true);
+            new Process(['git', 'init', '--quiet', $nested])->mustRun();
+        }
         file_put_contents("$nested/public/index.html", 'nested page');
         file_put_contents("$nested/.env", 'nested secret');
         $command = new DevelopmentCaddyAccessCommand()->command(collect([
@@ -168,6 +252,17 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
         ]));
         new Process($command->arguments)->setInput($command->input)->mustRun();
 
+        file_put_contents("$nested/implementer-write.txt", 'foreign owned output');
+        new Process(['sudo', '-n', 'chown', 'root:root', "$nested/implementer-write.txt"])->mustRun();
+        new Process(['sudo', '-n', 'setfacl', '-b', '--', "$nested/implementer-write.txt"])->mustRun();
+        expect(new Process(['setfacl', '-m', 'u:caddy:---', "$nested/implementer-write.txt"])->run())->not->toBe(0);
+        $before = new Process(['getfacl', '-R', '-p', $nested])->mustRun()->getOutput();
+        $parent = new DevelopmentCaddyAccessCommand()->command(collect([
+            development_caddy_access_site("$root/checkout", 'web/site'),
+        ]));
+        new Process($parent->arguments)->setInput($parent->input)->mustRun();
+
+        expect(new Process(['getfacl', '-R', '-p', $nested])->mustRun()->getOutput())->toBe($before);
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$nested/public/index.html"])->mustRun()->getOutput())
             ->toBe('nested page');
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'cat', "$root/checkout/web/site/index.html"])->mustRun()->getOutput())
@@ -176,7 +271,7 @@ it('keeps both Web roots readable when a Git worktree is nested inside another c
     } finally {
         new Filesystem()->deleteDirectory($root);
     }
-});
+})->with(['nested repository' => false, 'linked worktree' => true]);
 
 it('restores checkout and shared Git ACLs or retains its snapshot when recovery also fails', function (bool $failRecovery, bool $linked): void {
     if (LinuxHost::delegate($this)) {
