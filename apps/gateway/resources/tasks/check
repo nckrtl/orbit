@@ -18,8 +18,9 @@ check snapshot CHECKOUT         print HEAD, its parent, its tree, and the workin
 
 The detached `run` process removes its allocated TMPDIR when it ends, including on INT, TERM, HUP, or cancel.
 It only removes a non-empty directory it owns that sits directly under the host temp root and matches
-`orbit-check-<euid>-*`. A leftover after SIGKILL is removed when status sees the process is gone. A cleanup
-failure does not change the check's exit status. Status and snapshot keep working until the check finishes.
+`orbit-check-<euid>-*`. A leftover after SIGKILL is removed on a later cancel, not on status polls. A cleanup
+failure does not change the check's exit status. Status and snapshot keep working until the check finishes
+and never allocate or modify a TMPDIR.
 
 The check runs as the managed user. When ORBIT_TASK_WORKER_USER names an account on the Node, `run` grants that worker
 and the managed user rwX on every checkout entry the managed user owns, as workspace inspection does, before it writes
@@ -657,7 +658,6 @@ def status(pid, started):
     elif alive:
         print(json.dumps({'state': 'running'}))
     else:
-        remove_recorded_check_tmpdir()
         print(json.dumps({'state': 'lost', 'output': output_tail()}))
 
 

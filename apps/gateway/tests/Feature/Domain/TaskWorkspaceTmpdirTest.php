@@ -5,8 +5,12 @@ declare(strict_types=1);
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Models\Instance;
@@ -36,10 +40,10 @@ afterEach(function (): void {
     }
 });
 
-function tmpdir_runner(): RemoteTaskCheckRunner
+function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 {
     return new RemoteTaskCheckRunner(new DevelopmentSshExecutor(
-        new LocalShellSshExecutor,
+        $transport ?? new LocalShellSshExecutor,
         new class implements SshKeyProvider
         {
             public function privateKeyPath(): string
@@ -62,6 +66,36 @@ function tmpdir_runner(): RemoteTaskCheckRunner
             public function put(string $host, int $port, HostKey $key): void {}
         },
     ));
+}
+
+function tmpdir_records_scripts(array &$scripts): SshExecutor
+{
+    $inner = new LocalShellSshExecutor;
+
+    return new class($inner, $scripts) implements SshExecutor
+    {
+        public function __construct(private LocalShellSshExecutor $inner, private array &$scripts) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->scripts[] = (string) $command->input;
+
+            return $this->inner->execute($connection, $command);
+        }
+    };
+}
+
+function tmpdir_script_allocates(string $script): bool
+{
+    return str_contains($script, "workspace_metadata 'tmpdir'");
+}
+
+/** @return list<string> */
+function tmpdir_host_directories(): array
+{
+    $matches = glob(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-*') ?: [];
+
+    return array_values(array_filter($matches, is_dir(...)));
 }
 
 function tmpdir_check_directory(string $checkout): string
@@ -335,6 +369,7 @@ describe('workspace TMPDIR', function (): void {
             ->and(is_dir($path))->toBeTrue();
 
         posix_kill($process->pid, SIGKILL);
+        $runner->cancel($instance, $process);
         $reading = tmpdir_wait($runner, $instance, $process);
 
         expect($reading->state)->toBe('lost')
@@ -374,5 +409,54 @@ describe('workspace TMPDIR', function (): void {
         expect(tmpdir_remove($allocated))->toBeTrue()
             ->and(is_dir($allocated))->toBeFalse()
             ->and(is_dir($nested))->toBeFalse();
+    });
+
+    it('allocates a check TMPDIR only when start runs, never on status, cancel, or snapshot', function (): void {
+        $scripts = [];
+        $checkout = tmpdir_checkout($this->directory, 'polls');
+        $instance = tmpdir_instance($checkout, 'polls');
+        $runner = tmpdir_runner(tmpdir_records_scripts($scripts));
+        $before = tmpdir_host_directories();
+
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 30');
+        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
+            usleep(50_000);
+        }
+        $path = (string) file_get_contents($checkout.'/tmpdir-path');
+        expect($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+            ->and(is_dir($path))->toBeTrue()
+            ->and(tmpdir_script_allocates($scripts[0] ?? ''))->toBeTrue();
+        $this->allocated[] = $path;
+        $child = $path.'/granted';
+        mkdir($child, 0755);
+        file_put_contents($child.'/file', 'keep');
+        (new Process(['setfacl', '-m', 'u:nobody:r', $child.'/file']))->mustRun();
+        $mode = fileperms($path) & 0777;
+        $inode = fileinode($path);
+        $afterStart = tmpdir_host_directories();
+
+        $reading = $runner->read($instance, $process);
+        $snapshot = $runner->snapshot($instance);
+        $afterPolls = tmpdir_host_directories();
+
+        expect($reading->state)->toBe('running')
+            ->and($snapshot->head)->toBe($process->head)
+            ->and(is_dir($path))->toBeTrue()
+            ->and(fileperms($path) & 0777)->toBe($mode)
+            ->and(fileinode($path))->toBe($inode)
+            ->and((new Process(['getfacl', '-cp', $child.'/file']))->mustRun()->getOutput())->toContain('user:nobody:r')
+            ->and($afterPolls)->toEqualCanonicalizing($afterStart)
+            ->and(array_values(array_diff($afterStart, $before)))->toBe([$path]);
+        expect(array_map(tmpdir_script_allocates(...), array_slice($scripts, 1)))->each->toBeFalse();
+
+        $beforeCancel = count($scripts);
+        $runner->cancel($instance, $process);
+        $finished = tmpdir_wait($runner, $instance, $process);
+        $createdOnCancel = array_values(array_diff(tmpdir_host_directories(), $afterStart));
+
+        expect($finished->state)->toBe('lost')
+            ->and($createdOnCancel)->toBe([])
+            ->and(is_dir($path))->toBeFalse()
+            ->and(tmpdir_script_allocates($scripts[$beforeCancel] ?? ''))->toBeFalse();
     });
 });
