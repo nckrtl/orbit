@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Compute\SandboxState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCommentType;
@@ -48,6 +49,18 @@ beforeEach(function (): void {
         }
     };
     app()->instance(InstanceProvisioning::class, $this->provisioning);
+    app()->instance(DeliverablePathRepository::class, new class implements DeliverablePathRepository
+    {
+        public function defaultBranchCommit(Project $project): string
+        {
+            return str_repeat('a', 40);
+        }
+
+        public function files(Project $project, string $commit): array
+        {
+            return ['docs/reference/tasks.md', 'app/Data/PantrySync/Item.php', 'resources/js/PantryIntegration.tsx', 'apps/gateway/app/Domain/Tasks/Task.php', 'apps/gateway/tests/Feature/HomeScreenTest.php'];
+        }
+    });
 });
 
 /**

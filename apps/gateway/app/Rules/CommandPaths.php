@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Rules;
 
 use App\Domain\Tasks\TaskDeliverableType;
+use App\Domain\Tasks\TaskDeliverableVerifier;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
@@ -36,6 +37,22 @@ final class CommandPaths implements DataAwareRule, ValidationRule
         if (($parent['fails_on_base'] ?? false) === true && (! is_array($value) || $value === [])) {
             $fail("The paths value for {$who} must contain at least one path when fails_on_base is true.");
         }
+    }
+
+    /**
+     * @param  list<string>  $baseFiles
+     * @param  list<string>  $createdPatterns
+     */
+    public static function pathViolation(string $path, array $baseFiles, array $createdPatterns, bool $failsOnBase): ?string
+    {
+        if ($failsOnBase && preg_match('#(?:\A|/)tests/|Test\.php\z|\.test\.ts\z|\.spec\.ts\z|_test\.go\z#', $path) !== 1) {
+            return 'must be a test file for fails_on_base';
+        }
+        if (! in_array($path, $baseFiles, true) && ! array_any($createdPatterns, static fn (string $pattern): bool => TaskDeliverableVerifier::matches($pattern, $path))) {
+            return 'is missing';
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $data */
