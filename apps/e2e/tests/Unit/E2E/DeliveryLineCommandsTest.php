@@ -280,6 +280,54 @@ describe('delivery-line proof commands', function (): void {
             ->and($result['stderr'])->toContain('fails_on_base true');
     });
 
+    it('reports merged field from the pull record with a terminal no-op instruction even when review is missing', function (): void {
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/945',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-945-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json'])->toMatchArray([
+                'merged' => true,
+                'passed' => false,
+                'error' => 'review_missing',
+            ]);
+
+        $repository = dirname(__DIR__, 5);
+        foreach (['.agents/skills/merging-pull-requests/SKILL.md', 'docs/reference/delivery-line.md'] as $path) {
+            expect(file_get_contents($repository.'/'.$path))
+                ->toContain('When the JSON has `merged:true`, stop:')
+                ->toContain('Do not review it again or run `gh pr merge`.')
+                ->toContain('This applies even when `passed` is `false`')
+                ->toContain('When `merged` is `false`,');
+        }
+    });
+
+    it('reports merged field as false and still requires review for an unmerged pull request', function (): void {
+        $pull = json_decode((string) file_get_contents(deliveryLineFixture('pr-945-pull.json')), true, flags: JSON_THROW_ON_ERROR);
+        $pull['merged'] = false;
+        $pullFile = temporaryPath('orbit-delivery-unmerged-', 6);
+        file_put_contents($pullFile, json_encode($pull, JSON_THROW_ON_ERROR));
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/945',
+            '--pull-file', $pullFile,
+            '--reviews-file', deliveryLineFixture('pr-945-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json'])->toMatchArray([
+                'merged' => false,
+                'passed' => false,
+                'error' => 'review_missing',
+            ])
+            ->and($result['stderr'])->toContain('Review the current head. Do not merge.');
+    });
+
     it('fails PR 945 when the review list is empty', function (): void {
         $result = deliveryLineRun('pr-head-check', [
             '--pr', 'https://github.com/nckrtl/orbit/pull/945',
@@ -306,6 +354,7 @@ describe('delivery-line proof commands', function (): void {
 
         expect($result['exit'])->toBe(0)
             ->and($result['json']['passed'] ?? null)->toBeTrue()
+            ->and($result['json']['merged'] ?? null)->toBeTrue()
             ->and($result['json']['kept_reviews'] ?? null)->toBe(1)
             ->and(data_get($result['json'], 'required_checks.conclusion'))->toBe('success');
     });
