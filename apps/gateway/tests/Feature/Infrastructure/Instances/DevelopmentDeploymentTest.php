@@ -10,6 +10,7 @@ use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Instances\DevelopmentReleaseProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -267,7 +268,7 @@ describe('real development release programs', function (): void {
         $consumer->update(['starting_commit' => $seed->commit, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
         $keys = Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock();
         $hosts = Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock();
-        $runner = new RemoteTaskCheckRunner(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts));
+        $runner = new RemoteTaskCheckRunner(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), app(TiaBaselineSetup::class));
         $setup = [[
             'name' => 'copy from seed',
             'command' => 'touch setup-started; while [ ! -f allow-setup ]; do sleep 0.05; done; cat "$ORBIT_SEED_PATH/.cache/warm" > copied-cache',

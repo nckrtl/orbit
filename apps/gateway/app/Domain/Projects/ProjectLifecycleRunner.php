@@ -20,6 +20,7 @@ final readonly class ProjectLifecycleRunner
         private ProjectLifecycleStepStore $steps,
         private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
+        private TiaBaselineSetup $tia,
     ) {}
 
     public function run(Instance $instance, LifecyclePhase $phase): bool
@@ -63,9 +64,23 @@ final readonly class ProjectLifecycleRunner
                     throw $this->deadlineCut($phase, $step, 0.0);
                 }
 
+                $command = $step->command;
+                if ($command === LifecycleStep::RestoreTiaBaseline) {
+                    if ($phase !== LifecyclePhase::Setup) {
+                        throw new ResourceOperationException('instance.teardown_step_failed', 'TIA baseline restore is a setup-only operation.', 422, details: ['step' => $step->name]);
+                    }
+                    $started = microtime(true);
+                    $command = $this->tia->command($instance->project, $budget);
+                    $timeout = $this->deadline->cap(max(0.0, $timeout - (microtime(true) - $started)));
+                    $budget = $timeout - 5.0;
+                    if ($budget <= 0.0) {
+                        throw $this->deadlineCut($phase, $step, 0.0);
+                    }
+                }
+
                 $input = ProtectedInput::fromString(json_encode([
                     'checkout' => $checkout,
-                    'command' => $step->command,
+                    'command' => $command,
                     'environment' => [
                         'ORBIT_SEED_PATH' => $phase === LifecyclePhase::Setup ? ($instance->seed_path ?? '') : '',
                         'ORBIT_SEED_COMMIT' => $phase === LifecyclePhase::Setup ? ($instance->seed_commit ?? '') : '',
@@ -90,6 +105,9 @@ final readonly class ProjectLifecycleRunner
                 }
 
                 if ($exception instanceof ResourceOperationException) {
+                    if (str_starts_with($exception->errorCode, 'instance.tia_baseline_')) {
+                        throw new ResourceOperationException($exception->errorCode, $exception->getMessage(), $exception->status, details: ['step' => $step->name]);
+                    }
                     throw $exception;
                 }
 

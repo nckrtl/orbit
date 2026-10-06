@@ -327,6 +327,24 @@ ssh MANAGED_USER@NODE 'rm -f -- "$HOME/.local/lib/orbit/e2e-task-cleanup"'
 
 If the destroy response is lost, list again. Retry destroy only when the step is still present. The list is empty when the rollback of the step finished. If the new Gateway is already deployed, keep the helper and the step until the previous Gateway is restored. The new Gateway has no built-in bridge hook, so removing them leaves task bridges behind. Restore the previous Gateway first, re-read the teardown list, and only then destroy the step and delete the file.
 
+## Restore a CI TIA baseline
+
+Add an opt-in setup step after dependency installation and asset builds:
+
+```bash
+orbit instance:setup-step:create tia-baseline --project=PROJECT --command='@orbit/tia-baseline' --timeout=60 --json
+```
+
+`@orbit/tia-baseline` is a Gateway-owned operation, not a shell command. It runs during development Instance setup and the task baseline setup list. Teardown rejects it. It supports a root-level Pest project with the TIA `--baseline` option. A monorepo needs its own setup policy.
+
+The Gateway uses its [GitHub App](/reference/github-app) with `Actions: read` for this one repository. It reads at most 100 successful runs of `tia-baseline.yml` on the repository's current default branch and chooses the newest trusted `push` or `workflow_dispatch` run that contains an unexpired `pest-tia-baseline` artifact. Pull request runs cannot supply a baseline. Configure the workflow to publish only after the complete suite passes. The Gateway requires a graph whose branch and commit match the selected run. Pest may omit its optional `complete` marker; in that case the baseline must contain recorded test results. An explicit incomplete marker is rejected. The successful full-suite workflow is the source of completeness.
+
+Only `graph.json` and the optional `js-module-graph.cache.json` travel to the Node. Archives and expanded files are each limited to 4 MiB. The Node receives no GitHub credential and needs no authenticated `gh`. The Gateway needs PHP's ZIP extension. A missing App, unaccepted permission, missing baseline, or invalid artifact fails the named setup step; opt in only after the first default-branch baseline exists.
+
+The restore runs as the managed user, as do setup and the task candidate check. It asks the installed Pest for its cache directory without running tests. The directory must be inside that user's home or this checkout, with no symlink components. It stages files under a cache lock and publishes a new directory atomically. A nonempty cache stays unchanged, so retries and later subtasks keep their own results. Remove an obsolete cache explicitly before requesting a fresh import. Pest remains responsible for rejecting an incompatible runtime fingerprint and recording a new local baseline when needed.
+
+This step does not provision a VM or change the CI publication policy. It follows the same setup ordering, time budget, and failure cleanup as other steps. The list's total timeout must still fit the Project setup limits.
+
 ## Failure codes
 
 These codes name the step that failed. The sections above say whether the Instance stays.
@@ -371,3 +389,7 @@ Orbit's task bridge is this repository's cleanup, so the Orbit Project runs `bin
 ### Task setup runs as orbit-worker
 
 Create-time setup runs as the managed user, before an agent uses the Instance. A task workspace skips that path. Its baseline runs the setup list as the managed user inside the task check, so host-dependent setup and tests keep that user's access. [The candidate gate runs as the managed user](/reference/pi-server#the-candidate-gate-runs-as-the-managed-user) records the cost. Task teardown runs as `orbit-worker`, and its program is the root-owned helper. Privileged removal then deletes the tree as the managed user and runs no checkout program.
+
+### Gateway-owned baseline delivery
+
+CI artifacts are repository data. The Gateway already owns the GitHub App, so it downloads and validates the files before Node delivery. Personal tokens on disposable machines were rejected because they duplicate credentials and complicate revocation. A fixed setup identifier keeps the existing ordered step contract and prevents Projects from selecting arbitrary artifact URLs or granting a Node App access. Both instance setup and task baseline setup interpret it before any shell execution.

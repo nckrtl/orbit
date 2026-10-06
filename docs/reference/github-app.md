@@ -14,13 +14,17 @@ A Gateway reads private `github.com` repositories through its own GitHub App. Th
 
 ## What the App is
 
-Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has five permissions: `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks and cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
+Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has six permissions: `Actions: read`, `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks and cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
 
 A task push token carries `Workflows: write`, so a task can change `.github/workflows/`. An installation that has not accepted that permission refuses such a push, and the task reason names `Workflows` as the permission to grant. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes that failure.
 
 The App is public on GitHub, so any GitHub account can install it. An installation gives your Gateway access to that account's repositories. It gives the installing account nothing.
 
 The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway setting, and the private key as an encrypted one. No API response, Activity, or Doctor result contains the key or a token.
+
+## Read TIA artifacts
+
+The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before baseline delivery works. Changing Orbit’s manifest affects new registrations only.
 
 ## Register and install
 
