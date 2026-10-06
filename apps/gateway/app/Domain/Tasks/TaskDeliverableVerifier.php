@@ -124,7 +124,7 @@ final readonly class TaskDeliverableVerifier
 
     /**
      * Matches a path against a pattern where `*` stays within one directory, `**` crosses directories,
-     * `?` is one character, and `{a,b}` is a non-nested alternative.
+     * `?` is one character, and `{a,b}` is a non-nested alternative, including `{php}`.
      */
     public static function matches(string $pattern, string $path): bool
     {
@@ -167,7 +167,7 @@ final readonly class TaskDeliverableVerifier
     }
 
     /**
-     * A non-nested `{a,b,...}` group. Nested braces and `{a}` without a comma stay literal.
+     * A non-nested `{a,b,...}` group, including a single alternative such as `{php}`. Nested braces stay literal.
      *
      * @return array{end: int, alternatives: list<string>}|null
      */
@@ -181,10 +181,6 @@ final readonly class TaskDeliverableVerifier
                 return null;
             }
             if ($character === '}') {
-                if (! str_contains($inside, ',')) {
-                    return null;
-                }
-
                 return [
                     'end' => $index,
                     'alternatives' => explode(',', $inside),
