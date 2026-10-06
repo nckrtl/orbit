@@ -906,6 +906,8 @@ When the handoff check and the deliverables pass, the subtask moves to `reviewin
 
 A failure while requesting a review is a communication failure. After five, the task asks for assistance with `The review could not be requested (ExceptionClass).` Orbit sends no review when it cannot read the diff.
 
+The review diff includes untracked symlinks, including links to directories. Orbit lists each link's path and shows its symlink type and target in the diff body. It reads the link itself, not the destination, without updating the Git index.
+
 ### Review packet
 
 The opening turn is a review packet of at most 16,000 characters, about 4,000 tokens. No part is exempt. A part under its cap leaves the spare characters for the diff body.

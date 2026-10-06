@@ -95,6 +95,38 @@ it('reads tracked and untracked review diff without updating the index', functio
         ->and($diff['diff'])->toContain("return 'new';");
 });
 
+it('keeps an untracked directory symlink visible without updating the index', function (string $target, string $path = '.claude/skills', string $reviewPath = '.claude/skills'): void {
+    $checkout = review_diff_checkout();
+    mkdir($checkout.'/.agents/skills', 0755, true);
+    file_put_contents($checkout.'/.agents/skills/example.md', "A tracked skill.\n");
+    (new Process(['git', '-C', $checkout, 'add', '.agents']))->mustRun();
+    (new Process(['git', '-C', $checkout, 'commit', '--quiet', '-m', 'skills']))->mustRun();
+    $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+    mkdir($checkout.'/.claude');
+    symlink($target, $checkout.'/'.$path);
+    file_put_contents($checkout.'/untracked.php', "<?php\nreturn 'new';\n");
+    file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
+    $indexBefore = file_get_contents($checkout.'/.git/index');
+    $reader = review_diff_reader(new LocalShellSshExecutor);
+
+    $diff = $reader->read(review_diff_instance($checkout), $start);
+
+    expect($diff['files_complete'])->toBeTrue()
+        ->and($diff['diff_available'])->toBeTrue()
+        ->and(array_column($diff['files'], 'path'))->toContain($reviewPath, 'tracked.php', 'untracked.php')
+        ->and($diff['summary'])->toBe(['files' => 3, 'insertions' => 4, 'deletions' => 1])
+        ->and($diff['diff'])->toContain($path, '120000', $target, "return 'new';", 'return 2;')
+        ->and(file_get_contents($checkout.'/.git/index'))->toBe($indexBefore)
+        ->and((new Process(['git', '-C', $checkout, 'ls-files', '--others', '--exclude-standard', '-z']))->mustRun()->getOutput())->toContain($path);
+})->with([
+    'directory target' => '../.agents/skills',
+    'file target' => '../tracked.php',
+    'missing target' => '../missing',
+    'newline in path' => ['../.agents/skills', ".claude/skills\nextra", '.claude/skills\\nextra'],
+    'tab and quote in path' => ['../.agents/skills', ".claude/skills\t\"extra", '.claude/skills\\t\\"extra'],
+    'backslash in path' => ['../.agents/skills', '.claude/skills\\extra', '.claude/skills\\\\extra'],
+]);
+
 it('refuses a missing checkout, a missing base, and output that is not a diff', function (string $case): void {
     $checkout = review_diff_checkout();
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());

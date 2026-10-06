@@ -44,12 +44,33 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
                     fi
                     work=$(mktemp -d)
                     trap 'rm -rf "$work"' EXIT
+                    # No-index treats a directory symlink as a directory when paired with /dev/null.
+                    # Read the link itself, never its destination, and keep its type and target visible.
+                    untracked_diff() {
+                        if [ ! -L "$path" ]; then
+                            git diff --no-index "$@" -- /dev/null "$path"
+                            return $?
+                        fi
+                        target="$work/targets/$path"
+                        mkdir -p -- "${target%/*}" || return $?
+                        readlink -n -- "$path" > "$target" || return $?
+                        if [ "${1:-}" = "--numstat" ]; then
+                            # Keep the original relative name so Git quotes unusual path characters.
+                            (cd -- "$work/targets" && git diff --no-index --numstat -- /dev/null "$path")
+                            return $?
+                        else
+                            printf 'new symlink (mode 120000): %s\ntarget: ' "$path"
+                            cat "$target" || return $?
+                            printf '\n'
+                        fi
+                        return 1
+                    }
                     numstat="$work/numstat"
                     git diff --numstat "$start" > "$numstat"
                     git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do
                         piece="$work/piece"
                         status=0
-                        git diff --no-index --numstat -- /dev/null "$path" >"$piece" || status=$?
+                        untracked_diff --numstat >"$piece" || status=$?
                         if [ "$status" -gt 1 ] || { [ "$status" -eq 1 ] && [ ! -s "$piece" ]; }; then
                             exit "$status"
                         fi
@@ -79,7 +100,7 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
                         git ls-files --others --exclude-standard -z | while IFS= read -r -d '' path; do
                             piece="$work/body"
                             status=0
-                            git diff --no-index -- /dev/null "$path" >"$piece" || status=$?
+                            untracked_diff >"$piece" || status=$?
                             if [ "$status" -gt 1 ] || { [ "$status" -eq 1 ] && [ ! -s "$piece" ]; }; then
                                 exit "$status"
                             fi
