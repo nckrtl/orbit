@@ -261,7 +261,7 @@ final readonly class HttpGitHubApi implements GitHubApi
 
         $response = $this->send(fn (): Response => $this->request()->withToken($token)->post(
             $this->repositoryPath($repository).'/pulls/'.$number.'/requested_reviewers',
-            ['reviewers' => array_values($reviewers)],
+            ['reviewers' => $reviewers],
         ));
         if ($response->successful()) {
             return;
