@@ -42,6 +42,21 @@ afterEach(function (): void {
     (new Filesystem)->deleteDirectory($this->sandbox);
 });
 
+it('exports resolved VP_HOME to project-local vp in non-login lifecycle shells', function (string $home, LifecyclePhase $phase): void {
+    mkdir($this->sandbox.'/node_modules/.bin', 0755, true);
+    file_put_contents($this->sandbox.'/node_modules/.bin/vp', "#!/bin/sh\nprintf '%s' \"\$VP_HOME\" > vp-home\n");
+    chmod($this->sandbox.'/node_modules/.bin/vp', 0755);
+    $this->steps->create($this->instance->project, $phase, new LifecycleStep('vp-home', './node_modules/.bin/vp'), null, null);
+    $runner = $this->transport->runner(null, $home);
+
+    expect($runner->run($this->instance, $phase))->toBeTrue();
+    expect(file_get_contents($this->sandbox.'/vp-home'))->toBe($home);
+})->with([
+    ['/opt/orbit/vite-plus', LifecyclePhase::Setup],
+    ['/home/orbit/.local/share/vite-plus', LifecyclePhase::Setup],
+    ['/home/orbit/.vite-plus', LifecyclePhase::Teardown],
+]);
+
 it('passes the default release seed to setup and keeps the selection on retry', function (): void {
     $default = Instance::query()->create([
         'project_id' => $this->instance->project_id, 'node_id' => $this->instance->node_id,

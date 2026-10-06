@@ -4,7 +4,7 @@ description: "Where Tools run, the supported Tool Managers, how Orbit discovers,
 covers:
   - apps/gateway/app/{Actions,Domain}/Tools/**
   - apps/gateway/app/Providers/ApplicationServiceProvider.php
-  - apps/gateway/app/Infrastructure/Tools/**
+  - apps/gateway/app/Infrastructure/{Tools/**,Nodes/Roles/NodeRolePrerequisiteCommandFactory.php}
   - apps/gateway/app/Models/{Tool,ToolManagerRecord}.php
   - apps/gateway/app/Data/Tools/**
   - apps/gateway/app/Http/Controllers/Api/{ToolsController,ToolManagersController,ToolInventoryController}.php
@@ -40,11 +40,13 @@ The Gateway has five managers, fixed in code. There is no plugin registry and no
 
 `apt` and `composer` are not offered on macOS, and `brew-cask` is not offered on Linux. Install, update, removal, and adoption return `tool.manager_unsupported` (HTTP 422) before a lock or SSH. An absent or conflicting scope still returns `tool.manager_unavailable` (HTTP 409).
 
-On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` uses the first existing Vite+ store for the enrolled account, in this order: `/opt/orbit/vite-plus`, `~/.vite-plus`, then `~/.local/share/vite-plus`. Install, update, removal, and scan all use that store. A later store does not change the choice. The Gateway may install a missing Linux manager on first use.
+On Linux, `composer` uses `COMPOSER_HOME=/opt/orbit/composer`. `vp` scan and Linux materialization skip account-owned directories without `bin/vp`, such as a cache-only `~/.vite-plus/package_manager/npm` directory. They choose the first Vite+ store with `bin/vp` for the enrolled account, in this order: `/opt/orbit/vite-plus`, `~/.vite-plus`, then `~/.local/share/vite-plus`. Install, update, removal, and scan all use that store. A later store does not change the choice. The Gateway may install a missing Linux manager on first use.
 
-On macOS, `vp` is the enrolled account's existing Vite+ global store. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway resolves that account's home from the machine and does not assume `/home`, `getent`, or a Linux bottle tag. It does not install, replace, or repin those scopes, and it does not check out a Homebrew revision.
+Orbit's `/usr/local/bin` Vite+ launchers export `VP_HOME` for every resolved store, not just `/opt/orbit/vite-plus`. Instance setup, teardown, and task checks also export it so project-local `vp` uses the same store. Tool materialization and application-role convergence publish the same launcher format. Both accept an exact, root-owned legacy launcher for that store and upgrade it with rollback on failed runtime verification; changed or foreign launchers remain conflicts.
 
-A missing scope is scan state `absent`. A scope with the wrong owner, a non-official Homebrew origin, or a dirty Linux Homebrew tree is scan state `conflicting`. On macOS, two Vite+ stores, or one store with the wrong owner or shape, is `conflicting`. On Linux, the chosen Vite+ store is `conflicting` when it is a symlink, not a directory, owned by someone else, or its `bin/vp` is missing or not executable. A second Linux store is not a conflict. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
+On macOS, `vp` is the enrolled account's existing Vite+ global store. The scope probe also skips account-owned directories without `bin/vp`. `brew` and `brew-cask` use the existing Homebrew prefix. The Gateway resolves that account's home from the machine and does not assume `/home`, `getent`, or a Linux bottle tag. It does not install, replace, or repin those scopes, and it does not check out a Homebrew revision.
+
+A missing scope is scan state `absent`. A scope with the wrong owner, a non-official Homebrew origin, or a dirty Linux Homebrew tree is scan state `conflicting`. On macOS, two Vite+ stores with `bin/vp`, or one store with the wrong owner or shape, is `conflicting`. On Linux, the chosen Vite+ store is `conflicting` when it is a symlink, not a directory, owned by someone else, or its present `bin/vp` is not executable or is owned by someone else. A second Linux store is not a conflict. Adoption, install, update, and removal then return `tool.manager_unavailable` (HTTP 409). Orbit does not repair that scope.
 
 An accepted macOS Homebrew prefix is owned by the enrolled account and has origin `https://github.com/Homebrew/brew`. Apple silicon and an untar-anywhere install are the git repository: `prefix/.git` exists and `prefix/bin/brew` is a regular executable. The Intel `/usr/local` layout keeps the nested repository `prefix/Homebrew/.git` and a `prefix/bin/brew` symlink to `../Homebrew/bin/brew`. Any other shape is conflicting.
 
