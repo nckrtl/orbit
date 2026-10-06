@@ -140,9 +140,16 @@ describe('Project Documents CLI', function (): void {
     });
 
     it('renders recorded metadata and lists through the shared human renderer', function (string $operation, array $arguments): void {
-        cli_document_mock($operation);
-        expect(Artisan::call('project:document:'.$operation, $arguments))->toBe(0);
-        expect_output(Artisan::output(), 'project-documents/project-document-'.$operation.'/default.human.txt');
+        $originalColumns = getenv('COLUMNS');
+        putenv('COLUMNS=80');
+
+        try {
+            cli_document_mock($operation);
+            expect(Artisan::call('project:document:'.$operation, $arguments))->toBe(0);
+            expect_output(Artisan::output(), 'project-documents/project-document-'.$operation.'/default.human.txt');
+        } finally {
+            putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
+        }
     })->with([
         ['show', ['project' => '1', 'entry' => '1']],
         ['list', ['project' => '1']],

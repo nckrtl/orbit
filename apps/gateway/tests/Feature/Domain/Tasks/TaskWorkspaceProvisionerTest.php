@@ -21,6 +21,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
@@ -184,6 +185,25 @@ function bind_task_workspace_fakes(): object
     return (object) ['source' => $source, 'development' => $development];
 }
 
+it('task workspace stamps source_prepare_id before preparing source', function (): void {
+    $project = provisioner_app('prepare-id');
+    provisioner_node('prepare-id-dev', '10.44.0.138');
+    $group = provisioner_group($project);
+    $fakes = bind_task_workspace_fakes();
+    $reservation = null;
+    $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting) use (&$reservation): void {
+        $reservation = $instance->fresh();
+    };
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($reservation?->status)->toBe(InstanceState::Reserved);
+    expect($reservation?->source_prepare_id)->not->toBeNull()->toBeString();
+    expect(Str::isUuid($reservation->source_prepare_id, version: 4))->toBeTrue();
+    expect($instance?->fresh()?->source_prepare_id)->toBe($reservation->source_prepare_id);
+    expect($instance?->status)->toBe(InstanceState::SourceResolved);
+});
+
 it('provisions a workspace without an automatic root dependency copy', function (): void {
     $project = provisioner_app('acme');
     $node = provisioner_node('acme-dev', '10.44.0.111');
@@ -228,7 +248,7 @@ it('leaves a group reserved when no app-dev Node can take the workspace', functi
     bind_task_workspace_fakes();
 
     expect(app(InstanceProvisioning::class)->provision(new InstanceProvisionIntent($group, true)))
-        ->toBeNull();
+        ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
 it('creates a non-visitable Orbit checkout without activating a Route', function (): void {
@@ -307,17 +327,17 @@ it('reuses an already assigned Task workspace', function (): void {
         ->toBe($instance->id);
 });
 
-it('returns null when a visitable App lacks a web root', function (): void {
+it('returns a failure when a visitable App lacks a web root', function (): void {
     $project = provisioner_app('bare', null);
     provisioner_node('bare-dev', '10.44.0.104');
     $group = provisioner_group($project);
     bind_task_workspace_fakes();
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true)))
-        ->toBeNull();
+        ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
-it('returns null when destination occupation refuses the checkout', function (): void {
+it('returns a failure when destination occupation refuses the checkout', function (): void {
     $project = provisioner_app('blocked');
     provisioner_node('blocked-dev', '10.44.0.105');
     $group = provisioner_group($project);
@@ -335,7 +355,7 @@ it('returns null when destination occupation refuses the checkout', function ():
     });
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
-        ->toBeNull();
+        ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
 it('skips an excluded app-dev Node before choosing the least loaded node', function (): void {
@@ -410,17 +430,17 @@ it('places Pi roles on a Node with Pi rather than one with only T3', function ()
     $this->assertDatabaseMissing('instances', ['node_id' => $t3Only->id]);
 });
 
-it('returns null when no Node allows the implementer driver', function (): void {
+it('returns a failure when no Node allows the implementer driver', function (): void {
     $project = provisioner_app('no-pi');
     provisioner_node('t3-only', '10.44.0.115')->processes()->update(['name' => 't3-code']);
     $group = provisioner_group($project);
     $fakes = bind_task_workspace_fakes();
 
-    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false)))->toBeNull()
+    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false)))->toBeInstanceOf(InstanceProvisionFailure::class)
         ->and($fakes->source->calls)->toBe([]);
 });
 
-it('returns null when the app-dev Node has no usable Pi process', function (string $reason): void {
+it('returns a failure when the app-dev Node has no usable Pi process', function (string $reason): void {
     $project = provisioner_app('unavailable');
     $node = provisioner_node('unavailable', '10.44.0.112');
     match ($reason) {
@@ -436,7 +456,7 @@ it('returns null when the app-dev Node has no usable Pi process', function (stri
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
 
-    expect($instance)->toBeNull()
+    expect($instance)->toBeInstanceOf(InstanceProvisionFailure::class)
         ->and($fakes->source->calls)->toBe([]);
     $this->assertDatabaseCount('instances', 0);
 })->with(['missing', 'unrelated', 'failed', 'stopped', 'no-address', 'empty-address']);
@@ -470,6 +490,8 @@ it('resumes a reserved worktree reclaim with no starting commit', function (): v
             'seed_repository' => $seed,
             'seed_commit' => $commit,
             'starting_commit' => null,
+            'source_prepare_id' => null,
+            'task_workspace_routed' => false,
             'status' => InstanceState::Reserved,
         ]);
         $fakes = bind_task_workspace_fakes();
@@ -484,7 +506,8 @@ it('resumes a reserved worktree reclaim with no starting commit', function (): v
 
         expect($instance?->id)->toBe($left->id)
             ->and($instance?->status)->toBe(InstanceState::SourceResolved)
-            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40));
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40))
+            ->and($instance?->source_prepare_id)->toBeNull();
         expect($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved', 'inspect-prepared']);
         expect(is_file($checkout.'/.git'))->toBeTrue();
         $this->assertDatabaseCount('instances', 1);
@@ -606,7 +629,7 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         ]);
         bind_task_workspace_fakes();
 
-        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeNull()
+        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeInstanceOf(InstanceProvisionFailure::class)
             ->and($lookalike->fresh()?->branch_override)->toBe('feature-x')
             ->and($lookalike->fresh()?->status)->toBe(InstanceState::SourceResolved);
         $this->assertDatabaseCount('instances', 1);

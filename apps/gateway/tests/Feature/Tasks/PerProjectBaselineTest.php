@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\HostKey;
@@ -51,7 +52,7 @@ function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRun
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ), ResolvedVp::manager());
+    ), ResolvedVp::manager(), app(TiaBaselineSetup::class));
 }
 
 beforeEach(function (): void {

@@ -985,7 +985,8 @@
                 "Process",
                 "Project",
                 "Role",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1574,6 +1575,7 @@
                 "Access grant",
                 "Activity",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

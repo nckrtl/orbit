@@ -144,6 +144,7 @@ use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Processes\ProcessUsageIndex;
 use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
+use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\ProxyCli\ProxyCliAccountControlClient;
 use App\Domain\ProxyCli\ProxyCliCache;
 use App\Domain\ProxyCli\ProxyCliManagementClient;
@@ -243,6 +244,7 @@ use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
 use App\Infrastructure\GitHub\HttpGitHubApi;
+use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
 use App\Infrastructure\Hibernation\CacheHibernationWakeFailureStore;
 use App\Infrastructure\Hibernation\NativeRuntimeHibernatorConverger;
@@ -487,6 +489,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         HibernationWakeFailureStore::class => CacheHibernationWakeFailureStore::class,
         ScheduleRuntimeAccountResolver::class => SshScheduleRuntimeAccountResolver::class,
         ScheduleRuntimeManager::class => RemoteScheduleRuntimeManager::class,
+        TiaBaselineSource::class => HttpGitHubTiaBaseline::class,
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,

@@ -6,6 +6,7 @@ namespace Tests\Support;
 
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Projects\ProjectLifecycleStepStore;
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
@@ -101,6 +102,7 @@ final class LifecycleSshExecutor implements SshExecutor
             }),
             $deadline ?? new CommandDeadline,
             ResolvedVp::manager($vpHome),
+            app(TiaBaselineSetup::class),
         );
     }
 }

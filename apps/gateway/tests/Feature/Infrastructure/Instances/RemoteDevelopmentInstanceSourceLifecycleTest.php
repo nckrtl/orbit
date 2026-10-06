@@ -837,7 +837,7 @@ it('removes a checkout_prepared failed create with its partial checkout Route an
     $this->assertDatabaseMissing('vite_port_assignments', ['instance_id' => $instance->id]);
 })->with([false, true]);
 
-it('removes an absent pre-activation reserved worktree without touching its seed or siblings', function (string $mode): void {
+it('removes an absent pre-activation reserved worktree without touching its seed or siblings', function (string $mode, bool $legacy): void {
     $seedPath = $this->appsRoot.'/acme/seed';
     $siblingPath = $this->appsRoot.'/acme/sibling';
     $this->files->makeDirectory(dirname($seedPath), 0o755, true);
@@ -869,6 +869,9 @@ it('removes an absent pre-activation reserved worktree without touching its seed
         expect($exception->result?->exitCode)->toBe(75);
     });
     $instance->refresh();
+    if ($legacy) {
+        $instance->update(['source_prepare_id' => null]);
+    }
     expect($instance->source_layout)->toBe('worktree')
         ->and($instance->status)->toBe(InstanceState::Reserved)
         ->and($instance->starting_commit)->toBeNull()
@@ -903,11 +906,11 @@ it('removes an absent pre-activation reserved worktree without touching its seed
     expect(orb866_source_bytes($seedPath))->toBe($seedBytes)
         ->and(orb866_source_bytes($siblingPath))->toBe($siblingBytes)
         ->and(orb76_run(['git', '-C', $seedPath, 'worktree', 'list', '--porcelain'])->stdout)->toBe($worktrees);
-})->with(['normal', 'forced', 'cancel', 'retry']);
+})->with(['normal', 'forced', 'cancel', 'retry'])->with(['prepared' => false, 'legacy null prepare' => true]);
 
-it('protects unconfirmed and post-activation source in the reserved worktree absent path', function (string $state, bool $force): void {
+it('protects unconfirmed and post-activation source in the reserved worktree absent path', function (string $state, bool $force, bool $legacy): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-protected', 'task-protected');
-    $instance->update(['source_layout' => 'worktree', 'source_prepare_id' => 'unconfirmed-prepare', 'task_workspace_routed' => false]);
+    $instance->update(['source_layout' => 'worktree', 'source_prepare_id' => $legacy ? null : 'unconfirmed-prepare', 'task_workspace_routed' => false]);
     $seedPath = $this->appsRoot.'/acme/seed';
     $this->files->makeDirectory(dirname($seedPath), 0o755, true);
     orb76_run(['git', 'clone', '--branch', 'main', $this->repository, $seedPath]);
@@ -937,7 +940,7 @@ it('protects unconfirmed and post-activation source in the reserved worktree abs
     if ($sourceBytes !== null) {
         expect(orb866_source_bytes($instance->checkout_path))->toBe($sourceBytes);
     }
-})->with(['unconfirmed worktree', 'foreign directory', 'symlink', 'resolved', 'active'])->with([false, true]);
+})->with(['unconfirmed worktree', 'foreign directory', 'symlink', 'resolved', 'active'])->with([false, true])->with(['prepared' => false, 'legacy null prepare' => true]);
 
 it('refuses a directory appearing before absent reserved worktree finalization', function (bool $force): void {
     $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-race', 'task-race');

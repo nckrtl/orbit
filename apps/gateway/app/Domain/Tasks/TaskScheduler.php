@@ -13,6 +13,7 @@ use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Project;
@@ -64,6 +65,8 @@ final readonly class TaskScheduler
 
     /** Resumes reserved for one subtask before the next restart asks for assistance (ADR 0167). */
     public const int PiServerRestartResumeLimit = 2;
+
+    private const string WorkspaceStartedActivity = 'Task workspace started.';
 
     private const string PiRestartPending = 'pending';
 
@@ -2061,7 +2064,7 @@ final readonly class TaskScheduler
             try {
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
-                $this->releaseReservation($reserved, self::isClaimFailureReason($reserved->assistance_reason) ? null : $reserved->assistance_reason);
+                $this->releaseReservation($reserved);
                 $this->removeEndedWorkspace($reserved, null);
 
                 if ($exception->fleetFull) {
@@ -2072,13 +2075,12 @@ final readonly class TaskScheduler
 
                 continue;
             } catch (Throwable $exception) {
-                // An unexpected provisioning error must not strand the group in reserved. The log keeps the detail.
                 report($exception);
-                $instance = null;
+                $instance = InstanceProvisionFailure::fromException($exception);
             }
 
             if (! $instance instanceof Instance) {
-                $this->releaseReservation($reserved, self::ProvisioningFailedReason);
+                $this->releaseProvisioningFailure($reserved, $instance);
                 $this->removeEndedWorkspace($reserved, null);
                 $skipped[] = $reserved->id;
 
@@ -2146,10 +2148,19 @@ final readonly class TaskScheduler
 
         $group->status = TaskGroupStatus::Running;
         $group->started_at ??= now();
-        if (self::isClaimFailureReason($group->assistance_reason)) {
+        if ($group->assistance_kind !== AssistanceKind::Direction && self::isClaimFailureReason($group->assistance_reason)) {
             $group->fill(TaskAssistance::cleared());
         }
         $group->save();
+
+        $previousKey = $this->provisioningFailureKey($group);
+        Activity::query()->create([
+            'log_name' => 'tasks', 'description' => self::WorkspaceStartedActivity,
+            'subject_type' => $group::class, 'subject_id' => $group->id,
+            'properties' => ['instance_id' => $instance->id],
+            'request_id' => (string) Str::uuid(), 'command' => 'tasks:tick', 'status' => 'completed',
+        ]);
+        DB::afterCommit(fn (): bool => $this->rememberBackoff($previousKey, null, 'workspace provisioning'));
 
         return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
     }
@@ -2180,16 +2191,65 @@ final readonly class TaskScheduler
         }
     }
 
+    private function provisioningFailureKey(Task $group): string
+    {
+        // The committed activity is a durable reset witness. Cache cleanup is only garbage collection.
+        $generation = Activity::query()->where('log_name', 'tasks')
+            ->where('subject_type', $group::class)->where('subject_id', $group->id)
+            ->where('description', self::WorkspaceStartedActivity)->max('id');
+
+        return 'tasks:provisioning-failures:'.$group->id.(is_numeric($generation) ? ':'.$generation : '');
+    }
+
+    /** Counts a failed claim and requests assistance only while its reservation is still current. */
+    private function releaseProvisioningFailure(Task $reserved, ?InstanceProvisionFailure $failure): void
+    {
+        DB::transaction(function () use ($reserved, $failure): void {
+            $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+            if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
+                return;
+            }
+
+            $key = $this->provisioningFailureKey($group);
+            $failures = ($this->readBackoff($key, 'workspace provisioning')['failures'] ?? 0) + 1;
+            if (! $this->rememberBackoff($key, ['failures' => $failures, 'due' => 0], 'workspace provisioning')) {
+                $failures = 1;
+            }
+            $reason = self::ProvisioningFailedReason.($failure === null ? '' : ' '.$failure->cause);
+            $group->status = TaskGroupStatus::Todo;
+            if (! $group->assistance_requested) {
+                $group->assistance_reason = $reason;
+            }
+            $group->save();
+            $threshold = config('orbit.tasks.provisioning_failure_threshold', 3);
+            if ($failures >= max(1, is_numeric($threshold) ? (int) $threshold : 3)) {
+                $wasAsking = $group->assistance_requested;
+                $applied = TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason, replaceFailure: true);
+                if (! $wasAsking && $applied) {
+                    DB::afterCommit(fn () => $this->coder->assistance($group, $reason));
+                }
+            }
+        });
+    }
+
     /**
      * Returns a group to todo only while this claim still holds its reservation, so a claim never overwrites a
      * group that the tick released, a cancel ended, or a newer claim reserved.
      */
-    private function releaseReservation(Task $reserved, ?string $reason): void
+    private function releaseReservation(Task $reserved): void
     {
-        Task::topLevel()->whereKey($reserved->id)
-            ->where('status', TaskGroupStatus::Reserved)
-            ->where('reserved_at', $reserved->reserved_at)
-            ->update(['status' => TaskGroupStatus::Todo, 'assistance_reason' => $reason]);
+        DB::transaction(function () use ($reserved): void {
+            $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+            if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
+                return;
+            }
+
+            $group->status = TaskGroupStatus::Todo;
+            if ($group->assistance_kind !== AssistanceKind::Direction && self::isClaimFailureReason($group->assistance_reason)) {
+                $group->fill(TaskAssistance::cleared());
+            }
+            $group->save();
+        });
     }
 
     /**
@@ -2460,16 +2520,29 @@ final readonly class TaskScheduler
      *
      * @param  array{failures: int, due: int}|null  $backoff
      */
-    private function rememberBackoff(string $key, ?array $backoff, string $label, int $seconds = 0): void
+    private function rememberBackoff(string $key, ?array $backoff, string $label, int $seconds = 0): bool
     {
         try {
             if ($backoff === null) {
-                Cache::forget($key);
+                $written = Cache::forget($key);
+                if (! $written && ! Cache::has($key)) {
+                    return true;
+                }
+            } elseif ($seconds === 0) {
+                $written = Cache::forever($key, $backoff);
             } else {
-                Cache::put($key, $backoff, now()->addSeconds($seconds));
+                $written = Cache::put($key, $backoff, now()->addSeconds($seconds));
             }
+
+            if (! $written) {
+                Log::warning('The '.$label.' backoff could not be written.', ['key' => $key, 'reason' => 'Cache store returned false.']);
+            }
+
+            return $written;
         } catch (Throwable $exception) {
             Log::warning('The '.$label.' backoff could not be written.', ['key' => $key, 'exception' => $exception::class, 'reason' => $exception->getMessage()]);
+
+            return false;
         }
     }
 
@@ -2536,7 +2609,8 @@ final readonly class TaskScheduler
 
     public static function isClaimFailureReason(?string $reason): bool
     {
-        return in_array($reason, self::ClaimFailureReasons, true);
+        return in_array($reason, self::ClaimFailureReasons, true)
+            || (is_string($reason) && str_starts_with($reason, self::ProvisioningFailedReason.' '));
     }
 
     /** Claims todo groups until none fits. A failing group is tried once. */
