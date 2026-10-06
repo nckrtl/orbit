@@ -40,7 +40,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         ]);
         $stepsArgument = $setup === [] ? '-' : '"$dir/setup.json"';
         $deliverablesArgument = $deliverables === null ? '-' : '"$dir/deliverables.json"';
-        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"');
+        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', allocateTemporary: true);
         $pid = $data['pid'] ?? null;
         $started = $data['started'] ?? null;
         $head = $data['head'] ?? null;
@@ -130,6 +130,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         string $command,
         string $unreachable = 'The task workspace could not be reached for the check.',
         string $invalid = 'The check answered with invalid output.',
+        bool $allocateTemporary = false,
     ): array {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
@@ -148,7 +149,12 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 BASH;
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
-                input: $prefix.TaskWorkspaceMetadata::bashPreamble().$command."\n",
+                input: $prefix.TaskWorkspaceMetadata::bashPreamble().
+                    // Start allocates a host TMPDIR for the detached check. The check removes it when it ends. Later SSH calls do not.
+                    ($allocateTemporary
+                        ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir').')"'."\nexport TMPDIR\n"
+                        : '').
+                    $command."\n",
                 maxOutputBytes: self::OutputLimitBytes,
             ), 'task-check', 'tasks.check_failed');
         } catch (RuntimeConvergenceException $exception) {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Instances\CreateInstanceAction;
 use App\Actions\Instances\RemoveInstanceAction;
+use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
@@ -35,6 +36,8 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\NativeAppDevSourceOperationLock;
 use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
@@ -57,6 +60,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
 use App\Models\Route;
+use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -292,6 +296,49 @@ describe('TaskCheckWorkerUser', function (): void {
 });
 
 describe('TaskWorkspaceAcl', function (): void {
+    it('preserves populated private workspace temp caches across repeated inspection', function (bool $linked): void {
+        config()->set('orbit.tasks.worker_user', null);
+        $seed = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'tmp-seed');
+        $instance = $seed;
+        if ($linked) {
+            $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'tmp-linked');
+            orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $instance->checkout_path, $seed->starting_commit]);
+            $instance->update(['seed_repository' => $seed->checkout_path, 'source_layout' => 'worktree']);
+            // Common metadata traversal must also protect another linked workspace's caches.
+            orb76_run(['git', '-C', $seed->checkout_path, 'worktree', 'add', '--detach', $this->appsRoot.'/tmp-other', $seed->starting_commit]);
+        }
+        $git = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', '--absolute-git-dir'])->stdout);
+        $common = trim(orb76_run(['git', '-C', $instance->checkout_path, 'rev-parse', '--path-format=absolute', '--git-common-dir'])->stdout);
+        $metadata = array_unique([$git, $common, ...($linked ? [$common.'/worktrees/tmp-other'] : [])]);
+        $before = [];
+        foreach ($metadata as $directory) {
+            $cache = $directory.'/orbit/tmp/check-'.posix_geteuid().'/phpstan';
+            $this->files->makeDirectory($cache, 0700, true);
+            file_put_contents($cache.'/result', 'private');
+            chmod($cache.'/result', 0600);
+            foreach ([$directory.'/orbit/tmp', dirname($cache), $cache, $cache.'/result'] as $path) {
+                $before[$path] = orb76_run(['getfacl', '-cp', $path])->stdout;
+            }
+        }
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $failure = null;
+            try {
+                $this->source->inspectPrepared($instance);
+            } catch (RuntimeConvergenceException $exception) {
+                $failure = $exception;
+            }
+            foreach ($before as $path => $permissions) {
+                expect(orb76_run(['getfacl', '-cp', $path])->stdout)->toBe($permissions);
+            }
+            if ($failure !== null) {
+                throw new RuntimeException($failure->result?->stderr ?? $failure->getMessage(), previous: $failure);
+            }
+        }
+        // Ordinary checkout sharing still works; only the resolved temp subtrees are excluded.
+        expect(orb76_run(['getfacl', '-cp', $instance->checkout_path])->stdout)->toContain('user:nobody:rwx');
+    })->with(['normal checkout (former recursive fast path)' => false, 'linked worktrees' => true]);
+
     it('trusts only the managed checkout for worker Git and removes that trust on teardown', function (string $operation): void {
         config()->set('orbit.tasks.worker_user', null);
         $instance = orb180_resolved_source($this->source, $this->orbitApp, $this->node, $this->appsRoot, 'task-worker-trust');
@@ -788,6 +835,126 @@ it('removes a checkout_prepared failed create with its partial checkout Route an
     $this->assertModelMissing($instance);
     $this->assertModelMissing($route);
     $this->assertDatabaseMissing('vite_port_assignments', ['instance_id' => $instance->id]);
+})->with([false, true]);
+
+it('removes an absent pre-activation reserved worktree without touching its seed or siblings', function (string $mode): void {
+    $seedPath = $this->appsRoot.'/acme/seed';
+    $siblingPath = $this->appsRoot.'/acme/sibling';
+    $this->files->makeDirectory(dirname($seedPath), 0o755, true);
+    orb76_run(['git', 'clone', '--branch', 'main', $this->repository, $seedPath]);
+    orb76_run(['git', '-C', $seedPath, 'worktree', 'add', '-b', 'sibling', $siblingPath, 'HEAD']);
+    $commit = trim(orb76_run(['git', '-C', $seedPath, 'rev-parse', 'HEAD'])->stdout);
+    $group = Task::topLevel()->create([
+        'project_id' => $this->orbitApp->id,
+        'title' => 'Interrupted worktree preparation',
+        'brief' => 'Clear the reservation that stopped before mkdir.',
+        'status' => TaskGroupStatus::Todo,
+    ]);
+    $name = 'task-'.$group->id;
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, $name, $name);
+    $instance->update([
+        'source_prepare_id' => 'absent-task-prepare',
+        'task_workspace_routed' => false,
+        'seed_selected' => true,
+        'seed_path' => $seedPath,
+        'seed_repository' => $seedPath,
+        'seed_commit' => $commit,
+    ]);
+    $seedBytes = orb866_source_bytes($seedPath);
+    $siblingBytes = orb866_source_bytes($siblingPath);
+    $worktrees = orb76_run(['git', '-C', $seedPath, 'worktree', 'list', '--porcelain'])->stdout;
+    // Run real preparation, stopping immediately before mkdir after the layout update persisted.
+    $this->transport->prepareFailure = 'before directory';
+    expect(fn () => $this->source->prepare($instance, false))->toThrow(function (RuntimeConvergenceException $exception): void {
+        expect($exception->result?->exitCode)->toBe(75);
+    });
+    $instance->refresh();
+    expect($instance->source_layout)->toBe('worktree')
+        ->and($instance->status)->toBe(InstanceState::Reserved)
+        ->and($instance->starting_commit)->toBeNull()
+        ->and($instance->failed_step)->toBeNull()
+        ->and($instance->error_code)->toBeNull()
+        ->and(file_exists($instance->checkout_path))->toBeFalse();
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+    if ($mode === 'cancel') {
+        bind_task_node_reachability();
+        app(TaskExtensionState::class)->enable();
+        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+            ->and($cancelled->assistance_requested)->toBeFalse();
+        $removal = InstanceRemoval::query()->sole();
+    } else {
+        if ($mode === 'retry') {
+            $this->transport->beforeFinalization = static function (): void {
+                throw new RuntimeException('Interrupted absent worktree finalization.');
+            };
+            expect(fn () => $action->execute($instance, true))->toThrow(InstanceRemovalException::class);
+            $member = InstanceRemovalMember::query()->sole();
+            expect($member->source_prepared_at)->not->toBeNull()
+                ->and($member->source_finalized_at)->toBeNull();
+            $this->assertModelExists($instance);
+        }
+        $removal = $action->execute($instance->refresh(), $mode !== 'normal');
+    }
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($removal->members->sole()->source_identity)->toBe('absent')
+        ->and($removal->members->sole()->finalization_receipt)->not->toBeNull();
+    $this->assertModelMissing($instance);
+    expect(orb866_source_bytes($seedPath))->toBe($seedBytes)
+        ->and(orb866_source_bytes($siblingPath))->toBe($siblingBytes)
+        ->and(orb76_run(['git', '-C', $seedPath, 'worktree', 'list', '--porcelain'])->stdout)->toBe($worktrees);
+})->with(['normal', 'forced', 'cancel', 'retry']);
+
+it('protects unconfirmed and post-activation source in the reserved worktree absent path', function (string $state, bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-protected', 'task-protected');
+    $instance->update(['source_layout' => 'worktree', 'source_prepare_id' => 'unconfirmed-prepare', 'task_workspace_routed' => false]);
+    $seedPath = $this->appsRoot.'/acme/seed';
+    $this->files->makeDirectory(dirname($seedPath), 0o755, true);
+    orb76_run(['git', 'clone', '--branch', 'main', $this->repository, $seedPath]);
+    if ($state === 'unconfirmed worktree') {
+        orb76_run(['git', '-C', $seedPath, 'worktree', 'add', '-b', 'task-protected', $instance->checkout_path, 'HEAD']);
+    } elseif ($state === 'foreign directory') {
+        $this->files->makeDirectory($instance->checkout_path);
+        file_put_contents($instance->checkout_path.'/foreign', 'not owned by preparation');
+    } elseif ($state === 'symlink') {
+        symlink($seedPath, $instance->checkout_path);
+    } else {
+        $this->orbitApp->update(['type' => 'monorepo']);
+        $instance->update([
+            'status' => $state === 'active' ? InstanceState::Active : InstanceState::SourceResolved,
+            'starting_commit' => str_repeat('a', 40),
+        ]);
+    }
+    $seedBytes = orb866_source_bytes($seedPath);
+    $sourceBytes = is_dir($instance->checkout_path) ? orb866_source_bytes($instance->checkout_path) : null;
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    expect(fn () => $action->execute($instance, $force))->toThrow(ResourceOperationException::class);
+
+    $this->assertModelExists($instance);
+    expect(InstanceRemoval::query()->count())->toBe(0)
+        ->and(orb866_source_bytes($seedPath))->toBe($seedBytes);
+    if ($sourceBytes !== null) {
+        expect(orb866_source_bytes($instance->checkout_path))->toBe($sourceBytes);
+    }
+})->with(['unconfirmed worktree', 'foreign directory', 'symlink', 'resolved', 'active'])->with([false, true]);
+
+it('refuses a directory appearing before absent reserved worktree finalization', function (bool $force): void {
+    $instance = orb76_source_instance($this->orbitApp, $this->node, $this->appsRoot, 'task-race', 'task-race');
+    $instance->update(['source_layout' => 'worktree', 'source_prepare_id' => 'absent-prepare', 'task_workspace_routed' => false]);
+    $this->files->makeDirectory(dirname($instance->checkout_path), 0o755, true);
+    $this->transport->beforeFinalization = function () use ($instance): void {
+        $this->files->makeDirectory($instance->checkout_path);
+        file_put_contents($instance->checkout_path.'/foreign', 'appeared after acceptance');
+    };
+    $action = orb895_native_removal_action($this->removal, $this->sourceLock, $this->sandbox.'/environment-locks');
+
+    expect(fn () => $action->execute($instance, $force))->toThrow(InstanceRemovalException::class);
+
+    $this->assertModelExists($instance);
+    expect(file_get_contents($instance->checkout_path.'/foreign'))->toBe('appeared after acceptance')
+        ->and(InstanceRemoval::query()->sole()->status)->toBe(InstanceRemovalStatus::Failed)
+        ->and(InstanceRemovalMember::query()->sole()->finalization_receipt)->toBeNull();
 })->with([false, true]);
 
 it('removes a failed reserved create whose clone never made a checkout', function (bool $force): void {

@@ -47,6 +47,7 @@ final readonly class CommandVocabulary
         'node' => ['relocate', 'rename'],
         'process' => ['logs', 'restart', 'start', 'stop'],
         'proxycli' => ['models', 'setup', 'status', 'teardown'],
+        'project' => ['archive', 'download', 'read', 'restore', 'restore-version', 'search', 'upload', 'versions', 'write'],
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
@@ -121,7 +122,7 @@ final readonly class CommandVocabulary
      */
     public static function routeRequiresMatchingCommand(string $routeName, array $commandNames): bool
     {
-        if (in_array($routeName, ['instance:dependencies:show'], true)) {
+        if (in_array($routeName, ['instance:dependencies:show', 'project:document:destroy', 'project:document:version:list'], true)) {
             return false;
         }
 

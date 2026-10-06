@@ -10,6 +10,7 @@ use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubBranchPullRequest;
 use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubInstallation;
+use App\Domain\GitHub\GitHubOpenedPullRequest;
 use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
@@ -218,7 +219,7 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->reviewReader->comments($token, $repository, $number, $reviewId);
     }
 
-    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string
+    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest
     {
         $path = $this->repositoryPath($repository).'/pulls';
         $response = $this->send(fn (): Response => $this->request()->withToken($token)->post($path, [
@@ -227,9 +228,9 @@ final readonly class HttpGitHubApi implements GitHubApi
             'base' => $draft->base,
             'body' => $draft->body,
         ]));
-        $url = $response->json('html_url');
-        if ($response->successful() && is_string($url) && $url !== '') {
-            return $url;
+        $opened = $this->openedPullRequest($repository, $response);
+        if ($opened instanceof GitHubOpenedPullRequest) {
+            return $opened;
         }
         if ($response->status() !== 422) {
             throw GitHubApiException::refused();
@@ -240,12 +241,35 @@ final readonly class HttpGitHubApi implements GitHubApi
             'head' => $repository->owner.':'.$draft->head,
             'base' => $draft->base,
         ]));
-        $url = $existing->json('0.html_url');
-        if (! $existing->successful() || ! is_string($url) || $url === '') {
+        $opened = $this->openedPullRequest($repository, $existing, prefix: '0.');
+        if (! $existing->successful() || ! $opened instanceof GitHubOpenedPullRequest) {
             throw GitHubApiException::refused();
         }
 
-        return $url;
+        return $opened;
+    }
+
+    public function requestPullRequestReviewers(
+        #[SensitiveParameter] string $token,
+        GitHubRepository $repository,
+        int $number,
+        array $reviewers,
+    ): void {
+        if ($reviewers === []) {
+            return;
+        }
+
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->post(
+            $this->repositoryPath($repository).'/pulls/'.$number.'/requested_reviewers',
+            ['reviewers' => $reviewers],
+        ));
+        if ($response->successful()) {
+            return;
+        }
+
+        $message = $response->json('message');
+
+        throw GitHubApiException::reviewersRefused($response->status(), is_string($message) ? rtrim($message, '.') : '');
     }
 
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest
@@ -329,6 +353,24 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
 
         return $token;
+    }
+
+    private function openedPullRequest(GitHubRepository $repository, Response $response, string $prefix = ''): ?GitHubOpenedPullRequest
+    {
+        if ($prefix === '' && ! $response->successful()) {
+            return null;
+        }
+
+        $url = $response->json($prefix.'html_url');
+        if (! is_string($url) || $url === '') {
+            return null;
+        }
+
+        $number = $response->json($prefix.'number');
+        $number = is_int($number) && $number > 0 ? $number : $repository->pullRequestNumber($url);
+        $author = $this->text($response->json($prefix.'user.login'));
+
+        return new GitHubOpenedPullRequest($url, $number, $author);
     }
 
     private function repositoryPath(GitHubRepository $repository): string

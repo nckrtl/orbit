@@ -27,6 +27,7 @@ import {
     splitLines,
 } from "../src/tool-output.ts";
 import { createWorkspaceTools } from "../src/workspace-tools.ts";
+import { workspaceTmpdir } from "../src/workspace-tmpdir.ts";
 import { type Harness, startHarness, waitFor } from "./support.ts";
 
 const MODEL = "faux/model-a";
@@ -45,6 +46,113 @@ afterEach(async () => {
     for (const root of roots.splice(0)) {
         rmSync(root, { recursive: true, force: true });
     }
+});
+
+describe("workspace TMPDIR", () => {
+    it("supports cross-user fixtures with a private agent TMPDIR inherited by the test process", () => {
+        const cwd = sharedWorkspace();
+        execFileSync("git", ["init", "-q", cwd]);
+        const temporary = workspaceTmpdir(cwd);
+        expect(statSync(temporary).mode & 0o777).toBe(0o700);
+        execFileSync(
+            "vp",
+            [
+                "test",
+                "run",
+                "tests/tool-output.test.ts",
+                "-t",
+                "writes as the worker under a Node-owned Orbit directory",
+            ],
+            {
+                cwd: new URL("..", import.meta.url),
+                env: { ...process.env, TMPDIR: temporary },
+                timeout: 30_000,
+            },
+        );
+        expect(statSync(temporary).mode & 0o777).toBe(0o700);
+    }, 30_000);
+    it("keeps agent caches separate from check caches and other workspaces", async () => {
+        const inherited = process.env.TMPDIR;
+        const paths: string[] = [];
+        for (let index = 0; index < 2; index++) {
+            const cwd = workspace();
+            execFileSync("git", ["init", "-q", cwd]);
+            const check = join(cwd, ".git", "orbit", "tmp", `check-${process.getuid?.()}`);
+            mkdirSync(join(check, "phpstan"), { recursive: true });
+            chmodSync(join(check, "phpstan"), 0o500);
+            execFileSync("setfacl", ["-m", "d:u:nobody:rwX", join(cwd, ".git", "orbit", "tmp")]);
+            const { bash } = tools(cwd);
+
+            const result = await run(bash, {
+                command:
+                    'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && printf %s "$TMPDIR"',
+            });
+
+            const expected = join(cwd, ".git", "orbit", "tmp", `agent-${process.getuid?.()}`);
+            expect(result).toEqual({ text: expected, isError: false });
+            expect(readFileSync(join(expected, "phpstan", "result"), "utf-8")).toBe("analysed");
+            expect(process.env.TMPDIR).toBe(inherited);
+            const permissions = execFileSync("getfacl", ["-cp", expected], { encoding: "utf-8" });
+            expect(permissions).not.toContain("default:");
+            expect(permissions).not.toContain("user:nobody:");
+            chmodSync(join(check, "phpstan"), 0o700);
+            paths.push(expected);
+        }
+        expect(paths[0]).not.toBe(paths[1]);
+    });
+
+    it("uses the worktree git directory rather than the shared repository", async () => {
+        const cwd = workspace();
+        execFileSync("git", ["init", "-q", cwd]);
+        execFileSync(
+            "git",
+            [
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@t",
+                "commit",
+                "-qm",
+                "start",
+                "--allow-empty",
+            ],
+            { cwd },
+        );
+        const worktree = join(cwd, "linked");
+        execFileSync("git", ["worktree", "add", "-q", "-b", "linked", worktree], { cwd });
+        const { bash } = tools(worktree);
+
+        const result = await run(bash, { command: 'printf %s "$TMPDIR"' });
+
+        expect(result).toEqual({
+            text: join(
+                cwd,
+                ".git",
+                "worktrees",
+                "linked",
+                "orbit",
+                "tmp",
+                `agent-${process.getuid?.()}`,
+            ),
+            isError: false,
+        });
+    });
+
+    it("refuses a symlink planted in the temp directory path", async () => {
+        const cwd = workspace();
+        execFileSync("git", ["init", "-q", cwd]);
+        mkdirSync(join(cwd, ".git", "orbit"));
+        const outside = workspace();
+        symlinkSync(outside, join(cwd, ".git", "orbit", "tmp"));
+        const { bash } = tools(cwd);
+
+        const result = await run(bash, { command: "touch executed" });
+
+        expect(result.isError).toBe(true);
+        expect(result.text).toContain("Refusing workspace temp directory");
+        expect(exists(join(cwd, "executed"))).toBe(false);
+        expect(readdirSync(outside)).toEqual([]);
+    });
 });
 
 describe("measured text", () => {
@@ -202,7 +310,8 @@ describe("stored file", () => {
     });
 
     it("writes as the worker under a Node-owned Orbit directory without closing inherited ACLs", () => {
-        const cwd = workspace();
+        // Cross-user fixtures cannot live beneath the inherited role-private TMPDIR.
+        const cwd = sharedWorkspace();
         const orbit = join(cwd, ".git", "orbit");
         mkdirSync(orbit, { recursive: true });
         chmodSync(cwd, 0o755);
@@ -704,6 +813,14 @@ async function run(
     } catch (error) {
         return { text: error instanceof Error ? error.message : String(error), isError: true };
     }
+}
+
+/** Explicitly shareable fixtures; leave agent caches in their private inherited TMPDIR. */
+function sharedWorkspace(): string {
+    const cwd = mkdtempSync("/tmp/pi-shared-fixture-");
+    chmodSync(cwd, 0o755);
+    roots.push(cwd);
+    return cwd;
 }
 
 function workspace(): string {

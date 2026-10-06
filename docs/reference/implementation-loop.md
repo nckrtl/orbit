@@ -66,7 +66,7 @@ Read all effective decisions from the designated final reviewer in submission or
 
 After the merge, keep the review evidence and release the resources allocated to the feature. For a local worktree, run `bin/worktree-remove ISSUE`.
 
-[Delivery-line proofs](/reference/delivery-line) are the read-only commands for reproduction on current main, task-group shape, the current pull-request head, and post-merge live state. They do not file a task, merge, deploy, or roll back.
+[Delivery-line proofs](/reference/delivery-line) are the read-only commands for reproduction on current main, task-group shape, the current pull-request head, and post-merge live state. They do not file a task, merge, deploy, or roll back. Use `bin/pr-head-check` to confirm the diff adds no named leftover, including `object-storage-host` and `linear-reference`; the [leftover list](/reference/delivery-line#binpr-head-check) defines their generic, public-safe forms.
 
 ## CI
 

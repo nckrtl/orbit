@@ -199,7 +199,7 @@ The tool chooses the Laravel app in this order:
 
 When several `apps/*` directories match, the tool asks for `project`.
 
-The app needs `laravel/boost` installed, so run `composer install` in it first. The tool runs `php artisan boost:mcp` in the app with `php` from the server's `PATH`. It calls Boost's `search-docs` tool over MCP on standard input and output and returns the text. Boost runs only in a local or debug app, so the tool sets `APP_DEBUG=true` when the server's environment does not set it. The server's `PI_SERVER_*` variables stay out of that process. Boost fetches the documentation from `boost.laravel.com`, so the Node needs outbound HTTPS.
+The app needs `laravel/boost` installed, so run `composer install` in it first. The tool runs `php artisan boost:mcp` in the app with `php` from the server's `PATH`. It calls Boost's `search-docs` tool over MCP on standard input and output and returns the text. Boost runs only in a local or debug app, so the tool sets `APP_DEBUG=true` when the server's environment does not set it. The server's `PI_SERVER_*` variables stay out of that process. Agent bash and documentation lookup processes inherit the workspace's agent `TMPDIR`, separate from the setup/check runner's directory; [task checks](/reference/tasks#project-check) describes the layout. A non-Git session uses `<workspace>/.orbit/tmp/agent-<uid>`. Boost fetches the documentation from `boost.laravel.com`, so the Node needs outbound HTTPS.
 
 The tool stops Boost after the answer, after 60 seconds, or when the turn is interrupted. A failed search returns an error result to the agent. The error names the cause, such as no Laravel app, Boost not installed or not enabled, or a timeout.
 

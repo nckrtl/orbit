@@ -11,6 +11,7 @@ use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -42,7 +43,10 @@ use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Route;
 use App\Models\Task;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 function provisioner_app(
     string $slug,
@@ -132,9 +136,14 @@ function bind_task_workspace_fakes(): object
 
         public ?Closure $beforeFailure = null;
 
+        public ?Closure $onPrepare = null;
+
         public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->calls[] = 'prepare';
+            if ($this->onPrepare !== null) {
+                ($this->onPrepare)($instance, $allowExisting);
+            }
         }
 
         public function inspectPrepared(Instance $instance): void
@@ -583,6 +592,105 @@ it('returns null when the app-dev Node has no usable Pi process', function (stri
         ->and($fakes->source->calls)->toBe([]);
     $this->assertDatabaseCount('instances', 0);
 })->with(['missing', 'unrelated', 'failed', 'stopped', 'no-address', 'empty-address']);
+
+it('resumes a reserved worktree reclaim with no starting commit', function (): void {
+    $project = provisioner_app('reclaim');
+    $node = provisioner_node('reclaim-dev', '10.44.0.135');
+    $group = provisioner_group($project);
+    $sandbox = sys_get_temp_dir().'/orbit-reserved-reclaim-'.Str::uuid();
+    $seed = $sandbox.'/default';
+    $checkout = $sandbox.'/'.TaskWorkspaceName::for($group);
+    $files = new Filesystem;
+    $files->makeDirectory($seed, 0o755, true);
+
+    try {
+        foreach ([
+            ['git', 'init', '--initial-branch=main', $seed],
+            ['git', '-C', $seed, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-m', 'Seed'],
+            ['git', '-C', $seed, 'worktree', 'add', '--detach', $checkout, 'HEAD'],
+        ] as $command) {
+            (new Process($command))->mustRun();
+        }
+        $commit = trim((new Process(['git', '-C', $seed, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+        $left = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => $checkout,
+            'branch_override' => TaskWorkspaceName::for($group),
+            'source_layout' => InstanceSourceLayout::Worktree,
+            'seed_repository' => $seed,
+            'seed_commit' => $commit,
+            'starting_commit' => null,
+            'status' => InstanceState::Reserved,
+        ]);
+        $fakes = bind_task_workspace_fakes();
+        // Model the remote prepare contract: an existing checkout refuses unless explicitly allowed.
+        $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting): void {
+            if (is_file($instance->checkout_path.'/.git') && ! $allowExisting) {
+                throw new ResourceOperationException('instance.clone_failed', 'Checkout already exists.', 409);
+            }
+        };
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40));
+        expect($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved', 'inspect-prepared']);
+        expect(is_file($checkout.'/.git'))->toBeTrue();
+        $this->assertDatabaseCount('instances', 1);
+    } finally {
+        $files->deleteDirectory($sandbox);
+    }
+});
+
+it('refuses a reserved worktree reclaim when source identity does not match', function (): void {
+    $project = provisioner_app('foreign-reclaim');
+    $node = provisioner_node('foreign-dev', '10.44.0.137');
+    $group = provisioner_group($project);
+    $left = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => TaskWorkspaceName::for($group),
+        'checkout_path' => '/srv/orbit/apps/foreign-reclaim/'.TaskWorkspaceName::for($group),
+        'branch_override' => TaskWorkspaceName::for($group),
+        'source_layout' => InstanceSourceLayout::Worktree,
+        'seed_repository' => '/srv/orbit/apps/foreign-reclaim/default',
+        'seed_commit' => str_repeat('b', 40),
+        'status' => InstanceState::Reserved,
+    ]);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting): void {
+        throw new ResourceOperationException('instance.clone_failed', 'Source identity does not match.', 409);
+    };
+
+    expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+        ->toThrow(ResourceOperationException::class, 'Source identity does not match.');
+
+    expect($left->refresh()->status)->toBe(InstanceState::Reserved)
+        ->and($left->failed_step)->toBe('source-prepare')
+        ->and($left->error_code)->toBe('instance.clone_failed')
+        ->and($left->starting_commit)->toBeNull();
+    expect($fakes->source->calls)->toBe(['prepare']);
+    $this->assertModelExists($left);
+});
+
+it('does not allow_existing task provision for a newly reserved Instance', function (): void {
+    $project = provisioner_app('fresh-reclaim');
+    provisioner_node('fresh-dev', '10.44.0.136');
+    $group = provisioner_group($project);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting): void {
+        if ($allowExisting) {
+            throw new ResourceOperationException('instance.clone_failed', 'Cannot adopt an existing checkout on first prepare.', 409);
+        }
+    };
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance?->status)->toBe(InstanceState::SourceResolved);
+});
 
 describe('a workspace an interrupted claim left unattached', function (): void {
     it('resumes it on its own Node instead of the least loaded one', function (): void {

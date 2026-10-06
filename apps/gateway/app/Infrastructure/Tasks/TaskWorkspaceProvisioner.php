@@ -137,9 +137,9 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         return $this->sourceLock->synchronized(
             $instance->node_id,
-            function () use ($group, $instance, $visitable): Instance {
+            function () use ($group, $instance, $visitable, $existing): Instance {
                 try {
-                    $resolved = $this->prepareSource($instance);
+                    $resolved = $this->prepareSource($instance, $existing instanceof Instance);
                     $this->source->inspectPrepared($resolved);
 
                     if ($visitable) {
@@ -227,13 +227,15 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return $selected;
     }
 
-    private function prepareSource(Instance $instance): Instance
+    private function prepareSource(Instance $instance, bool $allowExisting): Instance
     {
         while (true) {
             $instance->refresh()->loadMissing(['project', 'node']);
 
             if ($instance->status === InstanceState::Reserved) {
-                $this->source->prepare($instance, false);
+                // Reclaim may follow a completed prepare whose state transition never persisted.
+                // The source lifecycle still verifies identity before accepting an existing checkout.
+                $this->source->prepare($instance, $allowExisting);
                 $this->transition($instance, InstanceState::Reserved, [
                     'status' => InstanceState::CheckoutPrepared,
                 ]);
