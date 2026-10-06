@@ -582,7 +582,7 @@
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
               "decisions/0196-derive-application-directory-from-web-root",
-              "decisions/0197-keep-delivery-line-proofs-as-repo-commands"
+              "decisions/0198-keep-delivery-line-proofs-as-repo-commands"
             ]
           }
         ]

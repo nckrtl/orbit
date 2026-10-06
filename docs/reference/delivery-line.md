@@ -119,18 +119,20 @@ bin/pr-head-check --pr URL
 | `--pr` | required | A GitHub pull request URL or `owner/repo#number`. |
 | `--pull-file`, `--reviews-file`, `--checks-file`, `--files-file` | GitHub through `gh api` | Recorded JSON for tests. |
 
-The command keeps a review only when its `commit_id` equals the current full head SHA and its state is not `DISMISSED` or `PENDING`. `COMMENTED` counts. Pass does not require `APPROVED`. GitHub refuses `APPROVE` from the pull request author. An empty successful review list is missing. A failed, partial, or unparsable read is unreadable and is not treated as empty.
+The command keeps a review only when its `commit_id` equals the current full head SHA and its state is `APPROVED`. `COMMENTED`, `CHANGES_REQUESTED`, `DISMISSED`, and `PENDING` do not count. GitHub refuses `APPROVE` from the pull request author. An empty successful review list is missing. A failed, partial, or unparsable read is unreadable and is not treated as empty.
 
 On that same full head SHA, the GitHub Actions check run named `Required checks` must have `status` `completed` and `conclusion` `success`. That run's `head_sha` must equal the pull request head. Newer `gh` wraps `gh api --paginate --slurp` check-runs in a one-element array of the check-runs object. Older `gh` has no `--slurp` and returns the object. Both shapes flatten to the `check_runs` list. A check that is not completed is pending. A completed check whose conclusion is not `success` is failed. No run with that name is missing. The admin bypass is not a successful check.
 
 The diff fails when it adds a leftover the merge skill already names: GitHub auto-merge, `--auto`, `--admin`, an `orbit tasks:merge` command, a Gateway merge endpoint, a merge SDK, MCP, or API contract, a ruleset change, or an App permission change. Documentation that states those leftovers stay forbidden is not a leftover. The scan also skips the detector (`bin/pr-head-check`), the delivery-line test that names the leftover refusal, and recorded delivery-line fixtures. Those files hold the forbidden names so the checker can refuse them. A leftover added in product code still fails.
+
+A GitHub `pull_request_review` event re-runs the review listener so ReviewBot can wake when a review arrives, without requiring a later push. The event does not bypass the gate: `bin/pr-head-check` still requires an `APPROVED` review and successful `Required checks` on the exact current head.
 
 On any mismatch the JSON names the mismatch. The next step is to review the new head. The command never runs `gh pr merge`.
 
 | `error` | Next step |
 | --- | --- |
 | `usage` | Pass `--pr` with the pull request URL. |
-| `review_missing` | Review the current head. Do not merge. |
+| `review_missing` | Obtain an `APPROVED` review of the current head. Do not merge. |
 | `review_unreadable` | Re-read the reviews until the list is complete. Do not merge. |
 | `check_missing`, `check_pending`, `check_failed` | Wait for `Required checks` on this head, or review the new head. Do not merge. |
 | `head_mismatch` | Review the new head. Do not merge. |
