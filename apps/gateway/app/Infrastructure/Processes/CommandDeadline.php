@@ -89,7 +89,7 @@ final class CommandDeadline
     }
 
     /**
-     * Caps forward work locally without charging the surrounding request's cleanup reserve against
+     * Caps forward work locally without charging the surrounding request's cleanup reserve or holds against
      * that local budget. Only expiry of the parent's forward-work deadline releases its cleanup reserve;
      * a caught local expiry does not. Forward work never enters the parent's cleanup mode.
      *
@@ -109,7 +109,7 @@ final class CommandDeadline
         $this->exceeded = false;
 
         try {
-            return $this->within($seconds + $this->cleanupReserveSeconds, $operation);
+            return $this->within($seconds + $this->cleanupReserveSeconds + $this->heldSeconds, $operation);
         } finally {
             $this->exceeded = $parentExceeded || (
                 $this->exceeded

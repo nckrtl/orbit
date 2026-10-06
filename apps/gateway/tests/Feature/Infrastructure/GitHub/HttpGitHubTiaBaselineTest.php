@@ -3,8 +3,10 @@
 declare(strict_types=1);
 
 use App\Domain\Projects\TiaBaselineFiles;
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Project;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -71,6 +73,17 @@ describe('Gateway GitHub TIA baseline', function (): void {
             && $request->data() === ['repositories' => ['shop'], 'permissions' => ['actions' => 'read']]);
         Http::assertSent(fn (Request $request): bool => str_starts_with($request->url(), 'https://productionresultssa1.blob.core.windows.net/')
             && ! $request->hasHeader('Authorization'));
+        Http::assertSentCount(7);
+    });
+
+    it('prepares the TIA restore while instance creation holds time for rollback', function (): void {
+        tia_http_fixture();
+        $deadline = app(CommandDeadline::class);
+        $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+
+        $command = $deadline->holding(150.0, fn (): string => app(TiaBaselineSetup::class)->command(tia_project(), 60.0));
+
+        expect($command)->toContain('ORBIT_TIA_FILES', base64_encode(tia_graph()));
         Http::assertSentCount(7);
     });
 
