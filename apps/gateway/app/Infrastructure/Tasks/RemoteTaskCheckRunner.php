@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
@@ -24,7 +27,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     /** A finished status carries the result, the deliverable evidence and a 16 KiB output tail. It outgrows the 64 KiB process default. */
     public const int OutputLimitBytes = 8 * 1024 * 1024;
 
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private DevelopmentSshExecutor $ssh, private TiaBaselineSetup $tia) {}
 
     public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
@@ -33,6 +36,19 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         if ($script === false) {
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
+        foreach ($setup as &$step) {
+            if ($step['command'] === LifecycleStep::RestoreTiaBaseline) {
+                try {
+                    $instance->loadMissing('project');
+                    $started = microtime(true);
+                    $step['command'] = $this->tia->command($instance->project, $step['timeout_seconds']);
+                    $step['timeout_seconds'] = max(1, (int) floor($step['timeout_seconds'] - (microtime(true) - $started)));
+                } catch (ResourceOperationException $exception) {
+                    throw new TaskCheckException('Setup step ['.$step['name'].']: '.$exception->getMessage());
+                }
+            }
+        }
+        unset($step);
         $steps = json_encode($setup, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $verify = $deliverables === null ? null : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $install = TaskWorkspaceMetadata::operation('check', [

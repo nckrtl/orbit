@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
@@ -25,6 +28,7 @@ use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TiaBaselineTestSource;
 
 function check_runner_checkout(string $check): string
 {
@@ -71,7 +75,7 @@ function check_runner(SshExecutor $transport): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(TiaBaselineSetup::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -973,4 +977,20 @@ it('runs no project command when start and run omit the command file, and still 
         ->and($startedLog)->not->toContain('composer check')
         ->and(is_file($checkout.'/composer-check-ran'))->toBeFalse()
         ->and(is_file($checkout.'/deliverable-ran'))->toBeTrue();
+});
+
+it('restores the builtin TIA baseline after dependency setup before a task check', function (): void {
+    app()->instance(TiaBaselineSource::class, new TiaBaselineTestSource);
+    $checkout = check_runner_checkout('true');
+    $target = $checkout.'/.pest/tia';
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $setup = [
+        ['name' => 'dependencies', 'command' => 'mkdir -p vendor/bin; printf %s '.escapeshellarg('<?php echo '.var_export($target."\n", true).';').' > vendor/bin/pest', 'timeout_seconds' => 10],
+        ['name' => 'baseline', 'command' => LifecycleStep::RestoreTiaBaseline, 'timeout_seconds' => 30],
+    ];
+    $process = $runner->start($instance, 'test -f .pest/tia/graph.json', $setup);
+    $reading = check_runner_wait($runner, $instance, $process);
+    expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(0);
+    expect(file_get_contents($target.'/graph.json'))->toContain(str_repeat('a', 40));
 });

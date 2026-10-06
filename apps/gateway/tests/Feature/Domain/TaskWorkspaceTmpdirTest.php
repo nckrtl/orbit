@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -65,7 +66,7 @@ function tmpdir_runner(?SshExecutor $transport = null): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(TiaBaselineSetup::class));
 }
 
 function tmpdir_records_scripts(array &$scripts): SshExecutor
