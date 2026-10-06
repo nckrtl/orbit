@@ -76,7 +76,7 @@ function probe_transport_state(): array
 }
 
 describe('committed document body HTTP transport', function (): void {
-    it('round trips and verifies empty and binary bodies through real bounded HTTP responses', function (string $encoded): void {
+    it('round trips DocumentBodies without an object ACL and verifies empty and binary bodies through real bounded HTTP responses', function (string $encoded): void {
         [$server, $bodies] = body_transport_fixture('short');
         $body = DocumentBody::base64($encoded);
         $bytes = $body->bytes;
@@ -85,7 +85,7 @@ describe('committed document body HTTP transport', function (): void {
 
             expect($bodies->get('orbit-documents/1/1/fixture', $body->sizeBytes, $body->sha256))->toBe($bytes);
             expect(array_column(probe_transport_state()['requests'], 'method'))->toBe(['PUT', 'GET', 'GET']);
-            expect(probe_transport_state()['requests'][0]['acl'])->toBe('private');
+            expect(probe_transport_state()['requests'][0]['acl'])->toBeNull();
         } finally {
             $server->stop();
             DB::disconnect('sqlite');
@@ -141,7 +141,7 @@ describe('document probe HTTP transport', function (): void {
         }
     })->with(['denied' => 403, 'not found' => 404, 'server failure' => 500, 'redirect' => 302]);
 
-    it('completes a private filesystem PUT GET DELETE round trip with the selected transport', function (): void {
+    it('completes a filesystem PUT GET DELETE round trip without an object ACL with the selected transport', function (): void {
         [$server, $client, $storage] = probe_transport_fixture('short');
         $disk = app(DocumentsFilesystem::class)->forConfiguration($storage);
         $key = 'orbit-document-probes/private-round-trip';
@@ -154,7 +154,7 @@ describe('document probe HTTP transport', function (): void {
             expect(array_column($state['requests'], 'method'))->toBe(['PUT', 'GET', 'DELETE']);
             expect(array_column($state['requests'], 'status'))->toBe([200, 200, 204]);
             expect(array_column($state['requests'], 'authorized'))->toBe([true, true, true]);
-            expect($state['requests'][0]['acl'])->toBe('private');
+            expect($state['requests'][0]['acl'])->toBeNull();
             expect($state['object_count'])->toBe(0);
         } finally {
             $server->stop();
@@ -169,6 +169,7 @@ describe('document probe HTTP transport', function (): void {
             expect(array_column($state['requests'], 'method'))->toBe(['PUT', 'GET', 'DELETE']);
             expect(array_column($state['requests'], 'status'))->toBe([200, 200, 204]);
             expect($state['object_count'])->toBe(0);
+            expect($state['requests'][0]['acl'])->toBeNull();
             $this->travel(2)->minutes();
             expect(app(ReconcileProbesAction::class)->handle())->toBe(['attempted' => 1, 'succeeded' => 1, 'failed' => 0]);
         } finally {

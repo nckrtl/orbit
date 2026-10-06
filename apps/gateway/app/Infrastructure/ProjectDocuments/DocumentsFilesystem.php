@@ -6,7 +6,9 @@ namespace App\Infrastructure\ProjectDocuments;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\ProjectDocumentStorage;
+use Aws\CommandInterface;
 use Aws\Handler\Guzzle\GuzzleHandler;
+use Aws\Middleware as AwsMiddleware;
 use GuzzleHttp\Client;
 use GuzzleHttp\Handler\CurlHandler;
 use GuzzleHttp\HandlerStack;
@@ -61,6 +63,16 @@ final readonly class DocumentsFilesystem
             if (! $disk instanceof AwsS3V3Adapter) {
                 throw new ResourceOperationException('project_documents.storage_unavailable', 'Document storage is unavailable.', 503);
             }
+
+            // Flysystem defaults uploads to ACL=private even without visibility config.
+            // Document privacy comes from the private bucket and IAM, not object ACLs.
+            $disk->getClient()->getHandlerList()->appendInit(AwsMiddleware::mapCommand(static function (CommandInterface $command): CommandInterface {
+                if (in_array($command->getName(), ['PutObject', 'CreateMultipartUpload'], true)) {
+                    unset($command['ACL']);
+                }
+
+                return $command;
+            }), 'documents_no_object_acl');
 
             return $disk;
         } catch (ResourceOperationException $exception) {

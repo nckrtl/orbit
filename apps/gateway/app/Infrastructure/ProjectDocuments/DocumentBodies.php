@@ -34,7 +34,7 @@ final readonly class DocumentBodies
         try {
             $disk->getClient()->putObject([
                 'Bucket' => $disk->getConfig()['bucket'], 'Key' => $key, 'Body' => $body->bytes,
-                'ACL' => 'private', 'ContentType' => 'application/octet-stream',
+                'ContentType' => 'application/octet-stream',
                 'ContentDisposition' => 'attachment',
                 '@http' => ['timeout' => 30, 'connect_timeout' => 2, 'allow_redirects' => false, 'sink' => new ProbeResponseBuffer(65536)],
             ]);
