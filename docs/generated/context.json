@@ -84,6 +84,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Subtask",
@@ -444,6 +445,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Route",
                 "Schedule",
                 "Task",
@@ -581,6 +583,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Schedule",
@@ -768,6 +771,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Schedule",
@@ -838,6 +842,7 @@
             "concepts": [
                 "Extension",
                 "Project",
+                "Project Documents",
                 "Task"
             ],
             "governing_adrs": []
@@ -953,6 +958,7 @@
                 "Instance",
                 "Node",
                 "Project",
+                "Project Documents",
                 "Route",
                 "Subtask",
                 "Task",
@@ -977,6 +983,7 @@
                 "Node",
                 "Node agent",
                 "Process",
+                "Project",
                 "Role",
                 "Task"
             ],
@@ -1070,6 +1077,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Schedule",
@@ -1640,6 +1648,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Route",
                 "Schedule",
                 "Subtask",
@@ -1840,6 +1849,29 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/project-documents.md",
+            "title": "Project Documents",
+            "kind": "reference",
+            "components": [
+                "apps/gateway",
+                "apps/web"
+            ],
+            "concepts": [
+                "Activity",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Project Documents",
+                "Schedule",
+                "Task",
+                "Tool"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/reference/projects.md",
             "title": "Projects",
             "kind": "reference",
@@ -1856,6 +1888,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Route",
                 "Schedule",
                 "Task",
@@ -1926,6 +1959,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Schedule"
             ],
             "governing_adrs": []
@@ -2048,6 +2082,7 @@
                 "Node agent",
                 "Process",
                 "Project",
+                "Project Documents",
                 "Role",
                 "Route",
                 "Schedule",
@@ -2072,6 +2107,8 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Project",
+                "Project Documents",
                 "Route",
                 "Subtask",
                 "Task",

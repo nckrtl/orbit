@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\ProjectDocuments\\DestroyProjectDocumentRequest",
+    "route": "DELETE /api/v1/projects/{project}/documents/{entry}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "removed": true,
+            "cleanup_pending": true
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

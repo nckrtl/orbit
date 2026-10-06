@@ -15,6 +15,10 @@ covers:
 
 A Project records one Git repository and the defaults for running it. New Instances inherit its default branch and root. Its type decides what those Instances can do. The API path is `/api/v1/projects`, and the CLI family is [`project`](/cli/project).
 
+## Project Documents
+
+[Project Documents](/reference/project-documents) are a native folder tree of notes and versioned attachments owned by the Project, independent of its Instances and Git branches. Orbit keeps their metadata in the Gateway database and their bodies in a dedicated private UpCloud bucket. The shared contract covers editing, upload/download, archive, permanent removal, and recovery across API, CLI, SDK, MCP, and web.
+
 ## Fields
 
 A Project stores these fields. API responses, the SDK, and CLI JSON use the same names.

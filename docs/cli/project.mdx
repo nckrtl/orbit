@@ -2,7 +2,7 @@
 title: "project"
 description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
 covers:
-  - apps/cli/app/Commands/Projects/**
+  - apps/cli/app/Commands/Project*/**
   - packages/php-sdk/src/Requests/Projects/{Create,Show,Update,Destroy}ProjectRequest.php
   - packages/php-sdk/src/Requests/Projects/ListProjectsRequest.php
   - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse}.php
@@ -25,6 +25,19 @@ A Project records one Git repository and the defaults for running it. [Projects]
 | [`project:dev-deploy-step:destroy`](#orbit-projectdev-deploy-stepdestroy) | Remove a development deploy step. |
 
 Every command accepts `--json`. [`project:excluded-node`](/reference/development-node-exclusions) keeps a Project off selected `app-dev` Nodes.
+
+## Project Documents
+
+Use `project:document:<verb>` with a Project ID or slug. The [Project Documents command contract](/reference/project-documents#cli-contract) lists browsing, search, folder creation, file input/output, metadata changes, archive, restore, version history, and removal. `project:document-storage:show` and `project:document-storage:update` configure Gateway-owned storage without a Project selector.
+
+Mutations require an observed `--expected-revision`; permanent removal also requires `--yes` without a terminal. JSON mode preserves the API envelope. Local validation uses `input.invalid` and exit 2. Local download integrity or filesystem failures use `project_documents.local_io_failed` and exit 1. On `project_documents.revision_conflict`, preserve the draft and reread metadata rather than retrying automatically.
+
+```bash
+orbit project:document:list acme
+orbit project:document:create acme notes --kind=folder
+orbit project:document:upload acme 12 --from=spec.pdf --expected-revision=3
+orbit project:document:download acme 12 --output=downloaded-spec.pdf
+```
 
 ## orbit project:create
 

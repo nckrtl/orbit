@@ -54,6 +54,18 @@ final class GatewayFailureRenderer
             return self::fieldDetails($details);
         }
 
+        if ($code === 'project_documents.revision_conflict') {
+            $safe = [];
+            foreach (['entry_id', 'current_revision'] as $field) {
+                $value = $details[$field] ?? null;
+                if (is_int($value) && $value > 0) {
+                    $safe[$field] = $value;
+                }
+            }
+
+            return $safe;
+        }
+
         if ($code === 'env.configuration_invalid') {
             return self::environmentConfigurationDetails($details);
         }
