@@ -634,6 +634,10 @@
   },
   "redirects": [
     {
+      "source": "/decisions/0199-post-direction-requests-to-opsbot-immediately",
+      "destination": "/reference/tasks#direction-wakes-opsbot-immediately"
+    },
+    {
       "source": "/decisions/0197-native-project-documents-with-private-s3-storage",
       "destination": "/reference/project-documents#why-it-works-this-way"
     },
