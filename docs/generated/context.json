@@ -740,6 +740,34 @@
             ]
         },
         {
+            "path": "docs/decisions/0200-run-each-task-group-in-its-own-sandbox-vm.md",
+            "title": "ADR 0200: Run each task group in its own sandbox VM",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task check"
+            ],
+            "governing_adrs": [
+                "0200"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -786,7 +814,8 @@
                 "0190",
                 "0191",
                 "0196",
-                "0198"
+                "0198",
+                "0200"
             ]
         },
         {
