@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
+use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Data\Schedules\AddScheduleData;
 use App\Data\Schedules\ScheduleData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
@@ -43,7 +44,11 @@ final readonly class AddScheduleAction
         $ownerIds = $data->targetType === ScheduleTargetType::Instance ? [$data->targetId] : [];
 
         try {
-            return $this->admissions->run($ownerIds, fn (): array => $this->executeOwned($data));
+            return app(AdmitInstanceAppMutationAction::class)->execute(
+                $ownerIds,
+                fn (): array => $this->admissions->run($ownerIds, fn (): array => $this->executeOwned($data)),
+                'process.operation_busy',
+            );
         } catch (ResourceOperationException $exception) {
             if ($exception->errorCode !== 'process.operation_busy') {
                 throw $exception;

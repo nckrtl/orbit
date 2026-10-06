@@ -53,6 +53,7 @@ use App\Domain\Shared\StoredInteger;
 use App\Domain\SourceControl\ApplicationDirectory;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceTransfer;
 use App\Models\Node;
@@ -91,6 +92,7 @@ final readonly class TransferInstanceAction
     /** @return array{instance: Instance, transfer: InstanceTransfer, created: bool} */
     public function execute(Instance $instance, TransferInstanceData $data): array
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         $instance->loadMissing(['project', 'node', 'routes.targets', 'removalMember']);
         $existing = $this->existingTransfer($instance, $data);
 
@@ -138,6 +140,7 @@ final readonly class TransferInstanceAction
             [$transfer, $created] = $this->environmentOperations->run(
                 [$instance->id],
                 function () use ($instance, $data): array {
+                    InstanceAppProjection::assertAvailable([$instance->id]);
                     $instance->refresh();
                     $reserved = $this->existingTransfer($instance, $data);
 
@@ -153,6 +156,7 @@ final readonly class TransferInstanceAction
                 fn (): Instance => $this->sourceLock->synchronized(
                     $transfer->source_node_id,
                     function () use ($instance, $transfer, $sourceClusterId): Instance {
+                        InstanceAppProjection::assertAvailable([$instance->id]);
                         try {
                             return $this->resume($instance->id, $transfer->id, $sourceClusterId);
                         } catch (Throwable $exception) {

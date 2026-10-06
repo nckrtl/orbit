@@ -20,6 +20,7 @@ use App\Domain\Routes\RouteDomain;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRename;
 use App\Models\InstanceTransfer;
@@ -39,6 +40,7 @@ final readonly class RenameInstanceAction
 
     public function execute(Instance $instance, RenameInstanceData $data): Instance
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         $identity = $this->identity($instance, $data);
         $latest = InstanceRename::query()->where('instance_id', $instance->id)->orderByRaw("phase = 'complete' ASC")->latest('rowid')->first();
         if ($instance->placedOnAppDev() && (! $latest instanceof InstanceRename || $latest->phase === 'complete' && ! $this->matches($latest, $identity))) {
@@ -60,6 +62,7 @@ final readonly class RenameInstanceAction
 
     private function renameOwned(Instance $instance, RenameInstanceData $data): Instance
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         if (! $instance->placedOnAppDev() || $instance->source_layout !== InstanceSourceLayout::Checkout->value) {
             throw new ResourceOperationException('instance.rename_unsupported', 'Rename requires a development checkout Instance.', 409);
         }

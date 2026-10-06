@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use App\Models\Node;
 use App\Models\Schedule;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
@@ -20,7 +21,7 @@ final readonly class ScheduleTargetResolver
         private ScheduleRuntimeAccountResolver $accounts,
     ) {}
 
-    public function resolve(ScheduleTargetType $type, int $id): ScheduleTarget
+    public function resolve(ScheduleTargetType $type, int $id, bool $mutation = true): ScheduleTarget
     {
         if ($id < 1) {
             $this->invalid();
@@ -31,6 +32,7 @@ final readonly class ScheduleTargetResolver
                 ScheduleTargetType::Node => $this->node(Node::query()->findOrFail($id)),
                 ScheduleTargetType::Instance => $this->instance(
                     Instance::query()->with('node')->findOrFail($id),
+                    mutation: $mutation,
                 ),
             };
         } catch (ModelNotFoundException) {
@@ -38,10 +40,10 @@ final readonly class ScheduleTargetResolver
         }
     }
 
-    public function forSchedule(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
+    public function forSchedule(#[SensitiveParameter] Schedule $schedule, bool $mutation = true): ScheduleTarget
     {
         $type = $this->typeForModel($schedule->target_type);
-        $target = $this->resolve($type, $schedule->target_id);
+        $target = $this->resolve($type, $schedule->target_id, $mutation);
 
         if ($target->node->id !== $schedule->host_node_id) {
             $this->unavailable();
@@ -93,6 +95,7 @@ final readonly class ScheduleTargetResolver
                 ScheduleTargetType::Instance => $this->instance(
                     Instance::query()->with('node')->findOrFail($schedule->target_id),
                     requireActive: false,
+                    mutation: false,
                 ),
             };
         } catch (ModelNotFoundException) {
@@ -104,6 +107,9 @@ final readonly class ScheduleTargetResolver
 
     public function forRemoval(#[SensitiveParameter] Schedule $schedule): ScheduleTarget
     {
+        if (Instance::isMorphType($schedule->target_type)) {
+            InstanceAppProjection::assertAvailable([$schedule->target_id]);
+        }
         $target = $this->forInspection($schedule);
 
         if ($target->node->id !== $schedule->host_node_id) {
@@ -140,8 +146,11 @@ final readonly class ScheduleTargetResolver
         );
     }
 
-    private function instance(Instance $instance, bool $requireActive = true): ScheduleTarget
+    private function instance(Instance $instance, bool $requireActive = true, bool $mutation = true): ScheduleTarget
     {
+        if ($mutation) {
+            InstanceAppProjection::assertAvailable([$instance->id]);
+        }
         $instance->loadMissing('node');
         $this->assertNode($instance->node, $requireActive);
 

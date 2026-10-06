@@ -43,6 +43,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
 use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\InstanceRename;
@@ -76,6 +77,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     public function execute(Instance $instance, bool $force, bool $runTeardown = true, bool $allowCascade = true, bool $requirePreActivation = false): InstanceRemoval
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         AppRuntimeMigration::assertInstanceAvailable($instance);
         if (InstanceRename::query()->where('instance_id', $instance->id)->where('phase', '!=', 'complete')->exists()) {
             throw new ResourceOperationException('instance.lifecycle_busy', 'Finish the Instance rename before removal.', 409);
@@ -118,6 +120,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             fn (): InstanceRemoval => $this->sourceLock->synchronized(
                 $instance->node_id,
                 function () use ($instance, $force, $ownerIds, $runTeardown, $allowCascade, $requirePreActivation): InstanceRemoval {
+                    InstanceAppProjection::assertAvailable($ownerIds);
                     $currentOwnerIds = $allowCascade ? $this->removalEnvironmentOwnerIds($instance->refresh(), $force) : [$instance->id];
 
                     if ($currentOwnerIds !== $ownerIds) {
@@ -136,6 +139,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function executeOwned(Instance $instance, bool $force, bool $runTeardown, bool $allowCascade, bool $requirePreActivation): InstanceRemoval
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         $snapshot = $instance->refresh()->load($this->removalRelations());
         if ($requirePreActivation && $snapshot->status === InstanceState::Active) {
             throw new ResourceOperationException('instance.remove_refused', 'Failed-create cleanup cannot remove an activated Instance.', 409);

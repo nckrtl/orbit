@@ -11,6 +11,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use App\Models\Node;
 use App\Models\Route;
 use Illuminate\Database\Eloquent\Collection;
@@ -19,6 +20,7 @@ final readonly class InstanceEnvironmentContextResolver
 {
     public function resolve(Instance $instance, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         $app = $instance->appConfiguration($app)['name'];
         if ($instance->status !== InstanceState::Active || $instance->provisioning_step !== 'active' || $instance->placementEnvironment() === null) {
             $this->conflict();
@@ -58,6 +60,7 @@ final readonly class InstanceEnvironmentContextResolver
 
     public function resolveForRouteTransition(Instance $instance, InstanceEnvironmentRouteDomain $domain, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         $app = $instance->appConfiguration($app)['name'];
         if ($instance->status !== InstanceState::Active || ! in_array($instance->placementEnvironment(), ['development', 'production'], true) || $instance->provisioning_step !== 'active' || ! is_bool($instance->runtimeForApp($app)['laravel'])) {
             $this->conflict();

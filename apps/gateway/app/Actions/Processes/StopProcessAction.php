@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
+use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Data\Processes\ProcessData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -13,6 +14,7 @@ use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Processes\ProcessRuntimeStatusIndex;
 use App\Domain\Shared\LifecycleStatus;
+use App\Models\Instance;
 use App\Models\Process;
 use SensitiveParameter;
 
@@ -38,6 +40,13 @@ final readonly class StopProcessAction
     }
 
     public function execute(#[SensitiveParameter] Process $process): Process
+    {
+        $ids = Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [];
+
+        return app(AdmitInstanceAppMutationAction::class)->execute($ids, fn (): Process => $this->executeOwned($process));
+    }
+
+    private function executeOwned(#[SensitiveParameter] Process $process): Process
     {
         return $this->lease->run($process, function (Process $fresh): Process {
             try {

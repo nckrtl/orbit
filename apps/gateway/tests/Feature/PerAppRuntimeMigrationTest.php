@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Actions\Instances\MigrateAppRuntimeAction;
 use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
@@ -13,6 +14,8 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Processes\ProcessRuntimeLease;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Instances\NativeInstanceEnvironmentOperationLock;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\AppRuntimeMigration;
 use App\Models\Instance;
 use App\Models\Node;
@@ -20,7 +23,7 @@ use App\Models\Process;
 use App\Models\Project;
 use Illuminate\Support\Facades\DB;
 
-function runtime_migration_fixture(): array
+function runtime_migration_fixture(?InstanceEnvironmentOperationLock $environment = null, ?ProcessAdmissionLock $admissions = null, ?AppDevSourceOperationLock $source = null): array
 {
     $project = Project::query()->create(['name' => 'Migration', 'slug' => 'migration', 'repository_url' => 'https://example.test/migration.git', 'root' => 'public']);
     $node = Node::query()->create(['name' => 'migration', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '192.0.2.20', 'wireguard_ip' => '10.44.0.20']);
@@ -36,9 +39,12 @@ function runtime_migration_fixture(): array
 
         public array $failures = [];
 
+        public ?Closure $duringPrepare = null;
+
         public function prepare(Node $node, AppRuntimeMigration $migration): array
         {
             $this->calls[] = 'prepare';
+            ($this->duringPrepare ?? static fn () => null)();
 
             return ['running' => []];
         }
@@ -79,19 +85,104 @@ function runtime_migration_fixture(): array
 
         return $preferred;
     });
-    $source = Mockery::mock(AppDevSourceOperationLock::class);
-    $source->shouldReceive('synchronized')->andReturnUsing(static fn (int $id, Closure $operation): mixed => $operation());
+    if ($source === null) {
+        $source = Mockery::mock(AppDevSourceOperationLock::class);
+        $source->shouldReceive('synchronized')->andReturnUsing(static fn (int $id, Closure $operation): mixed => $operation());
+    }
     $projection = Mockery::mock(DevelopmentProjectionOperationLock::class);
     $projection->shouldReceive('run')->andReturnUsing(static fn (Closure $operation): mixed => $operation());
-    $environment = Mockery::mock(InstanceEnvironmentOperationLock::class);
-    $environment->shouldReceive('run')->andReturnUsing(static fn (array $ids, Closure $operation): mixed => $operation());
-    $admissions = Mockery::mock(ProcessAdmissionLock::class);
-    $admissions->shouldReceive('run')->andReturnUsing(static fn (array $ids, Closure $operation): mixed => $operation());
+    if ($environment === null) {
+        $environment = Mockery::mock(InstanceEnvironmentOperationLock::class);
+        $environment->shouldReceive('run')->andReturnUsing(static fn (array $ids, Closure $operation): mixed => $operation());
+    }
+    if ($admissions === null) {
+        $admissions = Mockery::mock(ProcessAdmissionLock::class);
+        $admissions->shouldReceive('run')->andReturnUsing(static fn (array $ids, Closure $operation): mixed => $operation());
+    }
     $leases = Mockery::mock(ProcessRuntimeLease::class);
     $leases->shouldReceive('run')->andReturnUsing(static fn (Process $process, Closure $operation): mixed => $operation($process));
 
     return [$node, $instance, new MigrateAppRuntimeAction($source, $projection, $environment, $admissions, $leases, $ports, $projector), $projector, $ports];
 }
+
+it('app projection durable owner takes Instance locks before migration source and admission locks and permits reentrancy', function (): void {
+    $state = (object) ['environment' => 0, 'admission' => 0, 'events' => []];
+    $environment = Mockery::mock(InstanceEnvironmentOperationLock::class);
+    $environment->shouldReceive('run')->andReturnUsing(function (array $ids, Closure $operation) use ($state): mixed {
+        if ($state->environment === 0) {
+            expect($state->admission)->toBe(0);
+        }
+        $state->events[] = 'environment';
+        $state->environment++;
+        try {
+            return $operation();
+        } finally {
+            $state->environment--;
+        }
+    });
+    $source = Mockery::mock(AppDevSourceOperationLock::class);
+    $source->shouldReceive('synchronized')->andReturnUsing(function (int $id, Closure $operation) use ($state): mixed {
+        expect($state->environment)->toBeGreaterThan(0);
+        expect($state->admission)->toBeGreaterThan(0);
+        $state->events[] = 'source';
+
+        return $operation();
+    });
+    $admissions = Mockery::mock(ProcessAdmissionLock::class);
+    $admissions->shouldReceive('run')->andReturnUsing(function (array $ids, Closure $operation) use ($state): mixed {
+        expect($state->environment)->toBeGreaterThan(0);
+        $state->events[] = 'admission';
+        $state->admission++;
+        try {
+            return $operation();
+        } finally {
+            $state->admission--;
+        }
+    });
+    [$node, $instance, $action, $projector] = runtime_migration_fixture($environment, $admissions, $source);
+    $projector->duringPrepare = function () use ($environment, $admissions, $instance): void {
+        new AdmitInstanceAppMutationAction($environment)->execute([$instance->id],
+            fn () => $admissions->run([$instance->id], fn () => null));
+    };
+
+    $action->execute($node);
+
+    expect($state->events)->toBe(['environment', 'admission', 'source', 'environment', 'admission']);
+    expect($state->environment)->toBe(0);
+    expect($state->admission)->toBe(0);
+    expect($projector->calls)->toBe(['prepare', 'activate', 'cleanup']);
+});
+
+it('app projection durable owner prevents migration from holding admission while an Instance mutation owns its native lock', function (): void {
+    $directory = sys_get_temp_dir().'/orbit-migration-order-'.bin2hex(random_bytes(8));
+    $deadline = new CommandDeadline;
+    $owner = new NativeInstanceEnvironmentOperationLock($directory, $deadline);
+    $time = 0.0;
+    $contender = new NativeInstanceEnvironmentOperationLock($directory, $deadline,
+        clock: function () use (&$time): float {
+            $time += 31.0;
+
+            return $time;
+        }, wait: fn () => null);
+    $admissions = Mockery::mock(ProcessAdmissionLock::class);
+    $admissions->shouldNotReceive('run');
+    [$node, $instance, $action, $projector] = runtime_migration_fixture($contender, $admissions);
+    try {
+        $owner->run([$instance->id], function () use ($action, $node, $owner, $instance): void {
+            // A distinct native owner contends, while a same-owner nested call remains reentrant.
+            $owner->run([$instance->id], fn () => null);
+            expect(fn () => $action->execute($node))
+                ->toThrow(fn (ResourceOperationException $e): bool => $e->errorCode === 'env.operation_busy');
+        });
+        expect($projector->calls)->toBe([]);
+        expect(AppRuntimeMigration::query()->count())->toBe(0);
+    } finally {
+        foreach (glob($directory.'/*') as $path) {
+            unlink($path);
+        }
+        rmdir($directory);
+    }
+});
 
 it('journals the legacy annotator store independently and preserves pending withdrawal ownership', function (): void {
     [$node, $instance, $action, $projector, $ports] = runtime_migration_fixture();

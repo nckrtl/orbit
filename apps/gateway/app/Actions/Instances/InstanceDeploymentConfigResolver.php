@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use InvalidArgumentException;
 
 final readonly class InstanceDeploymentConfigResolver
@@ -31,6 +32,7 @@ final readonly class InstanceDeploymentConfigResolver
 
     public function assertAvailable(Instance $instance): void
     {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         if (
             ! $instance->placedOnAppProd()
             || ! in_array($instance->status, [InstanceState::SourceResolved, InstanceState::Active], strict: true)

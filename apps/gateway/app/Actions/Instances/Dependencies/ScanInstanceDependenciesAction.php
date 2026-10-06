@@ -16,6 +16,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 
@@ -40,6 +41,7 @@ final readonly class ScanInstanceDependenciesAction
 
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $attemptedAt): InstanceDependencyScanResult {
+                InstanceAppProjection::assertAvailable([$instance->id]);
                 $current = Instance::query()->with('node')->find($instance->id);
                 if ($current === null) {
                     return $this->failure($instance->id, $attemptedAt, 'dependencies.instance_unavailable', false);
@@ -49,7 +51,11 @@ final readonly class ScanInstanceDependenciesAction
                     ? $this->sourceOperations->synchronized($current->node_id, fn (): InstanceDependencyScanResult => $this->scan($current, $attemptedAt))
                     : $this->scan($current, $attemptedAt);
             });
-        } catch (ResourceOperationException) {
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode === 'instance.lifecycle_busy') {
+                throw $exception;
+            }
+
             // A contender must not overwrite a newer attempt from the current owner.
             return $this->failure($instance->id, $attemptedAt, 'dependencies.operation_busy', false);
         }

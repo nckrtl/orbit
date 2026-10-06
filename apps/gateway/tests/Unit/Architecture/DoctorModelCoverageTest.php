@@ -16,6 +16,9 @@ use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
+use App\Models\InstanceAppProjectionStep;
+use App\Models\InstanceAppUpdate;
 use App\Models\InstanceDependencyEdge;
 use App\Models\InstanceDependencyObservation;
 use App\Models\InstanceDependencyResolution;
@@ -100,6 +103,9 @@ it('partitions every persisted model across doctor dispositions', function (): v
         // Recovery journals are resumed by their lifecycle actions, not mutated by Doctor.
         AppRuntimeMigration::class,
         InstanceRename::class,
+        InstanceAppUpdate::class,
+        InstanceAppProjection::class,
+        InstanceAppProjectionStep::class,
         JevDecision::class,
         ProjectUpdate::class,
         ProblemFingerprint::class,

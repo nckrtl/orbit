@@ -13,6 +13,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use Closure;
 
 final readonly class UpdateInstanceDependenciesAction
@@ -33,6 +34,7 @@ final readonly class UpdateInstanceDependenciesAction
     {
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $cancelled): InstanceDependencyUpdateResult {
+                InstanceAppProjection::assertAvailable([$instance->id]);
                 $current = Instance::query()->with('node')->find($instance->id);
                 if ($current === null || ! $this->available($current)) {
                     return $this->refused($instance->id, 'dependencies.instance_unavailable');
@@ -46,7 +48,11 @@ final readonly class UpdateInstanceDependenciesAction
                     fn (): InstanceDependencyUpdateResult => $this->update($current, $cancelled),
                 );
             });
-        } catch (ResourceOperationException) {
+        } catch (ResourceOperationException $exception) {
+            if ($exception->errorCode === 'instance.lifecycle_busy') {
+                throw $exception;
+            }
+
             return $this->refused($instance->id, 'dependencies.operation_busy');
         }
     }

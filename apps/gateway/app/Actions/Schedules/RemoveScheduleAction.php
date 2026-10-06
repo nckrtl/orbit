@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
+use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Data\Schedules\ScheduleData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -11,6 +12,7 @@ use App\Domain\Schedules\ScheduleOperationException;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Instance;
 use App\Models\Schedule;
 use SensitiveParameter;
 
@@ -22,6 +24,13 @@ final readonly class RemoveScheduleAction
     ) {}
 
     public function execute(#[SensitiveParameter] Schedule $schedule, bool $cascade = false): Schedule
+    {
+        $ids = Instance::isMorphType($schedule->target_type) ? [$schedule->target_id] : [];
+
+        return app(AdmitInstanceAppMutationAction::class)->execute($ids, fn (): Schedule => $this->executeOwned($schedule, $cascade));
+    }
+
+    private function executeOwned(#[SensitiveParameter] Schedule $schedule, bool $cascade): Schedule
     {
         $schedule->update([
             'status' => LifecycleStatus::Removing,

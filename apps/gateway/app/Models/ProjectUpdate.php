@@ -50,6 +50,15 @@ final class ProjectUpdate extends Model
         'error_code',
     ];
 
+    protected static function booted(): void
+    {
+        self::updating(function (self $owner): void {
+            if ($owner->isDirty(['id', 'project_id', 'fingerprint', 'requested_slug', 'requested_repository_url', 'requested_default_branch', 'requested_root', 'previous_slug', 'previous_repository_url', 'previous_default_branch', 'previous_root'])) {
+                throw new \LogicException('A Project update request and prior configuration are immutable.');
+            }
+        });
+    }
+
     /** @return BelongsTo<Project, $this> */
     public function project(): BelongsTo
     {

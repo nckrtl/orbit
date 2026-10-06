@@ -26,6 +26,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -47,6 +48,7 @@ final readonly class DeployDefaultInstanceAction
         $request ??= DeploymentRequest::withoutOutput();
         try {
             return $this->operations->run([$instance->id], function () use ($instance, $request, $onlyChanged, $triggeredBy): ?DeploymentResult {
+                InstanceAppProjection::assertAvailable([$instance->id]);
                 $instance->refresh()->loadMissing(['project', 'node']);
                 $this->assertAvailable($instance);
                 $steps = $this->steps->ordered($instance->project);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Processes;
 
+use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Domain\Analytics\AnalyticsProcessOwnership;
 use App\Domain\AppDev\AgentationPortAllocator;
 use App\Domain\AppDev\AgentationSiteProjection;
@@ -59,6 +60,13 @@ final readonly class RemoveProcessAction
 
     /** `$removedByOwningRole` is true only when the analytics role removes its own `plausible` Process, or a Database server removes its own Process. */
     public function execute(#[SensitiveParameter] Process $process, bool $removedByOwningRole = false): Process
+    {
+        $ids = Instance::isMorphType($process->owner_type) ? [$process->owner_id] : [];
+
+        return app(AdmitInstanceAppMutationAction::class)->execute($ids, fn (): Process => $this->executeOwned($process, $removedByOwningRole));
+    }
+
+    private function executeOwned(#[SensitiveParameter] Process $process, bool $removedByOwningRole): Process
     {
         return $this->lease->run($process, function (Process $fresh) use ($removedByOwningRole): Process {
             if ($fresh->owner_type === Instance::MorphAlias && $fresh->owner instanceof Instance) {

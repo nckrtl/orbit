@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Actions\Schedules;
 
+use App\Actions\Instances\AdmitInstanceAppMutationAction;
 use App\Data\Schedules\ScheduleData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
@@ -24,6 +25,13 @@ final readonly class ActivateScheduleAction
     ) {}
 
     public function execute(#[SensitiveParameter] Schedule $schedule): Schedule
+    {
+        $ids = Instance::isMorphType($schedule->target_type) ? [$schedule->target_id] : [];
+
+        return app(AdmitInstanceAppMutationAction::class)->execute($ids, fn (): Schedule => $this->executeOwned($schedule));
+    }
+
+    private function executeOwned(#[SensitiveParameter] Schedule $schedule): Schedule
     {
         if (! Instance::isMorphType($schedule->target_type)) {
             throw new ResourceOperationException(

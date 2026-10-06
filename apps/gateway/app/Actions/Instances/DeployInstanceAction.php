@@ -22,6 +22,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProcessCancelledException;
 use App\Models\Instance;
+use App\Models\InstanceAppProjection;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -80,6 +81,7 @@ final readonly class DeployInstanceAction
         DeploymentConfig $config,
         DeploymentRequest $request,
     ): DeploymentResult {
+        InstanceAppProjection::assertAvailable([$instance->id]);
         $boundary = DeploymentFailureBoundary::Preparation;
         $release = null;
         $selected = null;
