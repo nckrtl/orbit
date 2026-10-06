@@ -70,7 +70,8 @@ final readonly class TiaBaselineFiles
             $baselines = is_array($graph) ? ($graph['baselines'] ?? null) : null;
             $baseline = is_array($baselines) ? ($baselines[$branch] ?? null) : null;
             if (! is_array($baseline) || ($baseline['sha'] ?? null) !== $sha
-                || ($baseline['complete'] ?? null) !== true) {
+                || (($baseline['complete'] ?? null) !== true
+                    && (array_key_exists('complete', $baseline) || ! is_array($baseline['results'] ?? null) || $baseline['results'] === []))) {
                 throw self::invalid();
             }
 

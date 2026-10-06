@@ -74,6 +74,15 @@ describe('Gateway GitHub TIA baseline', function (): void {
         Http::assertSentCount(7);
     });
 
+    it('accepts Pest baselines with recorded results and no optional complete marker', function (): void {
+        $graph = json_encode(['schema' => 1, 'baselines' => ['main' => [
+            'sha' => str_repeat('a', 40), 'tree' => [],
+            'results' => ['example' => ['status' => 0, 'message' => '', 'time' => 0.01, 'assertions' => 1, 'file' => 'tests/ExampleTest.php']],
+        ]]], JSON_THROW_ON_ERROR);
+        tia_http_fixture(archive: tia_archive(['graph.json' => $graph]));
+        expect(app(TiaBaselineSource::class)->fetch(tia_project())->files)->toBe(['graph.json' => $graph]);
+    });
+
     it('refuses missing App credentials without using the CLI or network', function (): void {
         Http::preventStrayRequests();
         expect(fn () => app(TiaBaselineSource::class)->fetch(tia_project()))->toThrow(ResourceOperationException::class, 'Actions read');
@@ -124,6 +133,7 @@ describe('Gateway GitHub TIA baseline', function (): void {
         'unexpected file' => [['graph.json' => '{}', 'credentials' => 'secret']],
         'invalid JSON' => [['graph.json' => '{']],
         'wrong commit' => [['graph.json' => '{"baselines":{"main":{"sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","complete":true}}}']],
+        'missing results and completeness' => [['graph.json' => '{"baselines":{"main":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}}']],
         'incomplete graph' => [['graph.json' => '{"baselines":{"main":{"sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","complete":false}}}']],
         'oversized expansion' => [['graph.json' => str_repeat(' ', TiaBaselineFiles::MaxBytes + 1)]],
     ]);
