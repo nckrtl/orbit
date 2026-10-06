@@ -157,10 +157,16 @@ it('allows a concurrent SQLite writer during a blocked remote correction fetch a
             {
                 if (in_array('fetch', $invocation->arguments, true)) {
                     $input = new InputStream;
-                    $remote = new Process(['bash', '-c', 'printf fetch-blocked; read -r release'], input: $input, timeout: 5);
+                    $remote = new Process(['bash', '-c', 'printf fetch-blocked; read -r release'], input: $input, timeout: 30);
                     $remote->start();
                     try {
-                        $remote->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'fetch-blocked'));
+                        while (! str_contains($remote->getOutput(), 'fetch-blocked')) {
+                            $remote->checkTimeout();
+                            if (! $remote->isRunning()) {
+                                throw new RuntimeException('Blocked fetch fixture exited before readiness.');
+                            }
+                            usleep(1000);
+                        }
                         expect($remote->isRunning())->toBeTrue();
                         expect(DB::connection()->transactionLevel())->toBe(0);
                         $this->writer->exec("INSERT INTO writer_probe VALUES ('written while fetch blocked')");
