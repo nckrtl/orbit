@@ -38,6 +38,7 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
 it('installs and executes the FPM pre-start gate before accepting traffic and refuses startup on gate failure', function (string $ambientEnvironment): void {
@@ -412,7 +413,11 @@ it('publishes one complete gateway file from distinct candidates under contentio
         }
 
         foreach (array_keys($characters) as $index) {
-            protected_file_writer_wait_until(static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"));
+            protected_file_writer_wait_until(
+                static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"),
+                $processes,
+                static fn (): string => "ready marker {$index}",
+            );
         }
 
         file_put_contents($startPath, 'start');
@@ -423,6 +428,8 @@ it('publishes one complete gateway file from distinct candidates under contentio
             ]));
 
             return count($observedCandidates) >= 2;
+        }, $processes, static function () use (&$observedCandidates): string {
+            return 'observed candidates: '.count($observedCandidates).' (expected at least 2)';
         });
 
         foreach ($processes as $process) {
@@ -828,13 +835,41 @@ function protected_file_writer_wait_for_success(Process $process): void
     }
 }
 
-function protected_file_writer_wait_until(Closure $condition, float $timeoutSeconds = 5.0): void
+/** @param list<Process> $processes */
+function protected_file_writer_wait_until(Closure $condition, array $processes, Closure $state): void
 {
-    $deadline = microtime(true) + $timeoutSeconds;
-
     while (! $condition()) {
-        if (microtime(true) >= $deadline) {
-            throw new RuntimeException('Timed out waiting for protected-file writer state.');
+        $running = false;
+        $failure = null;
+        $writerStates = [];
+
+        foreach ($processes as $index => $process) {
+            try {
+                $process->checkTimeout();
+            } catch (ProcessTimedOutException $exception) {
+                $failure = "Writer {$index} exceeded its {$exception->getExceededTimeout()} second lifetime.";
+            }
+
+            if ($process->isRunning()) {
+                $running = true;
+            } elseif (! $process->isSuccessful()) {
+                $failure ??= 'A protected-file writer failed before the required state was observed.';
+            }
+
+            $writerStates[] = sprintf(
+                'writer %d: status=%s, exit=%s, stderr=%s',
+                $index,
+                $process->getStatus(),
+                $process->getExitCode() ?? 'none',
+                $process->getErrorOutput(),
+            );
+        }
+
+        if ($failure !== null || ! $running) {
+            throw new RuntimeException(
+                $state().'. '.($failure ?? 'All protected-file writers exited before the required state was observed.')
+                .' '.implode('; ', $writerStates),
+            );
         }
 
         usleep(1_000);
