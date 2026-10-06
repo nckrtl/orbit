@@ -446,17 +446,20 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 # enter. The worker owns everything below it, so the grants skip it instead of failing the whole prepare.
                 # setfacl writes access before defaults in a combined call. Finish inheritance first.
                 default_grant="d:u:$worker_user:rwX,d:u:$managed_user:rwX"
-                find -P "$checkout" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} + \)
+                # Always use a pruned traversal, even when every entry is managed-owned. A recursive
+                # setfacl fast path would reopen private caches, including other linked worktrees' temp.
+                share_entries() {
+                    sharing_root=$1
+                    shift
+                    find -P "$sharing_root" \( -path "$git_directory/orbit/tmp" -o -path "$common_directory/orbit/tmp" -o -path "$common_directory/worktrees/*/orbit/tmp" -o \( -type d \( ! -readable -o ! -executable \) \) \) -prune -o \( -user "$managed_user" "$@" \)
+                }
+                share_entries "$checkout" -type d -exec setfacl -m "$default_grant" -- {} +
                 access_grant="u:$worker_user:rwX,u:$managed_user:rwX"
-                if [ -z "$(find -P "$checkout" ! -user "$managed_user" -print -quit)" ]; then
-                    setfacl -R -P -m "$access_grant" -- "$checkout"
-                else
-                    # Worker-owned files already inherit access; only their owner can change their ACL.
-                    find -P "$checkout" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} + \)
-                fi
+                # Worker-owned files already inherit access; only their owner can change their ACL.
+                share_entries "$checkout" ! -type l -exec setfacl -m "$access_grant" -- {} +
                 # Linked worktrees need their own administration and the shared refs/objects.
-                find -P "$common_directory" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} + \)
-                find -P "$common_directory" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} + \)
+                share_entries "$common_directory" -type d -exec setfacl -m "$default_grant" -- {} +
+                share_entries "$common_directory" ! -type l -exec setfacl -m "$access_grant" -- {} +
                 setfacl -m "u:$worker_user:r--" -- "$common_directory/config"
                 if [ -d "$common_directory/hooks" ]; then
                     find -P "$common_directory/hooks" -user "$managed_user" -type d -exec setfacl -m "u:$worker_user:r-X,d:u:$worker_user:r-X" -- {} +

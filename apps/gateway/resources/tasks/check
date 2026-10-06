@@ -404,9 +404,10 @@ def share_with_worker(checkout, worker):
 
 
 def grant_options(owner):
-    """The find arguments that select the entries to grant: owned by OWNER, outside .git/config, .git/hooks and
-    any directory the running user cannot enter."""
+    """Select owned checkout entries, excluding protected Git files, role-private temp directories,
+    and any directory the running user cannot enter."""
     return ['find', '-P', '.', '(', '-path', './.git/config', '-o', '-path', './.git/hooks',
+            '-o', '-path', './.git/orbit/tmp',
             '-o', '(', '-type', 'd', '!', '(', '-readable', '-executable', ')', ')', ')', '-prune', '-o', '-user', str(owner)]
 
 

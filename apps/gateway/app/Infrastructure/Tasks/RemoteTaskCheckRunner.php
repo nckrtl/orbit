@@ -148,7 +148,8 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
                 BASH;
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
-                input: $prefix.TaskWorkspaceMetadata::bashPreamble().$command."\n",
+                input: $prefix.TaskWorkspaceMetadata::bashPreamble().
+                    'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir').')"'."\nexport TMPDIR\n".$command."\n",
                 maxOutputBytes: self::OutputLimitBytes,
             ), 'task-check', 'tasks.check_failed');
         } catch (RuntimeConvergenceException $exception) {

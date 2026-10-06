@@ -120,6 +120,52 @@ function check_runner_as_worker(string $directory, string $command): int
 }
 
 describe('TaskCheckWorkerUser', function (): void {
+    it('isolates workspace TMPDIR when another Unix user owns a restrictive prior shared cache', function (): void {
+        config()->set('orbit.tasks.worker_user', 'nobody');
+        $checkout = check_runner_checkout('true');
+        (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $this->directory]))->mustRun();
+        $shared = $this->directory.'/prior-shared';
+        File::ensureDirectoryExists($shared);
+        (new Process(['setfacl', '-m', 'u:nobody:rwx', $shared]))->mustRun();
+        // mkdir -m alone preserves named-user ACLs inherited from the shared parent.
+        expect(check_runner_as_worker($shared, 'mkdir phpstan && setfacl -b -k phpstan && chmod 0700 phpstan'))->toBe(0);
+        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result"';
+        expect((new Process(['bash', '-c', $analyse], null, ['TMPDIR' => $shared]))->run())->not->toBe(0);
+        $prior = getenv('TMPDIR');
+        $priorServer = $_SERVER['TMPDIR'] ?? null;
+        $priorEnvironment = $_ENV['TMPDIR'] ?? null;
+        putenv('TMPDIR='.$shared);
+        $_SERVER['TMPDIR'] = $_ENV['TMPDIR'] = $shared;
+
+        try {
+            $runner = check_runner(new LocalShellSshExecutor);
+            $instance = check_runner_instance($checkout);
+            $reading = check_runner_wait($runner, $instance, $runner->start($instance, $analyse, [
+                ['name' => 'analyse setup', 'command' => $analyse, 'timeout_seconds' => 10],
+            ]));
+
+            expect($reading->exitCode)->toBe(0);
+            $temporary = $checkout.'/.git/orbit/tmp/check-'.posix_geteuid();
+            expect(file_get_contents($temporary.'/phpstan/result'))->toBe('analysed');
+            $permissions = (new Process(['getfacl', '-cp', $temporary]))->mustRun()->getOutput();
+            expect($permissions)->not->toContain('default:')->not->toContain('user:nobody:');
+            expect(fileowner($shared.'/phpstan'))->toBe(posix_getpwnam('nobody')['uid']);
+        } finally {
+            putenv($prior === false ? 'TMPDIR' : 'TMPDIR='.$prior);
+            if ($priorServer === null) {
+                unset($_SERVER['TMPDIR']);
+            } else {
+                $_SERVER['TMPDIR'] = $priorServer;
+            }
+            if ($priorEnvironment === null) {
+                unset($_ENV['TMPDIR']);
+            } else {
+                $_ENV['TMPDIR'] = $priorEnvironment;
+            }
+            check_runner_as_worker($shared, 'rm -rf phpstan');
+        }
+    });
+
     it('runs setup, the Project check, working-tree and start-commit deliverables as the managed user', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
@@ -280,13 +326,13 @@ describe('TaskCheckWorkerUser', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
         $checkout = check_runner_checkout('true');
         File::ensureDirectoryExists($checkout.'/.git/no-acl');
-        file_put_contents($checkout.'/.git/no-acl/setfacl', "#!/bin/sh\nexit 1\n");
+        file_put_contents($checkout.'/.git/no-acl/setfacl', "#!/bin/sh\nif [ \"\$1\" = -b ]; then exec /usr/bin/setfacl \"\$@\"; fi\nexit 1\n");
         chmod($checkout.'/.git/no-acl/setfacl', 0755);
         $runner = check_runner(new class implements SshExecutor
         {
             public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
             {
-                // A Node without the acl package has no setfacl.
+                // Allow private TMPDIR initialization, but fail the checkout-sharing grant.
                 return new LocalShellSshExecutor()->execute($connection, new RemoteCommand(
                     arguments: $command->arguments,
                     input: "export PATH=\"\$1/.git/no-acl:\$PATH\"\n".$command->input,
