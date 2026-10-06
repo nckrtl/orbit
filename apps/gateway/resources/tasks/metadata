@@ -8,6 +8,7 @@ import json
 import os
 import secrets
 import stat
+import subprocess
 import sys
 
 DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -174,6 +175,16 @@ def perform(checkout, operation, payload):
                 metadata.publish(info, 'exclude', exclude)
             installed = metadata.publish(metadata.checkout, '.mcp.json', payload['config'].encode() + b'\n', missing=True)
             return 'installed\n' if installed else 'present\n'
+        if operation == 'tmpdir':
+            orbit = metadata.orbit(create=True)
+            temporary = metadata.directory(orbit, 'tmp', owned=False, create=True)
+            directory = metadata.directory(temporary, f'check-{os.geteuid()}', create=True)
+            # Workspace sharing ACLs must not leak into role-private temporary files.
+            subprocess.run(['setfacl', '-b', '-k', f'/proc/self/fd/{directory}'],
+                           pass_fds=(directory,), check=True)
+            os.fchmod(directory, 0o700)
+            metadata.verify()
+            return os.readlink(f'/proc/self/fd/{directory}')
         if operation in {'check', 'snapshot', 'turn'}:
             orbit = metadata.orbit(create=True)
             if operation in {'check', 'snapshot'}:

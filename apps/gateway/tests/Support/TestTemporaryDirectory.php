@@ -7,14 +7,12 @@ namespace Tests\Support;
 use RuntimeException;
 
 /**
- * Points TMPDIR at the canonical system temporary directory before any test reads it.
+ * Gives each test process a unique, traversable fixture root outside private role TMPDIRs.
  *
- * On macOS, TMPDIR is `/var/folders/...`, and `/var` is a symlink to `/private/var`. Orbit refuses symlinked
- * path ancestors and compares canonical paths, as its Ubuntu Nodes require. Tests that build fixtures under
- * sys_get_temp_dir() would then see those checks reject their own directories. PHP caches the temporary
- * directory on the first sys_get_temp_dir() call, so this runs before anything else in tests/bootstrap.php.
- * The parallel runner reads it earlier, but its workers are new processes that inherit this TMPDIR. Child
- * processes inherit it too, so `mktemp` in shell programs under test agrees with the PHP side.
+ * Cross-user tests grant access on individual fixtures; their parent must be traversable too.
+ * Canonicalize /tmp on macOS, where it is a symlink. PHP caches sys_get_temp_dir(), so this
+ * runs before other test bootstrap code. Production/check processes retain their private TMPDIR;
+ * only test processes replace it. Shell programs under test inherit the same fixture root.
  */
 final class TestTemporaryDirectory
 {
@@ -22,6 +20,22 @@ final class TestTemporaryDirectory
     {
         $configured = getenv('TMPDIR');
         $directory = is_string($configured) && $configured !== '' ? $configured : '/tmp';
+        // Cross-user fixtures cannot traverse a role-private workspace TMPDIR ancestor.
+        // Preserve other callers' configured roots (including database safety probes).
+        if (preg_match('~/orbit/tmp/(?:agent|check)-[0-9]+$~', $directory) === 1) {
+            $directory = '/tmp/orbit-gateway-tests-'.bin2hex(random_bytes(12));
+            if (! mkdir($directory, 0755)) {
+                throw new RuntimeException('Could not create the shared test fixture root.');
+            }
+            chmod($directory, 0755);
+            register_shutdown_function(static function () use ($directory): void {
+                // Run after other bootstrap shutdown hooks have removed their fixtures.
+                register_shutdown_function(static function () use ($directory): void {
+                    // Tests own cleanup of worker-owned files; never delete their leftovers here.
+                    @rmdir($directory);
+                });
+            });
+        }
         $canonical = realpath($directory);
 
         if ($canonical === false || ! is_dir($canonical)) {
