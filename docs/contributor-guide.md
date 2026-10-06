@@ -5,7 +5,7 @@ description: "Prepare architecture and documentation, build a feature, and submi
 covers:
   - .agents/skills/reviewing-pull-requests/references/test-*.md
   - composer.json
-  - bin/{bootstrap,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify}
+  - bin/{bootstrap,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check}
   - "{apps/*,packages/php-sdk}/composer.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
@@ -187,6 +187,19 @@ Coverage declarations are optional, but docs-lint checks that their globs are sa
 `composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the committed context index. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
 
 Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. A lower number follows the same two rules only when the retirement table does not list its number. The open gaps are 0007 and 0020. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
+
+Check a proposed head and its merge result with the current Docs tooling:
+
+```bash
+bin/docs-merge-check --base origin/main --head HEAD --head-only
+bin/docs-merge-check --base origin/main --head HEAD
+```
+
+`--head` defaults to `HEAD`. `--head-only` checks that committed tree alone; otherwise `--base` is required and Git builds the merge result in a temporary local clone. Both modes run strict docs lint, including the ADR lifecycle rules, without changing the working tree. The merge preview retains both parents for history checks. The command isolates Laravel's configuration-cache path in its private scratch directory so a workspace or inherited cache cannot select a different documentation tree; existing caches are left untouched.
+
+An ADR number closed on the base can pass at an older branch's head but fail in the merge result: the merge result is what lands on main.
+
+The command never fetches. Make both refs available locally before running it. `--help` lists the flags and exit codes: 0 means lint passed, 1 means lint failed, and 2 means the preview could not be checked. Missing refs report `base_unavailable` or `head_unavailable`; conflicts report `merge_conflict` and never fall back to checking the head.
 
 The lint command reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
 
