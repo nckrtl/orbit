@@ -21,7 +21,7 @@ it('round-trips the receipt-backed interrupted creation eligibility guards', fun
 });
 
 it('round-trips reserved task worktree eligibility and unresolved source commit guards', function (): void {
-    $migration = require base_path('database/migrations/2026_10_11_000003_allow_reserved_task_worktree_removal.php');
+    $migration = reserved_task_worktree_removal_migration();
     $names = ['instance_removals_insert', 'instance_removal_members_insert', 'instances_removal_status_update', 'instance_removal_members_source_commit_insert'];
     $before = DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all();
 
@@ -32,4 +32,18 @@ it('round-trips reserved task worktree eligibility and unresolved source commit 
     $migration->up();
 
     expect(DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all())->toBe($before);
+});
+
+it('round-trips legacy null-prepare reserved worktree eligibility without changing other trigger clauses', function (): void {
+    $migration = require base_path('database/migrations/2026_10_12_000000_allow_reserved_worktree_null_prepare_removal.php');
+    $before = DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all();
+
+    $migration->down();
+    $rolledBack = DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all();
+    $changed = array_keys(array_diff_assoc($before, $rolledBack));
+    sort($changed);
+    expect($changed)->toBe(['instance_removal_members_insert', 'instance_removals_insert', 'instances_removal_status_update']);
+    $migration->up();
+
+    expect(DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all())->toEqual($before);
 });

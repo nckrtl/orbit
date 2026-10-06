@@ -11,14 +11,32 @@ function owned_interrupted_creation_removal_migration(): object
     {
         public function down(): void
         {
-            (require base_path('database/migrations/2026_10_11_000003_allow_reserved_task_worktree_removal.php'))->down();
+            reserved_task_worktree_removal_migration()->down();
             (require base_path('database/migrations/2026_10_10_000001_allow_owned_interrupted_creation_removal.php'))->down();
         }
 
         public function up(): void
         {
             (require base_path('database/migrations/2026_10_10_000001_allow_owned_interrupted_creation_removal.php'))->up();
+            reserved_task_worktree_removal_migration()->up();
+        }
+    };
+}
+
+function reserved_task_worktree_removal_migration(): object
+{
+    return new class
+    {
+        public function down(): void
+        {
+            (require base_path('database/migrations/2026_10_12_000000_allow_reserved_worktree_null_prepare_removal.php'))->down();
+            (require base_path('database/migrations/2026_10_11_000003_allow_reserved_task_worktree_removal.php'))->down();
+        }
+
+        public function up(): void
+        {
             (require base_path('database/migrations/2026_10_11_000003_allow_reserved_task_worktree_removal.php'))->up();
+            (require base_path('database/migrations/2026_10_12_000000_allow_reserved_worktree_null_prepare_removal.php'))->up();
         }
     };
 }
