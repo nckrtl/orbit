@@ -239,7 +239,7 @@ it('returns a group to todo when provisioning throws and continues the tick with
     Exceptions::assertReported(RuntimeException::class);
     expect($provisioning->calls[$failing->id])->toBe(1)
         ->and($failing->fresh()?->status)->toBe(TaskGroupStatus::Todo)
-        ->and($failing->fresh()?->assistance_reason)->toBe(TaskScheduler::ProvisioningFailedReason)
+        ->and($failing->fresh()?->assistance_reason)->toContain(TaskScheduler::ProvisioningFailedReason, 'RuntimeException', 'Lock wait timeout')
         ->and($next->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and(Task::topLevel()->where('status', TaskGroupStatus::Reserved)->count())->toBe(0)
         ->and(app(TaskConcurrencyGuard::class)->activeForApp($project->id))->toBe(1);

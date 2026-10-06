@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskGroupData;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -48,8 +50,8 @@ final readonly class UpdateTaskGroupAction
                 }
 
                 $locked->status = $data->status;
-                if (TaskScheduler::isClaimFailureReason($locked->assistance_reason)) {
-                    $locked->assistance_reason = null;
+                if ($locked->assistance_kind !== AssistanceKind::Direction && TaskScheduler::isClaimFailureReason($locked->assistance_reason)) {
+                    $locked->fill(TaskAssistance::cleared());
                 }
             }
 

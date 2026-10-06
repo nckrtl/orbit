@@ -76,6 +76,7 @@ return [
         // Effort for new threads. Existing threads keep their stored value.
         'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'high' : $implementerEffort,
         'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,
+        'provisioning_failure_threshold' => max(1, (int) env('ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD', 3)),
         'observation_grace_seconds' => (int) env('ORBIT_TASKS_OBSERVATION_GRACE_SECONDS', 120),
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
