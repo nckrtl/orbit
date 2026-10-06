@@ -199,6 +199,8 @@ bin/docs-merge-check --base origin/main --head HEAD
 
 An ADR number closed on the base can pass at an older branch's head but fail in the merge result: the merge result is what lands on main.
 
+On pull requests, CI's `Docs (merge ref)` job checks out the base repository's `refs/pull/N/merge` and runs `composer check` in `apps/docs`. It logs the merge commit and fails with `Docs merge ref unavailable` if checkout fails; it never falls back to the PR head. `Required checks` requires this job to succeed on pull requests. Pushes to `main` and manual runs skip it and keep their existing checks.
+
 The command never fetches. Make both refs available locally before running it. `--help` lists the flags and exit codes: 0 means lint passed, 1 means lint failed, and 2 means the preview could not be checked. Missing refs report `base_unavailable` or `head_unavailable`; conflicts report `merge_conflict` and never fall back to checking the head.
 
 The lint command reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
