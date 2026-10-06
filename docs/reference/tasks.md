@@ -558,11 +558,17 @@ When the workspace is ready, the task becomes `running`, and its first subtask s
 | Cause | Result |
 | --- | --- |
 | Every fitting Node is full | The task waits without a reason. When no `app-dev` Node has capacity, claims stop until the next tick. |
-| No Node fits, the Project lacks a valid default branch or repository, a routed workspace lacks a valid root, or provisioning throws | Reason `Workspace provisioning did not return an instance.` The error goes to the Gateway log. |
+| No Node fits, source defaults are invalid, or provisioning throws | Count consecutive failures per group in cache. Request `failure` assistance at `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` (default `3`, minimum `1`). |
+| Provisioning failure with a known cause | Prefix `Workspace provisioning did not return an instance.` followed by the constraint or exception class, step, and message, such as `app-instance-source-prepare` for an existing checkout. |
+| Workspace creation exception | Log the exception through Laravel `report()` before returning a typed failure. |
+| Provisioner returns null | Use the fixed reason `Workspace provisioning did not return an instance.` |
+| Successful start after provisioning failures | Clear the claim-failure reason and reset the consecutive-failure counter. |
 | The move to `running` fails after provisioning | Reason `The task could not start after its workspace was provisioned.` The task keeps its workspace. |
 | The task stays `reserved` longer than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Reason `The task stayed reserved too long and returned to todo.` |
 
-These reasons clear when the task starts, waits for capacity, or moves to `backlog`. Each release applies only while the claim still holds that reservation, so a claim never overwrites a newer claim or a cancel.
+These reasons and their failure assistance clear when the task starts, waits for capacity, or moves between `backlog` and `todo`. Direction requests stay open. Each release applies only while the claim still holds that reservation, so a claim never overwrites a newer claim or a cancel.
+
+The scheduler records a successful workspace start in the activity log within the transaction that moves the group to `running`. That activity ID identifies the next counter generation. A rollback keeps the old generation and streak. A committed start resets the streak even if the Gateway stops before deleting the old cache entry. Cache reads, writes, and cleanup failures are logged; an unavailable counter means no prior failures, and never stops the tick.
 
 A new task workspace reservation records a UUID `source_prepare_id` before source preparation, just like an ordinary development Instance. Preparation uses that ID to write an ownership receipt for later reclaim and removal. Older reservations can lack the ID; reclaim still checks their source identity.
 
@@ -1323,6 +1329,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
+| `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` | Consecutive provisioning failures before failure assistance. Default `3`, at least `1`. A successful start resets the count |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | How long a task may stay `reserved`. Default `3600`, at least `60`. Keep it above the slowest workspace provision |
 | `ORBIT_T3_PORT`, `ORBIT_T3_TOKEN` | The T3 port, default `3773`, and bearer token for [annotations](#coder-settle-webhook). Task agents do not use them |
 | `ORBIT_PI_PORT`, `ORBIT_PI_TOKEN`, `ORBIT_PI_PROVIDER` | The Pi server port, default `3774`, its bearer token, and the provider for plain model names |
@@ -1420,6 +1427,12 @@ The sample keeps bounded Doctor values and a short redacted log excerpt. Storing
 ### The Gateway claims, not the Nodes
 
 The Gateway already knows every Instance and Node, so it counts active tasks itself. Node-side polling would add a second loop and a second source of truth. A claim reserves the task first and provisions afterwards, so a slow checkout never holds a lock.
+
+### A committed start resets the provisioning streak
+
+The counter needs a durable record of its reset because changes to a file cache cannot commit with the task row. Deleting before commit loses the streak if the start rolls back. Deleting after commit alone retains a stale streak if the Gateway stops before cleanup.
+
+An activity row records each successful start, commits with the task row, and supplies the counter generation without a new column or table. `started_at` alone is not a generation: it records the first start and does not change on a later successful claim. Old-generation cache cleanup is best effort and cannot erase failures in the new generation.
 
 ### One subtask at a time on one branch
 

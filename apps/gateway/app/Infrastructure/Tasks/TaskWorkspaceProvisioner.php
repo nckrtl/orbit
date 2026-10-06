@@ -23,6 +23,7 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
@@ -51,12 +52,12 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private AgentDriverRegistry $drivers,
     ) {}
 
-    public function provision(InstanceProvisionIntent $intent): ?Instance
+    public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
         return $this->provisionWorkspace($intent);
     }
 
-    private function provisionWorkspace(InstanceProvisionIntent $intent): ?Instance
+    private function provisionWorkspace(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
         $group = $intent->group->loadMissing(['project', 'taskable']);
         $existing = $group->taskable;
@@ -68,20 +69,23 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         $workspace = $this->existingWorkspace($group);
         $visitable = $this->routingForClaim($workspace, $intent->visitable);
 
-        if (! $this->hasSourceDefaults($group->project, $visitable)) {
-            return null;
+        $sourceFailure = $this->sourceDefaultsFailure($group->project, $visitable);
+        if ($sourceFailure instanceof InstanceProvisionFailure) {
+            return $sourceFailure;
         }
 
         $node = $this->selectNode($group->project, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($workspace));
 
-        if (! $node instanceof Node) {
-            return null;
+        if ($node instanceof InstanceProvisionFailure) {
+            return $node;
         }
 
         try {
             return $this->createWorkspace($group, $node, $visitable);
-        } catch (ResourceOperationException|RuntimeConvergenceException) {
-            return null;
+        } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+            report($exception);
+
+            return InstanceProvisionFailure::fromException($exception);
         }
     }
 
@@ -296,21 +300,21 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return $instance->name;
     }
 
-    private function hasSourceDefaults(Project $project, bool $visitable): bool
+    private function sourceDefaultsFailure(Project $project, bool $visitable): ?InstanceProvisionFailure
     {
         if (! is_string($project->default_branch) || ! GitBranchName::isValid($project->default_branch)) {
-            return false;
+            return new InstanceProvisionFailure('Project default branch is missing or invalid.');
         }
 
         if (! GitRepositoryOrigin::isValid($project->repository_url)) {
-            return false;
+            return new InstanceProvisionFailure('Project repository is missing or invalid.');
         }
 
-        if (! $visitable) {
-            return true;
+        if ($visitable && (! is_string($project->root) || ! ProjectRoot::isValid($project->root, $project->type))) {
+            return new InstanceProvisionFailure('Routed workspace Project root is missing or invalid.');
         }
 
-        return is_string($project->root) && ProjectRoot::isValid($project->root, $project->type);
+        return null;
     }
 
     /**
@@ -339,7 +343,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
      * @param  list<string>  $drivers  Every driver the group uses must allow the Node.
      * @param  int|null  $pinnedNodeId  The Node of the group's existing workspace. Only that Node can then fit.
      */
-    private function selectNode(Project $project, array $drivers, ?int $pinnedNodeId = null): ?Node
+    private function selectNode(Project $project, array $drivers, ?int $pinnedNodeId = null): Node|InstanceProvisionFailure
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -350,16 +354,13 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                     ->where('role', RoleName::AppDev)
                     ->where('status', LifecycleStatus::Active),
             )
-            ->whereDoesntHave(
-                'projectNodeExclusions',
-                static fn ($query) => $query->where('project_id', $project->id),
-            )
+            ->with('projectNodeExclusions')
             ->orderBy('id')
             ->get();
 
-        $fitting = $nodes
-            ->filter(static fn (Node $node): bool => $pinnedNodeId === null || $node->id === $pinnedNodeId)
-            ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)));
+        $eligible = $nodes->filter(fn (Node $node): bool => ! $node->projectNodeExclusions->contains('project_id', $project->id));
+        $pinned = $eligible->filter(static fn (Node $node): bool => $pinnedNodeId === null || $node->id === $pinnedNodeId);
+        $fitting = $pinned->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)));
 
         $selected = $fitting
             ->filter(fn (Node $node): bool => $this->hasCapacity($node))
@@ -374,7 +375,17 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             throw new TaskCapacityException(fleetFull: ! $this->anyAppDevNodeHasCapacity());
         }
 
-        return null;
+        if ($nodes->isEmpty()) {
+            return new InstanceProvisionFailure('No active Linux app-dev Node is available.');
+        }
+        if ($eligible->isEmpty()) {
+            return new InstanceProvisionFailure('Project node exclusion leaves no available Node.');
+        }
+        if ($pinned->isEmpty()) {
+            return new InstanceProvisionFailure('Pinned workspace Node ['.$pinnedNodeId.'] is not an available active Linux app-dev Node or is excluded by the Project.');
+        }
+
+        return new InstanceProvisionFailure('No Node fits: driver(s) ['.implode(', ', array_unique($drivers)).'] not allowed on the available'.($pinnedNodeId === null ? '' : ' pinned workspace').' Node(s).');
     }
 
     private function hasCapacity(Node $node): bool
