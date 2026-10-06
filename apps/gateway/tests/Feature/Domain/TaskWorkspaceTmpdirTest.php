@@ -67,7 +67,8 @@ function tmpdir_check_directory(string $checkout): string
     $metadata = new Process(['python3', resource_path('tasks/metadata'), $checkout, 'tmpdir']);
     $metadata->setInput('{}');
     $path = rtrim($metadata->mustRun()->getOutput(), "\n");
-    test()->allocated[] = $path;
+    $allocated = test()->allocated;
+    test()->allocated = [...(is_array($allocated) ? $allocated : []), $path];
 
     return $path;
 }
