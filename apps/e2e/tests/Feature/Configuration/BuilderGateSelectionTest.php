@@ -189,6 +189,8 @@ function orb277_run_gate(
     int $expectedExit = 0,
     bool $discoverTests = true,
     string $tiaDirectory = '',
+    ?string $testBase = null,
+    bool $ci = false,
 ): array {
     $process = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
         'ORBIT_GATE_UNSELECTED' => $discoverTests ? $unselected : trim($unselected.',apps/gateway', ','),
@@ -196,6 +198,9 @@ function orb277_run_gate(
         'ORBIT_GATE_HIDE_TESTS' => $discoverTests ? '' : '1',
         'ORBIT_TIA_DIRECTORY' => $tiaDirectory === '' ? false : $tiaDirectory,
         'PATH' => $fixture['path'],
+        'ORBIT_TASK_CHECK_BASE' => $testBase ?? false,
+        'CI' => $ci ? 'true' : false,
+        'GITHUB_ACTIONS' => false,
     ]);
     $process->setTimeout(60);
     $process->run();
@@ -723,4 +728,33 @@ PHP);
             ->and($recorded['edges'])->toBe($graph['edges']);
         expect(array_keys($preserved['baselines']))->toBe(['main', 'task-x']);
     });
+});
+
+describe('subtask test selection', function (): void {
+    it('keeps docs on the branch base and narrows only intermediate handoff tests', function (bool $ci): void {
+        $fixture = orb277_gate_fixture('apps/cli/composer.lock');
+        $root = $fixture['root'];
+        mkdir($root.'/apps/gateway/app', 0700, true);
+        file_put_contents($root.'/apps/gateway/app/Later.php', '<?php final class Later {}');
+        (new Process(['git', 'add', '.'], $root))->mustRun();
+        (new Process(['git', 'commit', '-m', 'Later subtask'], $root))->mustRun();
+
+        $run = orb277_run_gate($fixture, 'apps/cli', testBase: $fixture['candidate'], ci: $ci);
+
+        expect($run['receipt']['base'])->toBe($fixture['main'])
+            ->and($run['receipt']['test_base'])->toBe($ci ? $fixture['main'] : $fixture['candidate']);
+        $fallbacks = array_values(array_filter($run['receipt']['checks'], static fn (array $check): bool => $check['project'] === 'apps/cli' && in_array('--no-tia', $check['command'], true)));
+        expect($fallbacks)->toHaveCount($ci ? 1 : 0);
+    })->with(['handoff' => false, 'CI' => true]);
+
+    it('refuses a nonexistent or malformed handoff test base before running checks', function (string $base): void {
+        $fixture = orb277_gate_fixture();
+        $process = new Process([$fixture['root'].'/bin/review-check'], $fixture['root'], [
+            'PATH' => $fixture['path'], 'ORBIT_TASK_CHECK_BASE' => $base, 'CI' => false, 'GITHUB_ACTIONS' => false,
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getErrorOutput())->toContain('task test base');
+    })->with([str_repeat('f', 40), '--all']);
 });

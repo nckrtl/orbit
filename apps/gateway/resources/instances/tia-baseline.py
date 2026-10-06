@@ -38,6 +38,11 @@ try:
     if len(result.stdout) > 4096:
         raise ValueError('invalid cache path')
     target = result.stdout.decode().strip()
+    if target.startswith('{'):
+        payload = json.loads(target)
+        if payload.get('tool') != 'pest' or not isinstance(payload.get('raw'), list) or len(payload['raw']) != 1 or not isinstance(payload['raw'][0], str):
+            raise ValueError('invalid cache path response')
+        target = payload['raw'][0]
     home = os.path.realpath(os.path.expanduser('~'))
     if not any(target.startswith(root + '/') for root in (home, checkout)):
         raise ValueError('cache outside home and checkout')

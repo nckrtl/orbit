@@ -103,6 +103,7 @@ final readonly class TaskScheduler
         private TaskSettleMetricsCollector $metrics,
         private TaskWorkspaceStateReader $workspace,
         private TaskPullRequestWatcher $pullRequestWatcher,
+        private TaskPullRequestUpdater $pullRequestUpdater,
         private CompleteTaskGroupAction $completeGroup,
         private CoderSettleNotifier $coder,
         private TaskExtensionState $extension,
@@ -500,7 +501,7 @@ final readonly class TaskScheduler
         }
 
         try {
-            $process = $this->checks->start($instance, $command, [], $this->deliverableCheck($task));
+            $process = $this->checks->start($instance, $command, [], $this->handoffCheck($task));
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
@@ -982,6 +983,23 @@ final readonly class TaskScheduler
         $missing = TaskDeliverableVerifier::unconfirmed($deliverables, $receipt->deliverables ?? [], $role);
 
         return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The turn receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
+    }
+
+    /**
+     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string}|null
+     */
+    private function handoffCheck(Task $task): ?array
+    {
+        $deliverables = $this->deliverableCheck($task);
+        $group = $task->parent;
+        $start = $task->subtask_start_commit;
+        if ($group->project->slug === 'orbit' && is_string($start)
+            && preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $start) === 1
+            && $group->tasks()->where('position', '>', $task->position)->whereNotIn('status', [TaskStatus::Completed, TaskStatus::Cancelled])->exists()) {
+            return [...($deliverables ?? ['start' => $start, 'commands' => []]), 'test_base' => $start];
+        }
+
+        return $deliverables;
     }
 
     /**
@@ -3137,6 +3155,23 @@ final readonly class TaskScheduler
             $this->resumeWaitingSubtask($group);
 
             return;
+        }
+
+        if ($health->conflicts || $health->behind) {
+            $update = is_string($health->headSha) && $health->headSha !== ''
+                ? $this->pullRequestUpdater->updateBranch($group, $health->headSha)
+                : TaskBranchUpdate::Unavailable;
+            if ($update !== TaskBranchUpdate::Conflict) {
+                $this->reportPullRequestHealth($group, new TaskPullRequestHealth('open', $update === TaskBranchUpdate::Accepted ? [] : [
+                    'GitHub could not update the base branch. Orbit will retry after a fresh observation.',
+                ]));
+
+                return;
+            }
+            if (! $health->conflicts) {
+                // A concurrent base change can reveal a conflict after the health read.
+                return;
+            }
         }
 
         if ($health->infrastructureChecks === []) {

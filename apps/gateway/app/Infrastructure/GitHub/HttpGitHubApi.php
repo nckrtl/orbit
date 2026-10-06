@@ -16,6 +16,7 @@ use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
+use App\Domain\Tasks\TaskBranchUpdate;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
@@ -270,6 +271,23 @@ final readonly class HttpGitHubApi implements GitHubApi
         $message = $response->json('message');
 
         throw GitHubApiException::reviewersRefused($response->status(), is_string($message) ? rtrim($message, '.') : '');
+    }
+
+    public function updatePullRequestBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $headSha): TaskBranchUpdate
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->put(
+            $this->repositoryPath($repository).'/pulls/'.$number.'/update-branch',
+            ['expected_head_sha' => $headSha],
+        ));
+        if ($response->status() === 202) {
+            return TaskBranchUpdate::Accepted;
+        }
+        $message = $response->json('message');
+        if ($response->status() === 422 && is_string($message) && str_contains(strtolower($message), 'merge conflict')) {
+            return TaskBranchUpdate::Conflict;
+        }
+
+        return TaskBranchUpdate::Unavailable;
     }
 
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest

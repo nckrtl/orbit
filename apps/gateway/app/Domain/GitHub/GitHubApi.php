@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\GitHub;
 
+use App\Domain\Tasks\TaskBranchUpdate;
 use SensitiveParameter;
 
 interface GitHubApi
@@ -134,6 +135,9 @@ interface GitHubApi
         int $number,
         array $reviewers,
     ): void;
+
+    /** Merge the base into exactly the observed head, without rebasing or force-pushing. */
+    public function updatePullRequestBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $headSha): TaskBranchUpdate;
 
     /** @throws GitHubApiException */
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest;

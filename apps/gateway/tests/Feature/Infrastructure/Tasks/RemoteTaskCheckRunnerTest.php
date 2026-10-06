@@ -1160,3 +1160,17 @@ it('restores the builtin TIA baseline after dependency setup before a task check
     expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(0);
     expect(file_get_contents($target.'/graph.json'))->toContain(str_repeat('a', 40));
 });
+
+it('passes the handoff test base only to a scoped project check', function (bool $scoped): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $base = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $command = $scoped ? 'test "$ORBIT_TASK_CHECK_BASE" = '.escapeshellarg($base) : 'test -z "${ORBIT_TASK_CHECK_BASE+set}"';
+    $deliverables = $scoped ? ['start' => $base, 'commands' => [], 'test_base' => $base] : null;
+
+    $process = $runner->start($instance, $command, deliverables: $deliverables);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->exitCode)->toBe(0);
+})->with([true, false]);

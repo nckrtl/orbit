@@ -585,9 +585,9 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         $this->assertDatabaseCount('instances', 1);
     });
 
-    it('waits for capacity on its own Node', function (): void {
+    it('releases an empty reserved pin when another Node has capacity', function (): void {
         $project = provisioner_app('orbit');
-        provisioner_node('roomy', '10.44.0.132');
+        $roomy = provisioner_node('roomy', '10.44.0.132');
         $full = provisioner_node('full', '10.44.0.133');
         $occupied = Instance::query()->create([
             'project_id' => $project->id,
@@ -612,8 +612,12 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         ]);
         bind_task_workspace_fakes();
 
-        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
-            ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBeFalse());
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance)->toBeInstanceOf(Instance::class)
+            ->and($instance->node_id)->toBe($roomy->id)
+            ->and($instance->status)->toBe(InstanceState::SourceResolved);
+        $this->assertDatabaseMissing('instances', ['node_id' => $full->id, 'name' => TaskWorkspaceName::for($group)]);
     });
 
     it('never adopts an Instance that only shares the workspace name', function (): void {
@@ -791,3 +795,41 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
         forget_checkout($checkout);
     }
 })->with(['cancel', 'complete', 'unattached']);
+
+it('keeps a full-node reserved workspace when it cannot prove the reservation is empty', function (bool $sourceEvidence): void {
+    $project = provisioner_app('kept-reservation');
+    provisioner_node('roomy', '10.44.0.140');
+    $full = provisioner_node('full', '10.44.0.141');
+    $occupied = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $full->id, 'name' => 'occupied',
+        'checkout_path' => '/srv/orbit/apps/kept-reservation/occupied', 'status' => InstanceState::SourceResolved,
+    ]);
+    for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
+        $active = provisioner_group($project, "Active {$i}");
+        $active->taskable()->associate($occupied);
+        $active->save();
+    }
+    $group = provisioner_group($project);
+    $left = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $full->id, 'name' => TaskWorkspaceName::for($group),
+        'checkout_path' => '/srv/orbit/apps/kept-reservation/'.TaskWorkspaceName::for($group),
+        'branch_override' => TaskWorkspaceName::for($group), 'status' => InstanceState::Reserved,
+        'seed_commit' => $sourceEvidence ? str_repeat('a', 40) : null,
+    ]);
+    $fakes = bind_task_workspace_fakes();
+    app()->instance(InstanceDestinationGuard::class, new class implements InstanceDestinationGuard
+    {
+        public function assertUnoccupied(Node $node, StoragePath $destination): void
+        {
+            throw new ResourceOperationException('instance.migration_conflict', 'Checkout exists.', 409);
+        }
+    });
+
+    $result = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($result)->toBeInstanceOf(InstanceProvisionFailure::class)
+        ->and($result->cause)->toContain('Reserved workspace')
+        ->and($left->fresh()->node_id)->toBe($full->id)
+        ->and($fakes->source->calls)->toBe([]);
+    $this->assertModelExists($left);
+})->with(['source evidence' => true, 'checkout exists' => false]);

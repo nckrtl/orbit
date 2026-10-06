@@ -1080,9 +1080,13 @@ On the Gateway, run `php artisan orbit:tasks:github-reviews <group-id> --json` t
 
 The command reports evidence **as of the stored scan**, not GitHub's live truth. It returns no merge-ready flag, aggregate approval verdict, or designated-final-reviewer assertion. It cannot approve a subtask, complete a group, clear findings, or authorize a merge. Operators still perform fresh identity, exact-head, required-check, and delegation checks in the external final-review workflow. The report is not that workflow's gate.
 
+### Retry an empty workspace reservation
+
+When an interrupted claim leaves only a `reserved` Instance on a full Node, Orbit checks that its checkout path is absent before releasing the database reservation and selecting another Node. It never deletes workspace files. A prepared checkout, source identity, Route, or attached task keeps its placement. If Orbit cannot prove the old path is empty, the group reports the reservation and reason instead of waiting silently on that Node.
+
 ### Fix a settling pull request
 
-While the pull request is open, the Gateway repairs it with a fixup: a subtask that it appends itself.
+When an open pull request falls behind its base or appears to conflict, the Gateway first asks GitHub to update the branch with a merge commit. It sends the observed head SHA to `PUT /repos/{owner}/{repo}/pulls/{number}/update-branch`; it never rebases or force-pushes. An accepted update waits for CI on the new head and appends no subtask. Only a confirmed merge-conflict response (HTTP 422) appends `Merge origin/{base}`. A stale head, denied permission, or unavailable API waits for a fresh observation and reports the reason. Failed CI on the updated head can append a check fixup.
 
 A pull request **conflicts** when GitHub reports it as not mergeable, or its mergeable state is `dirty`. A null result is not a conflict. The Gateway reads the check runs of the head commit at most once a minute, with a token that holds only `checks: read`. It reads one page of at most 100 check runs, so a failed check beyond that page is not reported. Without that permission, it sees conflicts only.
 

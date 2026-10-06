@@ -28,6 +28,7 @@ use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckReading;
@@ -44,6 +45,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
+use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewFindingsPacket;
@@ -700,7 +702,7 @@ function tick_open_pull(array $overrides = []): array
  * @param  list<array<string, mixed>>  $pulls
  * @param  array<string, list<array<string, mixed>>>  $checks  check runs keyed by head sha
  */
-function tick_watch_pulls(array $pulls, array $checks = []): void
+function tick_watch_pulls(array $pulls, array $checks = [], int $updateStatus = 422, string $updateMessage = 'merge conflict between base and head'): void
 {
     $sequence = Http::sequence();
     foreach ($pulls as $body) {
@@ -711,6 +713,7 @@ function tick_watch_pulls(array $pulls, array $checks = []): void
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => $sequence,
+        'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response(['message' => $updateMessage], $updateStatus),
     ];
     foreach ($checks as $sha => $runs) {
         $fake['https://api.github.com/repos/acme/orbit/commits/'.$sha.'/check-runs*'] = Http::response(['check_runs' => $runs]);
@@ -818,6 +821,7 @@ function tick_assistance_notifier(): CoderSettleNotifier
 }
 
 it('preserves unresolved review assistance while CI and conflict fixes activate and continue', function (bool $conflict): void {
+    mock(TaskPullRequestUpdater::class)->shouldReceive('updateBranch')->andReturn(TaskBranchUpdate::Conflict);
     $group = tick_settling_group();
     config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
@@ -967,6 +971,7 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response(['message' => 'merge conflict between base and head'], 422),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
             ->push($conflict)->push($conflict)
             ->push([...$clean, 'mergeable_state' => 'unstable'])
@@ -6599,3 +6604,50 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
 
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
+
+it('updates a behind pull request without creating an agent fixup and waits for the new head', function (): void {
+    $group = tick_settling_group();
+    $agents = tick_running_agents();
+    // Captured from the disposable GitHub proof PR #973 (2026-10-07).
+    tick_watch_pulls([tick_open_pull(['mergeable_state' => 'behind']), tick_open_pull(['mergeable_state' => 'behind'])], ['abc123' => []], 202, 'Updating pull request branch.');
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->tasks()->whereNotNull('fixup_problem')->count())->toBe(0)
+        ->and($agents->spawned)->toBe([]);
+    $updates = Http::recorded(static fn (Request $request): bool => str_ends_with($request->url(), '/update-branch'));
+    expect($updates)->toHaveCount(1);
+    expect($updates->first()[0]->method())->toBe('PUT')
+        ->and($updates->first()[0]->data())->toBe(['expected_head_sha' => 'abc123']);
+});
+
+it('waits visibly without a fixup when a branch update is refused without a merge conflict', function (int $status, string $message): void {
+    $group = tick_settling_group();
+    tick_watch_pulls([tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty'])], ['abc123' => []], $status, $message);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->tasks()->whereNotNull('fixup_problem')->count())->toBe(0)
+        ->and($group->fresh()->assistance_reason)->toContain('GitHub could not update');
+})->with([
+    'stale head' => [422, 'Expected head sha did not match'],
+    'permission' => [403, 'Resource not accessible by integration'],
+    'outage' => [503, 'Service Unavailable'],
+]);
+
+it('scopes only nonfinal Orbit handoff tests to the subtask start', function (bool $later, bool $orbit): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    $group->project->update(['slug' => $orbit ? 'orbit' : 'other']);
+    $task->update(['subtask_start_commit' => str_repeat('a', 40)]);
+    if ($later) {
+        Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Later', 'brief' => 'Next.', 'status' => TaskStatus::Todo]);
+    }
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(1)
+        ->and($checks->deliverables[0]['test_base'] ?? null)->toBe($later && $orbit ? str_repeat('a', 40) : null);
+})->with([[true, true], [false, true], [true, false]]);

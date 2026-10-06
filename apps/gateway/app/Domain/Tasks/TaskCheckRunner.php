@@ -22,7 +22,7 @@ interface TaskCheckRunner
      * The detached check removes that exact directory when it ends, including on cancel.
      *
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
-     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>}|null  $deliverables
+     * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, test_base?: string}|null  $deliverables
      * @param  string|null  $command  the Project task check command, or null to run no command
      *
      * @throws TaskCheckException

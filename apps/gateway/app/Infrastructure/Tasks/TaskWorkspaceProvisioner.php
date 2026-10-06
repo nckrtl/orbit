@@ -16,6 +16,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -67,6 +68,13 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         }
 
         $workspace = $this->existingWorkspace($group);
+        if ($workspace instanceof Instance && $workspace->status === InstanceState::Reserved && ! $this->hasCapacity($workspace->node)) {
+            $failure = $this->releaseEmptyReservation($group, $workspace);
+            if ($failure instanceof InstanceProvisionFailure) {
+                return $failure;
+            }
+            $workspace = null;
+        }
         $visitable = $this->routingForClaim($workspace, $intent->visitable);
 
         $sourceFailure = $this->sourceDefaultsFailure($group->project, $visitable);
@@ -315,6 +323,34 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         }
 
         return null;
+    }
+
+    /** Release database-only reservations; never remove a checkout or infer absence from missing source metadata. */
+    private function releaseEmptyReservation(Task $group, Instance $workspace): ?InstanceProvisionFailure
+    {
+        try {
+            return $this->sourceLock->synchronized($workspace->node_id, fn (): ?InstanceProvisionFailure => DB::transaction(function () use ($group, $workspace): ?InstanceProvisionFailure {
+                $locked = Instance::query()->lockForUpdate()->findOrFail($workspace->id);
+                if ($locked->status !== InstanceState::Reserved
+                    || $locked->project_id !== $group->project_id
+                    || $locked->branch_override !== TaskWorkspaceName::for($group)
+                    || $locked->starting_commit !== null || $locked->seed_commit !== null
+                    || $locked->routes()->exists()
+                    || Task::query()->whereMorphedTo('taskable', $locked)->exists()) {
+                    return new InstanceProvisionFailure('Reserved workspace ['.$locked->id.'] has source or attachment evidence and stays on Node ['.$locked->node_id.'].');
+                }
+                $path = StoragePath::tryParse((string) $locked->checkout_path);
+                if ($path === null) {
+                    return new InstanceProvisionFailure('Reserved workspace ['.$locked->id.'] has no valid checkout path to verify.');
+                }
+                $this->destinationGuard->assertUnoccupied($locked->node, $path);
+                $locked->delete();
+
+                return null;
+            }));
+        } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+            return new InstanceProvisionFailure('Reserved workspace ['.$workspace->id.'] stays on Node ['.$workspace->node_id.']: its checkout could not be proved absent. '.$exception->getMessage());
+        }
     }
 
     /**

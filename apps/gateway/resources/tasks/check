@@ -32,6 +32,7 @@ user rwX on every entry the worker owns, so the check can replace what an agent'
 import atexit
 import json
 import os
+import re
 import pwd
 import shutil
 import signal
@@ -551,8 +552,17 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at, work
         if failed_step is None and command:
             log.write(f"$ {command}\n".encode())
             log.flush()
+            environment = dict(os.environ)
+            environment.pop('ORBIT_TASK_CHECK_BASE', None)
+            if deliverables:
+                with open(deliverables) as source:
+                    test_base = json.load(source).get('test_base')
+                if test_base is not None:
+                    if not isinstance(test_base, str) or not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', test_base):
+                        raise ValueError('Invalid task test base.')
+                    environment['ORBIT_TASK_CHECK_BASE'] = test_base
             exit_code = subprocess.run(['bash', '-lc', command], cwd=checkout, stdin=subprocess.DEVNULL,
-                                       stdout=log, stderr=subprocess.STDOUT).returncode
+                                       stdout=log, stderr=subprocess.STDOUT, env=environment).returncode
         if failed_step is None and exit_code == 0 and deliverables:
             evidence = verify_deliverables(checkout, tree, deliverables, log)
     head_after = git(checkout, 'rev-parse', 'HEAD')

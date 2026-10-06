@@ -36,6 +36,7 @@ final readonly class TaskPullRequestHealth
         public ?string $mergeSha = null,
         public ?string $mergedAt = null,
         public ?bool $mergeable = null,
+        public bool $behind = false,
     ) {}
 
     public function reason(?string $extra = null): string

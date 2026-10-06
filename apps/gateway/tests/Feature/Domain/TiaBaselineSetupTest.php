@@ -131,7 +131,9 @@ it('uses the installed Pest cache path without running tests', function (): void
     try {
         $discovery = new Process(['php', 'vendor/bin/pest', '--baseline'], $sandbox, ['HOME' => $sandbox]);
         $discovery->mustRun();
-        expect(trim($discovery->getOutput()))->toStartWith($sandbox.'/');
+        $output = trim($discovery->getOutput());
+        $payload = json_decode($output, true);
+        expect(is_array($payload) ? $payload['raw'][0] : $output)->toStartWith($sandbox.'/');
         $command = app(TiaBaselineSetup::class)->command(new Project, 30);
         $process = new Process(['bash', '-c', $command], $sandbox, ['HOME' => $sandbox]);
         $process->mustRun();

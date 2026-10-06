@@ -142,6 +142,8 @@ Root `bin/test` runs all five project suites in parallel and splits the availabl
 
 ### The candidate gate
 
+Intermediate Orbit task handoffs select affected tests from the subtask's start commit. The Gateway supplies `ORBIT_TASK_CHECK_BASE` only when another subtask remains. The final handoff and CI select the full branch. The gate validates that the supplied commit is an ancestor of the candidate, records the test base, and keeps documentation checks on the full branch. It reuses dependency graphs from a prior passing handoff only when that handoff's tree matches the start commit. Missing graphs or changed dependencies still trigger Pest's full-suite fallback.
+
 Root `composer check` runs `bin/review-check`. It checks the working tree as it is, including uncommitted and untracked files. The Orbit Project uses it as its task check, so it also runs at every subtask handoff. It runs these checks.
 
 1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
