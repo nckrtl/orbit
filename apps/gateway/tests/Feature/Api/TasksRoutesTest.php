@@ -1137,7 +1137,9 @@ it('allows one invalid_deliverable correction and audits it without discarding w
     $replacement = [deliverable_path_file('tests/ExistingTest.php')];
     $url = "/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}";
 
-    $this->patchJson($url, ['deliverables' => $replacement])->assertOk()->assertJsonPath('data.deliverables', $replacement);
+    $requestId = '19c10948-0ca3-4c1a-b1d0-6c99eb4c05f5';
+    $actor = Node::query()->where('name', 'tasks-gateway')->sole();
+    $this->withHeader('X-Orbit-Request-Id', $requestId)->patchJson($url, ['deliverables' => $replacement])->assertOk()->assertJsonPath('data.deliverables', $replacement);
 
     $task->refresh();
     expect($task->deliverables)->toBe($replacement)
@@ -1146,6 +1148,9 @@ it('allows one invalid_deliverable correction and audits it without discarding w
         ->and($task->completion_attempt)->toBe(2)
         ->and($task->assistance_requested)->toBeTrue();
     $audit = Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->sole();
+    expect($audit->getRawOriginal('caller_node_id'))->toBe($actor->id);
+    expect($audit->caller_ip)->toBe($actor->wireguard_ip);
+    expect($audit->request_id)->toBe($requestId);
     expect($audit->properties?->get('old'))->toBe($before)
         ->and($audit->properties?->get('new'))->toBe($replacement)
         ->and($audit->properties?->get('check_id'))->toBe(TaskCheck::query()->where('task_id', $task->id)->sole()->id);

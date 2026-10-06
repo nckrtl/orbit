@@ -70,7 +70,7 @@ use LogicException;
  * @property string|null $pi_restart_reservation
  * @property string|null $pi_restart_session_revision
  * @property int|null $deliverable_correction_check_id
- * @property array{comment_id: int, thread_id: int|null, key: string, message: string, state: string}|null $deliverable_correction_resume
+ * @property array{comment_id: int, thread_id: int|null, key: string, message: string, state: string, caller_node_id?: int|null, caller_ip?: string|null, request_id?: string}|null $deliverable_correction_resume
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief

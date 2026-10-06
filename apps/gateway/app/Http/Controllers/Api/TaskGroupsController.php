@@ -30,6 +30,7 @@ use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
 use App\Http\Requests\Tasks\UpdateTaskRequest;
+use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Http\JsonResponse;
@@ -74,7 +75,7 @@ final class TaskGroupsController extends Controller
         abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
-            'data' => TaskData::fromModel($action->execute($group, $task, $request->payload()))->toArray(),
+            'data' => TaskData::fromModel($action->execute($group, $task, $request->payload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id')))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
@@ -116,7 +117,7 @@ final class TaskGroupsController extends Controller
     public function storeComment(StoreTaskCommentRequest $request, Task $group, Task $task, StoreTaskCommentAction $action): JsonResponse
     {
         abort_unless($task->parent_id === $group->id, 404);
-        $comment = $action->execute($task, $request->validated());
+        $comment = $action->execute($task, $request->validated(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
     }

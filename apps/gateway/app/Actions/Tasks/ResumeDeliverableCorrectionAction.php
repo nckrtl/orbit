@@ -6,6 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskExecutionHold;
 use App\Domain\Tasks\TaskQuestions;
@@ -18,6 +19,7 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\DB;
@@ -33,7 +35,7 @@ final readonly class ResumeDeliverableCorrectionAction
     ) {}
 
     /** Reserve with the resolution comment, before any remote effects. The first resolution owns retries. */
-    public function reserve(Task $task, TaskComment $comment): void
+    public function reserve(Task $task, TaskComment $comment, ?Node $actor = null, ?string $requestId = null): void
     {
         $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
         if ($locked->deliverable_correction_resume !== null) {
@@ -43,6 +45,8 @@ final readonly class ResumeDeliverableCorrectionAction
         $locked->update(['deliverable_correction_resume' => [
             'comment_id' => $comment->id, 'thread_id' => $locked->implementer_agent_thread_id,
             'key' => (string) Str::uuid(), 'state' => 'pending',
+            'caller_node_id' => $actor?->id, 'caller_ip' => $actor?->wireguard_ip,
+            'request_id' => $requestId ?? (string) Str::uuid(),
             'message' => $comment->body."\n\nDeliverables were corrected. This complete list replaces the previous contract. Confirm every corrected deliverable at handoff:\n\n```json\n".$contract."\n```",
         ]]);
     }
@@ -53,7 +57,8 @@ final readonly class ResumeDeliverableCorrectionAction
         TaskExecutionHold::run($task->parent, function () use ($task): void {
             $task = Task::query()->findOrFail($task->id);
             $resume = $task->deliverable_correction_resume;
-            if ($resume === null || $resume['state'] !== 'pending' || $task->status !== TaskStatus::Running || ! $task->assistance_requested) {
+            if ($resume === null || $resume['state'] !== 'pending' || $task->status !== TaskStatus::Running
+                || self::directionPending($task, $task->parent)) {
                 return;
             }
             $comment = TaskComment::query()->findOrFail($resume['comment_id']);
@@ -65,8 +70,20 @@ final readonly class ResumeDeliverableCorrectionAction
             }
             try {
                 $this->fetcher->beforeTurn($group);
+                $task->refresh();
+                $group->refresh();
+                if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
+                    || self::directionPending($task, $group)) {
+                    return;
+                }
                 // The remote metadata commit is keyed too. A lost prepare reply cannot erase a resumed receipt.
                 $this->receipts->prepare($instance, TaskThreadRole::Implementer, false, $task->deliverableList(), $thread->id, new TaskTurnMode(deliveryKey: $resume['key']));
+                $task->refresh();
+                $group->refresh();
+                if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
+                    || self::directionPending($task, $group)) {
+                    return;
+                }
                 // Pi reconciles acceptance with the same key, even when both replies to a send were lost.
                 $this->drivers->get($thread->driver)->send($thread, $resume['message'], $resume['key']);
             } catch (AgentDriverException|TaskTurnReceiptException) {
@@ -76,24 +93,35 @@ final readonly class ResumeDeliverableCorrectionAction
             DB::transaction(static function () use ($task, $comment, $resume): void {
                 $parent = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
                 $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
-                if ($locked->deliverable_correction_resume !== $resume || TaskExecutionHold::active($parent)) {
+                if ($locked->deliverable_correction_resume !== $resume || TaskExecutionHold::active($parent)
+                    || $locked->status !== TaskStatus::Running) {
                     return;
                 }
+                $direction = self::directionPending($locked, $parent);
                 $locked->update([
-                    ...TaskAssistance::cleared(), 'communication_failures' => 0,
+                    ...($direction ? [] : TaskAssistance::cleared()), 'communication_failures' => 0,
                     'completion_attempt' => $locked->completion_attempt + 1,
                     'completion_reminder_attempt' => null, 'completion_reminder_input_id' => null,
                     'resolution_delivered_comment_id' => $comment->id,
                     'deliverable_correction_resume' => [...$resume, 'state' => 'delivered'],
                 ]);
-                $parent->update(TaskAssistance::cleared());
-                TaskQuestions::attachResolution($locked, $comment);
+                if (! $direction) {
+                    $parent->update(TaskAssistance::cleared());
+                    TaskQuestions::attachResolution($locked, $comment);
+                }
                 Activity::query()->create([
                     'log_name' => 'tasks', 'description' => 'deliverable correction resumed', 'subject_type' => Task::class,
-                    'subject_id' => $locked->id, 'properties' => ['comment_id' => $comment->id, 'actor' => $comment->author, 'send_key' => $resume['key']],
-                    'request_id' => (string) Str::uuid(), 'command' => 'tasks:comment', 'status' => 'completed',
+                    'subject_id' => $locked->id, 'properties' => ['comment_id' => $comment->id, 'author' => $comment->author, 'send_key' => $resume['key']],
+                    'caller_node_id' => $resume['caller_node_id'] ?? null, 'caller_ip' => $resume['caller_ip'] ?? null,
+                    'request_id' => $resume['request_id'] ?? (string) Str::uuid(), 'command' => 'tasks:comment', 'status' => 'completed',
                 ]);
             });
         });
+    }
+
+    private static function directionPending(Task $task, Task $group): bool
+    {
+        return $task->assistance_kind === AssistanceKind::Direction || $group->assistance_kind === AssistanceKind::Direction
+            || $task->direction_relay_comment_id !== null || $task->consult_comment_id !== null;
     }
 }

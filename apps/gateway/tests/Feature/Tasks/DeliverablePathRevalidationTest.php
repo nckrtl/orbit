@@ -2,12 +2,17 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\UpdateTaskAction;
+use App\Data\Tasks\UpdateTaskData;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\NullTaskWorkspaceStateReader;
+use App\Domain\Tasks\TaskCheckKind;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
@@ -16,11 +21,21 @@ use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\DB;
+use Symfony\Component\Process\InputStream;
+use Symfony\Component\Process\Process;
 
 /** @param list<array<string, mixed>> $deliverables */
 function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', bool $provisional = false): array
@@ -112,6 +127,85 @@ function revalidation_fixture(array $deliverables, string $base = 'bbbbbbbbbbbbb
 
     return [$group, $task, $repository, $spawner];
 }
+
+it('allows a concurrent SQLite writer during a blocked remote correction fetch and rejects stale validation', function (string $change): void {
+    $original = config('database.default');
+    $database = tempnam(sys_get_temp_dir(), 'orbit-correction-db-');
+    $schema = DB::select("SELECT sql FROM sqlite_master WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%' ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END");
+    $writer = new PDO('sqlite:'.$database);
+    foreach ($schema as $entry) {
+        $writer->exec($entry->sql);
+    }
+    $writer->exec('CREATE TABLE writer_probe (value TEXT)');
+    $writer->exec('PRAGMA busy_timeout=50');
+    config(['database.connections.correction_probe' => [...config('database.connections.sqlite'), 'database' => $database], 'database.default' => 'correction_probe']);
+    try {
+        [$group, $task] = revalidation_fixture([['id' => 'paths', 'type' => 'file', 'path' => 'tests/MissingTest.php']]);
+        $task->update(['status' => TaskStatus::Running, 'assistance_requested' => true, 'completion_attempt' => 2, 'subtask_start_commit' => str_repeat('b', 40)]);
+        $receipt = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::ReadyForReview, 'author' => 'implementer', 'body' => 'Ready.', 'posted_at' => now(), 'completion_attempt' => 2]);
+        $task->update(['completion_handoff_comment_id' => $receipt->id]);
+        TaskCheck::query()->create(['task_id' => $task->id, 'task_comment_id' => $receipt->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Failed, 'failed_step' => 'invalid_deliverable', 'pid' => 123, 'process_started' => 'check-start', 'head_before' => str_repeat('b', 40), 'tree_before' => str_repeat('d', 40), 'started_at' => now(), 'finished_at' => now()]);
+        $otherGroup = $group->replicate();
+        $otherGroup->save();
+        $runner = new class($writer, $task->id, $change, $otherGroup->id) implements ProcessRunner
+        {
+            public bool $blockedFetchObserved = false;
+
+            public function __construct(private PDO $writer, private int $taskId, private string $change, private int $otherGroupId) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                if (in_array('fetch', $invocation->arguments, true)) {
+                    $input = new InputStream;
+                    $remote = new Process(['bash', '-c', 'printf fetch-blocked; read -r release'], input: $input, timeout: 5);
+                    $remote->start();
+                    try {
+                        $remote->waitUntil(static fn (string $type, string $output): bool => str_contains($output, 'fetch-blocked'));
+                        expect($remote->isRunning())->toBeTrue();
+                        expect(DB::connection()->transactionLevel())->toBe(0);
+                        $this->writer->exec("INSERT INTO writer_probe VALUES ('written while fetch blocked')");
+                        if ($this->change === 'base') {
+                            $this->writer->exec("UPDATE tasks SET subtask_start_commit = '".str_repeat('c', 40)."' WHERE id = ".$this->taskId);
+                        } elseif ($this->change === 'consumed') {
+                            $this->writer->exec('UPDATE tasks SET deliverable_correction_check_id = 999 WHERE id = '.$this->taskId);
+                        } elseif ($this->change === 'ownership') {
+                            $this->writer->exec('UPDATE tasks SET parent_id = '.$this->otherGroupId.' WHERE id = '.$this->taskId);
+                        }
+                        $this->blockedFetchObserved = true;
+                        $input->write("release\n");
+                        $input->close();
+                        $remote->wait();
+                    } finally {
+                        $remote->stop();
+                    }
+                }
+                $output = in_array('ls-tree', $invocation->arguments, true) ? '100644 blob '.str_repeat('b', 40)."\ttests/ExistingTest.php\0" : '';
+
+                return new CommandResult(0, $output, '', 0, false);
+            }
+        };
+        app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($runner, app(RepositoryReadAccess::class), new Filesystem));
+        $replacement = [['id' => 'paths', 'type' => 'file', 'path' => 'tests/ExistingTest.php']];
+        $update = fn () => app(UpdateTaskAction::class)->execute($group, $task, new UpdateTaskData(null, null, null, $replacement));
+
+        if ($change === 'none') {
+            $update();
+            expect($task->fresh()?->deliverables)->toBe($replacement);
+            expect(Activity::query()->where('description', 'deliverables corrected')->count())->toBe(1);
+            expect($update)->toThrow(ResourceOperationException::class);
+        } else {
+            expect($update)->toThrow(ResourceOperationException::class);
+            expect($task->fresh()?->deliverables)->toBe([['id' => 'paths', 'type' => 'file', 'path' => 'tests/MissingTest.php']]);
+            expect(Activity::query()->where('description', 'deliverables corrected')->count())->toBe(0);
+        }
+        expect($runner->blockedFetchObserved)->toBeTrue();
+        expect($writer->query('SELECT value FROM writer_probe')->fetchColumn())->toBe('written while fetch blocked');
+    } finally {
+        DB::purge('correction_probe');
+        config(['database.default' => $original]);
+        unlink($database);
+    }
+})->with(['none', 'base', 'consumed', 'ownership']);
 
 it('blocks a provisional plan on a release seed missing its paths before any agent starts', function (): void {
     [$group, $task, $repository, $spawner] = revalidation_fixture([

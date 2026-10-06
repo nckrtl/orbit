@@ -25,6 +25,7 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
@@ -45,13 +46,13 @@ final readonly class StoreTaskCommentAction
     ) {}
 
     /** @param array<string, mixed> $payload */
-    public function execute(Task $task, array $payload): TaskComment
+    public function execute(Task $task, array $payload, ?Node $actor = null, ?string $requestId = null): TaskComment
     {
         $deliverResolution = false;
         $deliverDirection = false;
         $retryBaselineQueued = false;
         $deliverCorrection = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued, &$deliverCorrection): TaskComment {
+        $comment = DB::transaction(function () use ($task, $payload, $actor, $requestId, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued, &$deliverCorrection): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -63,6 +64,7 @@ final readonly class StoreTaskCommentAction
             $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
             $group = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
+            $task = Task::query()->lockForUpdate()->findOrFail($task->id);
             $endedPullRequest = TaskExecutionHold::active($group)
                 || RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
                 || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason);
@@ -73,10 +75,17 @@ final readonly class StoreTaskCommentAction
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
-                $deliverCorrection = $task->status === TaskStatus::Running && $task->deliverable_correction_check_id !== null
+                if ($task->deliverable_correction_check_id !== null && $group->assistance_kind === AssistanceKind::Direction
+                    && $task->assistance_kind !== AssistanceKind::Direction) {
+                    return $comment;
+                }
+                $deliverCorrection = $task->status === TaskStatus::Running
+                    && $task->assistance_kind !== AssistanceKind::Direction && $group->assistance_kind !== AssistanceKind::Direction
+                    && $task->direction_relay_comment_id === null && $task->consult_comment_id === null
+                    && $task->deliverable_correction_check_id !== null
                     && ($task->deliverable_correction_resume === null || $task->deliverable_correction_resume['state'] === 'pending');
                 if ($deliverCorrection) {
-                    $this->correctionResume->reserve($task, $comment);
+                    $this->correctionResume->reserve($task, $comment, $actor, $requestId);
                 } else {
                     $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
                     $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
