@@ -719,8 +719,8 @@
             ]
         },
         {
-            "path": "docs/decisions/0197-keep-delivery-line-proofs-as-repo-commands.md",
-            "title": "ADR 0197: Keep delivery-line proofs as repository commands",
+            "path": "docs/decisions/0198-keep-delivery-line-proofs-as-repo-commands.md",
+            "title": "ADR 0198: Keep delivery-line proofs as repository commands",
             "kind": "decision",
             "components": [
                 "apps/e2e"
@@ -736,7 +736,7 @@
                 "Task check"
             ],
             "governing_adrs": [
-                "0197"
+                "0198"
             ]
         },
         {
@@ -786,7 +786,7 @@
                 "0190",
                 "0191",
                 "0196",
-                "0197"
+                "0198"
             ]
         },
         {
