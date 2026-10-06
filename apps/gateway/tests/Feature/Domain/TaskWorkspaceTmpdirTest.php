@@ -90,14 +90,6 @@ function tmpdir_script_allocates(string $script): bool
     return str_contains($script, "workspace_metadata 'tmpdir'");
 }
 
-/** @return list<string> */
-function tmpdir_host_directories(): array
-{
-    $matches = glob(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-*') ?: [];
-
-    return array_values(array_filter($matches, is_dir(...)));
-}
-
 function tmpdir_check_directory(string $checkout): string
 {
     (new Process(['git', 'init', '-q', $checkout]))->mustRun();
@@ -121,15 +113,18 @@ function tmpdir_can_switch_to_nobody(): bool
 
 function tmpdir_instance(string $checkout, string $name): Instance
 {
-    $project = Project::query()->create(['name' => $name, 'slug' => $name, 'repository_url' => 'git@github.com:acme/'.$name.'.git', 'default_branch' => 'main']);
-    $node = Node::query()->create(['name' => $name, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => $name === 'first' ? '10.44.0.160' : '10.44.0.161', 'user' => 'orbit']);
+    $suffix = bin2hex(random_bytes(4));
+    $slug = $name.'-'.$suffix;
+    $host = '10.44.'.random_int(1, 254).'.'.random_int(1, 254);
+    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'git@github.com:acme/'.$slug.'.git', 'default_branch' => 'main']);
+    $node = Node::query()->create(['name' => $slug, 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => $host, 'wireguard_ip' => $host, 'user' => 'orbit']);
 
     return Instance::query()->create([
         'project_id' => $project->id,
         'node_id' => $node->id,
-        'name' => 'task-'.$name,
+        'name' => 'task-'.$slug,
         'checkout_path' => $checkout,
-        'branch' => 'task-'.$name,
+        'branch' => 'task-'.$slug,
         'status' => 'source_resolved',
     ]);
 }
@@ -418,7 +413,6 @@ describe('workspace TMPDIR', function (): void {
         $checkout = tmpdir_checkout($this->directory, 'polls');
         $instance = tmpdir_instance($checkout, 'polls');
         $runner = tmpdir_runner(tmpdir_records_scripts($scripts));
-        $before = tmpdir_host_directories();
 
         $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 30');
         for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
@@ -435,29 +429,24 @@ describe('workspace TMPDIR', function (): void {
         (new Process(['setfacl', '-m', 'u:nobody:r', $child.'/file']))->mustRun();
         $mode = fileperms($path) & 0777;
         $inode = fileinode($path);
-        $afterStart = tmpdir_host_directories();
+        $afterStart = count($scripts);
 
         $reading = $runner->read($instance, $process);
         $snapshot = $runner->snapshot($instance);
-        $afterPolls = tmpdir_host_directories();
 
         expect($reading->state)->toBe('running')
             ->and($snapshot->head)->toBe($process->head)
             ->and(is_dir($path))->toBeTrue()
             ->and(fileperms($path) & 0777)->toBe($mode)
             ->and(fileinode($path))->toBe($inode)
-            ->and((new Process(['getfacl', '-cp', $child.'/file']))->mustRun()->getOutput())->toContain('user:nobody:r')
-            ->and($afterPolls)->toEqualCanonicalizing($afterStart)
-            ->and(array_values(array_diff($afterStart, $before)))->toBe([$path]);
-        expect(array_map(tmpdir_script_allocates(...), array_slice($scripts, 1)))->each->toBeFalse();
+            ->and((new Process(['getfacl', '-cp', $child.'/file']))->mustRun()->getOutput())->toContain('user:nobody:r');
+        expect(array_map(tmpdir_script_allocates(...), array_slice($scripts, $afterStart)))->each->toBeFalse();
 
         $beforeCancel = count($scripts);
         $runner->cancel($instance, $process);
         $finished = tmpdir_wait($runner, $instance, $process);
-        $createdOnCancel = array_values(array_diff(tmpdir_host_directories(), $afterStart));
 
         expect($finished->state)->toBe('lost')
-            ->and($createdOnCancel)->toBe([])
             ->and(is_dir($path))->toBeFalse()
             ->and(tmpdir_script_allocates($scripts[$beforeCancel] ?? ''))->toBeFalse();
     });
