@@ -146,7 +146,7 @@ describe('TaskCheckWorkerUser', function (): void {
 
             expect($reading->exitCode)->toBe(0);
             $temporary = file_get_contents($checkout.'/tmpdir-path');
-            expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'.');
+            expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-');
             expect(file_get_contents($temporary.'/phpstan/result'))->toBe('analysed');
             $permissions = (new Process(['getfacl', '-cp', $temporary]))->mustRun()->getOutput();
             expect($permissions)->not->toContain('default:')->not->toContain('user:nobody:');

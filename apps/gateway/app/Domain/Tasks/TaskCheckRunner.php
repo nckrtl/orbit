@@ -17,7 +17,7 @@ interface TaskCheckRunner
      * Starts the check. Setup steps run first, in order, as they do for a baseline check. With deliverables,
      * a passing check also records their evidence ([ADR 0133](/decisions/0133-verify-typed-subtask-deliverables-at-handoff)).
      * A command with fails_on_base also runs on the start commit with its paths overlaid (ADR 0163).
-     * All check processes inherit TMPDIR=/tmp/orbit-check-<uid>.<random>, separate from
+     * All check processes inherit TMPDIR=/tmp/orbit-check-<uid>-<random>, separate from
      * agent-<uid> used by agent tools. Neither role uses the other's restrictive tool caches.
      *
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup

@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
+use Tests\Support\LinuxHost;
 use Tests\Support\LocalShellSshExecutor;
 
 beforeEach(function (): void {
@@ -95,7 +96,7 @@ describe('workspace TMPDIR', function (): void {
 
         expect($fixture['path'])->toStartWith(realpath('/tmp').'/orbit-gateway-tests-')->not->toBe($temporary);
         expect($fixture['mode'])->toBe(0755);
-        expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'.');
+        expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-');
         expect(fileowner($temporary))->toBe(posix_geteuid());
         expect(fileperms($temporary) & 0777)->toBe(0711);
     });
@@ -165,7 +166,7 @@ describe('workspace TMPDIR', function (): void {
                 expect($reading)->toBeInstanceOf(TaskCheckReading::class);
                 expect($reading->exitCode)->toBe(0);
                 $expected = file_get_contents($checkout.'/setup-tmp');
-                expect($expected)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'.')
+                expect($expected)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
                     ->not->toContain($checkout)
                     ->not->toContain('.git');
                 expect(fileowner($expected))->toBe(posix_geteuid());
@@ -214,8 +215,10 @@ describe('workspace TMPDIR', function (): void {
         expect((new Process(['sudo', '-n', '-u', 'nobody', 'test', '-r', $legacyChild.'/file']))->run())->not->toBe(0);
 
         $allocated = tmpdir_check_directory($this->directory);
-        expect($allocated)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'.')
-            ->not->toContain($parent);
+        expect($allocated)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+            ->not->toContain($parent)
+            ->toMatch('#\A[A-Za-z0-9/_-]+\z#');
+        expect(LinuxHost::stopScript($allocated))->toBeString();
         expect(fileowner($allocated))->toBe(posix_geteuid());
         expect(fileperms($allocated) & 0777)->toBe(0711);
         $permissions = (new Process(['getfacl', '-cp', $allocated]))->mustRun()->getOutput();

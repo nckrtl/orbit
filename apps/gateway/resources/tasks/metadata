@@ -178,7 +178,7 @@ def perform(checkout, operation, payload):
             return 'installed\n' if installed else 'present\n'
         if operation == 'tmpdir':
             # Allocate outside the ACL-shared checkout so stripping defaults cannot lock the root.
-            path = tempfile.mkdtemp(prefix=f'orbit-check-{os.geteuid()}.', dir='/tmp')
+            path = tempfile.mkdtemp(prefix=f'orbit-check-{os.geteuid()}-', dir='/tmp')
             directory = metadata.keep(os.open(path, DIRECTORY_FLAGS))
             metadata.require_owner(directory)
             subprocess.run(['setfacl', '-b', '-k', f'/proc/self/fd/{directory}'],
