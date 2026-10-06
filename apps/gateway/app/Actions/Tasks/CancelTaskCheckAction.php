@@ -7,6 +7,7 @@ namespace App\Actions\Tasks;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckException;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Models\Instance;
@@ -37,6 +38,10 @@ final readonly class CancelTaskCheckAction
                 message: __('The task has no running check.'),
                 status: 409,
             );
+        }
+        if ($check->kind === TaskCheckKind::Probe && $check->pid === 0) {
+            throw new ResourceOperationException(errorCode: 'tasks.probe_start_pending',
+                message: 'The probe start must recover its process identity before cancellation.', status: 409);
         }
         $claimed = TaskCheck::query()->whereKey($check->id)->where('status', TaskCheckStatus::Running->value)
             ->update(['status' => TaskCheckStatus::Cancelled->value, 'finished_at' => now()]);

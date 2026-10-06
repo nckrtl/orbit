@@ -420,6 +420,178 @@ afterEach(function (): void {
     File::deleteDirectory($this->directory);
 });
 
+describe('DeliverableProbeStartRecovery', function (): void {
+    it('durably retires a never-started key and refuses every later start without running the command', function (): void {
+        $checkout = check_runner_checkout('false');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $retirement = $runner->retireProbe($instance, 'probe-94');
+        $again = $runner->retireProbe($instance, 'probe-94');
+        expect($retirement->process)->toBeNull()
+            ->and($again->process)->toBeNull()
+            ->and($retirement->execution['uid'])->toBe(posix_geteuid())
+            ->and($retirement->execution['tmpdir'])->toBe('');
+        $payload = ['start' => null, 'commands' => [['id' => 'once', 'command' => 'printf run >> probe-runs', 'directory' => '.']]];
+        expect(fn () => $runner->start($instance, '', [], $payload, key: 'probe-94'))->toThrow(TaskCheckException::class)
+            ->and(file_exists($checkout.'/probe-runs'))->toBeFalse()
+            ->and(file_exists($checkout.'/.git/orbit/check.log'))->toBeFalse();
+    });
+
+    it('identifies and stops an accepted probe through retirement without starting or repeating its command', function (): void {
+        $checkout = check_runner_checkout('false');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $payload = ['start' => null, 'commands' => [['id' => 'once', 'command' => 'printf run >> probe-runs; sleep 30', 'directory' => '.']]];
+        $process = $runner->start($instance, '', [], $payload, key: 'probe-95');
+        try {
+            for ($attempt = 0; $attempt < 100 && ! file_exists($checkout.'/probe-runs'); $attempt++) {
+                usleep(10_000);
+            }
+            $retirement = $runner->retireProbe($instance, 'probe-95');
+            $again = $runner->retireProbe($instance, 'probe-95');
+            expect($retirement->process?->pid)->toBe($process->pid)
+                ->and($again->process?->pid)->toBe($process->pid)
+                ->and($retirement->process?->started)->toBe($process->started);
+            $runner->cancel($instance, $process);
+            $reading = check_runner_wait($runner, $instance, $process);
+            expect($reading->state)->toBe('lost')
+                ->and(file_get_contents($checkout.'/probe-runs'))->toBe('run')
+                ->and(is_dir($retirement->execution['tmpdir']))->toBeFalse();
+            expect(fn () => $runner->start($instance, '', [], $payload, key: 'probe-95'))->toThrow(TaskCheckException::class)
+                ->and(file_get_contents($checkout.'/probe-runs'))->toBe('run');
+        } finally {
+            $runner->cancel($instance, $process);
+        }
+    });
+
+    it('reattaches the accepted remote start after a lost reply without executing the command twice', function (): void {
+        $checkout = check_runner_checkout('false');
+        $instance = check_runner_instance($checkout);
+        $transport = new class implements SshExecutor
+        {
+            public bool $loseReply = true;
+
+            /** @var array<string, mixed>|null */
+            public ?array $accepted = null;
+
+            public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+            {
+                $result = (new LocalShellSshExecutor)->execute($connection, $command);
+                if ($this->loseReply) {
+                    $this->loseReply = false;
+                    $this->accepted = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+
+                    return new CommandResult(0, '', '', 1, false);
+                }
+
+                return $result;
+            }
+        };
+        $runner = check_runner($transport);
+        $payload = ['start' => null, 'commands' => [['id' => 'once', 'command' => 'printf run >> probe-runs; sleep 1', 'directory' => '.']]];
+        expect(fn () => $runner->start($instance, '', [], $payload, key: 'probe-91'))->toThrow(TaskCheckException::class);
+        $process = $runner->start($instance, '', [], $payload, key: 'probe-91');
+        expect($runner->read($instance, $process)->state)->toBe('running');
+        $reading = check_runner_wait($runner, $instance, $process);
+        $again = $runner->start($instance, '', [], $payload, key: 'probe-91');
+        expect($process->pid)->toBe($transport->accepted['pid'])
+            ->and($again->pid)->toBe($process->pid)
+            ->and($again->started)->toBe($process->started)
+            ->and($reading->deliverables['commands']['once']['exit_code'])->toBe(0)
+            ->and(file_get_contents($checkout.'/probe-runs'))->toBe('run')
+            ->and(is_dir($reading->execution['tmpdir']))->toBeFalse();
+    });
+
+    it('keeps the admitted child TMPDIR when publishing the start reply fails', function (): void {
+        $checkout = check_runner_checkout('false');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $runner->snapshot($instance);
+        $payload = ['start' => null, 'commands' => [['id' => 'once',
+            'command' => 'test -d "$TMPDIR" && printf run >> probe-runs', 'directory' => '.']]];
+        $spec = $this->directory.'/probe-spec.json';
+        file_put_contents($spec, json_encode($payload, JSON_THROW_ON_ERROR));
+        $temporary = '/tmp/orbit-check-'.posix_geteuid().'-'.bin2hex(random_bytes(8));
+        mkdir($temporary, 0711);
+        try {
+            $failure = new Process(['python3', '-c', <<<'PYTHON'
+                import importlib.machinery, importlib.util, os, sys
+                loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+                check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+                loader.exec_module(check)
+                def lost_reply(*args):
+                    raise BrokenPipeError('Injected lost reply after the child was admitted')
+                check.print = lost_reply
+                try:
+                    check.start(sys.argv[2], deliverables=sys.argv[3], key='probe-93')
+                except BrokenPipeError:
+                    record = check.read_probe_record('probe-93')
+                    os.waitpid(record['pid'], 0)
+                    sys.exit(1)
+                PYTHON, $checkout.'/.git/orbit/check', $checkout, $spec], null, ['TMPDIR' => $temporary]);
+            expect($failure->run())->toBe(1);
+            $process = $runner->start($instance, '', [], $payload, key: 'probe-93');
+            $reading = check_runner_wait($runner, $instance, $process);
+            expect($reading->state)->toBe('finished')
+                ->and($reading->deliverables['commands']['once']['exit_code'])->toBe(0)
+                ->and(file_get_contents($checkout.'/probe-runs'))->toBe('run')
+                ->and($reading->execution['tmpdir'])->toBe($temporary)
+                ->and(is_dir($temporary))->toBeFalse();
+        } finally {
+            File::deleteDirectory($temporary);
+        }
+    });
+
+    it('never releases a child when the remote start fails around durable identity publication', function (bool $published): void {
+        $checkout = check_runner_checkout('false');
+        $instance = check_runner_instance($checkout);
+        $runner = check_runner(new LocalShellSshExecutor);
+        $runner->snapshot($instance);
+        $payload = ['start' => null, 'commands' => [['id' => 'once', 'command' => 'printf run >> probe-runs', 'directory' => '.']]];
+        $spec = $this->directory.'/probe-spec.json';
+        file_put_contents($spec, json_encode($payload, JSON_THROW_ON_ERROR));
+        $temporary = '/tmp/orbit-check-'.posix_geteuid().'-'.bin2hex(random_bytes(8));
+        mkdir($temporary, 0711);
+        try {
+            $failure = new Process(['python3', '-c', <<<'PYTHON'
+                import importlib.machinery, importlib.util, os, sys
+                loader = importlib.machinery.SourceFileLoader('check', sys.argv[1])
+                check = importlib.util.module_from_spec(importlib.util.spec_from_loader('check', loader))
+                loader.exec_module(check)
+                publish = check.publish_probe_record
+                children = []
+                def interrupted(key, identity):
+                    children.append(identity['pid'])
+                    if sys.argv[4] == 'published':
+                        publish(key, identity)
+                    raise RuntimeError('Injected parent crash before releasing the child')
+                check.publish_probe_record = interrupted
+                try:
+                    check.start(sys.argv[2], deliverables=sys.argv[3], key='probe-92')
+                except RuntimeError:
+                    # The barrier has closed. Reap the abandoned child so status observes its terminal loss.
+                    os.waitpid(children[0], 0)
+                    sys.exit(1)
+                PYTHON, $checkout.'/.git/orbit/check', $checkout, $spec, $published ? 'published' : 'unpublished'], null, ['TMPDIR' => $temporary]);
+            expect($failure->run())->toBe(1)
+                ->and(file_exists($checkout.'/probe-runs'))->toBeFalse()
+                ->and(is_dir($temporary))->toBeFalse();
+            $process = $runner->start($instance, '', [], $payload, key: 'probe-92');
+            $reading = check_runner_wait($runner, $instance, $process);
+            expect($reading->state)->toBe($published ? 'lost' : 'finished');
+            if ($published) {
+                expect(file_exists($checkout.'/probe-runs'))->toBeFalse()
+                    ->and($reading->execution['uid'])->toBe(posix_geteuid())
+                    ->and($reading->execution['tmpdir'])->toBe($temporary);
+            } else {
+                expect(file_get_contents($checkout.'/probe-runs'))->toBe('run');
+            }
+        } finally {
+            File::deleteDirectory($temporary);
+        }
+    })->with([false, true]);
+});
+
 it('runs composer check detached and reports running, then the exit code and output', function (string $check, int $exitCode, string $output): void {
     $checkout = check_runner_checkout($check);
     $instance = check_runner_instance($checkout);
@@ -439,6 +611,10 @@ it('runs composer check detached and reports running, then the exit code and out
         ->and($reading->output)->toContain($output)
         ->and($reading->treeAfter)->toBe($process->tree)
         ->and($reading->changedPaths)->toBe([])
+        ->and($reading->execution['managed_user'])->toBe(posix_getpwuid(posix_geteuid())['name'])
+        ->and($reading->execution['uid'])->toBe(posix_geteuid())
+        ->and($reading->execution['tmpdir'])->toStartWith('/tmp/orbit-check-'.posix_geteuid().'-')
+        ->and(is_dir($reading->execution['tmpdir']))->toBeFalse()
         ->and($reading->finishedAt)->toBeFloat()
         ->and($reading->finishedAt)->toBeLessThanOrEqual(microtime(true))
         ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);

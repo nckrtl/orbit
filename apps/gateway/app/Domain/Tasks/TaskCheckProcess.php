@@ -14,5 +14,6 @@ final readonly class TaskCheckProcess
         public string $started,
         public string $head,
         public string $tree,
+        public ?string $key = null,
     ) {}
 }

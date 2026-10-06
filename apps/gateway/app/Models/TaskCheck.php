@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * One run of the Project check: the baseline before the first implementer, or the check for one `ready_for_review` receipt.
+ * A workspace baseline, a handoff check, or a declared deliverable dry-run that never gates handoff.
  *
  * @property int $id
  * @property int $task_id
@@ -52,7 +52,7 @@ final class TaskCheck extends Model
 
     public function process(): TaskCheckProcess
     {
-        return new TaskCheckProcess($this->pid, $this->process_started, $this->head_before, $this->tree_before);
+        return new TaskCheckProcess($this->pid, $this->process_started, $this->head_before, $this->tree_before, $this->kind === TaskCheckKind::Probe ? 'probe-'.$this->id : null);
     }
 
     /** @return array<string, string> */

@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
+use App\Actions\Tasks\RunTaskDeliverableProbeAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Projects\LifecyclePhase;
@@ -148,6 +149,7 @@ final readonly class TaskScheduler
         }
 
         foreach ($groups as $group) {
+            TaskExecutionHold::run($group, fn () => app(RunTaskDeliverableProbeAction::class)->reconcile($group));
             $this->reportMissingReviewFixups($group);
             if (in_array($group->status, [TaskGroupStatus::Running, TaskGroupStatus::Reviewing], true)
                 && in_array($group->watched_pr_completion, ['merged', 'closed'], true)) {
@@ -420,7 +422,7 @@ final readonly class TaskScheduler
 
             return;
         }
-        $check = TaskCheck::query()->where('task_comment_id', $receipt->id)->latest('id')->first();
+        $check = TaskCheck::query()->where('task_comment_id', $receipt->id)->where('kind', '!=', TaskCheckKind::Probe->value)->latest('id')->first();
         if ($check instanceof TaskCheck && $check->status === TaskCheckStatus::Running) {
             try {
                 $reading = $this->checks->read($instance, $check->process());
@@ -472,7 +474,7 @@ final readonly class TaskScheduler
             return;
         }
         $repeats = $check instanceof TaskCheck
-            ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('status', $check->status->value)->count()
+            ? TaskCheck::query()->where('task_comment_id', $receipt->id)->where('kind', '!=', TaskCheckKind::Probe->value)->where('status', $check->status->value)->count()
             : 0;
         $command = $group->project->taskCheckCommand();
         $name = $command ?? 'the task check';
@@ -496,6 +498,10 @@ final readonly class TaskScheduler
             return;
         }
 
+        // A probe occupies the workspace but never supplies a handoff result.
+        if (TaskCheck::query()->whereIn('task_id', $group->tasks()->select('id'))->where('status', TaskCheckStatus::Running->value)->exists()) {
+            return;
+        }
         try {
             $process = $this->checks->start($instance, $command, [], $this->deliverableCheck($task));
         } catch (TaskCheckException $exception) {
@@ -3938,8 +3944,7 @@ final readonly class TaskScheduler
                 return null;
             }
             $running = TaskCheck::query()
-                ->where('task_id', $locked->id)
-                ->where('kind', TaskCheckKind::Baseline->value)
+                ->whereIn('task_id', $group->tasks()->select('id'))
                 ->where('status', TaskCheckStatus::Running->value)
                 ->lockForUpdate()
                 ->exists();

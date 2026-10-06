@@ -9,6 +9,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskProbeRetirement;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -26,7 +27,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
 
     public function __construct(private DevelopmentSshExecutor $ssh) {}
 
-    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $key = null): TaskCheckProcess
     {
         $instance->refresh();
         $script = file_get_contents(resource_path('tasks/check'));
@@ -40,7 +41,11 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         ]);
         $stepsArgument = $setup === [] ? '-' : '"$dir/setup.json"';
         $deliverablesArgument = $deliverables === null ? '-' : '"$dir/deliverables.json"';
-        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', allocateTemporary: true);
+        if ($key !== null && preg_match('/^probe-[1-9][0-9]*$/D', $key) !== 1) {
+            throw new TaskCheckException('The probe reservation key is invalid.');
+        }
+        $keyArgument = $key === null ? '' : ' '.escapeshellarg($key);
+        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"'.$keyArgument, allocateTemporary: true);
         $pid = $data['pid'] ?? null;
         $started = $data['started'] ?? null;
         $head = $data['head'] ?? null;
@@ -49,17 +54,47 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The check did not start.');
         }
 
-        return new TaskCheckProcess($pid, $started, $head, $tree);
+        return new TaskCheckProcess($pid, $started, $head, $tree, $key);
+    }
+
+    public function retireProbe(Instance $instance, string $key): TaskProbeRetirement
+    {
+        if (preg_match('/^probe-[1-9][0-9]*$/D', $key) !== 1) {
+            throw new TaskCheckException('The probe reservation key is invalid.');
+        }
+        $script = file_get_contents(resource_path('tasks/check'));
+        if ($script === false) {
+            throw new TaskCheckException('The check script is missing from the Gateway.');
+        }
+        // Install only the trusted reader. No setup, command inputs, TMPDIR allocation, or start is admitted here.
+        $data = $this->run($instance, [], TaskWorkspaceMetadata::operation('snapshot', ['script' => base64_encode($script)]).
+            'check_python "$dir/check" retire '.escapeshellarg($key));
+        $execution = is_array($data['execution'] ?? null) ? $data['execution'] : [];
+        if (! array_key_exists('process', $data)) {
+            throw new TaskCheckException('The probe retirement could not be read.');
+        }
+        $identity = $data['process'];
+        if ($identity === null) {
+            return new TaskProbeRetirement(null, $execution);
+        }
+        if (! is_array($identity) || ! is_int($identity['pid'] ?? null) || $identity['pid'] < 1
+            || ! is_string($identity['started'] ?? null) || $identity['started'] === ''
+            || ! is_string($identity['head'] ?? null) || ! is_string($identity['tree'] ?? null)) {
+            throw new TaskCheckException('The retired probe identity could not be read.');
+        }
+
+        return new TaskProbeRetirement(new TaskCheckProcess($identity['pid'], $identity['started'], $identity['head'], $identity['tree'], $key), $execution);
     }
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
     {
-        $data = $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" status "$2" "$3"');
+        $keyArgument = $process->key === null ? '' : ' '.escapeshellarg($process->key);
+        $data = $this->run($instance, [(string) $process->pid, $process->started], 'check_python "$dir/check" status "$2" "$3"'.$keyArgument);
         $output = is_string($data['output'] ?? null) ? $data['output'] : '';
 
         return match ($data['state'] ?? null) {
             'running' => TaskCheckReading::running(),
-            'lost' => TaskCheckReading::lost($output),
+            'lost' => TaskCheckReading::lost($output, is_array($data['execution'] ?? null) ? $data['execution'] : []),
             'finished' => $this->finished($data['result'] ?? null, $output),
             default => throw new TaskCheckException('The check state could not be read.'),
         };
@@ -117,6 +152,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             is_string($treeBefore) ? $treeBefore : null,
             is_string($failedStep) ? $failedStep : null,
             is_array($evidence) ? $evidence : null,
+            is_array($result['execution'] ?? null) ? $result['execution'] : [],
         );
     }
 

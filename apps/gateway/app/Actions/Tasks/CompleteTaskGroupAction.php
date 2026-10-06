@@ -26,6 +26,7 @@ final readonly class CompleteTaskGroupAction
         private GitHubApi $github,
         private StopTaskSubtaskAction $stop,
         private TaskExecutionLock $execution,
+        private RunTaskDeliverableProbeAction $probes,
     ) {}
 
     /**
@@ -119,6 +120,8 @@ final readonly class CompleteTaskGroupAction
     private function completeOpenSubtasks(Task $group): void
     {
         $this->execution->synchronized($group->id, function () use ($group): void {
+            // A held probe may have no Gateway PID yet. Fence/recover it without admitting a start before the stop snapshot.
+            $this->probes->retireHeld($group);
             $open = [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing];
             do {
                 $stopped = [];

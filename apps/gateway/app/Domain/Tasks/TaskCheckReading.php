@@ -24,6 +24,8 @@ final readonly class TaskCheckReading
         public ?string $treeBefore = null,
         public ?string $failedStep = null,
         public ?array $deliverables = null,
+        /** @var array<string, mixed> */
+        public array $execution = [],
     ) {}
 
     public static function running(): self
@@ -37,14 +39,16 @@ final readonly class TaskCheckReading
      * @param  string|null  $treeBefore  the tree the check itself saw, after any setup steps
      * @param  string|null  $failedStep  the setup step that failed, so the task check did not run
      * @param  array<array-key, mixed>|null  $deliverables  the evidence for the subtask's deliverables (ADR 0133)
+     * @param  array<string, mixed>  $execution  the check process's managed user, uid, and TMPDIR
      */
-    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null, ?array $deliverables = null): self
+    public static function finished(int $exitCode, string $headAfter, string $treeAfter, array $changedPaths, string $output, ?float $finishedAt = null, ?string $treeBefore = null, ?string $failedStep = null, ?array $deliverables = null, array $execution = []): self
     {
-        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep, $deliverables);
+        return new self('finished', $exitCode, $headAfter, $treeAfter, $changedPaths, $output, $finishedAt, $treeBefore, $failedStep, $deliverables, $execution);
     }
 
-    public static function lost(string $output): self
+    /** @param array<string, mixed> $execution */
+    public static function lost(string $output, array $execution = []): self
     {
-        return new self('lost', output: $output);
+        return new self('lost', output: $output, execution: $execution);
     }
 }

@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskProbeRetirement;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
@@ -71,15 +72,20 @@ it('starts one baseline check and asks for no assistance when the todo move and 
 
         public function __construct(private FakeTaskCheckRunner $inner) {}
 
-        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $key = null): TaskCheckProcess
         {
-            $process = $this->inner->start($instance, $command, $setup, $deliverables);
+            $process = $this->inner->start($instance, $command, $setup, $deliverables, $key);
             if ($this->racing) {
                 $this->racing = false;
                 app(TaskScheduler::class)->tick();
             }
 
             return $process;
+        }
+
+        public function retireProbe(Instance $instance, string $key): TaskProbeRetirement
+        {
+            return $this->inner->retireProbe($instance, $key);
         }
 
         public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -152,11 +158,16 @@ it('cancels the started baseline process when the claim is cancelled during the 
 
         public function __construct(private Task $group, private Task $task) {}
 
-        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+        public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $key = null): TaskCheckProcess
         {
             app(CancelTaskCheckAction::class)->execute($this->group->fresh(['taskable']) ?? $this->group, $this->task);
 
             return new TaskCheckProcess(4001, 'Wed Sep 23 12:00:01 2026', str_repeat('a', 40), str_repeat('b', 40));
+        }
+
+        public function retireProbe(Instance $instance, string $key): TaskProbeRetirement
+        {
+            return new TaskProbeRetirement(null);
         }
 
         public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading

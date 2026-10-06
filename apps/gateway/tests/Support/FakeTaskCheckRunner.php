@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskProbeRetirement;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Models\Instance;
 use Illuminate\Support\Facades\DB;
@@ -57,14 +58,63 @@ final class FakeTaskCheckRunner implements TaskCheckRunner
     /** @var list<string|null> configured commands for each started check */
     public array $commands = [];
 
-    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
+    /** @var array<string, TaskCheckProcess> */
+    public array $keyedStarts = [];
+
+    /** @var list<int> */
+    public array $startTransactionLevels = [];
+
+    public ?\Closure $afterStart = null;
+
+    public ?\Closure $beforeStart = null;
+
+    /** @var list<array<string, mixed>|null> */
+    public array $requestedDeliverables = [];
+
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $key = null): TaskCheckProcess
     {
+        $this->startTransactionLevels[] = DB::transactionLevel();
+        $this->requestedDeliverables[] = $deliverables;
+        if ($this->beforeStart !== null) {
+            ($this->beforeStart)();
+        }
+        if ($key !== null && in_array($key, $this->retiredKeys, true)) {
+            throw new TaskCheckException('The probe reservation is retired.');
+        }
+        if ($key !== null && isset($this->keyedStarts[$key])) {
+            return $this->keyedStarts[$key];
+        }
         $this->starts++;
         $this->setups[] = $setup;
         $this->deliverables[] = $deliverables;
         $this->commands[] = $command;
 
-        return new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
+        $process = new TaskCheckProcess(4000 + $this->starts, 'Wed Sep 23 12:00:0'.$this->starts.' 2026', str_repeat('a', 40), str_repeat('b', 40));
+        if ($key !== null) {
+            $this->keyedStarts[$key] = $process;
+        }
+        if ($this->afterStart !== null) {
+            ($this->afterStart)($process);
+        }
+
+        return $process;
+    }
+
+    /** @var list<string> */
+    public array $retiredKeys = [];
+
+    public bool $failNextRetirement = false;
+
+    public function retireProbe(Instance $instance, string $key): TaskProbeRetirement
+    {
+        $this->retiredKeys[] = $key;
+        if ($this->failNextRetirement) {
+            $this->failNextRetirement = false;
+            throw new TaskCheckException('The probe retirement reply was lost.');
+        }
+
+        return new TaskProbeRetirement($this->keyedStarts[$key] ?? null,
+            ['managed_user' => 'orbit', 'uid' => 1001, 'tmpdir' => isset($this->keyedStarts[$key]) ? '/tmp/orbit-check-1001-held' : '']);
     }
 
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading

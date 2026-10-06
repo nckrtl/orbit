@@ -24,10 +24,18 @@ interface TaskCheckRunner
      * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
      * @param  array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>}|null  $deliverables
      * @param  string|null  $command  the Project task check command, or null to run no command
+     * @param  string|null  $key  a durable probe reservation key; repeated starts reattach without rerunning
      *
      * @throws TaskCheckException
      */
-    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess;
+    public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null, ?string $key = null): TaskCheckProcess;
+
+    /**
+     * Fences a probe key without starting it. Returns its accepted identity, or a durable never-started retirement.
+     *
+     * @throws TaskCheckException
+     */
+    public function retireProbe(Instance $instance, string $key): TaskProbeRetirement;
 
     /** @throws TaskCheckException */
     public function read(Instance $instance, TaskCheckProcess $process): TaskCheckReading;

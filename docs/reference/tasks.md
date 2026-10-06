@@ -890,6 +890,26 @@ The scheduler identifies the process by its id and its start time, so a reused p
 
 `tasks:check:cancel` stops a running check. A subtask without one answers HTTP 409 `tasks.check_not_running`. When Orbit marks the check cancelled but cannot stop its process, the call answers HTTP 502 `tasks.check_unreachable`. Each run is stored with its receipt, kind, status, process, HEAD and trees, times, exit code, changed paths, and the last 16 KiB of output.
 
+### Deliverable probes
+
+A deliverable probe is a dry-run of one declared `command` deliverable while its subtask is `running`. The Gateway action accepts the subtask's implementer thread or an operator. It uses the stored command and directory verbatim, with no extra arguments or free-form filter. It starts the check runner with an empty Project command, no setup steps, and only that deliverable in the command payload. A probe does not run the Project check.
+
+By default, a probe runs only against the working tree. With `base=true`, its payload also includes the deliverable's declared `fails_on_base` and `paths` fields. That enables the declared start-commit run; it does not invent base-run requirements for other commands. Probes use the same managed user and host `TMPDIR` as other checks.
+
+The action refuses an unknown deliverable with HTTP 404, a file or review deliverable with HTTP 422, and a request while any baseline, handoff, or probe check runs in the group with HTTP 409. Each subtask can request at most three probes per completion attempt, across all its deliverables. A fourth request answers HTTP 429. A new completion attempt resets that allowance.
+
+Before any remote start, the Gateway commits a `task_checks` reservation with `kind` `probe`, linked to a `deliverable_probe` comment. The reservation counts toward the attempt's quota and excludes other checks even before it has a process ID. Its stored command payload stays fixed during recovery.
+
+The Gateway starts it outside the database transaction with a stable key derived from the check ID. A repeated start with that key returns the same process identity rather than running the command again. The remote child waits until its identity is durably recorded before executing the command.
+
+A lost SSH reply or a failed identity update leaves the reservation in place; a later tick reattaches and records the result. A child abandoned before its start is released runs no command and can end with a `lost` receipt. An operator cannot cancel an unidentified probe and remove its exclusion; it must first recover its process identity.
+
+An ended watched pull request holds all new execution, but completion can still retire probes. Before stopping subtasks, completion fences each running probe's key under the remote start lock. It identifies and stops an accepted process, or durably retires a key that never started. After the Gateway fences the key, the remote start operation rejects later requests, even if a delayed SSH start arrives. This cleanup path never calls the start operation. It records a terminal receipt before completion removes the workspace. A failed retirement or stop keeps the group and reservation for another cleanup attempt.
+
+When the probe finishes, the Gateway stores its exit code and output on the check and writes a JSON receipt in the comment body. The receipt contains `check_id`, `kind`, `deliverable`, `command`, `directory`, `managed_user`, `uid`, `tmpdir`, `head`, `tree`, `exit_code`, `output_tail`, `started_at`, and `finished_at`. It also contains `base_exit_code` when base-run evidence exists. The output tail is at most 16 KiB. The probe exit comes from the declared command's evidence, not from the empty Project command.
+
+A probe never gates handoff or counts as a handoff attempt. Its result does not advance `completion_attempt`, set completion reminder fields, or request assistance. The scheduler records probe results separately and excludes probes when selecting handoff results or counting handoff retries. A later handoff still needs its own check; failing handoffs keep the reminder and assistance behavior described above. API, MCP, and CLI probe entry points are not part of this domain action.
+
 ### Baseline check
 
 Before the first implementer of a task starts, the check runs on the fresh workspace, with `kind` `baseline`.

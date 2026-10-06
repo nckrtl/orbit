@@ -14,4 +14,5 @@ enum TaskCommentType: string
     case TopologyRequested = 'topology_requested';
     case AssistanceRequested = 'assistance_requested';
     case Resolution = 'resolution';
+    case DeliverableProbe = 'deliverable_probe';
 }

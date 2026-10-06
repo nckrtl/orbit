@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Orbit task check (ADR 0125). The Gateway installs this script in .git/orbit/ and runs it over SSH.
 
-check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
+check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND] [PROBE_KEY]
                                 start the Project task check detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
                                 DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check
@@ -9,11 +9,14 @@ check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 A command with fails_on_base runs on the start commit with its paths overlaid, then on the working tree (ADR 0163).
                                 The base tree is a temporary archive under .git/orbit/bases/, not a registered worktree. The base run stops after 600 seconds.
                                 COMMAND is a file with the Project's task check command. An empty file, or no COMMAND, runs no command.
+                                PROBE_KEY is probe-<check_id>. Repeats return the same durably recorded identity.
+                                A keyed child waits for that record before running; parent loss before release aborts it.
 check run CHECKOUT HEAD TREE [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 run the setup steps and the command, then write check.json (started by `start`).
                                 Invalid command deliverables fail before that command. An unexpected error still writes check.json.
-check status PID STARTED        print running, finished (with the result), or lost
+check status PID STARTED [PROBE_KEY]  print running, finished (with the result), or lost; a keyed loss includes execution metadata
 check cancel PID STARTED        stop the check's process group
+check retire PROBE_KEY          fence a probe without starting it; return the accepted identity or never-started retirement
 check snapshot CHECKOUT         print HEAD, its parent, its tree, and the working-tree hash, without touching the index
 
 The detached `run` process removes its allocated TMPDIR when it ends, including on INT, TERM, HUP, or cancel.
@@ -30,9 +33,11 @@ user rwX on every entry the worker owns, so the check can replace what an agent'
 """
 
 import atexit
+import fcntl
 import json
 import os
 import pwd
+import re
 import shutil
 import signal
 import stat
@@ -178,7 +183,94 @@ def optional(path):
     return path if path and path != '-' else None
 
 
-def start(checkout, setup=None, deliverables=None, command=None):
+def probe_record_path(key):
+    if not re.fullmatch(r'probe-[1-9][0-9]*', key):
+        raise ValueError('Invalid probe reservation key.')
+    return os.path.join(DIRECTORY, 'check-start-' + key + '.json')
+
+
+def read_probe_record(key):
+    try:
+        descriptor = os.open(probe_record_path(key), os.O_RDONLY | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(descriptor) as source:
+        details = os.fstat(source.fileno())
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid():
+            raise ValueError('Unsafe probe start record.')
+        return json.load(source)
+
+
+def publish_probe_record(key, identity):
+    target = probe_record_path(key)
+    temporary = target + '.' + str(os.getpid())
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        with os.fdopen(descriptor, 'w') as output:
+            json.dump(identity, output)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, target)
+        directory = os.open(DIRECTORY, os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def start(checkout, setup=None, deliverables=None, command=None, key=None):
+    if key is None:
+        return start_process(checkout, setup, deliverables, command)
+    probe_record_path(key)
+    descriptor = os.open(os.path.join(DIRECTORY, 'check-start.lock'), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    admission = [False]
+    try:
+        details = os.fstat(descriptor)
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid():
+            raise ValueError('Unsafe probe start lock.')
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        existing = read_probe_record(key)
+        if existing is not None:
+            if existing.get('retired'):
+                raise RuntimeError('The probe reservation is retired.')
+            # This SSH retry allocated its own unused TMPDIR, never the original process's directory.
+            remove_allocated_check_tmpdir()
+            print(json.dumps(existing))
+            return
+        return start_process(checkout, setup, deliverables, command, key, descriptor, admission)
+    except BaseException:
+        if not admission[0]:
+            remove_allocated_check_tmpdir()
+        raise
+    finally:
+        os.close(descriptor)
+
+
+def retire(key):
+    """Fence the key under the start lock. A missing record becomes a durable tombstone, never a start."""
+    probe_record_path(key)
+    descriptor = os.open(os.path.join(DIRECTORY, 'check-start.lock'), os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        details = os.fstat(descriptor)
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid():
+            raise ValueError('Unsafe probe start lock.')
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        record = read_probe_record(key)
+        if record is None:
+            record = {'execution': {'managed_user': pwd.getpwuid(os.geteuid()).pw_name,
+                                    'uid': os.geteuid(), 'tmpdir': ''}}
+        record['retired'] = True
+        publish_probe_record(key, record)
+        print(json.dumps({'process': record if record.get('pid') is not None else None,
+                          'execution': record.get('execution', {})}))
+    finally:
+        os.close(descriptor)
+
+
+def start_process(checkout, setup=None, deliverables=None, command=None, key=None, lock=None, admission=None):
     retire_stale_base_directories()
     setup, deliverables = optional(setup), optional(deliverables)
     if command:
@@ -191,19 +283,48 @@ def start(checkout, setup=None, deliverables=None, command=None):
     for path in (RESULT, LOG):
         if os.path.exists(path):
             os.remove(path)
+    barrier = os.pipe() if key is not None else None
     pid = os.fork()
     if pid == 0:
         os.setsid()
+        if barrier is not None:
+            os.close(lock)
+            os.close(barrier[1])
+            admitted = os.read(barrier[0], 1) == b'1'
+            os.close(barrier[0])
+            if not admitted:
+                remove_allocated_check_tmpdir()
+                os._exit(1)
         null = os.open(os.devnull, os.O_RDWR)
         for descriptor in (0, 1, 2):
             os.dup2(null, descriptor)
         os.execv(sys.executable, [sys.executable, os.path.abspath(__file__), 'run', checkout, head, tree, setup or '-', deliverables or '-', command])
-    for _ in range(50):
-        started = process_started(pid)
-        if started:
-            break
-        time.sleep(0.02)
-    print(json.dumps({'pid': pid, 'started': started, 'head': head, 'tree': tree}))
+    if barrier is not None:
+        os.close(barrier[0])
+    try:
+        started = None
+        for _ in range(50):
+            started = process_started(pid)
+            if started:
+                break
+            time.sleep(0.02)
+        identity = {'pid': pid, 'started': started, 'head': head, 'tree': tree}
+        if key is not None:
+            if not started:
+                raise RuntimeError('The probe process identity could not be read.')
+            identity['execution'] = {
+                'managed_user': pwd.getpwuid(os.geteuid()).pw_name,
+                'uid': os.geteuid(), 'tmpdir': os.environ.get('TMPDIR', ''),
+            }
+            # The child can execute only after this durable identity exists. EOF aborts it on a crash.
+            publish_probe_record(key, identity)
+            # Transfer TMPDIR ownership before the release syscall: a lost reply must not remove a live child's directory.
+            admission[0] = True
+            os.write(barrier[1], b'1')
+        print(json.dumps(identity))
+    finally:
+        if barrier is not None:
+            os.close(barrier[1])
 
 
 def run_setup(checkout, setup, log):
@@ -627,6 +748,11 @@ def check_result(head, tree, head_after, tree_after, paths, exit_code, failed_st
         'tree_after': tree_after,
         'changed_paths': paths,
         'deliverables': evidence,
+        'execution': {
+            'managed_user': pwd.getpwuid(os.geteuid()).pw_name,
+            'uid': os.geteuid(),
+            'tmpdir': os.environ.get('TMPDIR', ''),
+        },
         'started_at': started_at,
         'finished_at': time.time(),
     }
@@ -648,7 +774,7 @@ def output_tail():
         return log.read().decode('utf-8', errors='replace')
 
 
-def status(pid, started):
+def status(pid, started, key=None):
     # Read liveness before the result: the check writes check.json before it exits, so a check that
     # finishes between the two reads is still running on the first and finished on the second.
     alive = process_started(pid) == started
@@ -658,7 +784,9 @@ def status(pid, started):
     elif alive:
         print(json.dumps({'state': 'running'}))
     else:
-        print(json.dumps({'state': 'lost', 'output': output_tail()}))
+        record = read_probe_record(key) if key is not None else None
+        execution = record.get('execution', {}) if record and record.get('pid') == pid and record.get('started') == started else {}
+        print(json.dumps({'state': 'lost', 'output': output_tail(), 'execution': execution}))
 
 
 def cancel(pid, started):
@@ -690,14 +818,16 @@ def snapshot(checkout):
 
 def main(arguments):
     command = arguments[0] if arguments else ''
-    if command == 'start' and len(arguments) in (2, 3, 4, 5):
+    if command == 'start' and len(arguments) in (2, 3, 4, 5, 6):
         start(*arguments[1:])
     elif command == 'run' and len(arguments) in (4, 5, 6, 7):
         run(*arguments[1:])
-    elif command == 'status' and len(arguments) == 3:
-        status(int(arguments[1]), arguments[2])
+    elif command == 'status' and len(arguments) in (3, 4):
+        status(int(arguments[1]), arguments[2], arguments[3] if len(arguments) == 4 else None)
     elif command == 'cancel' and len(arguments) == 3:
         cancel(int(arguments[1]), arguments[2])
+    elif command == 'retire' and len(arguments) == 2:
+        retire(arguments[1])
     elif command == 'snapshot' and len(arguments) == 2:
         snapshot(arguments[1])
     else:
