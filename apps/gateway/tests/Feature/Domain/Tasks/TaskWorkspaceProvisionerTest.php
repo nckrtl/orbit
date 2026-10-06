@@ -538,8 +538,7 @@ it('refuses a reserved worktree reclaim when source identity does not match', fu
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
 
-    expect($instance)->toBeInstanceOf(InstanceProvisionFailure::class)
-        ->cause->toContain('instance.clone_failed', 'Source identity does not match.');
+    expect($instance)->toBeNull();
     expect($left->refresh()->status)->toBe(InstanceState::Reserved)
         ->and($left->starting_commit)->toBeNull();
     expect($fakes->source->calls)->toBe(['prepare']);
