@@ -38,6 +38,7 @@ use App\Models\Project;
 use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 {
@@ -127,6 +128,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 'node_id' => $node->id,
                 'name' => $name,
                 'source_layout' => InstanceSourceLayout::Checkout,
+                'source_prepare_id' => (string) Str::uuid(),
                 'checkout_path' => $checkout->value,
                 'root' => $visitable ? $group->project->root : null,
                 'branch_override' => $name,

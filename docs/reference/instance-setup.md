@@ -81,7 +81,7 @@ Activation records `failed_step: setup` in the same transaction, so a Gateway in
 
 Each command runs with `bash -eu` at the repository root, even when the Laravel [application directory](/reference/projects#application-directory) is nested. For example, a setup command for root `apps/site/public` must use `cd apps/site && composer install` to install that application's dependencies. Teardown and task-check commands also keep their repository-root scope. Each setup command runs on the Instance's Node, as the Node's managed user. This is the `instance:create` and `instance:setup` path. A task workspace does not use it. The task baseline runs the same commands, also as the managed user, inside the task check. [Project check](/reference/tasks#project-check) describes that run.
 
-Commands read no input, and Orbit discards their output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
+Commands read no input. Orbit discards their stdout and retains only a bounded 1 KiB stderr tail internally; public errors do not include command output. When a step ends, for any reason, Orbit kills its process group, so background processes do not survive the step. Each run holds a lifecycle lock on the Instance. If another operation holds that lock during `instance:create`, Orbit keeps the active Instance and records `error_code: instance.lifecycle_busy`.
 
 An identical create retry then reports that setup must run; use `instance:setup` to retry the list. A busy lock never removes the Instance.
 
@@ -89,7 +89,9 @@ The first command that exits non-zero or times out stops the list. Then Orbit ro
 
 1. It runs every teardown step.
 2. It removes the Instance with forced removal, which also deletes a dirty checkout.
-3. It returns `instance.setup_step_failed` with the failed setup step. A failed teardown step is named too.
+3. It returns `instance.setup_step_failed` with the failed setup step, or `instance.setup_step_unavailable` with `outcome: missing` for a missing or non-executable command (exit 127 or 126).
+
+An unavailable setup error keeps its step, Node, and not-found diagnostic and says the Instance was removed. A failed teardown step is named too.
 
 A teardown failure during this rollback does not keep the Instance. Rollback never removes another Instance.
 
@@ -101,7 +103,7 @@ Orbit keeps the Instance, with its setup marked failed, in three cases:
 | Orbit cannot confirm a teardown step's outcome. | The error adds `cleanup: unconfirmed`. |
 | The removal starts but does not finish. | The error adds `cleanup: incomplete` and names `orbit instance:destroy <id> --force`. |
 
-Inspect the Instance before you retry.
+Incomplete or unconfirmed cleanup keeps the setup error's classification and details. When setup was unavailable, the error also keeps its step, Node, and not-found diagnostic alongside the cleanup annotation. Inspect the Instance before you retry.
 
 With `ORBIT_TASKS_WORKER_USER` configured, registration inspection, in-place adoption, and relocation verification run Git content-status checks as that worker. Clean and process filters receive no Gateway credential environment. The managed account checks ownership and moves the source only when its path differs from the managed destination.
 
@@ -109,7 +111,7 @@ With `ORBIT_TASKS_WORKER_USER` configured, registration inspection, in-place ado
 
 It pins the source and Git directory before discovering the common directory, then checks those identities before every read grant. It never resolves a replacement link as a new grant target. Read grants preserve the worker's existing effective permissions, including workspace edits and Git locks. They do not follow links or grant access to either user's home. Parent directories must already be traversable by the worker. Git trusts only the exact checked path for that command. Registration stops if the worker is missing, sudo fails, or Git cannot read the content. It never falls back to the managed account.
 
-`instance:register` runs no setup. `instance:register --setup` runs the setup list after adoption. `instance:setup` runs the list again on an active development Instance. Both keep the Instance when a command fails and return `instance.setup_step_failed`. Every run starts at the first step.
+`instance:register` runs no setup. `instance:register --setup` runs the setup list after adoption. `instance:setup` runs the list again on an active development Instance. Both keep the Instance when a command fails and return `instance.setup_step_failed`, or `instance.setup_step_unavailable` when the command is missing or not executable. Every run starts at the first step.
 
 ```bash
 orbit instance:setup <instance>
@@ -131,7 +133,7 @@ A step that the request deadline stops, or that has no time left to start, is no
 
 Teardown may delete ignored files. It must keep the checkout, its Git identity, and its worktrees. When teardown changes tracked files, normal removal refuses. Retry with `--force` to discard them.
 
-The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. Fix or destroy the step, then run `instance:destroy` again.
+The first teardown command that exits non-zero or times out stops the removal. The Route, source, and record stay, and the command returns `instance.teardown_step_failed` with the step name. A missing or non-executable command (exit 127 or 126) returns `instance.teardown_step_unavailable` instead, with `outcome: missing`. The message names the step and its Node and says the command was not found or is not executable. Setup uses the same distinction with `instance.setup_step_unavailable`. Orbit retains a bounded stderr tail internally, without including command output in the public error. Fix or destroy the step, then run `instance:destroy` again.
 
 ## Bootstrap the Orbit repository
 
@@ -333,6 +335,8 @@ These codes name the step that failed. The sections above say whether the Instan
 | --- | --- |
 | `instance.setup_step_failed` | A setup command failed or timed out. |
 | `instance.teardown_step_failed` | A teardown command failed or timed out during `instance:destroy`. |
+| `instance.setup_step_unavailable` | A setup command was not found or is not executable on the Node; `outcome: missing`. |
+| `instance.teardown_step_unavailable` | A teardown command was not found or is not executable on the Node; `outcome: missing`. |
 | `instance.setup_unavailable` | `instance:setup` targets an Instance that is not an active development Instance. |
 | `command.deadline_exceeded` | The request deadline stopped a step. |
 

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\RemoveInstanceAction;
-use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -13,26 +12,23 @@ use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Shared\LifecycleStatus;
-use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
-use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectLifecycleStep;
-use App\Models\Task;
 use Tests\Support\LifecycleSshExecutor;
 
 beforeEach(function (): void {
     bind_task_node_reachability();
 });
 
-describe('reserved worktree removable', function (): void {
-    it('removes an interrupted reservation without recording a failure or running teardown', function (bool $force): void {
-        $instance = reserved_removal_instance();
-        $transport = reserved_removal_source($instance, $force);
+describe('legacy reserved worktree orphan without source_prepare_id', function (): void {
+    it('is pre-activation removable via RemoveInstanceAction (LIVE 348/369 shape)', function (bool $force): void {
+        $instance = legacy_reserved_removal_instance();
+        $transport = legacy_reserved_removal_source($instance, $force);
+
+        expect(InstanceCreationRecovery::isPreActivation($instance))->toBeTrue();
 
         $removal = app(RemoveInstanceAction::class)->execute($instance, force: $force);
 
@@ -40,67 +36,10 @@ describe('reserved worktree removable', function (): void {
         expect($transport->inputs)->toBe([]);
         expect(Instance::query()->find($instance->id))->toBeNull();
         expect(InstanceRemovalMember::query()->where('instance_id', $instance->id)->sole()->source_finalized_at)->not->toBeNull();
-    })->with([false, true]);
-
-    it('cancels a group and clears its stranded unattached task workspace', function (): void {
-        app(TaskExtensionState::class)->enable();
-        $instance = reserved_removal_instance();
-        $group = Task::topLevel()->create([
-            'project_id' => $instance->project_id,
-            'title' => 'Interrupted provision',
-            'brief' => 'Clear the interrupted workspace.',
-            'status' => TaskGroupStatus::Todo,
-        ]);
-        $instance->update(['name' => 'task-'.$group->id, 'branch_override' => 'task-'.$group->id]);
-        $transport = reserved_removal_source($instance, true);
-
-        $cancelled = app(CancelTaskGroupAction::class)->execute($group);
-
-        expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled);
-        expect($transport->inputs)->toBe([]);
-        expect($cancelled->taskable_id)->toBeNull();
-        expect($cancelled->assistance_requested)->toBeFalse();
-        expect(Instance::query()->find($instance->id))->toBeNull();
-        expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
-    });
-
-    it('does not treat an active worktree as failed-create cleanup', function (): void {
-        $instance = reserved_removal_instance();
-        $instance->project->update(['type' => 'monorepo']);
-        $instance->update(['status' => InstanceState::Active]);
-
-        expect(InstanceCreationRecovery::isPreActivation($instance))->toBeFalse();
-        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: true, requirePreActivation: true))
-            ->toThrow(ResourceOperationException::class, 'Failed-create cleanup cannot remove an activated Instance.');
-        expect(Instance::query()->find($instance->id))->not->toBeNull();
-        expect(InstanceRemoval::query()->count())->toBe(0);
-    });
-
-    it('keeps reservations without creation evidence protected even with force', function (array $attributes): void {
-        $instance = reserved_removal_instance();
-        $instance->update($attributes);
-
-        expect(InstanceCreationRecovery::isPreActivation($instance))->toBeFalse();
-        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: true))
-            ->toThrow(ResourceOperationException::class);
-        expect(Instance::query()->find($instance->id))->not->toBeNull();
-        expect(InstanceRemoval::query()->count())->toBe(0);
-    })->with([
-        'already resolved commit' => [['starting_commit' => str_repeat('a', 40)]],
-        'no preparation identity' => [['source_prepare_id' => null, 'task_workspace_routed' => null]],
-        'registered source' => [['registration_request_id' => 'registered-source']],
-        'not a task workspace' => [['task_workspace_routed' => null]],
-    ]);
-
-    it('leaves a resolved unrouted worktree on its healthy teardown path', function (): void {
-        $instance = reserved_removal_instance();
-        $instance->update(['status' => InstanceState::SourceResolved, 'starting_commit' => str_repeat('a', 40)]);
-
-        expect(InstanceCreationRecovery::isPreActivation($instance))->toBeFalse();
-    });
+    })->with(['non-force' => false, 'force' => true]);
 });
 
-function reserved_removal_instance(): Instance
+function legacy_reserved_removal_instance(): Instance
 {
     $project = Project::query()->create([
         'name' => 'Reserved removal',
@@ -125,7 +64,8 @@ function reserved_removal_instance(): Instance
         'name' => 'task-1253',
         'branch_override' => 'task-1253',
         'source_layout' => 'worktree',
-        'source_prepare_id' => 'reserved-prepare',
+        'source_prepare_id' => null,
+        'registration_request_id' => null,
         'checkout_path' => '/srv/orbit/apps/reserved-removal/task-1253',
         'task_workspace_routed' => false,
         'status' => InstanceState::Reserved,
@@ -135,7 +75,7 @@ function reserved_removal_instance(): Instance
     ]);
 }
 
-function reserved_removal_source(Instance $instance, bool $force): LifecycleSshExecutor
+function legacy_reserved_removal_source(Instance $instance, bool $force): LifecycleSshExecutor
 {
     $instance->loadMissing('project');
     $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
@@ -146,12 +86,12 @@ function reserved_removal_source(Instance $instance, bool $force): LifecycleSshE
             repositoryIdentity: $instance->project->repository_identity,
             checkoutPath: $instance->checkout_path,
             root: '/srv/orbit/apps',
-            branch: null,
-            startingCommit: '',
-            commonRepositoryPath: '/srv/orbit/apps/reserved-removal/main',
-            sourceIdentity: 'reserved-prepare',
+            branch: $instance->branch_override,
+            startingCommit: str_repeat('0', 40),
+            commonRepositoryPath: $instance->checkout_path,
+            sourceIdentity: 'absent',
             linkedWorktreePaths: [$instance->checkout_path],
-            digest: hash('sha256', 'reserved-prepare'),
+            digest: hash('sha256', 'absent-reserved-worktree'),
         ));
     app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
     $finalizer = Mockery::mock(DevelopmentInstanceSourceFinalizer::class);

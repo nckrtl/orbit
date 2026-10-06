@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\RunInstanceSetupAction;
 use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Data\Instances\InstanceData;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\InstanceState;
@@ -129,6 +130,68 @@ it('stops after a failed step and preserves the instance on explicit setup', fun
     expect(Instance::query()->whereKey($this->instance->id)->exists())->toBeTrue()
         ->and(file_exists($this->sandbox.'/later'))->toBeFalse()
         ->and($this->transport->inputs)->toHaveCount(1);
+});
+
+it('reports a teardown step whose command is missing as unavailable', function (): void {
+    $this->steps->create($this->instance->project, LifecyclePhase::Teardown,
+        new LifecycleStep('task-e2e-bridge', '/nonexistent/orbit/e2e-task-cleanup'), null, null);
+
+    expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Teardown))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.teardown_step_unavailable')
+                ->and($exception->details)->toBe(['step' => 'task-e2e-bridge', 'outcome' => 'missing'])
+                ->and($exception->getMessage())->toContain('task-e2e-bridge', 'not found', 'lifecycle', '127');
+            $previous = $exception->getPrevious();
+            $result = $previous instanceof RuntimeConvergenceException ? $previous->result : null;
+            expect($result?->exitCode)->toBe(127)
+                ->and($result?->stderr)->toContain('/nonexistent/orbit/e2e-task-cleanup');
+        });
+});
+
+it('reports non-executable lifecycle commands as unavailable with a bounded stderr tail', function (LifecyclePhase $phase): void {
+    file_put_contents($this->sandbox.'/cleanup', '#!/usr/bin/bash');
+    chmod($this->sandbox.'/cleanup', 0600);
+    $this->steps->create($this->instance->project, $phase,
+        new LifecycleStep('cleanup', 'printf "%1048576s" "" >&2; printf diagnostic-tail >&2; ./cleanup'), null, null);
+    $this->steps->create($this->instance->project, $phase,
+        new LifecycleStep('later', 'touch later'), null, null);
+
+    expect(fn () => $this->runner->run($this->instance, $phase))
+        ->toThrow(function (ResourceOperationException $exception) use ($phase): void {
+            expect($exception->errorCode)->toBe('instance.'.$phase->value.'_step_unavailable')
+                ->and($exception->details)->toBe(['step' => 'cleanup', 'outcome' => 'missing'])
+                ->and($exception->getMessage())->toContain('cleanup', 'not found', '126')
+                ->and($exception->getMessage())->not->toContain('diagnostic-tail');
+            $previous = $exception->getPrevious();
+            $result = $previous instanceof RuntimeConvergenceException ? $previous->result : null;
+            expect($result?->exitCode)->toBe(126)
+                ->and(strlen($result?->stderr ?? ''))->toBe(1024)
+                ->and($result?->stderr)->toContain('diagnostic-tail', 'Permission denied');
+        });
+    expect(file_exists($this->sandbox.'/later'))->toBeFalse();
+})->with([LifecyclePhase::Setup, LifecyclePhase::Teardown]);
+
+it('reports a setup step whose command is missing as unavailable', function (): void {
+    $this->steps->create($this->instance->project, LifecyclePhase::Setup,
+        new LifecycleStep('install', '/nonexistent/orbit/install'), null, null);
+
+    expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Setup))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.setup_step_unavailable')
+                ->and($exception->details)->toBe(['step' => 'install', 'outcome' => 'missing'])
+                ->and($exception->getMessage())->toContain('install', 'not found');
+        });
+});
+
+it('reports other teardown command failures as failed', function (): void {
+    $this->steps->create($this->instance->project, LifecyclePhase::Teardown,
+        new LifecycleStep('cleanup', 'exit 41'), null, null);
+
+    expect(fn () => $this->runner->run($this->instance, LifecyclePhase::Teardown))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('instance.teardown_step_failed')
+                ->and($exception->details)->toBe(['step' => 'cleanup', 'outcome' => 'failed']);
+        });
 });
 
 it('kills the timed-out command group before returning failure', function (): void {

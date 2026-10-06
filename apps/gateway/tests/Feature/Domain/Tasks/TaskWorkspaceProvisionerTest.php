@@ -335,6 +335,25 @@ it('backs off ProvisioningFailed claims across scheduler ticks and clears worksp
     $this->travelBack();
 });
 
+it('task workspace stamps source_prepare_id before preparing source', function (): void {
+    $project = provisioner_app('prepare-id');
+    provisioner_node('prepare-id-dev', '10.44.0.138');
+    $group = provisioner_group($project);
+    $fakes = bind_task_workspace_fakes();
+    $reservation = null;
+    $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting) use (&$reservation): void {
+        $reservation = $instance->fresh();
+    };
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($reservation?->status)->toBe(InstanceState::Reserved);
+    expect($reservation?->source_prepare_id)->not->toBeNull()->toBeString();
+    expect(Str::isUuid($reservation->source_prepare_id, version: 4))->toBeTrue();
+    expect($instance?->fresh()?->source_prepare_id)->toBe($reservation->source_prepare_id);
+    expect($instance?->status)->toBe(InstanceState::SourceResolved);
+});
+
 it('provisions a workspace without an automatic root dependency copy', function (): void {
     $project = provisioner_app('acme');
     $node = provisioner_node('acme-dev', '10.44.0.111');
@@ -622,6 +641,8 @@ it('resumes a reserved worktree reclaim with no starting commit', function (): v
             'seed_repository' => $seed,
             'seed_commit' => $commit,
             'starting_commit' => null,
+            'source_prepare_id' => null,
+            'task_workspace_routed' => false,
             'status' => InstanceState::Reserved,
         ]);
         $fakes = bind_task_workspace_fakes();
@@ -636,7 +657,8 @@ it('resumes a reserved worktree reclaim with no starting commit', function (): v
 
         expect($instance?->id)->toBe($left->id)
             ->and($instance?->status)->toBe(InstanceState::SourceResolved)
-            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40));
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40))
+            ->and($instance?->source_prepare_id)->toBeNull();
         expect($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved', 'inspect-prepared']);
         expect(is_file($checkout.'/.git'))->toBeTrue();
         $this->assertDatabaseCount('instances', 1);

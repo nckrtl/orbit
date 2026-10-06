@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_reserved_task_worktree_removal}.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_reserved_task_worktree_removal,allow_reserved_worktree_null_prepare_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -76,7 +76,7 @@ If the process is interrupted or cleanup cannot finish, `instance:destroy` accep
 
 Removal uses the same recorded steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal.
 
-A task workspace that is still `reserved` with no starting commit is also pre-activation when preparation has recorded its source preparation ID and changed its layout to `worktree`. Removal and group cancellation accept this interrupted state even without `failed_step` or `error_code`; `instance.remove_refused` does not apply merely because the layout changed. The ownership checks above still apply, and teardown is skipped.
+A task workspace that is still `reserved` with no starting commit is also pre-activation when its layout is `worktree`, `task_workspace_routed` is set (including `false`), and no registration request is recorded. Older reservations can lack a source preparation ID; the task workspace evidence still permits removal. Removal and group cancellation accept this interrupted state even without `failed_step` or `error_code`; `instance.remove_refused` does not apply merely because the layout changed. A reservation with neither a preparation ID nor task workspace evidence still refuses removal, even with `--force`. The ownership checks above still apply, and teardown is skipped.
 
 An unrouted task workspace is different once resolved: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
 
