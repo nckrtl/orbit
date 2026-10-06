@@ -4,6 +4,7 @@ description: "How the Gateway stores a Schedule, projects it to a native systemd
 covers:
   - apps/gateway/app/Actions/Schedules/**
   - apps/gateway/app/Domain/Schedules/**
+  - apps/gateway/app/Infrastructure/{Instances/{NativeAppProjectionWorkerRuntime,AppProjectionWorkerProgram},Schedules/RemoteScheduleRuntimeManager}.php
   - apps/gateway/app/Infrastructure/Schedules/**
   - apps/gateway/app/Data/Schedules/**
   - apps/gateway/app/Http/{Controllers/Api/Schedule*,Requests/Schedules/*}.php
@@ -90,6 +91,14 @@ Installation keeps `/etc/orbit` as a real directory owned by `root:root` with mo
 Create validates the input and the target first. Then it installs the artifacts over SSH in one script that holds a lock on the host Node. The script checks the calendar with `systemd-analyze calendar`, stages the new files, checks them with `systemd-analyze verify`, moves them in place, reloads systemd, and sets the timer to the desired state. It checks the timer state before the Schedule becomes `active`.
 
 An existing file at an owned path must be a regular file with the expected owner, mode, and `X-Orbit-Schedule-ID` marker. Otherwise installation stops with `schedule.artifact_conflict`, and Orbit does not overwrite, adopt, or delete the file. When a step fails, the script restores the earlier files and timer state. A first installation removes only the files it created. When the restore fails too, the Schedule becomes `failed` with `schedule.rollback_failed`. Repeat the identical create to retry.
+
+## Candidate path preparation
+
+Project app-list and Instance override updates use explicit internal Schedule candidate targets frozen by owner, app, Schedule ID and specification fingerprint. Public maps and profiles remain published values during preparation. The shared native worker adapter validates affected Schedules, snapshots owned scripts/services/timers and their protections, and uses the existing renderers, owned-file markers and installers to rewrite derived app working directories and environment paths. It never temporarily saves a candidate map to select a different target.
+
+Timer enabled and active state are recorded separately from Process desired/observed state. Preparation reinstalls scripts/services and restores the recorded timer state against the candidate path before publication; rollback restores old targets and the same state. Neither recovery nor retry enables a disabled timer, starts an inactive timer or wakes cold dependencies. Sibling Schedules and apps remain unchanged. Add/run/activate/remove and Instance cascade entrypoints honor persisted foreign app owners through existing operation locks, including after worker exit.
+
+Every stop/write/reload/state-restore/cleanup mutation follows a committed intent with a stable protected receipt. Lost responses inspect receipts and actual owned artifacts rather than recapturing modified snapshots or running the Schedule again. Restore only recorded owned artifacts and their exact protections; foreign replacement refuses recovery. Before publication recovery restores old targets; afterwards it verifies and cleans candidate artifacts forward. [Projects](/reference/projects#protected-step-and-receipt-contract) owns receipt fields and parent publication boundaries; [Processes](/reference/processes-and-schedules#candidate-path-preparation) owns the shared worker adapter's Process state matrix.
 
 ## Timer state
 

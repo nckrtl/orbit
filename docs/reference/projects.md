@@ -2,13 +2,13 @@
 title: "Projects"
 description: "How a Project records one repository, its named apps, source access, and Instance defaults, and how create, update, and removal work."
 covers:
-  - "apps/gateway/app/{Actions,Domain,Infrastructure}/Projects/**"
+  - "apps/gateway/app/{Actions/Instances/UpdateInstanceAppOverridesAction.php,Domain/Instances/AppProjection{Owner,Plan,Runtime,Recovery}.php,Infrastructure/Instances/NativeAppProjectionRuntime.php,{Actions,Domain,Infrastructure}/Projects/**}"
   - "apps/gateway/app/Domain/SourceControl/{GitRepositoryIdentity,GitRepositoryOrigin,ProjectRoot,RelativeWebRoot,RepositoryDefaultBranchResolver}.php"
   - "apps/gateway/app/Infrastructure/SourceControl/NativeRepositoryDefaultBranchResolver.php"
   - "apps/gateway/app/{Http/{Controllers/Api/ProjectsController.php,Requests/Projects/**},Data/Projects/**}"
-  - "apps/gateway/app/Models/{Project,ProjectUpdate}.php"
+  - "apps/gateway/app/Models/{Project,ProjectUpdate,InstanceAppUpdate,InstanceAppProjection}.php"
+  - "apps/gateway/database/migrations/{2026_10_12_{000000_add_named_apps_to_projects,000004_create_app_projection_journals,000005_add_apps_to_project_update_journals},*_{rename_app_domain_to_project_and_instance,add_task_workspace_routing}}.php"
   - "apps/cli/app/Commands/Projects/**"
-  - "apps/gateway/database/migrations/*_{rename_app_domain_to_project_and_instance,add_task_workspace_routing}.php"
 ---
 
 # Projects
@@ -86,11 +86,43 @@ Ports are null or integers from 1024 through 65535. Agentation and annotator URL
 
 The removed top-level Instance `route`, `domain`, `url`, `vite_port`, `agentation_port`, `annotator_port`, `annotator_url`, `selected_php_version`, `source_is_laravel` and any scalar source-profile output have no aliases or primary-app fallback, even for one app. Stored Route/target association, source classification, port assignments and pending reservation or withdrawal state migrate to app `web` without resetting classification. Ports without collisions stay unchanged; [port migration](/reference/assigned-vite-ports#migrate-port-reservations) defines collision preflight, journaled reallocation and retained-reservation refusal. Missing classification remains null. Migration retires the Instance scalar columns only after these app-keyed records exist. Instance-wide branch, checkout, placement, hibernation, release and lifecycle fields remain unchanged. Human output renders an Apps subtree rather than one domain or port column.
 
+### Shared app-projection ownership
+
+Project app-list changes and Instance override changes share per-Instance projection plans, admission guards and remote step receipts. `ProjectUpdate` owns the Project request, its complete affected Instance set and its `reserved`, `preflighted`, `prepared`, `publishing`, `cleaning_up` and terminal phases. `InstanceAppUpdate` owns one Instance's normalized override request, prior map, candidate map and publication/recovery phase. Neither shared adapter publishes public configuration. `InstanceAppProjection` belongs to exactly one of these parent operations and one affected Instance; it records immutable before/candidate effective apps, profiles and resource fingerprints. Each Instance has at most one incomplete owner for app mutations, including after its executing process exits.
+
+Reservation uses the existing Instance operation locks and their existing ordering and reentrancy, followed by the existing projection and Node service locks where needed. A Project operation takes every affected Instance lock before any preflight and reserves the entire Instance set durably in one transaction or reserves none. No remote work runs in that transaction. Releasing an OS lock does not abandon a journal. A retry takes the same locks and resumes the recorded owner; a new request cannot steal it. [ADR 0196](/decisions/0196-derive-application-directory-from-web-root#delivery-and-planned-path-inventory) fixes the admission entrypoints and planned files.
+
+Contention between app mutations returns existing `instance.lifecycle_busy` (409). Within the same unfinished override owner, a different normalized map returns `instance.app_update_in_progress`; within the same Project owner, a different request returns `project.update_in_progress`. Equivalent maps ignore key order and app lists compare by name. Unrelated lock callers retain their existing errors, including environment and Process lock errors. More specific source, Route, environment and runtime errors survive; only unspecified override projection failures use `instance.app_update_failed`. Failed restoration retains ownership and accepts only the identical request.
+
+### Candidate rendering and public configuration
+
+Preparation commits a projection phase before requesting remote work. Internal serving readers select the before or candidate app/profile view from that committed journal, through the existing whole-Node Caddy build and shared-version FPM paths. Every independent Node rebuild sees the same phase. Public API, CLI, SDK, MCP, web and ordinary configuration readers continue to use published Project apps, Instance overrides and runtime profiles until the parent's publication boundary.
+
+Candidate Process and Schedule resolvers receive explicit internal targets and immutable resource fingerprints, not a temporarily changed public row. Route ID, domain, provenance and port identities are carried explicitly for retained apps; app-list additions/removals prepare or withdraw generated Routes through their existing owners.
+
+No temporary public-row staging, transaction-held remote build, in-memory renderer override, second Caddy publisher or unmanaged Node fragment is allowed. Before publication, restoration first commits the old-side rendering intent and reconciles current desired Node state, including unrelated sites and pools. It never installs a stale whole-Node snapshot. Recovery restores private files only from their recorded owned artifacts. After publication, verification and cleanup continue forward.
+
+### Protected step and receipt contract
+
+Each plan freezes its parent kind/ID, Instance and Node placement, normalized request digest, old/candidate app configuration and profiles, selected release identity, app Route/domain/provenance/port identities, and affected Process/Schedule IDs and specification fingerprints. It records desired Process state separately from observed running/stopped/sleeping state, and records Schedule timer enabled and active state separately. Changing a frozen resource is a conflict, not permission to replace the plan on retry.
+
+| Record | Required evidence |
+| --- | --- |
+| Parent journal | Stable operation ID, normalized request and prior configuration, phase, publication boundary and completion result. Project ownership includes the complete affected Instance set. |
+| Per-Instance projection | Exactly one parent kind/ID, Instance/Node identity, immutable plan and digest, old/candidate profiles and resource fingerprints, committed render side and recovery direction. |
+| Step intent | Stable step ID/sequence, owner/Instance/app/resource identity, plan digest, action/targets, receipt identity, recovery action and status. Commit before every remote mutation. |
+| Protected remote receipt | Same owner/Instance/app/step/digest, target identities, before-state snapshot references and protection metadata, created-vs-existing artifacts, verified result and completion marker. Snapshot bytes stay protected, not in plaintext journal fields. |
+| Step acknowledgment | Verified receipt/result fingerprint, completed phase or retained conflict/failure evidence. An absent acknowledgment is not proof that remote work failed. |
+
+Receipt creation has a stable retry identity of its own. Snapshot/receipt creation, stop, write, reload, state restoration and cleanup each require a committed intent. After interruption or a lost response, recovery inspects that receipt and actual owned artifacts before retrying; it never captures an already modified file as its original snapshot. Missing, damaged or foreign evidence stops recovery without guessing or deleting foreign files. Restore and cleanup are checkpointed steps too.
+
+Shared receipts authorize remote preparation, restoration and cleanup only; the parent alone installs public maps/profiles. Completed retries verify completion and return the current resource without restarting runtimes. Environment bytes appear only in encrypted control-plane storage or protected remote snapshots/transport, never plaintext journal fields, command arguments, logs or public output. [Environment](/reference/environment-variables#app-path-preparation-and-protected-receipts) owns file checks and protection details.
+
 ### Instance override update lifecycle
 
 `PATCH /api/v1/instances/{instance}` accepts `app_overrides`; CLI `instance:update --app-overrides=JSON`, SDK `UpdateInstanceRequest($appOverrides: ...)` and MCP `instance-update` send that map. It cannot be combined with production `deployment_branch`. Omission is unchanged; `{}` clears all overrides. Equivalent maps ignore key order. This separate mutation owns the Instance operation lock from reservation through cleanup, sharing it with deploy, transfer, removal, rename, environment, Processes, Schedules and dependency operations. A competing owner returns existing `instance.lifecycle_busy` (409). An update to the Project's app list also acquires the affected Instance locks before preflight; neither operation may change an effective app beneath the other.
 
-Orbit durably records the requested map, prior map and runtime profiles, effective paths, owned file snapshots and completed steps before remote mutation. It preflights every affected app's canonical containment, distinct paths, source classification, web root, permissions and available runtime. It validates every existing Process, preset and Schedule against the new app path. Domains, Route IDs, provenance and ports are unchanged.
+The `InstanceAppUpdate` journal records the requested map and prior map durably for the Instance. Its shared projections record prior/candidate runtime profiles, effective paths, protected snapshot references and step intents before remote mutation. It preflights every affected app's canonical containment, distinct paths, source classification, web root, permissions and available runtime. It validates every existing Process, preset and Schedule against the new app path. Domains, Route IDs, provenance and ports are unchanged.
 
 An override update cannot change a retained app between serving and non-serving in either direction (only a package with path `.` and null web root is non-serving); it returns `app.serving_state_change_unsupported` (409) before remote work. This includes clearing an override when inheritance would change the app's serving state. Initial Instance creation or registration may supply a serving package override because provisioning reserves and publishes its required Route before activation. Migration also preserves an existing serving package override; it is not a new override mutation.
 
@@ -102,7 +134,9 @@ On a development `default`, preflight and staging cover both the stable home's e
 
 Preparation projects Caddy access, source profile and PHP version, FPM pool/socket working directory and cached APP_URL for each affected serving app. It rewrites derived Process environment paths, preset runtime files and default working directories, while retaining explicit Process directories. It rewrites Schedule scripts and service working directories while preserving timer state. It stops affected running Processes during preparation and restores their recorded running/stopped state against the new path before publication; it never starts sleeping Processes or cold dependencies. Unchanged apps retain their files, pools, Processes and Schedules. Repository commands and Git paths do not move.
 
-Publication is one database transaction that installs the override map and corresponding app profiles after every prepared projection succeeds. Before this transaction, public output shows the old map. Prepublication failure restores snapshotted files, runtimes and desired states, removes only owned newly staged files, and records rollback completion. A failed rollback stays recoverable and accepts only the identical request. After publication, recovery goes forward: it verifies the new projection and cleans only operation-owned staging files, without restoring old app paths. It leaves old-path environment files in place with their existing protections. No unrelated file is removed.
+Publication is one database transaction that installs the override map and corresponding app profiles after every prepared projection succeeds. Before this transaction, public output shows the old map and profiles even when committed internal rendering selects candidate paths. The transaction also records the journal's published boundary; a lost response cannot make recovery choose rollback after the new map became visible.
+
+Prepublication failure restores snapshotted files, runtimes and desired states, removes only owned newly staged files, and records rollback completion. A failed rollback stays recoverable and accepts only the identical request. After publication, recovery goes forward: it verifies the new projection and cleans only operation-owned staging files, without restoring old app paths. It leaves old-path environment files in place with their existing protections. No unrelated file is removed.
 
 A journal checkpoint precedes each mutating step. A crash resumes from that journal and verifies remote results rather than assuming an unfinished write failed. An identical retry resumes rollback before publication or forward cleanup after publication; a completed retry, including a lost success response, returns the current Instance without restarting runtimes. A different map during an incomplete update returns `instance.app_update_in_progress` (409). An infrastructure failure without a more specific existing code returns `instance.app_update_failed` (409), retaining the failed step for inspection and retry. A confirmed unchanged map is a no-op. The web editor uses this same lifecycle, not a database-only override save.
 
@@ -159,7 +193,7 @@ An edit to the app list cannot change a retained name between serving and non-se
 
 Existing overrides remain for unchanged names and win over Project paths. Removing an app is refused while a Process, Schedule, Project definition, explicit Route, tracking configuration or environment configuration refers to it, or an Instance has an override for it. Generated Routes and pools can be removed by the app-list update itself.
 
-A rename is removal plus addition, not an implicit reference rewrite. Removing the last app is invalid. Prepublication failure restores old app configuration, Routes and runtimes; postpublication retry continues forward under the existing Project update lifecycle.
+A rename is removal plus addition, not an implicit reference rewrite. Removing the last app is invalid. `ProjectUpdate` stores requested/prior app lists and normalized identity, reserves every affected Instance through the shared ownership contract, and prepares additions, removals and path/type changes through the complete environment, serving and worker adapters. Publication installs the app list and corresponding profiles at the existing `publishing` boundary. Before `publishing`, failure restores old app configuration, Routes and runtimes; once `publishing` starts, retry continues forward under the existing Project update lifecycle. The parent's phase, not a missing step acknowledgment, selects recovery direction. Scalar updates that omit `apps` retain the existing lifecycle.
 
 Multi-app production releases are not supported in this group. A Project with production Instances cannot add a second app.
 

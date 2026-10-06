@@ -8,6 +8,7 @@ covers:
   - apps/gateway/app/Infrastructure/Nodes/{PhpFpmRuntimeIniRenderer,RemotePhpPackageManager}.php
   - apps/gateway/app/Infrastructure/AppDev/{DevelopmentPhpFpmConfigRenderer,RemoteAppDevPhpFpmManager}.php
   - apps/gateway/app/Infrastructure/SharedOrbitDirectory.php
+  - apps/gateway/app/Infrastructure/Instances/{NativeAppProjectionServingRuntime,DevelopmentCaddyAccessCommand}.php
 ---
 
 # PHP runtimes
@@ -56,6 +57,14 @@ php_admin_value[opcache.revalidate_freq] = 0
 ```
 
 `opcache.file_update_protection` stays at its stock 2 seconds, because file times have one-second resolution.
+
+### Candidate app projection
+
+Project app-list and Instance override preparation inspect candidate source and validate access and available PHP versions using explicit internal app contexts. The native serving adapter selects desired pools from committed app-projection journals, using the same before/candidate render side as [Caddy](/reference/caddy-configuration#committed-app-candidates). Public app maps and source profiles remain published values until the parent lifecycle publishes. Independent convergence reads the same committed candidate state; it does not depend on the update worker's memory.
+
+Candidate pools keep the Instance/app socket identity while changing derived document and working directories or PHP-version membership as required. App additions/removals reconcile only their own pools through the existing shared-version manager; sibling pools and services remain intact. Source profiles and cached APP_URL are prepared with owned receipts, not by staging public profile rows. Every remote mutation has a committed step intent, and ambiguous completion verifies the receipt and actual pool/configuration before retry.
+
+Before publication, recovery commits old-side rendering and reconciles the current desired pool set rather than replacing shared-version configuration with a stale Node snapshot. Private app artifacts restore only owned recorded snapshots. After publication, verification and cleanup go forward. Production dedicated FPM identity, pools, release receipts and environment-link layout are unchanged. [Projects](/reference/projects#shared-app-projection-ownership) owns journal admission and recovery boundaries.
 
 ## Production runtime
 

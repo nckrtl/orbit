@@ -2,10 +2,10 @@
 title: "Instance environment variables"
 description: "How the Gateway imports, stores, updates, and synchronizes an Instance .env file without exposing its values."
 covers:
-  - apps/gateway/app/Domain/Instances/Environment/**
+  - apps/gateway/app/Domain/Instances/{Environment/**,AppProjectionEnvironment.php}
+  - apps/gateway/app/Infrastructure/Instances/{NativeAppProjectionEnvironment,AppProjectionEnvironmentProgram,RemoteInstanceEnvironmentAccess,NativeInstanceEnvironmentOperationLock}.php
   - apps/gateway/app/Actions/*/{Import,Update,Synchronize}*EnvironmentAction.php
   - apps/gateway/app/Http/Controllers/Api/InstanceEnvironment*Controller.php
-  - apps/gateway/app/Infrastructure/Instances/{RemoteInstanceEnvironmentAccess,NativeInstanceEnvironmentOperationLock}.php
   - apps/gateway/app/Models/{Instance,InstanceEnvironmentValue}.php
   - apps/gateway/database/migrations/{2026_09_30_*,*rename_app_domain_to_project_and_instance}.php
   - apps/cli/app/Commands/Environment/**
@@ -142,6 +142,18 @@ A Project slug change updates the Laravel `APP_URL` that the Route domain owns. 
 ## Inspect the projection with Doctor
 
 [Doctor](/cli/doctor#named-app-checks) renders each app's stored configuration against that app's Route and the Instance placement and compares it with that app's `.env` file. It reports a missing, unsafe, or different production file as an `instance` finding. It shows no environment key or value. For each classified Laravel app, Doctor also compares cached `app.url` with that app's authoritative Route when `bootstrap/cache/config.php` exists, using a bounded read without application bootstrap. It reports `instance.laravel_url_mismatch` for a different URL and `instance.inspection_failed` for an unsafe or unreadable cache. An absent cache is valid; Doctor never creates or clears one.
+
+## App-path preparation and protected receipts
+
+Project app-list and Instance override updates use the same native environment adapter with explicit old/candidate contexts. Configuration stays encrypted and keyed to the same app. Public readers keep the published paths throughout preparation; the adapter never changes a public map to make an environment resolver select a candidate. [Projects](/reference/projects#protected-step-and-receipt-contract) owns the journal and receipt schema.
+
+Preflight verifies canonical containment, safe parent directories, regular-file and owner checks, permissions and free space without following unsafe links. Each configured source `.env` and managed `.env.testing` must match that app's rendered stored configuration. A different source requires import and synchronization before retry. A destination file is acceptable only when it matches the same app's rendered configuration; even a matching destination is snapshotted before replacement. Unrelated files fail with `instance.app_environment_conflict`, including during Project app-list preparation. Empty unconfigured apps without files remain file-free. No sibling's file is imported and no old-path environment is deleted.
+
+The adapter records the stable-home and selected-release targets separately on a development `default`, including their release identity and protection metadata. It stages configured files at candidate paths with mode `0600`, independently of the live seed. Production's durable environment and release-link layout do not change; unsupported production path mutations fail before preparation.
+
+Before snapshot or staging, commit an intent with a stable receipt identity. Protected remote receipts bind every snapshot and result to owner, Instance, app, step, plan digest and exact target. Environment bytes travel only through protected transport and snapshots or encrypted control-plane storage, never plaintext journal fields, argv, logs or public output. On a lost response, inspect the existing receipt and file identity before retrying; do not recapture a modified source or destination. Missing or foreign evidence refuses mutation and retains the owner for recovery.
+
+Before publication, restore only snapshotted artifacts with their exact ownership, modes and required access protections; remove only files proven created by this owner. A foreign replacement is a conflict, not an owned file to remove. After publication, verify the candidate files and clean only owned snapshot/staging artifacts. Cleanup is checkpointed and retryable; old-path files retain their protections. Preparation, restore and cleanup leave siblings untouched. Environment import/update/synchronize entrypoints honor persisted foreign app owners even after the original worker and its OS lock disappear, while retaining existing unrelated environment error contracts.
 
 ## Storage and recovery
 

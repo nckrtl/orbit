@@ -2,12 +2,11 @@
 title: "Processes and schedules"
 description: "How Orbit runs Processes for an Instance or a Node, and how a Project declares Process and Schedule definitions that production Instances copy."
 covers:
-  - apps/gateway/app/Actions/Processes/**
+  - apps/gateway/app/Actions/{Processes/**,ProjectDefinitions/**,Instances/InstantiateProjectRuntimeDefinitionsAction.php}
   - apps/gateway/app/Domain/Processes/**
+  - apps/gateway/app/Infrastructure/{Instances/{NativeAppProjectionWorkerRuntime,AppProjectionWorkerProgram},Processes/SystemdProcessRenderer}.php
   - apps/gateway/app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer,DockerProcessRenderer,NativeProcessAdmissionLock,NativeProcessRuntimeLease,SshProcessUserResolver}.php
   - apps/gateway/app/Http/{Controllers/Api/ProcessesController,Requests/Processes/*}.php
-  - apps/gateway/app/Actions/ProjectDefinitions/**
-  - apps/gateway/app/Actions/Instances/InstantiateProjectRuntimeDefinitionsAction.php
   - apps/gateway/app/Http/{Controllers/Api/ProjectRuntimeDefinitionsController,Requests/ProjectDefinitions/*}.php
   - apps/gateway/app/Models/{Process,ProcessDefinition,ScheduleDefinition}.php
 ---
@@ -117,6 +116,16 @@ The Gateway holds one runtime lock for each Process while it reads the record, c
 Create, start, and restart of an Instance Process first take the Instance's operation lock. A competing request waits up to 30 seconds, or the rest of its command deadline, and then gets `process.operation_busy`. Node Processes skip that lock. Lifecycle commands that contend for the Instance lifecycle lock return `instance.lifecycle_busy` (409, with `details.outcome` set to `busy`); retry after the other lifecycle operation finishes.
 
 Systemd replacement installs a checked candidate unit and restores the earlier unit when activation fails. Docker replacement keeps or restores the earlier container.
+
+## Candidate path preparation
+
+Project app-list and Instance override updates pass explicit internal candidate targets to native Process renderers and installers while public app maps remain unchanged. The shared worker adapter freezes owner, app, Process ID and specification fingerprints and validates every affected Process and preset before mutation. It snapshots owned units, preset files, protections and actual runtime state through [protected receipts](/reference/projects#protected-step-and-receipt-contract). Process add/start/restart/stop/remove and Instance cascade entrypoints refuse persisted foreign app owners through the existing admission and runtime locks, even after the original worker exits; unrelated Process errors and lock ordering remain unchanged.
+
+Preparation stops affected running Processes, rewrites derived environment paths, preset files and default working directories, and retains explicit working directories. App Route origins, certificate scopes, port identities, preset ownership and watcher-to-HTTP Process IDs do not change for retained apps. Sibling apps' artifacts are untouched. The adapter uses existing owned-file markers and native installers, never public-row staging to redirect a target resolver.
+
+Desired Process state and observed running/stopped/sleeping state are separate snapshot facts. After installation, restore recorded state against the candidate before publication; rollback restores it against the old context. Neither path starts a sleeping Process or wakes cold dependencies, even if its desired state is running. A stopped or failed observed runtime is not inferred to have been running from desired state. Stop/write/reload/state-restoration and cleanup each have committed intents and stable receipts; after interruption or a lost success response, retries inspect completion without restarting an already restored runtime. Foreign artifacts stop restore/cleanup rather than being overwritten.
+
+Prepublication recovery restores exact owned artifact protections and old targets; postpublication recovery verifies candidate targets and cleans forward. The parent journal alone publishes maps/profiles. The worker adapter includes complete native Process and [Schedule](/reference/schedules#candidate-path-preparation) preparation and recovery before the lifecycle integrations start; later integrations do not supply missing installers or guards.
 
 ## Project definitions
 

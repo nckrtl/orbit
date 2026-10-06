@@ -93,11 +93,87 @@ Transfer validates the required Route of every serving app, preserves package/un
 
 [Tracking and stats](/reference/analytics#single-app-boundary) remain single-app only. Tracking configuration migrates to the app name `web`, while tracking Route `app` remains null. Analytics derives hosts, CNAMEs, snippets and Plausible sites from that recorded sole app's authoritative Route, never an Instance primary domain. Adding a second app to a Project with tracked Instances and enable/show/stats on a multi-app Project return `app.analytics_multi_app_unsupported`. Disable remains a domain-free cleanup operation. Converting a generated app domain preserves tracking hosts but changes the snippet/site domain; the operator creates the new Plausible site and updates CNAMEs/snippets. The web app hides unsupported stats/enable controls and exposes cleanup for inconsistent stored hosts.
 
+#### Shared candidate projection and durable recovery
+
+Project app-list and Instance override mutations share one projection foundation. `ProjectUpdate` remains the Project lifecycle owner; `InstanceAppUpdate` is the Instance override lifecycle owner. Each `InstanceAppProjection` links exactly one parent operation to one Instance and freezes before/candidate app configuration, profiles, placement, selected release and resource fingerprints. Shared adapters prepare, restore and clean remote artifacts; only the parent publishes public configuration. [Projects](/reference/projects#shared-app-projection-ownership) owns the journal, step/receipt schema, normalized retry identity and error precedence.
+
+Keep existing Instance operation locks, ordering and reentrancy, projection locks and Node service locks. A Project reserves all affected Instances under their locks before preflight, atomically or not at all. Durable ownership outlives the executing process and OS lock. Deploy/rollback, transfer, removal, rename, environment, Process, Schedule and dependency entrypoints refuse foreign persisted owners before consuming effective app paths or mutating resources. Both parent kinds use the same admission rule. Existing unrelated lock callers retain their errors; app-mutation contention uses `instance.lifecycle_busy`, different unfinished requests use their documented Project/Instance in-progress codes, and more specific infrastructure errors survive.
+
+Candidate serving state comes from committed transitional journals through existing whole-Node Caddy and shared-version FPM build paths. Independent builds select the same before/candidate side. Public configuration readers stay on published maps and profiles. Explicit internal candidate Process/Schedule targets carry owner/app/resource fingerprints and retained Route/domain/provenance/port identities. Never temporarily rewrite a public row, hold a database transaction during remote work, use an in-memory renderer override, or introduce another Caddy publisher or unmanaged Node fragment.
+
+Commit a stable intent before every mutating step, including receipt/snapshot creation. Protected receipts bind old artifact snapshots and results to parent owner, Instance, app, step and plan digest. Receipt creation itself has a stable retry identity. A lost response inspects the receipt and actual owned artifacts; it never assumes failure or recaptures modified prior state. Environment bytes stay in encrypted storage or protected remote snapshots/transport, not journal plaintext, argv, logs or public output. Verify canonical containment, regular files, owners, links, protections, free space and synchronized source configuration. Matching destination files still need snapshots; stable-home and selected-release targets are separate. Old-path environments remain in place.
+
+Before publication, restore only recorded owned private artifacts and exact protections; delete only files proven created by this operation. Restore shared Node serving state by reconciling current committed desired state, including unrelated apps, never a stale whole-Node snapshot. Desired Process state, observed running/stopped/sleeping state and Schedule enabled/active timer state are separate facts. Restoration and retries cannot start sleeping Processes, enable disabled timers or wake cold dependencies. Instance map/profile publication is one transaction recording the published journal boundary; after it, verification/cleanup goes forward. Project recovery retains its existing boundary when `publishing` starts. Failed restoration keeps durable ownership; identical retries finish recovery. Completed/lost-success retries do not restart runtimes.
+
+#### Delivery and planned path inventory
+
+The OpsBot-approved #1237 replan replaces that scope with seven ordered subtasks on the unreleased #982 branch. Operator/PlanBot owns the recorded Tasks order; this contract does not invent another split. Completed #1023–#1025 and #1166 remain complete, and cancelled #1026 remains cancelled. The approved exceptional group order is:
+
+| Order | Slice | Must be complete at its review |
+| --- | --- | --- |
+| 1 | Shared architecture and documentation (#1240) | Candidate/owner/receipt decision, admission and planned-path inventory, clean docs impact and architecture review before product code. |
+| 2 | Durable ownership, checkpoints and recovery admission (#1241) | All-or-nothing reservation, both parent kinds, crash/lost-response/completion semantics and all entrypoint guards, independently tested after worker/lock exit. |
+| 3 | Native protected cross-path environments (#1242) | Complete protected snapshot/stage/restore/cleanup adapter, source/destination conflicts, file-free case, stable/release independence, secret redaction and real remote-program tests. |
+| 4 | Native committed serving projection (#1243) | Complete source/access/profile/APP_URL, Caddy/FPM and existing certificate/DNS/Route owner integration, app add/change/remove, independent Node rebuild and native recovery tests with old public configuration. |
+| 5 | Native Process and Schedule candidates (#1244) | Complete native render/install/state preservation and recovery, explicit directories, preset identities, sleeping workers/disabled timers/cold dependency tests. |
+| 6 | Full Project app-list lifecycle (#1245) | Complete safety preflight, Route/runtime reconciliation, publication/recovery and scalar compatibility using the complete foundation; modify the existing native Project mutator. |
+| 7 | Full Instance override lifecycle (#1246) | Complete normalized map integration, safety/error/state matrix, atomic map/profile publication, identical/different/completed retries and cross-parent regressions. |
+
+Each code slice independently runs its focused native behavior/recovery tests, `composer test:affected` and `composer check` in `apps/gateway`, Pint and `git diff --check`, plus the root handoff gate. Tests must fail when the corresponding guard, adapter or checkpoint is removed. Each foundation slice completes its guards, adapters and receipts before the Project and Instance integrations begin. Independent review confirms native behavior; database-only/fake-only acceptance is insufficient. No unavailable Incus result is claimed. Topology discovery follows the allocated-environment consult rule.
+
+The recorded order continues with #1238, which owns public API/CLI/SDK/MCP interfaces and root removal, then #1239, which owns web app delivery, ADR absorption and group acceptance. Both follow #1240–#1246 without changing the split. #1238 consumes both completed lifecycle actions rather than implementing runtime behavior. #1239 completes Project/Instance web app editors, app selectors and phone/desktop screenshot review. No UI requirement is silently restored from #1026 or deferred from named-app acceptance.
+
+ADR 0196 remains In progress during #1240. After this group's named-app delivery is complete, #1239 absorbs the built behavior and lasting rationale into the owning reference pages, deletes this ADR, adds its redirect and retired-decision entry, and updates inbound links under the [decision lifecycle](/decisions/overview#decision-lifecycle). Excluded multi-app production and database work does not delay that absorption; it requires a separate group and its own architectural contract.
+
+No partial foundation release or merge is authorized: original two-app development acceptance, migrations, every interface, CI, independent code/Incus review and maintainer approval remain final release gates. This group does not deliver multi-app production.
+
+Admission inventory below is part of slice 2, not work for the Project and Instance integrations. Check the persisted owner under existing locks before preflight/path consumption, re-read frozen ownership before mutation, and permit only the same parent to recover its internal steps. Preserve current lock order and reentrant internal calls; do not introduce an independent lock hierarchy.
+
+| Boundary | Gateway entrypoints and shared lock/target paths |
+| --- | --- |
+| Deploy and rollback | `Actions/Instances/{DeployInstanceAction,DeployDefaultInstanceAction,RollbackInstanceAction,InstanceDeploymentConfigResolver}.php` |
+| Transfer, removal and rename | `Actions/Instances/{TransferInstanceAction,RemoveInstanceAction,RenameInstanceAction}.php`, `Models/InstanceRename.php` |
+| Environment | `Actions/Instances/{ImportInstanceEnvironmentAction,UpdateInstanceEnvironmentAction,SynchronizeInstanceEnvironmentAction}.php`, `Infrastructure/Instances/{NativeInstanceEnvironmentOperationLock,RemoteInstanceEnvironmentAccess}.php`, `Domain/Instances/Environment/{InstanceEnvironmentContextResolver,InstanceEnvironmentStore}.php` |
+| Processes | `Actions/Processes/{AddProcessAction,StartProcessAction,RestartProcessAction,StopProcessAction,RemoveProcessAction,CascadeInstanceProcessesAction}.php`, `Infrastructure/Processes/{NativeProcessAdmissionLock,NativeProcessRuntimeLease}.php`, `Domain/Processes/ProcessTargetResolver.php` |
+| Schedules | `Actions/Schedules/{AddScheduleAction,RunScheduleAction,ActivateScheduleAction,RemoveScheduleAction,CascadeInstanceSchedulesAction}.php`, `Domain/Schedules/ScheduleTargetResolver.php` |
+| Dependencies | `Actions/Instances/Dependencies/{UpdateInstanceDependenciesAction,ScanInstanceDependenciesAction,AccessInstanceDependenciesAction}.php` |
+| Both app mutations | `Actions/Projects/UpdateProjectAction.php`, `Actions/Instances/UpdateInstanceAppOverridesAction.php`, both parent journals and shared projection ownership/recovery |
+| Route/serving projection | `Domain/Routes/{RouteAssociationGuard,RouteStateResolver}.php`, `Actions/Routes/{CreateRouteAction,RemoveRouteAction,ConvergeRouteAction}.php`, existing development projector and site repository; internal candidate intents carry parent ownership |
+
+All paths in the tables below are relative to `apps/gateway/`. Brace notation enumerates exact planned files, not permission to widen scope. These are the finalized #1237 replan foundation/integration impact paths. The impact check also includes this ADR, Projects, Caddy configuration, Environment, PHP runtime, Processes, Schedules and generated context. Scoped `covers:` entries on the owning pages resolve new surfaces before they exist. Re-run against group start `4f1924d857cf82658935cb6b875602924a93c77e` with each expanded path; no unresolved error is waived. An implementer who changes a planned path repeats the check before coding.
+
+| Planned path | Documentation owner / purpose |
+| --- | --- |
+| `app/Domain/Instances/AppProjection{Owner,Plan,Runtime,Recovery}.php` | Projects: typed reservation, immutable plan, runtime orchestration and publication-side recovery. |
+| `app/Models/{InstanceAppProjection,InstanceAppUpdate,ProjectUpdate}.php` | Projects: shared child journal, Instance parent and existing Project parent. |
+| `database/migrations/2026_10_12_000004_create_app_projection_journals.php` | Projects: durable owner/child/step evidence. |
+| `database/migrations/2026_10_12_000005_add_apps_to_project_update_journals.php` | Projects: requested/prior app-list identity in the existing parent. |
+| `app/Infrastructure/Instances/NativeAppProjectionRuntime.php` | Projects: orchestrates complete adapters, never publishes maps itself. |
+| `app/Domain/Instances/AppProjectionEnvironment.php`, `app/Infrastructure/Instances/{NativeAppProjectionEnvironment,AppProjectionEnvironmentProgram}.php` | Environment: typed protected remote file adapter/program. |
+| `app/Infrastructure/Instances/NativeAppProjectionServingRuntime.php` | Caddy and PHP runtime: native committed candidate serving adapter. |
+| `app/Infrastructure/Instances/{NativeAppProjectionWorkerRuntime,AppProjectionWorkerProgram}.php` | Processes and Schedules: native protected worker adapter/program. |
+| `app/Actions/Instances/UpdateInstanceAppOverridesAction.php` | Projects: internal Instance lifecycle action, never a plain save. |
+| `app/Actions/Projects/UpdateProjectAction.php`, `app/Data/Projects/UpdateProjectData.php`, `app/Domain/Projects/ProjectUpdateProjectionMutator.php`, `app/Infrastructure/Projects/NativeProjectUpdateProjectionMutator.php` | Projects: internal full app-list integration. The native implementation path is existing; do not use the nonexistent `Infrastructure/Projects/ProjectUpdateProjectionMutator.php`. |
+| `app/Providers/ApplicationServiceProvider.php` | Existing tools page owns dependency wiring. |
+| `tests/Feature/{AppProjectionDurableOwnerTest,AppProjectionStepRecoveryTest,AppProjectionEnvironmentTest,AppProjectionServingTest,AppProjectionWorkersTest,ProjectAppListUpdateTest,InstanceAppOverridesUpdateTest}.php` | Focused independent foundation/integration behavior and recovery tests. |
+| `tests/Feature/Domain/UpdateProjectActionTest.php`, `tests/Support/{FakeProjectUpdateProjectionMutator,LocalAppProjectionTransport}.php` | Existing scalar regressions and native-program transport support; fakes alone are not runtime proof. |
+
+In addition to every admission path above, the planned native adapter integration inventory is:
+
+| Existing paths | Owner |
+| --- | --- |
+| `app/Infrastructure/Instances/{RemoteDevelopmentInstanceConfigurator,NativeDevelopmentRouteProjector,DevelopmentCaddyAccessCommand}.php` | Instance setup, Routes and Caddy access. |
+| `app/Infrastructure/AppDev/{DevelopmentSiteRepository,RemoteAppDevPhpFpmManager,RemoteAppDevCaddyManager,RemoteAppDevCertificateManager}.php` | Routes/Caddy and PHP runtime; reuse existing publishers. |
+| `app/Infrastructure/Processes/{RemoteProcessRuntimeManager,SystemdProcessRenderer}.php` | Processes: existing native render/install. |
+| `app/Infrastructure/Schedules/RemoteScheduleRuntimeManager.php`, `app/Domain/Schedules/ScheduleRenderer.php` | Schedules: existing native render/install. |
+
+Deployments, transfer, removal, dependency and Route pages retain their existing ownership of the admission surfaces. Their existing refusal/recovery contracts are preserved; Projects owns the additional shared persisted-owner rule. The complete deterministic impact report, with all expanded planned paths and base-to-HEAD changes, is handoff evidence under `.orbit-artifacts/`, not a committed proof file. Reviewer confirmation covers the adapter/guard inventory, impact paths, absence of public-row staging and recorded release/task coverage before implementation begins.
+
 #### Group boundary
 
 Group #982 delivers named apps and per-app development Routes, pools, environments and selectors. It migrates existing single-app production Instances without losing their effective paths, explicit domains, durable environment file, dedicated FPM identity, release receipts or production pools. Their environment configuration is associated with `web`, but their physical production `.env` remains `<home>/.env` and release links retain their existing targets. Production Route pools remain single-app pools; every target and reassignment must match both Project and app.
 
-Multi-app production releases, per-app production masters, durable environment layout for production apps and app-scoped database attachments are not in this group. A Project with production Instances cannot add a second app; production provisioning or cloning a Project with several apps fails before remote work. Existing database attachments on Instances require a Project with one app; adding a second app while attachments exist also fails. This is an explicit refusal, not a silent first-app fallback. Multi-app development apps may configure database keys independently in their own stored environments. These limits keep deployment and database redesign out of the four implementation subtasks. If those subtasks omit any named-app development consumer or migration named here, the reviewer must adjust their scope before implementation rather than leave selection to an implementer.
+Multi-app production releases, per-app production masters, durable environment layout for production apps and app-scoped database attachments are not in this group. A Project with production Instances cannot add a second app; production provisioning or cloning a Project with several apps fails before remote work. Existing database attachments on Instances require a Project with one app; adding a second app while attachments exist also fails. This is an explicit refusal, not a silent first-app fallback. Multi-app development apps may configure database keys independently in their own stored environments. These limits keep deployment and database redesign out of the approved delivery contract. The seven replacement subtasks above complete the internal mutation lifecycle, not the remaining public interface and root-removal work. If the recorded group omits any named-app development consumer or migration named here, resolve its ownership before implementation rather than leave selection to an implementer.
 
 ## Rejected alternatives
 
@@ -106,6 +182,9 @@ Multi-app production releases, per-app production masters, durable environment l
 - Changing the working directory of every command: repository-wide installs and task checks must still see every subproject. Commands that need an app directory can explicitly change into it.
 - One Project or one Instance per app: it duplicates repository identity, source operations, and release selection instead of representing several apps in one copy.
 - Several apps served through one arbitrarily selected Route: APP_URL and app selection would depend on ordering instead of a named app's Route.
+- Temporary public-row staging or worker-local renderer overrides: other readers/builds would see an uncommitted configuration or a different candidate. Committed journals give every renderer the same desired state without publishing maps early.
+- A second Caddy publisher or restoring whole-Node snapshots: it bypasses existing publication locks or overwrites unrelated changes. Reconcile current committed desired state through the existing publisher instead.
+- OS locks alone or recapturing snapshots after a lost response: worker exit would admit a different operation, or modified candidate files would become the supposed before-state. Durable owners and stable protected receipts preserve recovery identity.
 
 ## Consequences
 
@@ -113,7 +192,7 @@ Multi-app production releases, per-app production masters, durable environment l
 - Repository identity, registration without discovery, and repository-owned commands keep the boundary established in group #975.
 - Group #982 implements the contract above across the Gateway, CLI, SDK, MCP and web app; the documentation subtask does not change code or migrations.
 - Existing generated domains change once to include `web`; explicit domains and runtime identities are preserved in production for the sole app.
-- Multi-app production releases and database attachments require a separate group. This ADR remains In progress while those boundaries remain unbuilt; completing only the development contract does not retire it.
+- This group excludes multi-app production releases and database attachments scoped to an app; they require a separate group. ADR 0196 stays In progress for this documentation subtask; #1239 absorbs and retires it after group #982 completes its named-app delivery, including #1238 public interfaces/root removal and #1239 web app/group acceptance. Retirement does not require implementing the excluded production or database features.
 
 ## Affects
 

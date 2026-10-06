@@ -1036,6 +1036,7 @@
                 "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Role",
                 "Route"
             ],
@@ -1873,7 +1874,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0196"
+            ]
         },
         {
             "path": "docs/reference/proxycli.md",
