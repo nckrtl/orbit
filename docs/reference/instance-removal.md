@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal}.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_reserved_task_worktree_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -76,9 +76,11 @@ If the process is interrupted or cleanup cannot finish, `instance:destroy` accep
 
 Removal uses the same recorded steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal.
 
-An unrouted task workspace is different: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
+A task workspace that is still `reserved` with no starting commit is also pre-activation when preparation has recorded its source preparation ID and changed its layout to `worktree`. Removal and group cancellation accept this interrupted state even without `failed_step` or `error_code`; `instance.remove_refused` does not apply merely because the layout changed. The ownership checks above still apply, and teardown is skipped.
 
-A reserved Instance may have no checkout directory. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
+An unrouted task workspace is different once resolved: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
+
+A reserved Instance may have no checkout directory, including a task reservation whose layout changed to `worktree` before its directory was created. Removal records the absent source and leaves its seed repository and sibling worktrees untouched. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
 
 For new reservations, preparation writes a receipt in Git metadata with the recorded preparation ID and the directory's device and inode. Removal requires that receipt whenever the directory exists, even with `--force`. A matching origin and account owner do not prove that the create attempt owns a pre-existing checkout. A lost prepare response with a valid receipt can be cleaned up. If preparation stops before recording ownership, cleanup retains the unconfirmed directory for inspection rather than deleting it. Do not bypass an ownership refusal to finish cleanup.
 
