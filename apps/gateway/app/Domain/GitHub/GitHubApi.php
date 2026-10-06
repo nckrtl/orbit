@@ -117,11 +117,23 @@ interface GitHubApi
     /**
      * Opens the pull request, or returns the open one that already has this head.
      *
-     * @return string the pull request's web URL
+     * @throws GitHubApiException
+     */
+    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest;
+
+    /**
+     * Requests reviewers on an open pull request. Re-requesting the same logins is safe.
+     *
+     * @param  list<string>  $reviewers
      *
      * @throws GitHubApiException
      */
-    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string;
+    public function requestPullRequestReviewers(
+        #[SensitiveParameter] string $token,
+        GitHubRepository $repository,
+        int $number,
+        array $reviewers,
+    ): void;
 
     /** @throws GitHubApiException */
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest;

@@ -17,6 +17,7 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
@@ -71,18 +72,32 @@ function publisher(SshExecutor $transport): GitHubTaskPullRequestPublisher
     return app(GitHubTaskPullRequestPublisher::class);
 }
 
-function publisher_github(int $pullStatus = 201): void
+function publisher_github(int $pullStatus = 201, int $reviewersStatus = 201): void
 {
+    $reviewers = $reviewersStatus === 201
+        ? Http::response(['requested_reviewers' => [['login' => 'reviewbot']]], 201)
+        : Http::response(['message' => 'Review cannot be requested from pull request author.'], $reviewersStatus);
     Http::fake([
         'https://api.github.com/repos/acme/shop/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_publish'], 201),
-        'https://api.github.com/repos/acme/shop/pulls?*' => Http::response([['html_url' => 'https://github.com/acme/shop/pull/12']]),
-        'https://api.github.com/repos/acme/shop/pulls' => Http::response($pullStatus === 201 ? ['html_url' => 'https://github.com/acme/shop/pull/11'] : ['message' => 'A pull request already exists'], $pullStatus),
+        'https://api.github.com/repos/acme/shop/pulls/11/requested_reviewers' => $reviewers,
+        'https://api.github.com/repos/acme/shop/pulls/12/requested_reviewers' => $reviewers,
+        'https://api.github.com/repos/acme/shop/pulls?*' => Http::response([[
+            'html_url' => 'https://github.com/acme/shop/pull/12',
+            'number' => 12,
+            'user' => ['login' => 'orbit-bot'],
+        ]]),
+        'https://api.github.com/repos/acme/shop/pulls' => Http::response($pullStatus === 201 ? [
+            'html_url' => 'https://github.com/acme/shop/pull/11',
+            'number' => 11,
+            'user' => ['login' => 'orbit-bot'],
+        ] : ['message' => 'A pull request already exists'], $pullStatus),
     ]);
 }
 
 beforeEach(function (): void {
     Http::preventStrayRequests();
+    config(['orbit.tasks.review_request_logins' => []]);
 });
 
 afterEach(function (): void {
@@ -109,6 +124,7 @@ it('pushes the task branch with a pull request token and opens the pull request'
     Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
         && $request->data() === ['title' => 'Export orders', 'head' => 'task-'.Task::topLevel()->sole()->id, 'base' => 'main', 'body' => "Adds the export.\n"]
         && $request->hasHeader('Authorization', 'Bearer ghs_publish'));
+    Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/requested_reviewers'));
 });
 
 it('pushes the task branch without opening a pull request', function (): void {
@@ -161,6 +177,61 @@ it('uses the open pull request that already has the task branch as its head', fu
     publisher_github(422);
 
     expect(publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))->toBe('https://github.com/acme/shop/pull/12');
+    Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/requested_reviewers'));
+});
+
+it('requests the configured reviewers after opening a pull request', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    config(['orbit.tasks.review_request_logins' => ['reviewbot', 'orbit-bot']]);
+
+    $url = publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40));
+
+    expect($url)->toBe('https://github.com/acme/shop/pull/11');
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
+        && $request->url() === 'https://api.github.com/repos/acme/shop/pulls/11/requested_reviewers'
+        && $request->data() === ['reviewers' => ['reviewbot']]
+        && $request->hasHeader('Authorization', 'Bearer ghs_publish'));
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST' && $request->url() === 'https://api.github.com/repos/acme/shop/pulls'
+        && $request->data() === ['title' => 'Export orders', 'head' => 'task-'.Task::topLevel()->sole()->id, 'base' => 'main', 'body' => 'Body']);
+});
+
+it('does not send a reviewers request when review request logins are unset', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    config(['orbit.tasks.review_request_logins' => []]);
+
+    publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40));
+
+    Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/requested_reviewers'));
+});
+
+it('requests the configured reviewers when it reuses an open pull request', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github(422);
+    config(['orbit.tasks.review_request_logins' => ['reviewbot']]);
+
+    expect(publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))->toBe('https://github.com/acme/shop/pull/12');
+    Http::assertSent(static fn (Request $request): bool => $request->method() === 'POST'
+        && $request->url() === 'https://api.github.com/repos/acme/shop/pulls/12/requested_reviewers'
+        && $request->data() === ['reviewers' => ['reviewbot']]
+        && $request->hasHeader('Authorization', 'Bearer ghs_publish'));
+});
+
+it('still publishes when the requested reviewers POST fails', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github(201, 422);
+    config(['orbit.tasks.review_request_logins' => ['reviewbot']]);
+    Log::spy();
+
+    expect(publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))->toBe('https://github.com/acme/shop/pull/11');
+    Log::shouldHaveReceived('warning')->once()->withArgs(function (string $message, array $context): bool {
+        return $message === 'The task pull request reviewers could not be requested.'
+            && $context['reason'] === 'GitHub refused the reviewer request (422): Review cannot be requested from pull request author.'
+            && $context['repository'] === 'acme/shop'
+            && $context['pull_request'] === 11
+            && $context['reviewers'] === ['reviewbot'];
+    });
 });
 
 it('refuses to publish without an App, for another host, or when the push fails', function (bool $project, string $repository, int $pushExit, string $message): void {
