@@ -564,6 +564,8 @@ When the workspace is ready, the task becomes `running`, and its first subtask s
 
 These reasons clear when the task starts, waits for capacity, or moves to `backlog`. Each release applies only while the claim still holds that reservation, so a claim never overwrites a newer claim or a cancel.
 
+A new task workspace reservation records a UUID `source_prepare_id` before source preparation, just like an ordinary development Instance. Preparation uses that ID to write an ownership receipt for later reclaim and removal. Older reservations can lack the ID; reclaim still checks their source identity.
+
 A claim that stops after it created the workspace leaves the `task-{id}` Instance behind. The next claim finds it by name and branch and resumes it on its Node. If the Instance is still `reserved`, preparation permits its existing checkout even when no starting commit was recorded. Preparation still verifies the repository, checkout ownership, linked worktree registration, and any recorded source preparation receipt before resolving the task branch. Another Instance with that name but another branch is never adopted. When the task was cancelled while its claim ran, the claim removes the workspace it created.
 
 ### Start a subtask
