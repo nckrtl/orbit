@@ -116,7 +116,7 @@ A create that fails before activation removes its owned resources and Instance r
 The Instance becomes active once Orbit has prepared the source, PHP runtime, Laravel URL, and Route. Setup runs after that. A successful create response also means every setup step succeeded; an empty list counts as success. The application can still fail for other reasons.
 </Note>
 
-A failed setup step removes the new Instance after the teardown steps run. See [Instance setup and teardown](/reference/instance-setup#run-setup).
+A failed setup step removes the new Instance after the teardown steps run. A missing or non-executable setup command returns `instance.setup_step_unavailable` with `outcome: missing`, naming the step, Node, and exit 127 or 126. That classification and diagnostic survive rollback, including an incomplete or unconfirmed cleanup annotation. Other command failures return `instance.setup_step_failed`. See [Instance setup and teardown](/reference/instance-setup#run-setup).
 
 ## orbit instance:rename
 

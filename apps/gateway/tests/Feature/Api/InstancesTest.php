@@ -3295,6 +3295,46 @@ it('tears down and removes a newly created instance after confirmed setup failur
         ->and(Route::query()->count())->toBe(1);
 })->with([0, 1]);
 
+it('preserves unavailable setup commands through create rollback', function (int $setupExit, string $cleanup): void {
+    $command = $setupExit === 127 ? '/nonexistent/orbit/install' : './not-executable-install';
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'setup', 'name' => 'install-dependencies', 'command' => $command, 'timeout_seconds' => 30, 'position' => 0]);
+    ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => 'teardown', 'name' => 'cleanup', 'command' => 'cleanup', 'timeout_seconds' => 30, 'position' => 0]);
+    // The real-runner tests establish Bash's 126/127 results; this exercises the create wrappers.
+    $transport = new LifecycleSshExecutor(result: static fn (array $input): int => $input['command'] === $command ? $setupExit : ($cleanup === 'unconfirmed' ? 255 : 0));
+    app()->instance(ProjectLifecycleRunner::class, $transport->runner());
+
+    if ($cleanup === 'incomplete') {
+        $this->removalSource->failPrepareFor = (int) Instance::query()->max('id') + 1;
+    }
+
+    $response = $this->postJson('/api/v1/instances', ['project_id' => $this->orbitApp->id, 'node_id' => $this->node->id, 'name' => 'unavailable-setup', 'branch' => 'dev'])
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'instance.setup_step_unavailable')
+        ->assertJsonPath('error.details.step', 'install-dependencies')
+        ->assertJsonPath('error.details.outcome', 'missing');
+    expect($response->json('error.message'))->toContain('install-dependencies', $this->node->name, 'not found', "exit {$setupExit}")
+        ->and(array_column($transport->inputs, 'command'))->toBe([$command, 'cleanup']);
+
+    if ($cleanup === 'removed') {
+        expect($response->json('error.message'))->toContain('The Instance was removed.')
+            ->and(Instance::query()->count())->toBe(0)
+            ->and(Route::query()->count())->toBe(0);
+    } else {
+        $response->assertJsonPath('error.details.cleanup', $cleanup);
+        $instance = Instance::query()->where('name', 'unavailable-setup')->sole();
+        expect($instance->error_code)->toBe('instance.setup_step_unavailable')
+            ->and($instance->failed_step)->toBe('setup');
+
+        if ($cleanup === 'incomplete') {
+            expect($response->json('error.message'))->toContain('cleanup is incomplete', "orbit instance:destroy {$instance->id} --force");
+        } else {
+            expect($response->json('error.message'))->toContain('teardown could not be confirmed', 'The Instance remains.')
+                ->and(Route::query()->count())->toBe(1)
+                ->and(InstanceRemoval::query()->count())->toBe(0);
+        }
+    }
+})->with(['non-executable' => 126, 'missing' => 127])->with(['removed', 'incomplete', 'unconfirmed']);
+
 it('stops setup early enough in a create that the rollback still fits the request deadline', function (): void {
     foreach (['setup', 'teardown'] as $phase) {
         ProjectLifecycleStep::query()->create(['project_id' => $this->orbitApp->id, 'phase' => $phase, 'name' => $phase, 'command' => $phase, 'timeout_seconds' => 540, 'position' => 0]);

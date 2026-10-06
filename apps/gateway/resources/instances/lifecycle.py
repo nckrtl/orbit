@@ -10,6 +10,17 @@ import time
 
 child = None
 command_path = None
+stderr_tail = b''
+
+
+def read_stderr():
+    global stderr_tail
+    try:
+        chunk = os.read(child.stderr.fileno(), 65536)
+    except BlockingIOError:
+        return False
+    stderr_tail = (stderr_tail + chunk)[-1024:]
+    return bool(chunk)
 
 
 def terminate():
@@ -51,9 +62,10 @@ try:
         env={**os.environ, **payload.get('environment', {})},
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
         start_new_session=True,
     )
+    os.set_blocking(child.stderr.fileno(), False)
     owner = os.getppid()
     deadline = time.monotonic() + payload['timeout']
     while child.poll() is None:
@@ -61,9 +73,15 @@ try:
             raise SystemExit(125)
         if time.monotonic() >= deadline:
             raise SystemExit(124)
-        time.sleep(0.05)
-    raise SystemExit(0 if child.returncode == 0 else 1)
+        if not read_stderr():
+            time.sleep(0.05)
+    raise SystemExit(child.returncode if child.returncode in (0, 126, 127) else 1)
 finally:
     terminate()
+    if child is not None:
+        while read_stderr():
+            pass
+        child.stderr.close()
+        sys.stderr.buffer.write(stderr_tail)
     if command_path is not None:
         os.unlink(command_path)
