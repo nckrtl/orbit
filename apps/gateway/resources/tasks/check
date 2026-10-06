@@ -56,17 +56,26 @@ def git(checkout, *arguments, environment=None):
                                    stderr=subprocess.DEVNULL).strip()
 
 
-def working_tree(checkout):
-    """The tree of the whole working tree, uncommitted and untracked files included, without touching the index."""
+def snapshot_tree(checkout, include_working):
+    """Build a working or staged tree using a copied index, leaving the real index untouched."""
     index = git(checkout, 'rev-parse', '--path-format=absolute', '--git-path', 'index')
     with tempfile.TemporaryDirectory(prefix='orbit-check-') as scratch:
         candidate = os.path.join(scratch, 'index')
         if os.path.exists(index):
             shutil.copyfile(index, candidate)
         environment = {**os.environ, 'GIT_INDEX_FILE': candidate}
-        subprocess.run(git_arguments(checkout, 'add', '--all'), env=environment, check=True,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if include_working:
+            subprocess.run(git_arguments(checkout, 'add', '--all'), env=environment, check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return git(checkout, 'write-tree', environment=environment)
+
+
+def working_tree(checkout):
+    return snapshot_tree(checkout, True)
+
+
+def index_tree(checkout):
+    return snapshot_tree(checkout, False)
 
 
 def changed_paths(checkout, before, after):
@@ -588,6 +597,8 @@ def snapshot(checkout):
         'tree': working_tree(checkout),
         'parent': optional_rev(checkout, 'HEAD^'),
         'commit_tree': git(checkout, 'rev-parse', 'HEAD^{tree}'),
+        'branch': subprocess.run(git_arguments(checkout, 'symbolic-ref', '--quiet', '--short', 'HEAD'), capture_output=True, text=True).stdout.strip() or None,
+        'index_tree': index_tree(checkout),
     }))
 
 

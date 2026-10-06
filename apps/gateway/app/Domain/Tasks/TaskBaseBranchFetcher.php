@@ -40,5 +40,14 @@ interface TaskBaseBranchFetcher
      *
      * @throws TaskPullRequestException
      */
-    public function resetToDefault(Task $group): string;
+    public function resetToDefault(Task $group, ?string $verifiedTip = null): string;
+
+    /** Preserve the recorded candidate while advancing to the pinned green descendant. */
+    public function advanceCandidate(Task $group, string $head, string $tree, string $target, string $indexTree): TaskWorkspaceSnapshot;
+
+    /** Reads the fetched default-branch tip without moving HEAD. @throws TaskPullRequestException */
+    public function defaultTip(Task $group): string;
+
+    /** Tests ancestry in the fetched workspace without moving HEAD. @throws TaskPullRequestException */
+    public function isAncestor(Task $group, string $ancestor, string $tip): bool;
 }

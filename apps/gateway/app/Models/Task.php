@@ -101,6 +101,7 @@ use LogicException;
  * @property string|null $direction_answer_key
  * @property string|null $direction_answer_source_turn_id
  * @property Carbon|null $started_at
+ * @property array<string, mixed>|null $handoff_retry
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
  * @property string|null $fixup_head_sha
@@ -149,6 +150,7 @@ final class Task extends Model
         'target_thread_id',
         'completion_summary',
         'subtask_start_commit',
+        'handoff_retry',
         'completion_attempt',
         'completion_handoff_comment_id',
         'completion_reminder_attempt',
@@ -205,6 +207,7 @@ final class Task extends Model
         'duration_ms',
         'started_at',
         'subtask_start_commit',
+        'handoff_retry',
         'fixup_problem',
         'fixup_head_sha',
         'deliverables',
@@ -412,6 +415,7 @@ final class Task extends Model
     protected function casts(): array
     {
         return [
+            'handoff_retry' => 'array',
             'type' => TaskType::class,
             'position' => 'integer',
             'status' => TaskLevelStatusCast::class,

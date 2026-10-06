@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
+use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Infrastructure\Tasks\T3\T3ThreadReader;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -80,9 +81,24 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
 
         public function fastForward(Task $group, bool $missingRefOk = false): void {}
 
-        public function resetToDefault(Task $group): string
+        public function advanceCandidate(Task $group, string $head, string $tree, string $target, string $indexTree): TaskWorkspaceSnapshot
+        {
+            throw new TaskPullRequestException('Not used by this fixture.');
+        }
+
+        public function resetToDefault(Task $group, ?string $verifiedTip = null): string
         {
             return str_repeat('c', 40);
+        }
+
+        public function defaultTip(Task $group): string
+        {
+            return str_repeat('c', 40);
+        }
+
+        public function isAncestor(Task $group, string $ancestor, string $tip): bool
+        {
+            return true;
         }
 
         public function fetchForTurn(Task $group): void

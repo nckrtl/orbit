@@ -98,6 +98,105 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
+it('preserves staged unstaged and untracked candidate work in one pinned fast-forward and reconciles its lost reply', function (): void {
+    config()->set('orbit.tasks.worker_user', 'nobody');
+    $root = sys_get_temp_dir().'/orbit-handoff-advance-'.bin2hex(random_bytes(6));
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '-q', '-b', 'task-7', $checkout]))->mustRun();
+    $group = fetcher_group($checkout);
+    file_put_contents($checkout.'/lifecycle', 'base');
+    file_put_contents($checkout.'/staged', 'base');
+    fetcher_git($checkout, ['add', '.']);
+    fetcher_git($checkout, ['commit', '-qm', 'red base']);
+    $old = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    file_put_contents($checkout.'/upstream', 'fixed');
+    fetcher_git($checkout, ['add', '.']);
+    fetcher_git($checkout, ['commit', '-qm', 'green descendant']);
+    $target = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/main', $target]);
+    fetcher_git($checkout, ['reset', '--hard', $old]);
+    file_put_contents($checkout.'/staged', 'staged candidate');
+    fetcher_git($checkout, ['add', 'staged']);
+    file_put_contents($checkout.'/lifecycle', 'unstaged candidate');
+    file_put_contents($checkout.'/new-file', 'untracked candidate');
+    $index = $root.'/snapshot-index';
+    copy($checkout.'/.git/index', $index);
+    (new Process(['git', '-C', $checkout, 'add', '--all'], env: ['GIT_INDEX_FILE' => $index]))->mustRun();
+    $tree = trim((new Process(['git', '-C', $checkout, 'write-tree'], env: ['GIT_INDEX_FILE' => $index]))->mustRun()->getOutput());
+    $originalIndex = fetcher_git($checkout, ['write-tree']);
+    $transport = TaskWorkerSshExecutor::forCheckout($checkout);
+    (new Process(['setfacl', '-R', '-m', 'u:nobody:rwX,d:u:nobody:rwX,d:u:'.posix_geteuid().':rwX', $root]))->mustRun();
+    try {
+        $bases = fetcher($transport);
+        $advanced = $bases->advanceCandidate($group, $old, $tree, $target, $originalIndex);
+        expect($advanced->head)->toBe($target);
+        expect($bases->advanceCandidate($group, $old, $tree, $target, $originalIndex))->toEqual($advanced);
+        expect(file_get_contents($checkout.'/lifecycle'))->toBe('unstaged candidate')
+            ->and(file_get_contents($checkout.'/new-file'))->toBe('untracked candidate')
+            ->and(fetcher_git($checkout, ['diff', '--cached', '--name-only']))->toBe('staged')
+            ->and(fetcher_git($checkout, ['diff', '--name-only']))->toBe('lifecycle')
+            ->and(fetcher_git($checkout, ['ls-files', '--others', '--exclude-standard']))->toBe('new-file');
+    } finally {
+        File::deleteDirectory($root);
+    }
+});
+
+it('refuses pinned advancement on collision divergence candidate movement or ref movement without changing work', function (string $case): void {
+    $root = TestOrbitHome::scratch('orbit-handoff-refuse');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '-q', '-b', 'task-7', $checkout]))->mustRun();
+    file_put_contents($checkout.'/lifecycle', 'base');
+    fetcher_git($checkout, ['add', '.']);
+    fetcher_git($checkout, ['commit', '-qm', 'base']);
+    $old = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    $path = $case === 'tracked collision' ? 'lifecycle' : 'incoming';
+    file_put_contents($checkout.'/'.$path, 'upstream');
+    fetcher_git($checkout, ['add', '.']);
+    fetcher_git($checkout, ['commit', '-qm', 'upstream']);
+    $target = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/main', $target]);
+    fetcher_git($checkout, ['reset', '--hard', $old]);
+    if ($case === 'diverged') {
+        file_put_contents($checkout.'/diverged', 'commit');
+        fetcher_git($checkout, ['add', '.']);
+        fetcher_git($checkout, ['commit', '-qm', 'diverged']);
+        $old = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    }
+    file_put_contents($checkout.'/'.($case === 'untracked collision' ? 'incoming' : 'lifecycle'), 'candidate');
+    $index = $root.'/snapshot-index';
+    copy($checkout.'/.git/index', $index);
+    (new Process(['git', '-C', $checkout, 'add', '--all'], env: ['GIT_INDEX_FILE' => $index]))->mustRun();
+    $tree = trim((new Process(['git', '-C', $checkout, 'write-tree'], env: ['GIT_INDEX_FILE' => $index]))->mustRun()->getOutput());
+    if ($case === 'candidate moved') {
+        file_put_contents($checkout.'/later', 'later work');
+    }
+    if ($case === 'ref moved') {
+        fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/main', $old]);
+    }
+    $before = fetcher_git($checkout, ['status', '--porcelain']);
+    $originalIndex = fetcher_git($checkout, ['write-tree']);
+    $indexHash = hash_file('sha256', $checkout.'/.git/index');
+    $process = new Process(['python3', resource_path('tasks/advance-candidate'), $checkout, $old, $tree, $target, 'task-7', 'main', $originalIndex]);
+    $process->run();
+    expect($process->isSuccessful())->toBeFalse()
+        ->and(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($old)
+        ->and(fetcher_git($checkout, ['status', '--porcelain']))->toBe($before)
+        ->and(hash_file('sha256', $checkout.'/.git/index'))->toBe($indexHash);
+})->with(['tracked collision', 'untracked collision', 'diverged', 'candidate moved', 'ref moved']);
+
+it('refuses a baseline reset when the fetched ref differs from the positively checked SHA', function (): void {
+    $root = TestOrbitHome::scratch('orbit-baseline-pinned');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '-q', '-b', 'task-7', $checkout]))->mustRun();
+    fetcher_git($checkout, ['commit', '--allow-empty', '-qm', 'base']);
+    $old = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/main', $old]);
+    file_put_contents($checkout.'/preserve', 'do not reset');
+    $group = fetcher_group($checkout);
+    expect(fn () => fetcher(new LocalShellSshExecutor)->resetToDefault($group, str_repeat('f', 40)))->toThrow(TaskPullRequestException::class);
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($old)->and(file_get_contents($checkout.'/preserve'))->toBe('do not reset');
+});
+
 describe('TaskCheckWorkerUser', function (): void {
     it('updates the checkout with worker filter UIDs and without the fetch credential environment', function (string $operation): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
@@ -405,6 +504,29 @@ it('does not run a fetch when the default branch name is invalid', function (): 
     expect($transport->commands)->toHaveCount(0);
 });
 
+it('reads the default tip and ancestry without moving HEAD or requiring a write credential', function (): void {
+    $checkout = TestOrbitHome::scratch('orbit-baseline-read').'/checkout';
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $checkout]))->mustRun();
+    $group = fetcher_group($checkout);
+    fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Original baseline']);
+    $original = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['commit', '--quiet', '--allow-empty', '-m', 'Fixed main']);
+    $tip = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['update-ref', 'refs/remotes/origin/main', $tip]);
+    fetcher_git($checkout, ['reset', '--quiet', '--hard', $original]);
+    $bases = fetcher(new LocalShellSshExecutor);
+
+    expect($bases->defaultTip($group))->toBe($tip);
+    expect($bases->isAncestor($group, $original, $tip))->toBeTrue();
+    expect($bases->isAncestor($group, $tip, $original))->toBeFalse();
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($original);
+    expect(fetcher_git($checkout, ['rev-parse', '--abbrev-ref', 'HEAD']))->toBe('task-7');
+    expect(fn () => $bases->isAncestor($group, str_repeat('f', 40), $tip))->toThrow(TaskPullRequestException::class);
+    fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/main']);
+    expect(fn () => $bases->defaultTip($group))->toThrow(TaskPullRequestException::class);
+    Http::assertNothingSent();
+});
+
 it('resets an untouched baseline workspace to the fetched default branch tip without changing its branch', function (): void {
     $root = TestOrbitHome::scratch('orbit-baseline-reset');
     $checkout = $root.'/checkout';
@@ -425,6 +547,12 @@ it('resets an untouched baseline workspace to the fetched default branch tip wit
     $bases = fetcher(new LocalShellSshExecutor);
     $bases->fetchForTurn($group);
     expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($original);
+
+    expect($bases->defaultTip($group))->toBe($tip);
+    expect($bases->isAncestor($group, $original, $tip))->toBeTrue();
+    expect($bases->isAncestor($group, $tip, $original))->toBeFalse();
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($original);
+    expect(file_get_contents($checkout.'/tracked.txt'))->toBe('Original baseline');
 
     $head = $bases->resetToDefault($group);
 

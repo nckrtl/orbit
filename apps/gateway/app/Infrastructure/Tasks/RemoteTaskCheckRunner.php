@@ -91,6 +91,8 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             $tree,
             is_string($parent) && $parent !== '' ? $parent : null,
             is_string($commitTree) && $commitTree !== '' ? $commitTree : null,
+            is_string($data['branch'] ?? null) && $data['branch'] !== '' ? $data['branch'] : null,
+            is_string($data['index_tree'] ?? null) && preg_match('/\A[0-9a-f]{40}\z/', $data['index_tree']) === 1 ? $data['index_tree'] : null,
         );
     }
 

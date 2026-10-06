@@ -67,6 +67,7 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
+use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\Tasks\Pi\PiDriver;
@@ -775,9 +776,24 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             }
         }
 
-        public function resetToDefault(Task $group): string
+        public function advanceCandidate(Task $group, string $head, string $tree, string $target, string $indexTree): TaskWorkspaceSnapshot
+        {
+            throw new TaskPullRequestException('Not used by this fixture.');
+        }
+
+        public function resetToDefault(Task $group, ?string $verifiedTip = null): string
         {
             return str_repeat('c', 40);
+        }
+
+        public function defaultTip(Task $group): string
+        {
+            return str_repeat('c', 40);
+        }
+
+        public function isAncestor(Task $group, string $ancestor, string $tip): bool
+        {
+            return true;
         }
 
         public function fetchForTurn(Task $group): void

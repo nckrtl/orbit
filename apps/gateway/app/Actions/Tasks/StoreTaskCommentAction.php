@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionHold;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
@@ -49,7 +50,7 @@ final readonly class StoreTaskCommentAction
         $deliverResolution = false;
         $deliverDirection = false;
         $retryBaselineQueued = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued): TaskComment {
+        $store = function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -77,7 +78,19 @@ final readonly class StoreTaskCommentAction
             }
 
             return $comment;
-        });
+        };
+        $assistanceRequested = in_array($payload['type'] ?? null, [TaskCommentType::AssistanceRequested, TaskCommentType::AssistanceRequested->value], true);
+        $publish = function () use ($task, $store, $assistanceRequested): TaskComment {
+            if ($assistanceRequested) {
+                $task->refresh();
+            }
+
+            return DB::transaction($store);
+        };
+        // Acquire admission before row locks; a direction never publishes inside another process's admitted work.
+        $comment = $assistanceRequested
+            ? app(TaskExecutionLock::class)->synchronized((int) $task->parent_id, $publish)
+            : $publish();
 
         if ($deliverDirection) {
             TaskExecutionHold::run($task->parent, fn () => $this->deliverDirection($task, $comment));

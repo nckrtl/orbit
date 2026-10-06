@@ -1,0 +1,111 @@
+#!/usr/bin/env python3
+"""Advance only a pinned fast-forward candidate, retaining staged and untracked work."""
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+checkout, old_head, old_tree, target, branch, default, original_index = sys.argv[1:]
+
+
+def git(*args, env=None, data=None):
+    return subprocess.check_output(
+        ['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
+         '-c', 'safe.directory=' + checkout, '-C', checkout, *args],
+        input=data, env=env, stderr=subprocess.PIPE)
+
+
+def text(*args):
+    return git(*args).decode().strip()
+
+
+def entries(tree):
+    result = {}
+    for row in git('ls-tree', '-rz', tree).split(b'\0'):
+        if row:
+            meta, path = row.split(b'\t', 1)
+            mode, kind, sha = meta.split()
+            result[path] = (mode, sha)
+    return result
+
+
+def snapshot_tree(include_working):
+    index = text('rev-parse', '--path-format=absolute', '--git-path', 'index')
+    with tempfile.TemporaryDirectory(prefix='orbit-advance-') as directory:
+        temporary = os.path.join(directory, 'index')
+        if os.path.exists(index):
+            shutil.copyfile(index, temporary)
+        env = dict(os.environ, GIT_INDEX_FILE=temporary)
+        if include_working:
+            git('add', '--all', env=env)
+        return git('write-tree', env=env).decode().strip()
+
+
+def working_tree():
+    return snapshot_tree(True)
+
+
+def index_tree():
+    return snapshot_tree(False)
+
+
+def overlaid_tree(base, source, delta):
+    with tempfile.TemporaryDirectory(prefix='orbit-advance-') as directory:
+        env = dict(os.environ, GIT_INDEX_FILE=os.path.join(directory, 'index'))
+        git('read-tree', base, env=env)
+        rows = b''
+        for path in sorted(delta):
+            mode, sha = source.get(path, (b'0', b'0' * 40))
+            rows += mode + b' ' + sha + b'\t' + path + b'\0'
+        git('update-index', '-z', '--index-info', env=env, data=rows)
+        return git('write-tree', env=env).decode().strip()
+
+
+def refuse(reason):
+    sys.stderr.write(reason + '\n')
+    sys.exit(1)
+
+
+try:
+    if any(len(value) != 40 or any(c not in '0123456789abcdef' for c in value)
+           for value in (old_head, old_tree, target, original_index)):
+        refuse('Invalid candidate identity.')
+    if text('symbolic-ref', '--short', 'HEAD') != branch:
+        refuse('Candidate branch changed.')
+    if text('rev-parse', 'refs/remotes/origin/' + default) != target:
+        refuse('Default branch moved after green verification.')
+    if old_head == target:
+        refuse('Default branch has not advanced.')
+    git('merge-base', '--is-ancestor', old_head, target)
+    before, candidate, upstream = entries(old_head), entries(old_tree), entries(target)
+    dirty = {p for p in before.keys() | candidate.keys() if before.get(p) != candidate.get(p)}
+    incoming = {p for p in before.keys() | upstream.keys() if before.get(p) != upstream.get(p)}
+    staged = entries(original_index)
+    staged_delta = {p for p in before.keys() | staged.keys() if before.get(p) != staged.get(p)}
+    if any(a == b or a.startswith(b + b'/') or b.startswith(a + b'/')
+           for a in dirty | staged_delta for b in incoming):
+        refuse('Incoming changes overlap preserved candidate paths.')
+    expected_tree = overlaid_tree(target, candidate, dirty)
+    expected_index = overlaid_tree(target, staged, staged_delta)
+    head, tree = text('rev-parse', 'HEAD'), working_tree()
+    if head == target and tree == expected_tree and index_tree() == expected_index:
+        print(json.dumps({'head': head, 'tree': tree, 'branch': branch, 'index_tree': index_tree()}))
+        sys.exit(0)
+    if head != old_head or tree != old_tree or index_tree() != original_index:
+        refuse('Candidate changed after retry intent was recorded.')
+    # Git itself refuses staged/ignored-file collisions. Do not stash or overwrite them.
+    for name in ('MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD'):
+        if os.path.exists(text('rev-parse', '--path-format=absolute', '--git-path', name)):
+            refuse('Candidate has an unfinished Git operation.')
+    for name in ('rebase-merge', 'rebase-apply'):
+        if os.path.exists(text('rev-parse', '--path-format=absolute', '--git-path', name)):
+            refuse('Candidate has an unfinished rebase.')
+    git('-c', 'merge.autoStash=false', 'merge', '--ff-only', '--no-autostash', '--no-overwrite-ignore', target)
+    head, tree = text('rev-parse', 'HEAD'), working_tree()
+    if head != target or tree != expected_tree or index_tree() != expected_index:
+        refuse('Advanced candidate does not match the preserved work; operator reconciliation required.')
+    print(json.dumps({'head': head, 'tree': tree, 'branch': branch, 'index_tree': index_tree()}))
+except subprocess.CalledProcessError:
+    refuse('Pinned fast-forward refused; preserve the workspace and inspect its state.')

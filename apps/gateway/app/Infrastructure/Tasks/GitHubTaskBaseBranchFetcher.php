@@ -15,6 +15,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskWorkspaceSnapshot;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
@@ -100,7 +101,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
     }
 
-    public function resetToDefault(Task $group): string
+    public function resetToDefault(Task $group, ?string $verifiedTip = null): string
     {
         $group->loadMissing(['project', 'taskable']);
         $instance = $group->taskable;
@@ -109,17 +110,25 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             || ! is_string($default) || ! GitBranchName::isValid($default)) {
             throw new TaskPullRequestException('The baseline workspace could not be reset.');
         }
+        if ($verifiedTip !== null && preg_match('/\A[0-9a-f]{40}\z/', $verifiedTip) !== 1) {
+            throw new TaskPullRequestException('The verified baseline tip is invalid.');
+        }
         $instance->loadMissing('node');
         $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).<<<'BASH'
             checkout=$1
             branch=$2
+            verified=$3
             tip=$(git -C "$checkout" rev-parse --verify "refs/remotes/origin/$branch^{commit}")
+            if [ -n "$verified" ]; then
+                [ "$tip" = "$verified" ] || exit 1
+                tip=$verified
+            fi
             workspace_git -C "$checkout" reset --hard --quiet "$tip"
             git -C "$checkout" rev-parse HEAD
             BASH;
         try {
             $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default],
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $verifiedTip ?? ''],
                 input: $script,
             ), 'task-baseline-reset', 'tasks.baseline_reset_failed');
         } catch (RuntimeConvergenceException $exception) {
@@ -131,6 +140,97 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         return $head;
+    }
+
+    public function advanceCandidate(Task $group, string $head, string $tree, string $target, string $indexTree): TaskWorkspaceSnapshot
+    {
+        $group->loadMissing(['project', 'taskable.node']);
+        $instance = $group->taskable;
+        $default = $group->project->default_branch;
+        if (! $instance instanceof Instance || $instance->checkout_path === '' || ! is_string($default) || ! GitBranchName::isValid($default)) {
+            throw new TaskPullRequestException('The candidate workspace is unavailable.');
+        }
+        $worker = TaskWorkerUser::name();
+        if ($worker === null || ! is_string($instance->branch) || ! GitBranchName::isValid($instance->branch)) {
+            throw new TaskPullRequestException('The candidate worker or branch is unavailable.');
+        }
+        $script = file_get_contents(resource_path('tasks/advance-candidate'));
+        if (! is_string($script)) {
+            throw new TaskPullRequestException('The candidate advancement resource is unavailable.');
+        }
+        try {
+            $result = $this->ssh->execute($instance->node, new RemoteCommand(
+                arguments: ['sudo', '-n', '-u', $worker, '-H', 'python3', '-', $instance->checkout_path, $head, $tree, $target, $instance->branch, $default, $indexTree],
+                input: $script,
+            ), 'task-candidate-advance', 'tasks.candidate_advance_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException('The pinned candidate fast-forward was refused; preserve the workspace for direction.', previous: $exception);
+        }
+        $value = json_decode($result->stdout, true);
+        if (! is_array($value) || ($value['head'] ?? null) !== $target || ! is_string($value['tree'] ?? null)
+            || preg_match('/\A[0-9a-f]{40}\z/', $value['tree']) !== 1 || ($value['branch'] ?? null) !== $instance->branch
+            || ! is_string($value['index_tree'] ?? null) || preg_match('/\A[0-9a-f]{40}\z/', $value['index_tree']) !== 1) {
+            throw new TaskPullRequestException('The candidate advancement result is uncertain; reconcile the workspace before continuing.');
+        }
+
+        return new TaskWorkspaceSnapshot($target, $value['tree'], branch: $value['branch'], indexTree: $value['index_tree']);
+    }
+
+    public function defaultTip(Task $group): string
+    {
+        $group->loadMissing('project');
+        $default = $group->project->default_branch;
+        if (! is_string($default) || ! GitBranchName::isValid($default)) {
+            throw new TaskPullRequestException('The default branch tip could not be read.');
+        }
+        $tip = $this->readWorkspace($group, <<<'BASH'
+            git -C "$1" rev-parse --verify "refs/remotes/origin/$2^{commit}"
+            BASH, [$default]);
+        if (preg_match('/\A[0-9a-f]{40}\z/', $tip) !== 1) {
+            throw new TaskPullRequestException('The default branch tip could not be read.');
+        }
+
+        return $tip;
+    }
+
+    public function isAncestor(Task $group, string $ancestor, string $tip): bool
+    {
+        foreach ([$ancestor, $tip] as $sha) {
+            if (preg_match('/\A[0-9a-f]{40}\z/', $sha) !== 1) {
+                throw new TaskPullRequestException('The baseline ancestry could not be read.');
+            }
+        }
+
+        return $this->readWorkspace($group, <<<'BASH'
+            status=0
+            git -C "$1" merge-base --is-ancestor "$2" "$3" || status=$?
+            case "$status" in
+                0) printf 'yes' ;;
+                1) printf 'no' ;;
+                *) exit "$status" ;;
+            esac
+            BASH, [$ancestor, $tip]) === 'yes';
+    }
+
+    /** @param list<string> $arguments */
+    private function readWorkspace(Task $group, string $script, array $arguments): string
+    {
+        $group->loadMissing('taskable');
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance || $instance->checkout_path === '') {
+            throw new TaskPullRequestException('The workspace refs could not be read.');
+        }
+        $instance->loadMissing('node');
+        try {
+            $result = $this->ssh->execute($instance->node, new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
+                input: WorkspaceGit::bashPreamble().$script,
+            ), 'task-base-read', 'tasks.fetch_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException('The workspace refs could not be read.', previous: $exception);
+        }
+
+        return trim($result->stdout);
     }
 
     public function fetchForTurn(Task $group): void

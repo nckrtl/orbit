@@ -409,9 +409,85 @@ final readonly class TaskScheduler
         return true;
     }
 
-    /**
-     * Runs the Project check for a handoff and acts on its state. The process state decides; no timer ends a check.
-     */
+    /** Read one persisted recovery check without launching a replacement or resuming a failed worker. */
+    public function continueRecoveredHandoff(Task $task, TaskHandoffRetry $intent): bool
+    {
+        $group = $task->parent()->with(['taskable', 'project', 'tasks'])->firstOrFail();
+        $check = $task->checks()->find($intent->checkId);
+        $receipt = $task->comments()->find($intent->receiptId);
+        $instance = $group->taskable;
+        if (! $check instanceof TaskCheck || ! $receipt instanceof TaskComment || ! $instance instanceof Instance
+            || $check->task_comment_id !== $receipt->id || $check->head_before !== $intent->target || $check->tree_before !== $intent->advancedTree
+            || $task->checks()->latest('id')->first()?->id !== $check->id) {
+            return false;
+        }
+        if ($check->status === TaskCheckStatus::Running) {
+            $reading = $this->checks->read($instance, $check->process());
+            if ($reading->state === 'running') {
+                return false;
+            }
+            $this->recordReading($check, $reading);
+        }
+        if ($check->status !== TaskCheckStatus::Passed
+            || TaskDeliverableVerifier::failures($task->deliverableList(), TaskDeliverableEvidence::fromArray($check->deliverable_evidence)) !== []) {
+            return true;
+        }
+        $observation = $this->observer->observe($group, $task);
+        $implementer = $observation->thread(TaskThreadRole::Implementer);
+        if (! $implementer instanceof TaskThreadObservation || ! $implementer->available || ! $implementer->idle || $implementer->inputRequests !== []) {
+            return false;
+        }
+        $snapshot = $this->checks->snapshot($instance);
+        if ($snapshot->head !== $intent->target || $snapshot->tree !== $intent->advancedTree
+            || $snapshot->branch !== $intent->branch || $snapshot->indexTree !== $intent->advancedIndexTree) {
+            return false;
+        }
+        $admitted = DB::transaction(function () use ($task, $group, $check, $receipt, $implementer, $intent): bool {
+            $lockedGroup = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            $persisted = TaskHandoffRetry::fromArray($locked->handoff_retry);
+            $freshCheck = $locked->checks()->latest('id')->first();
+            if ($persisted === null || $persisted->toArray() !== $intent->toArray() || $persisted->phase !== 'running'
+                || ! $intent->owns($lockedGroup, $locked) || $locked->consult_comment_id !== null || $locked->direction_relay_comment_id !== null
+                || $locked->resolution_delivered_comment_id !== null || ! $freshCheck instanceof TaskCheck || $freshCheck->id !== $check->id
+                || $freshCheck->status !== TaskCheckStatus::Passed || $freshCheck->task_comment_id !== $receipt->id
+                || $freshCheck->head_before !== $intent->target || $freshCheck->tree_before !== $intent->advancedTree
+                || $locked->comments()->where('id', '>', $receipt->id)->whereIn('type', [TaskCommentType::ReadyForReview, TaskCommentType::Approved, TaskCommentType::ChangesRequested])->exists()
+                || TaskDeliverableVerifier::failures($locked->deliverableList(), TaskDeliverableEvidence::fromArray($freshCheck->deliverable_evidence)) !== []) {
+                return false;
+            }
+            foreach (array_keys(TaskAssistance::cleared()) as $key) {
+                if ($locked->getRawOriginal($key) !== $task->getRawOriginal($key)
+                    || $lockedGroup->getRawOriginal($key) !== $group->getRawOriginal($key)) {
+                    return false;
+                }
+            }
+            $completed = clone $intent;
+            $completed->phase = 'finished';
+            $values = ['completion_handoff_comment_id' => $receipt->id, 'communication_failures' => 0,
+                'handoff_retry' => $completed->toArray(), ...TaskAssistance::cleared()];
+            if (is_string($implementer->turnId) && $implementer->turnId !== '') {
+                $values['completion_handoff_turn_id'] = $implementer->turnId;
+            }
+            $locked->fill($values);
+            $lockedGroup->fill(TaskAssistance::cleared());
+            $this->markImplementerReview($lockedGroup, $locked);
+
+            return true;
+        });
+        if (! $admitted) {
+            return false;
+        }
+        $intent->phase = 'finished';
+        // A crash here leaves an admitted reviewing task, which ordinary review notification can resume.
+        $fresh = $task->fresh() ?? $task;
+        if (! $fresh->assistance_requested && ! $fresh->parent->assistance_requested) {
+            $this->nudgeReviewer($fresh, $observation->thread(TaskThreadRole::Reviewer));
+        }
+
+        return true;
+    }
+
     private function checkHandoff(Task $group, Task $task, TaskThreadObservation $implementer, TaskComment $receipt, TaskSessionObservation $observation): void
     {
         $instance = $group->taskable;
@@ -497,23 +573,12 @@ final readonly class TaskScheduler
         }
 
         try {
-            $process = $this->checks->start($instance, $command, [], $this->deliverableCheck($task));
+            app(TaskHandoffChecks::class)->start($group, $task, $receipt);
         } catch (TaskCheckException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
 
             return;
         }
-        TaskCheck::query()->create([
-            'task_id' => $task->id,
-            'task_comment_id' => $receipt->id,
-            'kind' => TaskCheckKind::Handoff,
-            'status' => TaskCheckStatus::Running,
-            'pid' => $process->pid,
-            'process_started' => $process->started,
-            'head_before' => $process->head,
-            'tree_before' => $process->tree,
-            'started_at' => now(),
-        ]);
         $this->clearCommunicationFailures($task);
     }
 
@@ -979,36 +1044,6 @@ final readonly class TaskScheduler
         $missing = TaskDeliverableVerifier::unconfirmed($deliverables, $receipt->deliverables ?? [], $role);
 
         return new TaskRubricItem('deliverables', $missing === [], $missing === [] ? '' : 'The turn receipt does not confirm the deliverables '.implode(', ', $missing).'. Pass --deliverable=ID=evidence for each one.');
-    }
-
-    /**
-     * ADR 0133: what the handoff check needs to record deliverable evidence, or null for a subtask without deliverables.
-     * ADR 0163: a command with fails_on_base true also runs against the start commit with its paths overlaid.
-     *
-     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>}|null
-     */
-    private function deliverableCheck(Task $task): ?array
-    {
-        $deliverables = $task->deliverableList();
-        if ($deliverables === []) {
-            return null;
-        }
-        $commands = [];
-        foreach ($deliverables as $deliverable) {
-            if ($deliverable->type !== TaskDeliverableType::Command) {
-                continue;
-            }
-            $command = ['id' => $deliverable->id, 'command' => $deliverable->command, 'directory' => TaskDeliverable::relative($deliverable->directory) ?: '.'];
-            if ($deliverable->fails_on_base) {
-                $command['fails_on_base'] = true;
-                $command['paths'] = $deliverable->paths;
-            }
-            $commands[] = $command;
-        }
-
-        $start = TaskReviewBase::commit($task);
-
-        return ['start' => $start !== '' ? $start : null, 'commands' => $commands];
     }
 
     private function receiptItem(?TaskTurnReceipt $read, ?TaskComment $receipt): TaskRubricItem
@@ -2773,6 +2808,15 @@ final readonly class TaskScheduler
             && in_array($thread->sessState, [AgentThreadState::Done->value, AgentThreadState::AskingForInput->value], true);
     }
 
+    /** Both ordinary completion and recovered completion call this inside their admission transaction. */
+    private function markImplementerReview(Task $group, Task $task): void
+    {
+        $task->status = TaskStatus::Reviewing;
+        $task->save();
+        $group->status = TaskGroupStatus::Reviewing;
+        $group->save();
+    }
+
     public function settleImplementer(Task $task, ?TaskThreadObservation $reviewer = null): Task
     {
         $task->parent->requireManagedExecution();
@@ -2788,10 +2832,7 @@ final readonly class TaskScheduler
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             }
 
-            $locked->status = TaskStatus::Reviewing;
-            $locked->save();
-            $group->status = TaskGroupStatus::Reviewing;
-            $group->save();
+            $this->markImplementerReview($group, $locked);
 
             return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         });

@@ -532,6 +532,8 @@ it('reads the same working tree as the check without touching the index', functi
     expect($snapshot->head)->toBe($process->head)
         ->and($snapshot->tree)->toBe($process->tree)
         ->and($snapshot->parent)->toBeNull()
+        ->and($snapshot->branch)->toBe(trim((new Process(['git', 'symbolic-ref', '--short', 'HEAD'], $checkout))->mustRun()->getOutput()))
+        ->and($snapshot->indexTree)->toBe($snapshot->commitTree)
         ->and($snapshot->commitTree)->toBe(trim((new Process(['git', 'rev-parse', 'HEAD^{tree}'], $checkout))->mustRun()->getOutput()))
         ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($status);
 
@@ -546,6 +548,8 @@ it('reads the same working tree as the check without touching the index', functi
         ->and($changed->tree)->not->toBe($snapshot->tree)
         ->and($ignored->head)->toBe($changed->head)
         ->and($ignored->tree)->toBe($changed->tree)
+        ->and($changed->indexTree)->toBe($snapshot->indexTree)
+        ->and($ignored->indexTree)->toBe($snapshot->indexTree)
         ->and((new Process(['git', 'status', '--porcelain'], $checkout))->mustRun()->getOutput())->toBe($written);
 });
 

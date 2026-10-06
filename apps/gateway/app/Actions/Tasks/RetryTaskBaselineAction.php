@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskDefaultBranchChecks;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
@@ -24,7 +25,7 @@ use Illuminate\Support\Facades\DB;
 
 final readonly class RetryTaskBaselineAction
 {
-    public function __construct(private TaskBaseBranchFetcher $bases) {}
+    public function __construct(private TaskBaseBranchFetcher $bases, private TaskDefaultBranchChecks $checks) {}
 
     /** Called in the comment transaction: retry intent must commit before any remote mutation. */
     public function queue(Task $task, TaskComment $comment): bool
@@ -59,7 +60,18 @@ final readonly class RetryTaskBaselineAction
             // The intent was committed separately. Repeating this reset is safe while no agent started.
             try {
                 $this->bases->fetchForTurn($group);
-                $head = $this->bases->resetToDefault($group);
+                $tip = null;
+                $resolution = TaskComment::query()->find($locked->resolution_delivered_comment_id);
+                if ($resolution instanceof TaskComment && $resolution->author === 'gateway'
+                    && str_starts_with($resolution->body, RetryRedMainBaselineAction::COMMENT_PREFIX)) {
+                    $tip = $this->bases->defaultTip($group);
+                    if ($tip === $check->head_before
+                        || ! $this->bases->isAncestor($group, $check->head_before, $tip)
+                        || ! $this->checks->green($group, $tip)) {
+                        return false;
+                    }
+                }
+                $head = $this->bases->resetToDefault($group, $tip);
             } catch (TaskPullRequestException $exception) {
                 throw new AgentDriverException($exception->getMessage(), previous: $exception);
             }
@@ -75,7 +87,7 @@ final readonly class RetryTaskBaselineAction
     }
 
     /** A failed baseline is retryable only while the entire group remains untouched. */
-    private function failedBaseline(Task $group, Task $task): ?TaskCheck
+    public function failedBaseline(Task $group, Task $task): ?TaskCheck
     {
         if ($group->execution_mode !== TaskExecutionMode::Managed || $group->status !== TaskGroupStatus::Running
             || $task->status !== TaskStatus::Running || ! $task->assistance_requested
