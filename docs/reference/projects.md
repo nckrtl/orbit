@@ -44,6 +44,12 @@ The application directory contains `composer.json`, `artisan`, development [envi
 
 Registration never infers a nested root from source files. Configure the Project's root, or send an explicit Instance root override. This group keeps one effective root and the existing type rules. The [application-directory decision](/decisions/0196-derive-application-directory-from-web-root#target-model-for-the-follow-up-multi-app-group) records the follow-up target: one or more named apps per Project, each with a path and web root, and each Instance serving every app under its own Route. That target is not today's API.
 
+## Setup and teardown steps
+
+A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. Production Instances run neither list.
+
+When a command is missing or not executable on that Node (exit 127 or 126), Orbit returns `instance.setup_step_unavailable` or `instance.teardown_step_unavailable` with the step name and `outcome: missing`. The message names the step, Node, and exit code and says the command was not found or is not executable. Other command failures still return `instance.setup_step_failed` or `instance.teardown_step_failed`. See [Instance setup and teardown](/reference/instance-setup#failure-codes) for retry and removal behavior.
+
 ## Development deploy steps
 
 A Project owns an ordered [development deploy list](/reference/deployments#development-deploy-steps), separate from setup and teardown and from production's per-Instance deploy steps. Use [`project:dev-deploy-step`](/cli/project#orbit-projectdev-deploy-steplist) to list, create, update, or remove a step. Each step stores a name, command, timeout, and `required` boolean, which defaults to true. These operations change configuration only; they never start a deployment.

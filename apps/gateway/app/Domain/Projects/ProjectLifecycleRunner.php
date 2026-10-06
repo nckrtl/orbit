@@ -105,6 +105,18 @@ final readonly class ProjectLifecycleRunner
                     );
                 }
 
+                if ($result !== null && in_array($result->exitCode, [126, 127], true)) {
+                    $label = $phase === LifecyclePhase::Setup ? 'Setup' : 'Teardown';
+
+                    throw new ResourceOperationException(
+                        errorCode: $phase === LifecyclePhase::Setup ? 'instance.setup_step_unavailable' : 'instance.teardown_step_unavailable',
+                        message: "{$label} step [{$step->name}] is unavailable on node [{$instance->node->name}]: the command was not found or is not executable (exit {$result->exitCode}).",
+                        status: 422,
+                        previous: $exception,
+                        details: ['step' => $step->name, 'outcome' => 'missing'],
+                    );
+                }
+
                 // The step ran out of the time the request had left, not out of its own timeout.
                 $timedOut = $result?->exitCode === 124
                     || $exception instanceof ProcessTimedOutException
