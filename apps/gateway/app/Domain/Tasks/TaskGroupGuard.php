@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Task;
+use App\Models\TaskCheck;
 
 /** ADR 0122: the refusals that keep Backlog preparation apart from scheduled work. */
 final class TaskGroupGuard
@@ -41,6 +43,30 @@ final class TaskGroupGuard
             message: __('A subtask of a group outside backlog needs at least one deliverable.'),
             status: 422,
         );
+    }
+
+    /** Called under the group and subtask locks before consuming the one recovery. */
+    public static function deliverableCorrectionCheck(Task $group, Task $task): ?TaskCheck
+    {
+        if ($group->status !== TaskGroupStatus::Running || $task->status !== TaskStatus::Running
+            || ! $task->assistance_requested || self::deliverableCorrectionRecorded($task)) {
+            return null;
+        }
+
+        $check = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Handoff)->latest('id')->first();
+        if (! $check instanceof TaskCheck || $check->status !== TaskCheckStatus::Failed
+            || $check->failed_step !== 'invalid_deliverable'
+            || $check->task_comment_id !== $task->completion_handoff_comment_id) {
+            return null;
+        }
+        $receipt = $task->comments()->find($check->task_comment_id);
+
+        return $receipt?->completion_attempt === $task->completion_attempt ? $check : null;
+    }
+
+    public static function deliverableCorrectionRecorded(Task $task): bool
+    {
+        return $task->deliverable_correction_check_id !== null;
     }
 
     public static function deliverablesLocked(): ResourceOperationException

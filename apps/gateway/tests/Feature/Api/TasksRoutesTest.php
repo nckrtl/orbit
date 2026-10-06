@@ -16,6 +16,7 @@ use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
@@ -26,6 +27,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
@@ -1101,6 +1103,132 @@ it('checks deliverable.path and fails_on_base command paths at every request bou
         'nested tests directory' => [[$command('apps/gateway/tests/new.php'), deliverable_path_file('apps/gateway/tests/new.php', 'created')], null, null],
         'created implementation still refused' => [[$command('app/New.php'), deliverable_path_file('app/New.php', 'created')], '0.paths.0', 'base-check path app/New.php must be a test file'],
     ];
+});
+
+function deliverable_correction_task(?string $failedStep = 'invalid_deliverable'): Task
+{
+    tasks_gateway();
+    enable_tasks();
+    deliverable_path_repository();
+    $project = tasks_app('correction');
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Correction', 'brief' => 'Keep the work.', 'status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.']);
+    $task = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Started', 'brief' => 'Keep this brief.',
+        'status' => TaskStatus::Running, 'subtask_start_commit' => str_repeat('b', 40),
+        'deliverables' => [deliverable_path_file('tests/MissingTest.php')],
+        'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.',
+        'completion_attempt' => 2,
+    ]);
+    $receipt = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::ReadyForReview, 'body' => 'Ready.', 'author' => 'implementer', 'posted_at' => now(), 'completion_attempt' => 2]);
+    $task->update(['completion_handoff_comment_id' => $receipt->id]);
+    TaskCheck::query()->create([
+        'task_id' => $task->id, 'task_comment_id' => $receipt->id, 'kind' => TaskCheckKind::Handoff,
+        'status' => TaskCheckStatus::Failed, 'failed_step' => $failedStep,
+        'pid' => 123, 'process_started' => 'check-start', 'head_before' => str_repeat('c', 40), 'tree_before' => str_repeat('d', 40),
+        'started_at' => now(), 'finished_at' => now(),
+    ]);
+
+    return $task;
+}
+
+it('allows one invalid_deliverable correction and audits it without discarding work', function (): void {
+    $task = deliverable_correction_task();
+    $before = $task->deliverables;
+    $replacement = [deliverable_path_file('tests/ExistingTest.php')];
+    $url = "/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}";
+
+    $this->patchJson($url, ['deliverables' => $replacement])->assertOk()->assertJsonPath('data.deliverables', $replacement);
+
+    $task->refresh();
+    expect($task->deliverables)->toBe($replacement)
+        ->and($task->status)->toBe(TaskStatus::Running)
+        ->and($task->subtask_start_commit)->toBe(str_repeat('b', 40))
+        ->and($task->completion_attempt)->toBe(2)
+        ->and($task->assistance_requested)->toBeTrue();
+    $audit = Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->sole();
+    expect($audit->properties?->get('old'))->toBe($before)
+        ->and($audit->properties?->get('new'))->toBe($replacement)
+        ->and($audit->properties?->get('check_id'))->toBe(TaskCheck::query()->where('task_id', $task->id)->sole()->id);
+
+    $this->patchJson($url, ['deliverables' => $replacement])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+    $check = TaskCheck::query()->where('task_id', $task->id)->sole();
+    $again = $check->replicate();
+    $again->save();
+    $this->patchJson($url, ['deliverables' => $replacement])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+    expect($task->fresh()?->deliverables)->toBe($replacement);
+    expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(1);
+});
+
+it('does not reopen a deliverable correction after activity cleanup and another invalid handoff', function (): void {
+    $task = deliverable_correction_task();
+    $url = "/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}";
+    $replacement = [deliverable_path_file('tests/ExistingTest.php')];
+    $this->patchJson($url, ['deliverables' => $replacement])->assertOk();
+    $consumed = $task->fresh()?->deliverable_correction_check_id;
+    Activity::query()->where('log_name', 'tasks')->update(['created_at' => now()->subDays(400)]);
+
+    $this->artisan('activitylog:clean', ['log' => 'tasks', '--days' => 1])->assertExitCode(0);
+
+    expect(Activity::query()->where('description', 'deliverables corrected')->count())->toBe(0);
+    $again = TaskCheck::query()->where('task_id', $task->id)->sole()->replicate();
+    $again->save();
+    $this->patchJson($url, ['deliverables' => $replacement])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+    expect($task->fresh()?->deliverable_correction_check_id)->toBe($consumed)->not->toBeNull();
+});
+
+it('keeps deliverables_locked for ordinary running edits and unrelated failures', function (?string $failedStep): void {
+    $task = deliverable_correction_task($failedStep);
+    $before = $task->deliverables;
+
+    $this->patchJson("/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}", ['deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+
+    expect($task->fresh()?->deliverables)->toBe($before);
+})->with([null, 'project_check']);
+
+it('keeps deliverable correction locked outside the failed handoff assistance window', function (string $case): void {
+    $task = deliverable_correction_task();
+    $before = $task->deliverables;
+    if ($case === 'not-assisted') {
+        $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+    } elseif ($case === 'new-attempt') {
+        $task->update(['completion_attempt' => 3]);
+    } elseif ($case === 'reviewing') {
+        $task->update(['status' => TaskStatus::Reviewing]);
+    } elseif ($case === 'closed-group') {
+        $task->parent->update(['status' => TaskGroupStatus::Cancelled]);
+    } elseif ($case === 'old-receipt') {
+        $task->update(['completion_handoff_comment_id' => null]);
+    } else {
+        $newer = TaskCheck::query()->where('task_id', $task->id)->sole()->replicate();
+        $newer->status = TaskCheckStatus::Passed;
+        $newer->save();
+    }
+
+    $this->patchJson("/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}", ['deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+
+    expect($task->fresh()?->deliverables)->toBe($before);
+})->with(['not-assisted', 'new-attempt', 'reviewing', 'closed-group', 'old-receipt', 'newer-check']);
+
+it('validates a deliverable correction without consuming it on refused requests', function (): void {
+    $task = deliverable_correction_task();
+    $before = $task->deliverables;
+    $url = "/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}";
+    $command = ['id' => 'repro', 'type' => 'command', 'description' => 'Reproduce.', 'command' => 'vendor/bin/pest', 'fails_on_base' => true, 'paths' => ['app/New.php']];
+
+    $response = $this->patchJson($url, ['deliverables' => [$command, deliverable_path_file('app/New.php', 'created')]])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($response->json('error.details')['deliverables.0.paths.0'][0])->toContain('must be a test file', str_repeat('b', 40), 'base_kind=resolved');
+    $this->patchJson($url, ['deliverables' => [deliverable_path_file('tests/MissingTest.php')]])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    $this->patchJson($url, ['deliverables' => []])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
+    $this->patchJson($url, ['title' => 'Changed', 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+    expect($task->fresh()?->deliverables)->toBe($before);
+    expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(0);
+
+    $command['paths'] = ['tests/ExistingTest.php'];
+    $this->patchJson($url, ['deliverables' => [$command]])->assertOk();
+    expect($task->fresh()?->deliverables[0]['fails_on_base'])->toBeTrue();
 });
 
 it('allows DeliverablePathChecker callers to supply an explicit commit without default branch lookup', function (): void {

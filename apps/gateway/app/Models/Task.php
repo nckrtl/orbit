@@ -69,6 +69,8 @@ use LogicException;
  * @property string|null $pi_restart_source_turn_id
  * @property string|null $pi_restart_reservation
  * @property string|null $pi_restart_session_revision
+ * @property int|null $deliverable_correction_check_id
+ * @property array{comment_id: int, thread_id: int|null, key: string, message: string, state: string}|null $deliverable_correction_resume
  * @property int|null $resolution_delivered_comment_id
  * @property string $title
  * @property string $brief
@@ -183,6 +185,8 @@ final class Task extends Model
         'review_workspace_tree',
         'deliverables',
         'topology',
+        'deliverable_correction_check_id',
+        'deliverable_correction_resume',
         'fixup_problem',
         'fixup_head_sha',
         'communication_failures',
@@ -228,6 +232,8 @@ final class Task extends Model
         'fixup_head_sha',
         'deliverables',
         'topology',
+        'deliverable_correction_check_id',
+        'deliverable_correction_resume',
         'settled_at',
         'completion_attempt',
         'completion_handoff_comment_id',
@@ -537,6 +543,8 @@ final class Task extends Model
             'pi_restart_resumes' => 'integer',
             'pi_restart_thread_id' => 'integer',
             'ended_pr_notice_thread_id' => 'integer',
+            'deliverable_correction_check_id' => 'integer',
+            'deliverable_correction_resume' => 'array',
             'resolution_delivered_comment_id' => 'integer',
         ];
     }

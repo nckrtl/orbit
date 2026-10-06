@@ -6,13 +6,18 @@ namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Shared\StoredInteger;
+use App\Domain\Tasks\DeliverablePathChecker;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
+use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
+use App\Models\Activity;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 final readonly class UpdateTaskAction
@@ -27,6 +32,40 @@ final readonly class UpdateTaskAction
         return DB::transaction(static function () use ($group, $task, $data): Task {
             $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
             $task = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if ($data->deliverables !== null && ($check = TaskGroupGuard::deliverableCorrectionCheck($locked, $task)) !== null) {
+                if ($data->title !== null || $data->brief !== null || $data->position !== null) {
+                    throw TaskGroupGuard::notInBacklog();
+                }
+                if ($data->deliverables === []) {
+                    throw TaskGroupGuard::deliverablesRequired();
+                }
+
+                $task->setRelation('parent', $locked);
+                $commit = TaskReviewBase::commit($task);
+                $kind = $commit === '' ? 'provisional' : 'resolved';
+                if ($commit === '') {
+                    $commit = app(DeliverablePathRepository::class)->defaultBranchCommit($locked->project);
+                }
+                $errors = app(DeliverablePathChecker::class)->check($locked->project, $data->deliverables, $commit, $kind);
+                if ($errors !== []) {
+                    $messages = [];
+                    foreach ($errors as $field => $message) {
+                        $messages['deliverables.'.$field] = [$message];
+                    }
+                    throw ValidationException::withMessages($messages);
+                }
+
+                $old = $task->deliverables;
+                $task->update(['deliverables' => $data->deliverables, 'deliverable_correction_check_id' => $check->id]);
+                Activity::query()->create([
+                    'log_name' => 'tasks', 'description' => 'deliverables corrected', 'subject_type' => Task::class,
+                    'subject_id' => $task->id, 'properties' => ['check_id' => $check->id, 'old' => $old, 'new' => $data->deliverables],
+                    'request_id' => (string) Str::uuid(), 'command' => 'tasks:subtask:update', 'status' => 'completed',
+                ]);
+
+                return $task->refresh();
+            }
+
             $backlog = $locked->status === TaskGroupStatus::Backlog;
             $todoOutsideBacklog = $task->status === TaskStatus::Todo && in_array($locked->status, [
                 TaskGroupStatus::Todo,

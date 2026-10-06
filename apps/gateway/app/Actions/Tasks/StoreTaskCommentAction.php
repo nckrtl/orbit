@@ -41,6 +41,7 @@ final readonly class StoreTaskCommentAction
         private TaskTurnFetchNotice $fetchNotice,
         private TaskReviewPacketBuilder $reviewPackets,
         private RetryTaskBaselineAction $retryBaseline,
+        private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
     /** @param array<string, mixed> $payload */
@@ -49,7 +50,8 @@ final readonly class StoreTaskCommentAction
         $deliverResolution = false;
         $deliverDirection = false;
         $retryBaselineQueued = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued): TaskComment {
+        $deliverCorrection = false;
+        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued, &$deliverCorrection): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -71,13 +73,23 @@ final readonly class StoreTaskCommentAction
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
-                $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
-                $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
-                $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
+                $deliverCorrection = $task->status === TaskStatus::Running && $task->deliverable_correction_check_id !== null
+                    && ($task->deliverable_correction_resume === null || $task->deliverable_correction_resume['state'] === 'pending');
+                if ($deliverCorrection) {
+                    $this->correctionResume->reserve($task, $comment);
+                } else {
+                    $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
+                    $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
+                    $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
+                }
             }
 
             return $comment;
         });
+
+        if ($deliverCorrection) {
+            $this->correctionResume->execute($task);
+        }
 
         if ($deliverDirection) {
             TaskExecutionHold::run($task->parent, fn () => $this->deliverDirection($task, $comment));

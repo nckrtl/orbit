@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskSandboxAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
@@ -143,6 +144,7 @@ final readonly class TaskScheduler
         private TaskSandboxWarmPool $warmPool,
         private TaskPullRequestMerger $merger,
         private DeliverablePathChecker $deliverablePaths,
+        private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
     /**
@@ -251,6 +253,11 @@ final readonly class TaskScheduler
 
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
+                }
+                if ($task->status === TaskStatus::Running && ($task->deliverable_correction_resume['state'] ?? null) === 'pending') {
+                    $this->correctionResume->execute($task);
+                    $task->refresh();
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                 }
                 if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
                     try {
