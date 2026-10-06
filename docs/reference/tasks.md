@@ -306,7 +306,7 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 | `fails_on_base` | The JSON boolean `true` or `false`, on a `command` deliverable only. Omitted means `false`. `true` needs at least one path |
 | `paths` | A list of at most 100 relative file paths on a `command` deliverable. Each path is at most 500 characters and contains no `..` |
 
-A field of another type is refused with HTTP 422 `validation.failed`. The error names the field path, such as `deliverables.0.path`. The `fails_on_base` and `paths` errors also name the deliverable's `id`. Only a `file` deliverable's `path` accepts a glob: `*` matches in one directory, `**` matches across directories, and `?` matches one character. `paths` is not a glob.
+A field of another type is refused with HTTP 422 `validation.failed`. The error names the field path, such as `deliverables.0.path`. The `fails_on_base` and `paths` errors also name the deliverable's `id`. Only a `file` deliverable's `path` accepts a glob: `*` matches in one directory, `**` matches across directories, `?` matches one character, and `{a,b}` is a non-nested alternative. `paths` is not a glob.
 
 There is no `test` deliverable type. A migration converts stored `test` deliverables in tasks that are not completed, failed, or cancelled, and it leaves `task_check` unchanged. Each stored `test` deliverable names a Pest file and a test-name substring. The migration normalizes the project and file paths, then runs `vendor/bin/pest` from that project directory with the file and `--colors=never`. The name match is a case-sensitive substring, and regex characters in the name are escaped so they stay literal.
 
@@ -1419,7 +1419,7 @@ One check decides for every driver, because it does not depend on tool output. I
 
 ### Deliverables are checked, not read
 
-Orbit cannot check prose, so a subtask names typed items. The check script runs each command itself. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `file` path accepts a glob. A command's `paths` list is exact files, because a glob could match a file made to satisfy the base run.
+Orbit cannot check prose, so a subtask names typed items. The check script runs each command itself. The Gateway verifies against its own run, because the agent controls the workspace and could change a script that verified itself. A `file` path accepts a glob, including `{a,b}` alternation. A command's `paths` list is exact files, because a glob could match a file made to satisfy the base run.
 
 ### A command must fail on the start commit
 

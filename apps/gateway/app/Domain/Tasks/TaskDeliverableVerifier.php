@@ -124,14 +124,28 @@ final readonly class TaskDeliverableVerifier
 
     /**
      * Matches a path against a pattern where `*` stays within one directory, `**` crosses directories,
-     * and `?` is one character.
+     * `?` is one character, and `{a,b}` is a non-nested alternative.
      */
     public static function matches(string $pattern, string $path): bool
+    {
+        return preg_match('#\A'.self::toRegex($pattern).'\z#', $path) === 1;
+    }
+
+    private static function toRegex(string $pattern): string
     {
         $regex = '';
         $length = strlen($pattern);
         for ($index = 0; $index < $length; $index++) {
             $character = $pattern[$index];
+            if ($character === '{') {
+                $group = self::braceAlternation($pattern, $index);
+                if ($group !== null) {
+                    $regex .= '(?:'.implode('|', array_map(self::toRegex(...), $group['alternatives'])).')';
+                    $index = $group['end'];
+
+                    continue;
+                }
+            }
             if ($character === '*' && ($pattern[$index + 1] ?? '') === '*') {
                 $index++;
                 if (($pattern[$index + 1] ?? '') === '/') {
@@ -149,6 +163,36 @@ final readonly class TaskDeliverableVerifier
             }
         }
 
-        return preg_match('#\A'.$regex.'\z#', $path) === 1;
+        return $regex;
+    }
+
+    /**
+     * A non-nested `{a,b,...}` group. Nested braces and `{a}` without a comma stay literal.
+     *
+     * @return array{end: int, alternatives: list<string>}|null
+     */
+    private static function braceAlternation(string $pattern, int $open): ?array
+    {
+        $length = strlen($pattern);
+        $inside = '';
+        for ($index = $open + 1; $index < $length; $index++) {
+            $character = $pattern[$index];
+            if ($character === '{') {
+                return null;
+            }
+            if ($character === '}') {
+                if (! str_contains($inside, ',')) {
+                    return null;
+                }
+
+                return [
+                    'end' => $index,
+                    'alternatives' => explode(',', $inside),
+                ];
+            }
+            $inside .= $character;
+        }
+
+        return null;
     }
 }

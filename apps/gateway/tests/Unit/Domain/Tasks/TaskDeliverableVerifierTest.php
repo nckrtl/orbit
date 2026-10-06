@@ -10,7 +10,39 @@ use App\Domain\Tasks\TaskThreadRole;
 it('matches file deliverable globs where * stays in one directory and ** crosses directories', function (): void {
     expect(TaskDeliverableVerifier::matches('docs/**/*.md', 'docs/reference/tasks.md'))->toBeTrue()
         ->and(TaskDeliverableVerifier::matches('apps/*/README.md', 'apps/gateway/README.md'))->toBeTrue()
-        ->and(TaskDeliverableVerifier::matches('apps/*/README.md', 'apps/gateway/docs/README.md'))->toBeFalse();
+        ->and(TaskDeliverableVerifier::matches('apps/*/README.md', 'apps/gateway/docs/README.md'))->toBeFalse()
+        ->and(TaskDeliverableVerifier::matches('docs/?.md', 'docs/a.md'))->toBeTrue()
+        ->and(TaskDeliverableVerifier::matches('docs/?.md', 'docs/ab.md'))->toBeFalse();
+});
+
+it('matches file deliverable brace-alternation globs', function (string $pattern, string $path, bool $matches): void {
+    expect(TaskDeliverableVerifier::matches($pattern, $path))->toBe($matches);
+})->with([
+    'a Data path under directory alternatives' => ['app/{Data,Enums}/PantrySync/**/*.php', 'app/Data/PantrySync/V1/X.php', true],
+    'an Enums path under directory alternatives' => ['app/{Data,Enums}/PantrySync/**/*.php', 'app/Enums/PantrySync/V1/Y.php', true],
+    'a sibling directory outside the alternatives' => ['app/{Data,Enums}/PantrySync/**/*.php', 'app/Other/PantrySync/X.php', false],
+    'a database path under root alternatives' => ['{app,database}/**/*Pantry*.php', 'database/factories/PantryItemFactory.php', true],
+    'an app path whose file name has no Pantry' => ['{app,database}/**/*Pantry*.php', 'app/Data/PantrySync/V1/X.php', false],
+    'a brace without a comma stays literal' => ['app/{Data}/X.php', 'app/Data/X.php', false],
+    'an unclosed brace stays literal' => ['app/{Data,Enums/X.php', 'app/Data/X.php', false],
+]);
+
+it('verifies a file deliverable whose path uses brace alternation', function (): void {
+    $deliverable = TaskDeliverable::fromArray([
+        'id' => 'pantry-sync', 'type' => 'file', 'description' => 'Pantry sync types',
+        'path' => 'app/{Data,Enums}/PantrySync/**/*.php', 'change' => 'any',
+    ]);
+    $match = TaskDeliverableEvidence::fromArray([
+        'diff' => [['status' => 'A', 'path' => 'app/Data/PantrySync/V1/X.php']], 'commands' => [],
+    ]);
+    $miss = TaskDeliverableEvidence::fromArray([
+        'diff' => [['status' => 'A', 'path' => 'app/Other/PantrySync/X.php']], 'commands' => [],
+    ]);
+
+    expect(TaskDeliverableVerifier::failures([$deliverable], $match))->toBe([])
+        ->and(TaskDeliverableVerifier::failures([$deliverable], $miss))->toBe([
+            "pantry-sync (file): no path in the subtask's diff matches app/{Data,Enums}/PantrySync/**/*.php.",
+        ]);
 });
 
 it('renders a generic command deliverable and its base-run requirement in prompts', function (): void {
