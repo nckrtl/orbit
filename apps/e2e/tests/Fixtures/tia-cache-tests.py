@@ -990,7 +990,8 @@ class RealPestCacheTest(unittest.TestCase):
                 '<directory>tests</directory></testsuite></testsuites><source><include>'
                 '<directory>src</directory></include></source></phpunit>')
             (directory / 'tests/Pest.php').write_text(
-                "<?php\n\npest()->tia()->locally()->filtered()->directory(dirname(__DIR__).'/.orbit-tia');\n"
+                "<?php\n\npest()->tia()->defaultBranch('main')->locally()->filtered()"
+                "->directory(dirname(__DIR__).'/.orbit-tia');\n"
                 "require_once dirname(__DIR__).'/src/Value.php';\n")
             value = directory / 'src/Value.php'
             value.write_text("<?php\n\nfunction cacheValue(string $value): string\n{\n    return $value;\n}\n")
@@ -1011,6 +1012,7 @@ class RealPestCacheTest(unittest.TestCase):
                 cache.git(root, 'commit', '-m', message)
                 sha = cache.git(root, 'rev-parse', 'HEAD')
                 cache.git(root, 'update-ref', 'refs/remotes/origin/main', sha)
+                cache.git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/main')
                 return sha
 
             def check(checkout):
