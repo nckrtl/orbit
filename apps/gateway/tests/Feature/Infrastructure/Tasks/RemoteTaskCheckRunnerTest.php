@@ -129,8 +129,8 @@ describe('TaskCheckWorkerUser', function (): void {
         (new Process(['setfacl', '-m', 'u:nobody:rwx', $shared]))->mustRun();
         // mkdir -m alone preserves named-user ACLs inherited from the shared parent.
         expect(check_runner_as_worker($shared, 'mkdir phpstan && setfacl -b -k phpstan && chmod 0700 phpstan'))->toBe(0);
-        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result"';
-        expect((new Process(['bash', '-c', $analyse], null, ['TMPDIR' => $shared]))->run())->not->toBe(0);
+        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && cp "$TMPDIR/phpstan/result" phpstan-result && getfacl -cp "$TMPDIR" > tmp-acl && printf %s "$TMPDIR" > tmpdir-path';
+        expect((new Process(['bash', '-c', 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result"'], null, ['TMPDIR' => $shared]))->run())->not->toBe(0);
         $prior = getenv('TMPDIR');
         $priorServer = $_SERVER['TMPDIR'] ?? null;
         $priorEnvironment = $_ENV['TMPDIR'] ?? null;
@@ -145,10 +145,11 @@ describe('TaskCheckWorkerUser', function (): void {
             ]));
 
             expect($reading->exitCode)->toBe(0);
-            $temporary = $checkout.'/.git/orbit/tmp/check-'.posix_geteuid();
-            expect(file_get_contents($temporary.'/phpstan/result'))->toBe('analysed');
-            $permissions = (new Process(['getfacl', '-cp', $temporary]))->mustRun()->getOutput();
-            expect($permissions)->not->toContain('default:')->not->toContain('user:nobody:');
+            $temporary = file_get_contents($checkout.'/tmpdir-path');
+            expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-');
+            expect(file_get_contents($checkout.'/phpstan-result'))->toBe('analysed');
+            expect(file_get_contents($checkout.'/tmp-acl'))->not->toContain('default:')->not->toContain('user:nobody:');
+            expect(is_dir($temporary))->toBeFalse();
             expect(fileowner($shared.'/phpstan'))->toBe(posix_getpwnam('nobody')['uid']);
         } finally {
             putenv($prior === false ? 'TMPDIR' : 'TMPDIR='.$prior);
