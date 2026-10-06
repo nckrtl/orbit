@@ -145,6 +145,61 @@ describe(VpToolManager::class, function (): void {
         expect($inventorySsh->arguments()[1])->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
     })->with(['linux', 'macos']);
 
+    it('uses the scan-resolved Linux home for mutations beside a cache-only home', function (string $operation): void {
+        [$probeManager, $probeSsh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $node = vp_tool_node('linux', []);
+        $probeManager->existingBinary($node);
+        [$scopeResult, $binary] = vp_tool_run_scope_fixture($probeSsh->commands[0]->input ?? '');
+        expect($scopeResult->exitCode)->toBe(0, $scopeResult->stderr);
+
+        $ssh = new ToolManagerFakeSshExecutor([$scopeResult, vp_result("[]\n"), $scopeResult, vp_result()]);
+        $runner = new RemoteToolCommandRunner($ssh, vp_tool_keys(), vp_tool_known_hosts());
+        $versions = new SemverVersionNormalizer;
+        $manager = new VpToolManager($runner, $versions);
+        $inspector = new VpInventoryInspector($runner, $manager, $versions);
+
+        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
+        $manager->{$operation}($node, 'typescript');
+
+        expect($ssh->arguments()[1])->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
+        expect($ssh->arguments()[2])->toBe(['/bin/bash', '-seu', '--', 'orbit']);
+        expect($ssh->commands[2]->input)->toBe($probeSsh->commands[0]->input);
+        expect(array_slice($ssh->arguments()[3], 0, 3))->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary]);
+        expect(array_slice($ssh->arguments()[3], 3, 3))->toBe([$operation, '-g', 'typescript']);
+    })->with(['install', 'update', 'remove']);
+
+    it('preserves the managed opt home explicitly for Linux mutations', function (string $operation): void {
+        $scope = vp_result("/opt/orbit/vite-plus/bin/vp\n");
+        $ssh = new ToolManagerFakeSshExecutor([$scope, vp_result("[]\n"), $scope, vp_result()]);
+        $runner = new RemoteToolCommandRunner($ssh, vp_tool_keys(), vp_tool_known_hosts());
+        $versions = new SemverVersionNormalizer;
+        $manager = new VpToolManager($runner, $versions);
+        $inspector = new VpInventoryInspector($runner, $manager, $versions);
+        $node = vp_tool_node('linux', []);
+
+        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
+        $manager->{$operation}($node, 'typescript');
+
+        expect(array_slice($ssh->arguments()[1], 0, 3))->toBe(['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp']);
+        expect(array_slice($ssh->arguments()[3], 0, 3))->toBe(['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp']);
+        expect(array_slice($ssh->arguments()[3], 3, 3))->toBe([$operation, '-g', 'typescript']);
+    })->with(['install', 'update', 'remove']);
+
+    it('does not mutate when the Linux scope cannot be resolved', function (string $operation, int $exitCode, string $step): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result(exitCode: $exitCode)]);
+
+        expect(fn () => $manager->{$operation}(vp_tool_node('linux', []), 'typescript'))
+            ->toThrow(function (ToolManagerException $exception) use ($step): void {
+                expect($exception->step)->toBe($step);
+            });
+
+        expect($ssh->arguments())->toBe([['/bin/bash', '-seu', '--', 'orbit']]);
+    })->with(['install', 'update', 'remove'])->with([
+        'absent' => [42, 'manager-absent'],
+        'conflicting' => [43, 'manager-conflict'],
+        'probe failure' => [1, 'manager-probe'],
+    ]);
+
     it('keeps genuine vite-plus scope conflicts at exit 43', function (string $platform, string $fixture): void {
         [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
         $manager->existingBinary(vp_tool_node($platform, []));
@@ -284,7 +339,7 @@ describe(VpToolManager::class, function (): void {
     ]);
 
     it('uses the approved fixed VP argv through the complete lifecycle', function (): void {
-        [$manager, $ssh] = vp_tool_manager([
+        [$manager, $ssh] = vp_linux_tool_manager([
             vp_result("2.4.1\nextra line ignored\n"),
             vp_result('"5.8.2"'."\n"),
             vp_result('[{"name":"typescript","version":"5.7.3"}]'."\n"),
@@ -309,26 +364,37 @@ describe(VpToolManager::class, function (): void {
         expect($removalPlan->packages)->toBe(['typescript']);
         expect($removalPlan->removesOnly('typescript'))->toBeTrue();
         expect($ssh->arguments())->toBe([
-            ['/usr/local/bin/vp', '--version'],
-            ['/usr/local/bin/vp', 'info', 'typescript', 'version', '--json'],
-            ['/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', '--version'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'info', 'typescript', 'version', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
             [
-                '/usr/local/bin/vp',
+                'env',
+                'VP_HOME=/opt/orbit/vite-plus',
+                '/opt/orbit/vite-plus/bin/vp',
                 'install',
                 '-g',
                 'typescript',
                 '--node',
                 'lts',
             ],
+            ['/bin/bash', '-seu', '--', 'orbit'],
             [
-                '/usr/local/bin/vp',
+                'env',
+                'VP_HOME=/opt/orbit/vite-plus',
+                '/opt/orbit/vite-plus/bin/vp',
                 'update',
                 '-g',
                 'typescript',
                 '--reinstall-node-mismatch',
             ],
-            ['/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
-            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
         ]);
     });
 
@@ -342,7 +408,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('returns null when the installed package list is empty', function (): void {
-        [$manager, $ssh] = vp_tool_manager([
+        [$manager, $ssh] = vp_linux_tool_manager([
             vp_result("[]\n"),
         ]);
 
@@ -350,12 +416,13 @@ describe(VpToolManager::class, function (): void {
 
         expect($version)->toBeNull();
         expect($ssh->arguments())->toBe([
-            ['/usr/local/bin/vp', 'list', '-g', 'typescript', '--json'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'list', '-g', 'typescript', '--json'],
         ]);
     });
 
     it('rejects an empty top-level object for installed packages', function (): void {
-        [$manager] = vp_tool_manager([
+        [$manager] = vp_linux_tool_manager([
             vp_result("{}\n"),
         ]);
 
@@ -364,7 +431,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('rejects a numeric-key top-level object for installed packages', function (): void {
-        [$manager] = vp_tool_manager([
+        [$manager] = vp_linux_tool_manager([
             vp_result('{"0":{"name":"typescript","version":"5.7.3"}}'."\n"),
         ]);
 
@@ -373,7 +440,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('returns null when the installed package list contains only substring matches', function (): void {
-        [$manager] = vp_tool_manager([
+        [$manager] = vp_linux_tool_manager([
             vp_result('[{"name":"typescript-eslint","version":"8.0.0"}]'),
         ]);
 
@@ -381,7 +448,7 @@ describe(VpToolManager::class, function (): void {
     });
 
     it('fails closed on an invalid manager-version result', function (CommandResult $result, string $step): void {
-        [$manager] = vp_tool_manager([$result]);
+        [$manager] = vp_linux_tool_manager([$result]);
 
         expect(fn () => $manager->managerVersion(vp_tool_node()))
             ->toThrow(function (ToolManagerException $exception) use ($step): void {
@@ -402,7 +469,7 @@ describe(VpToolManager::class, function (): void {
     ]);
 
     it('fails closed on invalid candidate-version JSON output', function (CommandResult $result, string $step): void {
-        [$manager] = vp_tool_manager([$result]);
+        [$manager] = vp_linux_tool_manager([$result]);
 
         expect(fn () => $manager->candidateVersion(vp_tool_node(), 'typescript', ToolOperation::Install))
             ->toThrow(function (ToolManagerException $exception) use ($step): void {
@@ -425,7 +492,7 @@ describe(VpToolManager::class, function (): void {
     ]);
 
     it('fails closed on invalid installed-version JSON output', function (CommandResult $result, string $step): void {
-        [$manager] = vp_tool_manager([$result]);
+        [$manager] = vp_linux_tool_manager([$result]);
 
         expect(fn () => $manager->installedVersion(vp_tool_node(), 'typescript'))
             ->toThrow(function (ToolManagerException $exception) use ($step): void {
@@ -457,7 +524,7 @@ describe(VpToolManager::class, function (): void {
     ): void {
         $stdoutSentinel = 'secret mutation stdout';
         $stderrSentinel = 'secret mutation stderr';
-        [$manager, $ssh] = vp_tool_manager([
+        [$manager, $ssh] = vp_linux_tool_manager([
             vp_result($stdoutSentinel, exitCode: 14, stderr: $stderrSentinel),
         ]);
 
@@ -472,14 +539,14 @@ describe(VpToolManager::class, function (): void {
                     ->and($exception->getMessage())
                     ->not->toContain($stdoutSentinel, $stderrSentinel);
             });
-        expect($ssh->arguments())->toBe([$arguments]);
+        expect($ssh->arguments())->toBe([['/bin/bash', '-seu', '--', 'orbit'], ['env', 'VP_HOME=/opt/orbit/vite-plus', ...$arguments]]);
     })->with([
         'install' => [
             static function (VpToolManager $manager, Node $node): void {
                 $manager->install($node, 'typescript');
             },
             [
-                '/usr/local/bin/vp',
+                '/opt/orbit/vite-plus/bin/vp',
                 'install',
                 '-g',
                 'typescript',
@@ -493,7 +560,7 @@ describe(VpToolManager::class, function (): void {
                 $manager->update($node, 'typescript');
             },
             [
-                '/usr/local/bin/vp',
+                '/opt/orbit/vite-plus/bin/vp',
                 'update',
                 '-g',
                 'typescript',
@@ -503,25 +570,26 @@ describe(VpToolManager::class, function (): void {
         ],
         'removal plan' => [
             static fn (VpToolManager $manager, Node $node) => $manager->planRemoval($node, 'typescript'),
-            ['/usr/local/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
+            ['/opt/orbit/vite-plus/bin/vp', 'remove', '-g', '--dry-run', 'typescript'],
             'removal-plan',
         ],
         'remove' => [
             static function (VpToolManager $manager, Node $node): void {
                 $manager->remove($node, 'typescript');
             },
-            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
             'remove',
         ],
     ]);
 
     it('remove executes exactly one VP removal command without replanning', function (): void {
-        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        [$manager, $ssh] = vp_linux_tool_manager([vp_result()]);
 
         $manager->remove(vp_tool_node(), 'typescript');
 
         expect($ssh->arguments())->toBe([
-            ['/usr/local/bin/vp', 'remove', '-g', 'typescript'],
+            ['/bin/bash', '-seu', '--', 'orbit'],
+            ['env', 'VP_HOME=/opt/orbit/vite-plus', '/opt/orbit/vite-plus/bin/vp', 'remove', '-g', 'typescript'],
         ]);
     });
 
@@ -610,21 +678,21 @@ describe(VpToolManager::class, function (): void {
 
         expect($ssh->arguments())->toBe([
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, '--version'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, '--version'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'info', '@openai/codex', 'version', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'info', '@openai/codex', 'version', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'list', '-g', '@openai/codex', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', '@openai/codex', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'list', '-g', 'pnpm', '--json'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'list', '-g', 'pnpm', '--json'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'install', '-g', '@openai/codex', '--node', 'lts'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'install', '-g', '@openai/codex', '--node', 'lts'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'update', '-g', '@openai/codex', '--reinstall-node-mismatch'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'update', '-g', '@openai/codex', '--reinstall-node-mismatch'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'remove', '-g', '--dry-run', '@openai/codex'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'remove', '-g', '--dry-run', '@openai/codex'],
             ['/bin/bash', '-su', '--', 'mini'],
-            [$binary, 'remove', '-g', '@openai/codex'],
+            ['env', 'VP_HOME=/Users/mini/.local/share/vite-plus', $binary, 'remove', '-g', '@openai/codex'],
         ]);
     });
 
@@ -679,6 +747,21 @@ function vp_tool_manager(array $results): array
         ),
         $ssh,
     ];
+}
+
+/**
+ * @param  list<CommandResult>  $results
+ * @return array{VpToolManager, ToolManagerFakeSshExecutor}
+ */
+function vp_linux_tool_manager(array $results): array
+{
+    $probedResults = [];
+    foreach ($results as $result) {
+        $probedResults[] = vp_result("/opt/orbit/vite-plus/bin/vp\n");
+        $probedResults[] = $result;
+    }
+
+    return vp_tool_manager($probedResults);
 }
 
 /**

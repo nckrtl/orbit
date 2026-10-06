@@ -18,8 +18,6 @@ use App\Models\Node;
 
 final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 {
-    private const string VP_BINARY = '/usr/local/bin/vp';
-
     private const int MAX_PACKAGE_LENGTH = 214;
 
     private const int MAX_VERSION_LENGTH = 255;
@@ -496,7 +494,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     {
         $this->guardNode($node);
         $this->guardPackage($package);
-        $this->existingBinary($node);
         $version = $this->installedVersion($node, $package);
 
         if ($version === null) {
@@ -512,6 +509,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function install(Node $node, string $package): void
     {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+
         $this->mutate(
             node: $node,
             package: $package,
@@ -522,6 +522,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function update(Node $node, string $package): void
     {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+
         $this->mutate(
             node: $node,
             package: $package,
@@ -548,6 +551,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function remove(Node $node, string $package): void
     {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+
         $this->mutate(
             node: $node,
             package: $package,
@@ -634,11 +640,11 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     /** @return non-empty-list<string> */
     private function vpArguments(Node $node, string ...$arguments): array
     {
-        $binary = $node->platform === 'macos'
-            ? $this->resolveMacBinary($node)
-            : self::VP_BINARY;
+        $binary = $this->existingBinary($node);
 
         return array_values([
+            'env',
+            'VP_HOME='.dirname($binary, 2),
             $binary,
             ...$arguments,
         ]);
