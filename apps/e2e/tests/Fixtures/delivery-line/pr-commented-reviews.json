@@ -1,10 +1,42 @@
 [
   {
-    "id": 1,
+    "id": 5407909532,
+    "node_id": "PRR_kwDOUFw4mM8AAAABQlYmnA",
     "user": {
-      "login": "nckrtl"
+      "login": "nckrtl",
+      "id": 18613261,
+      "node_id": "MDQ6VXNlcjE4NjEzMjYx",
+      "avatar_url": "https://avatars.githubusercontent.com/u/18613261?u=2d5400800958758bb824facbdfe19f47d76c5c0f&v=4",
+      "gravatar_id": "",
+      "url": "https://api.github.com/users/nckrtl",
+      "html_url": "https://github.com/nckrtl",
+      "followers_url": "https://api.github.com/users/nckrtl/followers",
+      "following_url": "https://api.github.com/users/nckrtl/following{/other_user}",
+      "gists_url": "https://api.github.com/users/nckrtl/gists{/gist_id}",
+      "starred_url": "https://api.github.com/users/nckrtl/starred{/owner}{/repo}",
+      "subscriptions_url": "https://api.github.com/users/nckrtl/subscriptions",
+      "organizations_url": "https://api.github.com/users/nckrtl/orgs",
+      "repos_url": "https://api.github.com/users/nckrtl/repos",
+      "events_url": "https://api.github.com/users/nckrtl/events{/privacy}",
+      "received_events_url": "https://api.github.com/users/nckrtl/received_events",
+      "type": "User",
+      "user_view_type": "public",
+      "site_admin": false
     },
+    "body": "Pass on 869557fe5a88a217773e0a661019d8acbeaeeb61. GitHub rejected an approval because this account opened the pull request, so this is a submitted review on that commit, not an issue comment.\n\nbug-repro does not fetch. It exits main_stale when local origin/main or main differs from git ls-remote origin main. The planted grep is gone. deploy-verify --help and the certificate unreachable path both name SSL_CERT_FILE. Tests cover those two. Required checks succeeded on this head. macOS arm64 on mini and Mintlify were skipped.\n\nNot a miss: bug-repro was not run against a live failing command. No current command on main still fails, and the script refuses a stale main instead of fetching.",
     "state": "COMMENTED",
+    "html_url": "https://github.com/nckrtl/orbit/pull/946#pullrequestreview-5407909532",
+    "pull_request_url": "https://api.github.com/repos/nckrtl/orbit/pulls/946",
+    "author_association": "OWNER",
+    "_links": {
+      "html": {
+        "href": "https://github.com/nckrtl/orbit/pull/946#pullrequestreview-5407909532"
+      },
+      "pull_request": {
+        "href": "https://api.github.com/repos/nckrtl/orbit/pulls/946"
+      }
+    },
+    "submitted_at": "2026-10-04T19:59:14Z",
     "commit_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   }
 ]

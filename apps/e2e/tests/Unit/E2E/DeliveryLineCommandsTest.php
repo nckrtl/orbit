@@ -295,7 +295,7 @@ describe('delivery-line proof commands', function (): void {
             ->and($result['stderr'])->toContain('Do not merge');
     });
 
-    it('passes pr-head-check when the review, Required checks, and diff match the head', function (): void {
+    it('passes pr-head-check when an APPROVED review, Required checks, and diff match the exact head', function (): void {
         $result = deliveryLineRun('pr-head-check', [
             '--pr', 'https://github.com/nckrtl/orbit/pull/1',
             '--pull-file', deliveryLineFixture('pr-945-pull.json'),
@@ -326,7 +326,7 @@ describe('delivery-line proof commands', function (): void {
             ->and(data_get($result['json'], 'required_checks.head_sha'))->toBe('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
     });
 
-    it('keeps a COMMENTED review on the current head and does not require APPROVED', function (): void {
+    it('fails pr-head-check for a COMMENTED review on the exact current head', function (): void {
         $result = deliveryLineRun('pr-head-check', [
             '--pr', 'https://github.com/nckrtl/orbit/pull/1',
             '--pull-file', deliveryLineFixture('pr-945-pull.json'),
@@ -335,9 +335,31 @@ describe('delivery-line proof commands', function (): void {
             '--files-file', deliveryLineFixture('pr-945-files.json'),
         ]);
 
-        expect($result['exit'])->toBe(0)
-            ->and($result['json']['passed'] ?? null)->toBeTrue()
-            ->and($result['json']['kept_reviews'] ?? null)->toBe(1);
+        expect($result['exit'])->toBe(1)
+            ->and($result['json']['passed'] ?? null)->toBeFalse()
+            ->and($result['json']['kept_reviews'] ?? null)->toBe(0)
+            ->and($result['stderr'])->toContain('Do not merge');
+    });
+
+    it('fails pr-head-check and drops an APPROVED review on another commit', function (): void {
+        $pullPath = temporaryPath('orbit-delivery-other-head-', 6);
+        file_put_contents($pullPath, json_encode([
+            'head' => ['sha' => 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb'],
+        ], JSON_THROW_ON_ERROR));
+
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/1',
+            '--pull-file', $pullPath,
+            '--reviews-file', deliveryLineFixture('pr-pass-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json']['passed'] ?? null)->toBeFalse()
+            ->and($result['json']['error'] ?? null)->toBe('head_mismatch')
+            ->and($result['json']['reviews'] ?? null)->toBe(1)
+            ->and($result['json']['kept_reviews'] ?? null)->toBe(0);
     });
 
     it('names a tasks:merge leftover and refuses to merge', function (): void {
@@ -358,7 +380,7 @@ describe('delivery-line proof commands', function (): void {
         $result = deliveryLineRun('pr-head-check', [
             '--pr', 'https://github.com/nckrtl/orbit/pull/946',
             '--pull-file', deliveryLineFixture('pr-945-pull.json'),
-            '--reviews-file', deliveryLineFixture('pr-commented-reviews.json'),
+            '--reviews-file', deliveryLineFixture('pr-pass-reviews.json'),
             '--checks-file', deliveryLineFixture('pr-945-checks.json'),
             '--files-file', deliveryLineFixture('pr-946-files.json'),
         ]);
