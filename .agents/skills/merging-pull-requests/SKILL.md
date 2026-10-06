@@ -7,6 +7,8 @@ description: Use when asked to merge an approved Orbit PR or finish its cleanup.
 
 Merge an approved pull request only when that merge is authorized.
 
+Before any review or merge attempt, run `bin/pr-head-check --pr <pr-url>` and read its JSON, including when the command exits nonzero. When the JSON has `merged:true`, stop: the pull request is already merged and this merge flow is a terminal no-op. Do not review it again or run `gh pr merge`. This applies even when `passed` is `false` or the result names a missing review or another mismatch. When `merged` is `false`, continue with all review and merge requirements below. A missing or unreadable `merged` field is not evidence of a merge; resolve the read before proceeding.
+
 1. Confirm that the feature is complete, blocking findings are resolved, required verification is complete, and independent code and Incus review covers the current pull request commit.
 2. Confirm scoped maintainer authorization. For an Orbit task pull request, delegated final review and merge authorizes only that named work. Missing authorization stops the merge. The delegation does not authorize an unrelated merge. Run `bin/tia-cache status --json --remote` and stop when `correctness_failures` is non-empty for work that is not the reviewed fix for that failure. Stop when that status cannot be read. A maintenance failure is not this hold.
 3. For an Orbit task pull request, follow the [final review workflow](../../../docs/reference/implementation-loop.md#final-review-of-an-orbit-task-pull-request). Use the maintainer's GitHub CLI profile and confirm the active account with `gh api user --jq .login`. Read the pull request with `gh api repos/{owner}/{repo}/pulls/<number> --jq '{head: .head.sha, author: .user.login}'`. Read every review page with `gh api --paginate --slurp repos/{owner}/{repo}/pulls/<number>/reviews` and flatten every page. `{owner}` and `{repo}` come from the current repository. Compare review `user.login` with the pull request's REST `user.login`, not with `gh pr view --json author`, because a GitHub App author is shown differently there. Keep a review only when its `user.login` is the maintainer profile, that login is not the pull request author, its `commit_id` equals the current full head SHA, and its state is not `DISMISSED` or `PENDING`. Require a kept review with state `APPROVED` whose body records that full SHA, the whole-pull-request assessment, the evidence and results, the limitations, and the verdict. Ignore that approval when a later `CHANGES_REQUESTED` review from the same account has the same `commit_id`. A later `COMMENTED` review does not cancel the approval.
@@ -19,6 +21,8 @@ Merge an approved pull request only when that merge is authorized.
 9. Preserve review evidence and clean up the feature's branch, clean worktree, and allocated resources. Follow the cleanup safeguards for retained Incus machines.
 
 For cleanup after a merge, verify the merged pull request and finish the remaining steps. The internal `bin/worktree-remove ISSUE` helper verifies the merge and cleans its worktree.
+
+Do not merge added object-storage-host or linear-reference leftovers. Do not add hostnames under the generic `upcloudobjects.com` provider suffix (object-storage-host), `linear.app` references, Linear issue IDs, or Linear issue, ticket, project, product, task, integration, or workspace wording (linear-reference). Do not include real storage bucket, endpoint, region, or account names in detector patterns or fixtures.
 
 Report the merge commit and any cleanup still needed.
 
