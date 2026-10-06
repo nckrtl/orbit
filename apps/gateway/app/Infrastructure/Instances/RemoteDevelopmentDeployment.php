@@ -28,6 +28,7 @@ use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use Closure;
+use Illuminate\Support\Facades\Log;
 
 final readonly class RemoteDevelopmentDeployment implements DevelopmentDeployment
 {
@@ -221,12 +222,27 @@ final readonly class RemoteDevelopmentDeployment implements DevelopmentDeploymen
     /** @param list<string> $extra */
     private function run(Instance $instance, string $program, string $step, array $extra = []): CommandResult
     {
-        return $this->ssh->execute(
+        $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(arguments: [...$this->arguments($instance), ...$extra], input: $program, maxOutputBytes: 4096),
             'development-deployment-'.$step,
             'deployment.'.$step.'_failed',
         );
+        if ($step === 'releases' || $step === 'prune') {
+            foreach (explode("\n", $result->stderr) as $line) {
+                $parts = explode("\t", $line);
+                if (count($parts) === 3 && $parts[0] === 'SKIPPED_BROKEN_RELEASE'
+                    && DeploymentRelease::isValidName($parts[1]) && $parts[2] === 'missing-worktree-admin') {
+                    Log::warning('Skipping owned broken development release.', [
+                        'instance_id' => $instance->id,
+                        'release' => $parts[1],
+                        'reason' => 'missing-worktree-admin',
+                    ]);
+                }
+            }
+        }
+
+        return $result;
     }
 
     private function receipt(Instance $instance, CommandResult $result): DeploymentRelease

@@ -119,6 +119,32 @@ final class DevelopmentReleaseProgram
                 guard_file "$release_marker"
                 test "$(cat -- "$release_marker")" = "$identity:$name"
             }
+            inspect_release() {
+                name=$1
+                printf '%s' "$name" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$'
+                release="$releases/$name"
+                test -d "$release" && test ! -L "$release" || exit 1
+                test "$(stat -c %u -- "$release")" = "$(id -u)"
+                test "$(realpath -e -- "$release")" = "$release"
+                guard_file "$release/.git"
+                guard_file "$state/release-$name"
+                test "$(cat -- "$state/release-$name")" = "$identity:$name"
+                broken_release=0
+                git_directory="$home/.git/worktrees/$name"
+                # Only a missing, exactly named admin entry with intact ownership is skippable.
+                # Do not turn a general guard failure into permission to ignore an unknown path.
+                if [ "$(cat -- "$release/.git")" = "gitdir: $git_directory" ] && [ ! -e "$git_directory" ] && [ ! -L "$git_directory" ]; then
+                    test -d "$home/.git/worktrees" && test ! -L "$home/.git/worktrees" || exit 1
+                    test "$(stat -c %u -- "$home/.git/worktrees")" = "$(id -u)"
+                    test "$(realpath -e -- "$home/.git/worktrees")" = "$home/.git/worktrees"
+                    if git -C "$release" rev-parse --absolute-git-dir >/dev/null 2>&1; then exit 1; else git_status=$?; fi
+                    test "$git_status" = 128
+                    broken_release=1
+                    printf 'SKIPPED_BROKEN_RELEASE\t%s\tmissing-worktree-admin\n' "$name" >&2
+                else
+                    guard_release "$name"
+                fi
+            }
             recover_intents() {
                 local intent value intended_name intended_commit
                 while IFS= read -r -d '' intent; do
@@ -301,7 +327,8 @@ final class DevelopmentReleaseProgram
             selected=$(selected_name)
             printf 'SELECTED\t%s\n' "$selected"
             while IFS= read -r -d '' entry; do
-                guard_release "${entry##*/}"
+                inspect_release "${entry##*/}"
+                if [ "$broken_release" = 1 ]; then continue; fi
                 printf 'RELEASE\t%s\n' "$name"
             done < <(find -P "$releases" -mindepth 1 -maxdepth 1 -print0)
             BASH;
@@ -485,7 +512,8 @@ final class DevelopmentReleaseProgram
                 candidate=${entry##*/}
                 if [ "$candidate" = "$selected" ] || [ "$candidate" = "$previous" ]; then continue; fi
                 # Fail closed on an unregistered path; never delete by age or prefix alone.
-                guard_release "$candidate"
+                inspect_release "$candidate"
+                if [ "$broken_release" = 1 ]; then continue; fi
                 if [ "${retained[$candidate]:-}" = 1 ]; then continue; fi
                 git -C "$home" worktree remove --force -- "$release"
                 rm -f -- "$state/previous-$candidate" "$state/restored-$candidate" "$state/release-$candidate"
