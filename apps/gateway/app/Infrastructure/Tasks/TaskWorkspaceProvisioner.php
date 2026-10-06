@@ -17,6 +17,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
@@ -28,10 +29,13 @@ use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskConcurrencyGuard;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
@@ -77,11 +81,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             return null;
         }
 
-        try {
-            return $this->createWorkspace($group, $node, $visitable);
-        } catch (ResourceOperationException|RuntimeConvergenceException) {
-            return null;
-        }
+        return $this->createWorkspace($group, $node, $visitable);
     }
 
     private function createWorkspace(Task $group, Node $node, bool $visitable): Instance
@@ -137,19 +137,59 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         return $this->sourceLock->synchronized(
             $instance->node_id,
-            function () use ($instance, $visitable): Instance {
-                $resolved = $this->prepareSource($instance);
-                $this->source->inspectPrepared($resolved);
+            function () use ($group, $instance, $visitable): Instance {
+                try {
+                    $resolved = $this->prepareSource($instance);
+                    $this->source->inspectPrepared($resolved);
 
-                if (! $visitable) {
+                    if ($visitable) {
+                        $this->development->reserve($resolved, null);
+                        $resolved = $this->development->complete($resolved, null);
+                    }
+
+                    $resolved->update(['failed_step' => null, 'error_code' => null]);
+
                     return $resolved;
+                } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+                    $this->recordFailure($group, $instance, $exception);
+
+                    throw $exception;
                 }
-
-                $this->development->reserve($resolved, null);
-
-                return $this->development->complete($resolved, null);
             },
         );
+    }
+
+    private function recordFailure(Task $group, Instance $instance, ResourceOperationException|RuntimeConvergenceException $exception): void
+    {
+        $instance->refresh();
+        $step = $exception instanceof RuntimeConvergenceException
+            ? $exception->step
+            : match ($instance->status) {
+                InstanceState::Reserved => 'source-prepare',
+                InstanceState::CheckoutPrepared => 'source-resolve',
+                default => 'provisioning',
+            };
+
+        DB::transaction(static function () use ($group, $instance, $step, $exception): void {
+            $reserved = Task::topLevel()->whereKey($group->id)
+                ->where('status', TaskGroupStatus::Reserved)
+                ->where('reserved_at', $group->reserved_at)
+                ->lockForUpdate()->first();
+            if (! $reserved instanceof Task) {
+                return;
+            }
+
+            $reserved->update(['assistance_reason' => TaskScheduler::ProvisioningFailedPrefix.$exception->errorCode.'.']);
+            $instance->update(['failed_step' => $step, 'error_code' => $exception->errorCode]);
+            Route::query()
+                ->whereHas('targets', static fn ($query) => $query->where('instance_id', $instance->id))
+                ->where('status', '<>', RouteStatus::Active->value)
+                ->update([
+                    'status' => RouteStatus::Failed,
+                    'failed_step' => $step,
+                    'error_code' => $exception->errorCode,
+                ]);
+        });
     }
 
     /**

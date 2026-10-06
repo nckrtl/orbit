@@ -558,9 +558,17 @@ When the workspace is ready, the task becomes `running`, and its first subtask s
 | Cause | Result |
 | --- | --- |
 | Every fitting Node is full | The task waits without a reason. When no `app-dev` Node has capacity, claims stop until the next tick. |
-| No Node fits, the Project lacks a valid default branch or repository, a routed workspace lacks a valid root, or provisioning throws | Reason `Workspace provisioning did not return an instance.` The error goes to the Gateway log. |
+| No Node fits, the Project lacks a valid default branch or repository, or a routed workspace lacks a valid root | Reason `Workspace provisioning did not return an instance.` |
+| Provisioning fails with a convergence or resource-operation error | Reason `Workspace provisioning failed: {error_code}.`, for example `app-dev.source_access_failed`. The Instance and its non-active Route record `failed_step` and `error_code`. |
+| Provisioning throws an unexpected error | Reason `Workspace provisioning did not return an instance.` The error goes to the Gateway log. |
 | The move to `running` fails after provisioning | Reason `The task could not start after its workspace was provisioned.` The task keeps its workspace. |
 | The task stays `reserved` longer than `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Reason `The task stayed reserved too long and returned to todo.` |
+
+A failed Route retains its publication record: Caddy may already have loaded its sites before a later Router or DNS step failed. Retry completes the projection; cancellation removes it through the usual workspace cleanup.
+
+Failed provisioning retries after 1, 2, 5, 10, and then 30 minutes between attempts, capped at 30 minutes. The scheduler skips that group until its retry is due and can claim other groups meanwhile. A successful provisioning attempt clears the retry history and the workspace failure fields. Backoff uses the Gateway cache; a missing entry or a cache failure allows an attempt.
+
+Failure evidence and the coded assistance reason are recorded together, only for the reservation that failed. Retry-history writes and clears also hold that reservation's lock, so a delayed older claim cannot change a newer attempt's backoff. If the claiming process stops before scheduling its retry, stale-reservation recovery restores the coded reason from that reservation's workspace evidence and schedules a new backoff before returning it to `todo`.
 
 These reasons clear when the task starts, waits for capacity, or moves to `backlog`. Each release applies only while the claim still holds that reservation, so a claim never overwrites a newer claim or a cancel.
 
@@ -582,7 +590,7 @@ When the implementer cannot start, the subtask and the task become `failed`, and
 
 The task workspace is one fresh Instance that every subtask of the task shares. Its name and its branch are `task-{id}`. It lives in the Node's apps root like any development Instance. Its Project setup steps [copy dependencies](/domains/applications#dependency-copy) from the successful `default` release on the same Node.
 
-Before returning the workspace or activating its Route, Orbit inspects its source and repairs worker and managed-user ACLs. A linked worktree also needs access to its private Git administration directory and the shared refs and objects. An inspection failure leaves the workspace unexposed and the claim fails. Project setup owns dependency copies; the [task check](#project-check) runs as the managed user and shares entries it creates with the worker before returning.
+Before returning the workspace or activating its Route, Orbit inspects its source and repairs worker and managed-user ACLs. A linked worktree also needs access to its private Git administration directory and the shared refs and objects. An inspection failure stops that claim before new Route projection. An earlier attempt may already have published sites; the failure record does not imply that those sites were withdrawn. Project setup owns dependency copies; the [task check](#project-check) runs as the managed user and shares entries it creates with the worker before returning.
 
 A visitable Laravel task workspace inherits the configured web root; a nested root such as `apps/site/public` uses the shared [application directory](/reference/projects#application-directory) for environment and runtime consumers. Preparation and inspection still verify Git identity, checkout ownership, task metadata, and recursive ACLs over the whole repository. Unrouted workspaces skip application classification; inspection does not discover a nested app.
 

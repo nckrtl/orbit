@@ -8,6 +8,9 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterRouterOperationLock;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Instances\DevelopmentInstanceProvisioner;
+use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
+use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Transfer\InstanceTransferStatus;
 use App\Domain\Instances\Transfer\InstanceTransferStep;
@@ -23,6 +26,9 @@ use App\Domain\Routes\RoutePublication;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\InstanceProvisionIntent;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskWorkspaceName;
 use App\Infrastructure\AppDev\DevelopmentCaddyConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
 use App\Infrastructure\AppDev\DevelopmentPhpFpmConfigRenderer;
@@ -47,6 +53,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\TaskWorkspaceProvisioner;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\InstanceTransfer;
@@ -54,6 +61,7 @@ use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\Task;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
@@ -1246,6 +1254,69 @@ it('reports runtime certificate firewall and DNS publication boundaries before a
     'firewall' => ['firewall', 'route-firewall', 'app-dev.route_firewall_failed'],
     'publication' => ['dns', 'private-dns', 'app-dev.dns_config_failed'],
 ]);
+
+it('retains provisionWorkspace publication evidence after workload Caddy succeeds and DNS fails', function (): void {
+    [$instance, $route, $workload] = orb127_route_projection_models();
+    $instance->project->update(['default_branch' => 'main']);
+    $workload->processes()->create([
+        'name' => 'pi-server',
+        'runtime' => 'systemd',
+        'working_directory' => '/home/orbit',
+        'runtime_config' => ['command' => ['/home/orbit/.local/bin/pi-server', 'serve', '--host=10.44.0.10', '--port=3774']],
+        'restart_policy' => 'always',
+        'keep_alive' => true,
+        'desired_state' => 'running',
+        'status' => LifecycleStatus::Active,
+    ]);
+    $group = Task::query()->create([
+        'project_id' => $instance->project_id,
+        'title' => 'DNS failure after Caddy publication',
+        'brief' => 'Keep the published projection visible to cleanup.',
+        'implementer_agent_driver' => 'pi',
+        'reviewer_agent_driver' => 'pi',
+        'status' => TaskGroupStatus::Reserved,
+        'reserved_at' => now(),
+    ]);
+    $instance->update([
+        'name' => TaskWorkspaceName::for($group),
+        'branch_override' => TaskWorkspaceName::for($group),
+        'branch' => TaskWorkspaceName::for($group),
+        'task_workspace_routed' => true,
+    ]);
+    [$projector, $ssh, $processes, $home] = orb127_route_projector(failDns: true);
+    $source = Mockery::mock(DevelopmentInstanceSourceLifecycle::class);
+    $source->shouldReceive('inspectPrepared')->twice();
+    $source->shouldReceive('inspectResolved')->once()->andReturn(new DevelopmentSourceResolution($instance->branch, $instance->starting_commit));
+    app()->instance(DevelopmentInstanceSourceLifecycle::class, $source);
+    $development = Mockery::mock(DevelopmentInstanceProvisioner::class);
+    $development->shouldReceive('reserve')->once();
+    $development->shouldReceive('complete')->once()->andReturnUsing(function (Instance $workspace) use ($projector, $route): Instance {
+        $projector->converge($workspace, $route);
+
+        return $workspace;
+    });
+    app()->instance(DevelopmentInstanceProvisioner::class, $development);
+
+    try {
+        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true)))
+            ->toThrow(RuntimeConvergenceException::class);
+
+        expect(collect($ssh->commands)->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'orbit-caddy-build-result')))
+            ->toHaveCount(2);
+        expect($processes->invocations)->toHaveCount(1);
+        expect($route->fresh()->status)->toBe(RouteStatus::Failed)
+            ->and($route->fresh()->sites_published)->toBeTrue()
+            ->and($route->fresh()->failed_step)->toBe('private-dns')
+            ->and($route->fresh()->error_code)->toBe('app-dev.dns_config_failed');
+        expect(new DevelopmentSiteRepository()->forNode($workload)->contains(
+            static fn (DevelopmentSite $site): bool => $site->domain === $route->domain,
+        ))->toBeTrue();
+        expect($instance->fresh()->failed_step)->toBe('private-dns')
+            ->and($group->fresh()->assistance_reason)->toBe('Workspace provisioning failed: app-dev.dns_config_failed.');
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
 
 /** @return array{Instance, Route, Node, Node} */
 function orb127_route_projection_models(

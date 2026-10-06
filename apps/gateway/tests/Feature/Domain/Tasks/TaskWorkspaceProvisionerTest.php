@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
@@ -18,6 +19,9 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Routes\RouteProvenance;
+use App\Domain\Routes\RoutePublication;
+use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\InstanceProvisioning;
@@ -26,6 +30,7 @@ use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
@@ -35,7 +40,9 @@ use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
+use App\Models\Route;
 use App\Models\Task;
+use Illuminate\Support\Facades\Cache;
 
 function provisioner_app(
     string $slug,
@@ -121,6 +128,10 @@ function bind_task_workspace_fakes(): object
         /** @var list<string> */
         public array $calls = [];
 
+        public ?Throwable $failure = null;
+
+        public ?Closure $beforeFailure = null;
+
         public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->calls[] = 'prepare';
@@ -129,6 +140,13 @@ function bind_task_workspace_fakes(): object
         public function inspectPrepared(Instance $instance): void
         {
             $this->calls[] = 'inspect-prepared';
+
+            if ($this->failure instanceof Throwable) {
+                if ($this->beforeFailure instanceof Closure) {
+                    ($this->beforeFailure)();
+                }
+                throw $this->failure;
+            }
         }
 
         public function resolve(Instance $instance): DevelopmentSourceResolution
@@ -174,6 +192,139 @@ function bind_task_workspace_fakes(): object
 
     return (object) ['source' => $source, 'development' => $development];
 }
+
+it('records provisionWorkspace failures on Instance and Route and names the code in assistance', function (string $kind, string $step, string $code): void {
+    Cache::flush();
+    $project = provisioner_app('failed-workspace');
+    $node = provisioner_node('failed-dev', '10.44.0.190');
+    $group = provisioner_group($project);
+    $fakes = bind_task_workspace_fakes();
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+    $instance->update(['task_workspace_routed' => true]);
+    $route = Route::query()->create([
+        'project_id' => $project->id,
+        'generation_basis_node_id' => $node->id,
+        'node_id' => $node->id,
+        'domain' => 'failed-workspace.test',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+        'sites_published' => true,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $fakes->source->failure = $kind === 'runtime'
+        ? new RuntimeConvergenceException($step, $code, 'Source inspection failed.')
+        : new ResourceOperationException($code, 'Source identity changed.', 409);
+    $group->update(['status' => TaskGroupStatus::Todo]);
+
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+
+    expect($instance->fresh()->failed_step)->toBe($step)
+        ->and($instance->fresh()->error_code)->toBe($code);
+    expect($route->fresh()->failed_step)->toBe($step)
+        ->and($route->fresh()->error_code)->toBe($code)
+        ->and($route->fresh()->status)->toBe(RouteStatus::Failed)
+        ->and($route->fresh()->sites_published)->toBeTrue();
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
+        ->and($group->fresh()->assistance_reason)->toBe('Workspace provisioning failed: '.$code.'.')
+        ->and(TaskScheduler::isClaimFailureReason($group->fresh()->assistance_reason))->toBeTrue();
+})->with([
+    'source_access_failed' => ['runtime', 'source-access', 'app-dev.source_access_failed'],
+    'resource operation' => ['resource', 'provisioning', 'instance.source_identity_changed'],
+]);
+
+it('recovers ProvisioningFailed assistance and backoff when a worker stops after recording failure', function (): void {
+    Cache::flush();
+    $this->freezeTime();
+    config(['orbit.tasks.reserved_timeout_seconds' => 60]);
+    $project = provisioner_app('interrupted-workspace');
+    provisioner_node('interrupted-dev', '10.44.0.192');
+    $group = provisioner_group($project);
+    $group->update(['reserved_at' => now()]);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->failure = new RuntimeConvergenceException('source-access', 'app-dev.source_access_failed', 'Source inspection failed.');
+
+    // Stop at the provisioner boundary, without running the scheduler's failure handoff.
+    expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+        ->toThrow(RuntimeConvergenceException::class);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Reserved)
+        ->and($group->fresh()->assistance_reason)->toBe('Workspace provisioning failed: app-dev.source_access_failed.')
+        ->and(Cache::get('tasks.workspace-provisioning.'.$group->id))->toBeNull();
+    $calls = count($fakes->source->calls);
+    $this->travel(61)->seconds();
+
+    expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(1);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
+        ->and($group->fresh()->assistance_reason)->toBe('Workspace provisioning failed: app-dev.source_access_failed.');
+    $this->travel(59)->seconds();
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+        ->and(count($fakes->source->calls))->toBe($calls);
+    $this->travel(1)->seconds();
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+        ->and(count($fakes->source->calls))->toBe($calls + 1);
+    $this->travelBack();
+});
+
+it('fences provisionWorkspace failure evidence from a newer reservation', function (): void {
+    Cache::flush();
+    $this->freezeTime();
+    config(['orbit.tasks.reserved_timeout_seconds' => 60]);
+    $project = provisioner_app('fenced-workspace');
+    provisioner_node('fenced-dev', '10.44.0.193');
+    $group = provisioner_group($project);
+    $group->update(['reserved_at' => now()]);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->failure = new RuntimeConvergenceException('source-access', 'app-dev.source_access_failed', 'Source inspection failed.');
+    $fakes->source->beforeFailure = function () use ($group): void {
+        Task::topLevel()->whereKey($group->id)->update(['reserved_at' => now()->addSeconds(120), 'assistance_reason' => 'New reservation.']);
+    };
+
+    expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+        ->toThrow(RuntimeConvergenceException::class);
+
+    expect($group->fresh()->assistance_reason)->toBe('New reservation.');
+    $instance = Instance::query()->where('name', TaskWorkspaceName::for($group))->sole();
+    expect($instance->failed_step)->toBeNull()->and($instance->error_code)->toBeNull();
+    $this->travel(61)->seconds();
+    expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(0)
+        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Reserved)
+        ->and(Cache::get('tasks.workspace-provisioning.'.$group->id))->toBeNull();
+    $this->travelBack();
+});
+
+it('backs off ProvisioningFailed claims across scheduler ticks and clears workspace errors on recovery', function (): void {
+    Cache::flush();
+    $this->freezeTime();
+    $project = provisioner_app('backoff-workspace');
+    provisioner_node('backoff-dev', '10.44.0.191');
+    $group = provisioner_group($project);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->failure = new RuntimeConvergenceException('source-access', 'app-dev.source_access_failed', 'Source inspection failed.');
+    $group->update(['status' => TaskGroupStatus::Todo]);
+
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+    $instance = Instance::query()->where('name', TaskWorkspaceName::for($group))->sole();
+    expect($instance->failed_step)->toBe('source-access')
+        ->and($instance->error_code)->toBe('app-dev.source_access_failed');
+    $calls = count($fakes->source->calls);
+
+    foreach ([60, 120, 300, 600, 1800, 1800] as $delay) {
+        $this->travel($delay - 1)->seconds();
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and(count($fakes->source->calls))->toBe($calls);
+        $this->travel(1)->seconds();
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+            ->and(count($fakes->source->calls))->toBe(++$calls);
+    }
+
+    $fakes->source->failure = null;
+    $this->travel(1800)->seconds();
+    $resumed = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh(), false));
+    expect($resumed->id)->toBe($instance->id)
+        ->and($resumed->failed_step)->toBeNull()
+        ->and($resumed->error_code)->toBeNull();
+    $this->travelBack();
+});
 
 it('provisions a workspace without an automatic root dependency copy', function (): void {
     $project = provisioner_app('acme');
@@ -308,7 +459,7 @@ it('returns null when a visitable App lacks a web root', function (): void {
         ->toBeNull();
 });
 
-it('returns null when destination occupation refuses the checkout', function (): void {
+it('surfaces provisionWorkspace resource errors before creating a checkout', function (): void {
     $project = provisioner_app('blocked');
     provisioner_node('blocked-dev', '10.44.0.105');
     $group = provisioner_group($project);
@@ -325,8 +476,9 @@ it('returns null when destination occupation refuses the checkout', function ():
         }
     });
 
-    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
-        ->toBeNull();
+    expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+        ->toThrow(ResourceOperationException::class, 'Instance destination is occupied by unmanaged data.');
+    $this->assertDatabaseCount('instances', 0);
 });
 
 it('skips an excluded app-dev Node before choosing the least loaded node', function (): void {
@@ -500,7 +652,9 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         ]);
         bind_task_workspace_fakes();
 
-        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeNull()
+        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
+            ->toThrow(ResourceOperationException::class);
+        expect($lookalike->fresh()?->failed_step)->toBeNull()
             ->and($lookalike->fresh()?->branch_override)->toBe('feature-x')
             ->and($lookalike->fresh()?->status)->toBe(InstanceState::SourceResolved);
         $this->assertDatabaseCount('instances', 1);

@@ -10,6 +10,7 @@ use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -34,6 +35,8 @@ use Throwable;
 final readonly class TaskScheduler
 {
     public const string ProvisioningFailedReason = 'Workspace provisioning did not return an instance.';
+
+    public const string ProvisioningFailedPrefix = 'Workspace provisioning failed: ';
 
     public const string StartFailedReason = 'The group could not start after its workspace was provisioned.';
 
@@ -2040,7 +2043,8 @@ final readonly class TaskScheduler
                     ->get();
 
                 foreach ($candidates as $group) {
-                    if (! $this->ceilings->canActivate($group)) {
+                    if (! $this->retryIsDue($this->provisioningBackoffKey($group), 'workspace provisioning')
+                        || ! $this->ceilings->canActivate($group)) {
                         continue;
                     }
 
@@ -2058,6 +2062,7 @@ final readonly class TaskScheduler
                 return null;
             }
 
+            $failureReason = self::ProvisioningFailedReason;
             try {
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
@@ -2071,6 +2076,9 @@ final readonly class TaskScheduler
                 $skipped[] = $reserved->id;
 
                 continue;
+            } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+                $failureReason = self::ProvisioningFailedPrefix.$exception->errorCode.'.';
+                $instance = null;
             } catch (Throwable $exception) {
                 // An unexpected provisioning error must not strand the group in reserved. The log keeps the detail.
                 report($exception);
@@ -2078,12 +2086,14 @@ final readonly class TaskScheduler
             }
 
             if (! $instance instanceof Instance) {
-                $this->releaseReservation($reserved, self::ProvisioningFailedReason);
+                $this->recordProvisioningResult($reserved, $failureReason);
                 $this->removeEndedWorkspace($reserved, null);
                 $skipped[] = $reserved->id;
 
                 continue;
             }
+
+            $this->recordProvisioningResult($reserved, null);
 
             try {
                 $started = DB::transaction(fn (): ?Task => $this->startReserved($reserved, $instance));
@@ -2109,6 +2119,27 @@ final readonly class TaskScheduler
         $this->startFirstTask($started);
 
         return $started->fresh(['tasks', 'project', 'taskable']) ?? $started;
+    }
+
+    /** Serializes retry state with reservation changes. A stale claim cannot change another attempt's backoff. */
+    private function recordProvisioningResult(Task $reserved, ?string $failureReason): void
+    {
+        DB::transaction(function () use ($reserved, $failureReason): void {
+            $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
+            if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
+                return;
+            }
+
+            $key = $this->provisioningBackoffKey($group);
+            if ($failureReason === null) {
+                $this->rememberBackoff($key, null, 'workspace provisioning');
+
+                return;
+            }
+
+            $this->extendBackoff($key, $this->readBackoff($key, 'workspace provisioning'), 'workspace provisioning');
+            $group->update(['status' => TaskGroupStatus::Todo, 'assistance_reason' => $failureReason]);
+        });
     }
 
     /**
@@ -2243,11 +2274,29 @@ final readonly class TaskScheduler
         $released = 0;
 
         foreach ($stale(Task::topLevel())->orderBy('id')->pluck('id') as $id) {
-            $updated = $stale(Task::topLevel()->whereKey($id))->update([
-                'status' => TaskGroupStatus::Todo,
-                'assistance_reason' => self::ReservationExpiredReason,
-            ]);
-            if ($updated === 0) {
+            $updated = DB::transaction(function () use ($stale, $id): bool {
+                $group = $stale(Task::topLevel()->whereKey($id))->lockForUpdate()->first();
+                if (! $group instanceof Task) {
+                    return false;
+                }
+
+                $reason = self::ReservationExpiredReason;
+                $workspace = $this->workspaces->find($group);
+                if ($workspace instanceof Instance
+                    && is_string($workspace->failed_step)
+                    && is_string($workspace->error_code)
+                    && ($group->reserved_at === null || $workspace->updated_at?->greaterThanOrEqualTo($group->reserved_at))
+                    && $group->assistance_reason === self::ProvisioningFailedPrefix.$workspace->error_code.'.') {
+                    $reason = $group->assistance_reason;
+                    $key = $this->provisioningBackoffKey($group);
+                    $this->extendBackoff($key, $this->readBackoff($key, 'workspace provisioning'), 'workspace provisioning');
+                }
+
+                $group->update(['status' => TaskGroupStatus::Todo, 'assistance_reason' => $reason]);
+
+                return true;
+            });
+            if (! $updated) {
                 continue;
             }
 
@@ -2534,9 +2583,15 @@ final readonly class TaskScheduler
             ->get();
     }
 
+    private function provisioningBackoffKey(Task $group): string
+    {
+        return 'tasks.workspace-provisioning.'.$group->id;
+    }
+
     public static function isClaimFailureReason(?string $reason): bool
     {
-        return in_array($reason, self::ClaimFailureReasons, true);
+        return in_array($reason, self::ClaimFailureReasons, true)
+            || (is_string($reason) && str_starts_with($reason, self::ProvisioningFailedPrefix));
     }
 
     /** Claims todo groups until none fits. A failing group is tried once. */

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
@@ -108,6 +109,8 @@ it('claimNext continues after provision null', function (): void {
         ->assertJsonPath('data.status', 'todo')
         ->assertJsonPath('data.assistance_reason', TaskScheduler::ProvisioningFailedReason);
 
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+    $this->travel(1)->minutes();
     $recovered = app(TaskScheduler::class)->claimNext();
     test_pass_baseline();
 
@@ -118,6 +121,52 @@ it('claimNext continues after provision null', function (): void {
         ->and($oldest->tasks()->sole()->fresh()?->status)->toBe(TaskStatus::Running)
         ->and($oldest->tasks()->sole()->fresh()?->implementer_agent_thread_id)->not->toBeNull();
 });
+
+it('fences ProvisioningFailed retry state from a paused older scheduler claim', function (bool $oldSucceeds): void {
+    Cache::flush();
+    $this->freezeTime();
+    config(['orbit.tasks.reserved_timeout_seconds' => 60]);
+    $project = claim_hol_app();
+    $group = claim_hol_group($project, 'Paused claim');
+    $instance = claim_hol_instance($project, 'paused-claim');
+    $expectedBackoff = null;
+    $pause = function () use ($group, &$expectedBackoff): void {
+        $this->travel(61)->seconds();
+        expect(app(TaskScheduler::class)->releaseStaleReservations())->toBe(1);
+        expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+        $expectedBackoff = Cache::get('tasks.workspace-provisioning.'.$group->id);
+        expect($expectedBackoff)->toBe(['failures' => 1, 'due' => now()->addSeconds(60)->getTimestamp()]);
+    };
+    $provisioning = new class($instance, $pause, $oldSucceeds) implements InstanceProvisioning
+    {
+        public int $calls = 0;
+
+        public function __construct(private Instance $instance, private Closure $pause, private bool $oldSucceeds) {}
+
+        public function provision(InstanceProvisionIntent $intent): ?Instance
+        {
+            $this->calls++;
+            if ($this->calls === 1) {
+                ($this->pause)();
+
+                return $this->oldSucceeds ? $this->instance : null;
+            }
+
+            throw new RuntimeConvergenceException('source-access', 'app-dev.source_access_failed', 'Newer claim failed.');
+        }
+    };
+    app()->instance(InstanceProvisioning::class, $provisioning);
+
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull();
+
+    expect(Cache::get('tasks.workspace-provisioning.'.$group->id))->toBe($expectedBackoff);
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Todo)
+        ->and($group->fresh()->assistance_reason)->toBe('Workspace provisioning failed: app-dev.source_access_failed.');
+    $this->travel(59)->seconds();
+    expect(app(TaskScheduler::class)->claimNext())->toBeNull()
+        ->and($provisioning->calls)->toBe(2);
+    $this->travelBack();
+})->with(['old success' => true, 'old failure' => false]);
 
 it('leaves every group untouched in todo and stops claiming when the fleet is full', function (): void {
     claim_hol_enable();
