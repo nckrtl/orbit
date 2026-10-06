@@ -195,7 +195,9 @@ bin/docs-merge-check --base origin/main --head HEAD --head-only
 bin/docs-merge-check --base origin/main --head HEAD
 ```
 
-`--head` defaults to `HEAD`. `--head-only` checks that committed tree alone; otherwise `--base` is required and Git builds the merge result in a temporary local clone. Both modes run strict docs lint, including the ADR lifecycle rules, without changing the working tree. The merge preview retains both parents for history checks. The command isolates Laravel's configuration-cache path in its private scratch directory so a workspace or inherited cache cannot select a different documentation tree; existing caches are left untouched.
+`--head` defaults to `HEAD`. `--head-only` checks that committed tree alone; otherwise `--base` is required and Git builds the merge result in a temporary local clone. Both modes run strict docs lint, including the ADR lifecycle rules, without changing the working tree. The merge preview retains both parents for history checks and binds the coverage ratchet baseline to the resolved `--base` commit, not the checkout's local `main`. Head-only mode preserves the source checkout's `origin/main` baseline when present; without it, lint uses the head's committed ratchet. Neither mode substitutes local `main` for that baseline.
+
+The command isolates Laravel's configuration-cache path in its private scratch directory so a workspace or inherited cache cannot select a different documentation tree; existing caches are left untouched.
 
 An ADR number closed on the base can pass at an older branch's head but fail in the merge result: the merge result is what lands on main.
 

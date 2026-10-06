@@ -37,6 +37,9 @@ head_commit="$(git -C "$repo" rev-parse --verify --end-of-options "$head^{commit
 if ! "$head_only"; then
     [[ -n "$base" ]] || fail 'base_unavailable: --base is required; no fetch is performed'
     base_commit="$(git -C "$repo" rev-parse --verify --end-of-options "$base^{commit}" 2>/dev/null)" || fail "base_unavailable: $base is not a local commit; no fetch is performed"
+    baseline_commit="$base_commit"
+else
+    baseline_commit="$(git -C "$repo" rev-parse --verify refs/remotes/origin/main^{commit} 2>/dev/null)" || baseline_commit=''
 fi
 scratch="$(mktemp -d "${TMPDIR:-/tmp}/orbit-docs-merge-check.XXXXXXXX")" || fail 'temporary_checkout_failed: cannot create directory'
 trap 'rm -rf -- "$scratch"' EXIT
@@ -45,6 +48,14 @@ trap 'exit 2' HUP INT TERM
 git clone --quiet --shared --no-checkout "$repo" "$scratch/tree" || fail 'temporary_checkout_failed: local clone failed'
 git -C "$scratch/tree" config gc.auto 0
 git -C "$scratch/tree" config maintenance.auto false
+# Local clones derive remote refs from local branches, not source remote refs.
+# Bind lint's ratchet history to the resolved base (merge mode) or the actual
+# source origin/main (head-only), never to a missing or stale local main.
+if [[ -n "$baseline_commit" ]]; then
+    git -C "$scratch/tree" update-ref refs/remotes/origin/main "$baseline_commit" || fail 'temporary_checkout_failed: cannot bind ratchet baseline'
+else
+    git -C "$scratch/tree" update-ref -d refs/remotes/origin/main || fail 'temporary_checkout_failed: cannot clear synthetic ratchet baseline'
+fi
 preview="$head_commit"
 if ! "$head_only"; then
     set +e

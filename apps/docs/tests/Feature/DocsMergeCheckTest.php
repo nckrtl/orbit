@@ -43,6 +43,7 @@ function withDocsMergeFixture(Closure $test): void
     $root = sys_get_temp_dir().'/orbit-docs-merge-fixture-'.bin2hex(random_bytes(8));
     mkdir($root.'/docs/decisions', 0777, true);
     mkdir($root.'/docs/domains', 0777, true);
+    mkdir($root.'/docs/reference', 0777, true);
     mkdir($root.'/apps/docs/config', 0777, true);
     try {
         foreach (['README', 'mission', 'architecture', 'tech-stack', 'concepts'] as $name) {
@@ -127,6 +128,51 @@ it('a normal fixture PR passes both head-only and merge checks', function (): vo
             $result = docsMergeRun($root, $arguments);
             expect($result->getExitCode())->toBe(0, $result->getOutput().$result->getErrorOutput());
         }
+    });
+});
+
+it('detects ratchet removal despite a missing or stale local main', function (bool $missingMain, bool $headOnly): void {
+    withDocsMergeFixture(function (string $root) use ($missingMain, $headOnly): void {
+        // Add the ratchet on the shared history, then remove it on the PR.
+        file_put_contents($root.'/docs/reference/guide.md', "---\ncovers:\n  - apps/docs/config/adr-retired-slugs.php\n---\n\n# Documentation\n\nOrbit checks documentation.\n");
+        file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return ['docs/reference/guide.md'];\n");
+        docsMergeIndex($root);
+        docsMergeCommit($root, 'establish ratchet baseline');
+        $baseline = docsMergeGit($root, ['rev-parse', 'HEAD']);
+        if ($headOnly) {
+            docsMergeGit($root, ['update-ref', 'refs/remotes/origin/main', $baseline]);
+        }
+        if ($missingMain) {
+            docsMergeGit($root, ['branch', '-D', 'main']);
+        }
+        file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return [];\n");
+        docsMergeCommit($root, 'remove ratchet entry');
+        $before = docsMergeGit($root, ['rev-parse', 'HEAD']);
+        // Merge mode also accepts a SHA with no corresponding local branch.
+        // Head-only must ignore --base and use the real source origin/main.
+        $arguments = $headOnly ? ['--head-only', '--base', 'missing-ref'] : ['--base', $baseline];
+        $result = docsMergeRun($root, $arguments);
+        expect($result->getExitCode())->toBe(1, $result->getOutput().$result->getErrorOutput())
+            ->and($result->getOutput())->toContain('The coverage ratchet cannot remove docs/reference/guide.md.')
+            ->and(docsMergeGit($root, ['rev-parse', 'HEAD']))->toBe($before)
+            ->and(docsMergeGit($root, ['for-each-ref', '--format=%(objectname)', 'refs/remotes/origin/main']))->toBe($headOnly ? $baseline : '')
+            ->and(docsMergeGit($root, ['status', '--porcelain']))->toBe('');
+    });
+})->with(['no local main' => true, 'stale local main' => false])
+    ->with(['head-only' => true, 'merge preview' => false]);
+
+it('head-only does not invent a source baseline from local main', function (): void {
+    withDocsMergeFixture(function (string $root): void {
+        docsMergeGit($root, ['checkout', '-q', 'main']);
+        file_put_contents($root.'/docs/reference/guide.md', "---\ncovers:\n  - apps/docs/config/adr-retired-slugs.php\n---\n\n# Documentation\n\nOrbit checks documentation.\n");
+        file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return ['docs/reference/guide.md'];\n");
+        docsMergeIndex($root);
+        docsMergeCommit($root, 'ratchet only on local main');
+        docsMergeGit($root, ['checkout', '-q', '-B', 'pr']);
+        file_put_contents($root.'/apps/docs/config/docs-covers-ratchet.php', "<?php return [];\n");
+        docsMergeCommit($root, 'remove ratchet without a source remote baseline');
+        $result = docsMergeRun($root, ['--head-only']);
+        expect($result->getExitCode())->toBe(0, $result->getOutput().$result->getErrorOutput());
     });
 });
 
