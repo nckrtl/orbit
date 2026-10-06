@@ -20,6 +20,8 @@ Merge an approved pull request only when that merge is authorized.
 
 For cleanup after a merge, verify the merged pull request and finish the remaining steps. The internal `bin/worktree-remove ISSUE` helper verifies the merge and cleans its worktree.
 
+Do not merge added object-storage-host or linear-reference leftovers. Do not add hostnames under the generic `upcloudobjects.com` provider suffix (object-storage-host), `linear.app` references, Linear issue IDs, or Linear issue, ticket, project, product, task, integration, or workspace wording (linear-reference). Do not include real storage bucket, endpoint, region, or account names in detector patterns or fixtures.
+
 Report the merge commit and any cleanup still needed.
 
 The Tasks scheduler completes a merged task on its next tick. The maintainer profile bypasses GitHub enforcement of `Required checks`, and GitHub does not require this approval, so the reviewer enforces both before invoking the merge. This workflow keeps that bypass. It does not enable auto-merge. It adds no `orbit tasks:merge` command, Gateway merge endpoint, SDK contract, MCP contract, or API contract, and it changes no ruleset or App permission.
