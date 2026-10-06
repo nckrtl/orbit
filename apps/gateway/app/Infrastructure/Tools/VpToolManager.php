@@ -74,8 +74,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
                 saw_conflict=1
                 return 0
             fi
-            if [ ! -x "$binary" ] && [ ! -L "$binary" ]; then
-                saw_conflict=1
+            if [ ! -e "$binary" ] && [ ! -L "$binary" ]; then
                 return 0
             fi
             binary_owner=$(/usr/bin/stat -f '%Su' "$binary" 2>/dev/null || true)
@@ -108,7 +107,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     /**
      * Verifies the enrolled account's existing Linux Vite+ global scope.
-     * The first existing store wins, in materialize order. A later store is not a conflict.
+     * The first store with bin/vp wins, in materialize order. A later store is not a conflict.
      * It does not install Vite+, publish launchers, or change the scope.
      */
     private const string LINUX_SCOPE_SCRIPT = <<<'BASH'
@@ -179,8 +178,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
                 exit 43
             fi
             if [ ! -e "$binary" ] && [ ! -L "$binary" ]; then
-                printf 'Orbit Vite Plus scope conflict\n' >&2
-                exit 43
+                return 0
             fi
             binary_owner=$(/usr/bin/stat -c '%U:%G' "$binary" 2>/dev/null || true)
             if [ "$binary_owner" != "$account:$group" ] || [ ! -x "$binary" ]; then
@@ -267,6 +265,15 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             launcher_environment=
             for candidate in /opt/orbit/vite-plus "$managed_home/.vite-plus" "$managed_home/.local/share/vite-plus"; do
                 if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+                    if [ -d "$candidate" ] && [ ! -L "$candidate" ] \
+                        && [ ! -e "$candidate/bin/vp" ] && [ ! -L "$candidate/bin/vp" ]; then
+                        candidate_owner=$(stat -c '%U:%G' "$candidate" 2>/dev/null || true)
+                        if [ "$candidate_owner" != "$managed_user:$managed_group" ]; then
+                            printf 'Orbit Vite Plus directory conflict: %s\n' "$candidate" >&2
+                            exit 1
+                        fi
+                        continue
+                    fi
                     vp_home="$candidate"
                     break
                 fi

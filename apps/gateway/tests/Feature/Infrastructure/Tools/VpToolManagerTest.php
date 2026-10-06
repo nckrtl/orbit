@@ -7,6 +7,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tools\SemverVersionNormalizer;
 use App\Domain\Tools\ToolAdoptionFact;
 use App\Domain\Tools\ToolInventoryPackage;
+use App\Domain\Tools\ToolInventoryScanState;
 use App\Domain\Tools\ToolManager;
 use App\Domain\Tools\ToolManagerException;
 use App\Domain\Tools\ToolManagerName;
@@ -16,6 +17,7 @@ use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tools\RemoteToolCommandRunner;
+use App\Infrastructure\Tools\VpInventoryInspector;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Node;
 use App\Models\NodeRole;
@@ -119,6 +121,75 @@ describe(VpToolManager::class, function (): void {
         'double slash' => ['@openai//codex', false],
         'oversized' => [str_repeat('a', times: 215), false],
     ]);
+
+    it('skips cache-only vite-plus homes and lets inventory return Complete', function (string $platform): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $node = vp_tool_node($platform, []);
+        $manager->existingBinary($node);
+
+        [$result, $binary] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '');
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect(trim($result->stdout))->toBe($binary);
+
+        $inventorySsh = new ToolManagerFakeSshExecutor([$result, vp_result("[]\n")]);
+        $runner = new RemoteToolCommandRunner(
+            ssh: $inventorySsh,
+            keys: vp_tool_keys(),
+            knownHosts: vp_tool_known_hosts(),
+        );
+        $versions = new SemverVersionNormalizer;
+        $inspector = new VpInventoryInspector($runner, new VpToolManager($runner, $versions), $versions);
+
+        expect($inspector->inspect($node)->scanState)->toBe(ToolInventoryScanState::Complete);
+        expect($inventorySsh->arguments()[1])->toBe(['env', 'VP_HOME='.dirname($binary, 2), $binary, 'list', '-g', '--json']);
+    })->with(['linux', 'macos']);
+
+    it('keeps genuine vite-plus scope conflicts at exit 43', function (string $platform, string $fixture): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $manager->existingBinary(vp_tool_node($platform, []));
+
+        [$result] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', $fixture);
+
+        expect($result->exitCode)->toBe(43, $result->stderr);
+    })->with(['linux', 'macos'])->with([
+        'symlinked home' => 'symlink',
+        'non-directory home' => 'file',
+        'wrong home owner' => 'scope-owner',
+        'non-executable binary' => 'not-executable',
+        'wrong binary owner' => 'binary-owner',
+        'dangling binary symlink' => 'binary-symlink',
+    ]);
+
+    it('reports cache-only vite-plus homes without a real store as absent', function (string $platform): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result("/home/orbit/.local/share/vite-plus/bin/vp\n")]);
+        $manager->existingBinary(vp_tool_node($platform, []));
+
+        [$result] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'absent');
+
+        expect($result->exitCode)->toBe(42, $result->stderr);
+    })->with(['linux', 'macos']);
+
+    it('materializes the real vite-plus store instead of a cache-only home', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, $binary, $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', materialize: true);
+
+        expect($result->exitCode)->toBe(0, $result->stderr);
+        expect($launcher)->toContain('exec "'.$binary.'" "$@"');
+    });
+
+    it('rejects a wrong-owner cache-only vite-plus home before materializing launchers', function (): void {
+        [$manager, $ssh] = vp_tool_manager([vp_result()]);
+        $manager->materialize(vp_tool_node('linux', []));
+
+        [$result, , $launcher] = vp_tool_run_scope_fixture($ssh->commands[0]->input ?? '', 'scope-owner', materialize: true);
+
+        expect($result->exitCode)->toBe(1, $result->stderr);
+        expect($result->stderr)->toContain('Orbit Vite Plus directory conflict:');
+        expect($launcher)->toBe('');
+    });
 
     it('materializes the protected VP scope with fixed bootstrap input', function (): void {
         [$manager, $ssh] = vp_tool_manager([vp_result()]);
@@ -651,6 +722,116 @@ function vp_result(
         durationMs: 10,
         truncated: $truncated,
     );
+}
+
+/**
+ * Runs the emitted Bash against disposable homes, with account lookup and ownership stubs.
+ * Materialization publishes launchers only inside the fixture, with no sudo or network access.
+ *
+ * @return array{CommandResult, string, string}
+ */
+function vp_tool_run_scope_fixture(
+    string $program,
+    string $fixture = 'cache-only',
+    bool $materialize = false,
+): array {
+    $root = sys_get_temp_dir().'/orbit-vp-cache-'.bin2hex(random_bytes(4));
+    $home = $root.'/home';
+    $orbit = $root.'/orbit';
+    $scope = $home.'/.vite-plus';
+    $store = $home.'/.local/share/vite-plus';
+    $account = trim((string) shell_exec('id -un'));
+    mkdir($scope.'/package_manager/npm/cache', 0755, true);
+    mkdir($orbit.'/vite-plus/package_manager/npm/cache', 0755, true);
+    mkdir($root.'/launchers', 0755, true);
+    if ($fixture !== 'absent') {
+        mkdir($store.'/bin', 0755, true);
+        foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
+            file_put_contents($store.'/bin/'.$binary, "#!/bin/sh\nexit 0\n");
+            chmod($store.'/bin/'.$binary, 0755);
+        }
+    }
+    if ($fixture === 'symlink' || $fixture === 'file') {
+        rename($scope, $home.'/cache');
+        if ($fixture === 'symlink') {
+            symlink($home.'/cache', $scope);
+        } else {
+            file_put_contents($scope, 'not a directory');
+        }
+    }
+    if (in_array($fixture, ['not-executable', 'binary-owner', 'binary-symlink'], true)) {
+        mkdir($scope.'/bin', 0755, true);
+        if ($fixture === 'binary-symlink') {
+            symlink($root.'/missing', $scope.'/bin/vp');
+        } else {
+            file_put_contents($scope.'/bin/vp', "#!/bin/sh\nexit 0\n");
+            chmod($scope.'/bin/vp', $fixture === 'not-executable' ? 0644 : 0755);
+        }
+    }
+    $wrongOwnerPath = match ($fixture) {
+        'scope-owner' => $scope,
+        'binary-owner' => $scope.'/bin/vp',
+        default => $root.'/unused',
+    };
+    $stubs = [
+        'getent' => "#!/bin/sh\nprintf '%s\\n' '{$account}:x:1:1::{$home}:/bin/sh'\n",
+        'dscacheutil' => "#!/bin/sh\nprintf '%s\\n' 'dir: {$home}'\n",
+        'stat' => <<<SH
+            #!/bin/sh
+            path=
+            for path do :; done
+            if [ "\$path" = '{$orbit}' ]; then
+                printf 'root:root\n'
+            elif [ "\$path" = '{$wrongOwnerPath}' ]; then
+                printf 'other:other\n'
+            elif [ "\$1" = '-f' ]; then
+                printf '%s\n' '{$account}'
+            else
+                exec /usr/bin/stat "\$@"
+            fi
+            SH,
+        'sudo' => "#!/bin/sh\nshift 3\nexec \"\$@\"\n",
+        'curl' => "#!/bin/sh\nprintf 'unexpected installer invocation\\n' >&2\nexit 99\n",
+    ];
+    foreach ($stubs as $name => $contents) {
+        file_put_contents($root.'/'.$name, $contents);
+        chmod($root.'/'.$name, 0755);
+    }
+    $program = strtr($program, [
+        '/usr/bin/getent' => $root.'/getent',
+        'getent passwd' => $root.'/getent passwd',
+        '/usr/bin/dscacheutil' => $root.'/dscacheutil',
+        '/usr/bin/stat' => $root.'/stat',
+        'stat -c' => $root.'/stat -c',
+        '/opt/orbit' => $orbit,
+        '/usr/local/bin' => $root.'/launchers',
+        'chown root:root' => 'true',
+        'sudo -u' => $root.'/sudo -u',
+        'curl -fsSL' => $root.'/curl -fsSL',
+    ]);
+    $pipes = [];
+    $process = proc_open(
+        ['bash', '-seu', '--', $account],
+        [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
+        $pipes,
+    );
+
+    try {
+        fwrite($pipes[0], $program);
+        fclose($pipes[0]);
+        $stdout = stream_get_contents($pipes[1]);
+        $stderr = stream_get_contents($pipes[2]);
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+        $status = proc_close($process);
+        $launcher = $materialize && is_file($root.'/launchers/vp')
+            ? (string) file_get_contents($root.'/launchers/vp')
+            : '';
+
+        return [vp_result((string) $stdout, $status, (string) $stderr), $store.'/bin/vp', $launcher];
+    } finally {
+        exec('rm -rf -- '.escapeshellarg($root));
+    }
 }
 
 function vp_tool_keys(): SshKeyProvider
