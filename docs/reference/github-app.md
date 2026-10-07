@@ -1,6 +1,6 @@
 ---
 title: "GitHub App"
-description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, and publishes task pull requests."
+description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, publishes task pull requests, and finds the newest green commit of a branch."
 covers:
   - apps/gateway/app/Domain/GitHub/**
   - apps/gateway/app/Infrastructure/GitHub/**
@@ -114,7 +114,7 @@ GitHub refuses a token that asks for a permission the installation has not accep
 
 Each scheduler tick reads a settling group's pull request. While it is open, the Gateway also asks for a token with only `checks: read` and lists the check runs of the head commit, at most once a minute. With a non-empty repository entry in `orbit.tasks.github_reviewers`, it reads submitted GitHub reviews through a separate token with only `pull_requests: read`. This permission is already covered by the App's `Pull requests: write` grant; the registration, installation permissions, and webhook policy do not change. The watcher never uses the maintainer's CLI identity. [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) describes conflicts, failed checks, and trusted requested changes.
 
-The checks token is separate, because GitHub refuses a whole token request when one permission is not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts.
+The checks token is separate, because GitHub refuses a whole token request when one permission is not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. The check run list follows every page, up to 1,000 runs. A longer list, or one that changes between pages, leaves the health unread for that tick.
 
 ### Read review records
 
@@ -129,6 +129,34 @@ The App reads review decisions; it never submits, edits, dismisses, or requests 
 While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway also lists pull requests for head `{owner}:task-{id}`, at most once a minute per task. The list is `GET /repos/{owner}/{repo}/pulls` with query `head={owner}:task-{id}` and `state=all`. The token asks only for `pull_requests: read`. The Gateway accepts GitHub's canonical owner and repository casing in a listed pull request URL, because that identity is case-insensitive. It still requires the exact `https://github.com/` host and scheme, the `/pull/{number}` path, and a number matching the row. A URL for another repository leaves the list unreadable.
 
 The Gateway resolves the repository's installation id, caches it, and reuses that id for later lists of the same repository. The cached id is not a column on the task. When GitHub refuses the token for that id, the Gateway drops the cached id, resolves the installation again, and retries the list once. A second failure leaves the list unreadable. [Watch the branch while subtasks are open](/reference/tasks#watch-the-branch-while-subtasks-are-open) describes which pull request is stored and what a merged or closed result does.
+
+## Find the newest green commit
+
+The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release; no schedule asks for it yet. The question names a repository, a branch, and a required check. For the Gateway itself these are `nckrtl/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
+
+A commit qualifies when all of these hold. They are the same rules that [`bin/pr-head-check`](https://github.com/nckrtl/orbit/blob/main/bin/pr-head-check) applies to a pull request head.
+
+- At least one check run has exactly the required name.
+- Every such run has `head_sha` equal to the commit.
+- Every such run has completed with conclusion `success`. Any other state or conclusion fails this rule, including a queued or running run.
+- The commit strictly descends from the deployed commit. The compare API must report `ahead`, with the deployed commit as the merge base.
+- The commit has not failed a release.
+
+A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
+
+The Gateway walks the branch from its head along first parents, newest first. It stops at the deployed commit. A commit of a merged side branch is never a candidate, even when its pull request checks passed. The first qualifying commit wins, so a newer commit whose checks still run does not hold back an older green one. When nothing is deployed yet, the newest green commit qualifies without a compare.
+
+GitHub runs CI only for the head of a push. A commit that was pushed together with a newer one has no `Required checks` run, so it never qualifies; the newer commit covers it. A `Required checks` run can also succeed while GitHub reports its workflow run as cancelled, when the cancellation came after the job finished. The check run decides.
+
+One answer costs these reads:
+
+| Read | Token | Bound |
+| --- | --- | --- |
+| `GET /repos/{owner}/{repo}/commits?sha=refs/heads/{branch}` | `contents: read` | One page of 100 commits |
+| `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?check_name={name}` | `checks: read`, minted only when a candidate needs it | Every page, at most 1,000 runs, for at most 20 candidates |
+| `GET /repos/{owner}/{repo}/compare/{deployed}...{sha}` | `contents: read` | Once, for the first green candidate |
+
+When the deployed commit is the branch head, the answer needs only the commit list. The Gateway reads the branch through its full ref, so a tag with the same name is never read instead. When none of the 20 newest candidates qualifies, there is no answer until a newer commit turns green. Every failure fails closed: an App that is not registered or not installed, a refused token, an unknown commit, a check run list that changes or ends before its `total_count`, or a malformed record means no answer for that attempt.
 
 ## What the App does not cover
 

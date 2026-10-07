@@ -64,6 +64,7 @@ use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubCliToken;
+use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
@@ -245,6 +246,7 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
@@ -496,6 +498,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         TiaBaselineSource::class => HttpGitHubTiaBaseline::class,
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
+        GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
