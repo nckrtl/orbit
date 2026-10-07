@@ -71,13 +71,15 @@ describe('sandbox Pi identity', function (): void {
 
     it('creates a sandbox session at its proxy and keeps the host token out of the request', function (): void {
         [$workspace, $sandbox] = sandbox_pi_workspace();
+        $sandbox->forceFill(['model_key' => str_repeat('d', 64)])->save();
         Http::fake(['http://10.44.0.20:22000/sessions' => Http::response(['id' => 'sandbox-session'], 201)]);
         $id = app(PiDriver::class)->create(new AgentThreadStart($workspace->node, $workspace, 'Work', 'Implement', 'gpt-5.6-luna', 'low', TaskThreadRole::Implementer,
             externalId: 'sandbox-session', deferOpeningTurn: true));
 
         expect($id)->toBe('sandbox-session');
         Http::assertSent(fn (Request $request): bool => $request['cwd'] === '/home/orbit/orbit'
-            && $request->hasHeader('Authorization', 'Bearer '.$sandbox->pi_token));
+            && $request->hasHeader('Authorization', 'Bearer '.$sandbox->pi_token)
+            && ! $request->hasHeader('Authorization', 'Bearer '.$sandbox->model_key));
         Http::assertSentCount(1);
     });
 
@@ -134,20 +136,21 @@ describe('sandbox Pi identity', function (): void {
         Http::assertSentCount(1);
     })->with([401, 302]);
 
-    it('redacts the sandbox token from snapshots and streamed failures', function (bool $stream): void {
+    it('redacts sandbox Pi and model credentials from snapshots and streamed failures', function (bool $stream): void {
         [, $sandbox, $thread] = sandbox_pi_workspace();
+        $sandbox->forceFill(['model_key' => str_repeat('e', 64)])->save();
         $snapshot = ['kind' => 'snapshot', 'run' => 'run-1', 'sequence' => 1, 'session' => ['id' => $thread->external_id],
-            'state' => 'failed', 'error' => 'token '.$sandbox->pi_token, 'entries' => [
+            'state' => 'failed', 'error' => 'token '.$sandbox->pi_token.' model '.$sandbox->model_key, 'entries' => [
                 ['id' => 'e1', 'timestamp' => '2026-10-07T00:00:00Z', 'message' => ['role' => 'assistant', 'stopReason' => 'stop',
-                    'content' => [['type' => 'text', 'text' => 'token '.$sandbox->pi_token]]]],
+                    'content' => [['type' => 'text', 'text' => 'token '.$sandbox->pi_token.' model '.$sandbox->model_key]]]],
             ]];
         Http::fake(['http://10.44.0.20:22000/sessions/'.$thread->external_id.($stream ? '/stream' : '') => Http::response($stream ? json_encode($snapshot)."\n" : $snapshot)]);
 
         $result = $stream ? iterator_to_array(app(PiDriver::class)->events($thread, null), false)[0]->data
             : app(PiDriver::class)->observe($thread)->toArray();
 
-        expect($result['error'])->toBe('token [REDACTED]');
-        expect($result['entries'][0]['text'])->toBe('token [REDACTED]');
+        expect($result['error'])->toBe('token [REDACTED] model [REDACTED]');
+        expect($result['entries'][0]['text'])->toBe('token [REDACTED] model [REDACTED]');
     })->with([false, true]);
 
     it('connects Project sandboxes only through their enrolled guest Node', function (string $provider): void {

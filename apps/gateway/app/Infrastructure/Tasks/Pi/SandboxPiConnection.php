@@ -58,7 +58,7 @@ final readonly class SandboxPiConnection
         }
         $address = str_contains($address, ':') ? '['.$address.']' : $address;
 
-        return new PiEndpoint('http://'.$address.':'.$port, $sandbox->pi_token);
+        return new PiEndpoint('http://'.$address.':'.$port, $sandbox->pi_token, $sandbox->model_key === null ? [] : [$sandbox->model_key]);
     }
 
     private function unavailable(): AgentDriverException

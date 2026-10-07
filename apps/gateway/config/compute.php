@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 return [
+    'model_proxy' => [
+        'enabled' => (bool) env('ORBIT_SANDBOX_MODEL_PROXY_ENABLED', false),
+    ],
     'incus' => [
         'enabled' => (bool) env('ORBIT_INCUS_ENABLED', false),
         'hosts' => json_decode((string) env('ORBIT_INCUS_HOSTS', '[]'), true),

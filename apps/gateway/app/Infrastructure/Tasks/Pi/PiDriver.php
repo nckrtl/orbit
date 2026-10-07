@@ -279,10 +279,10 @@ final readonly class PiDriver implements AgentDriver
      */
     private function redact(array $data, Node|PiEndpoint $node): array
     {
-        $token = $this->connection->token($node);
-        array_walk_recursive($data, static function (mixed &$value) use ($token): void {
+        $tokens = $node instanceof PiEndpoint ? $node->secrets() : [$this->connection->token($node)];
+        array_walk_recursive($data, static function (mixed &$value) use ($tokens): void {
             if (is_string($value)) {
-                $value = str_replace($token, '[REDACTED]', $value);
+                $value = str_replace($tokens, '[REDACTED]', $value);
             }
         });
 
