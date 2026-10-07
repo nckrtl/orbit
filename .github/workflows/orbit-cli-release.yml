@@ -1,0 +1,184 @@
+name: Orbit CLI Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      commit:
+        description: Full SHA of a main commit whose Required checks passed.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orbit-cli-release-${{ github.event.workflow_run.head_sha || inputs.commit }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve release
+    # A CI run on main, from a push or a manual dispatch, can make a commit green. A pull-request run never
+    # releases. A backfill runs only main's copy of this workflow, so another branch cannot change how it publishes.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (
+        github.event_name == 'workflow_run' &&
+        contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.head_repository.full_name == github.repository
+      )
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      checks: read
+    outputs:
+      commit: ${{ steps.release.outputs.commit }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+      publish: ${{ steps.existing.outputs.publish }}
+    steps:
+      - name: Check out main with full history
+        uses: actions/checkout@v7
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Resolve commit, version and tag
+        id: release
+        env:
+          REQUESTED_COMMIT: ${{ github.event.workflow_run.head_sha || inputs.commit }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Pass a full 40-character commit SHA, not ${REQUESTED_COMMIT}."; exit 1; }
+          # Assignment, not echo "$(...)", so a refusal stops this step.
+          # --on-main refuses a side commit: two commits that are not in one
+          # line of history can reach the same count and would share a version.
+          version="$(bin/orbit-cli-release-version --on-main origin/main "$REQUESTED_COMMIT")"
+          tag="$(bin/orbit-cli-release-version --tag --on-main origin/main "$REQUESTED_COMMIT")"
+          {
+            echo "commit=${REQUESTED_COMMIT}"
+            echo "version=${version}"
+            echo "tag=${tag}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Require green Required checks on the commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+        run: |
+          set -euo pipefail
+          latest="$(gh api --paginate "repos/${REPOSITORY}/commits/${COMMIT}/check-runs?check_name=Required%20checks&filter=all&per_page=100" \
+            --jq '.check_runs[] | select(.head_sha == env.COMMIT) | [.id, .status, (.conclusion // "none")] | @tsv' \
+            | sort -n | tail -n 1)"
+          [ -n "$latest" ] || { echo "::error::No Required checks run exists for ${COMMIT}."; exit 1; }
+          read -r _ status conclusion <<< "$latest"
+          if [ "$status" != completed ] || [ "$conclusion" != success ]; then
+            echo "::error::Required checks for ${COMMIT} is ${status}/${conclusion}, not completed/success."
+            exit 1
+          fi
+          echo "Required checks passed on ${COMMIT}"
+
+      - name: Check for an existing release
+        id: existing
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ steps.release.outputs.commit }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! release="$(gh api "repos/${REPOSITORY}/releases/tags/${TAG}" 2>/dev/null)"; then
+            if tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha 2>/dev/null)" && [ "$tagged" != "$COMMIT" ]; then
+              echo "::error::Tag ${TAG} already points at ${tagged}, not ${COMMIT}."
+              exit 1
+            fi
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
+          expected="$(printf '%s\n' SHA256SUMS "orbit-${VERSION}-linux-aarch64" "orbit-${VERSION}-linux-x86_64" "orbit-${VERSION}-macos-arm64")"
+          assets="$(jq -r '.assets[].name' <<< "$release" | LC_ALL=C sort)"
+          if [ "$tagged" != "$COMMIT" ] || [ "$assets" != "$expected" ]; then
+            echo "::error::Release ${TAG} exists but does not match ${COMMIT} and the expected assets. Published releases are never replaced."
+            exit 1
+          fi
+          echo "Release ${TAG} is already published for ${COMMIT}."
+          echo "publish=false" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build
+    needs: resolve
+    if: needs.resolve.outputs.publish == 'true'
+    uses: ./.github/workflows/orbit-cli-binary.yml
+    with:
+      commit: ${{ needs.resolve.outputs.commit }}
+      version: ${{ needs.resolve.outputs.version }}
+
+  publish:
+    name: Publish release
+    needs: [resolve, build]
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPOSITORY: ${{ github.repository }}
+      COMMIT: ${{ needs.resolve.outputs.commit }}
+      VERSION: ${{ needs.resolve.outputs.version }}
+      TAG: ${{ needs.resolve.outputs.tag }}
+    steps:
+      # This job holds a write token, so it runs only this workflow's own scripts from main, never the release
+      # commit's. The release commit's code runs only in the build jobs, which have a read-only token.
+      - name: Check out the release scripts
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download binaries
+        uses: actions/download-artifact@v8
+        with:
+          pattern: orbit-*
+          path: artifacts
+
+      - name: Prepare release assets
+        run: bin/orbit-cli-release-assets "$VERSION" artifacts release
+
+      - name: Remove an unfinished draft
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/${REPOSITORY}/releases?per_page=100" \
+            --jq '.[] | select(.draft and .tag_name == env.TAG) | .id' \
+            | while read -r id; do
+                gh api --method DELETE "repos/${REPOSITORY}/releases/${id}"
+                echo "Deleted unfinished draft ${id} for ${TAG}."
+              done
+
+      - name: Publish GitHub release
+        run: |
+          set -euo pipefail
+          # gh uploads the assets to a draft and publishes it last, so the tag
+          # and the release appear only with every asset in place.
+          gh release create "$TAG" release/* \
+            --repo "$REPOSITORY" \
+            --target "$COMMIT" \
+            --title "orbit ${VERSION}" \
+            --latest=false \
+            --notes "$(printf 'Orbit CLI %s, built from %s.\n\nCommit: %s\n\nVerify each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n' "$VERSION" "$COMMIT" "$COMMIT")"
+
+      - name: Verify the published release
+        run: |
+          set -euo pipefail
+          tagged="$(gh api "repos/${REPOSITORY}/git/ref/tags/${TAG}" --jq .object.sha)"
+          test "$tagged" = "$COMMIT"
+          mkdir verify
+          curl --fail --silent --show-error --location --retry 4 \
+            --output verify/SHA256SUMS "https://github.com/${REPOSITORY}/releases/download/${TAG}/SHA256SUMS"
+          cmp verify/SHA256SUMS release/SHA256SUMS
+          echo "Published ${TAG} for ${COMMIT}."
