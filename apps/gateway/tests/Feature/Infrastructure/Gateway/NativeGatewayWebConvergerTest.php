@@ -628,7 +628,7 @@ it('repeats the same idempotent install step on every web convergence', function
         expect($second)
             ->toEqual($first)
             ->and($first[0]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway'])
+            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway', '/home/orbit/orbit-gateway'])
             ->and($first[1]->arguments)
             ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
             ->and($first[2]->arguments)

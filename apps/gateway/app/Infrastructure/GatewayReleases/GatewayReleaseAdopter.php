@@ -1,0 +1,522 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\GatewayReleases;
+
+use App\Domain\GatewayReleases\DeployedGatewayRelease;
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
+use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseRuntime;
+use App\Domain\GatewayReleases\GatewayReleaseVerifier;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use Closure;
+use Throwable;
+
+/**
+ * Converts the in-place checkout at `/home/orbit/orbit` into the release layout, once:
+ *
+ * 1. refuses when the checkout has tracked changes;
+ * 2. creates `shared/orbit.git` as a bare clone of the checkout's own repository, with its origin;
+ * 3. copies the checkout's `.env` to `shared/gateway.env`, without `APP_VERSION`, and copies every
+ *    `.env.bak-*` file to `shared/env-backups/`;
+ * 4. moves `apps/gateway/storage` to `shared/gateway-storage` and links it back, so the checkout
+ *    keeps working;
+ * 5. prepares `releases/<id>` for the checkout's commit;
+ * 6. swaps the checkout directory with a link to that release in one step, and keeps the
+ *    directory as `orbit.pre-adopt-<time>`;
+ * 7. hands the runtime over to the release and verifies it. A failure swaps the directory back.
+ *
+ * Every step can run again: a finished step is detected and skipped. The checkout's own `.env`
+ * and backups stay in the kept directory, so swapping it back restores the Gateway as it was.
+ */
+final readonly class GatewayReleaseAdopter
+{
+    /** @var Closure(): string */
+    private Closure $clock;
+
+    /** @param (Closure(): string)|null $clock UTC time for the kept directory's name */
+    public function __construct(
+        private GatewayReleaseLayout $layout,
+        private ProcessRunner $processes,
+        private GatewayReleaseBuilder $builder,
+        private GatewayReleaseExchange $exchange,
+        private GatewayReleaseRuntime $runtime,
+        private GatewayReleaseVerifier $verifier,
+        private GatewayReleaseRecorder $recorder,
+        ?Closure $clock = null,
+    ) {
+        $this->clock = $clock ?? static fn (): string => gmdate('Ymd\THis\Z');
+    }
+
+    /** @return array<string, mixed> */
+    public function adopt(): array
+    {
+        $startedAt = hrtime(true);
+        $current = $this->layout->currentPath();
+
+        if ($this->layout->isAdopted()) {
+            return [
+                'adopted' => true,
+                'already' => true,
+                'release' => $this->layout->currentReleaseId(),
+                'pre_adopt_path' => $this->finishLeftover(),
+            ];
+        }
+
+        $sha = null;
+
+        try {
+            $sha = $this->assertCheckout($current);
+            $id = GatewayReleaseCommit::id($sha);
+            $shared = [
+                'repository' => $this->repository($current, $sha),
+                ...$this->environment($current),
+                'storage' => $this->storage($current),
+            ];
+            $prepared = $this->builder->prepare($sha);
+            $phases = [
+                'shared' => $shared,
+                'prepare' => ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs],
+            ];
+            $kept = $this->layout->basePath().'/'.basename($current).'.pre-adopt-'.($this->clock)();
+            $switch = $this->switch($current, $id, $kept);
+            $phases['switch'] = $switch;
+        } catch (Throwable $thrown) {
+            // Nothing that serves changed: the checkout is still the current path.
+            $exception = GatewayReleaseException::fromThrowable($thrown, 'adopt', $sha);
+            $this->recorder->refused('adopt', $exception, $this->elapsed($startedAt));
+
+            throw $exception;
+        }
+
+        $step = 'handoff';
+
+        try {
+            $phases['handoff'] = $this->runtime->handoff($id);
+            $step = 'verify';
+            $verified = $this->verifier->verify($sha);
+            $phases['verify'] = ['outcome' => 'passed', 'status' => $verified['status'], 'version' => $verified['version']];
+        } catch (Throwable $thrown) {
+            throw $this->switchBack(GatewayReleaseException::fromThrowable($thrown, $step, $sha), $current, $kept, $id, $sha, $phases, $startedAt);
+        }
+
+        $this->record(new DeployedGatewayRelease(
+            id: $id,
+            sha: $sha,
+            outcome: 'verified',
+            trigger: 'adopt',
+            migrationsRan: false,
+            previousId: null,
+            snapshotPath: null,
+            cleanupPaused: $phases['handoff']['cleanup_paused'],
+            retryable: false,
+            durationMs: $this->elapsed($startedAt),
+            phases: $phases,
+        ));
+
+        return [
+            'adopted' => true,
+            'already' => false,
+            'release' => $id,
+            'sha' => $sha,
+            'path' => $prepared->path,
+            'pre_adopt_path' => $kept,
+            'shared' => $shared,
+            'switch' => $switch,
+            'handoff' => $phases['handoff'],
+            'verify' => $phases['verify'],
+            'duration_ms' => $this->elapsed($startedAt),
+        ];
+    }
+
+    /** The checkout's commit, after refusing a path that is not a clean in-place checkout. */
+    private function assertCheckout(string $current): string
+    {
+        if (is_link($current)) {
+            throw $this->refusal('gateway.release_adopt_unsupported', "[{$current}] is a link, but not to a release in [{$this->layout->releasesPath()}].");
+        }
+
+        if (! is_dir($current.'/.git') || ! is_dir($current.'/apps/gateway')) {
+            throw $this->refusal('gateway.release_adopt_not_checkout', "[{$current}] is not an in-place Orbit checkout with its own .git directory.");
+        }
+
+        $head = $this->git($current, ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], 'gateway.release_adopt_not_checkout');
+        $sha = trim($head->stdout);
+
+        if (! GatewayReleaseCommit::isSha($sha)) {
+            throw $this->refusal('gateway.release_adopt_not_checkout', "[{$current}] has no commit checked out.");
+        }
+
+        $status = $this->git($current, ['status', '--porcelain=v1', '--untracked-files=no', '--ignore-submodules=none'], 'gateway.release_adopt_not_checkout');
+        $changes = array_values(array_filter(explode("\n", $status->stdout), static fn (string $line): bool => trim($line) !== ''));
+
+        if ($changes !== []) {
+            throw $this->refusal(
+                'gateway.release_adopt_local_changes',
+                sprintf('[%s] has %d tracked change(s), such as [%s]. Commit, move, or discard them before adoption.', $current, count($changes), trim(substr($changes[0], 3))),
+            );
+        }
+
+        return $sha;
+    }
+
+    /** `shared/orbit.git`: a bare clone of the checkout's repository that keeps its origin and remote branches. */
+    private function repository(string $current, string $sha): string
+    {
+        $repository = $this->layout->repositoryPath();
+        $this->ensureDirectory($this->layout->sharedPath(), 0o750);
+
+        if (is_dir($repository)) {
+            $this->git($repository, ['cat-file', '-e', $sha.'^{commit}'], 'gateway.release_adopt_repository_conflict', "[{$repository}] exists but does not hold the checkout's commit [{$sha}].");
+
+            return 'existing';
+        }
+
+        $partial = $repository.'.partial';
+        $this->run(['rm', '-rf', '--', $partial], 'gateway.release_adopt_repository_failed');
+        $this->run(['git', 'clone', '--bare', '--quiet', '--', $current, $partial], 'gateway.release_adopt_repository_failed', 600.0);
+        $origin = $this->processes->run(new ProcessInvocation(['git', '-C', $current, 'remote', 'get-url', 'origin'], timeout: 30.0));
+
+        if ($origin->succeeded() && trim($origin->stdout) !== '') {
+            $this->git($partial, ['remote', 'set-url', 'origin', trim($origin->stdout)], 'gateway.release_adopt_repository_failed');
+            $this->git($partial, ['fetch', '--quiet', '--no-tags', '--', $current, '+refs/remotes/origin/*:refs/remotes/origin/*'], 'gateway.release_adopt_repository_failed', null, 600.0);
+        }
+
+        // The checkout's commit may be on no branch. A ref keeps it from garbage collection.
+        $this->git($partial, ['update-ref', 'refs/orbit/adopted', $sha], 'gateway.release_adopt_repository_failed');
+
+        if (! @rename($partial, $repository)) {
+            throw $this->failure('gateway.release_adopt_repository_failed', "[{$partial}] cannot be renamed to [{$repository}].");
+        }
+
+        return 'created';
+    }
+
+    /**
+     * `shared/gateway.env` from the checkout's `.env`. `APP_VERSION` is left out, so each release
+     * reports the commit in its `REVISION`. The checkout keeps its own file for a swap back.
+     *
+     * @return array{env: string, app_version_removed: bool, env_backups: list<string>}
+     */
+    private function environment(string $current): array
+    {
+        $source = $current.'/apps/gateway/.env';
+        $target = $this->layout->environmentPath();
+
+        if (! is_file($source) || is_link($source)) {
+            throw $this->refusal('gateway.release_adopt_env_missing', "[{$source}] is not a regular file.");
+        }
+
+        $original = (string) file_get_contents($source);
+        $lines = preg_split('/(?<=\n)/', $original) ?: [];
+        $removed = false;
+
+        foreach ($lines as $index => $line) {
+            if (preg_match('/^\s*(export\s+)?APP_VERSION\s*=\s*\S/', $line) === 1) {
+                $lines[$index] = '# '.rtrim($line, "\n")." (left out by gateway:release:adopt: each release reports its REVISION)\n";
+                $removed = true;
+            }
+        }
+
+        $contents = implode('', $lines);
+
+        if (is_file($target)) {
+            if ((string) file_get_contents($target) !== $contents) {
+                throw $this->refusal('gateway.release_adopt_env_conflict', "[{$target}] exists and differs from [{$source}]. Compare them and remove the one that is wrong.");
+            }
+
+            $env = 'existing';
+        } else {
+            $this->writePrivate($target, $contents);
+            $env = 'created';
+        }
+
+        $backups = [];
+
+        foreach (glob($current.'/apps/gateway/.env.bak*') ?: [] as $backup) {
+            if (! is_file($backup) || is_link($backup)) {
+                continue;
+            }
+
+            $this->ensureDirectory($this->layout->sharedPath().'/env-backups', 0o700);
+            $copy = $this->layout->sharedPath().'/env-backups/'.basename($backup);
+
+            if (! is_file($copy)) {
+                $this->writePrivate($copy, (string) file_get_contents($backup));
+            }
+
+            $backups[] = $copy;
+        }
+
+        return ['env' => $env, 'app_version_removed' => $removed, 'env_backups' => $backups];
+    }
+
+    /**
+     * Moves the checkout's storage to `shared/gateway-storage` in one rename, contents and
+     * permissions as they are, and links it back so running processes keep their paths.
+     */
+    private function storage(string $current): string
+    {
+        $source = $current.'/apps/gateway/storage';
+        $target = $this->layout->storagePath();
+
+        if (is_link($source)) {
+            if (readlink($source) !== $target) {
+                throw $this->refusal('gateway.release_adopt_storage_conflict', "[{$source}] links somewhere other than [{$target}].");
+            }
+
+            return 'existing';
+        }
+
+        if (file_exists($target)) {
+            if (is_dir($source)) {
+                throw $this->refusal('gateway.release_adopt_storage_conflict', "Both [{$source}] and [{$target}] exist. Merge them by hand, then remove one.");
+            }
+        } else {
+            if (! is_dir($source)) {
+                throw $this->refusal('gateway.release_adopt_storage_missing', "[{$source}] is not a directory.");
+            }
+
+            // The tracked placeholders move with the directory, so Git must not report them as deleted.
+            $tracked = $this->git($current, ['ls-files', '--', 'apps/gateway/storage'], 'gateway.release_adopt_storage_failed');
+            $placeholders = array_values(array_filter(explode("\n", trim($tracked->stdout)), static fn (string $line): bool => $line !== ''));
+
+            if ($placeholders !== []) {
+                $this->git($current, ['update-index', '--skip-worktree', '--', ...$placeholders], 'gateway.release_adopt_storage_failed');
+            }
+
+            if (! @rename($source, $target)) {
+                throw $this->failure('gateway.release_adopt_storage_failed', "[{$source}] cannot be moved to [{$target}].");
+            }
+        }
+
+        if (! @symlink($target, $source)) {
+            // A writer recreated the directory in the moment it was missing. Keep what it wrote beside it.
+            if ($this->isDirectory($source)) {
+                @rename($source, $source.'.stray-'.($this->clock)());
+            }
+
+            if (! @symlink($target, $source)) {
+                throw $this->failure('gateway.release_adopt_storage_failed', "[{$source}] cannot be linked to [{$target}].");
+            }
+        }
+
+        return 'moved';
+    }
+
+    /**
+     * Puts the link in place of the checkout directory. With an atomic swap no lookup ever misses
+     * the path. Without it, two renames leave it missing for the time between them, which the
+     * result reports.
+     *
+     * @return array{method: string, gap_us: int, from: string, to: string}
+     */
+    private function switch(string $current, string $id, string $kept): array
+    {
+        $next = $current.'.adopt-next';
+
+        if (is_link($next)) {
+            @unlink($next);
+        }
+
+        if (file_exists($next) || file_exists($kept)) {
+            throw $this->refusal('gateway.release_adopt_conflict', "[{$next}] or [{$kept}] already exists.");
+        }
+
+        if (! @symlink($this->layout->linkTarget($id), $next)) {
+            throw $this->failure('gateway.release_switch_failed', "The release link [{$next}] cannot be created.", 'switch');
+        }
+
+        if ($this->exchange->swap($next, $current)) {
+            if (! @rename($next, $kept)) {
+                throw $this->failure('gateway.release_switch_failed', "The checkout was swapped, but [{$next}] cannot be renamed to [{$kept}].", 'switch');
+            }
+
+            return ['method' => 'exchange', 'gap_us' => 0, 'from' => $kept, 'to' => $this->layout->linkTarget($id)];
+        }
+
+        $started = hrtime(true);
+        $moved = @rename($current, $kept);
+        $linked = $moved && @rename($next, $current);
+        $gap = intdiv(hrtime(true) - $started, 1_000);
+
+        if (! $linked) {
+            if ($moved) {
+                @rename($kept, $current);
+            }
+
+            @unlink($next);
+
+            throw $this->failure('gateway.release_switch_failed', "The checkout [{$current}] cannot be replaced by the release link.", 'switch');
+        }
+
+        return ['method' => 'rename', 'gap_us' => $gap, 'from' => $kept, 'to' => $this->layout->linkTarget($id)];
+    }
+
+    /**
+     * Puts the checkout directory back after a failed handoff or verification, repeats the handoff
+     * from it, records the attempt, and returns the failure to throw.
+     *
+     * @param  array<string, mixed>  $phases
+     */
+    private function switchBack(GatewayReleaseException $exception, string $current, string $kept, string $id, string $sha, array $phases, int $startedAt): GatewayReleaseException
+    {
+        $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+        $outcome = 'switched_back';
+
+        try {
+            if (! $this->exchange->swap($kept, $current)) {
+                if (! @rename($current, $kept.'.link') || ! @rename($kept, $current)) {
+                    throw $this->failure('gateway.release_switch_back_failed', "[{$kept}] cannot be put back at [{$current}].", 'switch');
+                }
+
+                @rename($kept.'.link', $kept);
+            }
+
+            @unlink($kept);
+            $this->run([PHP_BINARY, $current.'/apps/gateway/artisan', 'gateway:release:handoff', '--no-interaction'], 'gateway.release_handoff_failed', 600.0);
+            $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $current];
+        } catch (Throwable $thrown) {
+            $outcome = 'failed';
+            $back = GatewayReleaseException::fromThrowable($thrown, 'switch_back', $sha);
+            $phases['switch_back'] = ['outcome' => 'failed', 'error_code' => $back->errorCode];
+            $exception = new GatewayReleaseException(
+                step: 'switch',
+                errorCode: 'gateway.release_switch_back_failed',
+                message: $exception->getMessage().' Switching back to the checkout then failed: '.$back->getMessage(),
+                status: 500,
+                previous: $back,
+                sha: $sha,
+            );
+        }
+
+        $this->record(new DeployedGatewayRelease(
+            id: $id,
+            sha: $sha,
+            outcome: $outcome,
+            trigger: 'adopt',
+            migrationsRan: false,
+            previousId: null,
+            snapshotPath: null,
+            cleanupPaused: false,
+            retryable: false,
+            durationMs: $this->elapsed($startedAt),
+            phases: $phases,
+            errorCode: $exception->errorCode,
+            message: $exception->getMessage(),
+        ));
+
+        return $exception;
+    }
+
+    /** Renames a directory a swap left at `orbit.adopt-next` when adoption stopped right after it. */
+    private function finishLeftover(): ?string
+    {
+        $next = $this->layout->currentPath().'.adopt-next';
+
+        if (! is_dir($next) || is_link($next)) {
+            return null;
+        }
+
+        $kept = $this->layout->basePath().'/'.basename($this->layout->currentPath()).'.pre-adopt-'.($this->clock)();
+
+        return @rename($next, $kept) ? $kept : $next;
+    }
+
+    private function record(DeployedGatewayRelease $release): void
+    {
+        try {
+            $this->recorder->write($release);
+        } catch (Throwable) {
+            // The command output carries the outcome; a failed record write must not undo the adoption.
+        }
+    }
+
+    /** A real directory, not a link to one. The file system can change between two checks. */
+    private function isDirectory(string $path): bool
+    {
+        clearstatcache(true, $path);
+
+        return is_dir($path) && ! is_link($path);
+    }
+
+    private function ensureDirectory(string $path, int $mode): void
+    {
+        if (! is_dir($path) && ! @mkdir($path, $mode, true) && ! is_dir($path)) {
+            throw $this->failure('gateway.release_adopt_repository_failed', "[{$path}] cannot be created.");
+        }
+    }
+
+    private function writePrivate(string $path, string $contents): void
+    {
+        $candidate = $path.'.'.bin2hex(random_bytes(6));
+        $umask = umask(0o077);
+
+        try {
+            $written = @file_put_contents($candidate, $contents) !== false && @chmod($candidate, 0o600) && @rename($candidate, $path);
+        } finally {
+            umask($umask);
+        }
+
+        if (! $written) {
+            @unlink($candidate);
+
+            throw $this->failure('gateway.release_adopt_env_failed', "[{$path}] cannot be written.");
+        }
+    }
+
+    /** @param non-empty-list<string> $arguments */
+    private function git(string $directory, array $arguments, string $errorCode, ?string $message = null, float $timeout = 60.0): CommandResult
+    {
+        $result = $this->processes->run(new ProcessInvocation(['git', '-C', $directory, ...$arguments], timeout: $timeout));
+
+        if (! $result->succeeded()) {
+            throw new GatewayReleaseException(
+                step: 'adopt',
+                errorCode: $errorCode,
+                message: $message ?? "Git failed in [{$directory}]: ".trim($result->stderr),
+                status: 409,
+                result: $result,
+            );
+        }
+
+        return $result;
+    }
+
+    /** @param non-empty-list<string> $arguments */
+    private function run(array $arguments, string $errorCode, float $timeout = 60.0): CommandResult
+    {
+        $result = $this->processes->run(new ProcessInvocation($arguments, timeout: $timeout));
+
+        if (! $result->succeeded()) {
+            throw new GatewayReleaseException(
+                step: 'adopt',
+                errorCode: $errorCode,
+                message: '['.implode(' ', array_slice($arguments, 0, 3)).'] failed: '.trim($result->stderr),
+                status: 500,
+                result: $result,
+            );
+        }
+
+        return $result;
+    }
+
+    private function refusal(string $errorCode, string $message): GatewayReleaseException
+    {
+        return new GatewayReleaseException(step: 'adopt', errorCode: $errorCode, message: $message, status: 409);
+    }
+
+    private function failure(string $errorCode, string $message, string $step = 'adopt'): GatewayReleaseException
+    {
+        return new GatewayReleaseException(step: $step, errorCode: $errorCode, message: $message, status: 500);
+    }
+
+    private function elapsed(int $startedAt): int
+    {
+        return intdiv(hrtime(true) - $startedAt, 1_000_000);
+    }
+}

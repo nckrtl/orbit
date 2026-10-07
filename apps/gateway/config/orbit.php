@@ -25,7 +25,7 @@ return [
         ? env('ORBIT_DOCUMENT_CLEANUP_RUNTIME', '/run/orbit/project-documents')
         : '/run/orbit/project-documents',
     'gateway_checkout' => rtrim(
-        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit-gateway'),
+        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit/apps/gateway'),
         characters: '/',
     ),
     // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).

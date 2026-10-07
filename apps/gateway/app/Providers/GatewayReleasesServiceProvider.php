@@ -22,7 +22,9 @@ use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\ActionGatewayDocumentCleanup;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
+use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
@@ -123,6 +125,18 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 recorder: $app->make(GatewayReleaseRecorder::class),
                 builder: $app->make(GatewayReleaseBuilder::class),
                 keptReleases: max(1, Config::integer('orbit.gateway_releases.keep')),
+            ),
+        );
+        $this->app->bind(
+            GatewayReleaseAdopter::class,
+            static fn (Application $app): GatewayReleaseAdopter => new GatewayReleaseAdopter(
+                layout: $app->make(GatewayReleaseLayout::class),
+                processes: $app->make(ProcessRunner::class),
+                builder: $app->make(GatewayReleaseBuilder::class),
+                exchange: new GatewayReleaseExchange($app->make(ProcessRunner::class)),
+                runtime: $app->make(GatewayReleaseRuntime::class),
+                verifier: $app->make(GatewayReleaseVerifier::class),
+                recorder: $app->make(GatewayReleaseRecorder::class),
             ),
         );
     }

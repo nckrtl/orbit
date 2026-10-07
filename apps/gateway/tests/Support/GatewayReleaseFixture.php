@@ -112,6 +112,29 @@ final class GatewayReleaseFixture implements ProcessRunner
         );
     }
 
+    /**
+     * Turns the fixture into a Gateway before adoption: no shared state, and an in-place clone of
+     * the origin at its last commit, with an env file, an env backup, and some storage.
+     */
+    public function inPlaceCheckout(string $env = "APP_ENV=production\nAPP_VERSION=0.1.0\n"): string
+    {
+        $current = $this->layout->currentPath();
+        exec('chmod -R u+w '.escapeshellarg($this->layout->sharedPath()).' 2>/dev/null; rm -rf '.escapeshellarg($this->layout->sharedPath()).' '.escapeshellarg($current));
+        $this->git($this->base, 'clone', '--quiet', $this->origin, $current);
+        $this->git($current, 'remote', 'set-url', 'origin', 'https://github.com/nckrtl/orbit.git');
+        $sha = trim($this->git($current, 'rev-parse', 'HEAD'));
+        $this->git($current, 'checkout', '--quiet', '--detach', $sha);
+        file_put_contents($current.'/apps/gateway/.env', $env);
+        chmod($current.'/apps/gateway/.env', 0600);
+        file_put_contents($current.'/apps/gateway/.env.bak-deploy-1', "APP_ENV=old\n");
+        mkdir($current.'/apps/gateway/storage/framework/cache/data/aa', 0750, true);
+        file_put_contents($current.'/apps/gateway/storage/framework/cache/data/aa/lock', 'held');
+        file_put_contents($current.'/apps/gateway/storage/logs/laravel.log', "one line\n");
+        chmod($current.'/apps/gateway/storage/logs/laravel.log', 0640);
+
+        return $sha;
+    }
+
     public function write(string $path, string $contents): void
     {
         $file = $this->origin.'/'.$path;
@@ -153,7 +176,7 @@ final class GatewayReleaseFixture implements ProcessRunner
         }
     }
 
-    private function git(string $directory, string ...$arguments): string
+    public function git(string $directory, string ...$arguments): string
     {
         $result = $this->native->run(new ProcessInvocation(['git', '-C', $directory, ...$arguments], timeout: 60.0, environment: self::Isolated));
 
