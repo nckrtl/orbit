@@ -8,6 +8,9 @@ final readonly class NodeAgentFootprint
 {
     public const string Version = '0.3.0';
 
+    /** @var list<string> */
+    public const array Architectures = ['x86_64', 'aarch64'];
+
     /**
      * SHA-256 checksums from the pinned release's `SHA256SUMS` asset.
      *
@@ -47,9 +50,14 @@ final readonly class NodeAgentFootprint
         };
     }
 
+    public static function assetName(string $architecture): string
+    {
+        return 'orbit-agent-'.self::Version.'-linux-'.$architecture;
+    }
+
     public static function downloadUrl(string $architecture): string
     {
         return 'https://github.com/nckrtl/orbit/releases/download/agent-v'.self::Version
-            .'/orbit-agent-'.self::Version.'-linux-'.$architecture;
+            .'/'.self::assetName($architecture);
     }
 }

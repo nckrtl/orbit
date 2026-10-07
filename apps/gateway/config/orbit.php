@@ -32,6 +32,12 @@ return [
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
         characters: '/',
     ),
+    // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
+    // `cli-v0.N.0`, and the Git checkout whose history counts N. The checkout is the running Gateway's own.
+    'cli_releases' => [
+        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
+        'git_directory' => base_path(),
+    ],
     'app_dev_domain' => trim(
         string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
         characters: '.',

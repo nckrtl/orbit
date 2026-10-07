@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\FleetFirewallRulesController;
+use App\Http\Controllers\Api\GatewayDesiredFleetStatesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
@@ -92,6 +93,10 @@ Route::prefix('v1')->group(function (): void {
         ->name('gateway:status');
     Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
         ->name('gateway:trust');
+    // Any active WireGuard peer, a managed Node or an operator machine, may read what the fleet should run (ADR 0202).
+    Route::middleware([RequireActiveWireGuardPeer::class])
+        ->get('gateway/desired-fleet-state', [GatewayDesiredFleetStatesController::class, 'show'])
+        ->name('gateway:desired-fleet-state');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,
