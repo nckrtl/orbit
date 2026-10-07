@@ -535,6 +535,8 @@ A failure in one source does not skip the others. The same exception class for o
 
 The scheduler command `tasks:tick` does all work of the extension. The Gateway's Laravel schedule runs it every 10 seconds, `problems:collect` every 10 minutes, and `problems:file` every hour, while the extension is enabled. The Gateway host must run `php artisan schedule:work`, or no task advances. One cache lock, held for up to 300 seconds, protects scheduled and manual ticks. A tick that finds the lock held does nothing.
 
+A tick that takes the lock records that time in the Gateway cache, and [`tasks:status`](/cli/tasks#orbit-tasksstatus) reports it as `last_tick_at`. A ticking scheduler moves it forward about every 10 seconds. Clearing the cache forgets it until the next tick. [`bin/gateway-smoke`](/reference/delivery-line#bingateway-smoke) reads it to prove the scheduler runs after a Gateway release.
+
 Each tick runs these steps in order:
 
 1. Watch the task pull request and start a waiting subtask. See [Pull request](#pull-request-and-settle-metrics).
