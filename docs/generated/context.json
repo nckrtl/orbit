@@ -1199,6 +1199,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": []
