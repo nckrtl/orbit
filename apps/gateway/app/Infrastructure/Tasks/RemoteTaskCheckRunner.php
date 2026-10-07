@@ -13,7 +13,6 @@ use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
@@ -30,7 +29,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     public const int OutputLimitBytes = 8 * 1024 * 1024;
 
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private TaskWorkspaceExecutor $ssh,
         private VpToolManager $vp,
         private TiaBaselineSetup $tia,
     ) {}
@@ -160,7 +159,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
             throw new TaskCheckException('The task workspace has no checkout.');
         }
         $vpEnvironment = '';
-        if ($withVpHome) {
+        if ($withVpHome && $instance->task_sandbox_id === null) {
             try {
                 $vpEnvironment = 'export VP_HOME='.escapeshellarg(dirname($this->vp->existingBinary($instance->node), 2))."\n";
             } catch (Throwable $exception) {
@@ -171,20 +170,20 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         try {
             // The check runs as the managed user, so host-dependent tests keep its sudo, ACL and caddy access.
             // It shares what it creates with the task worker before it reports a result.
-            $worker = TaskWorkerUser::name() ?? '';
-            $prefix = $vpEnvironment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->seed_path ?? '')."\nseed_commit=".escapeshellarg($instance->seed_commit ?? '')."\n".<<<'BASH'
+            $worker = TaskWorkerUser::name($instance) ?? '';
+            $prefix = $vpEnvironment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_path ?? '') : '')."\nseed_commit=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_commit ?? '') : '')."\n".<<<'BASH'
                 dir="$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir)/orbit"
                 check_python() {
                     ORBIT_TASK_WORKER_USER="$worker" ORBIT_SEED_PATH="$seed_path" ORBIT_SEED_COMMIT="$seed_commit" python3 "$@"
                 }
 
                 BASH;
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
+            $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
                 input: $prefix.TaskWorkspaceMetadata::bashPreamble().
                     // Start allocates a host TMPDIR for the detached check. The check removes it when it ends. Later SSH calls do not.
                     ($allocateTemporary
-                        ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir').')"'."\nexport TMPDIR\n"
+                        ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir', ['sandbox' => $instance->task_sandbox_id !== null]).')"'."\nexport TMPDIR\n"
                         : '').
                     $command."\n",
                 maxOutputBytes: self::OutputLimitBytes,

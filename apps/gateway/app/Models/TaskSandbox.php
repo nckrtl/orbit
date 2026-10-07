@@ -56,6 +56,6 @@ final class TaskSandbox extends Model
     /** @return BelongsTo<Task, $this> */
     public function group(): BelongsTo
     {
-        return $this->belongsTo(Task::class, 'group_id');
+        return $this->belongsTo(Task::class, 'group_id')->withoutGlobalScope('subtask');
     }
 }

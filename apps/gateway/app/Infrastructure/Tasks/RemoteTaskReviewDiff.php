@@ -7,7 +7,6 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -23,7 +22,7 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
 
     private const string SummaryMarker = '---ORBIT-REVIEW-SUMMARY---';
 
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private TaskWorkspaceExecutor $ssh) {}
 
     public function read(Instance $instance, string $startCommit): array
     {
@@ -33,9 +32,9 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
         }
 
         try {
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path, $startCommit]),
-                input: WorkspaceGit::bashPreamble(TaskWorkerUser::name() === null ? null : $instance->checkout_path).<<<'BASH'
+            $result = $this->ssh->execute($instance, new RemoteCommand(
+                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path, $startCommit], $instance),
+                input: WorkspaceGit::bashPreamble(TaskWorkerUser::name($instance) === null ? null : $instance->checkout_path).<<<'BASH'
                     set -o pipefail
                     cd -- "$1"
                     start=$2

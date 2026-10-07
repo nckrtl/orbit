@@ -26,6 +26,8 @@ use Illuminate\Support\Carbon;
  * @property int|null $vite_port
  * @property int|null $annotator_port
  * @property int|null $agentation_port
+ * @property string|null $task_sandbox_id
+ * @property-read TaskSandbox|null $taskSandbox
  * @property int $node_id
  * @property string $name
  * @property string $source_layout
@@ -116,6 +118,7 @@ final class Instance extends Model
     protected $fillable = [
         'project_id',
         'node_id',
+        'task_sandbox_id',
         'vite_port',
         'agentation_port',
         'annotator_port',
@@ -193,6 +196,12 @@ final class Instance extends Model
     public function project(): BelongsTo
     {
         return $this->belongsTo(Project::class, 'project_id');
+    }
+
+    /** @return BelongsTo<TaskSandbox, $this> */
+    public function taskSandbox(): BelongsTo
+    {
+        return $this->belongsTo(TaskSandbox::class, 'task_sandbox_id');
     }
 
     /** @return BelongsTo<Node, $this> */

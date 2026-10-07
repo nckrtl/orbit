@@ -6,13 +6,12 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
 final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStateReader
 {
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private TaskWorkspaceExecutor $ssh) {}
 
     public function headCommit(Instance $instance): ?string
     {
@@ -31,8 +30,8 @@ final readonly class RemoteTaskWorkspaceStateReader implements TaskWorkspaceStat
             return null;
         }
         try {
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
-                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path]),
+            $result = $this->ssh->execute($instance, new RemoteCommand(
+                arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path], $instance),
                 input: "checkout=\$1\n{$command}\n",
             ), 'task-workspace-state', 'tasks.diff_failed');
         } catch (RuntimeConvergenceException) {

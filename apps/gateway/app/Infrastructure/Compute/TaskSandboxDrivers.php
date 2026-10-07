@@ -46,7 +46,7 @@ final readonly class TaskSandboxDrivers
                 || in_array($host['node_id'], $ids, true) || ! is_int($host['max_vms'] ?? null)
                 || $host['max_vms'] < 1 || $host['max_vms'] > 64
                 || ! is_string($host['pool'] ?? null) || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}\z/D', $host['pool']) !== 1
-                || ($host['project'] ?? null) !== 'orbit-task-sandboxes'
+                || ! is_string($host['project'] ?? null) || preg_match('/\Aorbit-(?:task-sandboxes|sandbox-proof-[a-z0-9]+)\z/D', $host['project']) !== 1
                 || ! is_array($host['blocked_networks'] ?? null) || ! array_is_list($host['blocked_networks']) || $host['blocked_networks'] === []) {
                 throw $this->invalidConfiguration();
             }

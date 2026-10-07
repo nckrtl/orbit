@@ -116,7 +116,7 @@ hosts, in placement order. Each entry contains:
 | Field | Meaning |
 | --- | --- |
 | `node_id` | Enrolled host Node ID |
-| `project` | Must be `orbit-task-sandboxes` |
+| `project` | `orbit-task-sandboxes`, or `orbit-sandbox-proof-<suffix>` for an isolated proof |
 | `pool` | Storage pool for guest disks and the worktree volume |
 | `max_vms` | Running or reserved VM budget, from 1 to 64 |
 | `orbit_images` | Pinned VM fingerprints keyed by `operator`, `gateway`, and optional workload role |
@@ -147,3 +147,16 @@ exclusive lock, so they wait for active commands. Guest work does not hold the
 host capacity lock and cannot stall operations for another group. This transport
 is an internal building block; workspace execution remains gated until the
 full task path is connected and proven.
+
+### Workspace command routing
+
+A sandbox workspace records its reservation in `task_sandbox_id`. Task checks,
+receipts, signatures, and diffs use that reservation to reach the guest. They
+verify the group, Project, workspace, provider, host, and running state before
+sending a command. A VM group with missing sandbox ownership fails closed.
+Shared workspaces retain their managed-host transport and worker account.
+
+Sandbox checks use the guest's runtime and home. They do not borrow the host's
+Vite+ installation, dependency seed, or `orbit-worker` account. Workspace
+provisioning remains gated while bundle publication, agent credentials, and
+image preparation are integrated.

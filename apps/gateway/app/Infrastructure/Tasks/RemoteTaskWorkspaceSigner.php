@@ -6,14 +6,13 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceSigner;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 
 final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
 {
     public function __construct(
-        private DevelopmentSshExecutor $ssh,
+        private TaskWorkspaceExecutor $ssh,
     ) {}
 
     public function commit(Instance $instance, string $message): ?string
@@ -26,9 +25,9 @@ final readonly class RemoteTaskWorkspaceSigner implements TaskWorkspaceSigner
 
         try {
             $result = $this->ssh->execute(
-                $instance->node,
+                $instance,
                 new RemoteCommand(
-                    arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path]),
+                    arguments: TaskWorkerUser::arguments(['bash', '-seu', '--', $instance->checkout_path], $instance),
                     input: "checkout=\$1\nmessage='".base64_encode($message)."'\n".<<<'BASH'
                     export GIT_AUTHOR_NAME=orbit
                     export GIT_AUTHOR_EMAIL=tasks@orbit
