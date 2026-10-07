@@ -314,7 +314,7 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, deploy the Gateway, and converge each Node. Doctor reports each Node that runs another version.
+To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, deploy the Gateway, and converge each Node. Doctor reports each Node that runs another version. [ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) replaces the converge of each Node with a rollout through `orbit self-update` after each Gateway release. The agent still only observes.
 
 ## Failures
 

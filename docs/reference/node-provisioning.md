@@ -34,6 +34,8 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). |
 | 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
 
+[ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) adds a step that installs the Orbit CLI on each managed Linux Node, during provisioning and role converge.
+
 The Gateway console command `orbit:node-provision` runs the same steps for the first Node. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
 
 ### Bootstrap identity
