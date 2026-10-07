@@ -34,6 +34,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $pi_token
  * @property Carbon|null $review_started_at
  * @property Carbon|null $parked_at
+ * @property Carbon|null $resume_requested_at
  * @property bool $preview
  */
 final class TaskSandbox extends Model
@@ -53,7 +54,7 @@ final class TaskSandbox extends Model
     protected $fillable = [
         'id', 'group_id', 'node_id', 'provider', 'name', 'state', 'desired_power', 'spec',
         'credential_fingerprint', 'network_policy', 'server_id', 'disk_id', 'public_address', 'create_attempted_at', 'firewall_configured_at', 'destroyed_at', 'error_code',
-        'review_started_at', 'parked_at', 'preview',
+        'review_started_at', 'parked_at', 'preview', 'resume_requested_at',
     ];
 
     /** @return array<string, string> */
@@ -64,7 +65,7 @@ final class TaskSandbox extends Model
             'state' => SandboxState::class, 'spec' => 'array', 'pi_token' => 'encrypted', 'model_key' => 'encrypted',
             'model_key_registered_at' => 'datetime', 'model_key_revoked_at' => 'datetime',
             'create_attempted_at' => 'datetime', 'firewall_configured_at' => 'datetime', 'destroyed_at' => 'datetime',
-            'review_started_at' => 'datetime', 'parked_at' => 'datetime', 'preview' => 'boolean',
+            'review_started_at' => 'datetime', 'parked_at' => 'datetime', 'preview' => 'boolean', 'resume_requested_at' => 'datetime',
         ];
     }
 

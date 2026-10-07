@@ -82,9 +82,16 @@ final readonly class TaskSandboxLifecycle
         $this->keys->ensure($sandbox);
         $this->pi->execute($sandbox);
 
-        return $sandbox->state === SandboxState::Stopped || $sandbox->desired_power === 'stopped'
-            ? $driver->resume($sandbox)
-            : $driver->provision($sandbox);
+        $resume = $sandbox->resume_requested_at !== null || $sandbox->state === SandboxState::Stopped || $sandbox->desired_power === 'stopped';
+        if ($resume && $sandbox->resume_requested_at === null) {
+            $sandbox->update(['resume_requested_at' => now()]);
+        }
+        $result = $resume ? $driver->resume($sandbox) : $driver->provision($sandbox);
+        if ($result->state === SandboxState::Running && $result->resume_requested_at !== null) {
+            $result->update(['resume_requested_at' => null]);
+        }
+
+        return $result;
     }
 
     private function parkOwned(TaskSandbox $sandbox, ComputeDriver $driver): TaskSandbox

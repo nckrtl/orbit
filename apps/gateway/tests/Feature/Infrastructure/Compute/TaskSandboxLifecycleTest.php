@@ -250,7 +250,7 @@ it('clears review timing only after activation is confirmed', function (): void 
 
         return $row;
     });
-    $driver->shouldReceive('provision')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+    $driver->shouldReceive('resume')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
         $row->update(['state' => SandboxState::Running]);
 
         return $row;
@@ -338,4 +338,29 @@ it('retains the review cycle when resume fails before compute starts', function 
     expect($sandbox->fresh()->state)->toBe(SandboxState::Stopped)
         ->and($sandbox->fresh()->review_started_at->equalTo($started))->toBeTrue()
         ->and($sandbox->fresh()->parked_at->equalTo($parked))->toBeTrue();
+});
+
+it('retries restoration after an uncertain resume instead of provisioning the parked reservation', function (): void {
+    (new FakeSandboxModelProxy)->install();
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldNotReceive('provision');
+    $attempts = 0;
+    $driver->shouldReceive('resume')->twice()->andReturnUsing(function (TaskSandbox $row) use (&$attempts): TaskSandbox {
+        expect($row->resume_requested_at)->not->toBeNull();
+        if ($attempts++ === 0) {
+            $row->update(['state' => SandboxState::Uncertain, 'desired_power' => 'running']);
+            throw new ComputeException('compute.capacity', 'The host VM budget is full.');
+        }
+        $row->update(['state' => SandboxState::Running, 'desired_power' => 'running']);
+
+        return $row;
+    });
+    $lifecycle = app(TaskSandboxLifecycle::class);
+    expect(fn () => $lifecycle->activate($sandbox, $driver))->toThrow(ComputeException::class, 'budget');
+    expect($sandbox->fresh()->resume_requested_at)->not->toBeNull();
+    $lifecycle->activate($sandbox, $driver);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Running)->and($sandbox->fresh()->resume_requested_at)->toBeNull();
 });

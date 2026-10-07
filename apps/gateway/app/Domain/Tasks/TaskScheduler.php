@@ -13,6 +13,7 @@ use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
+use App\Infrastructure\Compute\TaskSandboxGroupLifecycle;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -128,6 +129,7 @@ final readonly class TaskScheduler
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
         private TaskWorkspaceTopology $topology,
+        private TaskSandboxGroupLifecycle $sandboxes,
     ) {}
 
     /**
@@ -208,6 +210,7 @@ final readonly class TaskScheduler
             } elseif ($health instanceof TaskPullRequestHealth) {
                 $this->healOpenPullRequest($group, $health, $reviews);
             }
+            $this->sandboxes->review($group);
         }
 
         $decisions = [];
@@ -2050,6 +2053,10 @@ final readonly class TaskScheduler
      */
     public function claimNext(array &$skipped = []): ?Task
     {
+        $resumed = $this->resumeWaitingSandbox($skipped);
+        if ($resumed instanceof Task) {
+            return $resumed;
+        }
         while (true) {
             $reserved = DB::transaction(function () use ($skipped): ?Task {
                 $candidates = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
@@ -2131,6 +2138,30 @@ final readonly class TaskScheduler
         $this->startFirstTask($started);
 
         return $started->fresh(['tasks', 'project', 'taskable']) ?? $started;
+    }
+
+    /** @param list<int> $skipped */
+    private function resumeWaitingSandbox(array &$skipped): ?Task
+    {
+        $groups = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
+            ->where('task_compute', TaskCompute::Vm)->where('status', TaskGroupStatus::WaitingForReview)
+            ->whereNull('watched_pr_completion')
+            ->whereHas('tasks', fn ($tasks) => $tasks->where('status', TaskStatus::Todo))
+            ->when($skipped !== [], fn ($query) => $query->whereNotIn('id', $skipped))
+            ->with(['project', 'tasks', 'taskable'])->orderBy('id')->get();
+        foreach ($groups as $group) {
+            if (self::resumeBlocked($group)) {
+                continue;
+            }
+            $this->resumeWaitingSubtask($group);
+            $fresh = $group->fresh(['project', 'tasks', 'taskable']);
+            if ($fresh instanceof Task && $fresh->status === TaskGroupStatus::Running) {
+                return $fresh;
+            }
+            $skipped[] = $group->id;
+        }
+
+        return null;
     }
 
     /**
@@ -3133,6 +3164,7 @@ final readonly class TaskScheduler
         $group->save();
 
         $settled = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
+        $this->sandboxes->review($settled);
 
         if ($settled->notify_coder && ! $returning) {
             $this->coder->notify($settled);
@@ -3627,7 +3659,7 @@ final readonly class TaskScheduler
         if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
             return;
         }
-        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $this->resumeBlocked($group)) {
+        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && self::resumeBlocked($group)) {
             return;
         }
         if ($this->hasBusyTask($group->tasks)) {
@@ -3636,6 +3668,10 @@ final readonly class TaskScheduler
 
         $todo = $this->lowestTodo($group->tasks);
         if (! $todo instanceof Task) {
+            return;
+        }
+
+        if (! $this->sandboxes->resume($group)) {
             return;
         }
 
@@ -3707,7 +3743,7 @@ final readonly class TaskScheduler
                 if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
                     return null;
                 }
-                if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $this->resumeBlocked($group)) {
+                if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && self::resumeBlocked($group)) {
                     return null;
                 }
 
@@ -3764,7 +3800,7 @@ final readonly class TaskScheduler
     }
 
     /** Another assistance cause blocks a resume. The missing-pull-request reason does not. */
-    private function resumeBlocked(Task $group): bool
+    public static function resumeBlocked(Task $group): bool
     {
         return $group->assistance_requested
             && ! TaskPullRequestHealth::isReason($group->assistance_reason)
