@@ -67,6 +67,7 @@ require_once __DIR__.'/Helpers/AnalyticsConnectionFixtures.php';
 require_once __DIR__.'/Helpers/InstanceAnalyticsFixtures.php';
 require_once __DIR__.'/Helpers/ConfigFixtures.php';
 require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
+require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {

@@ -13,9 +13,11 @@ final readonly class GatewayStatusResponse
         public string $phpVersion,
         public string $laravelVersion,
         public string $requestId,
+        /** Shown to an active WireGuard peer only; null for any other caller and for an older Gateway. */
+        public ?DesiredFleetStateResponse $desiredFleetState = null,
     ) {}
 
-    /** @return array<string, string> */
+    /** @return array<string, mixed> */
     public function toArray(): array
     {
         return [
@@ -24,6 +26,7 @@ final readonly class GatewayStatusResponse
             'version' => $this->version,
             'php_version' => $this->phpVersion,
             'laravel_version' => $this->laravelVersion,
+            'desired_fleet_state' => $this->desiredFleetState?->toArray(),
             'request_id' => $this->requestId,
         ];
     }

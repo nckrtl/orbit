@@ -523,6 +523,21 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/self-update.mdx",
+            "title": "self-update",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/tasks.mdx",
             "title": "tasks",
             "kind": "product",
@@ -756,7 +771,6 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Route",
                 "Subtask",
@@ -1491,7 +1505,9 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0201"
+            ]
         },
         {
             "path": "docs/reference/implementation-loop.md",
@@ -1517,7 +1533,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0201"
+            ]
         },
         {
             "path": "docs/reference/incus-topologies.md",
@@ -1761,6 +1779,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Cluster",
                 "Deliverable",
@@ -2090,6 +2109,26 @@
                 "Schedule"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/self-update.md",
+            "title": "Orbit self-update",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0202"
+            ]
         },
         {
             "path": "docs/reference/service-metrics.md",

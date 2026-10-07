@@ -17,7 +17,7 @@ final readonly class UpCloudCloudInit
                 'ssh_authorized_keys' => [$spec->publicKey],
             ]],
             'ssh_pwauth' => false, 'disable_root' => true, 'package_update' => true,
-            'packages' => ['wireguard-tools', 'git', 'curl', 'python3', 'acl', 'ripgrep'],
+            'packages' => ['wireguard-tools', 'git', 'gh', 'curl', 'python3', 'acl', 'ripgrep'],
             'runcmd' => [['install', '-d', '-o', 'orbit', '-g', 'orbit', '-m', '0700', '/home/orbit/orbit'], [
                 'sh', '-c', 'set -eu; if [ ! -e /swapfile ]; then fallocate -l 1G /swapfile; chmod 600 /swapfile; mkswap /swapfile; fi; swapon /swapfile; grep -q "^/swapfile " /etc/fstab || printf "/swapfile none swap sw 0 0\\n" >> /etc/fstab',
             ]],

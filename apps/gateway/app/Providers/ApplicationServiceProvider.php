@@ -58,12 +58,16 @@ use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
+use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
@@ -237,6 +241,8 @@ use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
+use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
+use App\Infrastructure\Fleet\GitReleaseHistory;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
@@ -246,6 +252,7 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
@@ -497,6 +504,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         TiaBaselineSource::class => HttpGitHubTiaBaseline::class,
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
+        GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
@@ -616,6 +624,21 @@ final class ApplicationServiceProvider extends ServiceProvider
                     clock: CacheAgentStateView::now(...),
                     workingDirectory: base_path(),
                 ),
+            ),
+        );
+        $this->app->bind(
+            ReleaseHistory::class,
+            static fn ($app): GitReleaseHistory => new GitReleaseHistory(
+                processes: $app->make(ProcessRunner::class),
+                directory: Config::string('orbit.cli_releases.git_directory'),
+            ),
+        );
+        $this->app->bind(
+            CliReleaseCatalog::class,
+            static fn ($app): GitHubCliReleaseCatalog => new GitHubCliReleaseCatalog(
+                apps: $app->make(GitHubAppStore::class),
+                github: $app->make(GitHubApi::class),
+                repositoryOrigin: Config::string('orbit.cli_releases.repository'),
             ),
         );
         $this->app->bind(

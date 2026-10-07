@@ -119,7 +119,7 @@ Sandbox images need a test baseline from CI. Each successful project job on `mai
 
 Download the artifact outside the sandbox from a successful `main` CI run. Pass its extracted directory to `bin/tia-cache import-ci --project <path> --artifact <directory> --commit <tested-sha>` inside the image checkout. The command validates checksums, configuration, portable graph paths, test results, and commit ancestry. It seeds only an absent private graph and preserves an existing one. It does not fetch credentials or publish the imported graph to a shared cache store.
 
-When Orbit prepares a checkout from bundles, it records the Project's default branch as `origin/HEAD` without contacting GitHub. Pest uses that local reference to select its baseline. The source ownership record fixes the default branch for the checkout; a changed branch or reference is refused before another turn.
+When Orbit prepares a sandbox checkout, it records the Project's default branch as `origin/HEAD` without contacting GitHub. Pest uses that local reference to select its baseline. The source ownership record fixes the default branch for the checkout; a changed branch or reference is refused before another turn.
 
 ### Power and recovery
 
@@ -188,23 +188,18 @@ Guest checkout paths are scoped to a sandbox, so different VMs on one host can u
 
 Sandbox checks use the guest's runtime and home. They do not borrow the host's
 Vite+ installation, dependency seed, or `orbit-worker` account. Workspace
-provisioning remains gated while bundle publication, agent credentials, and
+provisioning remains gated while Git publication, agent credentials, and
 image preparation are integrated.
 
-### Git objects cross the boundary as bundles
+### VMs use temporary GitHub App access
 
-Sandbox publication exports the approved commit as a bundle. The Gateway receives
-bounded chunks in a private temporary directory, checks the transfer digest,
-and verifies the bundle in a fresh trusted bare repository before pushing that
-exact commit to `task-<id>`. It never force-pushes. Extra advertised refs,
-missing prerequisites, corrupt objects, and a different commit are refused.
+The Gateway keeps the App private key and mints installation tokens scoped to the Project repository. Fetch and publication run directly in the owned VM over authenticated HTTPS. Tokens travel as protected SSH input, never in command arguments, stored origins, or Git configuration. Every Gateway operation obtains fresh access, so later turns do not depend on an expired token. Fetch updates remote-tracking refs without moving HEAD or replacing local work. Publication pushes the exact approved commit to `task-<id>` without force.
 
-Fetching reverses that path. The Gateway fetches a named branch and exports a
-bundle. The guest imports it into the matching remote-tracking ref without
-changing its current branch or working tree. Repository tokens stay in the
-Gateway's protected process input and temporary credential file. No token or
-credential helper enters the sandbox. Transfer files are removed after the
-operation; destroying the sandbox also removes interrupted guest transfers.
+Enrolled UpCloud VMs also have a Git credential helper. It requests a fresh repository token from the Gateway over WireGuard and verified HTTPS for each Git authentication. The Gateway derives the repository from the VM's current task ownership, requires binary access to its own Node and its private Pi token, and refuses stopped, destroyed, detached, or ended groups. The helper accepts only the Project repository on github.com.
+
+Provisioning grants the enrolled VM access to its own Node only. It grants no access to the Gateway or another Node.
+
+Cloud-init installs GitHub CLI. An owned `gh` wrapper runs it with the temporary token in its process environment, including access to Actions artifacts. The wrapper also supports `orbit-github gh …`. Neither helper stores the installation token. The Gateway CA and endpoint are provisioned through the pinned SSH channel. VMs require the App installation even when the Project uses `gh_cli` on shared machines. The App must be installed on the Project repository; no personal access token is needed. GitHub installation tokens expire after one hour. Cleanup blocks renewal; tokens already issued retain their GitHub expiry.
 
 ### Pi sessions stay bound to their sandbox
 
@@ -216,7 +211,7 @@ Sandbox MCP files are installed through the guest transport. For Orbit they name
 
 ### Prepare source inside the guest
 
-`SandboxWorkspaceSource` initializes a blank checkout with a sandbox ownership marker, imports remote refs through the trusted bundle broker, and creates the task branch from its published branch or the Project default. No clone runs in the guest. Retrying a prepared checkout preserves local commits and uncommitted files. A foreign directory, changed origin, or changed checkout branch fails without replacing its contents. This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
+`SandboxWorkspaceSource` initializes a blank checkout with a sandbox ownership marker, fetches remote refs directly from GitHub with temporary App access, and creates the task branch from its published branch or the Project default. The guest initializes its checkout and fetches the selected refs. Retrying a prepared checkout preserves local commits and uncommitted files. A foreign directory, changed origin, or changed checkout branch fails without replacing its contents. This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
 
 ### Keep guest paths off the host
 
@@ -248,7 +243,7 @@ Runtime preparation checks the reservation and checkout, refuses foreign files o
 
 The Gateway prepares Pi only on the reservation's active, owned `app-dev` Node. Configure `ORBIT_SANDBOX_PI_ARTIFACT_PATH` with a Pi executable for Linux x64 owned by the Gateway process user and `ORBIT_SANDBOX_PI_ARTIFACT_SHA256` with its digest. Build this artifact from `apps/pi-server` with its `build:linux` script. Orbit sends it over pinned SSH on protected stdin. The guest verifies its length, ELF architecture, and digest before installing a root-owned executable. A reservation receipt makes retries idempotent. Foreign binaries, changed artifacts, or unsafe files refuse preparation.
 
-The VM forwards `127.0.0.1:8317` to the model address and port recorded during enrollment. The saved model-key registration origin must be that exact HTTP endpoint. HTTPS origins cannot use this TCP relay. The guest receives only its group model key and Pi token. It never receives provider, GitHub, or model-management credentials.
+The VM forwards `127.0.0.1:8317` to the model address and port recorded during enrollment. The saved model-key registration origin must be that exact HTTP endpoint. HTTPS origins cannot use this TCP relay. The guest receives only its group model key and Pi token. Provider and model-management credentials stay on the Gateway. The Gateway separately issues temporary App tokens scoped to the Project repository.
 
 Preparation reports readiness only after authenticated Pi and model requests succeed and invalid credentials receive `401`. Orbit records readiness on the reservation. Project Pi connections require that receipt and the active owned Node; they never adopt a shared `pi-server` Process. Failed preparation clears readiness and retains ownership for retry. Keep claims disabled until the complete provision-to-agent path passes live validation.
 
@@ -341,7 +336,7 @@ Publication returns pinned image fingerprints and the source descriptor for host
 
 A source template includes `.git/orbit-sandbox-template.json` with the same descriptor as its reservation. Before first use, the guest checks that marker, the pinned commit, the default branch, and a clean tracked and untracked tree. Ignored dependency caches can remain. The template uses a real local Git directory, contains only the default local and remote branches, and exposes only its canonical origin URL. Git includes, custom filters, alternate object stores, and replacement history are refused.
 
-After validation, the guest records group ownership without replacing an existing marker. It imports the task branch through the trusted bundle path and selects that branch, or the current default branch for new work. The template commit is the seed; the imported branch supplies the task's starting commit. Repeated preparation checks the recorded template identity and preserves local commits, dirty files, and dependencies. A populated checkout without the matching template marker remains refused.
+After validation, the guest records group ownership without replacing an existing marker. It fetches the task branch directly from GitHub and selects that branch, or the current default branch for new work. The template commit is the seed; the imported branch supplies the task's starting commit. Repeated preparation checks the recorded template identity and preserves local commits, dirty files, and dependencies. A populated checkout without the matching template marker remains refused.
 
 ### Prepare the isolated pair
 
@@ -361,10 +356,10 @@ Provisioning reserves and attaches an owned workspace before preparing source, t
 
 `ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` defaults to false. Its first lane uses UpCloud directly; it refuses project Incus reservations rather than changing their placement. Enable UpCloud compute, enrollment, and the model proxy, and configure Pi models and the pinned artifact before enabling this switch. Orbit projects retain their local pair path.
 
-The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, imports source through the Git bundle broker, and prepares Pi. It then returns the source-resolved workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. The task workspace has no preview Route.
+The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, fetches source directly from GitHub, and prepares Pi. It then returns the source-resolved workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. The task workspace has no preview Route.
 
 Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention.
 
-When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation has finished cleanup. It restores `task-{group id}` at the confirmed pull request commit through the Git bundle broker, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
+When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation has finished cleanup. It restores `task-{group id}` at the confirmed pull request commit using temporary GitHub App access, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
 
 Orbit does not recreate a VM just for preview access because private task workspaces have no preview Route. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.

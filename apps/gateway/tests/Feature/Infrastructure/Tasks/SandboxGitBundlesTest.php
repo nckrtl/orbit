@@ -94,8 +94,7 @@ describe('sandbox bundle broker', function (): void {
 
             return new CommandResult(0, json_encode(['commit' => str_repeat('a', 40), 'branch' => 'task-'.$workspace->taskSandbox->group_id], JSON_THROW_ON_ERROR), '', 1, false);
         });
-        bundle_repository_access();
-        app(GitHubTaskPullRequestPublisher::class)->push($workspace->taskSandbox->group, str_repeat('a', 40));
+        app(SandboxGitBundles::class)->publish($workspace, GitHubRepository::fromOrigin('https://github.com/acme/orbit.git'), $workspace->taskSandbox->group_id, str_repeat('a', 40), 'repository-secret');
         expect($operations)->toBe(['export', 'read', 'remove'])->and(file_exists($path))->toBeFalse()->and(is_dir(dirname($path)))->toBeFalse();
     });
 
@@ -148,8 +147,7 @@ describe('sandbox bundle broker', function (): void {
 
             return $request['operation'] === 'begin' ? ['offset' => 0] : ['removed' => true];
         });
-        bundle_repository_access();
-        app(GitHubTaskBaseBranchFetcher::class)->fetch($workspace->taskSandbox->group, 'main');
+        app(SandboxGitBundles::class)->fetch($workspace, GitHubRepository::fromOrigin('https://github.com/acme/orbit.git'), 'main', GitReadEnvironment::forGitHubToken('repository-secret'));
         expect($received)->toBe($bytes)->and($operations)->toBe(['begin', 'write', 'write', 'import', 'remove'])->and(file_exists($path))->toBeFalse();
     });
 

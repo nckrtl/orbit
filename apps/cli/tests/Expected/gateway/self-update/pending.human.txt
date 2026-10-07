@@ -1,0 +1,17 @@
+Reading desired state...
+Updating agent...
+Updating CLI...
+
+┌  Update Orbit
+│
+├  ● Read desired state
+│    CLI 0.4681.0 (pending), agent 0.3.0
+│
+├  ● Update agent
+│    This machine is not a managed Node.
+│
+├  ● Update CLI
+│    CLI 0.4681.0 is not published yet. Run orbit self-update again in a few minutes.
+│
+└  Waiting for the CLI release.
+

@@ -2162,6 +2162,72 @@
         ]
       }
     },
+    "/api/v1/compute/github-token": {
+      "post": {
+        "operationId": "compute-github-token",
+        "summary": "Renew sandbox repository access",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.",
+        "responses": {
+          "200": {
+            "description": "Fresh access scoped to the Project repository.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store, private"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "Temporary installation token. Never persist or log it."
+                    }
+                  },
+                  "required": [
+                    "token"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporary repository access could not be issued (`compute.github_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/compute/github-token\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/database-connections": {
       "get": {
         "operationId": "database-list",
@@ -4372,6 +4438,62 @@
         ]
       }
     },
+    "/api/v1/gateway/desired-fleet-state": {
+      "get": {
+        "operationId": "gateway-desired-fleet-state",
+        "summary": "Show the desired fleet state",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Returns what every machine in the fleet should run for the Gateway's commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DesiredFleetState"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/gateway/desired-fleet-state\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowDesiredFleetStateRequest())->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/gateway/status": {
       "get": {
         "operationId": "gateway-status",
@@ -4379,7 +4501,7 @@
         "tags": [
           "Gateway"
         ],
-        "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.",
+        "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -27298,6 +27420,106 @@
           }
         }
       },
+      "DesiredFleetState": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cli": {
+            "$ref": "#/components/schemas/DesiredCliRelease"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/DesiredAgent"
+          }
+        }
+      },
+      "DesiredCliRelease": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "pending",
+              "unavailable"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "gateway_commit_unknown",
+              "history_unavailable",
+              "release_missing",
+              "release_mismatch",
+              "release_incomplete",
+              "github_unavailable",
+              null
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checksums_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetReleaseAsset"
+            }
+          }
+        }
+      },
+      "FleetReleaseAsset": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "DesiredAgent": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetReleaseAsset"
+            }
+          }
+        }
+      },
       "GatewayStatus": {
         "type": "object",
         "properties": {
@@ -27315,6 +27537,16 @@
           },
           "laravel_version": {
             "type": "string"
+          },
+          "desired_fleet_state": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DesiredFleetState"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },

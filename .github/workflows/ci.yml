@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# A pull request keeps only its newest run. Each main commit gets its own group, so a newer push neither
+# cancels a running main run nor replaces a pending one, and every main commit gets a complete result.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   project:
@@ -49,6 +51,13 @@ jobs:
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           ref: ${{ github.head_ref || github.ref_name }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+
+      # The checkout above names the branch, and a later push can move it before this job starts. Main runs are not
+      # cancelled, so each one must test exactly its own commit: its Required checks result releases that commit.
+      - name: Pin the run's commit
+        if: github.event_name != 'pull_request'
+        working-directory: .
+        run: git reset --hard "$GITHUB_SHA"
 
       # Sabre already has PHP 8.5 with PCOV and Composer. On a self-hosted runner, setup-php makes
       # /usr/local/bin world-writable, which Orbit's service-metrics program refuses on every Node.
@@ -352,6 +361,18 @@ jobs:
 
       - name: Build
         run: bun run build
+
+      # Automatic Gateway releases (ADR 0201) install this build for the same commit, so the Gateway needs no Node or Bun.
+      # Every run on main publishes it, a manual dispatch too, so each successful Required checks result on main has one.
+      - name: Publish web build
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist-${{ github.sha }}
+          path: apps/web/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
 
   pi-server:
     name: Pi server

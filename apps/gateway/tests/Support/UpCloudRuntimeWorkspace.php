@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Actions\Nodes\AddNodeAccessAction;
 use App\Domain\Compute\SandboxSpec;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Nodes\RoleName;
@@ -47,6 +48,7 @@ final class UpCloudRuntimeWorkspace
         $sandbox = self::sandbox();
         $node = app(SandboxFleetIdentity::class)->reserve($sandbox);
         $node->update(['status' => 'active']);
+        app(AddNodeAccessAction::class)->execute($node, $node);
         $node->roles()->create(['role' => 'app-dev', 'status' => 'active']);
         $sandbox->forceFill(['network_policy' => 'sealed', 'enrollment' => [...$sandbox->enrollment, 'hub_confirmed_at' => now()->toIso8601String()], 'enrolled_at' => now(), 'pi_token' => str_repeat('a', 64), 'model_key' => str_repeat('b', 64),
             'model_key_registered_at' => now(), 'model_proxy_origin' => 'http://10.44.0.3:8317', 'pi_ready_at' => now()])->save();

@@ -51,9 +51,11 @@ CI publishes the CLI binaries of each green main commit as a GitHub release with
 One node-local command, run as root on Nodes and as the user on operator machines:
 
 1. Read the desired fleet state from the Gateway with the machine's normal Gateway identity.
-2. Replace the CLI binary with the published release. Verify the sha256 from the manifest, and replace atomically. Refuse a downgrade unless `--allow-downgrade` is passed.
-3. On a managed Linux Node, replace the agent binary when it differs from the pin, using the same verified candidate-and-move steps as today's agent converge. Then restart `orbit-agent.service`.
+2. On a managed Linux Node, replace the agent binary when it differs from the pin, using the same verified candidate-and-move steps as today's agent converge. Then restart `orbit-agent.service`, check that it stays up, and restore the previous binary when it does not.
+3. Replace the CLI binary with the published release, last. Build the download URL on the machine, verify the sha256 from the manifest against the release's own `SHA256SUMS`, install the release beside the old one, and switch the `orbit` link atomically. Refuse a downgrade unless `--allow-downgrade` is passed.
 4. Print a JSON result: versions before and after, and each step's outcome.
+
+The CLI goes last because a standalone binary reads its own PHAR by path while it runs: once the file that runs the command is replaced, the process cannot load more code. Versioned files behind a link keep every running `orbit` on its own file; only the first update of a plain binary replaces the running file, and the command then exits right after its result. [Orbit self-update](/reference/self-update#replace-the-cli-last) has the details.
 
 ### Fleet rollout
 

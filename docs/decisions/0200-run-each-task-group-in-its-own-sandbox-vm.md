@@ -53,7 +53,7 @@ There is no `orbit-worker` in a sandbox. Agents, the Pi server, and the task che
 
 ### Secrets and network
 
-- **No GitHub token enters a sandbox.** Orbit moves Git objects in and out as bundles over the control path. It fetches into a trusted clone outside the sandbox and pushes the approved commit from there. Today the push runs inside the checkout ([`GitHubTaskPullRequestPublisher`](/reference/github-app)). A root agent can capture the token there, so that path is not allowed for sandboxes.
+- **Temporary GitHub App tokens enter the owned sandbox.** The App private key stays on the Gateway. Tokens are scoped to the Project repository and renewed for direct fetch and push. UpCloud guests authenticate renewal with their enrolled WireGuard identity and private Pi token. A root agent can read its repository token; this is an accepted boundary for a disposable Project VM. Publication still pushes only the approved commit.
 - **Model calls** go only through CLIProxyAPI. Each group gets its own key, created at claim and revoked at the end. The Orbit-lane operator reaches it through a host proxy device, because `10.44.0.3` belongs to the test topology there. No subscription sign-in is stored in any sandbox.
 - **The Pi token is per node.** The Gateway-wide `ORBIT_PI_TOKEN` is not used for sandboxes.
 - **Limits on outbound and fleet traffic are enforced outside the sandbox.** Project lane: the WireGuard hub ACL. Orbit lane: an Incus network ACL on the host. Cloud: the provider firewall as well.
@@ -97,7 +97,7 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
 - The privileged tests run inside the sandbox. The ACL, `safe.directory`, and check-directory ownership work is removed for `vm` groups.
 - Overspill to cloud capacity uses the same lifecycle and images.
 - Images, snapshots, warm pools, and VM budgets need to be built and kept current. That work is listed in the implementation plan.
-- Publication moves outside the sandbox. Git bundles over the control path are new code.
+- Publication runs directly in the owned sandbox with temporary repository access. The Gateway retains the approved-commit gate.
 - A root agent can tamper with the in-sandbox check result. CI on the pushed commit stays the authoritative gate.
 - Nested virtualization is required wherever the Orbit lane adds VMs. Cloud drivers serve the project lane first.
 
@@ -111,4 +111,4 @@ This decision changes [Shared Instance](/reference/tasks#shared-instance) and [O
   - A local check run by an agent and Orbit's handoff check give the same verdict on the same tree.
   - A group runs to PR, then parks, resumes, merges, and nothing is left behind.
   - A sandbox cannot reach `10.44.0.0/16` except at its allowed endpoints.
-  - No GitHub token appears in any sandbox's process environment or files.
+  - No App private key or provider credential enters a sandbox. GitHub tokens never appear in argv, logs, stored origins, or Git configuration.
