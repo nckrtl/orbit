@@ -37,10 +37,10 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseSmoke $smoke,
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
+        /** Checks the previous release against the applied schema before a switch-back. */
+        private GatewayReleaseGuard $guard,
         private int $keptReleases = self::KeptReleases,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
-        /** Checks the previous release against the applied schema before a switch-back. */
-        private ?GatewayReleaseGuard $guard = null,
     ) {}
 
     /**
@@ -199,10 +199,6 @@ final readonly class GatewayReleasePromoter
     /** Why the previous release must not serve the applied schema, or null when it may. */
     private function schemaRefusal(string $previous): ?GatewayReleaseException
     {
-        if (! $this->guard instanceof GatewayReleaseGuard) {
-            return null;
-        }
-
         try {
             $this->guard->assertSchema($previous, false);
         } catch (Throwable $exception) {
