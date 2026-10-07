@@ -123,7 +123,7 @@ describe('gateway:release:deploy', function (): void {
     it('leaves the current release in place when the switch is interrupted', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Interrupted');
-        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, new class($this->fixture) implements ProcessRunner
+        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, new readonly class($this->fixture) implements ProcessRunner
         {
             public function __construct(private GatewayReleaseFixture $fixture) {}
 
@@ -314,7 +314,7 @@ function passing_verifier(?ReleaseSteps $order = null): GatewayReleaseVerifier
     {
         public ?string $failSha = null;
 
-        public function __construct(private ?ReleaseSteps $order) {}
+        public function __construct(private readonly ?ReleaseSteps $order) {}
 
         public function verify(string $sha): array
         {
@@ -333,7 +333,7 @@ function passing_verifier(?ReleaseSteps $order = null): GatewayReleaseVerifier
 
 function recording_runtime(ReleaseSteps $order): GatewayReleaseRuntime
 {
-    return new class($order) implements GatewayReleaseRuntime
+    return new readonly class($order) implements GatewayReleaseRuntime
     {
         public function __construct(private ReleaseSteps $order) {}
 
@@ -355,7 +355,7 @@ function recording_runtime(ReleaseSteps $order): GatewayReleaseRuntime
 
 function recording_web(ReleaseSteps $order): GatewayReleaseWebBuild
 {
-    return new class($order) implements GatewayReleaseWebBuild
+    return new readonly class($order) implements GatewayReleaseWebBuild
     {
         public function __construct(private ReleaseSteps $order) {}
 
@@ -382,7 +382,7 @@ function recording_smoke(ReleaseSteps $order): GatewayReleaseSmoke
     {
         public bool $fail = false;
 
-        public function __construct(private ReleaseSteps $order) {}
+        public function __construct(private readonly ReleaseSteps $order) {}
 
         public function run(string $id, string $sha): array
         {
