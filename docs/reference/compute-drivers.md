@@ -8,13 +8,12 @@ covers:
   - apps/gateway/app/Models/TaskSandbox.php
   - apps/gateway/config/compute.php
   - apps/gateway/resources/compute/**
-  - apps/gateway/database/migrations/*create_task_sandboxes_table.php
-  - apps/gateway/database/migrations/*add_fleet_enrollment_to_task_sandboxes.php
+  - apps/gateway/database/migrations/*{create_task_sandboxes_table,add_fleet_enrollment_to_task_sandboxes,add_pi_ready_at_to_task_sandboxes}.php
 ---
 
 # Compute drivers
 
-The UpCloud compute driver provides the VM lifecycle for a task sandbox. It is an internal Gateway contract, disabled by default. The task scheduler still places groups on existing shared Nodes. This driver does not yet enroll a Node, install Pi, prepare an Instance, or start an agent. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) defines those later integrations.
+The UpCloud compute driver provides the VM lifecycle for a task sandbox. It is an internal Gateway contract, disabled by default. Shared groups continue on existing Nodes. VM groups use their lane only when its claim switch is enabled. Enrollment uses the managed fleet path. Project claims use the UpCloud path behind a separate switch that defaults to disabled. [ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) defines the ownership and recovery policy.
 
 ## Provision a VM
 
@@ -245,6 +244,14 @@ Allocation registers model credentials and reserves the Pi token before compute 
 
 Runtime preparation checks the reservation and checkout, refuses foreign files or changed credentials, and confirms authenticated Pi health. Repeating preparation keeps a healthy service running, so existing sessions remain available. The image must contain the Pi binary and the managed user with sudo; it must not contain `orbit-worker` or subscription credentials.
 
+### Pi runtime on an enrolled UpCloud VM
+
+The Gateway prepares Pi only on the reservation's active, owned `app-dev` Node. Configure `ORBIT_SANDBOX_PI_ARTIFACT_PATH` with a Pi executable for Linux x64 owned by the Gateway process user and `ORBIT_SANDBOX_PI_ARTIFACT_SHA256` with its digest. Build this artifact from `apps/pi-server` with its `build:linux` script. Orbit sends it over pinned SSH on protected stdin. The guest verifies its length, ELF architecture, and digest before installing a root-owned executable. A reservation receipt makes retries idempotent. Foreign binaries, changed artifacts, or unsafe files refuse preparation.
+
+The VM forwards `127.0.0.1:8317` to the model address and port recorded during enrollment. The saved model-key registration origin must be that exact HTTP endpoint. HTTPS origins cannot use this TCP relay. The guest receives only its group model key and Pi token. It never receives provider, GitHub, or model-management credentials.
+
+Preparation reports readiness only after authenticated Pi and model requests succeed and invalid credentials receive `401`. Orbit records readiness on the reservation. Project Pi connections require that receipt and the active owned Node; they never adopt a shared `pi-server` Process. Failed preparation clears readiness and retains ownership for retry. Keep claims disabled until the complete provision-to-agent path passes live validation.
+
 ### Model relay on an Incus host
 
 An Incus host can set `model_proxy_origin` to a fixed HTTP(S) origin on loopback or `10.44.0.0/16`. It must match the endpoint where the Gateway registers model keys. Each reservation keeps that origin. The agent creates an owned Caddy user service bound to that group’s bridge address on port `8317`. Only the operator address can enter, and only model API paths pass through. Management paths and other HTTP methods return `403`. The relay forwards the group key unchanged and has no shared credential.
@@ -255,22 +262,22 @@ Guest preparation uses systemd socket forwarding from `127.0.0.1:8317` to the ow
 
 ### Review retention policy
 
-`TaskSandboxLifecycle::review` records the start of each review wait before changing compute. With no capacity waiter, a sandbox has a five-minute grace period. A capacity waiter ends that grace immediately. Repeated calls keep the original deadline. A reservation with `preview` enabled stays running. Changing it to a preview after parking resumes it through the same credential checks.
+`TaskSandboxLifecycle::review` records the start of each review wait before changing compute. Incus has a five-minute grace period when there is no capacity waiter. A capacity waiter ends that grace immediately. UpCloud stays running for one hour so incoming review feedback can reach the existing VM. Repeated calls keep the original deadline. A reservation with `preview` enabled stays running. Changing it to a preview after parking resumes it through the same credential checks.
 
-Incus retains its stopped snapshot until resume or destruction. UpCloud retention ends one hour after the review wait began, including any grace period or failed park attempt. Expiry uses the normal credential revocation and destruction path. An enrolled Node must leave the fleet before that path can remove its VM. Failures retain the deadline and ownership for retry. Preview retention does not prevent explicit merge cleanup.
+Incus retains its stopped snapshot until resume or destruction. UpCloud retention ends one hour after the review wait began. Capacity waits do not stop it early. Expiry uses the normal credential revocation and destruction path. Cleanup removes the owned enrolled Node and hub policy before that path can remove its VM. Failures retain the deadline and ownership for retry. Preview retention does not prevent explicit merge cleanup.
 
 Review timing, confirmed parking time, and VM power are stored separately. A confirmed activation clears review timing for the next cycle. A failed activation retains it. Resume intent is recorded before the driver runs and stays until running power is confirmed, so an uncertain resume retries restoration instead of provisioning.
 
-The scheduler reconciles review retention after publication and on later ticks. It restores Incus compute before fetching or starting resumed work. Eligible VM review resumes are attempted before new todo claims. A compute failure remains visible in `capacity_wait_reason`; it cannot start an agent through a shared workspace. Cloud rebuild, fleet removal, and workspace cleanup remain prerequisites for opening VM claims.
+The scheduler reconciles review retention after publication and on later ticks. It restores Incus compute before fetching or starting resumed work. Eligible VM review resumes are attempted before new todo claims. A compute failure remains visible in `capacity_wait_reason`; it cannot start an agent through a shared workspace. Cloud branch reconstruction remains a prerequisite for unattended claims.
 
 
 ## Task workspace cleanup
 
-Merge and cancellation remove an Orbit-lane workspace through its sandbox reservation. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach the shared-host Instance remover.
+Merge and cancellation remove task workspaces through their sandbox reservations. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach the shared-host Instance remover.
 
-Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. Project-lane cleanup refuses while its Node is enrolled; fleet removal remains a rollout prerequisite.
+For Incus, Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. UpCloud cleanup records destruction intent and revokes the model key before removing an exclusive workspace, its native app-dev role and Node, and the owned hub policy. The reservation retains provider IDs throughout. If provider deletion fails after the workspace is removed, cleanup retries through the reservation. A foreign workspace, Node, role, or live resource reference refuses cleanup.
 
-The sweep retries reservations with no Instance when their group has ended or been deleted. It does not adopt unrecorded host resources or remove an active group's reservation. Failed retries use the workspace sweep's time budget and backoff.
+The sweep retries reservations with no Instance when their group has ended, has been deleted, or has already recorded destruction intent. It does not adopt unrecorded host resources or start cleanup of an active group. Failed retries use the workspace sweep's time budget and backoff.
 
 ## Saved pair identity
 
@@ -319,3 +326,11 @@ The test Gateway validates Composer manifests and lock files. It refreshes depen
 `ORBIT_SANDBOX_ORBIT_CLAIMS_ENABLED` defaults to false. Keep it off until the complete Orbit lane and host connectivity policy are proven. With the switch enabled, an Orbit claim needs local pair images, a pinned source template, the private Pi endpoint, the model relay, and Pi model configuration. Other Projects keep a visible wait until their lane is enabled.
 
 Provisioning reserves and attaches an owned workspace before preparing source, the isolated pair, and Pi in that order. It holds the group's execution lock during preparation. A failed step retains the reservation and workspace for retry; it never adopts an unrelated workspace or falls back to shared compute. Only successful preparation returns the workspace to the scheduler, which runs the Project's baseline setup and check before starting an implementer.
+
+### Admit an UpCloud project claim
+
+`ORBIT_SANDBOX_PROJECT_CLAIMS_ENABLED` defaults to false. Its first lane uses UpCloud directly; it refuses project Incus reservations rather than changing their placement. Enable UpCloud compute, enrollment, and the model proxy, and configure Pi models and the pinned artifact before enabling this switch. Orbit projects retain their local pair path.
+
+The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, imports source through the Git bundle broker, and prepares Pi. It then returns the source-resolved workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. The task workspace has no preview Route.
+
+Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention. Reconstruction after destruction remains unavailable and reports `compute.rebuild_required`; do not enable unattended project claims until that recovery path is implemented and validated.

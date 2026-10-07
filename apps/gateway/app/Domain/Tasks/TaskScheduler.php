@@ -2454,7 +2454,7 @@ final readonly class TaskScheduler
         $removed = 0;
         $candidates = TaskSandbox::query()->where('state', '!=', SandboxState::Destroyed)
             ->whereNotIn('id', Instance::query()->whereNotNull('task_sandbox_id')->select('task_sandbox_id'))
-            ->where(fn ($query) => $query->whereNull('group_id')->orWhereHas('group', fn ($groups) => $groups
+            ->where(fn ($query) => $query->where('desired_power', 'destroyed')->orWhereNull('group_id')->orWhereHas('group', fn ($groups) => $groups
                 ->where('execution_mode', TaskExecutionMode::Managed)->where('task_compute', TaskCompute::Vm)
                 ->where(fn ($claim) => $claim->whereNull('reserved_at')->orWhere('reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
                 ->whereIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled])))

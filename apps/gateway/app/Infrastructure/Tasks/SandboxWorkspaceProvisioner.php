@@ -34,6 +34,7 @@ final readonly class SandboxWorkspaceProvisioner
         private SandboxWorkspaceSource $source,
         private SandboxPairRuntime $pair,
         private SandboxPiRuntime $pi,
+        private UpCloudWorkspaceProvisioner $projects,
     ) {}
 
     public function provision(Task $reserved): Instance|InstanceProvisionFailure
@@ -42,11 +43,11 @@ final readonly class SandboxWorkspaceProvisioner
             try {
                 $group = Task::topLevel()->with(['project', 'taskable'])->findOrFail($reserved->id);
                 $this->assertClaim($group, $reserved);
+                if ($group->project->slug !== 'orbit') {
+                    return $this->projects->provision($reserved);
+                }
                 if (! config('compute.orbit_claims_enabled', false)) {
                     throw new TaskCapacityException(false, 'Task sandbox compute is not configured on this Gateway.');
-                }
-                if ($group->project->slug !== 'orbit') {
-                    throw new TaskCapacityException(false, 'The Project sandbox lane is not ready on this Gateway.');
                 }
                 if ($group->implementer_agent_driver !== 'pi' || $group->reviewer_agent_driver !== 'pi') {
                     throw new TaskCapacityException(false, 'Sandbox claims require Pi for implementation and review.');

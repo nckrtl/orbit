@@ -209,3 +209,17 @@ it('refuses a foreign reservation found through a leftover workspace name', func
     expect($host->calls)->toBe([])->and($sandbox->fresh()->state)->toBe(SandboxState::Running);
     $this->assertModelExists($owner->taskable);
 });
+
+it('retries durable destruction intent during review even when the group has not ended', function (): void {
+    [$group, $sandbox, $host] = cleanup_sandbox_group();
+    $workspace = $group->taskable;
+    $group->taskable()->dissociate();
+    $group->update(['status' => TaskGroupStatus::WaitingForReview]);
+    $workspace->delete();
+    $sandbox->update(['desired_power' => 'destroyed']);
+
+    app(TaskScheduler::class)->removeAbandonedWorkspaces();
+
+    expect($host->calls)->toBe(['destroy']);
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Destroyed);
+});

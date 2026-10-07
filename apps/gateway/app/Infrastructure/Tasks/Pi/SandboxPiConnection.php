@@ -8,15 +8,17 @@ use App\Domain\Compute\SandboxState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\TaskCompute;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskSandbox;
+use Throwable;
 
 final readonly class SandboxPiConnection
 {
-    public function __construct(private TaskSandboxDrivers $drivers) {}
+    public function __construct(private TaskSandboxDrivers $drivers, private SandboxFleetIdentity $identity) {}
 
     public function endpoint(Instance $workspace, Node $node): PiEndpoint|Node
     {
@@ -33,11 +35,12 @@ final readonly class SandboxPiConnection
         }
         $sandbox = TaskSandbox::query()->find($workspace->task_sandbox_id);
         $group = $sandbox?->group;
+        $token = $sandbox?->pi_token;
         if ($sandbox === null || $group === null || $group->task_compute !== TaskCompute::Vm
             || $group->project_id !== $workspace->project_id || $group->taskable_id !== $workspace->id
             || $group->taskable_type !== $workspace->getMorphClass() || $sandbox->state !== SandboxState::Running
             || $sandbox->desired_power !== 'running' || $node->status !== LifecycleStatus::Active
-            || ! is_string($sandbox->pi_token) || preg_match('/\A[a-f0-9]{64}\z/D', $sandbox->pi_token) !== 1) {
+            || ! is_string($token) || preg_match('/\A[a-f0-9]{64}\z/D', $token) !== 1) {
             throw $this->unavailable();
         }
         $port = 3774;
@@ -52,13 +55,23 @@ final readonly class SandboxPiConnection
         } elseif (! in_array($sandbox->provider, ['incus', 'upcloud'], true) || $sandbox->node_id !== $node->id) {
             throw $this->unavailable();
         }
+        if ($sandbox->provider === 'upcloud') {
+            try {
+                $this->identity->assertReady($sandbox, $node);
+                if ($sandbox->pi_ready_at === null || $sandbox->model_key === null || $sandbox->model_key_registered_at === null || $sandbox->model_key_revoked_at !== null) {
+                    throw $this->unavailable();
+                }
+            } catch (Throwable) {
+                throw $this->unavailable();
+            }
+        }
         $address = $node->wireguard_ip;
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP) === false) {
             throw $this->unavailable();
         }
         $address = str_contains($address, ':') ? '['.$address.']' : $address;
 
-        return new PiEndpoint('http://'.$address.':'.$port, $sandbox->pi_token, $sandbox->model_key === null ? [] : [$sandbox->model_key]);
+        return new PiEndpoint('http://'.$address.':'.$port, $token, $sandbox->model_key === null ? [] : [$sandbox->model_key]);
     }
 
     private function unavailable(): AgentDriverException

@@ -13,6 +13,7 @@ use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Projects\TiaBaselineSetup;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Instances\DevelopmentReleaseProgram;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -409,7 +410,7 @@ describe('real development release programs', function (): void {
         $consumer->update(['starting_commit' => $seed->commit, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
         $keys = Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock();
         $hosts = Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock();
-        $runner = new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
+        $runner = new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
         $setup = [[
             'name' => 'copy from seed',
             'command' => 'touch setup-started; while [ ! -f allow-setup ]; do sleep 0.05; done; cat "$ORBIT_SEED_PATH/.cache/warm" > copied-cache',

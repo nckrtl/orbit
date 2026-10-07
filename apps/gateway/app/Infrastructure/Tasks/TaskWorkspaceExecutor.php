@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\TaskCompute;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -20,7 +21,7 @@ use Throwable;
 /** Routes task operations by persisted workspace ownership; never by available capacity. */
 final readonly class TaskWorkspaceExecutor
 {
-    public function __construct(private DevelopmentSshExecutor $shared, private IncusSandboxHost $host, private TaskSandboxDrivers $drivers) {}
+    public function __construct(private DevelopmentSshExecutor $shared, private IncusSandboxHost $host, private TaskSandboxDrivers $drivers, private SandboxFleetIdentity $identity) {}
 
     public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace', string $role = 'operator'): CommandResult
     {
@@ -51,6 +52,8 @@ final readonly class TaskWorkspaceExecutor
                 if ($sandbox->node_id !== $workspace->node_id || $group->project->slug === 'orbit') {
                     throw new RuntimeConvergenceException($step, $errorCode, 'The project sandbox has no matching enrolled Node.');
                 }
+
+                $this->identity->assertReady($sandbox, $workspace->node);
 
                 return $this->shared->execute($workspace->node, $command, $step, $errorCode, $commandTimeout, $failureLabel);
             }

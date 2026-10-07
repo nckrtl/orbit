@@ -21,6 +21,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\Support\UpCloudRuntimeWorkspace;
 
 /** @return array{Instance, TaskSandbox, AgentThread} */
 function sandbox_pi_workspace(?Node $host = null, int $port = 22000): array
@@ -157,6 +158,17 @@ describe('sandbox Pi identity', function (): void {
 
     it('connects Project sandboxes only through their enrolled guest Node', function (string $provider): void {
         [$workspace, $sandbox, $thread] = sandbox_pi_workspace();
+        if ($provider === 'upcloud') {
+            $workspace = UpCloudRuntimeWorkspace::create();
+            $sandbox = $workspace->taskSandbox;
+            $thread->update(['task_group_id' => $sandbox->group_id, 'node_id' => $workspace->node_id, 'runtime_key' => 'sandbox:'.$sandbox->id]);
+            Http::fake(['http://'.$workspace->node->wireguard_ip.':3774/sessions/*/interrupt' => Http::response([])]);
+            app(PiDriver::class)->interrupt($thread->fresh());
+            Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer '.$sandbox->pi_token));
+            Http::assertSentCount(1);
+
+            return;
+        }
         $workspace->project->update(['slug' => 'project']);
         $guest = Node::query()->create(['name' => 'guest', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.1.5', 'public_ssh_host' => '192.0.2.21']);
         $sandbox->update(['provider' => $provider, 'node_id' => $guest->id]);
