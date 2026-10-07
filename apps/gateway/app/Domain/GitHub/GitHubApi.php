@@ -144,7 +144,8 @@ interface GitHubApi
 
     /**
      * The latest check run of each check on the commit, every page up to 1,000 runs. With a check
-     * name, only runs of that exact name. A list GitHub reports as longer, or ends early, fails.
+     * name, only runs of that exact name. A longer list, or one that changes or ends before its
+     * `total_count`, fails.
      *
      * @return list<GitHubCheckRun>
      *
