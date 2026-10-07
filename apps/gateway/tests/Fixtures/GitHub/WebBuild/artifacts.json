@@ -2,23 +2,23 @@
   "total_count": 1,
   "artifacts": [
     {
-      "id": 11492530096,
-      "node_id": "MDg6QXJ0aWZhY3QxMTQ5MjUzMDA5Ng==",
-      "name": "sandbox-tia-0-a30e23427e697cd3359d8c127c00d7dd09719007",
-      "size_in_bytes": 54595,
-      "url": "https://api.github.com/repos/nckrtl/orbit/actions/artifacts/11492530096",
-      "archive_download_url": "https://api.github.com/repos/nckrtl/orbit/actions/artifacts/11492530096/zip",
+      "id": 11494149862,
+      "node_id": "MDg6QXJ0aWZhY3QxMTQ5NDE0OTg2Mg==",
+      "name": "web-dist-3c83e74ce6f241197b06b7b8e506e9496455b277",
+      "size_in_bytes": 453355,
+      "url": "https://api.github.com/repos/nckrtl/orbit/actions/artifacts/11494149862",
+      "archive_download_url": "https://api.github.com/repos/nckrtl/orbit/actions/artifacts/11494149862/zip",
       "expired": false,
-      "digest": "sha256:891d5cf909fdff5b62298e616659efd006e506db039e1bec57c7a65413056761",
-      "created_at": "2026-10-07T14:52:05Z",
-      "updated_at": "2026-10-07T14:52:05Z",
-      "expires_at": "2026-10-21T14:52:04Z",
+      "digest": "sha256:05aca30ba3c859643737e6c81f2e874abda8312772633b60e9c0a43a4c2a88ad",
+      "created_at": "2026-10-07T15:53:41Z",
+      "updated_at": "2026-10-07T15:53:41Z",
+      "expires_at": "2026-10-21T15:53:39Z",
       "workflow_run": {
-        "id": 37639888555,
+        "id": 37647307459,
         "repository_id": 1348221080,
         "head_repository_id": 1348221080,
         "head_branch": "main",
-        "head_sha": "a30e23427e697cd3359d8c127c00d7dd09719007"
+        "head_sha": "3c83e74ce6f241197b06b7b8e506e9496455b277"
       }
     }
   ]

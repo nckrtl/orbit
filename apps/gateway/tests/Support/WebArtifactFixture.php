@@ -24,7 +24,7 @@ use ZipArchive;
  */
 final class WebArtifactFixture implements ProcessRunner
 {
-    public const string Sha = 'a30e23427e697cd3359d8c127c00d7dd09719007';
+    public const string Sha = '3c83e74ce6f241197b06b7b8e506e9496455b277';
 
     public const string Token = 'web-token-secret';
 
@@ -103,8 +103,8 @@ final class WebArtifactFixture implements ProcessRunner
             'https://api.github.com/repos/nckrtl/orbit/installation' => fn () => Http::response(['id' => 7]),
             'https://api.github.com/app/installations/7/access_tokens' => fn () => Http::response($token['body'], $token['status']),
             'https://api.github.com/repos/nckrtl/orbit/actions/artifacts?name=web-dist-'.$sha.'&per_page=100' => fn () => Http::response($listing),
-            'https://api.github.com/repos/nckrtl/orbit/actions/runs/37639888555' => fn () => Http::response($runBody),
-            'https://api.github.com/repos/nckrtl/orbit/actions/artifacts/11492530096/zip' => fn () => Http::response('', 302, ['Location' => self::Storage]),
+            'https://api.github.com/repos/nckrtl/orbit/actions/runs/37647307459' => fn () => Http::response($runBody),
+            'https://api.github.com/repos/nckrtl/orbit/actions/artifacts/11494149862/zip' => fn () => Http::response('', 302, ['Location' => self::Storage]),
             self::Storage => fn () => Http::response($archive),
         ]);
 
@@ -128,9 +128,9 @@ final class WebArtifactFixture implements ProcessRunner
                 $zip->addFromString($name, $contents);
             }
 
-            if (isset($modes[$name])) {
-                $zip->setExternalAttributesName($name, ZipArchive::OPSYS_UNIX, $modes[$name] << 16);
-            }
+            // Like the real web-dist archive: regular files with Unix mode 0100644 and no directory entries.
+            $mode = $modes[$name] ?? (str_ends_with($name, '/') ? 0040755 : 0100644);
+            $zip->setExternalAttributesName($name, ZipArchive::OPSYS_UNIX, $mode << 16);
         }
 
         $zip->close();
