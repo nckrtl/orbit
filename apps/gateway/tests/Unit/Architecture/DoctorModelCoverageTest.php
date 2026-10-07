@@ -55,6 +55,7 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskDefinition;
 use App\Models\TaskQuestion;
+use App\Models\TaskSandbox;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
@@ -89,6 +90,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         DatabaseConnectionTarget::class,
     ];
     $excluded = [
+        TaskSandbox::class,
         Annotation::class,
         DependencyPackage::class,
         InstanceDependencyObservation::class,

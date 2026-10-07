@@ -1137,6 +1137,25 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/reference/compute-drivers.md",
+            "title": "Compute drivers",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Instance",
+                "Node",
+                "Process",
+                "Project",
+                "Task"
+            ],
+            "governing_adrs": [
+                "0200"
+            ]
+        },
+        {
             "path": "docs/reference/database-connections.md",
             "title": "Database connections",
             "kind": "reference",

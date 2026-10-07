@@ -118,6 +118,7 @@
               "reference/analytics",
               "reference/proxycli",
               "reference/tasks",
+              "reference/compute-drivers",
               "reference/pi-server",
               "reference/cli-binaries",
               "reference/events",

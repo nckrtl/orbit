@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Domain\Compute\ComputeDriver;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\BriefCoverageLabeler;
@@ -31,6 +32,7 @@ use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Domain\Tasks\TaskWorkspaceSigner;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\Tasks\TaskWorkspaceTopology;
+use App\Infrastructure\Compute\UpCloudComputeDriver;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
@@ -63,6 +65,7 @@ final class TasksServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        ComputeDriver::class => UpCloudComputeDriver::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceTopology::class => RemoteTaskWorkspaceTopology::class,
         AgentSpawner::class => TaskAgentSpawner::class,
