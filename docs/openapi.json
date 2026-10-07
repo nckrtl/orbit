@@ -29786,6 +29786,12 @@
             "items": {
               "$ref": "#/components/schemas/TaskAssistance"
             }
+          },
+          "last_tick_at": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },

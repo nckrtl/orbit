@@ -7,11 +7,12 @@ namespace App\Actions\Tasks;
 use App\Data\Tasks\TaskAssistanceData;
 use App\Data\Tasks\TasksStatusData;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskTickClock;
 use App\Models\Task;
 
 final readonly class ShowTasksStatusAction
 {
-    public function __construct(private TaskExtensionState $extension) {}
+    public function __construct(private TaskExtensionState $extension, private TaskTickClock $clock) {}
 
     public function execute(): TasksStatusData
     {
@@ -26,6 +27,7 @@ final readonly class ShowTasksStatusAction
         return new TasksStatusData(
             enabled: $this->extension->enabled(),
             assistance: $assistance,
+            lastTickAt: $this->clock->lastStartedAt(),
         );
     }
 }

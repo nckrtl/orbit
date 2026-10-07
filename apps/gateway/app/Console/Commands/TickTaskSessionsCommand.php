@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskTickClock;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Cache;
 
@@ -18,7 +19,7 @@ final class TickTaskSessionsCommand extends Command
     #[\Override]
     protected $description = 'Observe running task threads, ask Jev for the next action, and execute it.';
 
-    public function handle(TaskScheduler $scheduler, TaskExtensionState $extension, TaskBroadcasts $broadcasts): int
+    public function handle(TaskScheduler $scheduler, TaskExtensionState $extension, TaskBroadcasts $broadcasts, TaskTickClock $clock): int
     {
         if (! $extension->enabled()) {
             $this->info('Tasks extension is disabled.');
@@ -34,6 +35,7 @@ final class TickTaskSessionsCommand extends Command
         }
 
         try {
+            $clock->record();
             $decisions = $scheduler->tick();
             $scheduler->releaseStaleReservations();
             $scheduler->removeAbandonedWorkspaces();
