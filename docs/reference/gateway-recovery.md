@@ -481,6 +481,10 @@ Check these conditions on the Gateway before you run the command.
 - `git status --short --untracked-files=no` in `/home/orbit/orbit` prints nothing. Untracked files, such as `.env` backups, are fine.
 - The disk has room for one release, about the size of the checkout without `.git`, plus the free-space floor and a database snapshot.
 - `python3` is installed. Ubuntu installs it by default. Without it, the swap uses two renames, and the path is missing for the microseconds between them.
+- The Gateway GitHub App installation has accepted `Actions: read`. See [Read CI artifacts](/reference/github-app#read-ci-artifacts). Phase 2 needs it for the web build.
+- `orbit node:list` succeeds as `orbit` on the Gateway. The [Quickstart](/quickstart) step "Connect the CLI" sets this up. Smoke needs it.
+
+Without the permission, phase 2 stops in prepare with `gateway.release_web_build_unavailable`. Nothing changes live. Without the CLI profile, smoke fails with `gateway.profile_missing`, and phase 2 pauses after its migrations.
 
 ### Run adoption
 
