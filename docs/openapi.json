@@ -2162,6 +2162,72 @@
         ]
       }
     },
+    "/api/v1/compute/github-token": {
+      "post": {
+        "operationId": "compute-github-token",
+        "summary": "Renew sandbox repository access",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.",
+        "responses": {
+          "200": {
+            "description": "Fresh access scoped to the Project repository.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store, private"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "Temporary installation token. Never persist or log it."
+                    }
+                  },
+                  "required": [
+                    "token"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporary repository access could not be issued (`compute.github_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/compute/github-token\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          }
+        ]
+      }
+    },
     "/api/v1/database-connections": {
       "get": {
         "operationId": "database-list",

@@ -585,7 +585,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'compute:github-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -599,6 +599,7 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
+    'compute:github-token': 'Renew sandbox repository access',
     'instance:transfer': 'Transfer an Instance',
     'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
@@ -652,6 +653,7 @@ SUMMARIES = {
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
+    'compute:github-token': 'Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
@@ -1744,6 +1746,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'id': {'type': 'string', 'description': 'The stream ID.'},
             'closed': {'type': 'boolean', 'const': True, 'description': 'Always true.'},
         }, 'required': ['id', 'closed']}, 'The request succeeded.')
+    elif route['name'] == 'compute:github-token':
+        responses['200'] = {'description': 'Fresh access scoped to the Project repository.', 'headers': {'Cache-Control': {'schema': {'type': 'string', 'const': 'no-store, private'}}}, 'content': {'application/json': {'schema': {'type': 'object', 'properties': {'token': {'type': 'string', 'description': 'Temporary installation token. Never persist or log it.'}}, 'required': ['token']}}}}
+        responses['403'] = error_response('The active WireGuard peer or running sandbox ownership and Pi credential are unavailable.')
+        responses['503'] = error_response('Temporary repository access could not be issued (`compute.github_unavailable`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},

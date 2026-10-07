@@ -328,6 +328,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/compute/github-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew sandbox repository access
+         * @description Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.
+         */
+        post: operations["compute-github-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/database-connections": {
         parameters: {
             query?: never;
@@ -5408,6 +5428,48 @@ export interface operations {
             };
             /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "compute-github-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fresh access scoped to the Project repository. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store, private";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Temporary installation token. Never persist or log it. */
+                        token: string;
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporary repository access could not be issued (`compute.github_unavailable`). */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

@@ -574,6 +574,7 @@
               "GET /api/v1/agent/log-streams",
               "GET /api/v1/agent/realtime",
               "GET /api/v1/agent/workspaces",
+              "POST /api/v1/compute/github-token",
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",
