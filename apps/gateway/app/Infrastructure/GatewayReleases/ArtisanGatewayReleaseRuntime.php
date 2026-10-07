@@ -70,7 +70,8 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
         if (
             $data === []
             && $this->fallback instanceof GatewayReleaseRuntime
-            && (str_contains($output, 'is not defined') || str_contains($output, 'option does not exist'))
+            // Symfony Console's words for a missing command, a missing namespace, and a missing option.
+            && preg_match('/is not defined|no commands defined in the|option does not exist/', $output) === 1
         ) {
             // An older release, such as the first release of adoption, built from a commit before the handoff phases.
             return null;

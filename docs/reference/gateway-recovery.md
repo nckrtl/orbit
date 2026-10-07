@@ -87,7 +87,7 @@ A Gateway in the release layout runs from immutable releases instead of an in-pl
 | `/home/orbit/shared/gateway-storage/` | The Gateway storage directory. `apps/gateway/storage` in every release links to it, so the file cache, its locks, and the logs stay the same across releases. |
 | `ORBIT_HOME` | Gateway state, outside every release, as before. |
 
-The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. A release directory is never changed after it is prepared. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable.
+The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. Run release commands through that link, as `php /home/orbit/orbit/apps/gateway/artisan`. A shell that changed into the directory before a switch still runs the release it entered. A release directory is never changed after it is prepared. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable.
 
 The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset or empty, the version is the full commit in the release's `REVISION` file, so `bin/deploy-verify --sha` works without an env edit. Without either, the version is `dev`. Leave `APP_VERSION` out of the shared env file in the release layout; a set value always wins.
 
@@ -334,7 +334,7 @@ The kept checkout is a complete way back. Its `.env.pre-adopt` holds the origina
 rm -rf /home/orbit/orbit.pre-adopt-<time>
 ```
 
-The first release has no web build of its own when it came from `--commit`. A rollback to it fails at the web step and switches back; roll back to a later release instead.
+The first release runs the checkout's own commit. That commit may predate the release version, so the release reports `dev`, and a rollback to it fails verify and switches back. With `--commit`, it also has no web build of its own. Roll back to a later release instead.
 
 ### When adoption fails
 

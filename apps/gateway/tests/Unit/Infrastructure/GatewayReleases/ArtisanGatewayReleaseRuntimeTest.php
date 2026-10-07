@@ -104,6 +104,7 @@ describe(ArtisanGatewayReleaseRuntime::class, function (): void {
             ->and($local->calls)->toBe(['handoff:0123456789ab', 'schedule:0123456789ab']);
     })->with([
         'no command' => 'Command "gateway:release:handoff" is not defined.',
+        'no release commands at all, like 6daef4579' => 'ERROR  There are no commands defined in the "gateway:release" namespace.',
         'no phases' => 'The "--phase" option does not exist.',
     ]);
 });
