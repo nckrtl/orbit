@@ -227,7 +227,7 @@ When the Gateway prunes a release, it removes that release's web build too. It n
 bin/web-deploy
 ```
 
-The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases and never removes the current one. That count includes the builds of Gateway releases, so a manual run can remove the web build that a Gateway rollback needs. The next deploy of that commit installs it again.
+The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases. It never removes the release `current` serves, or the build of a retained Gateway release, one whose `releases/<id>/REVISION` exists in the Gateway releases directory. So a manual run never removes a build that a Gateway rollback needs.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -235,6 +235,7 @@ The command refuses uncommitted changes. It checks the commit out into a tempora
 | `ORBIT_WEB_DEPLOY_SSH` | `ssh` | SSH command, including options such as `-i KEY`. |
 | `ORBIT_WEB_DIR` | `/home/orbit/web` | Web directory on the Gateway host. |
 | `ORBIT_WEB_GROUP` | `caddy` | Group that must read the release. |
+| `ORBIT_GATEWAY_RELEASES` | `/home/orbit/releases` | Gateway [releases directory](/reference/gateway-recovery#release-layout) on the Gateway host. Their web builds are never pruned. |
 
 ## Roll back
 

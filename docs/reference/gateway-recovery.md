@@ -320,7 +320,7 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
 
 `<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
 
-Rollback needs the target's web build. Pruning a Gateway release removes its web build too, so every retained release keeps its own. A manual `bin/web-deploy` can prune it, though; rollback then switches back at the web step.
+Rollback needs the target's web build. Pruning a Gateway release removes its web build too, so every retained release keeps its own. A manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback switches back at the web step.
 
 ### Apply an env change
 
