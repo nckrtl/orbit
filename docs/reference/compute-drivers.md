@@ -106,3 +106,30 @@ The driver retains ownership after an uncertain result. A missing VM is not proo
 of complete cleanup. Only successful destruction releases the reservation as
 destroyed. These controls provide the local compute boundary; task workspace,
 agent, and scheduler integration must be proven before enabling VM task execution.
+
+
+### Configure local placement
+
+`ORBIT_INCUS_ENABLED` defaults to `false`. `ORBIT_INCUS_HOSTS` is a JSON list of
+hosts, in placement order. Each entry contains:
+
+| Field | Meaning |
+| --- | --- |
+| `node_id` | Enrolled host Node ID |
+| `project` | Must be `orbit-task-sandboxes` |
+| `pool` | Storage pool for guest disks and the worktree volume |
+| `max_vms` | Running or reserved VM budget, from 1 to 64 |
+| `orbit_images` | Pinned VM fingerprints keyed by `operator`, `gateway`, and optional workload role |
+| `project_images` | Pinned VM fingerprints keyed by Project slug |
+| `blocked_networks` | Additional host and LAN IPv4 CIDRs to exclude from public egress |
+
+The allocator accepts only groups already pinned to `vm`. It reserves an Orbit
+pair or one Project VM before provisioning. Existing reservations retain their
+provider, host, image, network, and identity; a parked reservation resumes there.
+Stopped guests release compute capacity while retaining their subnet and storage.
+
+Project work uses UpCloud after configured local capacity is exhausted. A host
+that cannot be observed is an error, not evidence of available cloud placement.
+Orbit groups stay local until cloud support for that lane is proven. The task
+workspace entry point remains gated while workspace and agent integration is
+completed; these settings alone do not start sandbox task execution.

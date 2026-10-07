@@ -1,0 +1,110 @@
+<?php
+
+declare(strict_types=1);
+
+use App\Actions\Compute\AllocateTaskSandboxAction;
+use App\Domain\Compute\ComputeDriver;
+use App\Domain\Compute\ComputeException;
+use App\Domain\Compute\SandboxState;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCompute;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
+use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Models\Node;
+use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskSandbox;
+
+use function Pest\Laravel\mock;
+
+beforeEach(function (): void {
+    $this->host = Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
+    $this->settings = ['node_id' => $this->host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2,
+        'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)],
+        'project_images' => ['dlf' => str_repeat('c', 64)], 'blocked_networks' => ['192.168.0.0/16']];
+    config(['compute.incus.enabled' => true, 'compute.incus.hosts' => [$this->settings], 'compute.upcloud.enabled' => true,
+        'compute.upcloud.zone' => 'nl-ams1', 'compute.upcloud.gateway_address' => '93.184.216.34',
+        'compute.upcloud.wireguard_address' => '93.184.216.35', 'compute.upcloud.wireguard_port' => 51820]);
+    $keys = mock(SshKeyProvider::class);
+    $keys->shouldReceive('privateKeyPath')->andReturn('/keys/private');
+    $keys->shouldReceive('publicKey')->andReturn('ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePublicMaterial');
+    mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+});
+
+function allocation_group(string $slug): Task
+{
+    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'repository_url' => 'https://github.com/acme/'.$slug.'.git']);
+
+    return Task::topLevel()->create(['project_id' => $project->id, 'title' => 'VM work', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+}
+
+function allocation_host(int $available): void
+{
+    mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($available): CommandResult {
+        $request = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+        if ($request['operation'] === 'capacity') {
+            return new CommandResult(0, json_encode(['available' => $available, 'used' => 2 - $available, 'budget' => 2], JSON_THROW_ON_ERROR), '', 1, false);
+        }
+        $name = 'ot-'.substr(hash('sha256', $request['sandbox_id']), 0, 10);
+        $row = TaskSandbox::query()->findOrFail($request['sandbox_id']);
+        expect($row->state)->toBe($request['operation'] === 'resume' ? SandboxState::Starting : SandboxState::Creating);
+        $images = $row->spec['images'];
+
+        return new CommandResult(0, json_encode(['name' => $name, 'power' => 'running', 'instances' => array_map(
+            fn (string $role): array => ['name' => $name.'-'.$role, 'state' => 'running'], array_keys($images),
+        )], JSON_THROW_ON_ERROR), '', 1, false);
+    });
+}
+
+describe('sandbox placement', function (): void {
+    it('places the Orbit pair locally and preserves placement through retry and resume', function (): void {
+        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
+        allocation_host(2);
+        $group = allocation_group('orbit');
+        $allocator = app(AllocateTaskSandboxAction::class);
+        $sandbox = $allocator->execute($group);
+        expect($sandbox->provider)->toBe('incus')->and($sandbox->state)->toBe(SandboxState::Running)
+            ->and(array_keys($sandbox->spec['images']))->toBe(['operator', 'gateway']);
+        expect($allocator->execute($group)->id)->toBe($sandbox->id);
+        $sandbox->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
+        expect($allocator->execute($group)->state)->toBe(SandboxState::Running)
+            ->and(TaskSandbox::query()->count())->toBe(1);
+    });
+
+    it('sends project work to cloud only when local capacity is full', function (): void {
+        allocation_host(0);
+        $cloud = mock(ComputeDriver::class);
+        $cloud->shouldReceive('capacity')->once()->andReturn(1);
+        $cloud->shouldReceive('provision')->once()->andReturnUsing(fn (TaskSandbox $sandbox): TaskSandbox => $sandbox);
+        $sandbox = app(AllocateTaskSandboxAction::class)->execute(allocation_group('dlf'));
+        expect($sandbox->provider)->toBe('upcloud')->and(TaskSandbox::query()->count())->toBe(1);
+    });
+
+    it('never sends the Orbit lane or an unobservable host to cloud', function (): void {
+        allocation_host(0);
+        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit')))
+            ->toThrow(ComputeException::class, 'local Incus');
+        mock(SshExecutor::class)->shouldReceive('execute')->andReturn(new CommandResult(255, '', 'unreachable', 1, false));
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('dlf')))
+            ->toThrow(ResourceOperationException::class);
+        expect(TaskSandbox::query()->count())->toBe(0);
+    });
+
+    it('reserves capacity before guests exist and refuses shared-mode groups', function (): void {
+        allocation_host(2);
+        mock(ComputeDriver::class)->shouldNotReceive('capacity', 'provision');
+        $first = allocation_group('orbit');
+        $sandbox = app(AllocateTaskSandboxAction::class)->execute($first);
+        $sandbox->update(['state' => SandboxState::Reserved]);
+        $second = Task::topLevel()->create(['project_id' => $first->project_id, 'title' => 'Next', 'brief' => 'Wait', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute($second))->toThrow(ComputeException::class, 'capacity');
+        $shared = Task::topLevel()->create(['project_id' => $first->project_id, 'title' => 'Shared', 'brief' => 'Keep', 'status' => 'todo', 'task_compute' => TaskCompute::Shared]);
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute($shared))->toThrow(ComputeException::class, 'pinned to VM');
+        expect(TaskSandbox::query()->count())->toBe(1);
+    });
+});

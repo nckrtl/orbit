@@ -1149,6 +1149,7 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Task",
                 "Task workspace"
             ],

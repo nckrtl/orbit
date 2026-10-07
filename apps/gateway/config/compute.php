@@ -3,6 +3,10 @@
 declare(strict_types=1);
 
 return [
+    'incus' => [
+        'enabled' => (bool) env('ORBIT_INCUS_ENABLED', false),
+        'hosts' => json_decode((string) env('ORBIT_INCUS_HOSTS', '[]'), true),
+    ],
     'upcloud' => [
         'enabled' => (bool) env('ORBIT_UPCLOUD_ENABLED', false),
         'token_file' => env('ORBIT_UPCLOUD_TOKEN_FILE'),
