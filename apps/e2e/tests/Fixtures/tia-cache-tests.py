@@ -54,6 +54,65 @@ class MainCacheTest(unittest.TestCase):
             }}},
         }
 
+    def ci_artifact(self):
+        project = self.root / self.project
+        (project / 'tests').mkdir(parents=True)
+        (project / 'composer.lock').write_text('locked')
+        (project / 'tests/Pest.php').write_text('<?php')
+        artifact = Path(self.temporary.name) / 'ci-artifact'
+        artifact.mkdir()
+        graph = json.dumps(self.graph).encode()
+        (artifact / 'graph.json').write_bytes(graph)
+        manifest = {'schema': 1, 'project': self.project, 'commit': self.commit, 'run_id': '123',
+                    'graph_sha256': cache.digest(graph),
+                    'inputs': {name: cache.digest((project / name).read_bytes())
+                               for name in ('composer.lock', 'tests/Pest.php')}}
+        (artifact / 'manifest.json').write_text(json.dumps(manifest))
+        return artifact, manifest
+
+    def test_ci_baseline_import_keeps_private_results_and_never_publishes(self):
+        artifact, _ = self.ci_artifact()
+        with patch.object(cache, 'metadata', return_value=self.info):
+            self.assertTrue(cache.import_ci(self.root, self.project, artifact, self.commit))
+            destination = self.root / self.project / '.orbit-tia/graph.json'
+            self.assertEqual(json.loads(destination.read_text()), self.graph)
+            self.assertEqual(destination.stat().st_mode & 0o777, 0o600)
+            destination.write_text('newer private results')
+            self.assertFalse(cache.import_ci(self.root, self.project, artifact, self.commit))
+            self.assertEqual(destination.read_text(), 'newer private results')
+        self.assertFalse(self.store.exists())
+
+    def test_ci_baseline_rejects_tampering_and_configuration_drift_before_writing(self):
+        artifact, manifest = self.ci_artifact()
+        for field, value in [('project', 'apps/gateway'), ('commit', 'a' * 40),
+                             ('graph_sha256', 'b' * 64), ('inputs', {}), ('run_id', '')]:
+            with self.subTest(field=field), patch.object(cache, 'metadata', return_value=self.info):
+                (artifact / 'manifest.json').write_text(json.dumps({**manifest, field: value}))
+                with self.assertRaises(ValueError):
+                    cache.import_ci(self.root, self.project, artifact, self.commit)
+                self.assertFalse((self.root / self.project / '.orbit-tia').exists())
+
+    def test_ci_baseline_refuses_failed_results_nonportable_paths_and_symlink_destinations(self):
+        artifact, manifest = self.ci_artifact()
+        failed = copy.deepcopy(self.graph)
+        failed['baselines']['main']['results']['example']['status'] = 8
+        nonportable = copy.deepcopy(self.graph)
+        nonportable['files'] = ['/home/runner/repository/file.php']
+        for graph in [failed, nonportable]:
+            encoded = json.dumps(graph).encode()
+            (artifact / 'graph.json').write_bytes(encoded)
+            (artifact / 'manifest.json').write_text(json.dumps({**manifest, 'graph_sha256': cache.digest(encoded)}))
+            with patch.object(cache, 'metadata', return_value=self.info), self.assertRaises(ValueError):
+                cache.import_ci(self.root, self.project, artifact, self.commit)
+        (artifact / 'graph.json').write_text(json.dumps(self.graph))
+        (artifact / 'manifest.json').write_text(json.dumps(manifest))
+        outside = Path(self.temporary.name) / 'outside'
+        outside.mkdir()
+        (self.root / self.project / '.orbit-tia').symlink_to(outside)
+        with patch.object(cache, 'metadata', return_value=self.info), self.assertRaises(ValueError):
+            cache.import_ci(self.root, self.project, artifact, self.commit)
+        self.assertEqual(list(outside.iterdir()), [])
+
     def test_development_cache_warms_only_an_unselected_release(self):
         self.store.mkdir(parents=True)
         (self.store / 'development-instance.json').write_text(json.dumps({'instance': 303}))
