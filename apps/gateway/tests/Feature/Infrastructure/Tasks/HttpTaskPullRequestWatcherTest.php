@@ -432,7 +432,7 @@ it('names each failed check run on the head commit with its URL, through a separ
         ])
         ->and($health?->checksPending)->toBeTrue()
         ->and($health?->headSha)->toBe('abc123');
-    Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs?per_page=100'
+    Http::assertSent(static fn (Request $request): bool => $request->url() === 'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs?per_page=100&page=1'
         && $request->hasHeader('Authorization', 'Bearer ghs_checks'));
     Http::assertSent(static fn (Request $request): bool => str_ends_with($request->url(), '/access_tokens')
         && $request->data() === ['repositories' => ['orbit'], 'permissions' => ['checks' => 'read']]);
@@ -599,9 +599,9 @@ it('starts a new pending clock when the check run id changes and clears one that
             'head' => ['sha' => 'abc123'], 'base' => ['ref' => 'main'],
         ]),
         'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::sequence()
-            ->push(['check_runs' => [$pending(1)]])
-            ->push(['check_runs' => [$success]])
-            ->push(['check_runs' => [$pending(2)]]),
+            ->push(['total_count' => 1, 'check_runs' => [$pending(1)]])
+            ->push(['total_count' => 1, 'check_runs' => [$success]])
+            ->push(['total_count' => 1, 'check_runs' => [$pending(2)]]),
     ]);
     $watcher = app(HttpTaskPullRequestWatcher::class);
     $group = watcher_group();

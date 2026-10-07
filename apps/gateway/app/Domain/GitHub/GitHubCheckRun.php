@@ -19,6 +19,8 @@ final readonly class GitHubCheckRun
      * @param  string|null  $url  the check run page, or the details page of the check's own service
      * @param  int|null  $id  the check run id, when GitHub sent one
      * @param  string|null  $startedAt  when the run started, when GitHub sent `started_at`
+     * @param  string|null  $status  `queued`, `in_progress`, `completed`, or another state GitHub reports
+     * @param  string|null  $headSha  the commit the run checked, when GitHub sent `head_sha`
      */
     public function __construct(
         public string $name,
@@ -26,7 +28,15 @@ final readonly class GitHubCheckRun
         public ?string $url,
         public ?int $id = null,
         public ?string $startedAt = null,
+        public ?string $status = null,
+        public ?string $headSha = null,
     ) {}
+
+    /** Whether the run completed with conclusion `success` for exactly this commit. */
+    public function passedOn(string $sha): bool
+    {
+        return $this->headSha === $sha && $this->status === 'completed' && $this->conclusion === 'success';
+    }
 
     /** Whether the check run completed without passing. Neutral and skipped runs do not fail. */
     public function failed(): bool
