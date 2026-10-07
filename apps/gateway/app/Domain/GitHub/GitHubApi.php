@@ -46,6 +46,8 @@ interface GitHubApi
      *
      * @throws GitHubApiException
      */
+    public function repositorySandboxToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string;
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,

@@ -127,6 +127,8 @@ describe('UpCloud provisioning', function (): void {
                     ->toMatchArray(['plan' => 'STARTER-1xCPU-1GB', 'zone' => 'nl-ams1', 'firewall' => 'on']);
                 expect($request->data()['server']['storage_devices']['storage_device'][0])
                     ->toMatchArray(['storage' => SandboxSpec::Image, 'size' => 20]);
+                $cloudInit = json_decode(substr($request->data()['server']['user_data'], strlen("#cloud-config\n")), true);
+                expect($cloudInit['packages'])->toContain('gh', 'git');
                 expect($request->data()['server']['user_data'])->toContain('ssh-ed25519', '/swapfile')->not->toContain('ucat_test_only', 'apiKey', 'orbit-token', 'orbit-worker');
 
                 return Http::response(compute_server($sandbox), 201);

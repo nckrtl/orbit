@@ -150,6 +150,11 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'read']);
     }
 
+    public function repositorySandboxToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
+    {
+        return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write', 'actions' => 'read']);
+    }
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,

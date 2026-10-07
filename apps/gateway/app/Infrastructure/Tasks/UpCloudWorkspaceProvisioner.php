@@ -6,6 +6,7 @@ namespace App\Infrastructure\Tasks;
 
 use App\Actions\Compute\EnrollUpCloudSandboxAction;
 use App\Actions\Compute\ProvisionTaskSandboxAction;
+use App\Actions\Nodes\AddNodeAccessAction;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxState;
 use App\Domain\GitHub\GitHubApi;
@@ -32,8 +33,8 @@ final readonly class UpCloudWorkspaceProvisioner
 {
     public function __construct(private TaskExecutionLock $groups, private ProvisionTaskSandboxAction $compute,
         private EnrollUpCloudSandboxAction $enroll, private SandboxFleetIdentity $identity,
-        private SandboxWorkspaceSource $source, private SandboxPiRuntime $pi, private SandboxPiArtifact $artifact,
-        private GitHubApi $github, private RepositoryPullRequestAccess $pullRequests) {}
+        private SandboxWorkspaceSource $source, private SandboxPiRuntime $pi, private SandboxPiArtifact $artifact, private SandboxGitHubAccess $gitAccess,
+        private GitHubApi $github, private RepositoryPullRequestAccess $pullRequests, private AddNodeAccessAction $nodeAccess) {}
 
     public function provision(Task $reserved): Instance
     {
@@ -99,6 +100,7 @@ final readonly class UpCloudWorkspaceProvisioner
                 $this->identity->assertReady($sandbox, $node);
             }
             $sandbox->refresh();
+            $this->nodeAccess->execute($node, $node);
             DB::transaction(function () use ($group, $reserved, $sandbox, $node, $restore): void {
                 $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
                 $this->assertClaim($locked, $reserved, $restore);
@@ -123,6 +125,7 @@ final readonly class UpCloudWorkspaceProvisioner
             });
             $workspace = $this->source->prepare($group->refresh(), $restoreCommit);
             $this->pi->prepare($workspace);
+            $this->gitAccess->prepare($workspace);
             $this->assertClaim($group->refresh(), $reserved, $restore);
 
             return $workspace->refresh();
