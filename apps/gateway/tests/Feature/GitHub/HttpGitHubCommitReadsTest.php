@@ -17,7 +17,7 @@ beforeEach(function (): void {
 });
 
 describe('HttpGitHubApi check runs', function (): void {
-    it('reads every page and maps status and head_sha', function (): void {
+    it('reads every page and maps status, head_sha, and the App', function (): void {
         $pages = GreenCommitFixtures::checkRunPages();
         $sha = $pages[0]['check_runs'][0]['head_sha'];
         Http::fake(["https://api.github.com/repos/nckrtl/orbit/commits/{$sha}/check-runs*" => Http::sequence()
@@ -31,6 +31,7 @@ describe('HttpGitHubApi check runs', function (): void {
             ->and($runs[0]->status)->toBe('completed')
             ->and($runs[0]->conclusion)->toBe('success')
             ->and($runs[0]->passedOn($sha))->toBeTrue()
+            ->and($runs[0]->appSlug)->toBe('github-actions')
             ->and($runs[1]->conclusion)->toBe('skipped');
         Http::assertSentCount(3);
         foreach ([1, 2, 3] as $page) {

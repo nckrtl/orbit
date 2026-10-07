@@ -20,13 +20,18 @@ use InvalidArgumentException;
  * Walks the branch's first-parent history from its head through the Gateway GitHub App. The same
  * rules as `bin/pr-head-check` decide a commit's check: a run of the required name for exactly that
  * `head_sha`, completed with `success`. A commit with no such run, such as one pushed together with
- * a newer commit, is never green. Commits are read with a `contents: read` token and check runs with
- * a separate `checks: read` token, minted only when a candidate needs one.
+ * a newer commit, is never green. Every run of the required name must also come from GitHub Actions,
+ * so another App with `checks: write` cannot report a commit green. Commits are read with a
+ * `contents: read` token and check runs with a separate `checks: read` token, minted only when a
+ * candidate needs one.
  */
 final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
 {
     /** Bounds the check-run reads of one resolution. Older candidates wait for a newer green commit. */
     private const int CANDIDATES = 20;
+
+    /** The only App whose check runs count. A run of the required name from any other App disqualifies the commit. */
+    private const string CHECK_APP = 'github-actions';
 
     public function __construct(private GitHubAppStore $store, private GitHubApi $github) {}
 
@@ -34,14 +39,14 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
         GitHubRepository $repository,
         string $branch,
         string $checkName,
-        ?string $deployedSha,
+        string $deployedSha,
         array $failedShas = [],
     ): ?GreenCommit {
         GitBranchName::validate($branch);
         if (trim($checkName) !== $checkName || $checkName === '' || strlen($checkName) > 255) {
             throw new InvalidArgumentException('The required check name is invalid.');
         }
-        $deployed = $deployedSha !== null ? $this->sha($deployedSha) : null;
+        $deployed = $this->sha($deployedSha);
         $failed = array_fill_keys(array_map($this->sha(...), $failedShas), true);
 
         [$credentials, $installation] = $this->installation($repository);
@@ -62,7 +67,7 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
                 $run = $this->passingRun($this->github->checkRuns($checksToken, $repository, $candidate->sha, $checkName), $candidate->sha, $checkName);
                 if ($run instanceof GitHubCheckRun) {
                     // On a first-parent chain, once a commit does not descend from the deployed one, no older commit does.
-                    if ($deployed !== null && ! $this->github->compareCommits($contentsToken, $repository, $deployed, $candidate->sha)->headDescendsFromBase()) {
+                    if (! $this->github->compareCommits($contentsToken, $repository, $deployed, $candidate->sha)->headDescendsFromBase()) {
                         return null;
                     }
 
@@ -77,14 +82,15 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
     }
 
     /**
-     * Every latest run of the required name must have passed on this exact commit, and at least one must exist.
+     * Every latest run of the required name must come from GitHub Actions and have passed on this exact
+     * commit, and at least one must exist.
      *
      * @param  list<GitHubCheckRun>  $runs
      */
     private function passingRun(array $runs, string $sha, string $checkName): ?GitHubCheckRun
     {
         $required = array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $checkName));
-        if ($required === [] || ! array_all($required, static fn (GitHubCheckRun $run): bool => $run->passedOn($sha))) {
+        if ($required === [] || ! array_all($required, static fn (GitHubCheckRun $run): bool => $run->appSlug === self::CHECK_APP && $run->passedOn($sha))) {
             return null;
         }
 

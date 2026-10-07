@@ -39,7 +39,7 @@ function green_fake(array $checks = [], string $comparison = 'ahead', ?array $co
 }
 
 /** @param  list<string>  $failed */
-function green_resolve(?string $deployed, array $failed = [], string $branch = 'main', string $check = 'Required checks'): ?GreenCommit
+function green_resolve(string $deployed, array $failed = [], string $branch = 'main', string $check = 'Required checks'): ?GreenCommit
 {
     return app(GreenCommitResolver::class)->resolve(
         GitHubRepository::fromOrigin('https://github.com/nckrtl/orbit.git'), $branch, $check, $deployed, $failed,
@@ -134,6 +134,19 @@ describe('GreenCommitResolver', function (): void {
         'neutral' => [[['conclusion' => 'neutral']]],
     ]);
 
+    it('trusts only Required checks runs that GitHub Actions created', function (array $runs): void {
+        $response = GreenCommitFixtures::requiredChecks($this->tip);
+        $response['check_runs'] = array_map(static fn (array $changes): array => array_replace($response['check_runs'][0], $changes), $runs);
+        $response['total_count'] = count($runs);
+        green_fake([$this->tip => $response]);
+
+        expect(green_resolve($this->third)?->sha)->toBe($this->second);
+    })->with([
+        'a success from another App' => [[['app' => ['slug' => 'forged-checks']]]],
+        'a success without an App' => [[['app' => null]]],
+        'another App beside GitHub Actions' => [[[], ['id' => 1, 'app' => ['slug' => 'forged-checks']]]],
+    ]);
+
     it('ignores runs of other checks', function (): void {
         $response = GreenCommitFixtures::requiredChecks($this->tip);
         $response['check_runs'][0]['name'] = 'Gateway';
@@ -155,19 +168,26 @@ describe('GreenCommitResolver', function (): void {
         expect(green_resolve(str_repeat('e', 40)))->toBeNull();
     });
 
-    it('releases the newest green commit without a compare when nothing is deployed', function (): void {
-        green_fake();
+    it('releases the newest green commit when the deployed commit is older than the commits page', function (): void {
+        $deployed = str_repeat('e', 40);
+        green_fake([
+            $this->tip => GreenCommitFixtures::requiredChecksAs('failure', $this->tip),
+            $this->second => GreenCommitFixtures::requiredChecksAs('in_progress', $this->second),
+        ]);
 
-        expect(green_resolve(null)?->sha)->toBe($this->tip);
-        Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/compare/'));
+        expect(green_resolve($deployed)?->sha)->toBe($this->third)
+            ->and(green_check_reads())->toBe(3);
+        Http::assertSent(fn (Request $request): bool => str_contains($request->url(), "/compare/{$deployed}...{$this->third}?"));
+        expect(Http::recorded(static fn (Request $request): bool => str_contains($request->url(), '/compare/'))->count())->toBe(1);
     });
 
     it('reads at most twenty candidates per resolution', function (): void {
         green_fake(array_fill_keys(GreenCommitFixtures::mainShas(), GreenCommitFixtures::requiredChecksAs('none', str_repeat('0', 40))));
 
         expect(count(GreenCommitFixtures::mainShas()))->toBeGreaterThan(20)
-            ->and(green_resolve(null))->toBeNull()
+            ->and(green_resolve(str_repeat('e', 40)))->toBeNull()
             ->and(green_check_reads())->toBe(20);
+        Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), '/compare/'));
     });
 
     it('follows only the first parent, so a merged side branch never ships', function (): void {
@@ -182,15 +202,16 @@ describe('GreenCommitResolver', function (): void {
         Http::assertNotSent(static fn (Request $request): bool => str_contains($request->url(), "/commits/{$side['sha']}/check-runs"));
     });
 
-    it('validates its input before any GitHub call', function (?string $deployed, array $failed, string $branch, string $check): void {
+    it('validates its input before any GitHub call', function (string $deployed, array $failed, string $branch, string $check): void {
         expect(fn () => green_resolve($deployed, $failed, $branch, $check))->toThrow(InvalidArgumentException::class);
         Http::assertNothingSent();
     })->with([
         'short deployed sha' => ['c7f8ae627b0e', [], 'main', 'Required checks'],
-        'uppercase failed sha' => [null, [strtoupper(str_repeat('a', 40))], 'main', 'Required checks'],
-        'invalid branch' => [null, [], 'main..x', 'Required checks'],
-        'empty check name' => [null, [], 'main', ''],
-        'padded check name' => [null, [], 'main', ' Required checks'],
+        'empty deployed sha' => ['', [], 'main', 'Required checks'],
+        'uppercase failed sha' => [str_repeat('e', 40), [strtoupper(str_repeat('a', 40))], 'main', 'Required checks'],
+        'invalid branch' => [str_repeat('e', 40), [], 'main..x', 'Required checks'],
+        'empty check name' => [str_repeat('e', 40), [], 'main', ''],
+        'padded check name' => [str_repeat('e', 40), [], 'main', ' Required checks'],
     ]);
 
     it('fails closed when GitHub cannot answer', function (string $path): void {
@@ -209,13 +230,13 @@ describe('GreenCommitResolver', function (): void {
     it('fails without a GitHub call when the Gateway GitHub App is not registered', function (): void {
         app(GitHubAppStore::class)->delete();
 
-        expect(fn () => green_resolve(null))->toThrow(GitHubApiException::class, 'The Gateway GitHub App is not registered.');
+        expect(fn () => green_resolve(str_repeat('e', 40)))->toThrow(GitHubApiException::class, 'The Gateway GitHub App is not registered.');
         Http::assertNothingSent();
     });
 
     it('fails when the Gateway GitHub App is not installed on the repository', function (): void {
         Http::fake(['https://api.github.com/repos/nckrtl/orbit/installation' => Http::response(['message' => 'Not Found'], 404)]);
 
-        expect(fn () => green_resolve(null))->toThrow(GitHubApiException::class, 'The Gateway GitHub App is not installed on nckrtl/orbit.');
+        expect(fn () => green_resolve(str_repeat('e', 40)))->toThrow(GitHubApiException::class, 'The Gateway GitHub App is not installed on nckrtl/orbit.');
     });
 });

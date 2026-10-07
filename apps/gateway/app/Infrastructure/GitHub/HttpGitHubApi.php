@@ -433,6 +433,7 @@ final readonly class HttpGitHubApi implements GitHubApi
             startedAt: $this->text($row['started_at'] ?? null),
             status: $this->text($row['status'] ?? null),
             headSha: $this->text($row['head_sha'] ?? null),
+            appSlug: is_array($row['app'] ?? null) ? $this->text($row['app']['slug'] ?? null) : null,
         );
     }
 

@@ -21,6 +21,7 @@ final readonly class GitHubCheckRun
      * @param  string|null  $startedAt  when the run started, when GitHub sent `started_at`
      * @param  string|null  $status  `queued`, `in_progress`, `completed`, or another state GitHub reports
      * @param  string|null  $headSha  the commit the run checked, when GitHub sent `head_sha`
+     * @param  string|null  $appSlug  the slug of the GitHub App that created the run, when GitHub sent `app.slug`
      */
     public function __construct(
         public string $name,
@@ -30,6 +31,7 @@ final readonly class GitHubCheckRun
         public ?string $startedAt = null,
         public ?string $status = null,
         public ?string $headSha = null,
+        public ?string $appSlug = null,
     ) {}
 
     /** Whether the run completed with conclusion `success` for exactly this commit. */
