@@ -601,7 +601,7 @@ DEFINITION_ROUTES = {
 SUMMARIES = {
     'compute:github-token': 'Renew sandbox repository access',
     'instance:transfer': 'Transfer an Instance',
-    'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate',
+    'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
     'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
@@ -655,7 +655,8 @@ SUMMARIES = {
 DESCRIPTIONS = {
     'compute:github-token': 'Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
-    'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
+    'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
+    'gateway:desired-fleet-state': 'Returns what every machine in the fleet should run for the Gateway\'s commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
     'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
     'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
@@ -1482,7 +1483,7 @@ RESPONSE_OVERRIDES = {
 }
 CTRL_DATA_OVERRIDES = {
     'SchedulesController@index': ('ScheduleData', True), 'SchedulesController@show': ('ScheduleData', False), 'SchedulesController@run': ('ScheduleData', False), 'SchedulesController@activate': ('ScheduleData', False), 'SchedulesController@destroy': ('ScheduleData', False), 'SchedulesController@logs': ('ScheduleLogsData', False),
-    'ToolManagersController@index': ('ToolManagerData', True), 'DoctorRunsController@store': ('DoctorReportData', False), 'GatewayStatusesController@show': ('GatewayStatusData', False),
+    'ToolManagersController@index': ('ToolManagerData', True), 'DoctorRunsController@store': ('DoctorReportData', False), 'GatewayStatusesController@show': ('GatewayStatusData', False), 'GatewayDesiredFleetStatesController@show': ('DesiredFleetStateData', False),
     'MetricsController@store': ('MetricsMutationData', False), 'MetricsController@destroy': ('MetricsMutationData', False), 'MetricsController@enableExporter': ('MetricsMutationData', False), 'MetricsController@disableExporter': ('MetricsMutationData', False), 'MetricsController@status': ('MetricsStatusData', False), 'MetricsController@credentials': ('MetricsCredentialsData', False), 'MetricsController@reset': ('MetricsCredentialsData', False),
     'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),

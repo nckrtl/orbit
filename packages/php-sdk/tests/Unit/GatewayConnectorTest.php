@@ -69,6 +69,22 @@ describe(GatewayConnector::class, function (): void {
             ->toHaveKey('X-Orbit-Request-Id', '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
     });
 
+    it('names the client version only when the caller supplies a printable one', function (?string $version, ?string $sent): void {
+        $mockClient = new MockClient([MockResponse::make(['data' => []])]);
+        $connector = new GatewayConnector('https://10.70.0.1', clientVersion: $version);
+        $connector->withMockClient($mockClient);
+
+        $connector->send(gateway_connector_probe_request());
+
+        expect($mockClient->getLastPendingRequest()?->headers()->get('X-Orbit-Client-Version'))->toBe($sent);
+    })->with([
+        'release' => ['0.4681.0', '0.4681.0'],
+        'source checkout' => ['cli-v0.4681.0', 'cli-v0.4681.0'],
+        'none' => [null, null],
+        'header injection' => ["0.4681.0\r\nX-Evil: 1", null],
+        'too long' => [str_repeat('9', 65), null],
+    ]);
+
     it('generates request correlation when no resolver is supplied', function (): void {
         $mockClient = new MockClient([MockResponse::make(['data' => []])]);
         $connector = new GatewayConnector('https://10.70.0.1');

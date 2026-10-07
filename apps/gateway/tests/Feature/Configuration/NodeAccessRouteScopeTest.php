@@ -11,7 +11,9 @@ use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
 it('declares node access scope on every active-peer API route', function (): void {
-    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'];
+    // The agent routes need the agent secret instead. Any active peer reads the desired fleet state (ADR 0202),
+    // because every managed Node updates itself from it, with or without access to the Gateway.
+    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'gateway:desired-fleet-state'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->filter(
@@ -372,6 +374,14 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             expect($middleware)
                 ->toContain(RequireActiveWireGuardPeer::class)
                 ->toContain(RequireNodeAgentSecret::class)
+                ->not->toContain(RequireNodeAccess::class);
+
+            continue;
+        }
+
+        if ($route->getName() === 'gateway:desired-fleet-state') {
+            expect($middleware)
+                ->toContain(RequireActiveWireGuardPeer::class)
                 ->not->toContain(RequireNodeAccess::class);
 
             continue;

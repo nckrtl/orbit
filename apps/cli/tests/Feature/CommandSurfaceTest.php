@@ -209,6 +209,7 @@ it('exposes only the implemented Orbit product commands', function (): void {
         'schedule:run',
         'schedule:show',
         'schedule:update',
+        'self-update',
         'tasks:status',
         'tool:adopt',
         'tool:install',
@@ -889,6 +890,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             'timeout' => '3600',
             'json' => false,
         ]],
+        'self-update' => [[], ['allow-downgrade' => false, 'json' => false]],
         'tool:adopt' => [
             ['package'],
             ['node' => null, 'manager' => null, 'constraint' => null, 'yes' => false, 'json' => false],
@@ -1282,6 +1284,7 @@ it('renders one exact json failure envelope for every Orbit product command', fu
             '--calendar' => 'daily',
             '--command' => 'php artisan report:send',
         ], ...$profileMissing],
+        'self-update' => [[], ...$profileMissing],
         'tasks:status' => [[], ...$profileMissing],
         'tool:adopt' => [
             ['package' => 'jq', '--node' => '1', '--manager' => 'apt'],

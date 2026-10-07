@@ -12,7 +12,7 @@ final readonly class DocsImpact
     private const array CLI_FAMILIES = [
         'activity', 'analytics', 'app', 'cluster', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall',
         'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'process', 'profile', 'project', 'proxycli',
-        'realtime', 'route', 'schedule', 'tasks', 'tool', 'workspace',
+        'realtime', 'route', 'schedule', 'self-update', 'tasks', 'tool', 'workspace',
     ];
 
     private const array CLI_FAMILY_OWNERS = [
@@ -27,6 +27,7 @@ final readonly class DocsImpact
         'annotations:dispatch' => 'docs/reference/agent-annotation.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity.mdx',
         'orbit:deploy-development-defaults' => 'docs/reference/deployments.md',
+        'orbit:desired-fleet-state' => 'docs/reference/self-update.md',
         'orbit:agent-view' => 'docs/reference/node-agent.md',
         'orbit:caddy-build' => 'docs/reference/gateway-trust.md',
         'orbit:tasks:jev-report' => 'docs/reference/tasks.md',

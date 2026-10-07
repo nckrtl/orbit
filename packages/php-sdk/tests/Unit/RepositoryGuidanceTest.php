@@ -302,7 +302,8 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Projects\\DestroyProjectDevelopmentDeployStepRequest',
         ];
         $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
-        $expectedOperationCount = count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests) + 15;
+        $fleetRequests = ['Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest'];
+        $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests) + 15;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',
             'Orbit\\Sdk\\Requests\\Tools\\ScanToolInventoryRequest',
@@ -405,6 +406,7 @@ describe('repository guidance bootstrap', function (): void {
             ->toContain(...$logRequests)
             ->toContain(...$extensionRequests)
             ->toContain(...$proxycliSwitchRequests)
+            ->toContain(...$fleetRequests)
             ->toContain(CloneInstanceRequest::class)
             ->toContain(TransferInstanceRequest::class)
             ->toContain(CreateInstanceRequest::class)
