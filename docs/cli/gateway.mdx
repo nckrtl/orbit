@@ -87,6 +87,8 @@ orbit gateway:status [--json]
 
 Human output is a detail tree with the profile URL, the Gateway name, status, Orbit version, PHP version, Laravel version, and request ID. JSON returns the same values with the profile name and URL.
 
+When this machine is an active WireGuard peer, the Gateway also returns its [desired fleet state](/reference/self-update#desired-fleet-state). Human output then adds `CLI release`, the version of the Gateway's CLI release or why it is unavailable, and `Agent version`, the pinned agent. JSON carries the whole state as `desired_fleet_state`, which is null for any other caller. [`self-update`](/cli/self-update) installs that state.
+
 The command fails with `gateway.profile_missing` when no profile is active and with `gateway.unreachable` when the Gateway does not answer. A Gateway response without an error code uses `gateway.request_failed`; transport failures use `gateway.unreachable`.
 
 ## orbit gateway:trust

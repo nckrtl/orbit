@@ -1,0 +1,105 @@
+---
+title: "self-update"
+description: "Update this machine to the Gateway's release: the orbit CLI, and orbit-agent on a managed Node."
+covers:
+  - apps/cli/app/Commands/SelfUpdate/**
+  - apps/gateway/app/Http/Controllers/Api/GatewayDesiredFleetStatesController.php
+---
+
+`self-update` updates this machine to the active Gateway's release. It replaces the `orbit` binary with the CLI release of the Gateway's commit, after a SHA-256 check. On a managed Linux Node it also replaces `orbit-agent` when it differs from the Gateway's pin, and restarts it. [Orbit self-update](/reference/self-update) describes the desired fleet state, each step, and the checks.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`self-update`](#orbit-self-update) | Update the CLI, and the agent on a managed Node. |
+
+The command accepts `--json`.
+
+## orbit self-update
+
+```bash
+orbit self-update [--allow-downgrade] [--json]
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--allow-downgrade` | off | Install the Gateway's CLI release even when it is older than this `orbit`, or when this `orbit` is not a release build. |
+
+```bash
+orbit self-update
+sudo orbit self-update --json
+```
+
+Run it with `sudo` on a Node, and when the binary lives in a directory only root may write, such as `/usr/local/bin`. A source checkout is left alone: update it with `git pull`.
+
+Human output is a progress tree with three steps: read the desired state, update the agent, and update the CLI. Each step shows its result, such as `0.4600.0 → 0.4681.0`, `Already 0.4681.0.`, or why it was skipped.
+
+JSON output is one result:
+
+```json
+{
+  "gateway": "default",
+  "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
+  "outcome": "updated",
+  "steps": [
+    {
+      "step": "agent",
+      "outcome": "skipped",
+      "reason": "not_managed_node",
+      "path": null,
+      "before": null,
+      "after": null,
+      "error": null
+    },
+    {
+      "step": "cli",
+      "outcome": "updated",
+      "reason": null,
+      "path": "/usr/local/bin/orbit",
+      "before": {"version": "0.4600.0", "sha256": "ec779baf…"},
+      "after": {"version": "0.4681.0", "sha256": "79d7424e…"},
+      "error": null
+    }
+  ],
+  "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+}
+```
+
+| Outcome | Step | Command |
+| --- | --- | --- |
+| `updated` | The binary was replaced. | A step changed something. Exit 0. |
+| `unchanged` | The binary already matches. | Nothing changed. Exit 0. |
+| `pending` | The Gateway's CLI release is not published yet. Nothing changed. | Run the command again in a few minutes. Exit 0. |
+| `skipped` | The step does not apply here; `reason` says why. | Not a top-level outcome. |
+| `failed` | The step failed; `error` says why. The CLI step does not run after a failed agent step. | Exit 1. |
+
+| Error code | Meaning |
+| --- | --- |
+| `self_update.downgrade_refused` | The Gateway's CLI release is older than this `orbit`. Pass `--allow-downgrade` to install it. |
+| `self_update.version_unknown` | This `orbit` is not a release build, so it cannot be compared. Pass `--allow-downgrade` to replace it. |
+| `self_update.checksum_mismatch` | The download or the release `SHA256SUMS` does not match the Gateway's checksum. Nothing changed. |
+| `self_update.candidate_invalid` | The downloaded binary does not start here or reports another version. Nothing changed. |
+| `self_update.download_failed` | `curl` could not download an asset. Nothing changed. |
+| `self_update.not_writable` | The command may not write to the directory of the binary. Run it with `sudo`. |
+| `self_update.install_failed` | The new binary could not be put in place. The old binary is still there. |
+| `agent.checksum_mismatch`, `agent.download_failed`, `agent.install_failed`, `agent.not_writable` | The same failures for `orbit-agent`. Nothing changed. |
+| `agent.restart_failed` | The new `orbit-agent` is in place, but `systemctl restart orbit-agent.service` failed. |
+
+A failure before the steps start, such as `gateway.profile_missing` or `gateway.unreachable`, prints the usual JSON error envelope.
+
+## The newer-release notice
+
+After any other command that reached the Gateway, the CLI prints one line on standard error when the Gateway's fleet runs a newer CLI release, at most once a day:
+
+```text
+Orbit 0.4681.0 is available (this is 0.4600.0). Run orbit self-update.
+```
+
+It never appears in JSON output. [The newer-release notice](/reference/self-update#the-newer-release-notice) describes the headers and the throttle.
+
+## Related
+
+- [`gateway`](/cli/gateway) shows the desired fleet state in `gateway:status`.
+- [CLI binaries](/reference/cli-binaries) describes the published releases.
+- [Node agent](/reference/node-agent#install-and-upgrade) describes the agent pin.

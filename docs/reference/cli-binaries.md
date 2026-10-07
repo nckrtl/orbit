@@ -104,6 +104,16 @@ orbit --version
 
 On a Mac, use `orbit-${version}-macos-arm64` and `shasum -a 256 --check` instead of `sha256sum --check`.
 
+### Update an installed binary
+
+`orbit self-update` replaces an installed binary with the CLI release of the active Gateway's commit. It checks the SHA-256 against the Gateway and the release `SHA256SUMS`, runs the new binary once, and swaps it in with one rename. It refuses a downgrade unless `--allow-downgrade` is passed, and it leaves a source checkout alone. On a managed Linux Node it also brings `orbit-agent` to the Gateway's pin. Use `sudo` when the binary lives in a directory only root may write. [Orbit self-update](/reference/self-update) describes each step.
+
+```bash
+sudo orbit self-update
+```
+
+When the Gateway's fleet runs a newer release, other commands print a notice to run `orbit self-update`, at most once a day.
+
 ### Publish a missed commit
 
 When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check.
@@ -147,7 +157,7 @@ The binary contract has these limits.
 - `SHA256SUMS` comes from the same release, so it detects a damaged download, not a forged release.
 - Orbit does not install the binary on Nodes, track which Node runs which version, or roll out upgrades.
 
-[ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) lifts the last limit. CI publishes the binaries of each green `main` commit as a GitHub release, the Gateway installs the CLI on managed Nodes, and `orbit self-update` updates a machine to the Gateway's release.
+[ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) lifts the last limit: the Gateway installs the CLI on managed Nodes and runs `orbit self-update` on each Node after a release.
 
 ## Why it works this way
 
