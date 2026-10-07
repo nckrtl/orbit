@@ -409,6 +409,27 @@ it('lets every main push finish CI while a pull request keeps only its newest ru
     ]);
 });
 
+it('publishes the web build of each main push for the Gateway to install', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $steps = array_column($workflow['jobs']['web']['steps'], null, 'name');
+    $names = array_keys($steps);
+
+    expect($steps['Publish web build'])->toBe([
+        'name' => 'Publish web build',
+        'if' => "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+        'uses' => 'actions/upload-artifact@v7',
+        'with' => [
+            'name' => 'web-dist-${{ github.sha }}',
+            'path' => 'apps/web/dist',
+            'include-hidden-files' => true,
+            'if-no-files-found' => 'error',
+            'retention-days' => 14,
+        ],
+    ]);
+    expect(array_search('Publish web build', $names, true))
+        ->toBe(array_search('Build', $names, true) + 1);
+});
+
 it('excludes privileged feedback through configuration while retaining TIA and ignores feedback in CI', function (bool $ci): void {
     $directory = temporaryPath('orbit-feedback-', 6);
     mkdir($directory);

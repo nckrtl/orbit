@@ -355,6 +355,17 @@ jobs:
       - name: Build
         run: bun run build
 
+      # Automatic Gateway releases (ADR 0201) install this build for the same commit, so the Gateway needs no Node or Bun.
+      - name: Publish web build
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist-${{ github.sha }}
+          path: apps/web/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
   pi-server:
     name: Pi server
     runs-on: ubuntu-26.04
