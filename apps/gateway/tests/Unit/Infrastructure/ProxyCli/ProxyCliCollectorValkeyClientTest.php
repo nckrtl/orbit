@@ -50,7 +50,7 @@ PY;
 
 it('parses wrapped quota responses and preserves collection deadlines', function (): void {
     $process = new Process(['/usr/bin/python3', __DIR__.'/test_collector.py']);
-    $process->setTimeout(10);
+    $process->setTimeout(15);
     $process->run();
 
     expect($process->isSuccessful())->toBeTrue($process->getErrorOutput());

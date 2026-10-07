@@ -404,10 +404,6 @@ abstract class GatewayCommand extends Command
             );
 
             return null;
-        } catch (FatalRequestException) {
-            GatewayFailureRenderer::write($this, 'gateway.unreachable', 'Could not reach the gateway.');
-
-            return null;
         }
 
         return $response;

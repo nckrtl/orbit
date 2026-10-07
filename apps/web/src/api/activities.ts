@@ -770,27 +770,6 @@ export function patchActivityUpdated(client: QueryClient, data: Record<string, u
 }
 
 /**
- * Unions every cached row with the newest fetched page, newest id first.
- * Fetched fields replace cached fields. A cached row the page omits stays.
- * The same id is stored once, including when the fetched page overlaps an older cached page.
- */
-export function mergeActivityFirstPage(
-    log: ActivityLog,
-    fetched: readonly Activity[],
-): ActivityLog {
-    const byId = new Map<number, Activity>();
-    for (const page of log.pages) {
-        for (const row of page) byId.set(row.id, row);
-    }
-    for (const row of fetched) {
-        const previous = byId.get(row.id);
-        byId.set(row.id, previous === undefined ? row : { ...previous, ...row });
-    }
-
-    return chunkActivityLog([...byId.values()].sort((left, right) => right.id - left.id));
-}
-
-/**
  * Fetches the newest page of each cached log and merges it by id.
  * One request per filter set, with no `before_id`, so a reconnect does not refetch every loaded page.
  */

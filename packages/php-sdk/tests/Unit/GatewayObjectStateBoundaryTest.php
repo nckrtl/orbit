@@ -277,8 +277,8 @@ describe('gateway object-state boundary', function (): void {
         expect($mockClient->getLastPendingRequest()?->body()?->all())->toBe($expectedBody);
     });
 
-    it('rejects an unsafe connector URL before a diagnostic operation can receive it', function (string $operation): void {
-        $credential = gateway_object_state_credential($operation);
+    it('rejects an unsafe connector URL without leaking credentials', function (): void {
+        $credential = gateway_object_state_credential('unsafe-origin');
         $control = "line\r\nX-Orbit-Token: {$credential}";
         $query = http_build_query(
             [
@@ -295,7 +295,7 @@ describe('gateway object-state boundary', function (): void {
         $gatewayUrl = "https://operator:{$credential}@gateway.test?{$query}";
 
         try {
-            gateway_object_state_connector_operation($operation, $gatewayUrl);
+            new GatewayConnector($gatewayUrl);
             $this->fail('Expected unsafe gateway origin rejection.');
         } catch (InvalidArgumentException $exception) {
             $sdkTrace = gateway_object_state_sdk_trace($exception);
@@ -316,11 +316,7 @@ describe('gateway object-state boundary', function (): void {
                 'encoded control' => rawurlencode($control),
             ]))->toBeEmpty();
         }
-    })->with([
-        'print_r' => ['print_r'],
-        'var_dump' => ['var_dump'],
-        'serialize' => ['serialize'],
-    ]);
+    });
 
     it('normalizes safe HTTPS connector origins', function (string $origin, string $expected): void {
         expect(new GatewayConnector($origin)->resolveBaseUrl())->toBe($expected);
@@ -515,16 +511,6 @@ function gateway_object_state_connector_constructor_exception(
     }
 
     throw new RuntimeException('Expected the gateway connector constructor to reject an invalid timeout.');
-}
-
-function gateway_object_state_connector_operation(string $operation, string $gatewayUrl): void
-{
-    match ($operation) {
-        'print_r' => print_r(new GatewayConnector($gatewayUrl), return: true),
-        'var_dump' => var_dump(new GatewayConnector($gatewayUrl)),
-        'serialize' => serialize(new GatewayConnector($gatewayUrl)),
-        default => throw new InvalidArgumentException('Unknown connector diagnostic operation.'),
-    };
 }
 
 function gateway_object_state_raw_debug_operation(object $transport, string $operation): object

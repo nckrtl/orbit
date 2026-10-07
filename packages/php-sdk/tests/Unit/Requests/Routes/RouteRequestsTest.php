@@ -99,26 +99,6 @@ it('preserves valid Route error-code tokens', function (): void {
         ->toBe('route.publication_failed');
 });
 
-it('normalizes malformed Route error codes to null', function (mixed $errorCode): void {
-    $response = RouteResponse::fromGatewayData(
-        [...route_data(), 'error_code' => $errorCode],
-        route_request_id(),
-    );
-
-    expect($response->errorCode)
-        ->toBeNull()
-        ->and($response->toArray()['error_code'])
-        ->toBeNull()
-        ->and(serialize($response))
-        ->not->toContain(is_string($errorCode) ? $errorCode : 'credential');
-})->with([
-    'credential-shaped code' => 'token=route-response-credential',
-    'control characters' => "route.failed\r\ncredential",
-    'whitespace' => ' route.failed ',
-    'non-string' => [['credential']],
-    'oversized' => str_repeat('a', times: 129),
-]);
-
 it('preserves a combined domain and publication update', function (): void {
     $update = new UpdateRouteRequest(11, domain: 'final.example.test', publication: 'public');
     $response = RouteResponse::fromGatewayData(

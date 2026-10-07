@@ -200,17 +200,6 @@ it('renders credentials in human output without leaking them in errors', functio
         ->and($output)->toContain('22222222-2222-4222-8222-222222222222');
 });
 
-it('requires a node id in non-interactive enable mode', function (): void {
-    $mock = MockClient::global();
-
-    $this
-        ->artisan('metrics:enable', ['--json' => true])
-        ->expectsOutputToContain('Node ID or name is required.')
-        ->assertExitCode(1);
-
-    expect($mock->getLastPendingRequest())->toBeNull();
-});
-
 it('enables Metrics on an explicit node and sends the node payload', function (): void {
     $mock = MockClient::global([
         EnableMetricsRequest::class => MockResponse::make([

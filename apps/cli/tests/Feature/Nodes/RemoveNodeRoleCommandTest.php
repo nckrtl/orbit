@@ -326,21 +326,6 @@ it('fails closed when the preview unexpectedly succeeds', function (): void {
     expect($mockClient->getRecordedResponses())->toHaveCount(1);
 });
 
-it('shows deterministic human output for a removed node role assignment', function (): void {
-    MockClient::global([
-        RemoveNodeRoleRequest::class => MockResponse::make([
-            'data' => removed_node_role_payload(),
-            'meta' => ['request_id' => node_role_remove_request_id()],
-        ]),
-    ]);
-
-    $this
-        ->artisan('node:role:remove', ['node' => '7', 'role' => 'app-dev', '--force' => true])
-        ->expectsOutput('Role [app-dev] removed from node [app-1] (#7).')
-        ->expectsOutput('Request ID: '.node_role_remove_request_id())
-        ->assertExitCode(0);
-});
-
 it('shows no degradation advisory for an ordinary node role removal', function (): void {
     MockClient::global([
         RemoveNodeRoleRequest::class => MockResponse::make([

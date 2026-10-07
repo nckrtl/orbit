@@ -8,7 +8,6 @@ use App\Support\Console\Renderers\TableLayout;
 use App\Support\Console\Renderers\TableTheme;
 use App\Support\Console\TerminalText;
 use Laravel\Prompts\Prompt;
-use Laravel\Prompts\Terminal;
 
 describe('safe human display cells', function (): void {
     it('preserves zero and false while displaying missing values separately', function (): void {
@@ -217,21 +216,4 @@ function human_layout_table_cells(string $output): array
     }
 
     return $columns;
-}
-
-final class HumanLayoutTerminal extends Terminal
-{
-    public function __construct(private readonly int $columns, private readonly int $rows) {}
-
-    public function cols(): int
-    {
-        return $this->columns;
-    }
-
-    public function lines(): int
-    {
-        return $this->rows;
-    }
-
-    public function restoreTty(): void {}
 }

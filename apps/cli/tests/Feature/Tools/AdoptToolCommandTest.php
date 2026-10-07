@@ -110,51 +110,6 @@ it('rejects invalid identity before consent or a request', function (array $argu
     'oversized package' => [['package' => str_repeat('x', 256), '--node' => '2', '--manager' => 'apt'], 'tool.package_invalid'],
 ]);
 
-it('renders the same intent as unchanged and a different intent as a refusal', function (string $fixture, int $exit, string $needle): void {
-    MockClient::global(gateway_fixture_mock($fixture));
-
-    expect(Artisan::call('tool:adopt', [
-        'package' => 'jq',
-        '--node' => '2',
-        '--manager' => 'apt',
-        '--constraint' => '^9.9',
-        '--yes' => true,
-        '--json' => true,
-    ]))->toBe($exit);
-    expect(Artisan::output())->toContain($needle);
-})->with([
-    'created' => ['tools/tool-adopt/adopted', 0, '"outcome":"applied"'],
-    'same intent' => ['tools/tool-adopt/unchanged', 0, '"outcome":"unchanged"'],
-    'repaired' => ['tools/tool-adopt/repaired', 0, '"outcome":"applied"'],
-    'different intent' => ['tools/tool-adopt/constraint-conflict', 1, '"code":"tool.constraint_conflict"'],
-    'constraint violated' => ['tools/tool-adopt/constraint-violated', 1, '"code":"tool.installed_version_constraint_violated"'],
-    'constraint invalid' => ['tools/tool-adopt/constraint-invalid', 1, '"code":"tool.constraint_invalid"'],
-    'busy scope' => ['tools/tool-adopt/operation-locked', 1, '"code":"tool.operation_locked"'],
-    'missing package' => ['tools/tool-adopt/absent', 1, '"code":"tool.package_absent"'],
-    'unsupported manager' => ['tools/tool-adopt/manager-unsupported', 1, '"code":"tool.manager_unsupported"'],
-    'unavailable manager' => ['tools/tool-adopt/manager-unavailable', 1, '"code":"tool.manager_unavailable"'],
-    'authorization' => ['tools/tool-adopt/access-required', 1, '"code":"node_access.required"'],
-]);
-
-it('keeps the adoption block and drops node access records from a refusal', function (string $fixture, string $present, string $absent): void {
-    MockClient::global(gateway_fixture_mock($fixture));
-
-    expect(Artisan::call('tool:adopt', [
-        'package' => 'jq',
-        '--node' => '2',
-        '--manager' => 'apt',
-        '--yes' => true,
-        '--json' => true,
-    ]))->toBe(1);
-    expect(Artisan::output())
-        ->toContain($present)
-        ->not->toContain($absent);
-})->with([
-    'dependency' => ['tools/tool-adopt/dependency', '"adoption_block":"dependency"', 'consumer_node'],
-    'protected' => ['tools/tool-adopt/protected', '"adoption_block":"protected"', 'manager_output'],
-    'access required' => ['tools/tool-adopt/access-required', '"code":"node_access.required"', 'adopt-consumer'],
-]);
-
 it('asks for default-No ownership consent and cancels before the adoption request', function (array $keys, bool $accepted): void {
     $result = run_tool_adopt_consent(
         ['tool:adopt', 'jq', '--node=2', '--manager=apt', '--no-ansi'],

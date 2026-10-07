@@ -14,7 +14,7 @@ const entry = fixture.body.data[0] as DocumentEntry;
 it("rejects corrupt downloads before creating a browser attachment", async () => {
     setTransport(async () => ({
         status: 200,
-        payload: { data: { content_base64: "YmFk", version: entry.current_version } },
+        payload: { data: { content_base64: "YmFkYmFk", version: entry.current_version } },
     }));
     await expect(downloadDocument(1, entry)).rejects.toMatchObject({
         code: "project_documents.body_unavailable",

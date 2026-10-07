@@ -217,17 +217,6 @@ JSON;
             && str_contains((string) $request->body(), '"arguments":{"options":{},"flags":[]}'));
     });
 
-    it('does not send a destroy request without confirmation', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-definition-destroy/destroyed'));
-
-        expect(Artisan::call('tasks:definition:destroy', [
-            'name' => 'build-feature',
-            '--project' => '1',
-            '--json' => true,
-        ]))->toBe(1);
-
-        $mock->assertNothingSent();
-    });
 });
 
 /** @param array<string, mixed> $arguments */

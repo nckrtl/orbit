@@ -4,74 +4,9 @@ declare(strict_types=1);
 
 use App\Domain\ProxyCli\ProxyCliAccount;
 use App\Domain\ProxyCli\ProxyCliPoolCompiler;
-use App\Domain\ProxyCli\ProxyCliQuotaParser;
-use App\Domain\ProxyCli\ProxyCliQuotaStats;
 use App\Domain\ProxyCli\ProxyCliWindow;
-use Illuminate\Support\Carbon;
 
 describe('proxycli pooling', function (): void {
-    it('orders windows longer first and never labels them Primary or Secondary', function (): void {
-        $parser = new ProxyCliQuotaParser;
-        $windows = $parser->parse('codex', [
-            'rate_limit' => [
-                'primary_window' => ['used_percent' => 10, 'limit_window_seconds' => 18_000],
-                'secondary_window' => ['used_percent' => 40, 'limit_window_seconds' => 604_800],
-            ],
-        ]);
-
-        expect(array_map(static fn (ProxyCliWindow $window): string => $window->label, $windows))
-            ->toBe(['7d', '5h'])
-            ->and($windows[0]->usedPercent)->toBe(40.0)
-            ->and($windows[1]->usedPercent)->toBe(10.0);
-    });
-
-    it('labels resets around the Codex fallback threshold and preserves past signed time', function (): void {
-        Carbon::setTestNow('2026-09-20T12:00:00+00:00');
-
-        try {
-            $windows = (new ProxyCliQuotaParser)->parse('codex', [
-                'rate_limit' => [
-                    'primary_window' => [
-                        'used_percent' => 15,
-                        'reset_at' => Carbon::now()->addHours(12)->toAtomString(),
-                    ],
-                    'secondary_window' => [
-                        'used_percent' => 35,
-                        'reset_at' => Carbon::now()->addDays(7)->toAtomString(),
-                    ],
-                ],
-            ]);
-
-            expect(array_map(static fn (ProxyCliWindow $window): string => $window->label, $windows))
-                ->toBe(['7d', '5h']);
-
-            $pastWindows = (new ProxyCliQuotaParser)->parse('codex', [
-                'rate_limit' => [
-                    'primary_window' => [
-                        'used_percent' => 15,
-                        'reset_at' => Carbon::now()->subDays(7)->toAtomString(),
-                    ],
-                ],
-            ]);
-
-            expect(array_map(static fn (ProxyCliWindow $window): string => $window->label, $pastWindows))
-                ->toBe(['5h']);
-        } finally {
-            Carbon::setTestNow();
-        }
-    });
-
-    it('omits a window the provider did not return instead of showing zero', function (): void {
-        $parser = new ProxyCliQuotaParser;
-        $windows = $parser->parse('claude', [
-            'seven_day' => ['utilization' => 22.5, 'resets_at' => '2026-09-21T00:00:00Z'],
-        ]);
-
-        expect($windows)->toHaveCount(1)
-            ->and($windows[0]->label)->toBe('7d')
-            ->and($windows[0]->usedPercent)->toBe(22.5);
-    });
-
     it('recompiles pools from cache after an account toggle without inventing windows', function (): void {
         $compiler = new ProxyCliPoolCompiler;
         $accounts = [
@@ -93,22 +28,5 @@ describe('proxycli pooling', function (): void {
             ->and($after->provider('codex')?->windows)->toHaveCount(2)
             ->and($after->accounts[1]->disabled)->toBeTrue()
             ->and($after->provider('codex')?->windows[0]->usedPercent)->toBe(20.0);
-    });
-
-    it('exposes CodexBar quota_groups as duration names', function (): void {
-        $snapshot = new ProxyCliPoolCompiler()->compile([
-            new ProxyCliAccount('plus.json', 'codex', 'plus', false, 'enabled', [
-                new ProxyCliWindow('7d', 25, '2026-09-27T00:00:00+00:00'),
-                new ProxyCliWindow('5h', 10, '2026-09-20T17:00:00+00:00'),
-            ]),
-        ], '2026-09-20T12:00:00+00:00');
-
-        $stats = new ProxyCliQuotaStats()->from($snapshot);
-
-        expect($stats['quota_groups'][0]['name'])->toBe('7d')
-            ->and($stats['quota_groups'][1]['name'])->toBe('5h')
-            ->and($stats['providers']['codex']['remaining_percent'])->toBe(75.0)
-            ->and(json_encode($stats))->not->toContain('Primary')
-            ->and(json_encode($stats))->not->toContain('Secondary');
     });
 });

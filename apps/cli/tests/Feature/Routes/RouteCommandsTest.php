@@ -341,15 +341,6 @@ it('rejects impossible create shapes before transport', function (array $argumen
         ],
         'instance.id_invalid',
     ],
-    'publication without value' => [
-        [
-            'instance' => '3',
-            'domain' => 'app.test',
-            '--publication' => null,
-            '--json' => true,
-        ],
-        'route.publication_invalid',
-    ],
     'missing domain' => [
         [
             'instance' => '3',

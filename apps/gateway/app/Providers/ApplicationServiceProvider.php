@@ -147,7 +147,6 @@ use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\ProxyCli\ProxyCliAccountControlClient;
 use App\Domain\ProxyCli\ProxyCliCache;
-use App\Domain\ProxyCli\ProxyCliManagementClient;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
@@ -326,7 +325,6 @@ use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
 use App\Infrastructure\Projects\NativeProjectUpdateProjectionMutator;
 use App\Infrastructure\Projects\RemoteProjectUpdateSourceMutator;
 use App\Infrastructure\ProxyCli\ArrayProxyCliCache;
-use App\Infrastructure\ProxyCli\HttpCliProxyApiClient;
 use App\Infrastructure\ProxyCli\HttpProxyCliAccountControlClient;
 use App\Infrastructure\ProxyCli\NativeProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\NativeProxyCliRuntimeLifecycle;
@@ -513,7 +511,6 @@ final class ApplicationServiceProvider extends ServiceProvider
         WebSocketCredentialManager::class => NativeWebSocketCredentialManager::class,
         WebSocketPublicationManager::class => NativeWebSocketPublicationManager::class,
         WebSocketRuntimeLifecycle::class => NativeWebSocketRuntimeLifecycle::class,
-        ProxyCliManagementClient::class => HttpCliProxyApiClient::class,
         ProxyCliAccountControlClient::class => HttpProxyCliAccountControlClient::class,
     ];
 
