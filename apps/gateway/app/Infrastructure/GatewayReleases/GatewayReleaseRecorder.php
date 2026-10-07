@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\GatewayReleases;
 
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Config;
@@ -41,6 +42,36 @@ final readonly class GatewayReleaseRecorder
         $this->activity($release);
 
         return $row;
+    }
+
+    /**
+     * Records a refused or failed attempt that names no prepared commit, such as an unknown commit
+     * or a rollback that would cross a migration. Nothing changed, so there is no release row, only
+     * the failed Activity entry.
+     */
+    public function refused(string $trigger, GatewayReleaseException $exception, int $durationMs): void
+    {
+        try {
+            Activity::query()->create([
+                'log_name' => 'commands',
+                'description' => 'gateway:release:'.$trigger,
+                'event' => 'command',
+                'properties' => [
+                    'outcome' => 'refused',
+                    'step' => $exception->step,
+                    'sha' => $exception->sha,
+                    'error_code' => $exception->errorCode,
+                ],
+                'request_id' => (string) Str::uuid(),
+                'command' => 'gateway:release:'.$trigger,
+                'status' => 'failed',
+                'duration_ms' => $durationMs,
+                'exit_code' => in_array($exception->status, [404, 422], true) ? 2 : 1,
+                'error_code' => $exception->errorCode,
+            ]);
+        } catch (Throwable) {
+            // The command output still carries the refusal.
+        }
     }
 
     private function pauseMarker(DeployedGatewayRelease $release): void

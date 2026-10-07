@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\GatewayReleases\ConfigureGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
@@ -19,6 +20,7 @@ use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\GatewayReleaseFixture;
 
 beforeEach(function (): void {
@@ -207,6 +209,152 @@ describe('gateway:release:deploy', function (): void {
             ->and($this->fixture->layout->currentReleaseId())->toBe($first);
     });
 
+    it('switches back and records the release when an unexpected error ends the handoff', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Handoff crashes');
+        $order = new ReleaseSteps;
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order, crashOn: substr($sha, 0, 12)), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+
+        $exception = release_failure(fn () => $action->execute($sha));
+        $record = GatewayRelease::query()->sole();
+
+        expect($exception->errorCode)->toBe('gateway.release_unexpected_failure')
+            ->and($exception->step)->toBe('handoff')
+            ->and($exception->getMessage())->toContain('ran out of memory')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and($record->outcome)->toBe('switched_back')
+            ->and($record->error_code)->toBe('gateway.release_unexpected_failure')
+            ->and($order->steps)->toBe(['handoff:'.substr($sha, 0, 12), 'web:restore', 'handoff:'.$first])
+            ->and(Activity::query()->value('status'))->toBe('failed');
+    });
+
+    it('pauses when an unexpected error ends a release after migrations ran', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Migrated, then the handoff crashes');
+        $order = new ReleaseSteps;
+        $database = new OpenReleaseDatabase;
+        $database->pending = ['2026_10_13_000000_create_gateway_releases_table'];
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order, crashOn: substr($sha, 0, 12)), $database, recording_web($order), recording_smoke($order));
+
+        release_failure(fn () => $action->execute($sha));
+
+        expect(GatewayRelease::query()->sole()->outcome)->toBe('paused')
+            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
+            ->and(is_file($this->fixture->base.'/home/gateway-release.paused'))->toBeTrue();
+    });
+
+    it('pauses when the switch fails after migrations ran, because the old code serves the new schema', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Migrated, then the switch fails');
+        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, new readonly class($this->fixture) implements ProcessRunner
+        {
+            public function __construct(private GatewayReleaseFixture $fixture) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                return ($invocation->arguments[0] ?? '') === 'mv'
+                    ? new CommandResult(1, '', 'mv failed', 1, false)
+                    : $this->fixture->run($invocation);
+            }
+        });
+        $database = new OpenReleaseDatabase;
+        $database->pending = ['2026_10_13_000000_create_gateway_releases_table'];
+        $order = new ReleaseSteps;
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order), $switcher);
+
+        expect(release_failure(fn () => $action->execute($sha))->errorCode)->toBe('gateway.release_switch_failed')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and(GatewayRelease::query()->sole()->outcome)->toBe('paused')
+            ->and(is_file($this->fixture->base.'/home/gateway-release.paused'))->toBeTrue();
+    });
+
+    it('records a failure about the machine as retryable', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Unreadable migrations');
+        $database = new OpenReleaseDatabase;
+        $database->unreadable = new RuntimeException('database is locked');
+        $order = new ReleaseSteps;
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order));
+
+        $exception = release_failure(fn () => $action->execute($sha));
+        $record = GatewayRelease::query()->sole();
+
+        expect($exception->errorCode)->toBe('gateway.release_unexpected_failure')
+            ->and($exception->step)->toBe('snapshot')
+            ->and($record->outcome)->toBe('failed')
+            ->and($record->retryable)->toBeTrue()
+            ->and($record->sha)->toBe($sha)
+            ->and($order->steps)->toBe([]);
+    });
+
+    it('records a refused rollback as a failed Activity entry and changes nothing', function (): void {
+        $first = adopt_release($this->fixture);
+        $order = new ReleaseSteps;
+        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+
+        $exception = release_failure(fn () => $rollback->execute('0123456789ab'));
+
+        expect($exception->errorCode)->toBe('gateway.release_not_prepared')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and(GatewayRelease::query()->count())->toBe(0)
+            ->and(Activity::query()->value('command'))->toBe('gateway:release:rollback')
+            ->and(Activity::query()->value('error_code'))->toBe('gateway.release_not_prepared');
+    });
+
+    it('caches the target release again from the shared env file before it goes current', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Second release');
+        $order = new ReleaseSteps;
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        file_put_contents($this->fixture->layout->environmentPath(), "APP_ENV=production\nORBIT_CHANGED=1\n");
+        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+
+        $rollback->execute($first);
+        $cache = $this->fixture->layout->releaseApplicationPath($first).'/bootstrap/cache';
+
+        expect((require $cache.'/config.php')['env'])->toContain('ORBIT_CHANGED=1')
+            ->and(glob($cache.'/config.next-*'))->toBe([]);
+    });
+
+    it('refreshes the current release configuration for an env change', function (): void {
+        $first = adopt_release($this->fixture);
+        file_put_contents($this->fixture->layout->environmentPath(), "APP_ENV=production\nORBIT_CHANGED=2\n");
+        $this->app->instance(ConfigureGatewayReleaseAction::class, new ConfigureGatewayReleaseAction(
+            new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock'),
+            $this->fixture->layout,
+            $this->fixture->builder(),
+        ));
+
+        $this->artisan('gateway:release:configure')
+            ->expectsOutputToContain('"release":"'.$first.'"')
+            ->assertExitCode(0);
+
+        expect((require $this->fixture->layout->releaseApplicationPath($first).'/bootstrap/cache/config.php')['env'])->toContain('ORBIT_CHANGED=2');
+    });
+
+    it('keeps the configured number of releases plus the current and previous one', function (): void {
+        $order = new ReleaseSteps;
+        $first = adopt_release($this->fixture);
+        $ids = [$first];
+
+        foreach (range(1, 3) as $index) {
+            $sha = $this->fixture->commit('Release '.$index);
+            $ids[] = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), keptReleases: 1)->execute($sha)->id;
+            touch($this->fixture->layout->releasePath(end($ids)).'/REVISION', time() + $index);
+        }
+
+        expect($this->fixture->layout->retainedReleaseIds())->toEqualCanonicalizing([$ids[3], $ids[2]])
+            ->and($this->fixture->layout->currentReleaseId())->toBe($ids[3]);
+    });
+
+    it('prints JSON for a failure the release code did not expect', function (): void {
+        Schema::drop('gateway_releases');
+
+        $this->artisan('gateway:release:list')
+            ->expectsOutputToContain('"error_code":"gateway.release_unexpected_failure"')
+            ->assertExitCode(1);
+    });
+
     it('prints one JSON object for a deploy and refuses a branch name', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Command release');
@@ -258,6 +406,7 @@ function release_deployer(
     GatewayReleaseSmoke $smoke,
     ?GatewayReleaseSwitcher $switcher = null,
     ?GatewayReleaseLock $lock = null,
+    int $keptReleases = GatewayReleasePromoter::KeptReleases,
 ): DeployGatewayReleaseAction {
     $builder = $fixture->builder($web);
     $recorder = new GatewayReleaseRecorder($fixture->base.'/home');
@@ -275,6 +424,7 @@ function release_deployer(
             $smoke,
             $recorder,
             $builder,
+            $keptReleases,
         ),
         $recorder,
     );
@@ -305,6 +455,7 @@ function release_rollback(
             $recorder,
             $builder,
         ),
+        $recorder,
     );
 }
 
@@ -331,15 +482,19 @@ function passing_verifier(?ReleaseSteps $order = null): GatewayReleaseVerifier
     };
 }
 
-function recording_runtime(ReleaseSteps $order): GatewayReleaseRuntime
+function recording_runtime(ReleaseSteps $order, ?string $crashOn = null): GatewayReleaseRuntime
 {
-    return new readonly class($order) implements GatewayReleaseRuntime
+    return new readonly class($order, $crashOn) implements GatewayReleaseRuntime
     {
-        public function __construct(private ReleaseSteps $order) {}
+        public function __construct(private ReleaseSteps $order, private ?string $crashOn) {}
 
         public function handoff(string $id): array
         {
             $this->order->steps[] = 'handoff:'.$id;
+
+            if ($this->crashOn === $id) {
+                throw new RuntimeException('The handoff process ran out of memory.');
+            }
 
             return [
                 'caddy' => 'skipped',
@@ -411,8 +566,14 @@ final class OpenReleaseDatabase implements GatewayReleaseDatabase
     /** @var array<string, list<string>> */
     public array $files = [];
 
+    public ?Throwable $unreadable = null;
+
     public function pending(string $releasePath): array
     {
+        if ($this->unreadable instanceof Throwable) {
+            throw $this->unreadable;
+        }
+
         return $this->pending;
     }
 

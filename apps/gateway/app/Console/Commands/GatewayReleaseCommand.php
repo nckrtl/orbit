@@ -8,6 +8,7 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use Closure;
 use Illuminate\Console\Command;
 use Symfony\Component\Console\Output\OutputInterface;
+use Throwable;
 
 /**
  * Gateway release commands run on the Gateway host as the Gateway account. Each prints one JSON
@@ -31,6 +32,15 @@ abstract class GatewayReleaseCommand extends Command
             ]);
 
             return in_array($exception->status, [404, 422], true) ? 2 : self::FAILURE;
+        } catch (Throwable $exception) {
+            $failure = GatewayReleaseException::fromThrowable($exception, 'command');
+            $this->emit([
+                'error_code' => $failure->errorCode,
+                'step' => $failure->step,
+                'message' => $failure->getMessage(),
+            ]);
+
+            return self::FAILURE;
         }
     }
 

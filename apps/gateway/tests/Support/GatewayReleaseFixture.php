@@ -73,14 +73,16 @@ final class GatewayReleaseFixture implements ProcessRunner
         $this->write('apps/gateway/public/index.php', "<?php\n");
         $this->write('apps/gateway/artisan', <<<'PHP'
             <?php
-            // Stands in for `artisan config:cache`: caches the version that the release's REVISION names.
+            // Stands in for `artisan config:cache`: caches the release's REVISION and the shared env file.
             $root = dirname(__DIR__, 2);
             if (is_file(__DIR__.'/config.fail')) {
                 fwrite(STDERR, "configuration failed\n");
                 exit(1);
             }
             $revision = is_file($root.'/REVISION') ? trim(file_get_contents($root.'/REVISION')) : 'dev';
-            file_put_contents(__DIR__.'/bootstrap/cache/config.php', '<?php return '.var_export(['app' => ['version' => $revision]], true).';');
+            $cache = getenv('APP_CONFIG_CACHE') ?: __DIR__.'/bootstrap/cache/config.php';
+            $env = is_file(__DIR__.'/.env') ? trim(file_get_contents(__DIR__.'/.env')) : '';
+            file_put_contents($cache, '<?php return '.var_export(['app' => ['version' => $revision], 'env' => $env], true).';');
             PHP);
         $this->write('apps/gateway/storage/logs/.gitignore', "*\n!.gitignore\n");
         $this->write('apps/gateway/storage/framework/cache/.gitignore', "*\n!.gitignore\n");

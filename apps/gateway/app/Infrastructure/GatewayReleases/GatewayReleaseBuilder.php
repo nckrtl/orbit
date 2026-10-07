@@ -107,6 +107,35 @@ final readonly class GatewayReleaseBuilder
         return new PreparedGatewayRelease($id, $sha, $path, false, $this->elapsed($startedAt));
     }
 
+    /**
+     * Caches a prepared release's configuration again from the shared env file, so a release that
+     * goes current runs with the env file as it is now. The cache is written beside the live one
+     * and renamed over it, so a request never reads a half-written configuration.
+     */
+    public function refreshConfiguration(string $id): void
+    {
+        $application = $this->layout->releaseApplicationPath($id);
+        $live = $application.'/bootstrap/cache/config.php';
+        $candidate = $application.'/bootstrap/cache/config.next-'.bin2hex(random_bytes(6)).'.php';
+        $result = $this->processes->run(new ProcessInvocation(
+            arguments: [$this->php, $application.'/artisan', 'config:cache', '--no-interaction'],
+            timeout: 120.0,
+            environment: ['APP_CONFIG_CACHE' => $candidate],
+        ));
+
+        if (! $result->succeeded() || ! is_file($candidate) || ! @rename($candidate, $live)) {
+            @unlink($candidate);
+
+            throw new GatewayReleaseException(
+                step: 'configuration',
+                errorCode: 'gateway.release_configuration_failed',
+                message: "The configuration of release [{$id}] cannot be cached again from the shared env file.",
+                status: 500,
+                result: $result,
+            );
+        }
+    }
+
     /** Removes a retained release that is not current. */
     public function remove(string $id): void
     {

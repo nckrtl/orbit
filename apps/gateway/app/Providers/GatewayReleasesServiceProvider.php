@@ -76,6 +76,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 smoke: $app->make(GatewayReleaseSmoke::class),
                 recorder: $app->make(GatewayReleaseRecorder::class),
                 builder: $app->make(GatewayReleaseBuilder::class),
+                keptReleases: max(1, Config::integer('orbit.gateway_releases.keep')),
             ),
         );
     }

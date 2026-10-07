@@ -11,18 +11,22 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Switches to a prepared release, hands the runtime over, verifies, switches the web app, then
- * runs smoke. Verify and smoke see the new release. Smoke runs only after the web switch. A
- * failure before migrations switches back and repeats the runtime handoff for the previous
- * release. A failure after migrations pauses instead.
+ * runs smoke. Verify and smoke see the new release. Smoke runs only after the web switch.
+ *
+ * Any failure after the switch, expected or not, is handled the same way: without migrations the
+ * previous release becomes current again and its runtime handoff repeats; after migrations the
+ * release pauses. A failure after migrations always pauses, also when the switch itself failed,
+ * because the previous code then serves a schema it has not run. Every outcome is recorded.
  */
 final readonly class GatewayReleasePromoter
 {
-    /** @var list<string> */
-    private const array SWITCH_BACK_STEPS = ['handoff', 'verify', 'web', 'smoke'];
+    /** The default number of prepared releases kept, newest first, besides the current and previous one. */
+    public const int KeptReleases = 5;
 
     public function __construct(
         private GatewayReleaseLayout $layout,
@@ -33,6 +37,7 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseSmoke $smoke,
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
+        private int $keptReleases = self::KeptReleases,
     ) {}
 
     /**
@@ -47,43 +52,58 @@ final readonly class GatewayReleasePromoter
         array $phases,
         int $startedAt,
     ): DeployedGatewayRelease {
-        $previous = null;
-        $switched = false;
+        $previous = $this->layout->currentReleaseId();
         $handoff = null;
+        $step = 'configuration';
 
         try {
+            $this->builder->refreshConfiguration($id);
+            $phases['configuration'] = ['outcome' => 'cached'];
+            $step = 'switch';
             $previous = $this->switcher->switchTo($id);
-            $switched = $previous !== $id;
             $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
+            $step = 'handoff';
             $handoff = $this->runtime->handoff($id);
             $phases['handoff'] = $handoff;
+            $step = 'verify';
             $verified = $this->verifier->verify($sha);
             $phases['verify'] = ['outcome' => 'passed', 'status' => $verified['status'], 'version' => $verified['version']];
+            $step = 'web';
             $this->web->publish($id);
             $phases['web'] = ['outcome' => 'published'];
-            $smoked = $this->smoke->run($id, $sha);
-            $phases['smoke'] = $smoked;
-
-            $release = $this->result(
+            $step = 'smoke';
+            $phases['smoke'] = $this->smoke->run($id, $sha);
+        } catch (Throwable $exception) {
+            $this->fail(
+                exception: GatewayReleaseException::fromThrowable($exception, $step, $sha),
                 id: $id,
                 sha: $sha,
-                outcome: 'verified',
                 trigger: $trigger,
                 migrationsRan: $migrationsRan,
-                previousId: $previous,
                 snapshotPath: $snapshotPath,
-                cleanupPaused: $handoff['cleanup_paused'],
-                retryable: false,
-                startedAt: $startedAt,
                 phases: $phases,
+                startedAt: $startedAt,
+                previous: $previous,
+                handoff: $handoff,
             );
-            $this->recorder->write($release);
-            $this->prune($id, $previous);
-
-            return $release;
-        } catch (GatewayReleaseException $exception) {
-            return $this->fail($exception, $id, $sha, $trigger, $migrationsRan, $snapshotPath, $phases, $startedAt, $previous, $switched, $handoff);
         }
+
+        $release = $this->result(
+            id: $id,
+            sha: $sha,
+            outcome: 'verified',
+            trigger: $trigger,
+            migrationsRan: $migrationsRan,
+            previousId: $previous,
+            snapshotPath: $snapshotPath,
+            cleanupPaused: $handoff['cleanup_paused'],
+            startedAt: $startedAt,
+            phases: $phases,
+        );
+        $this->record($release);
+        $this->prune($id, $previous);
+
+        return $release;
     }
 
     /**
@@ -100,24 +120,27 @@ final readonly class GatewayReleasePromoter
         array $phases,
         int $startedAt,
         ?string $previous,
-        bool $switched,
         ?array $handoff,
     ): never {
         $outcome = 'failed';
-        $reportedPause = is_array($handoff) ? ($handoff['cleanup_paused'] ?? null) : null;
-        $cleanupPaused = $reportedPause === true;
+        $cleanupPaused = is_array($handoff) && ($handoff['cleanup_paused'] ?? null) === true;
         $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+        $switched = $previous !== $id && $this->layout->currentReleaseId() === $id;
 
-        if ($this->switchesBack($exception, $switched, $migrationsRan, $previous, $id)) {
+        if ($migrationsRan) {
+            $outcome = 'paused';
+            $phases['pause'] = ['outcome' => 'paused', 'snapshot' => $snapshotPath, 'current' => $this->layout->currentReleaseId()];
+        } elseif ($switched && $previous !== null) {
             try {
-                $this->switcher->switchTo((string) $previous);
-                $this->web->restore((string) $previous);
-                $restored = $this->runtime->handoff((string) $previous);
+                $this->switcher->switchTo($previous);
+                $this->web->restore($previous);
+                $restored = $this->runtime->handoff($previous);
                 $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $previous, 'handoff' => $restored];
                 $outcome = 'switched_back';
                 $cleanupPaused = $restored['cleanup_paused'];
-            } catch (GatewayReleaseException $back) {
-                $phases['switch_back'] = ['outcome' => 'failed', 'error_code' => $back->errorCode];
+            } catch (Throwable $thrown) {
+                $back = GatewayReleaseException::fromThrowable($thrown, 'switch_back', $sha);
+                $phases['switch_back'] = ['outcome' => 'failed', 'error_code' => $back->errorCode, 'current' => $this->layout->currentReleaseId()];
                 $exception = new GatewayReleaseException(
                     step: 'switch',
                     errorCode: 'gateway.release_switch_back_failed',
@@ -127,12 +150,9 @@ final readonly class GatewayReleasePromoter
                     sha: $sha,
                 );
             }
-        } elseif ($switched && $migrationsRan) {
-            $outcome = 'paused';
-            $phases['pause'] = ['outcome' => 'paused', 'snapshot' => $snapshotPath];
         }
 
-        $release = $this->result(
+        $this->record($this->result(
             id: $id,
             sha: $sha,
             outcome: $outcome,
@@ -141,29 +161,29 @@ final readonly class GatewayReleasePromoter
             previousId: $previous,
             snapshotPath: $snapshotPath,
             cleanupPaused: $cleanupPaused,
-            retryable: false,
             startedAt: $startedAt,
             phases: $phases,
             errorCode: $exception->errorCode,
             message: $exception->getMessage(),
-        );
-        $this->recorder->write($release);
+        ));
 
         throw $exception;
     }
 
-    private function switchesBack(
-        GatewayReleaseException $exception,
-        bool $switched,
-        bool $migrationsRan,
-        ?string $previous,
-        string $id,
-    ): bool {
-        return $switched
-            && ! $migrationsRan
-            && $previous !== null
-            && $previous !== $id
-            && in_array($exception->step, self::SWITCH_BACK_STEPS, true);
+    /**
+     * Writes the record without letting a failed write change the outcome: a verified release is
+     * not switched back because its row could not be stored.
+     */
+    private function record(DeployedGatewayRelease $release): void
+    {
+        try {
+            $this->recorder->write($release);
+        } catch (Throwable $exception) {
+            Log::error('The Gateway release record could not be written.', [
+                'release' => $release->toArray(),
+                'exception' => $exception->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -178,7 +198,6 @@ final readonly class GatewayReleasePromoter
         ?string $previousId,
         ?string $snapshotPath,
         bool $cleanupPaused,
-        bool $retryable,
         int $startedAt,
         array $phases,
         ?string $errorCode = null,
@@ -193,7 +212,7 @@ final readonly class GatewayReleasePromoter
             previousId: $previousId,
             snapshotPath: $snapshotPath,
             cleanupPaused: $cleanupPaused,
-            retryable: $retryable,
+            retryable: false,
             durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000),
             phases: $phases,
             errorCode: $errorCode,
@@ -201,13 +220,15 @@ final readonly class GatewayReleasePromoter
         );
     }
 
+    /** Keeps the newest releases plus the current and the previous one, whatever their age. */
     private function prune(string $current, ?string $previous): void
     {
         $ids = $this->layout->retainedReleaseIds();
         $keep = array_values(array_unique(array_filter([
-            ...array_slice($ids, 0, 5),
+            ...array_slice($ids, 0, max(1, $this->keptReleases)),
             $current,
             $previous,
+            $this->layout->currentReleaseId(),
         ])));
 
         foreach ($ids as $id) {

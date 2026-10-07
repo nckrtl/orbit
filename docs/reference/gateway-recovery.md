@@ -105,7 +105,7 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 4. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories read-only;
 5. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version.
 
-Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so after a change to the shared env file, run `php artisan config:cache` in `/home/orbit/orbit/apps/gateway`. A release that already has it is reused without another build step. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
+Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
 
 Prepare refuses before it writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories.
 
@@ -126,7 +126,7 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 
 ### Deploy a release
 
-Deploy is the manual release. It prepares the commit, then switches `/home/orbit/orbit` to that release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout is refused until `gateway:release:adopt`.
+Deploy is the manual release. It prepares the commit and caches the release's configuration again from the shared env file. Then it switches `/home/orbit/orbit` to that release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout is refused until `gateway:release:adopt`.
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA>
@@ -139,9 +139,15 @@ After the switch, deploy:
 3. switches the web app to the release's build;
 4. runs smoke against that web app.
 
-Smoke does not run before the web switch. When verification or smoke fails and the release ran no migrations, deploy switches back to the previous release, restores its web build, and repeats the runtime handoff for it. The release record's outcome is `switched_back`. When migrations already ran, deploy leaves the new release current, writes `ORBIT_HOME/gateway-release.paused`, and records outcome `paused`. It does not switch back onto a schema the previous code has not run.
+Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
 
-`gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. The same attempt writes an Activity entry.
+- Without migrations, deploy switches back to the previous release, restores its web build, and repeats the runtime handoff for it. The outcome is `switched_back`.
+- After migrations, deploy pauses. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. It never switches back onto a schema the previous code has not run.
+- A switch that fails after migrations pauses too. The previous code then serves the new schema.
+
+After a verified release, deploy removes old releases. It keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` releases (default 5), and always the current and the previous one.
+
+`gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. Every attempt that names a commit writes a record and an Activity entry. A failure about the machine, such as low disk, is recorded with `retryable: true`, so the commit is not marked failed. A refusal that names no release, such as an unknown commit, writes only a failed Activity entry. A step refused by the release lock writes nothing.
 
 One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
 
@@ -153,6 +159,8 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |
 | `gateway.release_smoke_failed` | Smoke failed after the web switch. |
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
+| `gateway.release_configuration_failed` | The release's configuration could not be cached again. Nothing switched. |
+| `gateway.release_unexpected_failure` | A step failed with an error the release code did not expect. The message names it. |
 | `gateway.release_migration_crossed` | Rollback would leave older code on a newer schema. |
 
 ### Roll back
@@ -165,6 +173,16 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
 ```
 
 `<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the current release ships a migration file the target does not. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
+
+### Apply an env change
+
+Every release caches its configuration, so an edit to `/home/orbit/shared/gateway.env` changes nothing until you cache it again. As `orbit`, after the edit:
+
+```bash
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
+```
+
+It caches the current release's configuration beside the live cache and renames it into place, so a request never reads half of it. Do not run `php artisan config:cache` in a release: it rewrites the live cache in place. A deploy or rollback caches its target again, so a retained release picks up the edit when it goes current.
 
 ## Update source
 

@@ -11,11 +11,13 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use Throwable;
 
 /**
  * Prepares a commit, migrates when that release has pending migrations, then promotes it.
- * Prepare failures mark the commit failed unless the failure is about the machine (disk, lock,
- * layout) rather than the commit.
+ * Every attempt that names a commit is recorded. A failure about the machine (disk, lock,
+ * layout, or the database snapshot) is recorded as retryable, so the commit is not marked
+ * failed. A failed migration pauses.
  */
 final readonly class DeployGatewayReleaseAction
 {
@@ -28,8 +30,11 @@ final readonly class DeployGatewayReleaseAction
         'gateway.release_lock_unavailable',
         'gateway.release_commit_invalid',
         'gateway.release_commit_unknown',
+        'gateway.release_fetch_failed',
+        'gateway.release_migrations_unreadable',
         'gateway.release_snapshot_failed',
         'gateway.release_snapshot_unavailable',
+        'gateway.release_unexpected_failure',
     ];
 
     public function __construct(
@@ -44,50 +49,34 @@ final readonly class DeployGatewayReleaseAction
     {
         return $this->lock->run(function () use ($commit): DeployedGatewayRelease {
             $startedAt = hrtime(true);
+            $step = 'prepare';
+            $prepared = null;
+            $phases = [];
+            $snapshot = null;
+            $migrationsRan = false;
 
             try {
                 $prepared = $this->builder->prepare($commit);
-            } catch (GatewayReleaseException $exception) {
-                $this->recordPrepareFailure($exception, $startedAt);
+                $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
+                $step = 'snapshot';
+                $pending = $this->database->pending($prepared->path);
 
-                throw $exception;
-            }
-
-            $phases = ['prepare' => ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs]];
-            $pending = $this->database->pending($prepared->path);
-            $migrationsRan = false;
-            $snapshot = null;
-
-            if ($pending !== []) {
-                try {
+                if ($pending === []) {
+                    $phases['snapshot'] = ['outcome' => 'skipped'];
+                    $phases['migrate'] = ['outcome' => 'skipped'];
+                } else {
                     $snapshot = $this->database->snapshot($prepared->id);
                     $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $snapshot, 'pending' => $pending];
+                    $step = 'migrate';
                     $this->database->migrate($prepared->path);
                     $migrationsRan = true;
                     $phases['migrate'] = ['outcome' => 'migrated', 'pending' => $pending];
-                } catch (GatewayReleaseException $exception) {
-                    $outcome = $exception->step === 'migrate' ? 'paused' : 'failed';
-                    $this->recorder->write(new DeployedGatewayRelease(
-                        id: $prepared->id,
-                        sha: $prepared->sha,
-                        outcome: $outcome,
-                        trigger: 'deploy',
-                        migrationsRan: $exception->step === 'migrate',
-                        previousId: null,
-                        snapshotPath: $snapshot,
-                        cleanupPaused: false,
-                        retryable: in_array($exception->errorCode, self::RETRYABLE, true),
-                        durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000),
-                        phases: [...$phases, $exception->step => ['outcome' => 'failed', 'error_code' => $exception->errorCode]],
-                        errorCode: $exception->errorCode,
-                        message: $exception->getMessage(),
-                    ));
-
-                    throw $exception;
                 }
-            } else {
-                $phases['snapshot'] = ['outcome' => 'skipped'];
-                $phases['migrate'] = ['outcome' => 'skipped'];
+            } catch (Throwable $thrown) {
+                $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
+                $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt);
+
+                throw $exception;
             }
 
             return $this->promoter->promote(
@@ -102,30 +91,41 @@ final readonly class DeployGatewayReleaseAction
         });
     }
 
-    private function recordPrepareFailure(GatewayReleaseException $exception, int $startedAt): void
+    /**
+     * A failed migration may have applied part of its changes, so it pauses like a failure after
+     * migrations. Without a full commit there is no release to record, only the Activity entry.
+     *
+     * @param  array<string, mixed>  $phases
+     */
+    private function recordFailure(GatewayReleaseException $exception, string $step, array $phases, ?string $snapshot, int $startedAt): void
     {
-        if ($exception->sha === null || strlen($exception->sha) !== 40) {
-            return;
-        }
+        $durationMs = intdiv(hrtime(true) - $startedAt, 1_000_000);
 
-        if (in_array($exception->errorCode, self::RETRYABLE, true)) {
-            return;
-        }
+        try {
+            if ($exception->sha === null || strlen($exception->sha) !== 40) {
+                $this->recorder->refused('deploy', $exception, $durationMs);
 
-        $this->recorder->write(new DeployedGatewayRelease(
-            id: substr($exception->sha, 0, 12),
-            sha: $exception->sha,
-            outcome: 'failed',
-            trigger: 'deploy',
-            migrationsRan: false,
-            previousId: null,
-            snapshotPath: null,
-            cleanupPaused: false,
-            retryable: false,
-            durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000),
-            phases: ['prepare' => ['outcome' => 'failed', 'error_code' => $exception->errorCode]],
-            errorCode: $exception->errorCode,
-            message: $exception->getMessage(),
-        ));
+                return;
+            }
+
+            $migrating = $step === 'migrate';
+            $this->recorder->write(new DeployedGatewayRelease(
+                id: substr($exception->sha, 0, 12),
+                sha: $exception->sha,
+                outcome: $migrating ? 'paused' : 'failed',
+                trigger: 'deploy',
+                migrationsRan: $migrating,
+                previousId: null,
+                snapshotPath: $snapshot,
+                cleanupPaused: false,
+                retryable: ! $migrating && in_array($exception->errorCode, self::RETRYABLE, true),
+                durationMs: $durationMs,
+                phases: [...$phases, $step => ['outcome' => 'failed', 'error_code' => $exception->errorCode]],
+                errorCode: $exception->errorCode,
+                message: $exception->getMessage(),
+            ));
+        } catch (Throwable) {
+            // The failure itself is what the caller needs; a record that cannot be written must not replace it.
+        }
     }
 }
