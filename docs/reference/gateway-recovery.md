@@ -327,7 +327,7 @@ Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describ
 
 The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `shared`, `switch`, `phase1`, and `deploy`, the phase-2 release record. `switch.method` and `shared.storage_method` are `exchange`, or `rename` with the gap in `switch.gap_us` and `shared.storage_gap_us`. Each phase writes a release record with trigger `adopt` and an Activity entry.
 
-Running it again on a Gateway that finished adoption prints `"already": true` and changes nothing. When an earlier run swapped and then stopped before it verified, for example because its session dropped, the next run hands the runtime over and checks serving again. It records outcome `resumed`, prints `"resumed": true`, and then runs phase 2, which verifies the exact version.
+Running it again on a Gateway that finished adoption prints `"already": true` and changes nothing. When an earlier run swapped and then stopped before it verified, for example because its session dropped, the next run hands the runtime over and checks serving again. It records outcome `resumed`, prints `"resumed": true`, and then runs phase 2, which verifies the exact version. Only the phase-1 release can resume this way, and a `resumed` record keeps any pause marker; only a verified release clears it.
 
 The kept checkout is a complete way back. Its `.env.pre-adopt` holds the original env file, so keep its permissions, and remove it once a few releases have verified:
 

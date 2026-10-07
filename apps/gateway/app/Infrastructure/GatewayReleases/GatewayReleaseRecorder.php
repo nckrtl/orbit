@@ -95,7 +95,8 @@ final readonly class GatewayReleaseRecorder
         $path = $this->home().'/gateway-release.paused';
 
         if ($release->outcome !== 'paused') {
-            if ($release->succeeded() && is_file($path)) {
+            // Only a verified release clears a pause: `resumed` checked serving, not the schema the pause is about.
+            if ($release->outcome === 'verified' && is_file($path)) {
                 @unlink($path);
             }
 

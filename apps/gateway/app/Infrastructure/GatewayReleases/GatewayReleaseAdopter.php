@@ -194,7 +194,9 @@ final readonly class GatewayReleaseAdopter
     {
         $leftover = $this->finishLeftover();
 
-        if ($this->verified($id)) {
+        // Only phase 1's own release can be an interrupted adoption. Any other current release came from a deploy,
+        // which records its own outcome, such as a pause, and must not be resumed here.
+        if ($this->verified($id) || ! $this->isPhaseOneRelease($id)) {
             return ['adopted' => true, 'already' => true, 'release' => $id, 'pre_adopt_path' => $leftover];
         }
 
@@ -230,6 +232,17 @@ final readonly class GatewayReleaseAdopter
             'pre_adopt_path' => $leftover,
             'phase1' => $phases,
         ];
+    }
+
+    /** Whether the release is of the checkout's own commit, which `refs/orbit/pre-adopt` keeps. */
+    private function isPhaseOneRelease(string $id): bool
+    {
+        $result = $this->processes->run(new ProcessInvocation(
+            ['git', '-C', $this->layout->repositoryPath(), 'rev-parse', '--verify', '--quiet', 'refs/orbit/pre-adopt^{commit}'],
+            timeout: 30.0,
+        ));
+
+        return $result->succeeded() && GatewayReleaseCommit::id(trim($result->stdout)) === $id;
     }
 
     /** Whether a release attempt verified the current release, so adoption finished. */

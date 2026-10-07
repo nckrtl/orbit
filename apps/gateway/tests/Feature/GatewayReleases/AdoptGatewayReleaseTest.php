@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\AdoptGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
+use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -226,6 +227,47 @@ describe('gateway:release:adopt', function (): void {
             ->and(file_get_contents($shared.'/framework/cache/data/aa/lock'))->toBe('held');
     });
 
+    it('keeps a phase-2 pause when adopt runs again, and does not resume a release that is not phase 1\'s', function (): void {
+        $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
+        $target = $this->fixture->commit('Migrates, then fails verify');
+        $source = $this->fixture->base.'/adopt-source';
+        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $this->steps->pending = ['2026_12_31_000000_add_marks'];
+        $this->steps->failVerify = true;
+        $marker = $this->fixture->base.'/home/gateway-release.paused';
+
+        release_failure(fn () => adoption($this->fixture, $this->steps)->execute($target, $source));
+        $pausedFirst = is_file($marker);
+        $this->steps->steps = [];
+        $again = adoption($this->fixture, $this->steps)->execute($target, $source);
+
+        expect($pausedFirst)->toBeTrue()
+            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($target, 0, 12))
+            ->and($again)->toMatchArray(['already' => true, 'release' => substr($target, 0, 12)])
+            ->and($again)->not->toHaveKey('resumed')
+            ->and($this->steps->steps)->toBe([])
+            ->and(is_file($marker))->toBeTrue()
+            ->and(GatewayRelease::query()->orderBy('id')->pluck('outcome')->all())->toBe(['verified', 'paused']);
+    });
+
+    it('keeps the pause marker for a resumed adoption and clears it only for a verified release', function (): void {
+        $marker = $this->fixture->base.'/home/gateway-release.paused';
+        @mkdir(dirname($marker), 0700, true);
+        $recorder = new GatewayReleaseRecorder($this->fixture->base.'/home');
+        $release = static fn (string $outcome): DeployedGatewayRelease => new DeployedGatewayRelease(
+            id: '0123456789ab', sha: str_repeat('a', 40), outcome: $outcome, trigger: 'adopt', migrationsRan: false,
+            previousId: null, snapshotPath: null, cleanupPaused: false, retryable: false, durationMs: 1, phases: [],
+        );
+        file_put_contents($marker, '{"release":"0123456789ab"}');
+
+        $recorder->write($release('resumed'));
+        $keptAfterResume = is_file($marker);
+        $recorder->write($release('verified'));
+
+        expect($keptAfterResume)->toBeTrue()
+            ->and(is_file($marker))->toBeFalse();
+    });
+
     it('falls back to two renames where an atomic swap is not available', function (): void {
         $result = adoption($this->fixture, $this->steps, python: '/nonexistent/python3')->execute();
 
@@ -324,6 +366,8 @@ final class AdoptionSteps
 
     public bool $failServing = false;
 
+    public bool $failVerify = false;
+
     public bool $failMigrate = false;
 
     public bool $failSmoke = false;
@@ -359,6 +403,10 @@ final readonly class AdoptionVerifier implements GatewayReleaseVerifier
     public function verify(string $sha): array
     {
         $this->steps->steps[] = 'verify:'.$sha;
+
+        if ($this->steps->failVerify) {
+            throw new GatewayReleaseException('verify', 'gateway.release_verify_failed', 'Version mismatch.');
+        }
 
         return ['status' => 'ok', 'version' => $sha];
     }
