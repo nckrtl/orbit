@@ -18,6 +18,8 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 `ORBIT_DOCUMENT_CLEANUP_RUNTIME` selects the private local directory for isolated Project Document cleanup-gate fixtures when `APP_ENV=testing`; other environments ignore this override. Its default is `/run/orbit/project-documents/`. Never point it into `ORBIT_HOME`, a checkout, a web directory, or a backup. Installed Gateway services use the default runtime directory. This setting is not an Instance environment value or deletion authorization. See [the restore-time cleanup gate](/reference/project-documents#restore-time-cleanup-gate).
 
+`ORBIT_UPCLOUD_ENABLED`, `ORBIT_UPCLOUD_TOKEN_FILE`, `ORBIT_UPCLOUD_MAX_VMS`, `ORBIT_UPCLOUD_ZONE`, `ORBIT_UPCLOUD_GATEWAY_ADDRESS`, `ORBIT_UPCLOUD_WIREGUARD_ADDRESS`, and `ORBIT_UPCLOUD_WIREGUARD_PORT` configure the Gateway's [compute driver](/reference/compute-drivers#gateway-configuration). They are not Instance keys. The provider token stays in its protected file on the Gateway.
+
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 
 `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are settings in the Gateway's own environment. They are not Instance keys. See [Tasks: OpsBot direction webhook](/reference/tasks#opsbot-direction-webhook). The Gateway never returns the secret. Setting Instance keys with those names does not configure the Gateway.
