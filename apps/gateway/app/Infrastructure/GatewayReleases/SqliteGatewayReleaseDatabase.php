@@ -46,7 +46,7 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
             );
         }
 
-        $recorded = array_fill_keys(array_map(strval(...), $ran), true);
+        $recorded = array_fill_keys(array_map(static fn (mixed $name): string => is_string($name) ? $name : '', $ran), true);
         $pending = [];
 
         foreach ($this->migrations($releasePath) as $file) {

@@ -266,7 +266,7 @@ describe('gateway:release:handoff', function (): void {
         $scheduler = handoff_scheduler(handoff_gateway());
         [$handoff, $processes] = runtime_handoff();
         $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
-        $processes->results["systemctl is-active --quiet"] = new CommandResult(3, '', '', 1, false);
+        $processes->results['systemctl is-active --quiet'] = new CommandResult(3, '', '', 1, false);
 
         $exception = release_failure(fn () => $handoff->run());
 
