@@ -26,7 +26,7 @@ use Throwable;
  * 1. Caddy publishes the Node's Caddyfile only when it changed, with a graceful reload.
  * 2. PHP-FPM reloads only when the rendered pool differs from the live pool. Requests keep running otherwise.
  * 3. The hibernator and agent-view units are installed again; agent-view restarts on the new code.
- * 4. The scheduler restarts without cutting off a tasks tick ({@see GatewaySchedulerHandoff}).
+ * 4. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
  * 5. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
  *
  * @phpstan-import-type HandoffResult from \App\Domain\GatewayReleases\GatewayReleaseRuntime
@@ -79,6 +79,7 @@ final readonly class GatewayRuntimeHandoff
             'fpm' => $fpm,
             'scheduler' => $scheduler['outcome'],
             'scheduler_unit' => $scheduler['unit'],
+            'scheduler_drain' => $scheduler['drain'] ?? null,
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
             'agent_view' => 'restarted',

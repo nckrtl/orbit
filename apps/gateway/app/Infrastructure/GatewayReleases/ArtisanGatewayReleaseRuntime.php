@@ -21,7 +21,7 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
         private GatewayReleaseLayout $layout,
         private ProcessRunner $processes,
         private string $php = '/usr/bin/php8.5',
-        private float $timeout = 600.0,
+        private float $timeout = 1_230.0,
     ) {}
 
     public function handoff(string $id): array
@@ -51,10 +51,31 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
             'fpm' => is_string($data['fpm'] ?? null) ? $data['fpm'] : 'unknown',
             'scheduler' => is_string($data['scheduler'] ?? null) ? $data['scheduler'] : 'unknown',
             'scheduler_unit' => is_string($data['scheduler_unit'] ?? null) ? $data['scheduler_unit'] : null,
+            'scheduler_drain' => $this->drain($data['scheduler_drain'] ?? null),
             'cleanup' => is_string($data['cleanup'] ?? null) ? $data['cleanup'] : 'unknown',
             'cleanup_error_code' => is_string($data['cleanup_error_code'] ?? null) ? $data['cleanup_error_code'] : null,
             'agent_view' => is_string($data['agent_view'] ?? null) ? $data['agent_view'] : 'unknown',
             'cleanup_paused' => ($data['cleanup_paused'] ?? true) === true,
         ];
+    }
+
+    /**
+     * The scheduler drain the handoff reported, kept as it is for the release record.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function drain(mixed $drain): ?array
+    {
+        if (! is_array($drain)) {
+            return null;
+        }
+
+        $keyed = [];
+
+        foreach ($drain as $key => $value) {
+            $keyed[(string) $key] = $value;
+        }
+
+        return $keyed;
     }
 }
