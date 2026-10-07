@@ -141,30 +141,93 @@ class CheckSkipped(Exception):
         self.detail = detail or {}
 
 
+class Children:
+    """The process groups of running check commands, so a terminated smoke run can kill them all.
+
+    Each check command runs in a session of its own, so a signal to the smoke run's own process
+    group does not reach it. On SIGTERM, SIGINT, or SIGHUP the smoke run kills every recorded
+    group, and starts no command after that.
+    """
+
+    lock = threading.Lock()
+    groups = set()
+    stopping = False
+
+    @classmethod
+    def start(cls, argv):
+        with cls.lock:
+            if cls.stopping:
+                raise CheckFailed('terminated', 'The smoke run was terminated.')
+            process = subprocess.Popen(
+                argv,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                env={**os.environ, 'NO_COLOR': '1'},
+            )
+            cls.groups.add(process.pid)
+            return process
+
+    @classmethod
+    def finished(cls, process):
+        with cls.lock:
+            cls.groups.discard(process.pid)
+
+    @classmethod
+    def kill_all(cls):
+        # A check thread holds the lock only while it starts one command, so this wait is short.
+        acquired = cls.lock.acquire(timeout=5)
+        try:
+            cls.stopping = True
+            for group in list(cls.groups):
+                kill_group(group)
+            cls.groups.clear()
+        finally:
+            if acquired:
+                cls.lock.release()
+
+
+def kill_group(group):
+    try:
+        os.killpg(group, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def terminate(signum, _frame):
+    """Kill every running check command, report the run as terminated, and exit."""
+    Children.kill_all()
+    name = signal.Signals(signum).name
+    try:
+        emit({
+            'schema': SCHEMA,
+            'passed': False,
+            'source': 'live',
+            'error': 'terminated',
+            'message': f'The smoke run received {name} and stopped every running check.',
+            'next': FAILED_NEXT,
+        })
+    finally:
+        os._exit(128 + signum)
+
+
 def run_command(argv, budget, limit=COMMAND_LIMIT, what=None):
     """Run argv in its own process group and kill the whole group when the time limit passes."""
     what = what or ' '.join(argv)
     timeout = budget.cap(limit)
     try:
-        process = subprocess.Popen(
-            argv,
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-            env={**os.environ, 'NO_COLOR': '1'},
-        )
+        process = Children.start(argv)
     except OSError as error:
         raise CheckFailed('command_unavailable', f'{what} could not start: {error.strerror or error}.') from error
     try:
         stdout, stderr = process.communicate(timeout=timeout)
     except subprocess.TimeoutExpired:
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
+        kill_group(process.pid)
         process.communicate()
         raise CheckTimedOut(f'{what} did not finish within {timeout:.0f} seconds.')
+    finally:
+        Children.finished(process)
     return process.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
 
 
@@ -634,7 +697,9 @@ Checks, all run at once:
                  (only with --write-check and --smoke-project)
 
 Exit 0 when no check failed or timed out, 1 when one did, and 2 on wrong flags.
-Each check has its own time limit, and --timeout bounds the whole run.
+Each check has its own time limit, and --timeout bounds the whole run. On
+SIGTERM, SIGINT, or SIGHUP it kills every running check command, prints a
+result with error "terminated", and exits 128 plus the signal number.
 
 Run it as the Gateway account on the Gateway host. Python HTTPS calls need
 SSL_CERT_FILE set to Orbit's root CA, the Gateway profile ca_path after
@@ -687,6 +752,8 @@ def main(argv=None):
     options.skip = set(options.skip)
     if options.dry_run:
         return plan(options)
+    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(signum, terminate)
     return run(options)
 
 

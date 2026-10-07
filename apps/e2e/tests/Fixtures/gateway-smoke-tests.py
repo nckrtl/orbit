@@ -2,6 +2,7 @@
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,8 @@ fake = Path(os.environ['SMOKE_FAKE'])
 command = sys.argv[1]
 with open(fake / 'orbit.log', 'a') as log:
     log.write(json.dumps(sys.argv[1:]) + '\n')
+with open(fake / 'orbit.pids', 'a') as pids:
+    pids.write(f'{os.getpid()}\n')
 path = fake / 'orbit' / (command.replace(':', '-') + '.json')
 responses = json.loads(path.read_text())
 if isinstance(responses, list):
@@ -64,6 +67,21 @@ else:
 
 def utc_iso(moment):
     return moment.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+
+def running(pid):
+    """Whether a process exists and is not a zombie waiting for its parent."""
+    if not Path('/proc').is_dir():
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        return True
+    try:
+        state = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0]
+    except (FileNotFoundError, ProcessLookupError, IndexError):
+        return False
+    return state != 'Z'
 
 
 class Gateway(BaseHTTPRequestHandler):
@@ -162,15 +180,27 @@ class SmokeWorld:
         log = self.fake / 'orbit.log'
         return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
+    def smoke_argv(self, *arguments):
+        return [str(SMOKE), '--sha', SHA,
+                '--up-url', f'{self.url}/up', '--status-url', f'{self.url}/api/v1/gateway/status',
+                '--web-url', f'{self.url}/', '--web-dir', str(self.web), '--checkout', str(self.checkout),
+                '--orbit', str(self.bin / 'orbit'), *arguments]
+
+    def smoke_environment(self):
+        return {**os.environ, 'PATH': f'{self.bin}:{os.environ["PATH"]}', 'SMOKE_FAKE': str(self.fake), 'PYTHONDONTWRITEBYTECODE': '1'}
+
+    def start_smoke(self, *arguments):
+        return subprocess.Popen(self.smoke_argv(*arguments), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.smoke_environment())
+
+    def orbit_pids(self):
+        path = self.fake / 'orbit.pids'
+        return [int(line) for line in path.read_text().split()] if path.exists() else []
+
     def smoke(self, *arguments, timeout=60):
-        environment = {**os.environ, 'PATH': f'{self.bin}:{os.environ["PATH"]}', 'SMOKE_FAKE': str(self.fake), 'PYTHONDONTWRITEBYTECODE': '1'}
         started = time.monotonic()
         process = subprocess.run(
-            [str(SMOKE), '--sha', SHA,
-             '--up-url', f'{self.url}/up', '--status-url', f'{self.url}/api/v1/gateway/status',
-             '--web-url', f'{self.url}/', '--web-dir', str(self.web), '--checkout', str(self.checkout),
-             '--orbit', str(self.bin / 'orbit'), *arguments],
-            capture_output=True, text=True, env=environment, timeout=timeout,
+            self.smoke_argv(*arguments),
+            capture_output=True, text=True, env=self.smoke_environment(), timeout=timeout,
         )
         process.elapsed = time.monotonic() - started
         process.json = json.loads(process.stdout) if process.stdout.strip().startswith('{') else None
@@ -407,6 +437,27 @@ class GatewaySmokeTest(unittest.TestCase):
         self.assertEqual(process.json['summary'], {'passed': 0, 'failed': 0, 'timeout': 8, 'skipped': 0})
         for name in names:
             self.assertEqual(checks[name]['error'], 'timeout', checks[name])
+
+    def test_termination_kills_every_running_check_command(self):
+        world = self.world
+        for command in ('node:list', 'tasks:list', 'tasks:status'):
+            world.orbit(command, {}, sleep=30)
+
+        process = world.start_smoke('--timeout', '60')
+        deadline = time.monotonic() + 10
+        while len(world.orbit_pids()) < 3 and time.monotonic() < deadline:
+            time.sleep(0.05)
+        commands = world.orbit_pids()
+        process.send_signal(signal.SIGTERM)
+        stdout, _stderr = process.communicate(timeout=10)
+
+        self.assertEqual(len(commands), 3)
+        self.assertEqual(process.returncode, 128 + signal.SIGTERM)
+        self.assertEqual(json.loads(stdout)['error'], 'terminated')
+        deadline = time.monotonic() + 3
+        while any(running(pid) for pid in commands) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertEqual([pid for pid in commands if running(pid)], [])
 
     def write_check_world(self):
         world = self.world

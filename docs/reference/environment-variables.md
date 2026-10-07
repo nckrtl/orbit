@@ -32,6 +32,8 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_GATEWAY_VERIFY_ORIGIN` is the origin deploy uses for `/up` and Gateway status. It defaults to `https://gateway.orbit`. It is not an Instance key.
 
+`ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT` and `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` configure the [smoke step](/reference/gateway-recovery#smoke) of a Gateway release. The timeout is the limit `bin/gateway-smoke` gets, from 1 to 600 seconds, default `90`. The Project, by ID or slug, turns on the document write check; unset, no release writes a document. They are not Instance keys.
+
 `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are settings in the Gateway's own environment. They are not Instance keys. See [Tasks: OpsBot direction webhook](/reference/tasks#opsbot-direction-webhook). The Gateway never returns the secret. Setting Instance keys with those names does not configure the Gateway.
 
 `ORBIT_CLI_RELEASE_REPOSITORY` is a setting in the Gateway's own environment, not an Instance key. It names the repository whose CLI releases make up the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it). The default is `https://github.com/nckrtl/orbit`. On the machine that runs `orbit self-update`, `ORBIT_SELF_UPDATE_RELEASES` replaces the release download location, `https://github.com/nckrtl/orbit/releases/download`, for a mirror you trust. The Gateway never sets it.

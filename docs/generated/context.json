@@ -1422,7 +1422,8 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Activity",
@@ -2259,9 +2260,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0201"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/web-verification.md",

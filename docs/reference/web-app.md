@@ -1,6 +1,6 @@
 ---
 title: "Web app"
-description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how the app stays live, how bin/web-deploy releases it, and how to roll a release back."
+description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how the app stays live, how each Gateway release installs its CI build, how bin/web-deploy releases it by hand, and how to roll a release back."
 covers:
   - apps/web/**
   - bin/web-deploy
@@ -213,19 +213,21 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 5. It publishes the site.
 6. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
 
-It changes no role, VPN setting, or Node. A Gateway deploy never changes the releases or `current`.
+It changes no role, VPN setting, or Node, and it never changes the releases or `current`. A [Gateway release](/reference/gateway-recovery#web-build) installs its own web build in `releases/` and switches `current` after the release verified.
 
 ## Release a build
 
-[ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) releases the web app with each Gateway release, from the build that CI publishes for the commit. `bin/web-deploy` stays for manual releases and roll back.
+Each Gateway release ships the web app of its commit. CI builds `apps/web` on every push to `main` and uploads it as the artifact `web-dist-<sha>`. While it prepares the release, the Gateway downloads that artifact through its GitHub App and installs it as `releases/<commit>`. It switches `current` after the release verified, and switches it back when the release switches back. The Gateway needs no Node or Bun for this. [Web build](/reference/gateway-recovery#web-build) describes the checks, and [Deploy a release](/reference/gateway-recovery#deploy-a-release) the order.
 
-Run `bin/web-deploy` from a clean checkout of the commit to release.
+When the Gateway prunes a release, it removes that release's web build too. After each verified release it also removes every build that belongs to no retained release, a `bin/web-deploy` build of another commit included. It never removes the build `current` names.
+
+`bin/web-deploy` stays for manual use: a build of a commit CI did not publish, or a Gateway that does not release itself. Run it from a clean checkout of the commit to release.
 
 ```bash
 bin/web-deploy
 ```
 
-The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases and never removes the current one.
+The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases. It never removes the release `current` serves, or the build of a retained Gateway release, one whose `releases/<id>/REVISION` exists in the Gateway releases directory. So a manual run never removes a build that a Gateway rollback needs.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -233,6 +235,7 @@ The command refuses uncommitted changes. It checks the commit out into a tempora
 | `ORBIT_WEB_DEPLOY_SSH` | `ssh` | SSH command, including options such as `-i KEY`. |
 | `ORBIT_WEB_DIR` | `/home/orbit/web` | Web directory on the Gateway host. |
 | `ORBIT_WEB_GROUP` | `caddy` | Group that must read the release. |
+| `ORBIT_GATEWAY_RELEASES` | `/home/orbit/releases` | Gateway [releases directory](/reference/gateway-recovery#release-layout) on the Gateway host. Their web builds are never pruned. |
 
 ## Roll back
 

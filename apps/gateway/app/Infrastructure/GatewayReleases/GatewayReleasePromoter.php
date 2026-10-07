@@ -11,12 +11,15 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Switches to a prepared release, hands the runtime over, verifies, switches the web app, then
- * runs smoke. Verify and smoke see the new release. Smoke runs only after the web switch.
+ * runs smoke. Verify and smoke see the new release. Smoke runs only after the web switch, and it
+ * checks that the scheduler and agent view started after the handoff began.
  *
  * Any failure after the switch, expected or not, is handled the same way: without migrations the
  * previous release becomes current again and its runtime handoff repeats; after migrations the
@@ -70,6 +73,7 @@ final readonly class GatewayReleasePromoter
             $previous = $this->switcher->switchTo($id);
             $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
             $step = 'handoff';
+            $handoffAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
             $phases['handoff'] = $this->runtime->handoff($id);
             $step = 'verify';
             $verified = $this->verifier->verify($sha);
@@ -80,10 +84,9 @@ final readonly class GatewayReleasePromoter
             $scheduled = $this->runtime->schedule($id);
             $phases['scheduler'] = $scheduled;
             $step = 'web';
-            $this->web->publish($id);
-            $phases['web'] = ['outcome' => 'published'];
+            $phases['web'] = $this->publishWeb($id, $sha, $trigger);
             $step = 'smoke';
-            $phases['smoke'] = $this->smoke->run($id, $sha);
+            $phases['smoke'] = $this->smoke->run($id, $sha, $handoffAt, $phases['web']['outcome'] === 'kept' ? ['web'] : []);
         } catch (Throwable $exception) {
             $this->fail(
                 exception: GatewayReleaseException::fromThrowable($exception, $step, $sha),
@@ -137,7 +140,7 @@ final readonly class GatewayReleasePromoter
     ): never {
         $outcome = 'failed';
         $cleanupPaused = ($scheduled['cleanup_paused'] ?? false) === true;
-        $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+        $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
         $switched = $previous !== $id && $this->layout->currentReleaseId() === $id;
         $unknown = $switched && $previous !== null && ! $migrationsRan ? $this->schemaRefusal($previous) : null;
 
@@ -261,6 +264,39 @@ final readonly class GatewayReleasePromoter
     }
 
     /** Keeps the newest releases plus the current and the previous one, whatever their age. */
+    /**
+     * Switches the web app to the release's build. A deploy fails without that build. A rollback is often an
+     * emergency, so it installs a missing build from CI first, and when CI no longer has it, keeps the web app as it
+     * is and continues with a warning instead of blocking the code rollback on assets.
+     *
+     * @return array{outcome: string, installed?: bool, warning?: string, error_code?: string}
+     */
+    private function publishWeb(string $id, string $sha, string $trigger): array
+    {
+        try {
+            $this->web->publish($id);
+
+            return ['outcome' => 'published'];
+        } catch (GatewayReleaseException $exception) {
+            if ($trigger !== 'rollback' || $exception->errorCode !== 'gateway.release_web_build_missing') {
+                throw $exception;
+            }
+        }
+
+        try {
+            $this->web->install($id, $sha);
+            $this->web->publish($id);
+
+            return ['outcome' => 'published', 'installed' => true];
+        } catch (GatewayReleaseException $exception) {
+            return [
+                'outcome' => 'kept',
+                'warning' => 'The web build of the rollback target is not available, so the web app stays as it was: '.$exception->getMessage(),
+                'error_code' => $exception->errorCode,
+            ];
+        }
+    }
+
     private function prune(string $current, ?string $previous): void
     {
         $ids = $this->layout->retainedReleaseIds();
@@ -281,6 +317,22 @@ final readonly class GatewayReleasePromoter
             } catch (Throwable) {
                 // Pruning is not the release. A release that cannot be removed stays until the next one.
             }
+        }
+
+        $retained = $this->layout->retainedReleaseIds();
+
+        // A verified release is retained, so an empty list means the releases directory could not be read. Pruning
+        // the web builds against it would remove every build but the current one.
+        if ($retained === [] || ! is_readable($this->layout->releasesPath())) {
+            Log::warning('Gateway release skipped pruning web builds: the releases directory cannot be read.', ['releases' => $this->layout->releasesPath()]);
+
+            return;
+        }
+
+        try {
+            $this->web->prune($retained);
+        } catch (Throwable) {
+            // A web build that cannot be removed now is removed by a later release.
         }
     }
 }

@@ -8,7 +8,6 @@ use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
-use App\Infrastructure\GatewayReleases\NoGatewayReleaseWebBuild;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -100,7 +99,7 @@ final class GatewayReleaseFixture implements ProcessRunner
             layout: $this->layout,
             processes: $this,
             readAccess: app(RepositoryReadAccess::class),
-            web: $web ?? new NoGatewayReleaseWebBuild,
+            web: $web ?? new NoWebBuild,
             composer: $this->composer,
             php: PHP_BINARY,
             freeSpace: static fn (): float => $freeBytes,

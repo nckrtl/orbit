@@ -27,6 +27,10 @@ final readonly class GatewayReleaseRetry
         'gateway.release_switch_back_failed',
         'gateway.release_scheduler_missing',
         'gateway.release_scheduler_mismatch',
+        // CI uploads the web build before `Required checks` can pass, so a commit without one never gets it.
+        'gateway.release_web_build_missing',
+        'gateway.release_web_build_invalid',
+        'gateway.release_smoke_missing',
     ];
 
     public function __construct(private int $attempts = self::Attempts) {}

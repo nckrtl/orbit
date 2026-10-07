@@ -104,12 +104,13 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 1. creates the worktree `releases/<id>` for the exact commit;
 2. links the shared env file and the shared storage directory into it;
 3. runs `composer install` and `composer check-platform-reqs` for `apps/cli` and `apps/gateway`, with the committed locks;
-4. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
-5. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version. The cache holds `APP_KEY`, so it is mode `0600`.
+4. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
+5. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
+6. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version. The cache holds `APP_KEY`, so it is mode `0600`.
 
 Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
 
-Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
+Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
 
 Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories.
 
@@ -127,6 +128,31 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_layout_invalid` | `ORBIT_GATEWAY_CHECKOUT` is not an absolute `<base>/<checkout>/apps/gateway` path. |
 | `gateway.release_lock_unavailable` | The release lock file cannot be opened. |
 | `gateway.release_fetch_failed`, `gateway.release_worktree_failed`, `gateway.release_link_failed`, `gateway.release_dependencies_failed`, `gateway.release_access_failed`, `gateway.release_revision_failed`, `gateway.release_configuration_failed` | The named build step failed. The live release is unchanged, and the commit is marked failed unless the failure is the machine (disk, lock, or a missing layout). |
+| `gateway.release_web_build_missing` | CI published no unexpired `web-dist-<sha>` artifact from an [accepted CI run](#accepted-ci-runs) of the commit. The commit is marked failed. |
+| `gateway.release_web_build_invalid` | The artifact is larger than the limits, has no digest or does not match it, has an unsafe entry, or has no `index.html`. The commit is marked failed. |
+| `gateway.release_web_build_unavailable` | GitHub Actions cannot be read: no GitHub App, no `Actions: read` permission, or no answer. The commit is tried again later. |
+| `gateway.release_web_directory_missing`, `gateway.release_web_install_failed` | The web directory is missing, or the build cannot be written or given to the `caddy` group. The commit is tried again later. |
+
+#### Web build
+
+The web app ships with the Gateway release of the same commit. On every CI run on `main`, a push or a manual dispatch, CI uploads the build of `apps/web` as the artifact `web-dist-<sha>` and keeps it for 14 days ([Feature delivery: CI](/reference/implementation-loop#ci)). Prepare installs it into `web/releases/<id>` of the [web directory](/reference/web-app#web-directory), in the layout `bin/web-deploy` uses:
+
+1. It asks the [GitHub App](/reference/github-app#read-ci-artifacts) for a token with only `Actions: read`, for the repository that `shared/orbit.git` names as `origin`.
+2. It finds the newest unexpired artifact with that name from an [accepted CI run](#accepted-ci-runs) of exactly this commit.
+3. It downloads the archive, at most 128 MiB, from GitHub's artifact storage without the token. The download must match the artifact's SHA-256 digest.
+4. It extracts the archive into a hidden staging directory and refuses unsafe entries, listed below.
+5. It requires `index.html` at the top. It gives directories mode `0750` and files `0640`, with group `caddy`.
+6. It moves the staging directory to `web/releases/<id>` in one rename.
+
+Extraction accepts only regular files and directories with plain relative names. It refuses links, special files, absolute names, `..`, duplicate and encrypted entries, and entries whose size or checksum differs from their header. It also refuses more than 20,000 entries or more than 512 MiB of files.
+
+A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves. When the releases directory cannot be read, it skips this cleanup and logs a warning.
+
+CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. So a commit with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
+
+##### Accepted CI runs
+
+The run must be a `push` or a `workflow_dispatch` of `.github/workflows/ci.yml` on `main`, in this repository. A run from a fork, a pull request, another workflow, or another branch does not count. An artifact without a SHA-256 digest is refused.
 
 ### Deploy a release
 
@@ -151,8 +177,8 @@ After the switch, deploy:
 1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
 2. verifies the release, as described below;
 3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, and the OPcache reset;
-4. switches the web app to the release's build;
-5. runs smoke against that web app.
+4. switches `web/current` to the release's [web build](#web-build) with one rename;
+5. runs [smoke](#smoke) against the switched release.
 
 Verify runs before the scheduler phase, so a broken release is found and switched back without waiting for a long scheduled command or an idle pool.
 
@@ -160,7 +186,7 @@ Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (def
 
 Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
 
-- Without migrations, deploy switches back to the previous release and restores its web build. It repeats the handoff phases that started. The outcome is `switched_back`.
+- Without migrations, deploy switches back to the previous release and repeats the handoff phases that started. `web/current` returns to its earlier build. The outcome is `switched_back`.
 - A previous release whose code has no handoff command, or no phases, gets the handoff from the deploying process's code.
 - A previous release that lacks a migration the database applied gets no switch-back. Deploy pauses instead. This can follow an earlier pause.
 - When the `migrations` table cannot be read, deploy pauses too, because it cannot rule that out.
@@ -229,9 +255,34 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `cleanup`, `cleanup_error_code`, `agent_view`, and `cleanup_paused`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
+#### Smoke
+
+Smoke runs `bin/gateway-smoke` of the new release, `releases/<id>/bin/gateway-smoke`, as the Gateway account. So it is the exact code under test, and it uses that release's `apps/cli/orbit` with the account's Gateway profile. [Delivery-line proofs: bin/gateway-smoke](/reference/delivery-line#bingateway-smoke) lists its checks. The release passes:
+
+| Option | Value |
+| --- | --- |
+| `--sha` | The release's commit. |
+| `--since` | The time the runtime handoff started, in whole seconds. The scheduler and agent view must have restarted after it, and a tasks tick must have started after it. |
+| `--timeout` | `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, default `90` seconds. A restarted scheduler starts its first tick on the next minute. |
+| `--checkout`, `--web-dir` | `/home/orbit/orbit` and the web directory, so the checks read the live paths. |
+| `--web-url`, `--up-url`, `--status-url` | Built from `ORBIT_GATEWAY_VERIFY_ORIGIN`. |
+| `--write-check --smoke-project` | Only when `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` names a Project. |
+
+The Python checks trust Orbit's root CA through `SSL_CERT_FILE`, set to Caddy's `root-ca.pem` unless the environment already sets it. The document write check is off by default, because it writes a Project Document on every release. To turn it on, create a dedicated Project and set `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` to its ID or slug in the shared env file, then [apply the env change](#apply-an-env-change).
+
+The release record stores the smoke JSON as `phases.smoke.report`, also when smoke fails. Smoke fails when it exits nonzero, reports `passed: false`, prints no JSON, or the release has no `bin/gateway-smoke`. When it runs 15 seconds past its own limit, the step fails with `gateway.release_smoke_timeout`. `timeout` then sends `SIGTERM` to smoke, which kills every check command it started, each in a session of its own, and prints a `terminated` result that the record keeps as the report. After 5 more seconds, `timeout` kills what is left. No check outlives the step. A smoke failure is handled like a failed verification: switch back without migrations, pause after them.
+
+Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke` of the current release for its commit, or for the commit you name. It changes nothing and writes no release record.
+
+```bash
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:smoke [<SHA>] [--since=<TIME>]
+```
+
+It prints one JSON object with `release`, `sha`, `outcome`, and the smoke `report`. A failed smoke exits 1 with `error_code`, `step`, `message`, and the report under `detail.report`. A commit or `--since` value it cannot read exits 2.
+
 `gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. Every attempt that names a commit writes a record and an Activity entry.
 
-A failure the commit itself causes, such as a downgrade or a failed migration, is final at once. Any other failure, such as low disk, a fetch error, a slow verify, or an unexpected error, is recorded with `retryable: true` for the first two attempts of a commit; the third is final. A refusal that changes nothing, such as an unknown commit or a downgrade, writes only a failed Activity entry. A step refused by the release lock writes nothing.
+A failure the commit itself causes, such as a downgrade, a failed migration, or a missing or invalid web build, is final at once. Any other failure, such as low disk, a fetch error, a slow verify, or an unexpected error, is recorded with `retryable: true` for the first two attempts of a commit; the third is final. A refusal that changes nothing, such as an unknown commit or a downgrade, writes only a failed Activity entry. A step refused by the release lock writes nothing.
 
 One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
 
@@ -248,7 +299,12 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
 | `gateway.release_handoff_failed` | The release printed no handoff result. |
 | `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |
-| `gateway.release_smoke_failed` | Smoke failed after the web switch. |
+| `gateway.release_web_build_missing` | The release's web build is not installed, so `web/current` was not switched. |
+| `gateway.release_web_publish_failed` | `web/current` could not be switched. It stays on the build it served. |
+| `gateway.release_smoke_failed` | Smoke failed after the web switch, or printed no result. |
+| `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
+| `gateway.release_smoke_killed` | Smoke was killed before its limit by something else, such as the kernel's out-of-memory killer. |
+| `gateway.release_smoke_missing` | The release has no `bin/gateway-smoke`. |
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
 | `gateway.release_configuration_failed` | The release's configuration could not be cached again. It runs before migrations, so nothing changed. |
 | `gateway.release_unexpected_failure` | A step failed with an error the release code did not expect. The message names it. |
@@ -268,6 +324,8 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
 ```
 
 `<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
+
+Rollback switches the web app to the target's build. Pruning a Gateway release removes its web build too, so every retained release keeps its own, and a manual `bin/web-deploy` never prunes it. When the build is gone anyway, rollback installs it from the commit's CI artifact, which exists for 14 days. When the artifact has expired too, a rollback does not block the code on assets: it leaves `web/current` as it is, records the web step as `kept` with a warning, and smoke skips its `web` check. A deploy always fails without its web build.
 
 ### Apply an env change
 
@@ -323,7 +381,7 @@ Phase 1 runs these steps for the commit the in-place checkout has:
 | Handoff | The temporary checkout's code hands the runtime over, because the checkout's commit may predate the handoff command. The app code that serves is the same as before. |
 | Serving | `/up` is up and Gateway status is `ok`. The version may be `dev`, because `APP_VERSION` is commented out. |
 
-Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describes, with its snapshot, migrations, handoff, verify, web build, and smoke. Without `--commit`, it deploys the checkout's commit itself, which then must have the command; that adds the web build, the exact version check, and smoke.
+Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describes, with its snapshot, migrations, handoff, verify, web build, and smoke. Without `--commit`, it deploys the checkout's commit itself, which then must have the command; that adds the web build, the exact version check, and smoke. The web build comes from the commit's CI artifact, which CI keeps for 14 days, so phase 2 needs a commit built within that time.
 
 The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `shared`, `switch`, `phase1`, and `deploy`, the phase-2 release record. `switch.method` and `shared.storage_method` are `exchange`, or `rename` with the gap in `switch.gap_us` and `shared.storage_gap_us`. Each phase writes a release record with trigger `adopt` and an Activity entry.
 

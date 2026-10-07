@@ -49,6 +49,10 @@ return [
         'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
         'git_directory' => base_path(),
     ],
+    // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).
+    'gateway_release_smoke_timeout' => max(1, min(600, (int) env('ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT', 90))),
+    // A Project id or slug turns on the smoke write check, which writes one Project Document per release.
+    'gateway_release_smoke_project' => trim((string) env('ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT', '')),
     'app_dev_domain' => trim(
         string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
         characters: '.',
