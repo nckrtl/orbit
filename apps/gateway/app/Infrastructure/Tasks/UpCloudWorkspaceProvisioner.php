@@ -8,6 +8,10 @@ use App\Actions\Compute\EnrollUpCloudSandboxAction;
 use App\Actions\Compute\ProvisionTaskSandboxAction;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxState;
+use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubPullRequestState;
+use App\Domain\GitHub\GitHubRepository;
+use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Tasks\TaskCompute;
@@ -28,13 +32,24 @@ final readonly class UpCloudWorkspaceProvisioner
 {
     public function __construct(private TaskExecutionLock $groups, private ProvisionTaskSandboxAction $compute,
         private EnrollUpCloudSandboxAction $enroll, private SandboxFleetIdentity $identity,
-        private SandboxWorkspaceSource $source, private SandboxPiRuntime $pi, private SandboxPiArtifact $artifact) {}
+        private SandboxWorkspaceSource $source, private SandboxPiRuntime $pi, private SandboxPiArtifact $artifact,
+        private GitHubApi $github, private RepositoryPullRequestAccess $pullRequests) {}
 
     public function provision(Task $reserved): Instance
     {
-        return $this->groups->synchronized($reserved->id, function () use ($reserved): Instance {
+        return $this->prepare($reserved, false);
+    }
+
+    public function restore(Task $group): Instance
+    {
+        return $this->prepare($group, true);
+    }
+
+    private function prepare(Task $reserved, bool $restore): Instance
+    {
+        return $this->groups->synchronized($reserved->id, function () use ($reserved, $restore): Instance {
             $group = Task::topLevel()->with(['project', 'taskable'])->findOrFail($reserved->id);
-            $this->assertClaim($group, $reserved);
+            $this->assertClaim($group, $reserved, $restore);
             if (! config('compute.project_claims_enabled', false)) {
                 throw new ComputeException('compute.not_ready', 'The Project sandbox lane is not ready on this Gateway. Project sandbox compute is disabled.');
             }
@@ -48,6 +63,19 @@ final readonly class UpCloudWorkspaceProvisioner
             if ($existing !== null && $existing->provider !== 'upcloud') {
                 throw new ComputeException('compute.placement_conflict', 'The project reservation has another placement.');
             }
+            $restoreCommit = null;
+            if ($restore) {
+                $previous = TaskSandbox::query()->where('group_id', $group->id)->where('provider', 'upcloud')
+                    ->where('state', SandboxState::Destroyed)->whereNull('node_id')->whereNull('server_id')->whereNull('disk_id')->exists();
+                if (! $previous || ($existing !== null && ! isset($existing->spec['restore_commit']))) {
+                    throw $this->ownership();
+                }
+                $published = $this->publishedCommit($group);
+                $restoreCommit = $existing->spec['restore_commit'] ?? $published;
+                if (! is_string($restoreCommit) || preg_match('/\A[a-f0-9]{40}\z/D', $restoreCommit) !== 1) {
+                    throw $this->ownership();
+                }
+            }
             if ($group->taskable_id !== null) {
                 if (! $group->taskable instanceof Instance || $existing === null) {
                     throw $this->ownership();
@@ -56,7 +84,7 @@ final readonly class UpCloudWorkspaceProvisioner
             } elseif (Instance::query()->where('project_id', $group->project_id)->where('name', TaskWorkspaceName::for($group))->exists()) {
                 throw $this->ownership();
             }
-            $sandbox = $this->compute->execute($group);
+            $sandbox = $this->compute->execute($group, $restoreCommit);
             if ($sandbox->provider !== 'upcloud' || $sandbox->group_id !== $group->id
                 || $sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running') {
                 throw new ComputeException('compute.starting', 'The project sandbox is still starting.');
@@ -71,9 +99,9 @@ final readonly class UpCloudWorkspaceProvisioner
                 $this->identity->assertReady($sandbox, $node);
             }
             $sandbox->refresh();
-            DB::transaction(function () use ($group, $reserved, $sandbox, $node): void {
+            DB::transaction(function () use ($group, $reserved, $sandbox, $node, $restore): void {
                 $locked = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
-                $this->assertClaim($locked, $reserved);
+                $this->assertClaim($locked, $reserved, $restore);
                 if ($locked->taskable_id !== null) {
                     if (! $locked->taskable instanceof Instance) {
                         throw $this->ownership();
@@ -93,21 +121,45 @@ final readonly class UpCloudWorkspaceProvisioner
                 $locked->taskable()->associate($workspace);
                 $locked->save();
             });
-            $workspace = $this->source->prepare($group->refresh());
+            $workspace = $this->source->prepare($group->refresh(), $restoreCommit);
             $this->pi->prepare($workspace);
-            $this->assertClaim($group->refresh(), $reserved);
+            $this->assertClaim($group->refresh(), $reserved, $restore);
 
             return $workspace->refresh();
         });
     }
 
-    private function assertClaim(Task $group, Task $reserved): void
+    private function assertClaim(Task $group, Task $reserved, bool $restore): void
     {
+        $current = $restore
+            ? in_array($group->status, [TaskGroupStatus::Running, ...TaskGroupStatus::awaitingCompletion()], true)
+            : $group->status === TaskGroupStatus::Reserved && $group->reserved_at !== null
+                && $reserved->reserved_at !== null && $group->reserved_at->equalTo($reserved->reserved_at);
         if ($group->project->slug === 'orbit' || $group->execution_mode !== TaskExecutionMode::Managed || $group->task_compute !== TaskCompute::Vm
-            || $group->status !== TaskGroupStatus::Reserved || TaskExecutionHold::active($group) || $group->reserved_at === null
-            || $reserved->reserved_at === null || ! $group->reserved_at->equalTo($reserved->reserved_at)) {
+            || ! $current || TaskExecutionHold::active($group)) {
             throw new ComputeException('compute.claim_changed', 'The project sandbox claim is no longer current.');
         }
+    }
+
+    private function publishedCommit(Task $group): string
+    {
+        $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
+        $number = $repository instanceof GitHubRepository && is_string($group->pr_url)
+            ? $repository->pullRequestNumber($group->pr_url) : null;
+        if (! $repository instanceof GitHubRepository || $number === null) {
+            throw new ComputeException('compute.rebuild_required', 'Recovery requires a published pull request in the Project repository.');
+        }
+        try {
+            $pull = $this->github->pullRequest($this->pullRequests->cachedReadToken($repository), $repository, $number);
+        } catch (\Throwable) {
+            throw new ComputeException('compute.rebuild_required', 'The published pull request could not be confirmed.');
+        }
+        if ($pull->state !== GitHubPullRequestState::Open || ! is_string($pull->headSha)
+            || preg_match('/\A[a-f0-9]{40}\z/D', $pull->headSha) !== 1) {
+            throw new ComputeException('compute.rebuild_required', 'Recovery requires an open pull request with a confirmed commit.');
+        }
+
+        return $pull->headSha;
     }
 
     private function assertWorkspace(Instance $workspace, Task $group, TaskSandbox $sandbox): void

@@ -66,6 +66,27 @@ class GuestSource(unittest.TestCase):
         self.assertEqual(self.call('checkout')['starting_commit'], commit)
         self.assertEqual((self.target / 'file').read_text(), 'published work')
 
+    def test_recovery_never_falls_back_to_default_or_a_different_commit(self):
+        self.imported()
+        with self.assertRaises(ValueError):
+            self.call('checkout', required_commit=self.initial)
+        self.assertFalse((self.target / 'file').exists())
+        self.git(self.target, 'fetch', '-q', str(self.source), 'main:refs/remotes/origin/task-1')
+        with self.assertRaises(ValueError):
+            self.call('checkout', required_commit='a' * 40)
+        self.assertFalse((self.target / 'file').exists())
+        self.assertEqual(self.call('checkout', required_commit=self.initial)['starting_commit'], self.initial)
+        self.git(self.target, 'config', 'user.name', 'Proof')
+        self.git(self.target, 'config', 'user.email', 'proof@example.invalid')
+        (self.target / 'file').write_text('local recovery work')
+        self.git(self.target, 'commit', '-qam', 'recovered work')
+        local = self.git(self.target, 'rev-parse', 'HEAD')
+        (self.target / 'unfinished').write_text('keep')
+        self.assertEqual(self.call('inspect', required_commit=self.initial)['head'], local)
+        with self.assertRaises(ValueError):
+            self.call('inspect', required_commit='a' * 40)
+        self.assertEqual((self.target / 'unfinished').read_text(), 'keep')
+
     def test_binds_default_branch_and_refuses_default_ref_drift(self):
         self.imported()
         self.call('checkout')

@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Infrastructure\Tasks\UpCloudWorkspaceProvisioner;
 use App\Models\Instance;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -24,7 +25,7 @@ final readonly class TaskSandboxGroupLifecycle
 {
     private const string WaitPrefix = 'Sandbox compute: ';
 
-    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle) {}
+    public function __construct(private TaskExecutionLock $execution, private TaskSandboxDrivers $drivers, private TaskSandboxLifecycle $lifecycle, private UpCloudWorkspaceProvisioner $projects) {}
 
     public function review(Task $group): void
     {
@@ -66,8 +67,22 @@ final readonly class TaskSandboxGroupLifecycle
             }
             try {
                 $sandbox = $this->sandbox($group);
-                if ($sandbox->provider === 'upcloud' && ($sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running')) {
-                    throw new ComputeException('compute.rebuild_required', 'The cloud sandbox must be rebuilt from its published branch before work resumes.');
+                if ($sandbox->provider === 'upcloud') {
+                    if ($sandbox->desired_power === 'destroyed' && $sandbox->state !== SandboxState::Destroyed) {
+                        $sandbox = $this->lifecycle->destroy($sandbox, $this->drivers->forSandbox($sandbox));
+                    }
+                    if ($sandbox->state === SandboxState::Destroyed || isset($sandbox->spec['restore_commit']) && $sandbox->pi_ready_at === null) {
+                        $workspace = $this->projects->restore($group);
+                        $sandbox = $workspace->taskSandbox;
+                        if (! $sandbox instanceof TaskSandbox || $sandbox->pi_ready_at === null) {
+                            throw new ComputeException('compute.starting', 'The replacement runtime is still starting.');
+                        }
+                        $this->clearWait($group);
+
+                        return true;
+                    } elseif ($sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running') {
+                        throw new ComputeException('compute.rebuild_required', 'The cloud sandbox must be rebuilt from its published branch before work resumes.');
+                    }
                 }
                 $result = $this->lifecycle->activate($sandbox, $this->drivers->forSandbox($sandbox));
                 if ($result->state !== SandboxState::Running || $result->desired_power !== 'running') {
@@ -89,6 +104,11 @@ final readonly class TaskSandboxGroupLifecycle
         $group->load(['project', 'taskable']);
         $workspace = $group->taskable;
         if ($workspace === null && $group->taskable_id === null) {
+            $replacement = TaskSandbox::query()->where('group_id', $group->id)->where('provider', 'upcloud')
+                ->where('state', '!=', SandboxState::Destroyed)->first();
+            if ($replacement !== null && isset($replacement->spec['restore_commit'])) {
+                return $replacement;
+            }
             $cleanup = TaskSandbox::query()->where('group_id', $group->id)->where('provider', 'upcloud')->where('desired_power', 'destroyed')->latest('created_at')->first();
             if ($cleanup !== null) {
                 return $cleanup;
