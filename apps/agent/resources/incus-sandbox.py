@@ -99,6 +99,23 @@ def identity(value):
     return 'ot-' + hashlib.sha256(value.encode()).hexdigest()[:10]
 
 
+def pi_proxy(spec, subnet, interfaces):
+    values = [spec.get(key) for key in ('pi_host', 'pi_port', 'gateway_address')]
+    if all(value is None for value in values):
+        return None
+    host, port, gateway = values
+    if type(port) is not int or not 20000 <= port <= 60999:
+        raise Refusal('Invalid Pi proxy port.')
+    fleet = ipaddress.ip_network('10.44.0.0/16')
+    if (not isinstance(host, str) or not isinstance(gateway, str)
+            or ipaddress.ip_address(host) not in fleet or ipaddress.ip_address(gateway) not in fleet
+            or not any(address.get('local') == host for interface in interfaces for address in interface.get('addr_info', []))):
+        raise Refusal('Pi proxies require a local WireGuard address and one Gateway address.')
+    return {'type': 'proxy', 'bind': 'host', 'nat': 'true',
+            'listen': 'tcp:' + host + ':' + str(port),
+            'connect': 'tcp:' + str(subnet.network_address + 10) + ':3774'}
+
+
 class Host:
     def __init__(self, project, sandbox_id, budget):
         if not isinstance(project, str) or not re.fullmatch(r'orbit-(?:task-sandboxes|sandbox-proof-[a-z0-9]+)', project):
@@ -221,8 +238,10 @@ class Host:
         if not isinstance(blocked, list) or not blocked or not all(isinstance(value, str) for value in blocked):
             raise Refusal('Host and LAN exclusions are required.')
         addresses = subprocess.run(['ip', '-json', '-4', 'address', 'show'], capture_output=True, check=True, timeout=10)
+        interfaces = json.loads(addresses.stdout)
+        proxy = pi_proxy(spec, subnet, interfaces)
         host_networks = [str(ipaddress.ip_network(address['local'] + '/' + str(address['prefixlen']), strict=False))
-                         for interface in json.loads(addresses.stdout) for address in interface.get('addr_info', [])]
+                         for interface in interfaces for address in interface.get('addr_info', [])]
         public = public_networks([*blocked, *host_networks])
         current = {row['name']: row for row in self.instances()}
         for name, row in current.items():
@@ -244,7 +263,9 @@ class Host:
             devices = row.get('devices', {})
             nic = devices.get('eth0', {})
             root = devices.get('root', {})
-            if (row.get('profiles') != [] or set(devices) != {'root', 'eth0', 'worktree'}
+            expected_devices = {'root', 'eth0', 'worktree'} | ({'pi'} if proxy and role == 'operator' else set())
+            if (row.get('profiles') != [] or set(devices) != expected_devices
+                    or (devices.get('pi') != (proxy if role == 'operator' else None))
                     or root != {'type': 'disk', 'path': '/', 'pool': pool, 'size': '20GiB'}
                     or devices.get('worktree') != {'type': 'disk', 'pool': pool, 'source': self.name + '-worktree', 'path': '/home/orbit/orbit'}
                     or nic != {'type': 'nic', 'network': self.name, 'name': 'eth0',
@@ -284,6 +305,10 @@ class Host:
                             {'action': 'allow', 'destination': '1.1.1.1,9.9.9.9', 'protocol': 'udp', 'destination_port': '53', 'state': 'enabled'},
                             {'action': 'allow', 'destination': '1.1.1.1,9.9.9.9', 'protocol': 'tcp', 'destination_port': '53', 'state': 'enabled'},
                         ]}
+        if proxy:
+            acl_data['ingress'].append({'action': 'allow', 'source': spec['gateway_address'],
+                                        'destination': str(subnet.network_address + 10),
+                                        'protocol': 'tcp', 'destination_port': '3774', 'state': 'enabled'})
         if acl is None:
             self.run('network', 'acl', 'create', self.name, data=json.dumps(acl_data).encode())
         else:
@@ -307,6 +332,8 @@ class Host:
                                    'root': {'type': 'disk', 'path': '/', 'pool': pool, 'size': '20GiB'},
                                    'eth0': {'type': 'nic', 'network': self.name, 'name': 'eth0', 'ipv4.address': address,
                                             'security.mac_filtering': 'true', 'security.ipv4_filtering': 'true'}}}
+            if proxy and role == 'operator':
+                payload['devices']['pi'] = proxy
             self.run('query', '-X', 'POST', '/1.0/instances?project=' + self.project,
                      '-d', json.dumps(payload), '--wait', timeout=300)
             self.run('start', name, timeout=180)

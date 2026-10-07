@@ -39,6 +39,12 @@ struct Spec {
     pool: String,
     subnet: String,
     blocked_networks: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pi_host: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pi_port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    gateway_address: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -190,6 +196,18 @@ mod tests {
         bad["operation"] = "observe".into();
         assert!(request(bad.to_string().as_bytes()).is_err());
         value["guest"]["host_command"] = "never".into();
+        assert!(request(value.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn accepts_only_typed_proxy_fields_in_provision_spec() {
+        let mut value = base();
+        value["operation"] = "provision".into();
+        value["spec"] = json!({"images":{"operator":"a".repeat(64)}, "pool":"proof",
+            "subnet":"10.233.1.0/24", "blocked_networks":["192.168.0.0/16"],
+            "pi_host":"10.44.0.7", "pi_port":23001, "gateway_address":"10.44.0.1"});
+        assert!(request(value.to_string().as_bytes()).is_ok());
+        value["spec"]["pi_port"] = "23001".into();
         assert!(request(value.to_string().as_bytes()).is_err());
     }
 

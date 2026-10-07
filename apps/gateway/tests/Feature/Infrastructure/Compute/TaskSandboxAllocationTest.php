@@ -75,6 +75,30 @@ describe('sandbox placement', function (): void {
             ->and(TaskSandbox::query()->count())->toBe(1);
     });
 
+    it('keeps the private Pi port reserved while parked and assigns another port to the next group', function (): void {
+        $this->settings['gateway_address'] = '10.44.0.2';
+        config(['compute.incus.hosts' => [$this->settings]]);
+        allocation_host(2);
+        $group = allocation_group('orbit');
+        $first = app(AllocateTaskSandboxAction::class)->execute($group);
+        expect($first->spec['pi_host'])->toBe('10.44.0.20')->and($first->spec['gateway_address'])->toBe('10.44.0.2')
+            ->and($first->spec['pi_port'])->toBe(23001);
+        $first->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
+        $next = Task::topLevel()->create(['project_id' => $group->project_id, 'title' => 'Next', 'brief' => 'Work', 'status' => 'todo', 'task_compute' => TaskCompute::Vm]);
+        $second = app(AllocateTaskSandboxAction::class)->execute($next);
+        expect($second->spec['pi_port'])->toBe(23002)->and($first->fresh()->spec['pi_port'])->toBe(23001);
+    });
+
+    it('rejects a public Pi control address before contacting a compute host', function (): void {
+        $this->settings['gateway_address'] = '203.0.113.5';
+        config(['compute.incus.hosts' => [$this->settings]]);
+        mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+        expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit')))
+            ->toThrow(ComputeException::class, 'configuration is invalid');
+        expect(TaskSandbox::query()->count())->toBe(0);
+    });
+
     it('sends project work to cloud only when local capacity is full', function (): void {
         allocation_host(0);
         $cloud = mock(ComputeDriver::class);

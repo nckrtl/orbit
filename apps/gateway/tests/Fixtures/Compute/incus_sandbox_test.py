@@ -16,10 +16,12 @@ class FakeHost(Host):
     def __init__(self, rows=None, network=None, acl=None):
         self.rows, self.network, self.acl = rows or [], network, acl
         self.calls = []
+        self.payloads = []
         super().__init__('orbit-sandbox-proof-test', ID, 2)
 
     def run(self, *args, data=None, timeout=180):
         self.calls.append(args)
+        self.payloads.append((args, data))
         if args[:1] == ('query',) and args[1].startswith('/1.0/projects/'):
             return json.dumps({'config': {'user.orbit.compute.owner': module['OWNER'], 'features.networks': 'false'}}).encode()
         if args[:1] == ('query',) and args[1].startswith('/1.0/images/'):
@@ -69,6 +71,33 @@ class Boundary(unittest.TestCase):
         with patch('subprocess.run') as process:
             process.return_value.stdout = b'[]'
             return host.provision(spec)
+
+    def test_pi_proxy_is_bound_to_local_fleet_address_and_gateway_only_ingress(self):
+        host, spec = self.prepared()
+        spec.update(pi_host='10.44.0.7', pi_port=23001, gateway_address='10.44.0.1')
+        interfaces = [{'addr_info': [{'local': '10.44.0.7', 'prefixlen': 16}]}]
+        proxy = module['pi_proxy'](spec, ipaddress.ip_network(spec['subnet']), interfaces)
+        host.rows[0]['devices']['pi'] = proxy
+        with patch('subprocess.run') as process:
+            process.return_value.stdout = json.dumps(interfaces).encode()
+            self.assertEqual('running', host.provision(spec)['power'])
+        self.assertEqual('tcp:10.44.0.7:23001', proxy['listen'])
+        self.assertEqual('tcp:10.233.201.10:3774', proxy['connect'])
+        self.assertEqual('true', proxy['nat'])
+        acl = next(json.loads(data) for args, data in host.payloads if args[:3] == ('network', 'acl', 'edit'))
+        self.assertIn({'action': 'allow', 'source': '10.44.0.1', 'destination': '10.233.201.10',
+                       'protocol': 'tcp', 'destination_port': '3774', 'state': 'enabled'}, acl['ingress'])
+        self.assertFalse(any('10.44.' in rule.get('destination', '') for rule in acl['egress']))
+
+    def test_pi_proxy_refuses_public_wildcard_nonlocal_partial_or_low_port_configuration(self):
+        subnet = ipaddress.ip_network('10.233.201.0/24')
+        interfaces = [{'addr_info': [{'local': '10.44.0.7', 'prefixlen': 16}]}]
+        good = {'pi_host': '10.44.0.7', 'pi_port': 23001, 'gateway_address': '10.44.0.1'}
+        for changes in [{'pi_host': '0.0.0.0'}, {'pi_host': '10.44.0.8'}, {'gateway_address': '8.8.8.8'},
+                        {'pi_port': 22}, {'pi_port': True}, {'pi_port': None}, {'gateway_address': None}]:
+            with self.subTest(changes=changes), self.assertRaises((Refusal, ValueError)):
+                module['pi_proxy']({**good, **changes}, subnet, interfaces)
+        self.assertIsNone(module['pi_proxy']({}, subnet, interfaces))
 
     def test_provision_retries_a_create_that_completed_before_start_failed(self):
         host, spec = self.prepared()

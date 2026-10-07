@@ -53,8 +53,8 @@ final readonly class AllocateTaskSandboxAction
                 throw new ComputeException('compute.placement_conflict', 'The task group already has a workspace; its placement cannot change.');
             }
             // Serialize reservations from different groups before reading host budgets and subnets.
-            Node::query()->whereIn('id', array_column(array_column($candidates, 'settings'), 'node_id'))
-                ->orderBy('id')->lockForUpdate()->get();
+            $hostNodes = Node::query()->whereIn('id', array_column(array_column($candidates, 'settings'), 'node_id'))
+                ->orderBy('id')->lockForUpdate()->get()->keyBy('id');
             $locals = TaskSandbox::query()->where('provider', 'incus')->where('state', '!=', SandboxState::Destroyed->value)->get();
             foreach ($candidates as $candidate) {
                 $settings = $candidate['settings'];
@@ -83,6 +83,15 @@ final readonly class AllocateTaskSandboxAction
                 if ($subnet === null) {
                     continue;
                 }
+                $proxy = [];
+                if ($group->project->slug === 'orbit' && $settings['gateway_address'] !== null) {
+                    $address = $hostNodes->get($settings['node_id'])?->wireguard_ip;
+                    if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || ! str_starts_with($address, '10.44.')) {
+                        throw new ComputeException('compute.invalid_configuration', 'The Incus Pi proxy needs the host WireGuard address.');
+                    }
+                    // The subnet remains reserved while stopped, so its proxy port does too.
+                    $proxy = ['pi_host' => $address, 'pi_port' => 23000 + $index, 'gateway_address' => $settings['gateway_address']];
+                }
                 $id = (string) Str::uuid();
 
                 return TaskSandbox::query()->create([
@@ -90,7 +99,7 @@ final readonly class AllocateTaskSandboxAction
                     'name' => 'ot-'.substr(hash('sha256', $id), 0, 10), 'state' => SandboxState::Reserved,
                     'desired_power' => 'running', 'spec' => [
                         'host_id' => $settings['node_id'], 'project' => $settings['project'], 'pool' => $settings['pool'],
-                        'images' => $candidate['images'], 'subnet' => $subnet, 'blocked_networks' => $settings['blocked_networks'],
+                        'images' => $candidate['images'], 'subnet' => $subnet, 'blocked_networks' => $settings['blocked_networks'], ...$proxy,
                     ],
                 ]);
             }

@@ -32,7 +32,7 @@ final readonly class TaskSandboxDrivers
         throw new ComputeException('compute.host_unconfigured', 'Restore the recorded Incus host configuration before recovering this sandbox.');
     }
 
-    /** @return list<array{node_id: int, project: string, pool: string, max_vms: int, orbit_images: array<string, string>, project_images: array<string, string>, blocked_networks: list<string>}> */
+    /** @return list<array{node_id: int, project: string, pool: string, max_vms: int, orbit_images: array<string, string>, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null}> */
     public function localHosts(): array
     {
         $value = config('compute.incus.hosts', []);
@@ -50,6 +50,10 @@ final readonly class TaskSandboxDrivers
                 || ! is_array($host['blocked_networks'] ?? null) || ! array_is_list($host['blocked_networks']) || $host['blocked_networks'] === []) {
                 throw $this->invalidConfiguration();
             }
+            $gateway = $host['gateway_address'] ?? null;
+            if ($gateway !== null && (! is_string($gateway) || filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || ! str_starts_with($gateway, '10.44.'))) {
+                throw $this->invalidConfiguration();
+            }
             $blocked = [];
             foreach ($host['blocked_networks'] as $network) {
                 if (! is_string($network) || preg_match('/\A[0-9.]+\/[0-9]{1,2}\z/D', $network) !== 1) {
@@ -64,7 +68,7 @@ final readonly class TaskSandboxDrivers
             $ids[] = $host['node_id'];
             $result[] = [
                 'node_id' => $host['node_id'], 'project' => $host['project'], 'pool' => $host['pool'], 'max_vms' => $host['max_vms'],
-                'orbit_images' => $orbit, 'project_images' => $this->images($host['project_images'] ?? []), 'blocked_networks' => $blocked,
+                'orbit_images' => $orbit, 'project_images' => $this->images($host['project_images'] ?? []), 'blocked_networks' => $blocked, 'gateway_address' => $gateway,
             ];
         }
 
