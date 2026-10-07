@@ -20,6 +20,7 @@ use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
+use Tests\Support\FakeSandboxModelProxy;
 
 function compute_config(): string
 {
@@ -88,7 +89,7 @@ function compute_group(): Task
 
     return Task::topLevel()->create([
         'project_id' => $project->id, 'title' => 'Cloud group', 'brief' => 'One sandbox',
-        'status' => TaskGroupStatus::Todo, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+        'task_compute' => 'vm', 'status' => TaskGroupStatus::Todo, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
     ]);
 }
 
@@ -155,7 +156,7 @@ describe('UpCloud provisioning', function (): void {
 
         expect(app(ComputeDriver::class)->provision($sandbox)->state)->toBe(SandboxState::Running);
         expect(Http::recorded(fn (Request $request): bool => $request->method() === 'POST'))->toHaveCount(1);
-        Http::assertSentCount(4);
+        expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);
     });
 
     it('holds capacity and refuses another create when an ambiguous attempt has no visible server', function (): void {
@@ -234,7 +235,7 @@ describe('UpCloud provisioning', function (): void {
         expect(app(ComputeDriver::class)->observe($sandbox)->state)->toBe(SandboxState::Running);
         Http::assertSent(fn (Request $request): bool => $request->method() === 'PUT'
             && $request->data()['firewall_rules']['firewall_rule'] === compute_firewall()['firewall_rules']['firewall_rule']);
-        Http::assertSentCount(4);
+        expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);
     });
 
     it('keeps a firewall failure inspectable instead of treating an accepted PUT as readiness', function (): void {
@@ -248,7 +249,7 @@ describe('UpCloud provisioning', function (): void {
 
         expect(fn () => app(ComputeDriver::class)->observe($sandbox))->toThrow(ComputeException::class, 'did not converge');
         expect($sandbox->fresh()->firewall_configured_at)->toBeNull();
-        Http::assertSentCount(4);
+        expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);
     });
 
     it('seals metadata access after bootstrap while preserving the hub and public web access', function (): void {
@@ -279,7 +280,7 @@ describe('UpCloud provisioning', function (): void {
 
             return $acceptsMetadata === [] && count($hub) === 1 && count($web) === 1 && count($ipv6Drop) === 1;
         });
-        Http::assertSentCount(4);
+        expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);
     });
 
     it('retains sealed network intent after a lost firewall update and retries it on observation', function (): void {
@@ -398,7 +399,7 @@ describe('UpCloud power and deletion', function (): void {
         expect(fn () => app(ComputeDriver::class)->destroy($sandbox))->toThrow(ComputeException::class, 'HTTP 503');
         expect($sandbox->fresh()->desired_power)->toBe('destroyed');
         expect(app(ComputeDriver::class)->observe($sandbox)->state)->toBe(SandboxState::Destroyed);
-        Http::assertSentCount(4);
+        expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);
     });
 
     it('refuses VM destruction while its Node is still enrolled', function (): void {
@@ -473,6 +474,9 @@ describe('UpCloud power and deletion', function (): void {
 });
 
 describe('UpCloud reservation and credentials', function (): void {
+    beforeEach(function (): void {
+        (new FakeSandboxModelProxy)->install();
+    });
     it('reuses the group reservation and frozen network configuration', function (): void {
         compute_config();
         compute_keys();
@@ -494,7 +498,7 @@ describe('UpCloud reservation and credentials', function (): void {
         expect($result->spec['gateway_address'])->toBe('1.1.1.1');
         expect(TaskSandbox::query()->count())->toBe(1);
         expect(Http::recorded(fn (Request $request): bool => $request->method() === 'POST'))->toHaveCount(1);
-        Http::assertSentCount(4);
+        expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);
     });
 
     it('does not allocate another reservation when the VM budget is full', function (): void {
@@ -531,7 +535,7 @@ describe('UpCloud reservation and credentials', function (): void {
         expect(fn () => app(ProvisionTaskSandboxAction::class)->execute($group))->toThrow(ComputeException::class);
         expect(TaskSandbox::query()->count())->toBe(2);
         expect(TaskSandbox::query()->where('state', '!=', 'destroyed')->sole()->id)->not->toBe($sandbox->id);
-        Http::assertSentCount(1);
+        expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(1);
     });
 
     it('preserves sandbox ownership when the task group is deleted', function (): void {
@@ -644,4 +648,16 @@ describe('UpCloud reservation and credentials', function (): void {
         'private Gateway' => ['10.44.0.2', compute_spec()->publicKey],
         'key injection' => ['1.1.1.1', compute_spec()->publicKey."\nextra"],
     ]);
+});
+
+it('refuses provider destruction and observation cleanup before HTTP while a model key remains', function (): void {
+    compute_config();
+    $sandbox = compute_sandbox();
+    $sandbox->model_key = str_repeat('d', 64);
+    $sandbox->save();
+
+    expect(fn () => app(ComputeDriver::class)->destroy($sandbox))->toThrow(ComputeException::class, 'Revoke the sandbox model key');
+    expect(fn () => app(ComputeDriver::class)->observe($sandbox))->toThrow(ComputeException::class, 'Revoke the sandbox model key');
+    expect($sandbox->fresh()->model_key)->toBe(str_repeat('d', 64));
+    Http::assertNothingSent();
 });

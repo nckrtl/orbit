@@ -18,10 +18,12 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskSandbox;
+use Tests\Support\FakeSandboxModelProxy;
 
 use function Pest\Laravel\mock;
 
 beforeEach(function (): void {
+    (new FakeSandboxModelProxy)->install();
     $this->host = Node::query()->create(['name' => 'compute', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.20', 'public_ssh_host' => '192.0.2.20', 'user' => 'orbit']);
     $this->settings = ['node_id' => $this->host->id, 'project' => 'orbit-task-sandboxes', 'pool' => 'proof', 'max_vms' => 2,
         'orbit_images' => ['operator' => str_repeat('a', 64), 'gateway' => str_repeat('b', 64)],
@@ -68,7 +70,8 @@ describe('sandbox placement', function (): void {
         $allocator = app(AllocateTaskSandboxAction::class);
         $sandbox = $allocator->execute($group);
         expect($sandbox->provider)->toBe('incus')->and($sandbox->state)->toBe(SandboxState::Running)
-            ->and(array_keys($sandbox->spec['images']))->toBe(['operator', 'gateway']);
+            ->and(array_keys($sandbox->spec['images']))->toBe(['operator', 'gateway'])
+            ->and($sandbox->model_key_registered_at)->not->toBeNull()->and($sandbox->pi_token)->not->toBeNull();
         expect($allocator->execute($group)->id)->toBe($sandbox->id);
         $sandbox->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
         expect($allocator->execute($group)->state)->toBe(SandboxState::Running)

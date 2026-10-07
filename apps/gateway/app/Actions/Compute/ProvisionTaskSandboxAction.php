@@ -10,6 +10,7 @@ use App\Domain\Compute\SandboxSpec;
 use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Compute\ComputeLocks;
+use App\Infrastructure\Compute\TaskSandboxLifecycle;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -17,7 +18,7 @@ use Illuminate\Support\Str;
 
 final readonly class ProvisionTaskSandboxAction
 {
-    public function __construct(private ComputeDriver $driver, private ComputeLocks $locks, private SshKeyProvider $keys) {}
+    public function __construct(private ComputeDriver $driver, private ComputeLocks $locks, private SshKeyProvider $keys, private TaskSandboxLifecycle $lifecycle) {}
 
     public function execute(Task $group): TaskSandbox
     {
@@ -58,6 +59,6 @@ final readonly class ProvisionTaskSandboxAction
             ]);
         });
 
-        return $this->driver->provision($sandbox);
+        return $this->lifecycle->activate($sandbox, $this->driver);
     }
 }

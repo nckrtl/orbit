@@ -17,7 +17,7 @@ final readonly class ReserveSandboxPiTokenAction
     {
         DB::transaction(function () use ($sandbox): void {
             $locked = TaskSandbox::query()->lockForUpdate()->findOrFail($sandbox->id);
-            if ($locked->group?->task_compute !== TaskCompute::Vm
+            if ($locked->desired_power === 'destroyed' || $locked->group?->task_compute !== TaskCompute::Vm
                 || in_array($locked->state, [SandboxState::Destroying, SandboxState::Destroyed], true)) {
                 throw new ComputeException('compute.pi_unavailable', 'The sandbox cannot reserve Pi credentials.');
             }

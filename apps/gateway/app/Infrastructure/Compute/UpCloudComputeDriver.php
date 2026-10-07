@@ -230,6 +230,9 @@ final readonly class UpCloudComputeDriver implements ComputeDriver
 
     private function destroyOwned(TaskSandbox $sandbox): TaskSandbox
     {
+        if ($sandbox->model_key !== null) {
+            throw new ComputeException('compute.model_key_attached', 'Revoke the sandbox model key before destroying its compute.');
+        }
         if ($sandbox->state === SandboxState::Destroyed) {
             return $sandbox;
         }

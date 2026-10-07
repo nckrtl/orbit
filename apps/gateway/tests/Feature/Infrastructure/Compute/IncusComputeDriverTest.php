@@ -112,3 +112,12 @@ describe('local Incus driver', function (): void {
         expect(fn () => $driver->destroy($this->sandbox))->toThrow(ComputeException::class, 'Remove the sandbox Node');
     });
 });
+
+it('refuses raw destruction before host IO while a model credential remains registered', function (): void {
+    $this->sandbox->model_key = str_repeat('e', 64);
+    $this->sandbox->save();
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => incus_test_driver($this->host)->destroy($this->sandbox))->toThrow(ComputeException::class, 'Revoke the sandbox model key');
+    expect($this->sandbox->fresh()->model_key)->toBe(str_repeat('e', 64));
+});

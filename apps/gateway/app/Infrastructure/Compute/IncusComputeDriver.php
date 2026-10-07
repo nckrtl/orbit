@@ -74,6 +74,9 @@ final readonly class IncusComputeDriver implements ComputeDriver
                 || ($sandbox->spec['host_id'] ?? null) !== $this->host->id || ($sandbox->spec['project'] ?? null) !== $this->project) {
                 throw $this->ownership();
             }
+            if ($operation === SandboxHostOperation::Destroy && $sandbox->model_key !== null) {
+                throw new ComputeException('compute.model_key_attached', 'Revoke the sandbox model key before destroying its compute.');
+            }
             if ($sandbox->state === SandboxState::Destroyed) {
                 if (in_array($operation, [SandboxHostOperation::Destroy, SandboxHostOperation::Observe], true)) {
                     return $sandbox;

@@ -9,6 +9,7 @@ use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
+use App\Infrastructure\Compute\TaskSandboxLifecycle;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -18,7 +19,7 @@ use Illuminate\Support\Str;
 /** Reserve local capacity first. Cloud overspill is restricted to the project lane. */
 final readonly class AllocateTaskSandboxAction
 {
-    public function __construct(private TaskSandboxDrivers $drivers, private ProvisionTaskSandboxAction $cloud) {}
+    public function __construct(private TaskSandboxDrivers $drivers, private ProvisionTaskSandboxAction $cloud, private TaskSandboxLifecycle $lifecycle) {}
 
     public function execute(Task $group): TaskSandbox
     {
@@ -120,9 +121,7 @@ final readonly class AllocateTaskSandboxAction
     {
         $driver = $this->drivers->forSandbox($sandbox);
 
-        return $sandbox->state === SandboxState::Stopped || $sandbox->desired_power === 'stopped'
-            ? $driver->resume($sandbox)
-            : $driver->provision($sandbox);
+        return $this->lifecycle->activate($sandbox, $driver);
     }
 
     private function existing(Task $group): ?TaskSandbox
