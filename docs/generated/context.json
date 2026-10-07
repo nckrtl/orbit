@@ -1413,9 +1413,12 @@
             "concepts": [
                 "Activity",
                 "Doctor",
+                "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Schedule",
                 "Task",
                 "Task definition"
