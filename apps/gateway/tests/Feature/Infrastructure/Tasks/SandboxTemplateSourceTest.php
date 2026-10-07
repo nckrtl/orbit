@@ -10,3 +10,10 @@ it('prepares only a marked disposable source copy and produces an adoptable temp
 
     expect($process->getExitCode())->toBe(0);
 });
+
+it('publishes only an owned candidate pair and cleans partial outputs without deleting foreign resources', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/Compute/publish_template_test.py'), resource_path('compute/publish-template.py')]);
+    $process->mustRun();
+
+    expect($process->getExitCode())->toBe(0);
+});

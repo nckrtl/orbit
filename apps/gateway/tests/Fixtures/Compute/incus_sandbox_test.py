@@ -395,7 +395,7 @@ class RelayFiles(unittest.TestCase):
     def test_foreign_units_and_drift_refuse_before_service_mutation(self):
         with tempfile.TemporaryDirectory() as directory, patch('pwd.getpwuid', return_value=SimpleNamespace(pw_dir=directory, pw_gid=os.getegid())), patch('subprocess.run'):
             relay = module['ModelRelay']('ot-0a68f778a3', ID)
-            relay.unit.parent.mkdir(parents=True)
+            relay.unit.parent.mkdir(mode=0o700, parents=True)
             relay.unit.write_text('foreign unit')
             with patch.object(module['ModelRelay'], 'control') as control:
                 with self.assertRaises(ValueError):

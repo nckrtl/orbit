@@ -309,6 +309,16 @@ Preparation refuses task-owned checkouts, changed source, mismatched identity, u
 
 This helper prepares source only. It does not certify ignored files, dependency provenance, CI baselines, guest credentials, or image sanitation. The complete image publisher must verify those prerequisites before publishing the source snapshot and private pair images. Do not use the helper on a live workspace or a promoted template.
 
+### Publish a disposable candidate
+
+`bin/sandbox-template-publish --plan` validates a candidate without changing it. `--apply` prepares its source, stops the pair, and publishes two private VM images and a dedicated source volume with a `ready` snapshot. Both modes accept one JSON object on standard input and return one JSON object. The required fields are `project`, `pool`, `sandbox_id`, and `source_template`. The template descriptor is the same as the source helper's descriptor.
+
+The builder must mark both candidate VMs and their source volume with `user.orbit.template.candidate=<template UUID>`. The names and compute ownership must match `sandbox_id`. Only the pair may attach the source volume. The candidate must be running, have only its root disk, source disk, and group network, and contain no task-source or Pi/model runtime state. The command refuses existing template volumes or matching image identities. It never changes a promoted alias or accepts an unmarked pair.
+
+The command checks guest prerequisites and known credential locations before source changes. It refuses GitHub tokens in guest files or process environments, subscription credentials, and the shared worker account. This audit complements a clean image build; it cannot establish provenance for arbitrary candidate files. The cold builder must still supply verified packages, tools, dependencies, and CI baselines.
+
+Publication returns pinned image fingerprints and the source descriptor for host configuration. It leaves the candidate stopped. On failure it removes only output resources carrying this operation's exact template identity, then audits their absence. It retains the candidate for diagnosis. A host crash can leave owned outputs; inspect them before retrying. Existing output identities are refused rather than overwritten. This command does not enable claims or change host firewall policy.
+
 ### Adopt a template checkout
 
 A source template includes `.git/orbit-sandbox-template.json` with the same descriptor as its reservation. Before first use, the guest checks that marker, the pinned commit, the default branch, and a clean tracked and untracked tree. Ignored dependency caches can remain. The template uses a real local Git directory, contains only the default local and remote branches, and exposes only its canonical origin URL. Git includes, custom filters, alternate object stores, and replacement history are refused.
