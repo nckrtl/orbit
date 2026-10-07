@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
+use App\Infrastructure\GatewayReleases\ReleaseArtisan;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -41,9 +42,9 @@ describe(ArtisanGatewayReleaseRuntime::class, function (): void {
             'caddy' => 'unchanged', 'fpm' => 'unchanged', 'scheduler' => 'restarted', 'scheduler_unit' => 'orbit-process-1-schedule-work.service',
             'scheduler_drain' => ['outcome' => 'drained', 'waited_ms' => 1200, 'running' => []],
             'cleanup' => 'resumed', 'cleanup_error_code' => null, 'agent_view' => 'restarted', 'cleanup_paused' => false,
-        ])->and($processes->ran)->toBe([[
-            '/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', 'gateway:release:handoff', '--no-interaction',
-        ]]);
+        ])->and($processes->ran)->toBe([
+            ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['gateway:release:handoff', '--no-interaction']),
+        ]);
     });
 
     it('fails with the handoff error the release reported', function (): void {

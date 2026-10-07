@@ -82,7 +82,7 @@ final class GatewayReleaseFixture implements ProcessRunner
             $revision = is_file($root.'/REVISION') ? trim(file_get_contents($root.'/REVISION')) : 'dev';
             $cache = getenv('APP_CONFIG_CACHE') ?: __DIR__.'/bootstrap/cache/config.php';
             $env = is_file(__DIR__.'/.env') ? trim(file_get_contents(__DIR__.'/.env')) : '';
-            file_put_contents($cache, '<?php return '.var_export(['app' => ['version' => $revision], 'env' => $env], true).';');
+            file_put_contents($cache, '<?php return '.var_export(['app' => ['version' => $revision], 'env' => $env, 'leaked' => getenv('ORBIT_LEAKED')], true).';');
             PHP);
         $this->write('apps/gateway/storage/logs/.gitignore', "*\n!.gitignore\n");
         $this->write('apps/gateway/storage/framework/cache/.gitignore', "*\n!.gitignore\n");

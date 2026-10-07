@@ -143,7 +143,7 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
     public function migrate(string $releasePath): void
     {
         $result = $this->processes->run(new ProcessInvocation(
-            arguments: [$this->php, $releasePath.'/apps/gateway/artisan', 'migrate', '--force', '--no-interaction'],
+            arguments: ReleaseArtisan::command($this->php, $releasePath.'/apps/gateway/artisan', ['migrate', '--force', '--no-interaction']),
             timeout: $this->migrateTimeout,
         ));
 

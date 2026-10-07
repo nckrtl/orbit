@@ -124,9 +124,8 @@ final readonly class GatewayReleaseBuilder
         $live = $application.'/bootstrap/cache/config.php';
         $candidate = $application.'/bootstrap/cache/config.next-'.bin2hex(random_bytes(6)).'.php';
         $result = $this->processes->run(new ProcessInvocation(
-            arguments: [$this->php, $application.'/artisan', 'config:cache', '--no-interaction'],
+            arguments: ReleaseArtisan::command($this->php, $application.'/artisan', ['config:cache', '--no-interaction'], ['APP_CONFIG_CACHE' => $candidate]),
             timeout: 120.0,
-            environment: ['APP_CONFIG_CACHE' => $candidate],
         ));
 
         if (! $result->succeeded() || ! is_file($candidate) || ! @rename($candidate, $live)) {
@@ -391,9 +390,9 @@ final readonly class GatewayReleaseBuilder
     private function cacheConfiguration(string $path): void
     {
         try {
-            $this->run('configuration', 'gateway.release_configuration_failed', [
-                $this->php, $path.'/apps/gateway/artisan', 'config:cache', '--no-interaction',
-            ], 120.0);
+            $this->run('configuration', 'gateway.release_configuration_failed', ReleaseArtisan::command(
+                $this->php, $path.'/apps/gateway/artisan', ['config:cache', '--no-interaction'],
+            ), 120.0);
         } catch (GatewayReleaseException $exception) {
             $this->run('configuration', 'gateway.release_configuration_failed', ['chmod', 'u+w', '--', $path]);
             @unlink($path.'/REVISION');

@@ -27,7 +27,7 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
     public function handoff(string $id): array
     {
         $result = $this->processes->run(new ProcessInvocation(
-            arguments: [$this->php, $this->layout->releaseApplicationPath($id).'/artisan', 'gateway:release:handoff', '--no-interaction'],
+            arguments: ReleaseArtisan::command($this->php, $this->layout->releaseApplicationPath($id).'/artisan', ['gateway:release:handoff', '--no-interaction']),
             timeout: $this->timeout,
         ));
         $decoded = json_decode(trim($result->stdout), true);

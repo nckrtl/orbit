@@ -123,6 +123,22 @@ describe('gateway:release:prepare', function (): void {
             ->and($this->fixture->layout->preparedCommit(substr($sha, 0, 12)))->toBeNull();
     });
 
+    it('caches the configuration from the shared env file only, not from the environment of the process that prepares', function (): void {
+        $sha = $this->fixture->commit('Second commit');
+        putenv('ORBIT_LEAKED=from-the-preparing-process');
+
+        try {
+            $release = $this->fixture->builder()->prepare($sha);
+        } finally {
+            putenv('ORBIT_LEAKED');
+        }
+
+        $leaked = array_filter($this->fixture->commands, static fn (array $arguments): bool => in_array('config:cache', $arguments, true));
+
+        expect((require $release->path.'/apps/gateway/bootstrap/cache/config.php')['leaked'])->toBeFalse()
+            ->and(array_values($leaked)[0][0])->toBe('env');
+    });
+
     it('refuses revision syntax that is not a hex SHA before running Git', function (string $revision): void {
         $exception = release_failure(fn () => $this->fixture->builder()->prepare($revision));
 

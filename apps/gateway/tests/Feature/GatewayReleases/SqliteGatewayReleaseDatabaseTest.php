@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Infrastructure\GatewayReleases\ReleaseArtisan;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -86,7 +87,8 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
         $processes->exit = 1;
         $exception = release_failure(fn () => $database->migrate('/home/orbit/releases/0123456789ab'));
 
-        expect($processes->ran[0]->arguments)->toBe(['/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', 'migrate', '--force', '--no-interaction'])
+        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--no-interaction']))
+            ->and(array_slice($processes->ran[0]->arguments, 0, 2))->toBe(['env', '-i'])
             ->and($exception->step)->toBe('migrate')
             ->and($exception->errorCode)->toBe('gateway.release_migrate_failed');
     });
