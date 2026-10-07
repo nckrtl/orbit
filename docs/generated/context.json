@@ -1149,7 +1149,8 @@
                 "Node",
                 "Process",
                 "Project",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": [
                 "0200"

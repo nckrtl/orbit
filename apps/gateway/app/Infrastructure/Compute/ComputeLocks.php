@@ -13,6 +13,23 @@ final readonly class ComputeLocks
      * @param  callable(): T  $operation
      * @return T
      */
+    public function incus(int $hostId, callable $operation): mixed
+    {
+        $lock = Cache::lock('orbit:compute:incus:'.$hostId, 1800);
+        if (! $lock->get()) {
+            throw new ComputeException('compute.busy', 'Another Incus operation is running on this host.');
+        }
+        try {
+            return $operation();
+        } finally {
+            $lock->release();
+        }
+    }
+
+    /** @template T
+     * @param  callable(): T  $operation
+     * @return T
+     */
     public function upcloud(callable $operation): mixed
     {
         $lock = Cache::lock('orbit:compute:upcloud', 180);

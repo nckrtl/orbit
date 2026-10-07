@@ -71,6 +71,13 @@ async fn main() {
 }
 
 async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments == ["sandbox"] {
+        return orbit_agent::sandbox::run().map_err(Into::into);
+    }
+    if !arguments.is_empty() {
+        return Err("unsupported agent arguments".into());
+    }
     let cgroup = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
     if !orbit_agent::runs_in_service_unit(&cgroup) {
         return Err(format!(

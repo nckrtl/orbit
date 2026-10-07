@@ -118,7 +118,7 @@ describe('UpCloud provisioning', function (): void {
                 expect($request->data()['server'])
                     ->toMatchArray(['plan' => 'STARTER-1xCPU-1GB', 'zone' => 'nl-ams1', 'firewall' => 'on']);
                 expect($request->data()['server']['storage_devices']['storage_device'][0])
-                    ->toMatchArray(['storage' => SandboxSpec::Image, 'size' => 10]);
+                    ->toMatchArray(['storage' => SandboxSpec::Image, 'size' => 20]);
                 expect($request->data()['server']['user_data'])->toContain('ssh-ed25519', '/swapfile')->not->toContain('ucat_test_only', 'apiKey', 'orbit-token', 'orbit-worker');
 
                 return Http::response(compute_server($sandbox), 201);

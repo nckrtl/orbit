@@ -16,7 +16,7 @@ covers:
 
 `orbit-agent` is a small Rust program on every managed Linux Node. It reports that it runs, the state of the Node's Orbit Processes, and the Git state of the Node's task checkouts. While someone watches a log live, it also reads that log and sends the lines to the Gateway. The web app shows these reports live, and the Gateway keeps a [view](#gateway-view) of them to skip repeated SSH reads.
 
-The agent only observes. It runs no command, changes nothing on the Node, and listens on no port. Every change to a Node still runs over SSH.
+The agent service observes and listens on no port. The separate `orbit-agent sandbox` command controls task-owned Incus resources through a closed protocol. The Gateway invokes that command over SSH; the service does not accept remote execution requests.
 
 ## Where it runs
 
@@ -173,6 +173,14 @@ The agent bounds each step, so a peer that stops answering never holds it.
 After a drop, the agent reconnects with a backoff from 2 to 30 seconds, with jitter. A session that stayed joined for 60 seconds starts the backoff again from 2 seconds. Every connection repeats all steps, because Reverb gives each connection a new `socket_id`.
 
 One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent` while it runs, and a second process exits with `another orbit-agent already runs on this Node`. The agent also refuses to start outside `orbit-agent.service`, so a copy started from a shell never joins as the Node's agent.
+
+The separate `orbit-agent sandbox` command accepts a bounded JSON request on
+standard input for task sandbox provisioning, observation, capacity, parking,
+resume, and destruction. The Gateway invokes it over pinned SSH on an Incus
+host. It runs the controller embedded in the binary and accepts no host shell
+command. It does not load the live agent secret or join the realtime channel.
+The controller checks the sandbox UUID, project ownership, VM budget, image
+fingerprints, and external network policy before changing resources.
 
 ## Agent secret
 

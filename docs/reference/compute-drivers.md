@@ -2,11 +2,12 @@
 title: "Compute drivers"
 description: "Provider-owned virtual machines, capacity, and recovery for task sandboxes."
 covers:
-  - apps/gateway/app/Domain/Compute/**
+  - apps/gateway/app/Domain/{Compute/**,Tasks/SandboxHostOperation.php}
   - apps/gateway/app/Actions/Compute/**
-  - apps/gateway/app/Infrastructure/Compute/**
+  - apps/gateway/app/Infrastructure/{Compute/**,Tasks/IncusSandboxHost.php}
   - apps/gateway/app/Models/TaskSandbox.php
   - apps/gateway/config/compute.php
+  - apps/gateway/resources/compute/**
   - apps/gateway/database/migrations/*create_task_sandboxes_table.php
 ---
 
@@ -16,7 +17,7 @@ The UpCloud compute driver provides the VM lifecycle for a task sandbox. It is a
 
 ## Provision a VM
 
-`ProvisionTaskSandboxAction` reserves one sandbox for a managed task group. It uses the pinned image and smallest size, and takes the network from Gateway configuration. The first size is `starter-small`: one CPU, 1 GB memory, a 10 GB disk, and 1 GB swap. The image is the pinned Ubuntu Resolute template. These defaults match the DLF experiment; a provider power state does not prove that a project fits or that bootstrap has finished.
+`ProvisionTaskSandboxAction` reserves one sandbox for a managed task group. It uses the pinned image and smallest size, and takes the network from Gateway configuration. The first size is `starter-small`: one CPU, 1 GB memory, a 20 GB disk, and 1 GB swap. The image is the pinned Ubuntu Resolute template. The disk meets the task image minimum from the DLF experiment; a provider power state does not prove that a project fits or that bootstrap has finished.
 
 The reservation records its UUID and immutable image, plan, network, and Gateway public SSH key before any provider mutation. A lock for the provider serializes claims against the configured VM budget. Reserved, uncertain, stopping, and deleting VMs all consume capacity. A task group reuses its current reservation. A destroyed reservation stays in history; a later claim gets a new identity.
 
@@ -69,3 +70,39 @@ Stop, start, firewall replacement, and deletion are reconciled from current prov
 Provider state and task state are separate. A cloud server being started is not proof that a task can run. Stable ownership recorded before mutation makes failures inspectable and allows cleanup after a Gateway restart. Refusing a second ambiguous create prevents duplicate billable VMs.
 
 The compute boundary exposes typed image, size, and network intent rather than caller-supplied cloud-init or shell commands. The UpCloud driver uses the HTTPS API directly; the Gateway does not need `upctl` installed. Later providers can implement the same lifecycle without changing the task engine.
+
+
+## Local Incus control
+
+The local driver uses `orbit-agent sandbox` on a managed Linux host over pinned
+SSH. The command accepts only bounded typed requests. It embeds the host
+controller, so a guest checkout cannot replace host control code. The host's
+managed account must already have Incus access; the command grants no permissions.
+
+### Resources
+
+Each reservation records its host, isolated Incus project, VM image fingerprints,
+storage pool, subnet, and blocked networks. The project must be marked
+`user.orbit.compute.owner=orbit-task-sandbox` and use `features.networks=false`.
+VMs and storage belong to that project. Dedicated bridges and ACLs use the host
+network namespace because bridges scoped to a project require OVN.
+
+Only UUID-derived resources with the reservation's ownership markers can be
+changed. Existing image identities, devices, profiles, and network policy must
+match. Public HTTP(S) and public DNS are permitted; fleet, private, host, metadata,
+and other group addresses are excluded. Host forwarding policy must also permit
+the dedicated bridge. This driver does not change the host firewall.
+
+### Power and recovery
+
+A lock on the host serializes provisioning and power operations. Starting and
+running VMs consume the host VM budget. The operator and test gateway share one volume for the group checkout. Park
+stops every VM before snapshotting the volume and guest disks. Resume restores
+all snapshots and rechecks capacity before starting either guest. A create interrupted
+before start can be retried under the same identity. A parked sandbox requires
+resume. Cleanup removes only that sandbox's VMs, worktree volume, snapshots, bridge, and ACL.
+
+The driver retains ownership after an uncertain result. A missing VM is not proof
+of complete cleanup. Only successful destruction releases the reservation as
+destroyed. These controls provide the local compute boundary; task workspace,
+agent, and scheduler integration must be proven before enabling VM task execution.

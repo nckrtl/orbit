@@ -158,7 +158,7 @@ final readonly class UpCloudComputeDriver implements ComputeDriver
                 'type' => 'public', 'ip_addresses' => ['ip_address' => [['family' => 'IPv4']]],
             ]]]],
             'storage_devices' => ['storage_device' => [[
-                'action' => 'clone', 'storage' => SandboxSpec::Image, 'size' => 10, 'tier' => 'standard', 'title' => $sandbox->name.'-disk',
+                'action' => 'clone', 'storage' => SandboxSpec::Image, 'size' => 20, 'tier' => 'standard', 'title' => $sandbox->name.'-disk',
             ]]],
             'user_data' => $this->bootstrap->render($spec),
         ]];
