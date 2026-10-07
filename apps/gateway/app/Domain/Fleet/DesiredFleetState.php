@@ -7,13 +7,15 @@ namespace App\Domain\Fleet;
 use App\Data\Fleet\DesiredAgentData;
 use App\Data\Fleet\DesiredCliReleaseData;
 use App\Data\Fleet\DesiredFleetStateData;
+use Illuminate\Contracts\Cache\LockProvider;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Cache\Repository;
 use Illuminate\Support\Facades\Config;
 
 /**
  * The desired fleet state of the running Gateway (ADR 0202): its commit, the CLI release CI published for that
- * commit, and the pinned agent. The release endpoint, `gateway:status`, the client version header, and the
- * fleet rollout all read it here.
+ * commit, and the pinned agent. The release endpoint, the scheduler, and the fleet rollout resolve it here;
+ * `gateway:status` and the client version header read only what is cached.
  *
  * A published release never changes, so a confirmed CLI release stays cached for its commit. A release that is
  * not there yet is asked for again after a minute, because CI publishes it a few minutes after the checks pass.
@@ -23,6 +25,11 @@ final readonly class DesiredFleetState
     public const int AvailableSeconds = 30 * 24 * 60 * 60;
 
     public const int UnavailableSeconds = 60;
+
+    /** How long one resolution may hold the lock, and how long another caller waits for it. */
+    public const int LockSeconds = 60;
+
+    public const int LockWaitSeconds = 30;
 
     private const string CacheKey = 'orbit:desired-fleet-state:v1:';
 
@@ -42,6 +49,30 @@ final readonly class DesiredFleetState
             return $cached;
         }
 
+        // One caller resolves a cold commit; the others wait for its answer instead of asking GitHub too.
+        $store = $this->cache->getStore();
+
+        if (! $store instanceof LockProvider) {
+            return $this->resolveAndStore($revision);
+        }
+
+        $lock = $store->lock(self::CacheKey.'lock:'.hash('sha256', $revision), self::LockSeconds);
+
+        try {
+            $lock->block(self::LockWaitSeconds);
+        } catch (LockTimeoutException) {
+            return $this->read($revision) ?? $this->resolveAndStore($revision);
+        }
+
+        try {
+            return $this->read($revision) ?? $this->resolveAndStore($revision);
+        } finally {
+            $lock->release();
+        }
+    }
+
+    private function resolveAndStore(string $revision): DesiredFleetStateData
+    {
         [$commit, $cli] = $this->resolve($revision);
         $this->cache->put(
             $this->key($revision),

@@ -18,7 +18,7 @@ final class GatewayStatusData extends Data
         public string $version,
         public string $phpVersion,
         public string $laravelVersion,
-        /** What the fleet should run for this Gateway's commit, or null for a caller that is not an active WireGuard peer. */
+        /** What the fleet should run for this Gateway's commit, as last resolved; null until it is resolved, and for a caller that is not an active WireGuard peer. */
         public ?DesiredFleetStateData $desiredFleetState,
     ) {}
 }

@@ -17,11 +17,13 @@ final class FakeSelfUpdateHost implements SelfUpdateHost
         public ?string $platform = 'linux-x86_64',
         public bool $root = false,
         public bool $managedNode = false,
+        public ?string $running = null,
     ) {}
 
+    /** The running binary: the plain `bin/orbit`, or a versioned file in the managed layout. */
     public function binaryPath(): string
     {
-        return $this->directory.'/bin/orbit';
+        return $this->running ?? $this->directory.'/bin/orbit';
     }
 
     public function runningBinary(): RunningBinary
@@ -60,5 +62,10 @@ final class FakeSelfUpdateHost implements SelfUpdateHost
     public function exitAfterReplacingItself(int $status): void
     {
         $this->exitedWith = $status;
+    }
+
+    public function lockPath(): string
+    {
+        return $this->directory.'/self-update.lock';
     }
 }

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Services\SelfUpdate\ReleaseLocation;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Process;
 use Saloon\Http\Faking\MockResponse;
@@ -28,43 +29,70 @@ function self_update_state_with_agent(string $fixture = 'gateway/self-update/ava
 {
     $body = json_decode(gateway_fixture($fixture)['body'], true, flags: JSON_THROW_ON_ERROR);
 
-    foreach ($body['data']['agent']['assets'] as $index => $asset) {
+    foreach (array_keys($body['data']['agent']['assets']) as $index) {
         $body['data']['agent']['assets'][$index]['sha256'] = hash('sha256', SELF_UPDATE_AGENT_BYTES);
     }
 
     return MockResponse::make($body);
 }
 
+/** The release `SHA256SUMS` of the stand-in agent, as `bin` release jobs write it. */
+function self_update_agent_sums(): string
+{
+    $digest = hash('sha256', SELF_UPDATE_AGENT_BYTES);
+
+    return "{$digest}  orbit-agent-0.3.0-linux-aarch64\n{$digest}  orbit-agent-0.3.0-linux-x86_64\n";
+}
+
 /**
- * Fakes the processes self-update starts: `curl` writes the named release asset, the candidate reports its
- * version, and `systemctl` succeeds unless told otherwise. Every command is recorded in `$this->processes`.
+ * Fakes the processes self-update starts: `curl` writes the release asset its URL names, the candidate reports
+ * its version, `systemctl restart` succeeds unless told otherwise, and `systemctl show` reports the agent
+ * active with the restart counts in `$restarts`, one per call. Every command is recorded in `$this->processes`.
  *
- * @param  array<string, string>  $downloads  Bytes to serve by asset name instead of the fixture files.
+ * @param  array<string, string>  $downloads  Bytes to serve by `<tag>/<asset>` instead of the stand-ins.
+ * @param  list<string>  $restarts  The NRestarts values `systemctl show` reports, the last one repeating.
  */
-function fake_self_update_processes(object $test, array $downloads = [], string $reported = 'Orbit 0.4681.0', int $restartExit = 0, ?Closure $onDownload = null): void
+function fake_self_update_processes(object $test, array $downloads = [], string $reported = 'Orbit 0.4681.0', int $restartExit = 0, ?Closure $onDownload = null, array $restarts = ['0']): void
 {
     $test->processes = [];
+    $shows = 0;
 
-    Process::fake(static function (PendingProcess $process) use ($test, $downloads, $reported, $restartExit, $onDownload) {
+    Process::fake(static function (PendingProcess $process) use ($test, $downloads, $reported, $restartExit, $onDownload, $restarts, &$shows) {
         $command = (array) $process->command;
         $test->processes[] = $command;
 
         if ($command[0] === 'curl') {
             $url = (string) end($command);
             $output = $command[array_search('--output', $command, true) + 1];
-            $name = basename($url);
+            $key = basename(dirname($url)).'/'.basename($url);
 
-            if ($onDownload instanceof Closure && ($result = $onDownload($name, $output)) !== null) {
+            if ($onDownload instanceof Closure && ($result = $onDownload($key, $output)) !== null) {
                 return $result;
             }
 
-            file_put_contents($output, $downloads[$name] ?? ($name === 'orbit-agent-0.3.0-linux-x86_64' ? SELF_UPDATE_AGENT_BYTES : self_update_release_bytes($name)));
+            $bytes = $downloads[$key] ?? match ($key) {
+                'agent-v0.3.0/SHA256SUMS' => self_update_agent_sums(),
+                'agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64' => SELF_UPDATE_AGENT_BYTES,
+                default => str_starts_with($url, ReleaseLocation::Default.'/cli-v0.4681.0/') ? self_update_release_bytes(basename($url)) : null,
+            };
+
+            if ($bytes === null) {
+                return Process::result(exitCode: 22, errorOutput: 'curl: (22) The requested URL returned error: 404');
+            }
+
+            file_put_contents($output, $bytes);
 
             return Process::result();
         }
 
         if (($command[1] ?? null) === '--version') {
             return Process::result(output: $reported."\n");
+        }
+
+        if ($command[0] === 'systemctl' && $command[1] === 'show') {
+            $value = $restarts[min($shows++, count($restarts) - 1)];
+
+            return Process::result(output: "NRestarts={$value}\nActiveState=active\n");
         }
 
         if ($command[0] === 'systemctl') {
@@ -75,12 +103,13 @@ function fake_self_update_processes(object $test, array $downloads = [], string 
     });
 }
 
-/** @return list<string> The command names the fake recorded, such as `curl SHA256SUMS`. */
+/** @return list<string> The commands the fake recorded, such as `curl cli-v0.4681.0/SHA256SUMS`. */
 function self_update_commands(object $test): array
 {
     return array_map(static fn (array $command): string => match (true) {
-        $command[0] === 'curl' => 'curl '.basename((string) end($command)),
+        $command[0] === 'curl' => 'curl '.basename(dirname((string) end($command))).'/'.basename((string) end($command)),
         ($command[1] ?? null) === '--version' => 'version',
+        $command[0] === 'systemctl' && $command[1] === 'show' => 'systemctl show',
         default => implode(' ', $command),
     }, $test->processes);
 }

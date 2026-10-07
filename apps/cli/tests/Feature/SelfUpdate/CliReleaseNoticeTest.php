@@ -16,9 +16,9 @@ use Tests\Support\CapturedConsoleOutput;
 
 const CLI_NOTICE_TEXT = 'Orbit 0.4681.0 is available (this is 0.4600.0). Run orbit self-update.';
 
-function cli_release_notice(string $home, string $current = '0.4600.0', ?Closure $clock = null): CliReleaseNotice
+function cli_release_notice(string $home, string $current = '0.4600.0', ?Closure $clock = null, bool $terminal = true): CliReleaseNotice
 {
-    return new CliReleaseNotice($home.'/'.CliReleaseNotice::StateFile, $current, CliReleaseNotice::IntervalSeconds, $clock);
+    return new CliReleaseNotice($home.'/'.CliReleaseNotice::StateFile, $current, CliReleaseNotice::IntervalSeconds, $clock, static fn (mixed $stream): bool => $terminal);
 }
 
 function gateway_status_with_cli_version(?string $version): MockResponse
@@ -39,12 +39,16 @@ function run_with_captured_streams(string $command): CapturedConsoleOutput
 }
 
 beforeEach(function (): void {
+    // CI runs set CI, which silences the notice; each test sets it itself.
+    $this->ci = getenv('CI');
+    putenv('CI');
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-notice-'.Str::uuid();
     mkdir($this->orbitHome, 0700, true);
     $this->now = 1_791_000_000;
 });
 
 afterEach(function (): void {
+    putenv($this->ci === false ? 'CI' : 'CI='.$this->ci);
     MockClient::destroyGlobal();
     app()->forgetInstance(CliReleaseNotice::class);
     new Filesystem()->deleteDirectory($this->orbitHome);
@@ -55,25 +59,25 @@ describe(CliReleaseNotice::class, function (): void {
         $notice = cli_release_notice($this->orbitHome, clock: fn (): int => $this->now);
         $notice->observe('0.4681.0');
 
-        expect($notice->due())->toBe(CLI_NOTICE_TEXT)
-            ->and($notice->due())->toBeNull();
+        expect($notice->due(STDERR))->toBe(CLI_NOTICE_TEXT)
+            ->and($notice->due(STDERR))->toBeNull();
 
         $this->now += CliReleaseNotice::IntervalSeconds - 1;
-        expect($notice->due())->toBeNull();
+        expect($notice->due(STDERR))->toBeNull();
 
         $this->now += 1;
-        expect($notice->due())->toBe(CLI_NOTICE_TEXT);
+        expect($notice->due(STDERR))->toBe(CLI_NOTICE_TEXT);
     });
 
     it('keeps the throttle across runs in a private file under ORBIT_HOME', function (): void {
         $first = cli_release_notice($this->orbitHome, clock: fn (): int => $this->now);
         $first->observe('0.4681.0');
-        $first->due();
+        $first->due(STDERR);
 
         $second = cli_release_notice($this->orbitHome, clock: fn (): int => $this->now + 3600);
         $second->observe('0.4690.0');
 
-        expect($second->due())->toBeNull()
+        expect($second->due(STDERR))->toBeNull()
             ->and(json_decode((string) file_get_contents($this->orbitHome.'/self-update-notice.json'), true))->toBe(['notified_at' => $this->now, 'version' => '0.4681.0'])
             ->and(fileperms($this->orbitHome.'/self-update-notice.json') & 0777)->toBe(0600);
     });
@@ -82,7 +86,7 @@ describe(CliReleaseNotice::class, function (): void {
         $notice = cli_release_notice($this->orbitHome, $current);
         $notice->observe($desired);
 
-        expect($notice->due())->toBeNull()
+        expect($notice->due(STDERR))->toBeNull()
             ->and(file_exists($this->orbitHome.'/self-update-notice.json'))->toBeFalse();
     })->with([
         'same release' => ['0.4681.0', '0.4681.0'],
@@ -93,11 +97,27 @@ describe(CliReleaseNotice::class, function (): void {
         'malformed header' => ['0.4600.0', '0.4681'],
     ]);
 
-    it('says nothing when it cannot record the notice, so it never repeats on every command', function (): void {
-        $notice = new CliReleaseNotice('/proc/orbit-unwritable/'.CliReleaseNotice::StateFile, '0.4600.0');
+    it('says nothing when standard error is not a terminal', function (): void {
+        $notice = new CliReleaseNotice($this->orbitHome.'/'.CliReleaseNotice::StateFile, '0.4600.0');
         $notice->observe('0.4681.0');
 
-        expect($notice->due())->toBeNull();
+        expect($notice->due(fopen('php://memory', 'w+b')))->toBeNull()
+            ->and(file_exists($this->orbitHome.'/self-update-notice.json'))->toBeFalse();
+    });
+
+    it('says nothing under CI, even on a terminal', function (): void {
+        $notice = cli_release_notice($this->orbitHome);
+        $notice->observe('0.4681.0');
+        putenv('CI=true');
+
+        expect($notice->due(STDERR))->toBeNull();
+    });
+
+    it('says nothing when it cannot record the notice, so it never repeats on every command', function (): void {
+        $notice = new CliReleaseNotice('/proc/orbit-unwritable/'.CliReleaseNotice::StateFile, '0.4600.0', isTerminal: static fn (mixed $stream): bool => true);
+        $notice->observe('0.4681.0');
+
+        expect($notice->due(STDERR))->toBeNull();
     });
 });
 
@@ -105,7 +125,8 @@ describe('the newer-release notice on Gateway commands', function (): void {
     beforeEach(function (): void {
         config()->set('orbit.home', $this->orbitHome);
         config()->set('app.version', '0.4600.0');
-        app()->forgetInstance(CliReleaseNotice::class);
+        // The captured standard error is not a terminal; these tests stand in for one.
+        app()->instance(CliReleaseNotice::class, cli_release_notice($this->orbitHome));
         app()->forgetInstance(GatewayConfigRepository::class);
         app(GatewayConfigRepository::class)->add(new GatewayProfile(name: 'default', url: 'https://10.44.0.1', caPath: '/home/orbit/.orbit/ca/root.pem'));
     });
@@ -119,7 +140,7 @@ describe('the newer-release notice on Gateway commands', function (): void {
             ->and($first->stdout())->not->toContain('self-update')
             ->and($mock->getLastPendingRequest()?->headers()->get('X-Orbit-Client-Version'))->toBe('0.4600.0');
 
-        app()->forgetInstance(CliReleaseNotice::class);
+        app()->instance(CliReleaseNotice::class, cli_release_notice($this->orbitHome));
         MockClient::destroyGlobal();
         MockClient::global([ShowGatewayStatusRequest::class => gateway_status_with_cli_version('0.4681.0')]);
 

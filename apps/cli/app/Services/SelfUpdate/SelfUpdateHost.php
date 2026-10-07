@@ -34,4 +34,7 @@ interface SelfUpdateHost
      * by path, and that path now holds the new binary, so the process must not load more code.
      */
     public function exitAfterReplacingItself(int $status): void;
+
+    /** The file `orbit self-update` locks while it runs. */
+    public function lockPath(): string;
 }

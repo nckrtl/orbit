@@ -49,12 +49,14 @@ afterEach(function (): void {
 describe('self-update contract', function (): void {
     it('updates the CLI to the published release', function (): void {
         run_self_update_contract($this, 'gateway/self-update/available', 'self-update', [], 'gateway/self-update/updated.human.txt', 0);
+        new Filesystem()->cleanDirectory($this->machine.'/bin');
         file_put_contents($this->machine.'/bin/orbit', "#!/bin/sh\necho 'Orbit 0.4600.0'\n");
+        chmod($this->machine.'/bin/orbit', 0755);
         run_self_update_contract($this, 'gateway/self-update/available', 'self-update', ['--json' => true], 'gateway/self-update/updated.json', 0);
     });
 
     it('reports a checksum mismatch and changes nothing', function (): void {
-        fake_self_update_processes($this, ['orbit-0.4681.0-linux-x86_64' => "tampered\n"]);
+        fake_self_update_processes($this, ['cli-v0.4681.0/orbit-0.4681.0-linux-x86_64' => "tampered\n"]);
 
         run_self_update_contract($this, 'gateway/self-update/available', 'self-update', [], 'gateway/self-update/checksum-mismatch.human.txt', 1);
         run_self_update_contract($this, 'gateway/self-update/available', 'self-update', ['--json' => true], 'gateway/self-update/checksum-mismatch.json', 1);

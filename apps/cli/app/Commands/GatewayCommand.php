@@ -112,7 +112,7 @@ abstract class GatewayCommand extends Command
         }
 
         try {
-            $notice = app(CliReleaseNotice::class)->due();
+            $notice = app(CliReleaseNotice::class)->due(ConsoleMode::outputStream($output->getErrorOutput()));
         } catch (Throwable) {
             return;
         }

@@ -1873,7 +1873,7 @@
       "name": "gateway-status",
       "extension": null,
       "title": "Show Gateway status",
-      "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `desired_fleet_state`, the object `gateway:desired-fleet-state` returns; for any other caller that field is null.",
+      "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.",
       "method": "GET",
       "path": "/api/v1/gateway/status",
       "path_inputs": [],

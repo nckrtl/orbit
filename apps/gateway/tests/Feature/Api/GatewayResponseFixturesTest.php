@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\DesiredFleetState;
 use Illuminate\Support\Facades\Http;
 use Orbit\Sdk\Requests\Gateway\ShowDesiredFleetStateRequest;
 use Orbit\Sdk\Requests\Gateway\ShowGatewayStatusRequest;
@@ -56,6 +57,8 @@ describe('gateway response fixtures', function (): void {
     it('records the Gateway status fixtures with the desired state for an active peer', function (): void {
         desired_fleet_state_peer();
         fake_cli_release_github();
+        // The scheduler resolves the state; the status request reads it from the cache.
+        app(DesiredFleetState::class)->current();
 
         $response = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7'])
             ->getJson('/api/v1/gateway/status')

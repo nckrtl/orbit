@@ -2,8 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\DesiredFleetState;
+use App\Domain\Fleet\ReleaseHistory;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
+use Illuminate\Cache\ArrayStore;
+use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Cache\Lock;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 
@@ -110,6 +116,46 @@ describe(DesiredFleetState::class, function (): void {
         Http::preventStrayRequests();
 
         expect(app(DesiredFleetState::class)->current()->cli->toArray()['reason'])->toBe('history_unavailable');
+    });
+
+    it('resolves a cold commit under a lock and reads the answer another caller stored while it waited', function (): void {
+        fake_release_history();
+        Http::preventStrayRequests();
+        $store = new ArrayStore;
+        $cache = new Repository($store);
+        $lock = mock(Lock::class);
+        // The other caller stores its answer while this one waits for the lock.
+        $lock->shouldReceive('block')->once()->with(DesiredFleetState::LockWaitSeconds)->andReturnUsing(static function () use ($cache): bool {
+            $cache->put('orbit:desired-fleet-state:v1:'.hash('sha256', CLI_RELEASE_FIXTURE_COMMIT), [
+                'commit' => CLI_RELEASE_FIXTURE_COMMIT,
+                'cli' => ['status' => 'pending', 'reason' => 'release_missing', 'version' => '0.4681.0', 'tag' => 'cli-v0.4681.0', 'checksums_url' => null, 'assets' => []],
+            ], 60);
+
+            return true;
+        });
+        $lock->shouldReceive('release')->once();
+        $locks = Mockery::mock(ArrayStore::class)->makePartial();
+        $locks->shouldReceive('lock')->once()->andReturn($lock);
+        $locks->shouldReceive('get')->andReturnUsing(static fn (string $key): mixed => $store->get($key));
+
+        $state = new DesiredFleetState(app(ReleaseHistory::class), app(CliReleaseCatalog::class), new Repository($locks));
+
+        expect($state->current()->cli->status->value)->toBe('pending');
+        Http::assertNothingSent();
+    });
+
+    it('resolves after the lock wait when the holder never answers', function (): void {
+        fake_release_history();
+        fake_cli_release_github();
+        $lock = mock(Lock::class);
+        $lock->shouldReceive('block')->once()->andThrow(new LockTimeoutException);
+        $lock->shouldNotReceive('release');
+        $store = Mockery::mock(ArrayStore::class)->makePartial();
+        $store->shouldReceive('lock')->once()->andReturn($lock);
+
+        $state = new DesiredFleetState(app(ReleaseHistory::class), app(CliReleaseCatalog::class), new Repository($store));
+
+        expect($state->current()->cli->version)->toBe('0.4681.0');
     });
 
     it('reads nothing but the cache for the cached state', function (): void {

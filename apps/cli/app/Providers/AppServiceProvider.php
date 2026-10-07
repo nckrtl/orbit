@@ -13,6 +13,7 @@ use App\Services\Profile\CurlProfileRequestProfiler;
 use App\Services\Profile\ProfileRequestProfiler;
 use App\Services\SelfUpdate\CliReleaseNotice;
 use App\Services\SelfUpdate\NativeSelfUpdateHost;
+use App\Services\SelfUpdate\ReleaseLocation;
 use App\Services\SelfUpdate\SelfUpdateHost;
 use App\Support\Console\StandardInput;
 use App\Support\Console\StandardInputReader;
@@ -62,6 +63,10 @@ final class AppServiceProvider extends ServiceProvider
                 statePath: OrbitHome::path().'/'.CliReleaseNotice::StateFile,
                 currentVersion: is_string($version = config('app.version')) ? $version : '',
             ),
+        );
+        $this->app->bind(
+            ReleaseLocation::class,
+            static fn (): ReleaseLocation => new ReleaseLocation(Config::string('orbit.self_update.releases')),
         );
         $this->app->bind(
             SelfUpdateHost::class,

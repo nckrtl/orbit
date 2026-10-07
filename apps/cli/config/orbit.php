@@ -20,6 +20,9 @@ return [
     'self_update' => [
         'agent_unit' => '/etc/systemd/system/orbit-agent.service',
         'agent_binary' => '/usr/local/bin/orbit-agent',
+        // Where Orbit's releases are downloaded from. The CLI builds every download URL from this base and never
+        // takes one from the Gateway. Override it only for a mirror you trust.
+        'releases' => env(key: 'ORBIT_SELF_UPDATE_RELEASES', default: 'https://github.com/nckrtl/orbit/releases/download'),
     ],
 
     'github' => [

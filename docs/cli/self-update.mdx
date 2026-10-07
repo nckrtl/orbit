@@ -71,7 +71,8 @@ JSON output is one result:
 | `updated` | The binary was replaced. | A step changed something. Exit 0. |
 | `unchanged` | The binary already matches. | Nothing changed. Exit 0. |
 | `pending` | The Gateway's CLI release is not published yet. Nothing changed. | Run the command again in a few minutes. Exit 0. |
-| `skipped` | The step does not apply here; `reason` says why. | Not a top-level outcome. |
+| `incomplete` | Not a step outcome. | A step that applies here was skipped: the CLI release is unavailable, or the agent needs root. The machine is not up to date. Exit 0. |
+| `skipped` | The step did not run; `reason` says why. | Not a top-level outcome. A skip because the step does not apply here, such as `not_managed_node`, leaves the command `unchanged`. |
 | `failed` | The step failed; `error` says why. The CLI step does not run after a failed agent step. | Exit 1. |
 
 | Error code | Meaning |
@@ -83,10 +84,12 @@ JSON output is one result:
 | `self_update.download_failed` | `curl` could not download an asset. Nothing changed. |
 | `self_update.not_writable` | The command may not write to the directory of the binary. Run it with `sudo`. |
 | `self_update.install_failed` | The new binary could not be put in place. The old binary is still there. |
-| `agent.checksum_mismatch`, `agent.download_failed`, `agent.install_failed`, `agent.not_writable` | The same failures for `orbit-agent`. Nothing changed. |
-| `agent.restart_failed` | The new `orbit-agent` is in place, but `systemctl restart orbit-agent.service` failed. |
+| `self_update.release_mismatch` | The Gateway names a download that is not the Orbit release asset this CLI builds. Nothing was downloaded. |
+| `agent.checksum_mismatch`, `agent.download_failed`, `agent.install_failed`, `agent.not_writable`, `agent.release_mismatch` | The same failures for `orbit-agent`. Nothing changed. |
+| `agent.restart_failed` | `systemctl restart orbit-agent.service` failed for the new agent. The message says whether the previous agent was restored and runs. |
+| `agent.unhealthy` | The new agent did not stay active for 5 seconds. The message says whether the previous agent was restored and runs. |
 
-A failure before the steps start, such as `gateway.profile_missing` or `gateway.unreachable`, prints the usual JSON error envelope.
+A failure before the steps start, such as `gateway.profile_missing`, `gateway.unreachable`, or `self_update.busy` when another self-update holds the lock for 120 seconds, prints the usual JSON error envelope.
 
 ## The newer-release notice
 
@@ -96,7 +99,7 @@ After any other command that reached the Gateway, the CLI prints one line on sta
 Orbit 0.4681.0 is available (this is 0.4600.0). Run orbit self-update.
 ```
 
-It never appears in JSON output. [The newer-release notice](/reference/self-update#the-newer-release-notice) describes the headers and the throttle.
+It appears only when standard error is a terminal and `CI` is unset, and never in JSON output. [The newer-release notice](/reference/self-update#the-newer-release-notice) describes the headers and the throttle.
 
 ## Related
 

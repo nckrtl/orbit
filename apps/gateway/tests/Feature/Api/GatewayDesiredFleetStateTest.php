@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Fleet\DesiredFleetState;
+use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
 use Illuminate\Console\Scheduling\Schedule;
@@ -55,6 +56,34 @@ describe('GET /api/v1/gateway/desired-fleet-state', function (): void {
 });
 
 describe('GET /api/v1/gateway/status desired fleet state', function (): void {
+    it('never asks Git or GitHub, so release verification cannot wait on GitHub', function (): void {
+        config()->set('app.version', CLI_RELEASE_FIXTURE_COMMIT);
+        desired_fleet_state_peer();
+        $history = mock(ReleaseHistory::class);
+        $history->shouldNotReceive('commit', 'count');
+        app()->instance(ReleaseHistory::class, $history);
+        Http::preventStrayRequests();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7'])
+            ->getJson('/api/v1/gateway/status')
+            ->assertOk()
+            ->assertJsonPath('data.desired_fleet_state', null);
+        Http::assertNothingSent();
+    });
+
+    it('shows the state the scheduler resolved', function (): void {
+        config()->set('app.version', CLI_RELEASE_FIXTURE_COMMIT);
+        desired_fleet_state_peer();
+        fake_release_history();
+        fake_cli_release_github();
+        $this->artisan('orbit:desired-fleet-state')->assertSuccessful();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.7'])
+            ->getJson('/api/v1/gateway/status')
+            ->assertOk()
+            ->assertJsonPath('data.desired_fleet_state.cli.version', '0.4681.0');
+    });
+
     it('leaves the desired state out for a caller that is not an active peer, without asking GitHub', function (): void {
         Http::preventStrayRequests();
 

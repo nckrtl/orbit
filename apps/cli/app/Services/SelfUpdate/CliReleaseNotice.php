@@ -11,7 +11,7 @@ use JsonException;
  * Tells the operator, at most once per interval, that the Gateway's fleet runs a newer CLI release (ADR 0202).
  * The Gateway names that release in the `X-Orbit-Cli-Version` response header. The time of the last notice is
  * kept in `$ORBIT_HOME/self-update-notice.json`. Only a release binary compares versions: a source checkout or
- * another build never gets the notice.
+ * another build never gets the notice. It goes only to a terminal on standard error, and never under CI.
  */
 final class CliReleaseNotice
 {
@@ -26,14 +26,22 @@ final class CliReleaseNotice
     /** @var Closure(): int */
     private readonly Closure $clock;
 
-    /** @param  (Closure(): int)|null  $clock */
+    /** @var Closure(mixed): bool */
+    private readonly Closure $isTerminal;
+
+    /**
+     * @param  (Closure(): int)|null  $clock
+     * @param  (Closure(mixed): bool)|null  $isTerminal  Whether a stream is a terminal.
+     */
     public function __construct(
         private readonly string $statePath,
         private readonly string $currentVersion,
         private readonly int $intervalSeconds = self::IntervalSeconds,
         ?Closure $clock = null,
+        ?Closure $isTerminal = null,
     ) {
         $this->clock = $clock ?? time(...);
+        $this->isTerminal = $isTerminal ?? static fn (mixed $stream): bool => is_resource($stream) && stream_isatty($stream);
     }
 
     /** Remembers the newest release a Gateway response named. */
@@ -46,13 +54,23 @@ final class CliReleaseNotice
         }
     }
 
-    /** The notice to print now, or null. A returned notice is recorded, so the next one waits a full interval. */
-    public function due(): ?string
+    /**
+     * The notice to print now on `$stream`, or null. It is printed only to a terminal and never under CI. A
+     * returned notice is recorded, so the next one waits a full interval.
+     *
+     * @param  resource|null  $stream
+     */
+    public function due(mixed $stream): ?string
     {
         $current = self::number($this->currentVersion);
         $desired = self::number($this->desiredVersion);
+        $ci = getenv('CI');
 
-        if ($current === null || $desired === null || $desired <= $current || ! $this->intervalElapsed()) {
+        if ($current === null || $desired === null || $desired <= $current || ! ($this->isTerminal)($stream) || ($ci !== false && $ci !== '')) {
+            return null;
+        }
+
+        if (! $this->intervalElapsed()) {
             return null;
         }
 

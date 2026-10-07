@@ -40,6 +40,12 @@ final readonly class NodeAgentFootprint
 
     public const string CandidateSuffix = '.orbit-candidate';
 
+    /**
+     * The Node-local lock that `orbit self-update` holds while it replaces and restarts the agent. The converge
+     * moves its binary into place under the same lock, so the two never swap the agent at the same time.
+     */
+    public const string UpdateLockPath = '/run/lock/orbit-self-update.lock';
+
     public static function checksum(string $architecture): string
     {
         $manifest = self::ReleaseManifests[self::Version];

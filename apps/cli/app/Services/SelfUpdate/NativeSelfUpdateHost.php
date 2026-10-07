@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Services\SelfUpdate;
 
 use App\Support\EffectiveUser;
+use App\Support\OrbitHome;
 use Phar;
 
 final readonly class NativeSelfUpdateHost implements SelfUpdateHost
@@ -93,5 +94,14 @@ final readonly class NativeSelfUpdateHost implements SelfUpdateHost
     public function exitAfterReplacingItself(int $status): never
     {
         exit($status);
+    }
+
+    public function lockPath(): string
+    {
+        return match (true) {
+            ! $this->isRoot() => OrbitHome::path().'/self-update.lock',
+            PHP_OS_FAMILY === 'Linux' => '/run/lock/orbit-self-update.lock',
+            default => '/var/run/orbit-self-update.lock',
+        };
     }
 }

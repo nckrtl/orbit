@@ -418,7 +418,10 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $this->run($node, new RemoteCommand(['sudo', 'chown', 'root:root', '--', $candidate]), 'agent.install_failed');
         $this->run($node, new RemoteCommand(['sudo', 'chmod', '0755', '--', $candidate]), 'agent.install_failed');
         $beforeSwap();
-        $this->run($node, new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, NodeAgentFootprint::BinaryPath]), 'agent.install_failed');
+        $this->run($node, new RemoteCommand([
+            'sudo', 'flock', '--timeout', '120', NodeAgentFootprint::UpdateLockPath,
+            'mv', '-fT', '--', $candidate, NodeAgentFootprint::BinaryPath,
+        ]), 'agent.install_failed');
 
         return true;
     }
