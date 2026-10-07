@@ -74,7 +74,7 @@ The archive contains secrets. Do not attach it to a bug report or commit it to G
 
 ## Release layout
 
-A Gateway in the release layout runs from immutable releases instead of an in-place checkout. Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
+A Gateway in the release layout runs from immutable releases instead of an in-place checkout ([ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main)). Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
 
 | Path | Content |
 | --- | --- |
