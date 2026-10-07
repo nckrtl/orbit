@@ -17,3 +17,10 @@ it('publishes only an owned candidate pair and cleans partial outputs without de
 
     expect($process->getExitCode())->toBe(0);
 });
+
+it('verifies pinned cold-build inputs and refuses unsafe archives without extracting files', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/Compute/template_inputs_test.py'), resource_path('compute/template-inputs.py')]);
+    $process->mustRun();
+
+    expect($process->getExitCode())->toBe(0);
+});

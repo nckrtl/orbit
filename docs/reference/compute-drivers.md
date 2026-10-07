@@ -301,6 +301,14 @@ The host validates the complete template before creating resources. It copies th
 
 This copy protocol is an internal building block. Image sanitation, source adoption, pair retargeting, and runtime readiness must all pass before a scheduler claim can use a saved pair. VM claims remain gated until the full lane is proven.
 
+### Verify cold-build inputs
+
+`bin/sandbox-template-inputs --check` validates an offline input set before candidate construction. It accepts a JSON object on standard input with exactly `root`, `packages`, `tools`, `source`, and `composer`. `root` is an absolute directory. `packages` is a nonempty list; the other three inputs are single objects. Each object contains exactly `file` and `sha256`. File names are relative to `root`; parent traversal, symlinks, duplicate paths, and nonregular files are refused. Package names must end in `.deb` and must encode an epoch separator as `%3a`, rather than a literal colon, because APT can silently ignore local paths containing a colon.
+
+The command verifies every SHA-256 digest and checks both gzip tar archives without extracting them. Source entries must remain inside the source root. Tool entries are limited to the Node and Vite+ trees under `opt/orbit-image` and the Bun, Pi server, and Orbit Agent binaries under `usr/local/bin`. Links cannot escape those boundaries. Hard links must refer to an earlier regular file. Duplicate entries, link ancestors, devices, FIFOs, privileged mode bits, and oversized archives are refused. Success returns file hashes and archive counts; errors return a fixed code without input paths or file contents.
+
+Input verification does not install packages, create a candidate, certify upstream provenance, or publish an image. The builder must obtain packages and tool checksums from trusted sources, import the pinned commit's green CI baselines, and verify the same inputs again in the guest before use. Keep package acquisition outside the guests. Install the closed package set with an empty APT index and no external source; keep removals and downgrades disabled. Complete native enrollment and the publisher's guest audit before marking a template ready.
+
 ### Prepare a copied source volume
 
 The internal `guest-template-source.py` helper prepares a disposable source copy before publication. Run it as the managed user, with a JSON request on standard input containing `checkout` and `source_template`. The descriptor has exactly `id`, `repository`, `base`, and `commit`. The copy must already contain `.git/orbit-template-candidate.json` with that descriptor. The host builder must verify its own candidate volume and exclusive attachment before writing this marker.

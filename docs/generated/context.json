@@ -1208,7 +1208,8 @@
                 "Role",
                 "Route",
                 "Task",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": [
                 "0200"
