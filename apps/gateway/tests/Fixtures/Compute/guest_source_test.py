@@ -72,6 +72,10 @@ class GuestSource(unittest.TestCase):
         self.git(self.target, 'config', 'remote.origin.url', 'https://github.com/acme/other.git')
         with self.assertRaises(ValueError):
             self.call('initialize')
+        for operation in ['checkout', 'inspect']:
+            with self.assertRaises(ValueError):
+                self.call(operation)
+        self.git(self.target, 'config', 'remote.origin.url', self.request['repository'])
         self.git(self.target, 'checkout', '-qb', 'human-work')
         with self.assertRaises(ValueError):
             self.call('checkout')

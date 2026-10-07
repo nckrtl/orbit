@@ -65,13 +65,13 @@ finally:
         raise ValueError('Source ownership does not match')
     if request['operation'] == 'initialize':
         git(root, 'init', '--quiet', '--initial-branch=' + branch)
-        git(root, 'check-ref-format', 'refs/heads/' + base)
-        existing = [line for line in git(root, 'config', '--local', '--list').splitlines() if line.startswith('remote.')]
-        if existing and existing != ['remote.origin.url=' + repository]:
-            raise ValueError('The checkout has unexpected remote configuration')
+    git(root, 'check-ref-format', 'refs/heads/' + base)
+    existing = [line for line in git(root, 'config', '--local', '--list').splitlines() if line.startswith('remote.')]
+    if existing != ['remote.origin.url=' + repository] and not (request['operation'] == 'initialize' and not existing):
+        raise ValueError('The checkout has unexpected remote configuration')
+    if request['operation'] == 'initialize':
         git(root, 'config', '--local', 'remote.origin.url', repository)
         return {'initialized': True}
-    git(root, 'check-ref-format', 'refs/heads/' + base)
     if not has_ref(root, 'refs/heads/' + branch):
         if request['operation'] == 'inspect' or git(root, 'status', '--porcelain'):
             raise ValueError('The checkout is not ready or contains uncommitted files')
