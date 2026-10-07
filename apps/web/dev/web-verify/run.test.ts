@@ -509,8 +509,6 @@ it("does not let demo adapters call the CLI or an upstream service", async () =>
     const home = mkdtempSync(join(tmpdir(), "orbit-web-verify-demo-"));
     try {
         const opened = run(home, ["open", "/activity"], {
-            COMMANDER_MCP_TOKEN: "secret",
-            COMMANDER_URL: `http://127.0.0.1:${port}`,
             ANNOTATION_TRANSCRIPTION_TARGET: `http://127.0.0.1:${port}`,
         });
         expect(opened.status).toBe(0);
@@ -520,16 +518,6 @@ it("does not let demo adapters call the CLI or an upstream service", async () =>
         expect(await profile.json()).toEqual({
             ok: false,
             output: "Demo mode does not run orbit profile.",
-        });
-
-        const commander = await fetch(`${origin}/__orbit/commander/one-shot`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title: "x", creation_key: "y", kind: "one-shot" }),
-        });
-        expect(await commander.json()).toEqual({
-            ok: false,
-            error: "Demo mode does not call Commander.",
         });
 
         const thread = await fetch(`${origin}/__annotate/thread`);

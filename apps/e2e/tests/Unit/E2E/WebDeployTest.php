@@ -11,14 +11,13 @@ function webDeployFixture(): array
     $tools = $root.'/tools';
     $web = $root.'/gateway/web';
     $repository = $root.'/repository';
-    foreach ([$repository.'/bin', $repository.'/apps/web', $repository.'/packages/agent-annotation', $tools, $web.'/releases'] as $directory) {
+    foreach ([$repository.'/bin', $repository.'/apps/web', $tools, $web.'/releases'] as $directory) {
         mkdir($directory, 0700, true);
     }
     copy(dirname(__DIR__, 5).'/bin/web-deploy', $repository.'/bin/web-deploy');
     chmod($repository.'/bin/web-deploy', 0755);
     file_put_contents($repository.'/.gitignore', "apps/web/dist/\napps/web/.env.local\n");
     file_put_contents($repository.'/apps/web/package.json', "{}\n");
-    file_put_contents($repository.'/packages/agent-annotation/package.json', "{}\n");
 
     // `bun run build` writes a small release named after the commit, so each deploy is distinguishable.
     file_put_contents($tools.'/bun', <<<'BASH'

@@ -46,28 +46,9 @@ The URL carries the section, the open record, and the node and project filters. 
 - `src/update`: the build check that moves an open page to a newer release; `dev/build-id.ts` embeds the build id and writes `version.json`.
 - `tests/browser`: the browser tests and the expected screens.
 
-## Annotation (toolbar pin tool)
+## Annotation
 
-The SPA includes the laravel-toolbar **Annotation** overlay (pin / comment / overlay), not the stock `agentation` npm package. Footer chrome: the ✎ control toggles annotation mode; the open pin count shows beside it.
-
-### Commander one-shot
-
-When you submit a pin, Orbit web:
-
-1. Persists the annotation in `localStorage` (same toolbar storage prefix).
-2. POSTs to same-origin `/__orbit/commander/one-shot`, which the Vite middleware forwards to Commander MCP `create-task` with `kind=one-shot` and `creation_key=annotation:{id}` — the same contract as toolbar `CommanderClient` → `SubmitOneShotTask`.
-
-Environment (dev machine / shell that runs `vp dev`):
-
-```bash
-export COMMANDER_URL=https://commander.test          # default
-export COMMANDER_MCP_TOKEN=…                         # required for a live task
-export VITE_COMMANDER_PROJECT=commander              # project id (toolbar default)
-export COMMANDER_CA_PATH=/path/to/herd-ca.pem     # optional; *.test defaults to insecure TLS for Node
-# VITE_COMMANDER_ENABLED=0                           # disable one-shot submit
-```
-
-Without `COMMANDER_MCP_TOKEN`, the adapter returns a dry-run acknowledgment so the overlay UX still works locally.
+The SPA mounts the [`@nckrtl/annotator`](https://github.com/nckrtl/annotator) overlay in `src/main.tsx`. With `VITE_ANNOTATION_SERVICE_URL` set, `src/annotation/orbit-transport.ts` adds the **Orbit** delivery mode: it checks that the tasks extension is enabled, sends annotations to the Instance annotation endpoint as tasks for a T3 thread, and refreshes on the app's realtime annotation events. `VITE_ANNOTATION_THREAD_ID` sets the thread; in development, `/__annotate/thread` detects it from the T3 state database. The overlay's local server mode works without Orbit.
 
 ## Tests
 
@@ -99,4 +80,4 @@ bun run build
 
 ## Annotation package
 
-The overlay is maintained in `packages/agent-annotation`. Vite loads its source for live edits. Run `bun install` in that package before starting the web app. Set `VITE_ANNOTATION_TRANSCRIPTION_URL` in `.env.local` to a Diction-compatible WebSocket URL or same-origin route. Speech is disabled without a URL. Set `VITE_ANNOTATION_AUTO_START=0` to start recording only from the microphone button. Restart the dev server after editing environment settings. See `docs/reference/agent-annotation.md` for installation and injection.
+The overlay is the published `@nckrtl/annotator` package, maintained in its own repository. Update it with `bun update @nckrtl/annotator`, then run `bin/annotator-build` so the Gateway serves the same version. Set `VITE_ANNOTATION_TRANSCRIPTION_URL` in `.env.local` to a Diction-compatible WebSocket URL or same-origin route. Speech is disabled without a URL. Set `VITE_ANNOTATION_AUTO_START=0` to start recording only from the microphone button. Restart the dev server after editing environment settings. See `docs/reference/agent-annotation.md` for installation and injection.

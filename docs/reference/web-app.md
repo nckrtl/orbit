@@ -260,7 +260,7 @@ Both builds hold `version.json` at the top, next to `index.html`, so [open pages
 bin/web-deploy
 ```
 
-The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases. It never removes the release `current` serves, or the build of a retained Gateway release, one whose `releases/<id>/REVISION` exists in the Gateway releases directory. So a manual run never removes a build that a Gateway rollback needs.
+The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases. It never removes the release `current` serves, or the build of a retained Gateway release, one whose `releases/<id>/REVISION` exists in the Gateway releases directory. So a manual run never removes a build that a Gateway rollback needs.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |

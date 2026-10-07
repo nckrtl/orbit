@@ -88,7 +88,6 @@ final readonly class StaticProofInputPolicy
             || str_starts_with($path, 'apps/desktop/')
             || str_starts_with($path, 'apps/web/')
             || str_starts_with($path, 'apps/pi-server/')
-            || str_starts_with($path, 'packages/agent-annotation/')
             || str_starts_with($path, '.github/')
         ) {
             return ProofInputClassification::NonRuntime;
