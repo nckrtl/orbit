@@ -250,3 +250,5 @@ Merge and cancellation remove an Orbit-lane workspace through its sandbox reserv
 Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. Project-lane cleanup refuses while its Node is enrolled; fleet removal remains a rollout prerequisite.
 
 The sweep retries reservations with no Instance when their group has ended or been deleted. It does not adopt unrecorded host resources or remove an active group's reservation. Failed retries use the workspace sweep's time budget and backoff.
+
+The saved Orbit pair needs its network identity updated after cloning. The guest helper accepts either the existing four-Node topology or exactly a Gateway and a roleless operator. For the pair, it refuses additional Nodes or operator roles before changing addresses. It preserves private addresses, keys, DNS policy, and other settings while replacing the stored SSH addresses and Gateway endpoints.

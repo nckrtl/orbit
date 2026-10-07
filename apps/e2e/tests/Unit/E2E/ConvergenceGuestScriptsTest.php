@@ -1553,7 +1553,7 @@ describe('convergence guest scripts', function () {
         }
     })->with([
         'no addresses' => [[]],
-        'missing production address' => [['10.232.7.10', '10.232.7.11']],
+        'missing pair peer address' => [['10.232.7.10']],
         'unexpected fifth address' => [['10.232.7.10', '10.232.7.11', '10.232.7.12', '10.232.7.14', '10.232.7.15']],
     ]);
 
@@ -4908,4 +4908,49 @@ it('accepts current Gateway Project, Instance, and Route JSON', function (): voi
     } finally {
         new Filesystem()->deleteDirectory($fixture['root']);
     }
+});
+
+describe('sandbox pair clone identity', function (): void {
+    it('retargets only an isolated Gateway and roleless operator and preserves unrelated settings', function (): void {
+        $fixture = discovery_gateway_identity_fixture();
+        $pdo = $fixture['pdo'];
+        $pdo->exec("DELETE FROM node_roles WHERE node_id IN (2, 3); DELETE FROM nodes WHERE name IN ('app-dev', 'app-prod')");
+        $before = discovery_gateway_identity_state($pdo);
+        try {
+            $process = discovery_gateway_identity_process($fixture['database'], ['10.233.204.11', '10.233.204.10']);
+            expect($process->run())->toBe(0);
+            expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))->toBe(['operator' => '10.233.204.11:51821']);
+            $expected = $before;
+            $expected['nodes'][0]['public_ssh_host'] = '10.233.204.11';
+            $expected['nodes'][1]['public_ssh_host'] = '10.233.204.10';
+            $expected['settings'][0]['value'] = '10.233.204.11:51821';
+            expect(discovery_gateway_identity_state($pdo))->toBe($expected);
+            expect($process->run())->toBe(0);
+            expect(discovery_gateway_identity_state($pdo))->toBe($expected);
+        } finally {
+            (new Filesystem)->deleteDirectory($fixture['root']);
+        }
+    });
+
+    it('refuses unexpected pair inventory before any identity write', function (string $problem): void {
+        $fixture = discovery_gateway_identity_fixture();
+        $pdo = $fixture['pdo'];
+        if ($problem !== 'extra nodes') {
+            $pdo->exec("DELETE FROM node_roles WHERE node_id IN (2, 3); DELETE FROM nodes WHERE name IN ('app-dev', 'app-prod')");
+        }
+        if ($problem === 'operator role') {
+            $pdo->exec("INSERT INTO node_roles (node_id, role, status) VALUES (5, 'app-dev', 'active')");
+        }
+        if ($problem === 'foreign endpoint') {
+            $pdo->exec("UPDATE nodes SET wireguard_endpoint_override = '192.0.2.99:51820' WHERE name = 'operator'");
+        }
+        $before = discovery_gateway_identity_state($pdo);
+        try {
+            $process = discovery_gateway_identity_process($fixture['database'], ['10.233.204.11', '10.233.204.10']);
+            expect($process->run())->not->toBe(0);
+            expect(discovery_gateway_identity_state($pdo))->toBe($before);
+        } finally {
+            (new Filesystem)->deleteDirectory($fixture['root']);
+        }
+    })->with(['extra nodes', 'operator role', 'foreign endpoint']);
 });

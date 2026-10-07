@@ -2,16 +2,18 @@
 
 declare(strict_types=1);
 
-if ($argc !== 6) {
+if (! in_array($argc, [4, 6], true)) {
     exit(64);
 }
 
 $database = $argv[1];
-$addresses = array_combine(['gateway', 'app-dev', 'app-prod', 'operator'], array_slice($argv, 2));
+$names = $argc === 4 ? ['gateway', 'operator'] : ['gateway', 'app-dev', 'app-prod', 'operator'];
+$peers = array_values(array_diff($names, ['gateway']));
+$addresses = array_combine($names, array_slice($argv, 2));
 $pdo = null;
 
 try {
-    if (! is_file($database) || is_link($database) || count(array_unique($addresses)) !== 4) {
+    if (! is_file($database) || is_link($database) || count(array_unique($addresses)) !== count($names)) {
         throw new RuntimeException('Invalid clone inputs.');
     }
     foreach ($addresses as $address) {
@@ -22,7 +24,8 @@ try {
 
     $pdo = new PDO('sqlite:'.$database, options: [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     $pdo->beginTransaction();
-    $query = $pdo->prepare('SELECT id, name, status, public_ssh_host, wireguard_endpoint_override FROM nodes WHERE name IN (?, ?, ?, ?)');
+    $placeholders = implode(', ', array_fill(0, count($names), '?'));
+    $query = $pdo->prepare('SELECT id, name, status, public_ssh_host, wireguard_endpoint_override FROM nodes WHERE name IN ('.$placeholders.')');
     $query->execute(array_keys($addresses));
     $nodes = [];
     foreach ($query->fetchAll(PDO::FETCH_ASSOC) as $node) {
@@ -32,11 +35,15 @@ try {
         }
         $nodes[$node['name']] = $node;
     }
-    if (count($nodes) !== 4) {
+    if (count($nodes) !== count($names)) {
         throw new RuntimeException('Incomplete clone inventory.');
     }
+    if ($argc === 4 && ((int) $pdo->query('SELECT COUNT(*) FROM nodes')->fetchColumn() !== 2
+        || (int) $pdo->query('SELECT COUNT(*) FROM node_roles WHERE node_id = '.(int) $nodes['operator']['id'])->fetchColumn() !== 0)) {
+        throw new RuntimeException('Unexpected sandbox pair inventory.');
+    }
     $role = $pdo->prepare('SELECT COUNT(*) FROM node_roles WHERE node_id = ? AND role = ? AND status = ?');
-    foreach (['gateway' => ['gateway', 'vpn'], 'app-dev' => ['app-dev'], 'app-prod' => ['app-prod']] as $name => $roles) {
+    foreach (array_intersect_key(['gateway' => ['gateway', 'vpn'], 'app-dev' => ['app-dev'], 'app-prod' => ['app-prod']], $addresses) as $name => $roles) {
         foreach ($roles as $required) {
             $role->execute([$nodes[$name]['id'], $required, 'active']);
             if ((int) $role->fetchColumn() !== 1) {
@@ -73,7 +80,7 @@ try {
     $endpoint = $retarget($settings['vpn.endpoint']['value'] ?? null);
     $overrides = [];
     $endpoints = [];
-    foreach (['app-dev', 'app-prod', 'operator'] as $name) {
+    foreach ($peers as $name) {
         $overrides[$name] = $retarget($nodes[$name]['wireguard_endpoint_override']);
         $endpoints[$name] = $overrides[$name] ?? $endpoint ?? $addresses['gateway'].':'.$port;
     }
