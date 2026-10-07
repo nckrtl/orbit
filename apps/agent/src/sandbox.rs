@@ -45,6 +45,8 @@ struct Spec {
     pi_port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     gateway_address: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_proxy_origin: Option<String>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -205,7 +207,8 @@ mod tests {
         value["operation"] = "provision".into();
         value["spec"] = json!({"images":{"operator":"a".repeat(64)}, "pool":"proof",
             "subnet":"10.233.1.0/24", "blocked_networks":["192.168.0.0/16"],
-            "pi_host":"10.44.0.7", "pi_port":23001, "gateway_address":"10.44.0.1"});
+            "pi_host":"10.44.0.7", "pi_port":23001, "gateway_address":"10.44.0.1",
+            "model_proxy_origin":"http://10.44.0.3:8317"});
         assert!(request(value.to_string().as_bytes()).is_ok());
         value["spec"]["pi_port"] = "23001".into();
         assert!(request(value.to_string().as_bytes()).is_err());

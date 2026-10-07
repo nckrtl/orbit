@@ -31,6 +31,17 @@ class RuntimeBoundary(unittest.TestCase):
             with self.assertRaises(ValueError):
                 runtime.validate_auth(path, os.geteuid())
 
+    def test_loopback_forwarding_only_targets_a_group_bridge(self):
+        request = {'sandbox_id': 'ca656ccf-240d-476c-90f1-cf70f9dd7a12', 'checkout': '/home/orbit/orbit',
+                   'pi_token': 'a' * 64, 'model_key': 'b' * 64,
+                   'models': [{'id': 'probe', 'name': 'Proof', 'reasoning': False, 'input': ['text'], 'contextWindow': 8192, 'maxTokens': 1024}]}
+        request['model_relay_address'] = '10.233.201.1'
+        runtime.validate(request)
+        for address in ['127.0.0.1', '10.44.0.3', '10.233.201.2', '169.254.169.254', 'example.test']:
+            request['model_relay_address'] = address
+            with self.subTest(address=address), self.assertRaises(ValueError):
+                runtime.validate(request)
+
     def test_model_descriptors_cannot_supply_another_endpoint_or_key(self):
         request = {'sandbox_id': 'ca656ccf-240d-476c-90f1-cf70f9dd7a12', 'checkout': '/home/orbit/orbit',
                    'pi_token': 'a' * 64, 'model_key': 'b' * 64,

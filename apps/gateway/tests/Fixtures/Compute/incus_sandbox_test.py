@@ -2,6 +2,10 @@
 import base64
 import ipaddress
 import json
+import os
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
 import runpy
 import sys
 import unittest
@@ -71,6 +75,27 @@ class Boundary(unittest.TestCase):
         with patch('subprocess.run') as process:
             process.return_value.stdout = b'[]'
             return host.provision(spec)
+
+    def test_model_relay_allows_only_operator_to_its_own_bridge_port(self):
+        host, spec = self.prepared()
+        spec['model_proxy_origin'] = 'http://10.44.0.3:8317'
+        host.rows[0]['config']['user.orbit.compute.model_proxy_origin'] = spec['model_proxy_origin']
+        with patch.object(module['ModelRelay'], 'prepare') as prepare:
+            self.assertEqual('running', self.provision(host, spec)['power'])
+            prepare.assert_called_once_with(ipaddress.ip_network(spec['subnet']), spec['model_proxy_origin'])
+        acl = next(json.loads(data) for args, data in host.payloads if args[:3] == ('network', 'acl', 'edit'))
+        self.assertIn({'action': 'allow', 'source': '10.233.201.10', 'destination': '10.233.201.1',
+                       'protocol': 'tcp', 'destination_port': '8317', 'state': 'enabled'}, acl['egress'])
+        self.assertFalse(any('10.44.' in rule.get('destination', '') for rule in acl['egress']))
+        spec['model_proxy_origin'] = 'http://10.44.0.4:8317'
+        with self.assertRaises(Refusal):
+            self.provision(host, spec)
+
+    def test_model_relay_refuses_public_upstream_or_management_path(self):
+        for origin in ['http://8.8.8.8:8317', 'http://10.44.0.3/v0/management', 'http://secret@10.44.0.3',
+                       'http://10.44.0.3?key=secret', 'file:///etc/passwd', 'http://169.254.169.254']:
+            with self.subTest(origin=origin), self.assertRaises(ValueError):
+                module['model_relay_config']('10.233.201.1', '10.233.201.10', origin)
 
     def test_pi_proxy_is_bound_to_local_fleet_address_and_gateway_only_ingress(self):
         host, spec = self.prepared()
@@ -275,6 +300,43 @@ class Boundary(unittest.TestCase):
         self.assertEqual(incoming, base64.b64decode(result['stdout']))
         self.assertEqual(0, result['exit_code'])
 
+
+
+class RelayFiles(unittest.TestCase):
+    def test_owned_service_retries_and_cleanup_leave_no_group_files(self):
+        with tempfile.TemporaryDirectory() as directory, patch('pwd.getpwuid', return_value=SimpleNamespace(pw_dir=directory, pw_gid=os.getegid())), patch('subprocess.run'):
+            relay = module['ModelRelay']('ot-0a68f778a3', ID)
+            subnet = ipaddress.ip_network('10.233.201.0/24')
+            with patch.object(module['ModelRelay'], 'control') as control:
+                relay.prepare(subnet, 'http://10.44.0.3:8317')
+                before = (relay.root / 'caddy.json').read_bytes()
+                relay.prepare(subnet, 'http://10.44.0.3:8317')
+                self.assertEqual(before, (relay.root / 'caddy.json').read_bytes())
+                self.assertEqual(0o600, relay.unit.stat().st_mode & 0o777)
+                relay.destroy()
+                relay.destroy()
+                self.assertFalse(relay.root.exists())
+                self.assertFalse(relay.unit.exists())
+                self.assertIn(unittest.mock.call('disable', '--now', relay.unit_name), control.call_args_list)
+
+    def test_foreign_units_and_drift_refuse_before_service_mutation(self):
+        with tempfile.TemporaryDirectory() as directory, patch('pwd.getpwuid', return_value=SimpleNamespace(pw_dir=directory, pw_gid=os.getegid())), patch('subprocess.run'):
+            relay = module['ModelRelay']('ot-0a68f778a3', ID)
+            relay.unit.parent.mkdir(parents=True)
+            relay.unit.write_text('foreign unit')
+            with patch.object(module['ModelRelay'], 'control') as control:
+                with self.assertRaises(ValueError):
+                    relay.prepare(ipaddress.ip_network('10.233.201.0/24'), 'http://10.44.0.3:8317')
+                control.assert_not_called()
+                self.assertEqual('foreign unit', relay.unit.read_text())
+                relay.unit.unlink()
+                relay.prepare(ipaddress.ip_network('10.233.201.0/24'), 'http://10.44.0.3:8317')
+                control.reset_mock()
+                (relay.root / 'caddy.json').write_text('changed')
+                with self.assertRaises(ValueError):
+                    relay.destroy()
+                control.assert_not_called()
+                self.assertTrue(relay.unit.exists())
 
 
 unittest.main()

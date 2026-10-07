@@ -48,6 +48,11 @@ it('configures only the owning guest through protected input and requires an ide
     $workspace = $group->taskable;
     $sandbox = $workspace->taskSandbox;
     $sandbox->forceFill(['pi_token' => str_repeat('a', 64), 'model_key' => str_repeat('b', 64), 'model_key_registered_at' => now()])->save();
+    if ($valid) {
+        $sandbox->forceFill(['model_proxy_origin' => 'http://10.44.0.3:8317',
+            'spec' => [...$sandbox->spec, 'subnet' => '10.233.201.0/24', 'model_proxy_origin' => 'http://10.44.0.3:8317'],
+        ])->save();
+    }
     mock(SshExecutor::class)->shouldReceive('execute')->once()->andReturnUsing(function ($connection, RemoteCommand $command) use ($sandbox, $valid): CommandResult {
         expect($command->input)->toBeNull()->and($command->arguments)->toBe(['/usr/local/bin/orbit-agent', 'sandbox']);
         $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
@@ -55,6 +60,7 @@ it('configures only the owning guest through protected input and requires an ide
         expect($envelope['sandbox_id'])->toBe($sandbox->id)->and($guest['role'])->toBe('operator');
         expect(implode(' ', $guest['argv']))->not->toContain($sandbox->pi_token, $sandbox->model_key);
         $request = json_decode(base64_decode($guest['stdin']), true, flags: JSON_THROW_ON_ERROR);
+        expect($request['model_relay_address'])->toBe($valid ? '10.233.201.1' : null);
         expect($request['pi_token'])->toBe($sandbox->pi_token)->and($request['model_key'])->toBe($sandbox->model_key);
         $response = $valid ? json_encode(['sandbox_id' => $sandbox->id, 'ready' => true]) : $sandbox->model_key;
 
@@ -95,4 +101,15 @@ it('permits empty Pi auth storage while refusing subscription credentials and mo
     $process = new Process(['python3', base_path('tests/Fixtures/Compute/guest_pi_runtime_test.py'), resource_path('compute/guest-pi-runtime.py')]);
     $process->mustRun();
     expect($process->getExitCode())->toBe(0);
+});
+
+it('refuses a model relay outside its reserved group subnet before guest transport', function (): void {
+    $group = pi_runtime_group();
+    $group->taskable->taskSandbox->forceFill(['pi_token' => str_repeat('a', 64), 'model_key' => str_repeat('b', 64),
+        'model_key_registered_at' => now(), 'model_proxy_origin' => 'http://10.44.0.3:8317',
+        'spec' => ['subnet' => '10.44.0.0/16', 'model_proxy_origin' => 'http://10.44.0.3:8317'],
+    ])->save();
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => app(SandboxPiRuntime::class)->prepare($group->taskable))->toThrow(ComputeException::class, 'did not confirm readiness');
 });

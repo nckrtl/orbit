@@ -32,7 +32,7 @@ final readonly class TaskSandboxDrivers
         throw new ComputeException('compute.host_unconfigured', 'Restore the recorded Incus host configuration before recovering this sandbox.');
     }
 
-    /** @return list<array{node_id: int, project: string, pool: string, max_vms: int, orbit_images: array<string, string>, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null}> */
+    /** @return list<array{node_id: int, project: string, pool: string, max_vms: int, orbit_images: array<string, string>, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null, model_proxy_origin: string|null}> */
     public function localHosts(): array
     {
         $value = config('compute.incus.hosts', []);
@@ -69,6 +69,7 @@ final readonly class TaskSandboxDrivers
             $result[] = [
                 'node_id' => $host['node_id'], 'project' => $host['project'], 'pool' => $host['pool'], 'max_vms' => $host['max_vms'],
                 'orbit_images' => $orbit, 'project_images' => $this->images($host['project_images'] ?? []), 'blocked_networks' => $blocked, 'gateway_address' => $gateway,
+                'model_proxy_origin' => $this->modelProxyOrigin($host['model_proxy_origin'] ?? null),
             ];
         }
 
@@ -102,6 +103,27 @@ final readonly class TaskSandboxDrivers
         }
 
         return $images;
+    }
+
+    private function modelProxyOrigin(mixed $origin): ?string
+    {
+        if ($origin === null) {
+            return null;
+        }
+        if (! is_string($origin)) {
+            throw $this->invalidConfiguration();
+        }
+        $parts = parse_url($origin);
+        $host = is_array($parts) ? ($parts['host'] ?? null) : null;
+        if (! is_array($parts) || ! is_string($host) || filter_var($host, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false
+            || (! str_starts_with($host, '10.44.') && ! str_starts_with($host, '127.'))
+            || ! in_array($parts['scheme'] ?? null, ['http', 'https'], true)
+            || isset($parts['user']) || isset($parts['pass']) || isset($parts['query']) || isset($parts['fragment'])
+            || ! in_array($parts['path'] ?? '', ['', '/'], true) || ($parts['port'] ?? 8317) < 1) {
+            throw $this->invalidConfiguration();
+        }
+
+        return rtrim($origin, '/');
     }
 
     private function invalidConfiguration(): ComputeException

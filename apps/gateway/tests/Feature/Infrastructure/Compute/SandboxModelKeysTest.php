@@ -164,3 +164,12 @@ it('does not reserve credentials after destruction was requested', function (): 
     expect($sandbox->fresh()->model_key)->toBeNull();
     Http::assertNothingSent();
 });
+
+it('refuses to register a key for a different reserved host relay endpoint', function (): void {
+    $sandbox = model_key_sandbox();
+    $sandbox->update(['spec' => ['model_proxy_origin' => 'http://10.44.0.3:8317']]);
+
+    expect(fn () => app(SandboxModelKeys::class)->ensure($sandbox))->toThrow(ComputeException::class, 'cannot register');
+    expect($sandbox->fresh()->model_key)->toBeNull();
+    Http::assertNothingSent();
+});

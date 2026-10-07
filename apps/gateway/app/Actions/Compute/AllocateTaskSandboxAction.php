@@ -101,6 +101,7 @@ final readonly class AllocateTaskSandboxAction
                     'desired_power' => 'running', 'spec' => [
                         'host_id' => $settings['node_id'], 'project' => $settings['project'], 'pool' => $settings['pool'],
                         'images' => $candidate['images'], 'subnet' => $subnet, 'blocked_networks' => $settings['blocked_networks'], ...$proxy,
+                        ...($settings['model_proxy_origin'] === null ? [] : ['model_proxy_origin' => $settings['model_proxy_origin']]),
                     ],
                 ]);
             }

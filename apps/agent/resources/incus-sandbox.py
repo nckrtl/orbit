@@ -116,6 +116,155 @@ def pi_proxy(spec, subnet, interfaces):
             'connect': 'tcp:' + str(subnet.network_address + 10) + ':3774'}
 
 
+import ipaddress
+import json
+from pathlib import Path
+from urllib.parse import urlsplit
+
+
+def model_relay_config(listen, source, origin):
+    endpoint = urlsplit(origin)
+    address = ipaddress.ip_address(endpoint.hostname or '')
+    if (endpoint.scheme not in ('http', 'https') or endpoint.username is not None
+            or endpoint.password is not None or endpoint.path not in ('', '/')
+            or endpoint.query or endpoint.fragment or address.version != 4
+            or not (address.is_loopback or address in ipaddress.ip_network('10.44.0.0/16'))):
+        raise ValueError('A model relay needs a private fixed upstream')
+    target_port = endpoint.port or (443 if endpoint.scheme == 'https' else 80)
+    bound = ipaddress.ip_address(listen)
+    peer = ipaddress.ip_address(source)
+    if bound.version != 4 or peer.version != 4:
+        raise ValueError('Invalid relay network')
+    transport = {'protocol': 'http', 'dial_timeout': 3000000000, 'response_header_timeout': 30000000000}
+    if endpoint.scheme == 'https':
+        transport['tls'] = {}
+    return {'admin': {'disabled': True, 'config': {'persist': False}}, 'apps': {'http': {'servers': {'sandbox': {
+        'listen': [str(bound) + ':8317'], 'automatic_https': {'disable': True}, 'routes': [
+            {'match': [{'remote_ip': {'ranges': [str(peer) + '/32']},
+                        'path': ['/v1/models', '/v1/responses', '/v1/chat/completions', '/v1/completions', '/v1/embeddings'],
+                        'method': ['GET', 'POST']}],
+             'handle': [{'handler': 'reverse_proxy', 'upstreams': [{'dial': str(address) + ':' + str(target_port)}],
+                         'transport': transport,
+                         'headers': {'request': {'delete': ['Cookie', 'Proxy-Authorization']}}}], 'terminal': True},
+            {'handle': [{'handler': 'static_response', 'status_code': 403}]}]}}}}}
+
+import pwd
+import tempfile
+
+
+class ModelRelay:
+    """One unprivileged Caddy service, bound to one owned sandbox bridge."""
+    def __init__(self, name, identity):
+        if name != 'ot-' + hashlib.sha256(identity.encode()).hexdigest()[:10]:
+            raise ValueError('Invalid relay identity')
+        self.name, self.id = name, identity
+        self.uid = os.geteuid()
+        account = pwd.getpwuid(self.uid)
+        self.home = Path(account.pw_dir)
+        self.gid = account.pw_gid
+        if not re.fullmatch(r'/[A-Za-z0-9_./-]+', str(self.home)) or self.home.resolve() != self.home:
+            raise ValueError('Unsupported relay account home')
+        self.root = self.home / '.orbit-sandbox-model' / name
+        self.unit_name = 'orbit-sandbox-model-' + name + '.service'
+        self.unit = self.home / '.config/systemd/user' / self.unit_name
+
+    def directories(self, path):
+        for parent in reversed([path, *path.parents]):
+            if parent == self.home or self.home in parent.parents:
+                if not parent.exists() and not parent.is_symlink():
+                    parent.mkdir(mode=0o700)
+                details = parent.lstat()
+                # Existing XDG parents may be writable by the compute account's own group.
+                # Do not change their permissions; files and the dedicated state remain private.
+                forbidden = 0o022 if parent == path or parent == self.home else 0o002
+                if (not stat.S_ISDIR(details.st_mode) or details.st_uid != self.uid
+                        or details.st_gid != self.gid or details.st_mode & forbidden):
+                    raise ValueError('Unsafe relay state directory')
+
+    def read(self, path):
+        details = path.lstat()
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != self.uid or details.st_nlink != 1 or details.st_mode & 0o077:
+            raise ValueError('Unsafe relay state file')
+        return path.read_text()
+
+    def ensure_file(self, path, content):
+        if path.exists() or path.is_symlink():
+            if self.read(path) != content:
+                raise ValueError('Relay state drifted')
+            return
+        with tempfile.NamedTemporaryFile(mode='w', dir=path.parent, prefix='.orbit-relay-', delete=False) as output:
+            temporary = Path(output.name)
+            try:
+                output.write(content)
+                output.flush()
+                os.fsync(output.fileno())
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
+
+    def service(self):
+        return ('[Unit]\nDescription=Orbit sandbox model relay ' + self.name + '\n'
+                '[Service]\nExecStart=/usr/bin/caddy run --config ' + str(self.root / 'caddy.json') + '\n'
+                'Restart=on-failure\nRestartSec=2\nUMask=0077\nNoNewPrivileges=true\n'
+                '[Install]\nWantedBy=default.target\n')
+
+    def control(self, *arguments):
+        runtime = Path('/run/user') / str(self.uid)
+        if runtime.is_symlink() or not runtime.is_dir() or runtime.stat().st_uid != self.uid or not (runtime / 'bus').exists():
+            raise ValueError('The compute account needs an existing user service manager')
+        result = subprocess.run(['/usr/bin/systemctl', '--user', *arguments],
+                                env={'PATH': '/usr/bin:/bin', 'XDG_RUNTIME_DIR': str(runtime),
+                                     'DBUS_SESSION_BUS_ADDRESS': 'unix:path=' + str(runtime / 'bus')},
+                                capture_output=True, timeout=45)
+        if result.returncode:
+            raise ValueError('The owned model relay service operation failed')
+
+    def prepare(self, subnet, origin):
+        config = json.dumps(model_relay_config(str(subnet.network_address + 1), str(subnet.network_address + 10), origin), sort_keys=True)
+        marker = json.dumps({'owner': OWNER, 'sandbox_id': self.id, 'subnet': str(subnet), 'origin': origin}, sort_keys=True)
+        if not self.root.exists() and (self.unit.exists() or self.unit.is_symlink()):
+            raise ValueError('A foreign service occupies the relay identity')
+        self.directories(self.root)
+        if not (self.root / 'owner.json').exists() and any(self.root.iterdir()):
+            raise ValueError('An unowned directory occupies the relay identity')
+        self.ensure_file(self.root / 'owner.json', marker)
+        self.ensure_file(self.root / 'caddy.json', config)
+        subprocess.run(['/usr/bin/caddy', 'validate', '--config', str(self.root / 'caddy.json')],
+                       check=True, capture_output=True, timeout=30)
+        self.directories(self.unit.parent)
+        self.ensure_file(self.unit, self.service())
+        self.control('daemon-reload')
+        self.control('enable', '--now', self.unit_name)
+        self.control('is-active', '--quiet', self.unit_name)
+
+    def destroy(self):
+        if not self.root.exists() and not self.root.is_symlink():
+            if self.unit.exists() or self.unit.is_symlink():
+                raise ValueError('An unowned model relay service remains')
+            return
+        if self.root.resolve() != self.root or self.root.stat().st_uid != self.uid or not self.root.is_dir():
+            raise ValueError('Unsafe model relay directory')
+        marker = json.loads(self.read(self.root / 'owner.json'))
+        if marker.get('owner') != OWNER or marker.get('sandbox_id') != self.id:
+            raise ValueError('Model relay ownership does not match')
+        if set(path.name for path in self.root.iterdir()) - {'owner.json', 'caddy.json'}:
+            raise ValueError('Unexpected model relay files')
+        if (self.root / 'caddy.json').exists() or (self.root / 'caddy.json').is_symlink():
+            subnet = ipaddress.ip_network(marker['subnet'], strict=True)
+            expected = json.dumps(model_relay_config(str(subnet.network_address + 1), str(subnet.network_address + 10), marker['origin']), sort_keys=True)
+            if self.read(self.root / 'caddy.json') != expected:
+                raise ValueError('Model relay configuration drifted')
+        if self.unit.exists() or self.unit.is_symlink():
+            if self.read(self.unit) != self.service():
+                raise ValueError('Model relay service drifted')
+            self.control('disable', '--now', self.unit_name)
+            self.unit.unlink()
+            self.control('daemon-reload')
+        (self.root / 'caddy.json').unlink(missing_ok=True)
+        (self.root / 'owner.json').unlink()
+        self.root.rmdir()
+
+
 class Host:
     def __init__(self, project, sandbox_id, budget):
         if not isinstance(project, str) or not re.fullmatch(r'orbit-(?:task-sandboxes|sandbox-proof-[a-z0-9]+)', project):
@@ -240,12 +389,20 @@ class Host:
         addresses = subprocess.run(['ip', '-json', '-4', 'address', 'show'], capture_output=True, check=True, timeout=10)
         interfaces = json.loads(addresses.stdout)
         proxy = pi_proxy(spec, subnet, interfaces)
+        relay_origin = spec.get('model_proxy_origin')
+        relay = ModelRelay(self.name, self.id)
+        if relay_origin is not None:
+            model_relay_config(str(subnet.network_address + 1), str(subnet.network_address + 10), relay_origin)
+        elif relay.root.exists() or relay.root.is_symlink():
+            raise Refusal('An existing model relay cannot be removed by reprovisioning.')
         host_networks = [str(ipaddress.ip_network(address['local'] + '/' + str(address['prefixlen']), strict=False))
                          for interface in interfaces for address in interface.get('addr_info', [])]
         public = public_networks([*blocked, *host_networks])
         current = {row['name']: row for row in self.instances()}
         for name, row in current.items():
             role = name[len(self.name) + 1:]
+            if row.get('config', {}).get('user.orbit.compute.model_proxy_origin') != relay_origin:
+                raise Refusal('An existing model relay endpoint cannot change.')
             if role not in images or row.get('config', {}).get('volatile.base_image') != images[role]:
                 raise Refusal('Existing sandbox images cannot be changed or removed.')
         missing = [role for role in images if self.name + '-' + role not in current]
@@ -305,6 +462,10 @@ class Host:
                             {'action': 'allow', 'destination': '1.1.1.1,9.9.9.9', 'protocol': 'udp', 'destination_port': '53', 'state': 'enabled'},
                             {'action': 'allow', 'destination': '1.1.1.1,9.9.9.9', 'protocol': 'tcp', 'destination_port': '53', 'state': 'enabled'},
                         ]}
+        if relay_origin is not None:
+            acl_data['egress'].append({'action': 'allow', 'source': str(subnet.network_address + 10),
+                                       'destination': str(subnet.network_address + 1), 'protocol': 'tcp',
+                                       'destination_port': '8317', 'state': 'enabled'})
         if proxy:
             acl_data['ingress'].append({'action': 'allow', 'source': spec['gateway_address'],
                                         'destination': str(subnet.network_address + 10),
@@ -325,6 +486,8 @@ class Host:
         for role in missing:
             name = self.name + '-' + role
             config = {**self.metadata(), 'limits.cpu': '2', 'limits.memory': '4GiB'}
+            if relay_origin is not None:
+                config['user.orbit.compute.model_proxy_origin'] = relay_origin
             address = str(subnet.network_address + 10 + ROLES.index(role))
             payload = {'name': name, 'type': 'virtual-machine', 'profiles': [], 'config': config,
                        'source': {'type': 'image', 'fingerprint': images[role]},
@@ -339,6 +502,8 @@ class Host:
             self.run('start', name, timeout=180)
         for row in stopped:
             self.run('start', row['name'], timeout=180)
+        if relay_origin is not None:
+            relay.prepare(subnet, relay_origin)
         return self.observe()
 
     def park(self):
@@ -359,6 +524,15 @@ class Host:
     def resume(self):
         rows = self.instances()
         volumes = self.volumes()
+        origins = {row.get('config', {}).get('user.orbit.compute.model_proxy_origin') for row in rows}
+        if len(origins) > 1:
+            raise Refusal('Sandbox model relay identities disagree.')
+        if origins and None not in origins:
+            relay = ModelRelay(self.name, self.id)
+            marker = json.loads(relay.read(relay.root / 'owner.json'))
+            if marker.get('sandbox_id') != self.id or marker.get('origin') not in origins:
+                raise Refusal('The model relay reservation is unavailable.')
+            relay.prepare(ipaddress.ip_network(marker['subnet'], strict=True), marker['origin'])
         stopped = [row for row in rows if row['status'] == 'Stopped']
         if len(stopped) > self.capacity()['available']:
             raise Refusal('The host VM budget is full.')
@@ -384,6 +558,7 @@ class Host:
             self.own(network)
         if acl:
             self.own(acl)
+        ModelRelay(self.name, self.id).destroy()
         for row in rows:
             self.run('delete', row['name'], '--force', timeout=180)
         for pool, volume in volumes:

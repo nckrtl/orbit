@@ -32,7 +32,8 @@ final readonly class SandboxModelKeys
                 $locked = TaskSandbox::query()->lockForUpdate()->findOrFail($sandbox->id);
                 if ($locked->group?->task_compute !== TaskCompute::Vm || $locked->model_key_revoked_at !== null || $locked->desired_power === 'destroyed'
                     || in_array($locked->state, [SandboxState::Destroying, SandboxState::Destroyed], true)
-                    || ($locked->model_proxy_origin !== null && $locked->model_proxy_origin !== $origin)) {
+                    || ($locked->model_proxy_origin !== null && $locked->model_proxy_origin !== $origin)
+                    || (isset($locked->spec['model_proxy_origin']) && $locked->spec['model_proxy_origin'] !== $origin)) {
                     throw new ComputeException('compute.model_key_unavailable', 'The sandbox cannot register model credentials on this endpoint.');
                 }
                 if ($locked->model_key === null) {

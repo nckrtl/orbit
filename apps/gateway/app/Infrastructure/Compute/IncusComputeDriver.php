@@ -90,6 +90,10 @@ final readonly class IncusComputeDriver implements ComputeDriver
                 throw new ComputeException('compute.node_attached', 'Remove the sandbox Node from the fleet before destroying its VM.');
             }
             $spec = $sandbox->spec;
+            if ($operation === SandboxHostOperation::Provision && isset($spec['model_proxy_origin'])
+                && ($sandbox->model_proxy_origin !== $spec['model_proxy_origin'] || $sandbox->model_key_registered_at === null || $sandbox->model_key === null)) {
+                throw new ComputeException('compute.model_proxy_unconfirmed', 'The model relay must match the registered credential endpoint.');
+            }
             unset($spec['host_id'], $spec['project']);
             if ($operation !== SandboxHostOperation::Observe) {
                 $sandbox->update([

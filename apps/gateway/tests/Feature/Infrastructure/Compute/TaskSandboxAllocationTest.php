@@ -135,3 +135,22 @@ describe('sandbox placement', function (): void {
         expect(TaskSandbox::query()->count())->toBe(1);
     });
 });
+
+it('freezes the host model relay endpoint only after its group key is registered there', function (): void {
+    $this->settings['model_proxy_origin'] = 'http://127.0.0.1:28317';
+    config(['compute.incus.hosts' => [$this->settings]]);
+    allocation_host(2);
+    $sandbox = app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit'));
+
+    expect($sandbox->spec['model_proxy_origin'])->toBe('http://127.0.0.1:28317')
+        ->and($sandbox->model_proxy_origin)->toBe('http://127.0.0.1:28317')->and($sandbox->model_key_registered_at)->not->toBeNull();
+});
+
+it('refuses unsafe model relay origins before contacting a compute host', function (string $origin): void {
+    $this->settings['model_proxy_origin'] = $origin;
+    config(['compute.incus.hosts' => [$this->settings]]);
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit')))->toThrow(ComputeException::class, 'configuration is invalid');
+    expect(TaskSandbox::query()->count())->toBe(0);
+})->with(['http://8.8.8.8:8317', 'http://10.44.0.3/v0/management', 'http://secret@10.44.0.3', 'http://10.44.0.3?key=secret']);

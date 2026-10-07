@@ -1,5 +1,6 @@
 """Configure a sandbox-local Pi service. Only group credentials enter this program."""
 import json
+import ipaddress
 import os
 from pathlib import Path
 import pwd
@@ -18,7 +19,7 @@ BINARY = Path('/usr/local/bin/orbit-pi-server')
 
 
 def validate(request):
-    if set(request) != {'sandbox_id', 'checkout', 'pi_token', 'model_key', 'models'}:
+    if set(request) - {'model_relay_address'} != {'sandbox_id', 'checkout', 'pi_token', 'model_key', 'models'}:
         raise ValueError('Invalid runtime request')
     identity = request['sandbox_id']
     if str(uuid.UUID(identity)) != identity:
@@ -28,6 +29,11 @@ def validate(request):
     # A fixed image path avoids systemd specifier/argument interpolation of checkout paths.
     if request['checkout'] != '/home/orbit/orbit':
         raise ValueError('Unsupported sandbox checkout')
+    relay = request.get('model_relay_address')
+    if relay is not None:
+        address = ipaddress.ip_address(relay)
+        if address.version != 4 or address not in ipaddress.ip_network('10.233.0.0/16') or int(address) % 256 != 1:
+            raise ValueError('Invalid group model relay')
     models = request['models']
     if not isinstance(models, list) or not 1 <= len(models) <= 100:
         raise ValueError('Configure supported sandbox models')
@@ -102,6 +108,28 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 '''
+    units = {UNIT: unit}
+    relay = request.get('model_relay_address')
+    if relay is not None:
+        regular(Path('/usr/lib/systemd/systemd-socket-proxyd'), 0)
+        units[Path('/etc/systemd/system/orbit-sandbox-model.socket')] = '''[Unit]
+Description=Orbit sandbox loopback model socket
+[Socket]
+ListenStream=127.0.0.1:8317
+NoDelay=true
+[Install]
+WantedBy=sockets.target
+'''
+        units[Path('/etc/systemd/system/orbit-sandbox-model.service')] = '''[Unit]
+Description=Orbit sandbox loopback model forwarding
+Requires=orbit-sandbox-model.socket
+After=network.target
+[Service]
+User=orbit
+Group=orbit
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd ''' + relay + ''':8317
+NoNewPrivileges=true
+'''
     # Validate all existing files before adding missing files. A retry never rotates secrets.
     for name, value in contents.items():
         path = ROOT / name
@@ -109,20 +137,31 @@ WantedBy=multi-user.target
             regular(path, user.pw_uid)
             if path.stat().st_mode & 0o077 or path.read_text() != value:
                 raise ValueError('Runtime credentials or model catalogue changed')
-    if UNIT.exists() or UNIT.is_symlink():
-        regular(UNIT, 0)
-        if UNIT.read_text() != unit:
-            raise ValueError('Runtime service changed')
+    for path, value in units.items():
+        if path.exists() or path.is_symlink():
+            regular(path, 0)
+            if path.read_text() != value:
+                raise ValueError('Runtime service changed')
     validate_auth(ROOT / 'auth.json', user.pw_uid)
     for name, value in contents.items():
         if not (ROOT / name).exists():
             write(ROOT / name, value, user.pw_uid, user.pw_gid)
-    if not UNIT.exists():
-        write(UNIT, unit, 0, 0, 0o644)
-        run('systemctl', 'daemon-reload')
+    for path, value in units.items():
+        if not path.exists():
+            write(path, value, 0, 0, 0o644)
+    run('systemctl', 'daemon-reload')
+    if relay is not None:
+        run('systemctl', 'enable', '--now', 'orbit-sandbox-model.socket')
     run('systemctl', 'enable', 'orbit-sandbox-pi.service')
     run('systemctl', 'start', 'orbit-sandbox-pi.service')
     for attempt in range(40):
+        if relay is not None:
+            model_url = 'http://127.0.0.1:8317/v1/models'
+            if status(request['model_key'], model_url) != 200:
+                time.sleep(0.25)
+                continue
+            if status('invalid-model-proof-key', model_url) != 401:
+                raise ValueError('Model relay authentication failed')
         if status(request['pi_token']) == 200:
             if status('invalid-sandbox-proof-token') != 401:
                 raise ValueError('Pi authentication failed')
@@ -147,8 +186,8 @@ def write(path, content, uid, gid, mode=0o600):
         os.fsync(output.fileno())
 
 
-def status(token):
-    request = urllib.request.Request('http://127.0.0.1:3774/capabilities', headers={'Authorization': 'Bearer ' + token})
+def status(token, url='http://127.0.0.1:3774/capabilities'):
+    request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + token})
     try:
         with urllib.request.urlopen(request, timeout=2) as response:
             return response.status

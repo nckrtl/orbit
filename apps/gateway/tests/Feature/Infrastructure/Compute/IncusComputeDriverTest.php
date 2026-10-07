@@ -121,3 +121,10 @@ it('refuses raw destruction before host IO while a model credential remains regi
     expect(fn () => incus_test_driver($this->host)->destroy($this->sandbox))->toThrow(ComputeException::class, 'Revoke the sandbox model key');
     expect($this->sandbox->fresh()->model_key)->toBe(str_repeat('e', 64));
 });
+
+it('refuses relay provisioning before a key is confirmed on the recorded endpoint', function (): void {
+    $this->sandbox->update(['spec' => [...$this->sandbox->spec, 'model_proxy_origin' => 'http://10.44.0.3:8317']]);
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => incus_test_driver($this->host)->provision($this->sandbox))->toThrow(ComputeException::class, 'must match the registered');
+});
