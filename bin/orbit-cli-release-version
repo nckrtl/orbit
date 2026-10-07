@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+cd "$repo_root"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-cli-release-version [--tag] <commit>
+
+Prints the Orbit CLI release version for a commit: 0.N.0, where N is
+`git rev-list --count <commit>`. With --tag, prints the release tag
+cli-v0.N.0 instead.
+
+N grows with every commit on main, so release versions sort in main's
+history order. A shallow clone has the wrong count and is refused.
+EOF
+}
+
+fail() {
+    printf 'orbit-cli-release-version: %s\n' "$*" >&2
+    exit 1
+}
+
+prefix=''
+if [ "${1:-}" = "--tag" ]; then
+    prefix='cli-v'
+    shift
+fi
+
+commit="${1:-}"
+
+if [ "$commit" = "-h" ] || [ "$commit" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+if [ -z "$commit" ] || [ "$#" -ne 1 ]; then
+    usage >&2
+    exit 2
+fi
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail 'not a git checkout'
+[ "$(git rev-parse --is-shallow-repository)" = "false" ] || fail 'shallow clone: fetch the full history first'
+
+resolved="$(git rev-parse --verify --quiet "${commit}^{commit}")" || fail "unknown commit: ${commit}"
+
+printf '%s0.%s.0\n' "$prefix" "$(git rev-list --count "$resolved")"
