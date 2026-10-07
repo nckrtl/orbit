@@ -75,6 +75,8 @@ The binary contract has these limits.
 - Only Linux x86_64 and macOS Apple silicon are built. Windows and Linux ARM are not.
 - Orbit does not install the binary on Nodes, track which Node runs which version, or roll out upgrades.
 
+[ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) lifts the last limit. CI publishes the binaries of each green `main` commit as a GitHub release, the Gateway installs the CLI on managed Nodes, and `orbit self-update` updates a machine to the Gateway's release.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.

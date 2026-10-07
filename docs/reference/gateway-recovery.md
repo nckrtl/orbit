@@ -71,6 +71,8 @@ The archive contains secrets. Do not attach it to a bug report or commit it to G
 
 ## Update source
 
+[ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) replaces this in-place procedure with immutable releases that the Gateway builds and switches itself. Until that is built, update the Gateway with the steps in this section.
+
 Keep requests and automation paused. As `orbit`, fetch the selected release or exact commit and install its locked dependencies:
 
 ```bash

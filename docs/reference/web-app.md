@@ -217,6 +217,8 @@ It changes no role, VPN setting, or Node. A Gateway deploy never changes the rel
 
 ## Release a build
 
+[ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) releases the web app with each Gateway release, from the build that CI publishes for the commit. `bin/web-deploy` stays for manual releases and roll back.
+
 Run `bin/web-deploy` from a clean checkout of the commit to release.
 
 ```bash
