@@ -16,12 +16,12 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Task;
+use SensitiveParameter;
 use Throwable;
 
 /**
@@ -37,9 +37,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         private RepositoryPullRequestAccess $access,
         private RepositoryReadAccess $reads,
         private GitHubApi $github,
-        private DevelopmentSshExecutor $ssh,
         private TaskWorkspaceExecutor $workspaces,
-        private SandboxGitBundles $bundles,
     ) {}
 
     public function fetch(Task $group, string $base): void
@@ -52,12 +50,14 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
         $instance = $group->taskable;
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
+            || $instance->project_id !== $group->project_id
+            || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
             || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)) {
             throw new TaskPullRequestException('The base branch could not be fetched.');
         }
 
         try {
-            $this->fetchRef($instance, $repository, $base, $this->access->token($repository));
+            $this->fetchRef($instance, $base, $this->access->token($repository));
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The base branch could not be fetched.', previous: $exception);
         }
@@ -158,6 +158,8 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         $instance = $group->taskable;
         $default = $group->project->default_branch;
         if (! $repository instanceof GitHubRepository || ! $instance instanceof Instance || $instance->checkout_path === ''
+            || $instance->project_id !== $group->project_id
+            || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
             || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)
             || ! is_string($default) || ! GitBranchName::isValid($default)) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.');
@@ -168,21 +170,14 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
 
         try {
-            $environment = $this->reads->for((string) $group->project->repository_url, $group->project->source_access);
+            $environment = $instance->task_sandbox_id !== null
+                ? GitReadEnvironment::forGitHubToken($this->access->readToken($repository))
+                : $this->reads->for((string) $group->project->repository_url, $group->project->source_access);
         } catch (ResourceOperationException $exception) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.', previous: $exception);
         }
 
         $pullBase = $this->pullRequestBase($group, $repository, $default, $taskBranch);
-        if ($instance->task_sandbox_id !== null) {
-            $this->bundles->fetch($instance, $repository, $default, $environment);
-            $this->bundles->fetch($instance, $repository, $taskBranch, $environment, missingOk: true);
-            if ($pullBase !== null) {
-                $this->bundles->fetch($instance, $repository, $pullBase, $environment);
-            }
-
-            return;
-        }
         $this->fetchRefs($instance, $environment, $default, $taskBranch, $pullBase);
     }
 
@@ -228,7 +223,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             task_branch=$3
             pull_base=$4
             status=0
-            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" ls-remote --exit-code --heads origin "refs/heads/$task_branch" >/dev/null || status=$?
+            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" ls-remote --exit-code --heads origin "refs/heads/$task_branch" >/dev/null || status=$?
             if [ "$status" -ne 0 ] && [ "$status" -ne 2 ]; then
                 exit "$status"
             fi
@@ -239,13 +234,13 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             if [ -n "$pull_base" ]; then
                 refspecs+=("+refs/heads/${pull_base}:refs/remotes/origin/${pull_base}")
             fi
-            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --no-tags --quiet origin "${refspecs[@]}"
+            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --no-tags --quiet origin "${refspecs[@]}"
             if [ "$status" -eq 2 ]; then
                 git -C "$checkout" update-ref -d "refs/remotes/origin/$task_branch"
             fi
             BASH);
         try {
-            $this->ssh->execute($instance->node, new RemoteCommand(
+            $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, $default, $taskBranch, $pullBase ?? ''],
                 input: $script->input,
                 protectedInput: $script->protectedInput,
@@ -255,21 +250,16 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         }
     }
 
-    private function fetchRef(Instance $instance, GitHubRepository $repository, string $base, string $token): void
+    private function fetchRef(Instance $instance, string $base, #[SensitiveParameter] string $token): void
     {
-        if ($instance->task_sandbox_id !== null) {
-            $this->bundles->fetch($instance, $repository, $base, GitReadEnvironment::forGitHubToken($token));
-
-            return;
-        }
         $instance->loadMissing('node');
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
             checkout=$1
             base=$2
-            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"
+            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"
             BASH);
         try {
-            $this->ssh->execute($instance->node, new RemoteCommand(
+            $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, $base],
                 input: $script->input,
                 protectedInput: $script->protectedInput,

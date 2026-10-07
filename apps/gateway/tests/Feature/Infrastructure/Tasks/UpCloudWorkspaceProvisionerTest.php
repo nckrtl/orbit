@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Compute\ComputeDriver;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxNetworkPolicy;
@@ -97,6 +98,8 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         $keys->shouldReceive('publicKey')->once()->andReturn($sandbox->spec['public_key']);
     }
     mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/keys/known_hosts');
+    config(['app.url' => 'https://gateway.orbit']);
+    mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->twice()->andReturn('trusted-ca');
     $phases = [];
     mock(SshExecutor::class)->shouldReceive('execute')->andReturnUsing(function ($connection, RemoteCommand $command) use ($group, $restore, &$phases): CommandResult {
         expect($group->fresh()->taskable->taskSandbox->group_id)->toBe($group->id);
@@ -110,8 +113,12 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         } else {
             $stream = $command->protectedInput->stream();
             $request = json_decode(fgets($stream), true, flags: JSON_THROW_ON_ERROR);
-            $phases[] = isset($request['sha256']) ? 'artifact' : 'pi';
+            $phases[] = isset($request['ca']) ? 'github' : (isset($request['sha256']) ? 'artifact' : 'pi');
             $response = ['sandbox_id' => $request['sandbox_id'], 'ready' => true, 'sha256' => $request['sha256'] ?? null];
+            if (isset($request['ca'])) {
+                expect($request['repository'])->toBe('acme/dlf');
+                $response = ['ready' => true];
+            }
         }
 
         return new CommandResult(0, json_encode($response), '', 1, false);
@@ -136,7 +143,7 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         expect($second->id)->toBe($first->id);
         expect($second->status)->toBe(InstanceState::SourceResolved);
         expect($second->taskSandbox->pi_ready_at)->not->toBeNull();
-        expect($phases)->toBe(['initialize', 'checkout', 'artifact', 'pi', 'inspect', 'artifact', 'pi']);
+        expect($phases)->toBe(['initialize', 'checkout', 'artifact', 'pi', 'github', 'inspect', 'artifact', 'pi', 'github']);
         expect(Instance::query()->where('task_sandbox_id', $first->task_sandbox_id)->count())->toBe(1);
     } finally {
         fclose($file);
