@@ -110,6 +110,13 @@ function compute_keys(): void
 }
 
 describe('UpCloud provisioning', function (): void {
+    it('creates the managed checkout directory before source preparation', function (): void {
+        $bootstrap = app(UpCloudCloudInit::class)->render(compute_spec());
+        $config = json_decode(substr($bootstrap, strlen("#cloud-config\n")), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($config['runcmd'])->toContain(['install', '-d', '-o', 'orbit', '-g', 'orbit', '-m', '0700', '/home/orbit/orbit']);
+    });
+
     it('records creation before sending it and creates one smallest VM without secrets in cloud-init', function (): void {
         compute_config();
         $sandbox = compute_sandbox();
