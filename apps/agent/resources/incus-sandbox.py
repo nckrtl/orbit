@@ -369,6 +369,41 @@ class Host:
             raise Refusal('The guest command returned invalid output.')
         return {'name': self.name, 'role': command['role'], **value}
 
+    def source_template(self, spec, pool):
+        template = spec.get('source_template')
+        if template is None:
+            return None
+        if not isinstance(template, dict) or set(template) != {'id', 'repository', 'base', 'commit'}:
+            raise Refusal('Invalid source template descriptor.')
+        identity(template['id'])
+        if (not isinstance(template['repository'], str)
+                or not re.fullmatch(r'https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git', template['repository'])
+                or not isinstance(template['commit'], str) or not re.fullmatch(r'[a-f0-9]{40}(?:[a-f0-9]{24})?', template['commit'])
+                or not isinstance(template['base'], str) or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._/-]{0,199}', template['base'])
+                or any(part in template['base'] for part in ('..', '//', '@{'))
+                or any(part.endswith('.lock') or part.startswith('.') for part in template['base'].split('/'))
+                or template['base'] == 'HEAD' or template['base'].endswith(('/', '.'))):
+            raise Refusal('Invalid source template identity.')
+        expected = {'user.orbit.template.owner': 'orbit-task-template',
+                    **{'user.orbit.template.' + key: value for key, value in template.items()}}
+        name = 'ot-template-' + hashlib.sha256(template['id'].encode()).hexdigest()[:10]
+        path = '/1.0/storage-pools/' + pool + '/volumes/custom/' + name
+        volume = self.json('query', path + '?project=' + self.project)
+        snapshot = self.json('query', path + '/snapshots/ready?project=' + self.project)
+        for resource in (volume, snapshot):
+            if (resource.get('content_type') != 'filesystem' or resource.get('used_by', [])
+                    or any(resource.get('config', {}).get(key) != value for key, value in expected.items())):
+                raise Refusal('Source template ownership or attachments do not match.')
+        for role, fingerprint in spec['images'].items():
+            image = self.json('query', '/1.0/images/' + fingerprint + '?project=' + self.project)
+            properties = image.get('properties', {})
+            if (image.get('type') != 'virtual-machine' or image.get('public') is not False
+                    or properties.get('user.orbit.template.role') != role
+                    or any(properties.get(key) != value for key, value in expected.items())):
+                raise Refusal('The image does not belong to the source template.')
+        digest = hashlib.sha256(json.dumps(template, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        return {'name': name, 'digest': digest}
+
     def provision(self, spec):
         images = spec.get('images')
         if not isinstance(images, dict) or not images or any(role not in ROLES for role in images):
@@ -432,6 +467,7 @@ class Host:
         for fingerprint in images.values():
             if self.json('query', '/1.0/images/' + fingerprint + '?project=' + self.project).get('type') != 'virtual-machine':
                 raise Refusal('The operator image must be a VM, never a container.')
+        template = self.source_template(spec, pool)
         networks = self.json('network', 'list', '--format=json')
         for network in networks:
             if network['name'] == self.name:
@@ -451,6 +487,11 @@ class Host:
             raise Refusal('The sandbox worktree volume is missing; refusing to replace group data.')
         if volumes and volumes[0][0] != pool:
             raise Refusal('Sandbox worktree pool changed.')
+        template_digest = template['digest'] if template else None
+        if any(row.get('config', {}).get('user.orbit.compute.template') != template_digest for row in current.values()):
+            raise Refusal('The sandbox image template cannot change.')
+        if volumes and volumes[0][1].get('config', {}).get('user.orbit.compute.template') != template_digest:
+            raise Refusal('The sandbox worktree template cannot change.')
         acls = self.json('network', 'acl', 'list', '--format=json')
         acl = next((row for row in acls if row['name'] == self.name), None)
         peers = ','.join(str(subnet.network_address + 10 + ROLES.index(role)) for role in images)
@@ -480,12 +521,23 @@ class Host:
                      'ipv4.nat=true', 'ipv6.address=none', 'dns.mode=none', 'security.acls=' + self.name,
                      'security.acls.default.egress.action=reject', 'security.acls.default.ingress.action=reject',
                      *[key + '=' + value for key, value in self.metadata().items()])
+        metadata = {**self.metadata(), **({'user.orbit.compute.template': template_digest} if template else {})}
         if not volumes:
-            self.run('storage', 'volume', 'create', pool, self.name + '-worktree', 'size=20GiB',
-                     *[key + '=' + value for key, value in self.metadata().items()])
+            if template:
+                self.run('query', '-X', 'POST', '/1.0/storage-pools/' + pool + '/volumes/custom?project=' + self.project,
+                         '-d', json.dumps({'name': self.name + '-worktree', 'type': 'custom',
+                                           'source': {'type': 'copy', 'name': template['name'] + '/ready', 'pool': pool, 'project': self.project},
+                                           'config': {**metadata, 'size': '20GiB'}}), '--wait', timeout=300)
+                copied = self.volumes()
+                if (len(copied) != 1 or copied[0][0] != pool
+                        or copied[0][1].get('config', {}).get('user.orbit.compute.template') != template_digest):
+                    raise Refusal('Source copy ownership could not be confirmed.')
+            else:
+                self.run('storage', 'volume', 'create', pool, self.name + '-worktree', 'size=20GiB',
+                         *[key + '=' + value for key, value in metadata.items()])
         for role in missing:
             name = self.name + '-' + role
-            config = {**self.metadata(), 'limits.cpu': '2', 'limits.memory': '4GiB'}
+            config = {**metadata, 'limits.cpu': '2', 'limits.memory': '4GiB'}
             if relay_origin is not None:
                 config['user.orbit.compute.model_proxy_origin'] = relay_origin
             address = str(subnet.network_address + 10 + ROLES.index(role))

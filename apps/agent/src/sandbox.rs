@@ -34,8 +34,19 @@ enum Role {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+struct SourceTemplate {
+    id: String,
+    repository: String,
+    base: String,
+    commit: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Spec {
     images: BTreeMap<Role, String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_template: Option<SourceTemplate>,
     pool: String,
     subnet: String,
     blocked_networks: Vec<String>,
@@ -211,6 +222,21 @@ mod tests {
             "model_proxy_origin":"http://10.44.0.3:8317"});
         assert!(request(value.to_string().as_bytes()).is_ok());
         value["spec"]["pi_port"] = "23001".into();
+        assert!(request(value.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn accepts_only_a_closed_typed_source_template() {
+        let mut value = base();
+        value["operation"] = "provision".into();
+        value["spec"] = json!({"images":{"operator":"a".repeat(64)}, "pool":"proof",
+            "subnet":"10.233.1.0/24", "blocked_networks":["192.168.0.0/16"],
+            "source_template":{"id":"9862e1aa-605c-4b49-a65b-6cf0b3a96dfe",
+                "repository":"https://github.com/acme/orbit.git", "base":"main", "commit":"b".repeat(40)}});
+        assert!(request(value.to_string().as_bytes()).is_ok());
+        value["spec"]["source_template"]["path"] = "/foreign".into();
+        assert!(request(value.to_string().as_bytes()).is_err());
+        value["spec"]["source_template"] = "not a descriptor".into();
         assert!(request(value.to_string().as_bytes()).is_err());
     }
 

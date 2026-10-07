@@ -55,6 +55,9 @@ function allocation_host(int $available): void
         $row = TaskSandbox::query()->findOrFail($request['sandbox_id']);
         expect($row->state)->toBe($request['operation'] === 'resume' ? SandboxState::Starting : SandboxState::Creating);
         $images = $row->spec['images'];
+        if ($request['operation'] === 'provision') {
+            expect($request['spec']['source_template'] ?? null)->toBe($row->spec['source_template'] ?? null);
+        }
 
         return new CommandResult(0, json_encode(['name' => $name, 'power' => 'running', 'instances' => array_map(
             fn (string $role): array => ['name' => $name.'-'.$role, 'state' => 'running'], array_keys($images),
@@ -154,3 +157,36 @@ it('refuses unsafe model relay origins before contacting a compute host', functi
     expect(fn () => app(AllocateTaskSandboxAction::class)->execute(allocation_group('orbit')))->toThrow(ComputeException::class, 'configuration is invalid');
     expect(TaskSandbox::query()->count())->toBe(0);
 })->with(['http://8.8.8.8:8317', 'http://10.44.0.3/v0/management', 'http://secret@10.44.0.3', 'http://10.44.0.3?key=secret']);
+
+it('pins the source template through allocation and configuration changes', function (): void {
+    $template = ['id' => '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('c', 40)];
+    $this->settings['orbit_source_template'] = $template;
+    config(['compute.incus.hosts' => [$this->settings]]);
+    allocation_host(2);
+    $group = allocation_group('orbit');
+    $group->project->update(['default_branch' => 'main']);
+    $allocator = app(AllocateTaskSandboxAction::class);
+
+    $sandbox = $allocator->execute($group);
+    $this->settings['orbit_source_template']['commit'] = str_repeat('d', 40);
+    config(['compute.incus.hosts' => [$this->settings]]);
+    $again = $allocator->execute($group);
+
+    expect($sandbox->spec['source_template'])->toBe($template)
+        ->and($again->id)->toBe($sandbox->id)->and($again->spec['source_template'])->toBe($template);
+});
+
+it('refuses invalid or mismatched source templates before host contact', function (string $field, mixed $value): void {
+    $this->settings['orbit_source_template'] = ['id' => '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('c', 40)];
+    $this->settings['orbit_source_template'][$field] = $value;
+    config(['compute.incus.hosts' => [$this->settings]]);
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+    $group = allocation_group('orbit');
+    $group->project->update(['default_branch' => 'main']);
+
+    expect(fn () => app(AllocateTaskSandboxAction::class)->execute($group))->toThrow(ComputeException::class);
+    expect(TaskSandbox::query()->count())->toBe(0);
+})->with([
+    ['id', 'invalid'], ['repository', 'https://github.com/acme/foreign.git'],
+    ['base', 'other'], ['base', '../unsafe'], ['commit', 'not-a-sha'], ['command', 'unexpected'],
+]);

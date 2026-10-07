@@ -6,9 +6,11 @@ namespace App\Infrastructure\Compute;
 
 use App\Domain\Compute\ComputeDriver;
 use App\Domain\Compute\ComputeException;
+use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Models\Node;
 use App\Models\TaskSandbox;
+use Illuminate\Support\Str;
 
 final readonly class TaskSandboxDrivers
 {
@@ -32,7 +34,7 @@ final readonly class TaskSandboxDrivers
         throw new ComputeException('compute.host_unconfigured', 'Restore the recorded Incus host configuration before recovering this sandbox.');
     }
 
-    /** @return list<array{node_id: int, project: string, pool: string, max_vms: int, orbit_images: array<string, string>, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null, model_proxy_origin: string|null}> */
+    /** @return list<array{node_id: int, project: string, pool: string, max_vms: int, orbit_images: array<string, string>, orbit_source_template: array<string, string>|null, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null, model_proxy_origin: string|null}> */
     public function localHosts(): array
     {
         $value = config('compute.incus.hosts', []);
@@ -68,6 +70,7 @@ final readonly class TaskSandboxDrivers
             $ids[] = $host['node_id'];
             $result[] = [
                 'node_id' => $host['node_id'], 'project' => $host['project'], 'pool' => $host['pool'], 'max_vms' => $host['max_vms'],
+                'orbit_source_template' => $this->sourceTemplate($host['orbit_source_template'] ?? null),
                 'orbit_images' => $orbit, 'project_images' => $this->images($host['project_images'] ?? []), 'blocked_networks' => $blocked, 'gateway_address' => $gateway,
                 'model_proxy_origin' => $this->modelProxyOrigin($host['model_proxy_origin'] ?? null),
             ];
@@ -103,6 +106,25 @@ final readonly class TaskSandboxDrivers
         }
 
         return $images;
+    }
+
+    /** @return array<string, string>|null */
+    private function sourceTemplate(mixed $value): ?array
+    {
+        if ($value === null) {
+            return null;
+        }
+        if (! is_array($value) || count($value) !== 4 || ! is_string($value['id'] ?? null)
+            || ! Str::isUuid($value['id']) || strtolower($value['id']) !== $value['id']
+            || ! is_string($value['repository'] ?? null)
+            || preg_match('#\Ahttps://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git\z#D', $value['repository']) !== 1
+            || ! is_string($value['commit'] ?? null) || preg_match('/\A[a-f0-9]{40}(?:[a-f0-9]{24})?\z/D', $value['commit']) !== 1
+            || ! is_string($value['base'] ?? null) || ! GitBranchName::isValid($value['base'])
+            || preg_match('#\A[A-Za-z0-9][A-Za-z0-9._/-]{0,199}\z#D', $value['base']) !== 1) {
+            throw $this->invalidConfiguration();
+        }
+
+        return ['id' => $value['id'], 'repository' => $value['repository'], 'base' => $value['base'], 'commit' => $value['commit']];
     }
 
     private function modelProxyOrigin(mixed $origin): ?string

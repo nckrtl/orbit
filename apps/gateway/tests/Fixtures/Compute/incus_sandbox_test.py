@@ -1,5 +1,7 @@
 """Contract checks for ownership and capacity without touching the host daemon."""
 import base64
+import copy
+import hashlib
 import ipaddress
 import json
 import os
@@ -29,7 +31,19 @@ class FakeHost(Host):
         if args[:1] == ('query',) and args[1].startswith('/1.0/projects/'):
             return json.dumps({'config': {'user.orbit.compute.owner': module['OWNER'], 'features.networks': 'false'}}).encode()
         if args[:1] == ('query',) and args[1].startswith('/1.0/images/'):
-            return b'{"type":"virtual-machine"}'
+            return json.dumps(getattr(self, 'template_image', {'type': 'virtual-machine'})).encode()
+        if args[:1] == ('query',) and args[1].startswith('/1.0/storage-pools/'):
+            return json.dumps(self.template_snapshot if '/snapshots/' in args[1] else self.template_volume).encode()
+        if args[:3] == ('query', '-X', 'POST') and '/volumes/custom?' in args[3]:
+            payload = json.loads(args[5])
+            self.storage_volumes = [{'name': payload['name'], 'type': 'custom', 'content_type': 'filesystem',
+                                     'used_by': [], 'config': payload['config']}]
+            return b'{}'
+        if args[:3] == ('query', '-X', 'POST') and args[3].startswith('/1.0/instances?'):
+            payload = json.loads(args[5])
+            self.rows.append({**payload, 'status': 'Stopped',
+                              'config': {**payload['config'], 'volatile.base_image': payload['source']['fingerprint']}})
+            return b'{}'
         if args[:1] == ('query',) and '/snapshots?' in args[1]:
             return json.dumps(getattr(self, 'snapshots', [])).encode()
         if args[:1] == ('stop',):
@@ -75,6 +89,65 @@ class Boundary(unittest.TestCase):
         with patch('subprocess.run') as process:
             process.return_value.stdout = b'[]'
             return host.provision(spec)
+
+    def templated(self):
+        host, spec = self.prepared()
+        template = {'id': '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository': 'https://github.com/acme/orbit.git',
+                    'base': 'main', 'commit': 'b' * 40}
+        spec['source_template'] = template
+        metadata = {'user.orbit.template.owner': 'orbit-task-template',
+                    **{'user.orbit.template.' + key: value for key, value in template.items()}}
+        host.template_image = {'type': 'virtual-machine', 'public': False,
+                               'properties': {**metadata, 'user.orbit.template.role': 'operator'}}
+        host.template_volume = {'content_type': 'filesystem', 'used_by': [], 'config': metadata.copy()}
+        host.template_snapshot = copy.deepcopy(host.template_volume)
+        digest = hashlib.sha256(json.dumps(template, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+        host.rows[0]['config']['user.orbit.compute.template'] = digest
+        host.storage_volumes[0]['config']['user.orbit.compute.template'] = digest
+        return host, spec
+
+    def test_template_retry_preserves_existing_group_volume(self):
+        host, spec = self.templated()
+        self.assertEqual('running', self.provision(host, spec)['power'])
+        self.assertFalse(any(call[:3] == ('query', '-X', 'POST') for call in host.calls))
+
+    def test_template_copy_assigns_group_ownership_in_the_create_request(self):
+        host, spec = self.templated()
+        host.rows, host.storage_volumes = [], []
+        self.provision(host, spec)
+        copies = [json.loads(call[5]) for call in host.calls if call[:3] == ('query', '-X', 'POST') and '/volumes/custom?' in call[3]]
+        self.assertEqual(1, len(copies))
+        self.assertEqual(host.metadata()['user.orbit.compute.id'], copies[0]['config']['user.orbit.compute.id'])
+        self.assertEqual(host.name + '-worktree', copies[0]['name'])
+        self.assertEqual('ready', copies[0]['source']['name'].split('/')[1])
+        self.assertEqual('copy', copies[0]['source']['type'])
+        self.assertEqual('proof', copies[0]['source']['pool'])
+        self.assertEqual(host.project, copies[0]['source']['project'])
+        self.assertEqual(64, len(copies[0]['config']['user.orbit.compute.template']))
+        self.provision(host, spec)
+        self.assertEqual(1, len([call for call in host.calls if call[:3] == ('query', '-X', 'POST') and '/volumes/custom?' in call[3]]))
+
+    def test_template_mismatches_refuse_before_any_mutation(self):
+        changes = [
+            lambda h, s: h.template_image.update(public=True),
+            lambda h, s: h.template_image['properties'].update({'user.orbit.template.role': 'gateway'}),
+            lambda h, s: h.template_image['properties'].update({'user.orbit.template.commit': 'c' * 40}),
+            lambda h, s: h.template_volume.update(used_by=['/1.0/instances/foreign']),
+            lambda h, s: h.template_snapshot['config'].update({'user.orbit.template.id': ID}),
+            lambda h, s: h.storage_volumes[0]['config'].pop('user.orbit.compute.template'),
+            lambda h, s: h.rows[0]['config'].pop('user.orbit.compute.template'),
+            lambda h, s: s['source_template'].update(base='../../foreign'),
+            lambda h, s: s['source_template'].update(extra='not allowed'),
+            lambda h, s: s.pop('source_template'),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                host, spec = self.templated()
+                change(host, spec)
+                with self.assertRaises((Refusal, ValueError)):
+                    self.provision(host, spec)
+                self.assertFalse(any(call[0] in ('start', 'stop') or call[:3] in (
+                    ('network', 'acl', 'edit'), ('query', '-X', 'POST'), ('storage', 'volume', 'create')) for call in host.calls))
 
     def test_model_relay_allows_only_operator_to_its_own_bridge_port(self):
         host, spec = self.prepared()

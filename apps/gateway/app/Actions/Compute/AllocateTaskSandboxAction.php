@@ -6,6 +6,7 @@ namespace App\Actions\Compute;
 
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxState;
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
@@ -38,9 +39,17 @@ final readonly class AllocateTaskSandboxAction
                 if (count($images) !== ($group->project->slug === 'orbit' ? 2 : 1)) {
                     continue;
                 }
+                $template = $group->project->slug === 'orbit' ? $settings['orbit_source_template'] : null;
+                if ($template !== null) {
+                    $repository = GitHubRepository::fromOrigin((string) $group->project->repository_url);
+                    if (! $repository instanceof GitHubRepository || $template['repository'] !== 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git'
+                        || $template['base'] !== $group->project->default_branch) {
+                        throw new ComputeException('compute.template_mismatch', 'The source template does not match the Project repository and default branch.');
+                    }
+                }
                 // A failed observation is not evidence of a full host. Do not silently move to cloud.
                 $available = $this->drivers->local($settings)->capacity();
-                $candidates[] = ['settings' => $settings, 'images' => $images, 'available' => $available];
+                $candidates[] = ['settings' => $settings, 'images' => $images, 'available' => $available, 'template' => $template];
             }
         }
         $sandbox = DB::transaction(function () use ($group, $candidates): ?TaskSandbox {
@@ -100,6 +109,7 @@ final readonly class AllocateTaskSandboxAction
                     'name' => 'ot-'.substr(hash('sha256', $id), 0, 10), 'state' => SandboxState::Reserved,
                     'desired_power' => 'running', 'spec' => [
                         'host_id' => $settings['node_id'], 'project' => $settings['project'], 'pool' => $settings['pool'],
+                        ...($candidate['template'] === null ? [] : ['source_template' => $candidate['template']]),
                         'images' => $candidate['images'], 'subnet' => $subnet, 'blocked_networks' => $settings['blocked_networks'], ...$proxy,
                         ...($settings['model_proxy_origin'] === null ? [] : ['model_proxy_origin' => $settings['model_proxy_origin']]),
                     ],
