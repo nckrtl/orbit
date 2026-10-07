@@ -1,4 +1,5 @@
 """Contract checks for ownership and capacity without touching the host daemon."""
+import base64
 import ipaddress
 import json
 import runpy
@@ -189,6 +190,62 @@ class Boundary(unittest.TestCase):
         with self.assertRaises(Refusal):
             host.resume()
         self.assertFalse(any(call[0] in ('snapshot', 'start') for call in host.calls))
+
+    def test_guest_command_refuses_missing_stopped_or_foreign_vm(self):
+        host, _ = self.prepared()
+        command = {'role': 'operator', 'argv': ['id'], 'stdin': '', 'timeout': 5, 'max_output': 100}
+        with patch.dict(Host.guest_command.__globals__, bounded_process=lambda *a: self.fail('No command may run')):
+            with self.assertRaisesRegex(Refusal, 'not running'):
+                host.guest_command(command)
+            host.rows[0]['config'] = {}
+            with self.assertRaisesRegex(Refusal, 'ownership'):
+                host.guest_command(command)
+
+    def test_guest_command_never_interprets_guest_argv_on_the_host(self):
+        host, _ = self.prepared()
+        host.rows[0]['status'] = 'Running'
+        command = {'role': 'operator', 'argv': ['bash', '-c', 'echo $(whoami)'], 'stdin': '', 'timeout': 5, 'max_output': 100}
+        guest = {'exit_code': 7, 'stdout': 'b3JiaXQ=', 'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False}
+        calls = []
+        def run(argv, data, timeout, limit):
+            calls.append(argv)
+            self.assertEqual(command, json.loads(data))
+            return {**guest, 'exit_code': 0, 'stdout': base64.b64encode(json.dumps(guest).encode()).decode()}
+        with patch.dict(Host.guest_command.__globals__, bounded_process=run):
+            result = host.guest_command(command)
+        self.assertEqual(7, result['exit_code'])
+        self.assertEqual(host.name, result['name'])
+        self.assertEqual('operator', result['role'])
+        self.assertEqual(['incus', '--force-local', '--project', host.project, 'exec', host.name + '-operator', '--mode=non-interactive'], calls[0][:7])
+        self.assertNotIn('echo $(whoami)', calls[0])
+        self.assertIn('orbit', calls[0])
+
+    def test_guest_command_rejects_oversized_and_injected_envelopes(self):
+        host, _ = self.prepared()
+        good = {'role': 'operator', 'argv': ['id'], 'stdin': '', 'timeout': 5, 'max_output': 100}
+        for changes in ({'role': 'host'}, {'argv': []}, {'timeout': 901}, {'max_output': 8388609},
+                        {'host_command': 'id'}, {'argv': ['x\0y']}, {'stdin': '!invalid!'}):
+            with self.subTest(changes=changes), self.assertRaises((Refusal, ValueError)):
+                host.guest_command({**good, **changes})
+
+    def test_process_bounds_stdout_stderr_and_preserves_nonzero_exit(self):
+        result = module['bounded_process']([sys.executable, '-c', "import sys; print('x' * 100000); sys.stderr.write('y' * 100000); sys.exit(7)"], b'', 5, 100)
+        self.assertEqual(7, result['exit_code'])
+        self.assertTrue(result['truncated'])
+        self.assertEqual(100, sum(len(base64.b64decode(result[k])) for k in ('stdout', 'stderr')))
+
+    def test_process_times_out_even_when_descendant_keeps_output_open(self):
+        result = module['bounded_process']([sys.executable, '-c', "import subprocess; subprocess.Popen(['sleep', '30'])"], b'', 1, 100)
+        self.assertEqual(124, result['exit_code'])
+        self.assertTrue(result['timed_out'])
+        self.assertLess(result['duration_ms'], 4000)
+
+    def test_process_transmits_binary_input_without_shell_expansion(self):
+        incoming = b'\x00$(not-a-command)\xff'
+        result = module['bounded_process']([sys.executable, '-c', 'import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())'], incoming, 5, 100)
+        self.assertEqual(incoming, base64.b64decode(result['stdout']))
+        self.assertEqual(0, result['exit_code'])
+
 
 
 unittest.main()

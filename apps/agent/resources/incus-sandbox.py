@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Typed host control for task-owned Incus VMs. Input and output are JSON; secrets use stdin."""
+import base64
 import hashlib
 import fcntl
 import ipaddress
@@ -17,6 +18,60 @@ PRIVATE = ('0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
            '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24',
            '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24',
            '224.0.0.0/4', '240.0.0.0/4')
+
+
+# This fixed implementation runs on both sides. Host limits still hold if a guest
+# replaces its own Python executable or emits output outside the guest envelope.
+BOUNDED_PROCESS = r"""
+import base64, json, os, selectors, signal, subprocess, tempfile, time
+
+def bounded_process(argv, data, timeout, limit, env=None):
+    started = time.monotonic()
+    output = [bytearray(), bytearray()]
+    truncated, timed_out = False, False
+    with tempfile.TemporaryFile() as incoming:
+        incoming.write(data)
+        incoming.seek(0)
+        with subprocess.Popen(argv, stdin=incoming, stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE, start_new_session=True, env=env) as process:
+            with selectors.DefaultSelector() as selector:
+                for index, pipe in enumerate((process.stdout, process.stderr)):
+                    os.set_blocking(pipe.fileno(), False)
+                    selector.register(pipe, selectors.EVENT_READ, index)
+                while selector.get_map() or process.poll() is None:
+                    remaining = timeout - (time.monotonic() - started)
+                    if remaining <= 0:
+                        timed_out = True
+                        try:
+                            os.killpg(process.pid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
+                        break
+                    for key, _ in selector.select(min(remaining, 0.1)):
+                        chunk = os.read(key.fd, 65536)
+                        if not chunk:
+                            selector.unregister(key.fileobj)
+                            continue
+                        room = max(0, limit - sum(map(len, output)))
+                        output[key.data].extend(chunk[:room])
+                        truncated |= len(chunk) > room
+            process.wait()
+    return {'exit_code': 124 if timed_out else process.returncode,
+            'stdout': base64.b64encode(output[0]).decode(),
+            'stderr': base64.b64encode(output[1]).decode(),
+            'duration_ms': int((time.monotonic() - started) * 1000),
+            'truncated': truncated, 'timed_out': timed_out}
+"""
+exec(BOUNDED_PROCESS)
+GUEST_RUNNER = BOUNDED_PROCESS + r"""
+import sys
+request = json.load(sys.stdin)
+environment = {'HOME': '/home/orbit', 'USER': 'orbit', 'LOGNAME': 'orbit',
+               'PATH': '/home/orbit/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/local/sbin:/usr/sbin:/sbin',
+               'LANG': 'C.UTF-8'}
+print(json.dumps(bounded_process(request['argv'], base64.b64decode(request['stdin'], validate=True),
+                                request['timeout'], request['max_output'], environment)))
+"""
 
 
 class Refusal(RuntimeError):
@@ -115,6 +170,38 @@ class Host:
         rows = self.instances()
         return {'name': self.name, 'instances': [{'name': row['name'], 'state': row['status'].lower()} for row in rows],
                 'power': 'destroyed' if not rows else ('stopped' if all(row['status'] == 'Stopped' for row in rows) else 'running')}
+
+    def guest_command(self, command):
+        if (not isinstance(command, dict) or set(command) != {'role', 'argv', 'stdin', 'timeout', 'max_output'}
+                or command['role'] not in ROLES or not isinstance(command['argv'], list)
+                or not 1 <= len(command['argv']) <= 128
+                or any(not isinstance(arg, str) or '\0' in arg or len(arg.encode()) > 65536 for arg in command['argv'])
+                or not command['argv'][0] or not isinstance(command['stdin'], str)
+                or type(command['timeout']) is not int or not 1 <= command['timeout'] <= 900
+                or type(command['max_output']) is not int or not 1 <= command['max_output'] <= 8 * 1024 * 1024):
+            raise Refusal('Invalid guest command.')
+        incoming = base64.b64decode(command['stdin'], validate=True)
+        if len(incoming) > 512 * 1024:
+            raise Refusal('Guest input is too large.')
+        name = self.name + '-' + command['role']
+        guest = next((row for row in self.instances() if row['name'] == name), None)
+        if guest is None or guest['status'] != 'Running':
+            raise Refusal('The owned sandbox guest is not running.')
+        result = bounded_process(
+            ['incus', '--force-local', '--project', self.project, 'exec', name, '--mode=non-interactive',
+             '--', '/usr/bin/sudo', '-H', '-u', 'orbit', '--', '/usr/bin/python3', '-I', '-c', GUEST_RUNNER],
+            json.dumps(command).encode(), command['timeout'] + 15, 12 * 1024 * 1024)
+        if result['exit_code'] or result['truncated']:
+            raise Refusal('The guest command transport failed.')
+        value = json.loads(base64.b64decode(result['stdout'], validate=True))
+        if (not isinstance(value, dict) or set(value) != {'exit_code', 'stdout', 'stderr', 'duration_ms', 'truncated', 'timed_out'}
+                or type(value['exit_code']) is not int or not -255 <= value['exit_code'] <= 255
+                or type(value['duration_ms']) is not int or value['duration_ms'] < 0
+                or type(value['truncated']) is not bool or type(value['timed_out']) is not bool
+                or not isinstance(value['stdout'], str) or not isinstance(value['stderr'], str)
+                or sum(len(base64.b64decode(value[key], validate=True)) for key in ('stdout', 'stderr')) > command['max_output']):
+            raise Refusal('The guest command returned invalid output.')
+        return {'name': self.name, 'role': command['role'], **value}
 
     def provision(self, spec):
         images = spec.get('images')
@@ -284,26 +371,40 @@ class Host:
         return result
 
 
+from contextlib import contextmanager
+
+
+@contextmanager
+def sandbox_lock(path, shared=False):
+    descriptor = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    with os.fdopen(descriptor, 'r+') as lock:
+        details = os.fstat(lock.fileno())
+        if not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid() or details.st_nlink != 1:
+            raise Refusal('Unsafe sandbox lock.')
+        fcntl.flock(lock, fcntl.LOCK_SH if shared else fcntl.LOCK_EX)
+        yield
+
+
 def main():
     payload = sys.stdin.buffer.read(1024 * 1024 + 1)
     if len(payload) > 1024 * 1024:
         raise Refusal('Sandbox request is too large.')
     request = json.loads(payload)
     host = Host(request['project'], request['sandbox_id'], request['budget'])
-    # Capacity and partial provisioning share a host lock across every task sandbox.
-    descriptor = os.open('/run/lock/orbit-task-sandboxes.lock', os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
-    with os.fdopen(descriptor, 'r+') as lock:
-        details = os.fstat(lock.fileno())
-        if not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid() or details.st_nlink != 1:
-            raise Refusal('Unsafe sandbox lock.')
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        operation = request['operation']
-        if operation == 'provision':
-            result = host.provision(request['spec'])
-        elif operation in ('observe', 'capacity', 'park', 'resume', 'destroy'):
-            result = getattr(host, operation)()
+    operation = request['operation']
+    # Lock this group before the global budget lock. A long guest command never
+    # blocks another group's provisioning or holds host capacity serialization.
+    with sandbox_lock('/run/lock/orbit-sandbox-' + host.name + '.lock', operation == 'guest_command'):
+        if operation == 'guest_command':
+            result = host.guest_command(request['guest'])
         else:
-            raise Refusal('Unknown sandbox operation.')
+            with sandbox_lock('/run/lock/orbit-task-sandboxes.lock'):
+                if operation == 'provision':
+                    result = host.provision(request['spec'])
+                elif operation in ('observe', 'capacity', 'park', 'resume', 'destroy'):
+                    result = getattr(host, operation)()
+                else:
+                    raise Refusal('Unknown sandbox operation.')
     print(json.dumps(result))
 
 

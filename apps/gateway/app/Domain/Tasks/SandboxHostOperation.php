@@ -12,4 +12,5 @@ enum SandboxHostOperation: string
     case Park = 'park';
     case Resume = 'resume';
     case Destroy = 'destroy';
+    case GuestCommand = 'guest_command';
 }

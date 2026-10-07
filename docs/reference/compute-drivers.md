@@ -133,3 +133,17 @@ that cannot be observed is an error, not evidence of available cloud placement.
 Orbit groups stay local until cloud support for that lane is proven. The task
 workspace entry point remains gated while workspace and agent integration is
 completed; these settings alone do not start sandbox task execution.
+
+### Commands inside a guest
+
+The host accepts a separate `guest_command` envelope addressed to an owned VM
+role. It runs the command as the guest's managed `orbit` user, with a clean
+environment and passwordless sudo inside the VM. Command input travels on
+protected stdin. The host never interprets a guest command as a host shell
+program. Time and output limits apply on both sides of the VM boundary.
+
+Guest commands share a per-sandbox lock. Park, resume, and destroy take its
+exclusive lock, so they wait for active commands. Guest work does not hold the
+host capacity lock and cannot stall operations for another group. This transport
+is an internal building block; workspace execution remains gated until the
+full task path is connected and proven.

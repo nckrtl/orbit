@@ -19,6 +19,7 @@ enum Operation {
     Park,
     Resume,
     Destroy,
+    GuestCommand,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -42,6 +43,16 @@ struct Spec {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+struct GuestCommand {
+    role: Role,
+    argv: Vec<String>,
+    stdin: String,
+    timeout: u16,
+    max_output: u32,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 struct Request {
     operation: Operation,
     project: String,
@@ -49,6 +60,8 @@ struct Request {
     budget: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     spec: Option<Spec>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    guest: Option<GuestCommand>,
 }
 
 fn request(input: impl Read) -> Result<Vec<u8>, &'static str> {
@@ -63,9 +76,24 @@ fn request(input: impl Read) -> Result<Vec<u8>, &'static str> {
     let request: Request =
         serde_json::from_slice(&bytes).map_err(|_| "sandbox request is invalid")?;
     if (request.operation == Operation::Provision) != request.spec.is_some()
+        || (request.operation == Operation::GuestCommand) != request.guest.is_some()
         || !(1..=64).contains(&request.budget)
     {
         return Err("sandbox request is invalid");
+    }
+    if let Some(guest) = &request.guest {
+        if guest.argv.is_empty()
+            || guest.argv.len() > 128
+            || guest.argv[0].is_empty()
+            || guest
+                .argv
+                .iter()
+                .any(|arg| arg.contains('\0') || arg.len() > 65536)
+            || !(1..=900).contains(&guest.timeout)
+            || !(1..=8 * 1024 * 1024).contains(&guest.max_output)
+        {
+            return Err("sandbox request is invalid");
+        }
     }
     serde_json::to_vec(&request).map_err(|_| "sandbox request is invalid")
 }
@@ -136,6 +164,32 @@ mod tests {
         assert!(request(value.to_string().as_bytes()).is_err());
         let mut value = base();
         value["budget"] = 0.into();
+        assert!(request(value.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn guest_commands_are_closed_bounded_and_distinct_from_host_operations() {
+        let mut value = base();
+        value["operation"] = "guest_command".into();
+        assert!(request(value.to_string().as_bytes()).is_err());
+        value["guest"] =
+            json!({"role":"operator", "argv":["id"], "stdin":"", "timeout":30, "max_output":4096});
+        assert!(request(value.to_string().as_bytes()).is_ok());
+        for (field, invalid) in [
+            ("timeout", json!(901)),
+            ("max_output", json!(0)),
+            ("role", json!("host")),
+            ("argv", json!([])),
+            ("argv", json!(["x\u{0000}y"])),
+        ] {
+            let mut bad = value.clone();
+            bad["guest"][field] = invalid;
+            assert!(request(bad.to_string().as_bytes()).is_err());
+        }
+        let mut bad = value.clone();
+        bad["operation"] = "observe".into();
+        assert!(request(bad.to_string().as_bytes()).is_err());
+        value["guest"]["host_command"] = "never".into();
         assert!(request(value.to_string().as_bytes()).is_err());
     }
 
