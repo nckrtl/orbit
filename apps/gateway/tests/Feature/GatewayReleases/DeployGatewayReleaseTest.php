@@ -277,7 +277,7 @@ describe('gateway:release:deploy', function (): void {
             ->and(GatewayRelease::query()->first()->sha)->toBe($sha);
     });
 
-    it('marks a commit failed when its web build is missing, and retries when GitHub cannot be read', function (string $errorCode, bool $recorded): void {
+    it('marks a commit failed when its web build is missing, and retries when GitHub cannot be read', function (string $errorCode, bool $retryable): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Web build fails');
         $order = new ReleaseSteps;
@@ -302,18 +302,15 @@ describe('gateway:release:deploy', function (): void {
         expect($exception->errorCode)->toBe($errorCode)
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
             ->and($order->steps)->toBe([])
-            ->and(GatewayRelease::query()->count())->toBe($recorded ? 1 : 0);
-
-        if ($recorded) {
-            expect(GatewayRelease::query()->first()->outcome)->toBe('failed')
-                ->and(GatewayRelease::query()->first()->retryable)->toBeFalse()
-                ->and(GatewayRelease::query()->first()->phases)->toBe(['prepare' => ['outcome' => 'failed', 'error_code' => $errorCode]]);
-        }
+            ->and(GatewayRelease::query()->count())->toBe(1)
+            ->and(GatewayRelease::query()->first()->outcome)->toBe('failed')
+            ->and(GatewayRelease::query()->first()->retryable)->toBe($retryable)
+            ->and(GatewayRelease::query()->first()->error_code)->toBe($errorCode);
     })->with([
-        'missing artifact' => ['gateway.release_web_build_missing', true],
-        'invalid artifact' => ['gateway.release_web_build_invalid', true],
-        'GitHub unreadable' => ['gateway.release_web_build_unavailable', false],
-        'web directory missing' => ['gateway.release_web_directory_missing', false],
+        'missing artifact' => ['gateway.release_web_build_missing', false],
+        'invalid artifact' => ['gateway.release_web_build_invalid', false],
+        'GitHub unreadable' => ['gateway.release_web_build_unavailable', true],
+        'web directory missing' => ['gateway.release_web_directory_missing', true],
     ]);
 
     it('refuses a second release step while one holds the lock', function (): void {
