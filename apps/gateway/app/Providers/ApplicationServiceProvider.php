@@ -64,6 +64,8 @@ use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
+use App\Domain\GitHub\BranchHeadReader;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
@@ -252,6 +254,7 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
@@ -505,6 +508,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
+        BranchHeadReader::class => GitHubBranchHeadReader::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
@@ -835,6 +839,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 hibernator: app(RuntimeHibernatorConverger::class),
                 agentView: app(AgentViewConverger::class),
+                releaseUnits: app(GatewayReleaseUnitConverger::class),
             ),
         );
         $this->app->singleton(

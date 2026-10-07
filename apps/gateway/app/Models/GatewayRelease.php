@@ -8,11 +8,16 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * One attempt to put a Gateway release current, including a switch-back or a pause.
+ * One attempt to put a Gateway release current, including a switch-back or a pause. The record
+ * exists from the moment the attempt is requested: `queued` until a release unit claims it,
+ * `running` while it holds the release lock, then one final outcome.
  *
  * @property int $id
- * @property string $release_id
- * @property string $sha
+ * @property string|null $release_id
+ * @property string|null $sha
+ * @property string|null $requested
+ * @property bool $force
+ * @property array<string, mixed>|null $alert
  * @property string $trigger
  * @property string $outcome
  * @property bool $migrations_ran
@@ -29,6 +34,15 @@ use Illuminate\Support\Carbon;
  */
 final class GatewayRelease extends Model
 {
+    public const string Queued = 'queued';
+
+    public const string Running = 'running';
+
+    public const string Interrupted = 'interrupted';
+
+    /** Outcomes that mark the commit failed for automatic releases, unless the failure is retryable. */
+    public const array FailedOutcomes = ['failed', 'switched_back', 'paused'];
+
     /** @var list<string> */
     #[\Override]
     protected $fillable = [
@@ -45,6 +59,9 @@ final class GatewayRelease extends Model
         'error_code',
         'message',
         'duration_ms',
+        'requested',
+        'force',
+        'alert',
     ];
 
     /** @return array<string, string> */
@@ -56,7 +73,49 @@ final class GatewayRelease extends Model
             'cleanup_paused' => 'boolean',
             'phases' => 'array',
             'duration_ms' => 'integer',
+            'force' => 'boolean',
+            'alert' => 'array',
         ];
+    }
+
+    /**
+     * Commits that already failed a release for the commit itself, so they never ship automatically:
+     * a failed, switched-back, paused, or interrupted deploy, automatic release, or adoption with no
+     * retry left.
+     *
+     * @return list<string>
+     */
+    public static function failedShas(): array
+    {
+        return array_values(array_unique(self::query()
+            ->where('trigger', '!=', 'rollback')
+            ->whereIn('outcome', [...self::FailedOutcomes, self::Interrupted])
+            ->where('retryable', false)
+            ->get(['sha', 'requested'])
+            ->map(static fn (self $record): ?string => $record->commit())
+            ->filter(static fn (?string $sha): bool => $sha !== null)
+            ->all()));
+    }
+
+    /**
+     * The full commit of the attempt: its resolved `sha`, or the `requested` commit when the caller
+     * named a full SHA and the attempt died before prepare resolved it.
+     */
+    public function commit(): ?string
+    {
+        foreach ([$this->sha, $this->requested] as $candidate) {
+            if (is_string($candidate) && preg_match('/\A[0-9a-f]{40}\z/D', $candidate) === 1) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /** Whether the attempt has ended. A queued or running record can still change. */
+    public function finished(): bool
+    {
+        return ! in_array($this->outcome, [self::Queued, self::Running], true);
     }
 
     /** @return array<string, mixed> */
@@ -66,7 +125,9 @@ final class GatewayRelease extends Model
             'id' => $this->id,
             'release' => $this->release_id,
             'sha' => $this->sha,
+            'requested' => $this->requested,
             'trigger' => $this->trigger,
+            'force' => $this->force,
             'outcome' => $this->outcome,
             'migrations_ran' => $this->migrations_ran,
             'retryable' => $this->retryable,
@@ -77,7 +138,9 @@ final class GatewayRelease extends Model
             'error_code' => $this->error_code,
             'message' => $this->message,
             'duration_ms' => $this->duration_ms,
+            'alert' => $this->alert,
             'created_at' => $this->created_at?->toIso8601String(),
+            'updated_at' => $this->updated_at?->toIso8601String(),
         ];
     }
 }

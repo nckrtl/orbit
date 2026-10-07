@@ -6,6 +6,7 @@ use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
@@ -190,7 +191,7 @@ it('repairs restrictive public permissions without exposing private files or sym
 });
 
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger();
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger();
 
     try {
         $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
@@ -334,6 +335,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->and($hibernator->calls)
             ->toBe(1)
             ->and($agentView->calls)
+            ->toBe(1)
+            ->and($releaseUnits->calls)
             ->toBe(1);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -639,7 +642,7 @@ it('repeats the same idempotent install step on every web convergence', function
 });
 
 it('stops before any Caddy or certificate step when Caddy cannot be installed', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger(failure: 'caddy-install');
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger(failure: 'caddy-install');
 
     try {
         expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
@@ -672,6 +675,8 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
             ->and($hibernator->calls)
             ->toBe(0)
             ->and($agentView->calls)
+            ->toBe(0)
+            ->and($releaseUnits->calls)
             ->toBe(0);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -1010,12 +1015,14 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             checkoutPath: $checkoutPath,
             hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,
             agentView: $agentView = new RecordingAgentViewConverger,
+            releaseUnits: $releaseUnits = new RecordingGatewayReleaseUnitConverger,
         ),
         $processes,
         $issuer,
         $orbitHome,
         $hibernator,
         $agentView,
+        $releaseUnits,
     ];
 }
 
@@ -1044,6 +1051,16 @@ function gateway_web_pushed(ProcessInvocation $invocation): string
     preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $invocation->input, $match);
 
     return (string) base64_decode($match[1] ?? '', true);
+}
+
+final class RecordingGatewayReleaseUnitConverger implements GatewayReleaseUnitConverger
+{
+    public int $calls = 0;
+
+    public function converge(): void
+    {
+        $this->calls++;
+    }
 }
 
 final class RecordingRuntimeHibernatorConverger implements RuntimeHibernatorConverger

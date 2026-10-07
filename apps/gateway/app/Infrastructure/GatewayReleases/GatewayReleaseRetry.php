@@ -33,16 +33,36 @@ final readonly class GatewayReleaseRetry
         'gateway.release_smoke_missing',
     ];
 
+    /**
+     * The triggers whose attempts spend the budget. A rollback to the commit never does.
+     *
+     * @var list<string>
+     */
+    private const array Attempting = ['deploy', 'auto', 'adopt'];
+
+    /**
+     * The finished outcomes that spend the budget. A verified, queued, or running record never does.
+     *
+     * @var list<string>
+     */
+    private const array FailedAttempts = ['failed', 'switched_back', GatewayRelease::Interrupted];
+
     public function __construct(private int $attempts = self::Attempts) {}
 
-    public function retryable(string $errorCode, string $sha): bool
+    /** @param int|null $except the record of the attempt that asks, which is not an earlier attempt */
+    public function retryable(string $errorCode, string $sha, ?int $except = null): bool
     {
         if (in_array($errorCode, self::Final, true)) {
             return false;
         }
 
         try {
-            $earlier = GatewayRelease::query()->where('sha', $sha)->count();
+            $earlier = GatewayRelease::query()
+                ->where(static fn ($query) => $query->where('sha', $sha)->orWhere(static fn ($inner) => $inner->whereNull('sha')->where('requested', $sha)))
+                ->whereIn('trigger', self::Attempting)
+                ->whereIn('outcome', self::FailedAttempts)
+                ->when($except !== null, static fn ($query) => $query->whereKeyNot($except))
+                ->count();
         } catch (Throwable) {
             // The record table may not exist yet, before the first release migrated it.
             $earlier = 0;

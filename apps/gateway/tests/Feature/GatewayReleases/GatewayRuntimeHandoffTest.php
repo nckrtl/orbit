@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\GatewayReleases\GatewayDocumentCleanup;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
@@ -119,7 +120,7 @@ final class FakeDocumentCleanup implements GatewayDocumentCleanup
     }
 }
 
-final class RecordingHandoffUnits implements AgentViewConverger, RuntimeHibernatorConverger
+final class RecordingHandoffUnits implements AgentViewConverger, GatewayReleaseUnitConverger, RuntimeHibernatorConverger
 {
     /** @var list<string> */
     public array $converged = [];
@@ -199,6 +200,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5): array
             files: new ProtectedFileWriter,
             hibernator: $units,
             agentView: $units,
+            releaseUnits: $units,
             scheduler: new GatewaySchedulerHandoff(
                 $processes,
                 HANDOFF_APP,
@@ -265,7 +267,7 @@ describe('gateway:release:handoff', function (): void {
             ->and($result['scheduler_drain']['outcome'])->toBe('drained')
             ->and($result['scheduler_drain']['running'])->toBe([$probe->members[1]])
             ->and($builds->built)->toBe(['gateway'])
-            ->and($units->converged)->toBe(['units', 'units'])
+            ->and($units->converged)->toBe(['units', 'units', 'units'])
             ->and($processes->systemctl())->toBe([
                 "systemctl show -p MainPID --value {$unit}",
                 "sudo systemctl kill --kill-whom=main --signal=SIGTERM {$unit}",

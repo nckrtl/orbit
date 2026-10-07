@@ -9,10 +9,10 @@ use App\Actions\GatewayReleases\ShowGatewayReleaseAction;
 final class ShowGatewayReleaseCommand extends GatewayReleaseCommand
 {
     #[\Override]
-    protected $signature = 'gateway:release:show {release : First 12 hex digits of the release}';
+    protected $signature = 'gateway:release:show {release : Record id, or a hex SHA of 7 to 40 characters such as the 12-digit release id}';
 
     #[\Override]
-    protected $description = 'Show the newest record for one Gateway release.';
+    protected $description = 'Show one Gateway release record, or the newest record of a commit.';
 
     public function handle(ShowGatewayReleaseAction $action): int
     {

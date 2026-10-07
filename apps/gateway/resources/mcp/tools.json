@@ -1870,10 +1870,169 @@
       }
     },
     {
+      "name": "gateway-release-auto-disable",
+      "extension": null,
+      "title": "gateway:release:auto:disable",
+      "description": "Turns automatic Gateway releases off. A release that already runs finishes.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-automation/disable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-auto-enable",
+      "extension": null,
+      "title": "gateway:release:auto:enable",
+      "description": "Turns automatic Gateway releases on. A pause still holds them until `gateway:release:auto:resume`.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-automation/enable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-auto-resume",
+      "extension": null,
+      "title": "gateway:release:auto:resume",
+      "description": "Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-automation/resume",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-auto-status",
+      "extension": null,
+      "title": "gateway:release:auto:status",
+      "description": "Shows whether automatic Gateway releases are enabled or paused, the current release, the last runner tick, and how long releases have made no progress. See /reference/gateway-recovery#automatic-releases.",
+      "method": "GET",
+      "path": "/api/v1/gateway/release-automation",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-deploy",
+      "extension": null,
+      "title": "gateway:release:deploy",
+      "description": "Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.",
+      "method": "POST",
+      "path": "/api/v1/gateway/releases",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{7,40}$(?![\\s\\S])",
+            "description": "Hex SHA of the commit to release, 7 to 40 characters"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "commit"
+        ]
+      }
+    },
+    {
+      "name": "gateway-release-list",
+      "extension": null,
+      "title": "gateway:release:list",
+      "description": "Lists the 50 newest Gateway release records, newest first, including queued and running ones.",
+      "method": "GET",
+      "path": "/api/v1/gateway/releases",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-rollback",
+      "extension": null,
+      "title": "gateway:release:rollback",
+      "description": "Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.",
+      "method": "POST",
+      "path": "/api/v1/gateway/releases/{release}/rollback",
+      "path_inputs": [
+        "release"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": "string"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Switch the code across a migration the target release does not have"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "release"
+        ]
+      }
+    },
+    {
+      "name": "gateway-release-show",
+      "extension": null,
+      "title": "gateway:release:show",
+      "description": "Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.",
+      "method": "GET",
+      "path": "/api/v1/gateway/releases/{release}",
+      "path_inputs": [
+        "release"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "release"
+        ]
+      }
+    },
+    {
       "name": "gateway-status",
       "extension": null,
       "title": "Show Gateway status",
-      "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.",
+      "description": "Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.",
       "method": "GET",
       "path": "/api/v1/gateway/status",
       "path_inputs": [],

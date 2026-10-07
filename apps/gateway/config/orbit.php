@@ -34,6 +34,10 @@ return [
         'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 5),
         'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
         'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
+        // Automatic releases ship the newest commit of this branch whose check run of this name passed.
+        // The repository is the origin of the shared release repository.
+        'branch' => env(key: 'ORBIT_GATEWAY_RELEASE_BRANCH', default: 'main'),
+        'check' => env(key: 'ORBIT_GATEWAY_RELEASE_CHECK', default: 'Required checks'),
     ],
     'gateway_web' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
