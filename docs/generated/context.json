@@ -1152,6 +1152,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Schedule",
                 "Task",
                 "Task workspace"
             ],

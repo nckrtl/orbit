@@ -6,6 +6,7 @@ use App\Domain\Compute\ComputeDriver;
 use App\Domain\Compute\ComputeException;
 use App\Domain\Compute\SandboxState;
 use App\Infrastructure\Compute\TaskSandboxLifecycle;
+use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -114,4 +115,227 @@ it('does not overlap activation and destruction for a reservation', function ():
         $lock->release();
     }
     expect($sandbox->fresh()->model_key)->toBeNull()->and($sandbox->fresh()->desired_power)->toBe('running');
+});
+
+it('keeps one review deadline and parks at five minutes without repeating the snapshot', function (): void {
+    $this->travelTo(now()->startOfSecond());
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Running]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldReceive('park')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
+
+        return $row;
+    });
+    $lifecycle = app(TaskSandboxLifecycle::class);
+    $started = now();
+    $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false);
+    $this->travel(299)->seconds();
+    $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false);
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Running);
+    $this->travel(1)->seconds();
+    $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false);
+    $parked = now();
+    $this->travel(1)->hours();
+    $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Stopped)
+        ->and($sandbox->fresh()->review_started_at->equalTo($started))->toBeTrue()
+        ->and($sandbox->fresh()->parked_at->equalTo($parked))->toBeTrue();
+});
+
+it('ends the grace period as soon as another group waits for capacity', function (): void {
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Running]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldReceive('park')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped']);
+
+        return $row;
+    });
+    $lifecycle = app(TaskSandboxLifecycle::class);
+    $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false);
+    $this->travel(1)->seconds();
+    $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: true);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Stopped)->and($sandbox->fresh()->parked_at)->not->toBeNull();
+});
+
+it('retains a preview under pressure and permits explicit merge cleanup', function (): void {
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Running, 'provider' => 'upcloud']);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldNotReceive('park', 'resume');
+    $driver->shouldReceive('destroy')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Destroyed]);
+
+        return $row;
+    });
+    $lifecycle = app(TaskSandboxLifecycle::class);
+    $lifecycle->review($sandbox, $driver, preview: true, capacityWaiting: true);
+    $this->travel(2)->hours();
+    $lifecycle->review($sandbox, $driver, preview: true, capacityWaiting: true);
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Running)->and($sandbox->fresh()->preview)->toBeTrue();
+    $lifecycle->destroy($sandbox, $driver);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Destroyed);
+});
+
+it('resumes a parked preview with credentials without extending its review deadline', function (): void {
+    $proxy = new FakeSandboxModelProxy;
+    $proxy->install();
+    $this->travelTo(now()->startOfSecond());
+    $started = now()->subMinutes(10);
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped', 'review_started_at' => $started, 'parked_at' => now()->subMinutes(5)]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldReceive('resume')->once()->andReturnUsing(function (TaskSandbox $row) use ($proxy): TaskSandbox {
+        expect($row->pi_token)->not->toBeNull()->and($proxy->keys)->toContain($row->model_key);
+        $row->update(['state' => SandboxState::Running, 'desired_power' => 'running']);
+
+        return $row;
+    });
+    app(TaskSandboxLifecycle::class)->review($sandbox, $driver, preview: true, capacityWaiting: true);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Running)
+        ->and($sandbox->fresh()->review_started_at->equalTo($started))->toBeTrue();
+});
+
+it('expires UpCloud at one hour even after parking fails and retains cleanup intent across retries', function (): void {
+    $proxy = new FakeSandboxModelProxy;
+    $proxy->install();
+    $this->travelTo(now()->startOfSecond());
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['provider' => 'upcloud']);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldReceive('provision')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Running]);
+
+        return $row;
+    });
+    $driver->shouldReceive('park')->twice()->andThrow(new ComputeException('compute.unavailable', 'Stop failed'));
+    $lifecycle = app(TaskSandboxLifecycle::class);
+    $lifecycle->activate($sandbox, $driver);
+    $key = $sandbox->model_key;
+    $started = now();
+    expect(fn () => $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: true))->toThrow(ComputeException::class, 'Stop failed');
+    $this->travel(3599)->seconds();
+    expect(fn () => $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false))->toThrow(ComputeException::class, 'Stop failed');
+    $this->travel(1)->seconds();
+    $proxy->available = false;
+    expect(fn () => $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false))->toThrow(ComputeException::class);
+    expect($sandbox->fresh()->desired_power)->toBe('destroyed')->and($sandbox->fresh()->pi_token)->not->toBeNull();
+    $proxy->available = true;
+    $driver->shouldReceive('destroy')->once()->andReturnUsing(function (TaskSandbox $row) use ($key, $proxy): TaskSandbox {
+        expect($proxy->keys)->not->toContain($key)->and($row->model_key)->toBeNull();
+        $row->update(['state' => SandboxState::Destroyed]);
+
+        return $row;
+    });
+    $lifecycle->review($sandbox, $driver, preview: true, capacityWaiting: false);
+    $lifecycle->review($sandbox, $driver, preview: true, capacityWaiting: false);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Destroyed)->and($sandbox->fresh()->pi_token)->toBeNull()
+        ->and($sandbox->fresh()->review_started_at->equalTo($started))->toBeTrue();
+});
+
+it('clears review timing only after activation is confirmed', function (): void {
+    $proxy = new FakeSandboxModelProxy;
+    $proxy->install();
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped', 'review_started_at' => now()->subMinutes(10), 'parked_at' => now()->subMinutes(5)]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldReceive('resume')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Starting, 'desired_power' => 'running']);
+
+        return $row;
+    });
+    $driver->shouldReceive('provision')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Running]);
+
+        return $row;
+    });
+    $lifecycle = app(TaskSandboxLifecycle::class);
+    $lifecycle->activate($sandbox, $driver);
+    expect($sandbox->fresh()->review_started_at)->not->toBeNull()->and($sandbox->fresh()->parked_at)->not->toBeNull();
+    $lifecycle->activate($sandbox, $driver);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Running)
+        ->and($sandbox->fresh()->review_started_at)->toBeNull()->and($sandbox->fresh()->parked_at)->toBeNull();
+});
+
+it('does not overlap a review transition with another lifecycle operation', function (): void {
+    $sandbox = lifecycle_sandbox();
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldNotReceive('park', 'destroy');
+    $lock = Cache::lock('orbit:compute:sandbox:'.$sandbox->id, 2400);
+    $lock->get();
+    try {
+        expect(fn () => app(TaskSandboxLifecycle::class)->review($sandbox, $driver, preview: false, capacityWaiting: true))
+            ->toThrow(ComputeException::class, 'lifecycle operation');
+    } finally {
+        $lock->release();
+    }
+    expect($sandbox->fresh()->review_started_at)->toBeNull();
+});
+
+it('requires fleet removal before expiring an enrolled UpCloud sandbox', function (): void {
+    $sandbox = lifecycle_sandbox();
+    $node = Node::query()->create(['name' => 'review-sandbox', 'platform' => 'linux', 'public_ssh_host' => '203.0.113.20']);
+    $sandbox->update(['provider' => 'upcloud', 'node_id' => $node->id, 'state' => SandboxState::Stopped, 'desired_power' => 'stopped', 'review_started_at' => now()->subHour()]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldNotReceive('destroy');
+
+    expect(fn () => app(TaskSandboxLifecycle::class)->review($sandbox, $driver, preview: false, capacityWaiting: false))
+        ->toThrow(ComputeException::class, 'Remove the sandbox Node');
+    expect($sandbox->fresh()->node_id)->toBe($node->id)->and($sandbox->fresh()->state)->toBe(SandboxState::Stopped);
+});
+
+it('does not grant a new retention window when a long-running preview is disabled', function (): void {
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['provider' => 'upcloud', 'state' => SandboxState::Running]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldReceive('destroy')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Destroyed]);
+
+        return $row;
+    });
+    $lifecycle = app(TaskSandboxLifecycle::class);
+    $lifecycle->review($sandbox, $driver, preview: true, capacityWaiting: false);
+    $this->travel(61)->minutes();
+    $lifecycle->review($sandbox, $driver, preview: false, capacityWaiting: false);
+
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Destroyed);
+});
+
+it('records parking only after the driver confirms that the VM stopped', function (): void {
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Running]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldReceive('park')->once()->andReturnUsing(function (TaskSandbox $row): TaskSandbox {
+        $row->update(['state' => SandboxState::Stopping, 'desired_power' => 'stopped']);
+
+        return $row;
+    });
+    app(TaskSandboxLifecycle::class)->review($sandbox, $driver, preview: false, capacityWaiting: true);
+
+    expect($sandbox->fresh()->parked_at)->toBeNull()->and($sandbox->fresh()->state)->toBe(SandboxState::Stopping);
+});
+
+it('retains the review cycle when resume fails before compute starts', function (): void {
+    $proxy = new FakeSandboxModelProxy;
+    $proxy->install();
+    $proxy->available = false;
+    $this->travelTo(now()->startOfSecond());
+    $started = now()->subMinutes(10);
+    $parked = now()->subMinutes(5);
+    $sandbox = lifecycle_sandbox();
+    $sandbox->update(['state' => SandboxState::Stopped, 'desired_power' => 'stopped', 'review_started_at' => $started, 'parked_at' => $parked]);
+    $driver = mock(ComputeDriver::class);
+    $driver->shouldNotReceive('resume');
+
+    expect(fn () => app(TaskSandboxLifecycle::class)->activate($sandbox, $driver))->toThrow(ComputeException::class);
+    expect($sandbox->fresh()->state)->toBe(SandboxState::Stopped)
+        ->and($sandbox->fresh()->review_started_at->equalTo($started))->toBeTrue()
+        ->and($sandbox->fresh()->parked_at->equalTo($parked))->toBeTrue();
 });

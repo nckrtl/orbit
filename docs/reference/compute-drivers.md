@@ -53,7 +53,7 @@ Changing a setting applies to new reservations. Existing reservations keep their
 
 Each call makes a bounded set of provider requests. No call waits in a sleep loop for boot or shutdown. Call `observe` again to see the next provider state. `running` means the provider reports the server started and the firewall matches the recorded bootstrap or sealed policy; SSH, cloud-init, Pi, and Instance readiness are separate checks.
 
-`park` stops the VM without deleting its disk. `resume` starts that same VM. A stopped UpCloud Starter VM remains billable. The future task lifecycle must destroy it after the agreed one-hour review wait; this driver does not set that timer.
+`park` stops the VM without deleting its disk. `resume` starts that same VM. A stopped UpCloud Starter VM remains billable. The sandbox lifecycle records the review start and requests destruction after one hour; the raw driver does not set that timer.
 
 `destroy` records deletion intent, stops the VM, verifies its exact server identity and disk ownership, then deletes only the recorded server and disk. It confirms that both are absent before releasing capacity. If the server is already absent, the recorded disk can still be cleaned up, but only when its title matches the reservation and it is detached. A sandbox attached to an enrolled Node cannot be destroyed until the Node leaves the fleet. Unrelated VMs, disks, and snapshots are never swept or adopted.
 
@@ -231,3 +231,11 @@ An Incus host can set `model_proxy_origin` to a fixed HTTP(S) origin on loopback
 This needs the host’s Caddy binary and an existing service manager for the compute account. It does not enable a user service manager or change host firewall rules. The Incus ACL permits only the operator to reach its own bridge on this port. Parking retains the relay and key; resume checks the recorded origin; destruction stops the service and removes its owned files before removing the network. Drift refuses mutation.
 
 Guest preparation uses systemd socket forwarding from `127.0.0.1:8317` to the owned bridge. It verifies model-key authentication through that path before reporting readiness. A disposable connectivity proof remains a prerequisite for enabling this host option.
+
+### Review retention policy
+
+`TaskSandboxLifecycle::review` records the start of each review wait before changing compute. With no capacity waiter, a sandbox has a five-minute grace period. A capacity waiter ends that grace immediately. Repeated calls keep the original deadline. A reservation with `preview` enabled stays running. Changing it to a preview after parking resumes it through the same credential checks.
+
+Incus retains its stopped snapshot until resume or destruction. UpCloud retention ends one hour after the review wait began, including any grace period or failed park attempt. Expiry uses the normal credential revocation and destruction path. An enrolled Node must leave the fleet before that path can remove its VM. Failures retain the deadline and ownership for retry. Preview retention does not prevent explicit merge cleanup.
+
+Review timing, confirmed parking time, and VM power are stored separately. A confirmed activation clears review timing for the next cycle. A failed activation retains it. Scheduler status transitions and automatic reconciliation remain prerequisites for enabling VM claims; the lifecycle entry point alone does not schedule these operations.
