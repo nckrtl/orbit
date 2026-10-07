@@ -52,6 +52,13 @@ jobs:
           ref: ${{ github.head_ref || github.ref_name }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
 
+      # The checkout above names the branch, and a later push can move it before this job starts. Main runs are not
+      # cancelled, so each one must test exactly its own commit: its Required checks result releases that commit.
+      - name: Pin the run's commit
+        if: github.event_name != 'pull_request'
+        working-directory: .
+        run: git reset --hard "$GITHUB_SHA"
+
       # Sabre already has PHP 8.5 with PCOV and Composer. On a self-hosted runner, setup-php makes
       # /usr/local/bin world-writable, which Orbit's service-metrics program refuses on every Node.
       - name: Set up PHP

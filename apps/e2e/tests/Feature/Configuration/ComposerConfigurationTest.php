@@ -409,6 +409,22 @@ it('lets every main push finish CI while a pull request keeps only its newest ru
     ]);
 });
 
+it('tests exactly the run commit on main even when the branch moved before the job started', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $steps = $workflow['jobs']['project']['steps'];
+    $names = array_column($steps, 'name');
+    $checkout = array_search('Check out repository', $names, true);
+
+    // The checkout names the branch, so a later push would otherwise be tested under this run's commit.
+    expect($steps[$checkout]['with']['ref'])->toBe('${{ github.head_ref || github.ref_name }}')
+        ->and($steps[$checkout + 1])->toBe([
+            'name' => "Pin the run's commit",
+            'if' => "github.event_name != 'pull_request'",
+            'working-directory' => '.',
+            'run' => 'git reset --hard "$GITHUB_SHA"',
+        ]);
+});
+
 it('publishes the web build of each main push for the Gateway to install', function (): void {
     $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
     $steps = array_column($workflow['jobs']['web']['steps'], null, 'name');
