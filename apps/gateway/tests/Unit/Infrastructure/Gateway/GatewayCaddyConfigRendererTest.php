@@ -23,7 +23,9 @@ it('routes Gateway paths to Laravel, Grafana through Metrics authorization, and 
             '@gateway path /api/* /mcp /mcp/* /up /.well-known/*',
             'root * /home/orbit/orbit/apps/gateway/public',
             'php_fastcgi unix//run/php/orbit-gateway.sock',
-            'uri /api/v1/metrics/grafana/authorize',
+            'uri /index.php',
+            "root /home/orbit/orbit/apps/gateway/public\n                resolve_root_symlink\n                split .php\n",
+            'env REQUEST_URI /api/v1/metrics/grafana/authorize',
             'env REMOTE_ADDR {remote_host}',
             'reverse_proxy https://10.44.0.2 {',
             'header_up Host metrics.orbit',
@@ -35,6 +37,7 @@ it('routes Gateway paths to Laravel, Grafana through Metrics authorization, and 
             'try_files {path} /index.html',
         )
         ->not->toContain('reverse_proxy http://')
+        ->not->toContain('SCRIPT_FILENAME')
         ->and($gateway)->toBeInt()->toBeLessThan($grafana)
         ->and($grafana)->toBeLessThan($web);
 

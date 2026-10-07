@@ -24,6 +24,14 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 
+`APP_VERSION` in the Gateway's own `.env` sets the version that `gateway:status` reports. When it is unset or empty, the Gateway reports the commit in its release's `REVISION` file, or `dev` outside a release. Leave it unset in the [release layout](/reference/gateway-recovery#release-layout), so every release reports its own commit. `.env.example` does not set it, and [adoption](/reference/gateway-recovery#adopt-the-release-layout) comments it out of the shared env file. It is not an Instance key.
+
+`ORBIT_GATEWAY_CHECKOUT` is the Gateway application directory. It defaults to `/home/orbit/orbit/apps/gateway`, which is a link to the current release in the release layout.
+
+`ORBIT_GATEWAY_RELEASE_MIN_FREE_MB` is the free space, in MiB, that [prepare](/reference/gateway-recovery#prepare-a-release) keeps in the releases directory. It defaults to `1024`. It is not an Instance key. `ORBIT_GATEWAY_RELEASES_KEEP` is how many releases [deploy](/reference/gateway-recovery#deploy-a-release) keeps besides the current and previous one. It defaults to `5`. `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` is how many pre-migration [database snapshots](/reference/gateway-recovery#migrations-and-the-snapshot) the Gateway keeps, also `5` by default. `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` is how long the [runtime handoff](/reference/gateway-recovery#runtime-handoff) lets the old scheduler finish its running commands, `600` by default.
+
+`ORBIT_GATEWAY_VERIFY_ORIGIN` is the origin deploy uses for `/up` and Gateway status. It defaults to `https://gateway.orbit`. It is not an Instance key.
+
 `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are settings in the Gateway's own environment. They are not Instance keys. See [Tasks: OpsBot direction webhook](/reference/tasks#opsbot-direction-webhook). The Gateway never returns the secret. Setting Instance keys with those names does not configure the Gateway.
 
 `ORBIT_CLI_RELEASE_REPOSITORY` is a setting in the Gateway's own environment, not an Instance key. It names the repository whose CLI releases make up the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it). The default is `https://github.com/nckrtl/orbit`. On the machine that runs `orbit self-update`, `ORBIT_SELF_UPDATE_RELEASES` replaces the release download location, `https://github.com/nckrtl/orbit/releases/download`, for a mirror you trust. The Gateway never sets it.

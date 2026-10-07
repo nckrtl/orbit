@@ -25,11 +25,22 @@ return [
         ? env('ORBIT_DOCUMENT_CLEANUP_RUNTIME', '/run/orbit/project-documents')
         : '/run/orbit/project-documents',
     'gateway_checkout' => rtrim(
-        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit-gateway'),
+        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit/apps/gateway'),
         characters: '/',
     ),
+    // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
+    'gateway_releases' => [
+        'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
+        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 5),
+        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
+        'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
+    ],
     'gateway_web' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
+        characters: '/',
+    ),
+    'gateway_verify_origin' => rtrim(
+        string: env(key: 'ORBIT_GATEWAY_VERIFY_ORIGIN', default: 'https://gateway.orbit'),
         characters: '/',
     ),
     // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes

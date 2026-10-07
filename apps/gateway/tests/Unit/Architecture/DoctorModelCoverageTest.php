@@ -14,6 +14,7 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
+use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceDependencyEdge;
 use App\Models\InstanceDependencyObservation;
@@ -91,6 +92,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     ];
     $excluded = [
         TaskSandbox::class,
+        GatewayRelease::class,
         Annotation::class,
         DependencyPackage::class,
         InstanceDependencyObservation::class,

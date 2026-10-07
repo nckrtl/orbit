@@ -259,6 +259,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'root * /home/orbit/orbit-gateway/public',
                 'tls /etc/caddy/orbit-cert-current/gateway.pem /etc/caddy/orbit-cert-current/gateway.key',
                 'php_fastcgi unix//run/php/orbit-gateway.sock',
+                'resolve_root_symlink',
                 'dial_timeout 10s',
                 'read_timeout 600s',
                 'write_timeout 600s',
@@ -627,7 +628,7 @@ it('repeats the same idempotent install step on every web convergence', function
         expect($second)
             ->toEqual($first)
             ->and($first[0]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway'])
+            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway', '/home/orbit/orbit-gateway'])
             ->and($first[1]->arguments)
             ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
             ->and($first[2]->arguments)

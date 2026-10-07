@@ -16,7 +16,7 @@ Principle: [Deterministic first](/mission#principles). CI checks and code decide
 
 ## Context
 
-Today the Gateway runs from an in-place checkout at `/home/orbit/orbit` ([Update source](/reference/gateway-recovery#update-source)). An update stops Caddy and PHP-FPM, runs `git checkout --detach`, `composer install`, and `migrate --force`, then restarts and verifies. An agent does this by hand after merges. ProdBot was meant to own it ([nckrtl/team](https://github.com/nckrtl/team), "ProdBot: deploys every push to main"), but the Grok bots are decommissioned. Measured on origin/main `dc629e7fb` (7 Oct 2026):
+Today the Gateway runs from an in-place checkout at `/home/orbit/orbit` ([Adopt the release layout](/reference/gateway-recovery#adopt-the-release-layout)). An update stops Caddy and PHP-FPM, runs `git checkout --detach`, `composer install`, and `migrate --force`, then restarts and verifies. An agent does this by hand after merges. ProdBot was meant to own it ([nckrtl/team](https://github.com/nckrtl/team), "ProdBot: deploys every push to main"), but the Grok bots are decommissioned. Measured on origin/main `dc629e7fb` (7 Oct 2026):
 
 - **No tooling.** There is no deploy endpoint, workflow, or command. `bin/deploy-verify` ([ADR 0198](/decisions/0198-keep-delivery-line-proofs-as-repo-commands)) only checks a deploy. `APP_VERSION` is set by hand in `.env`.
 - **The in-place update is unsafe while serving.** The PHP-FPM pool has `opcache.validate_timestamps=1` and `revalidate_freq=0`, so requests during `git checkout` or `composer install` run a half-changed tree. `reload-or-restart php8.5-fpm` kills in-flight requests, which can last up to 600 s.
@@ -100,7 +100,7 @@ An **alert** is a failed Activity entry plus an outbound HMAC webhook. The [oute
 ### Adoption and ownership
 
 - `gateway:release:adopt` converts the in-place checkout into the layout once. It refuses when the checkout has local changes.
-- After adoption, the steps that update a checkout in place refuse to run on a release symlink, and the release commands replace the [Update source](/reference/gateway-recovery#update-source) procedure.
+- After adoption, the steps that update a checkout in place refuse to run on a release symlink, and the release commands replace the in-place update procedure ([Adopt the release layout](/reference/gateway-recovery#adopt-the-release-layout)).
 - The Gateway owns releasing itself. The operator (Anna, with Nick's approval for material risk) owns adoption, enabling auto-release, and decisions after a pause.
 - This replaces ProdBot's deploy and verify duty for the Gateway.
 
