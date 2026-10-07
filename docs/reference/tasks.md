@@ -370,7 +370,7 @@ When the workspace starting commit is 40 or 64 hexadecimal characters, both prom
 
 The Gateway files a Backlog task when the same production problem keeps returning. An operator edits that task and moves it to Todo. The scheduler does not claim it before that move.
 
-The loop reads Doctor, Activity, the Gateway log, and assistance reasons. It does not read the `schedules` table. It does not wait for an external alert manager.
+The loop reads Doctor, Activity, the Gateway log, and assistance reasons. A release command also pushes its [release alerts](/reference/gateway-recovery#release-alerts) into the loop. It does not read the `schedules` table. It does not wait for an external alert manager.
 
 ### Fingerprints
 
@@ -379,7 +379,7 @@ Each signal updates one row in `problem_fingerprints`. The fingerprint is unique
 | Column | Meaning |
 | --- | --- |
 | `fingerprint` | Stable key, at most 255 characters |
-| `source` | `doctor`, `activity`, `log`, or `assist` |
+| `source` | `doctor`, `activity`, `log`, `assist`, or `release` |
 | `first_seen`, `last_seen` | Signal time of the first accepted signal, and of the latest |
 | `occurrences` | How many 5-minute windows were counted, not how many log lines |
 | `evidence` | A small JSON sample |
@@ -389,7 +389,7 @@ Each signal updates one row in `problem_fingerprints`. The fingerprint is unique
 
 A key longer than 255 characters keeps the source prefix, then `#`, then the first 12 hex characters of the SHA-256 of the full key.
 
-The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 occurrences, and up to 200 open assistance task ids.
+The sample holds at most five request ids, five Activity ids, and five Activity paths. It holds one log excerpt of at most 500 characters, the latest Doctor expected and observed values, the latest Doctor summary, the assistance reason before normalization, the newest 20 occurrences, and up to 200 open assistance task ids. A release alert adds its summary as the summary, the release repository and release id, and up to five evidence links.
 
 Each occurrence stores the UTC time of the first signal in its 5-minute window and how many signals fell in that window. A log row also stores its app frame path as `source_path`, including when the fingerprint is shortened. The summary and the assistance reason are cut at 1,000 characters. The excerpt and an Activity error message pass through the Gateway log redactor before they are stored. Expected and observed stay the bounded Doctor values. The sample does not store a raw Doctor report.
 
@@ -399,6 +399,7 @@ Each occurrence stores the UTC time of the first signal in its 5-minute window a
 | Activity | `activity\|command\|error_code` |
 | Log | `log\|exception class\|first app frame` |
 | Assistance | `assist\|normalized reason` |
+| Release alert | `release\|kind\|target\|sha` |
 
 A null Doctor resource id uses `none`. An Activity row with a nonzero exit code and no error code uses `exit` as the error code segment. The resource id stays out of the Activity key. It lives only in `properties.path`, and that path is evidence.
 
@@ -421,7 +422,7 @@ An assistance reason is trimmed and lowercased. Each UUID, and each run of digit
 
 A signal that passes the source tests above increments `occurrences` only when that fingerprint has no counted signal in the same UTC block of 5 minutes. The block index is the signal's Unix time divided by 300, rounded down. A second signal in that block keeps the occurrence time already stored, adds one to that occurrence's signal count, and can still add request ids and the other bounded sample fields. It does not add an occurrence, and it does not raise `occurrences`. It does move `last_seen` to its own time.
 
-The signal time is the time on the signal, not the time the collector reads the source. A log record uses the bracketed timestamp at the start of its header, read in the Gateway application timezone. An Activity row uses its `created_at`. Doctor and assistance use the collector clock when it accepts the signal. The block uses that time in UTC.
+The signal time is the time on the signal, not the time the collector reads the source. A log record uses the bracketed timestamp at the start of its header, read in the Gateway application timezone. An Activity row uses its `created_at`. Doctor and assistance use the collector clock when it accepts the signal. A release alert uses the Gateway clock when the alert is raised. The block uses that time in UTC.
 
 Readiness counts these occurrences and their times. It does not count log lines. Many log lines in one block are one occurrence. The sample keeps the newest 20.
 
@@ -430,6 +431,8 @@ Readiness counts these occurrences and their times. It does not count log lines.
 The tests below use only the current episode. That episode is the occurrence history stored on the row: the time and the signal count of each 5-minute window.
 
 Doctor is ready after two of those times at least 10 minutes apart. A miss does not delete the row, and it does not reset the episode.
+
+A release alert is ready after one occurrence. A release command raises it once for a deliberate verdict, so there is no noise to wait out.
 
 Activity, the log, and assistance are ready when either test below is true for those same times. The count in both tests is `occurrences`, the number of windows, not the number of log lines.
 
@@ -470,13 +473,13 @@ The filer does not open another task for a key while `muted_until` has not passe
 
 A deadline that is already stored stays as it is. A missing linked task uses the 7-day deadline, measured from the run that notices the gap. `failed` uses the same wait as `completed`, because that task never ran and must not take another slot in the same hour.
 
-Filing a new task clears `muted_until` and sets `filed_at`. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, and the occurrence history. It also clears the request ids, Activity ids, paths, the log excerpt, and `source_path`. Open assistance task ids stay, so a request that is still open is not counted again. The brief is built from the episode before that clear.
+Filing a new task clears `muted_until` and sets `filed_at`. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, and the occurrence history. It also clears the request ids, Activity ids, paths, evidence links, the log excerpt, and `source_path`. Open assistance task ids stay, so a request that is still open is not counted again. The brief is built from the episode before that clear.
 
-The first time the filer writes `muted_until` for a `completed`, `failed`, `cancelled`, or missing task, that same write clears the episode again. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, the occurrence history, the request ids, Activity ids, paths, the log excerpt, and `source_path`. Open assistance task ids stay. A crash stores neither the deadline nor the clear.
+The first time the filer writes `muted_until` for a `completed`, `failed`, `cancelled`, or missing task, that same write clears the episode again. It sets `occurrences` to 0 and clears `first_seen`, `last_seen`, the occurrence history, the request ids, Activity ids, paths, evidence links, the log excerpt, and `source_path`. Open assistance task ids stay. A crash stores neither the deadline nor the clear.
 
 ### What gets filed
 
-`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes the highest `occurrences` first. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready rows that are not muted, not tied to an open task, and not skipped by [Suppression](#suppression).
+`problems:file` runs every hour. It files at most three new tasks per day, using the Gateway application timezone. It takes release alerts first, then the highest `occurrences`. Equal counts use the earlier `first_seen`, then the fingerprint string. Each run loads at most 50 ready rows that are not muted, not tied to an open task, and not skipped by [Suppression](#suppression).
 
 The cap counts fingerprint rows whose `filed_at` falls on today's date in that timezone. An operator edit to the brief does not change the count. A missing Orbit Project files nothing.
 
@@ -484,7 +487,7 @@ The filer inserts the task and its subtasks, then updates the fingerprint, in on
 
 Each task belongs to the Project whose slug is `orbit`, and the task starts in `backlog`. The first line of the brief is `Filed by the outer loop.`
 
-The rest of the brief is eight sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Occurrences, Evidence, and Suspected entry point. Times use UTC. Symptom is the Doctor summary, the redacted Activity error message, the redacted log message, or the assistance reason before normalization.
+The rest of the brief is eight sections, in this order: Symptom, Fingerprint, First seen, Last seen, Count, Occurrences, Evidence, and Suspected entry point. Times use UTC. Symptom is the Doctor summary, the redacted Activity error message, the redacted log message, the assistance reason before normalization, or the release alert's redacted summary.
 
 Count is `occurrences`, the number of windows. Occurrences lists one line per window, oldest first, at most the newest 20. Each line is the first signal's time, formatted `YYYY-MM-DD HH:MM:SS UTC`, a space, and the signal count in that window, such as `2026-10-01 12:00:01 UTC 129`. Evidence includes a `Request ids:` line when the sample has any, and omits that line when none are known. The suspected entry point is its own section.
 
@@ -505,6 +508,7 @@ The finished brief is at most 8,000 characters. The Evidence and Occurrences hea
 | Activity | `{command} failed with {error_code}` | The command name |
 | Log | `{exception class} at {frame}` | The app frame, or the stored `source_path` when the key is shortened |
 | Assistance | The normalized reason | The open task ids in the sample |
+| Release alert | `Release failed`, `Release paused`, or `Rollout halted`, then `for {target} at {first 12 characters of the sha}` | `{repository}@{sha}`, and the release id when there is one |
 
 A title longer than 160 characters is cut to 157 characters plus `...`.
 
@@ -1424,6 +1428,12 @@ Clearing the episode only when the task is filed is also rejected, because hits 
 ### The signals the Gateway already has
 
 The loop reads Doctor, Activity, the Gateway log, and assistance reasons. Waiting for schedule rows or an alert manager is rejected. The `schedules` table is empty, and no alert manager is configured.
+
+### A release alert files on its first occurrence
+
+A failed release is a verdict from deterministic checks, not a noisy signal, so waiting for three windows would only delay it. The release command pushes the alert at that moment, and the next hourly run files it.
+
+Collecting it from the release's Activity row is rejected: the Activity key has no commit, so two different bad commits would share one task, and a single row would never be ready. The key holds the commit, because each failed commit is its own problem and is not released again. Filing release alerts first keeps a burst of recurring noise from taking the daily cap before them. The webhook, not the task, is the prompt signal, so the filer keeps its hourly run.
 
 ### One fingerprint per problem
 

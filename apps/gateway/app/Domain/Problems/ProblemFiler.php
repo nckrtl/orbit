@@ -7,6 +7,7 @@ namespace App\Domain\Problems;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
+use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
@@ -22,7 +23,7 @@ use Illuminate\Validation\ValidationException;
 use Throwable;
 
 /**
- * Files at most three Backlog groups a day for fingerprints that keep returning.
+ * Files at most three Backlog groups a day for fingerprints that keep returning, and for release alerts.
  * The operator replaces the review placeholder with a scoped repro before Todo.
  */
 final readonly class ProblemFiler
@@ -199,9 +200,10 @@ final readonly class ProblemFiler
                     });
             })
             ->where(function (Builder $query): void {
-                $query->where('source', ProblemSource::Doctor)
+                $query->whereIn('source', [ProblemSource::Doctor, ProblemSource::Release])
                     ->orWhere('occurrences', '>=', 3);
             })
+            ->orderByRaw('case when source = ? then 0 else 1 end', [ProblemSource::Release->value])
             ->orderByDesc('occurrences')
             ->orderByRaw('case when first_seen is null then 1 else 0 end')
             ->orderBy('first_seen')
@@ -290,6 +292,10 @@ final readonly class ProblemFiler
 
         if ($row->source === ProblemSource::Doctor) {
             return $this->tenMinutesApart($stamps);
+        }
+
+        if ($row->source === ProblemSource::Release) {
+            return $occurrences >= 1;
         }
 
         if ($occurrences >= 10) {
@@ -467,6 +473,7 @@ final readonly class ProblemFiler
             ProblemSource::Activity => $this->text($row, 'error_message') ?? $this->activitySymptom($row),
             ProblemSource::Log => $this->text($row, 'log_excerpt') ?? $this->logSymptom($row),
             ProblemSource::Assist => $this->text($row, 'assistance_reason') ?? $this->reason($row),
+            ProblemSource::Release => $this->text($row, 'summary') ?? $this->releaseTitle($row),
         };
         $text = trim($text);
 
@@ -484,6 +491,7 @@ final readonly class ProblemFiler
             ProblemSource::Activity => $this->activityTitle($row),
             ProblemSource::Log => $this->logTitle($row),
             ProblemSource::Assist => $this->reason($row),
+            ProblemSource::Release => $this->releaseTitle($row),
         };
 
         if ($title === '') {
@@ -504,6 +512,7 @@ final readonly class ProblemFiler
             ProblemSource::Activity => $this->activityParts($row)['command'] ?? $row->fingerprint,
             ProblemSource::Log => $this->logParts($row)['frame'] ?? $this->text($row, 'source_path') ?? $row->fingerprint,
             ProblemSource::Assist => $this->assistanceEntry($row),
+            ProblemSource::Release => $this->releaseEntry($row),
         };
 
         return $this->cut($entry, 500, true);
@@ -530,6 +539,12 @@ final readonly class ProblemFiler
 
         if ($paths !== []) {
             $lines[] = 'Paths: '.implode(', ', array_map($this->oneLine(...), $paths));
+        }
+
+        $links = $this->strings($evidence['evidence_urls'] ?? null);
+
+        if ($links !== []) {
+            $lines[] = 'Evidence links: '.implode(', ', array_map($this->oneLine(...), $links));
         }
 
         $excerpt = $this->text($row, 'log_excerpt');
@@ -661,6 +676,47 @@ final readonly class ProblemFiler
         return implode(', ', array_map(static fn (int $id): string => (string) $id, $ids));
     }
 
+    private function releaseTitle(ProblemFingerprint $row): string
+    {
+        $parts = $this->releaseParts($row);
+
+        if ($parts === null) {
+            return $row->fingerprint;
+        }
+
+        $kind = ReleaseAlertKind::tryFrom($parts['kind']);
+        $label = $kind instanceof ReleaseAlertKind ? $kind->label() : $parts['kind'];
+
+        return "{$label} for {$parts['target']} at ".substr($parts['sha'], 0, 12);
+    }
+
+    private function releaseEntry(ProblemFingerprint $row): string
+    {
+        $parts = $this->releaseParts($row);
+
+        if ($parts === null) {
+            return $row->fingerprint;
+        }
+
+        $repository = $this->text($row, 'release_repository');
+        $entry = $repository === null ? $parts['sha'] : "{$repository}@{$parts['sha']}";
+        $releaseId = $this->text($row, 'release_id');
+
+        return $releaseId === null ? $entry : "{$entry}, release {$releaseId}";
+    }
+
+    /** @return array{kind: string, target: string, sha: string}|null */
+    private function releaseParts(ProblemFingerprint $row): ?array
+    {
+        $pieces = $this->pieces($row, ProblemSource::Release, 3);
+
+        if ($pieces === null) {
+            return null;
+        }
+
+        return ['kind' => $pieces[0], 'target' => $pieces[1], 'sha' => $pieces[2]];
+    }
+
     /** @return array{code: string, type: string, id: string}|null */
     private function doctorParts(ProblemFingerprint $row): ?array
     {
@@ -725,6 +781,7 @@ final readonly class ProblemFiler
             $evidence['request_ids'],
             $evidence['activity_ids'],
             $evidence['paths'],
+            $evidence['evidence_urls'],
             $evidence['log_excerpt'],
             $evidence['source_path'],
         );

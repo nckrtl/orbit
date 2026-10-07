@@ -89,6 +89,11 @@ return [
         'opsbot_webhook_url' => env('ORBIT_OPSBOT_WEBHOOK_URL'),
         'opsbot_webhook_secret' => env('ORBIT_OPSBOT_WEBHOOK_SECRET'),
     ],
+    // Release alerts always write Activity and a problem. The signed webhook is skipped unless both values are set.
+    'releases' => [
+        'alert_webhook_url' => env('ORBIT_RELEASE_ALERT_WEBHOOK_URL'),
+        'alert_webhook_secret' => env('ORBIT_RELEASE_ALERT_WEBHOOK_SECRET'),
+    ],
     // The outer loop neither counts nor files a listed fingerprint or a source path under a prefix.
     'problems' => [
         'suppressed_fingerprints' => [],

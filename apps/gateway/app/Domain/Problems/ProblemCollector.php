@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Throwable;
 
 /**
- * Records recurring Doctor, Activity, log, and assistance signals.
+ * Records recurring Doctor, Activity, log, and assistance signals, and the release alerts that release commands push.
  * Each source commits its fingerprints and its cursor together.
  */
 final readonly class ProblemCollector
@@ -69,6 +69,25 @@ final readonly class ProblemCollector
         }
 
         return $failures;
+    }
+
+    /**
+     * Records one pushed release alert under `release|{key}`. Stored is false when the fingerprint is suppressed.
+     *
+     * @param  array<string, mixed>  $observation
+     * @return array{fingerprint: string, stored: bool}
+     */
+    public function recordRelease(string $key, array $observation): array
+    {
+        $fingerprint = $this->fingerprint(ProblemSource::Release, $key);
+
+        if ($this->suppression->suppressesSignal($fingerprint, $observation)) {
+            return ['fingerprint' => $fingerprint, 'stored' => false];
+        }
+
+        DB::transaction(fn () => $this->record($fingerprint, ProblemSource::Release, $observation));
+
+        return ['fingerprint' => $fingerprint, 'stored' => true];
     }
 
     private function collectDoctor(): void

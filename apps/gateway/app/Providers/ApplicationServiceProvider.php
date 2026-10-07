@@ -151,6 +151,9 @@ use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Releases\GatewayReleaseAlertNotifier;
+use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Domain\Releases\ReleaseAlertWebhook;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -331,6 +334,7 @@ use App\Infrastructure\ProxyCli\NativeProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\ValkeyProxyCliCache;
+use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
@@ -383,6 +387,8 @@ final class ApplicationServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        ReleaseAlertNotifier::class => GatewayReleaseAlertNotifier::class,
+        ReleaseAlertWebhook::class => HttpReleaseAlertWebhook::class,
         InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,
         InstanceCloneCandidateInspector::class => RemoteInstanceCloneCandidateInspector::class,
         InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
