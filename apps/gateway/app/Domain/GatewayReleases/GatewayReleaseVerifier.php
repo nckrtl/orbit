@@ -16,4 +16,12 @@ interface GatewayReleaseVerifier
      * @return VerifyResult
      */
     public function verify(string $sha): array;
+
+    /**
+     * `/up` is up and Gateway status is `ok`, whatever version it reports. Adoption's first release runs the
+     * checkout's own commit, which may report `dev` or a hand-set `APP_VERSION`.
+     *
+     * @return VerifyResult
+     */
+    public function serving(): array;
 }

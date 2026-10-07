@@ -5,16 +5,30 @@ declare(strict_types=1);
 namespace App\Domain\GatewayReleases;
 
 /**
- * What a switched release does before it is verified: Caddy and PHP-FPM only when their rendered
- * output changed, the scheduler handoff, document-cleanup reconcile then resume, and agent-view.
- * Switch-back runs the same handoff for the release it returns to.
+ * How a switched release takes over the Gateway, in two phases around verify:
  *
- * @phpstan-type HandoffResult array{caddy: string, fpm: string, opcache?: string, scheduler: string, scheduler_unit: string|null, scheduler_drain?: array<string, mixed>|null, processes_restarted?: list<string>, cleanup: string, cleanup_error_code: string|null, agent_view: string, cleanup_paused: bool}
+ * - `handoff`: what serves requests. Caddy and PHP-FPM only when their rendered output changed, the OPcache reset,
+ *   and the units with agent-view. It runs right after the switch, so verify sees the release as it will serve.
+ * - `schedule`: the scheduler drain and restart, then document-cleanup reconcile and resume. It runs after verify,
+ *   because the drain can wait for a long scheduled command.
+ *
+ * Switch-back runs the phases that already ran, for the release it returns to.
+ *
+ * @phpstan-type HandoffResult array<string, mixed>
  */
 interface GatewayReleaseRuntime
 {
     /**
      * @return HandoffResult
+     *
+     * @throws GatewayReleaseException
      */
     public function handoff(string $id): array;
+
+    /**
+     * @return HandoffResult with `cleanup_paused` as a bool
+     *
+     * @throws GatewayReleaseException
+     */
+    public function schedule(string $id): array;
 }

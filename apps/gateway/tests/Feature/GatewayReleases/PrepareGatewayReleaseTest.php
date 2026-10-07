@@ -241,6 +241,17 @@ describe('gateway:release:prepare', function (): void {
             ->and(is_writable($application.'/bootstrap/cache'))->toBeTrue();
     });
 
+    it('caches the configuration again as a private file', function (): void {
+        $sha = $this->fixture->commit('Second commit');
+        $release = $this->fixture->builder()->prepare($sha);
+        $config = $release->path.'/apps/gateway/bootstrap/cache/config.php';
+        chmod($config, 0644);
+
+        $this->fixture->builder()->refreshConfiguration($release->id);
+
+        expect(fileperms($config) & 0o777)->toBe(0o600);
+    });
+
     it('checks free space before it fetches anything', function (): void {
         $exception = release_failure(fn () => $this->fixture->builder(freeBytes: 1_048_576)->prepare(str_repeat('e', 40)));
 

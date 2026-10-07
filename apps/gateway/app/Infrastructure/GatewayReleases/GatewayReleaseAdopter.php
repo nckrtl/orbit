@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
+use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
-use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
-use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
-use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -21,7 +19,10 @@ use Closure;
 use Throwable;
 
 /**
- * Converts the in-place checkout at `/home/orbit/orbit` into the release layout, once, while it keeps serving:
+ * Converts the in-place checkout at `/home/orbit/orbit` into the release layout, once, while it keeps serving, in two
+ * phases. The first changes the layout but not the code; the second changes the code through a normal deploy.
+ *
+ * Phase 1, the checkout's own commit:
  *
  * 1. refuses when the checkout has tracked changes;
  * 2. creates `shared/orbit.git` as a bare clone of the checkout's own repository, with its origin, and fetches the
@@ -30,22 +31,27 @@ use Throwable;
  *    `.env.pre-adopt`, and replaces `.env` with a link to the shared file in one rename. `.env.bak*` files are copied
  *    to `shared/env-backups/`;
  * 4. moves `apps/gateway/storage` to `shared/gateway-storage` and links it back, so the checkout keeps working;
- * 5. prepares `releases/<id>` for the target commit, the checkout's own commit by default, with its web build;
- * 6. snapshots and migrates when the target has pending migrations, while the checkout still serves;
- * 7. swaps the checkout directory with a link to the release in one step and keeps the directory as
- *    `orbit.pre-adopt-<time>`;
- * 8. hands the runtime over to the release, verifies it, publishes its web build, and runs smoke, as a deploy does.
+ * 5. prepares `releases/<id>` for the checkout's own commit, so the code that serves does not change;
+ * 6. swaps the checkout directory with a link to that release in one step, keeps the directory as
+ *    `orbit.pre-adopt-<time>`, hands the runtime over with this process's code, and checks that the Gateway serves.
  *
- * A failure before the swap, or a failed handoff or verify without migrations, leaves the checkout serving with its
- * original `.env` back in place. The storage link stays: it reaches the same files. After migrations ran, a failure
- * pauses on the release instead, as a deploy does. Every step can run again.
+ * A failure in phase 1 leaves the checkout serving with its original `.env` back in place. The storage link stays:
+ * it reaches the same files.
+ *
+ * Phase 2, only when the target is another commit: {@see DeployGatewayReleaseAction::deploy()} releases it like any
+ * deploy, with its snapshot, migrations, handoff, verify, web build, and smoke, and switches back or pauses on failure.
+ *
+ * Every step can run again. A rerun finishes an adoption that swapped but never verified, then deploys the target.
  */
 final readonly class GatewayReleaseAdopter
 {
     /** @var Closure(): string */
     private Closure $clock;
 
-    /** @param (Closure(): string)|null $clock UTC time for the kept directory's name */
+    /**
+     * @param  GatewayReleaseRuntime  $runtime  runs the handoff in this process, for a release that may predate the command
+     * @param  (Closure(): string)|null  $clock  UTC time for the kept directory's name
+     */
     public function __construct(
         private GatewayReleaseLayout $layout,
         private ProcessRunner $processes,
@@ -54,13 +60,11 @@ final readonly class GatewayReleaseAdopter
         private GatewayReleaseRuntime $runtime,
         private GatewayReleaseVerifier $verifier,
         private GatewayReleaseRecorder $recorder,
-        private GatewayReleaseDatabase $database,
-        private GatewayReleaseWebBuild $web,
-        private GatewayReleaseSmoke $smoke,
         private GatewayReleaseGuard $guard,
+        private DeployGatewayReleaseAction $deploy,
         ?Closure $clock = null,
     ) {
-        $this->clock = $clock ?? static fn (): string => gmdate('Ymd\THis\Z');
+        $this->clock = $clock ?? static fn (): string => gmdate('Ymd\\THis\\Z');
     }
 
     /**
@@ -70,125 +74,141 @@ final readonly class GatewayReleaseAdopter
      */
     public function adopt(?string $commit = null, ?string $source = null): array
     {
-        $startedAt = hrtime(true);
-        $current = $this->layout->currentPath();
+        $target = $commit === null ? null : GatewayReleaseCommit::parse($commit);
+        $layout = $this->layout->isAdopted()
+            ? $this->resume((string) $this->layout->currentReleaseId())
+            : $this->convert($target, $source);
+        $current = (string) $this->layout->currentReleaseId();
+        $sha = $target === null ? (string) $this->layout->preparedCommit($current) : $this->target($target, $source);
 
-        if ($this->layout->isAdopted()) {
-            $current = (string) $this->layout->currentReleaseId();
-            $leftover = $this->finishLeftover();
-
-            if ($this->verified($current)) {
-                return ['adopted' => true, 'already' => true, 'release' => $current, 'pre_adopt_path' => $leftover];
-            }
-
-            // An earlier run swapped and then stopped before it verified, for example when its session dropped.
-            return $this->resume($current, $leftover, $startedAt);
+        // A finished adoption already on the target has nothing left to do.
+        if ($layout['already'] === true && ! isset($layout['resumed']) && $sha === $this->layout->preparedCommit($current)) {
+            return $layout;
         }
 
-        $sha = null;
+        // Phase 2 runs the target through the deploy path. For the checkout's own commit it installs the web build,
+        // verifies the exact version, and runs smoke, which phase 1 does not.
+        $deployed = $this->deploy->deploy($sha, false, 'adopt');
+
+        return [...$layout, 'adopted' => true, 'release' => $deployed->id, 'sha' => $deployed->sha, 'deploy' => $deployed->toArray()];
+    }
+
+    /**
+     * Phase 1: the layout around the checkout's own commit.
+     *
+     * @return array<string, mixed>
+     */
+    private function convert(?string $target, ?string $source): array
+    {
+        $startedAt = hrtime(true);
+        $current = $this->layout->currentPath();
+        $head = null;
         $phases = [];
-        $migrationsRan = false;
-        $snapshot = null;
         $step = 'adopt';
 
         try {
-            $target = $commit === null ? null : GatewayReleaseCommit::parse($commit);
             $head = $this->assertCheckout($current);
+            $id = GatewayReleaseCommit::id($head);
             $shared = ['repository' => $this->repository($current, $head)];
-            $sha = $target === null ? $head : $this->target($target, $source);
-            $id = GatewayReleaseCommit::id($sha);
+
+            if ($target !== null) {
+                $this->target($target, $source);
+            }
+
             $shared = [...$shared, ...$this->environment($current), ...$this->storage($current)];
             $phases['shared'] = $shared;
             $step = 'prepare';
-            $prepared = $this->builder->prepare($sha);
+            // Without --commit the checkout's commit is the target too, so its release gets its web build.
+            $prepared = $this->builder->prepare($head, withWeb: $target === null || str_starts_with($head, $target));
             $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
             $step = 'guard';
-            $this->assertForward($head, $sha);
             $this->guard->assertSchema($id, false);
             $step = 'configuration';
             $this->builder->refreshConfiguration($id);
             $phases['configuration'] = ['outcome' => 'cached'];
-            $step = 'snapshot';
-            $pending = $this->database->pending($prepared->path);
-
-            if ($pending === []) {
-                $phases['snapshot'] = ['outcome' => 'skipped'];
-                $phases['migrate'] = ['outcome' => 'skipped'];
-            } else {
-                $snapshot = $this->database->snapshot($id);
-                $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $snapshot, 'pending' => $pending];
-                $step = 'migrate';
-                $migrationsRan = true;
-                $this->database->migrate($prepared->path);
-                $phases['migrate'] = ['outcome' => 'migrated', 'pending' => $pending];
-            }
-
             $step = 'switch';
             $kept = $this->layout->basePath().'/'.basename($current).'.pre-adopt-'.($this->clock)();
             $switch = $this->switch($current, $id, $kept);
             $phases['switch'] = $switch;
         } catch (Throwable $thrown) {
-            // The checkout still serves. Its original env file goes back; the storage link reaches the same files.
-            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $sha);
+            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $head);
             $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
             $phases['environment'] = $this->restoreEnvironment($current);
 
-            if ($sha === null || ! isset($id) || $step === 'guard') {
+            if ($head === null || ! isset($id) || $step === 'guard') {
                 $this->recorder->refused('adopt', $exception, $this->elapsed($startedAt));
             } else {
-                $this->record($this->outcome($id, $sha, $migrationsRan ? 'paused' : 'failed', $migrationsRan, $snapshot, $phases, $startedAt, $exception));
+                $this->record($this->outcome($id, $head, 'failed', $phases, $startedAt, $exception));
             }
 
             throw $exception;
         }
 
         $step = 'handoff';
+        $scheduled = false;
 
         try {
             $phases['handoff'] = $this->runtime->handoff($id);
             $step = 'verify';
-            $verified = $this->verifier->verify($sha);
-            $phases['verify'] = ['outcome' => 'passed', 'status' => $verified['status'], 'version' => $verified['version']];
-            $step = 'web';
-            $this->web->publish($id);
-            $phases['web'] = ['outcome' => 'published'];
-            $step = 'smoke';
-            $phases['smoke'] = $this->smoke->run($id, $sha);
+            $serving = $this->verifier->serving();
+            $phases['verify'] = ['outcome' => 'passed', 'status' => $serving['status'], 'version' => $serving['version']];
+            $step = 'scheduler';
+            $scheduled = true;
+            $phases['scheduler'] = $this->runtime->schedule($id);
         } catch (Throwable $thrown) {
-            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $sha);
-
-            if ($migrationsRan) {
-                // The checkout's code has not run on the migrated schema, so the release stays current.
-                $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
-                $phases['pause'] = ['outcome' => 'paused', 'snapshot' => $snapshot, 'pre_adopt_path' => $kept];
-                $this->record($this->outcome($id, $sha, 'paused', true, $snapshot, $phases, $startedAt, $exception));
-
-                throw $exception;
-            }
-
-            throw $this->switchBack($exception, $current, $kept, $id, $sha, $phases, $startedAt);
+            throw $this->switchBack(GatewayReleaseException::fromThrowable($thrown, $step, $head), $current, $kept, $id, $head, $phases, $startedAt, $scheduled);
         }
 
-        $this->record($this->outcome($id, $sha, 'verified', $migrationsRan, $snapshot, $phases, $startedAt));
+        $this->record($this->outcome($id, $head, 'verified', $phases, $startedAt));
 
         return [
             'adopted' => true,
             'already' => false,
-            'release' => $id,
-            'sha' => $sha,
             'from' => $head,
-            'path' => $prepared->path,
             'pre_adopt_path' => $kept,
-            'migrations_ran' => $migrationsRan,
-            'snapshot' => $snapshot,
             'shared' => $shared,
             'switch' => $switch,
-            'handoff' => $phases['handoff'],
-            'verify' => $phases['verify'],
-            'web' => $phases['web'],
-            'smoke' => $phases['smoke'],
-            'duration_ms' => $this->elapsed($startedAt),
+            'phase1' => ['release' => $id, 'handoff' => $phases['handoff'], 'verify' => $phases['verify'], 'scheduler' => $phases['scheduler'], 'duration_ms' => $this->elapsed($startedAt)],
         ];
+    }
+
+    /**
+     * An adopted Gateway: done when a release verified the current release; otherwise an earlier run swapped and
+     * stopped before it verified, so the handoff and the serving check run again.
+     *
+     * @return array<string, mixed>
+     */
+    private function resume(string $id): array
+    {
+        $leftover = $this->finishLeftover();
+
+        if ($this->verified($id)) {
+            return ['adopted' => true, 'already' => true, 'release' => $id, 'pre_adopt_path' => $leftover];
+        }
+
+        $startedAt = hrtime(true);
+        $sha = (string) $this->layout->preparedCommit($id);
+        $phases = ['resume' => ['outcome' => 'started']];
+        $step = 'handoff';
+
+        try {
+            $phases['handoff'] = $this->runtime->handoff($id);
+            $step = 'verify';
+            $serving = $this->verifier->serving();
+            $phases['verify'] = ['outcome' => 'passed', 'status' => $serving['status'], 'version' => $serving['version']];
+            $step = 'scheduler';
+            $phases['scheduler'] = $this->runtime->schedule($id);
+        } catch (Throwable $thrown) {
+            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $sha);
+            $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+            $this->record($this->outcome($id, $sha, 'failed', $phases, $startedAt, $exception));
+
+            throw $exception;
+        }
+
+        $this->record($this->outcome($id, $sha, 'verified', $phases, $startedAt));
+
+        return ['adopted' => true, 'already' => true, 'resumed' => true, 'release' => $id, 'pre_adopt_path' => $leftover, 'phase1' => $phases];
     }
 
     /** Whether a release attempt verified the current release, so adoption finished. */
@@ -198,61 +218,6 @@ final readonly class GatewayReleaseAdopter
             return GatewayRelease::query()->where('release_id', $id)->where('outcome', 'verified')->exists();
         } catch (Throwable) {
             return false;
-        }
-    }
-
-    /**
-     * Finishes an adoption that swapped but never verified: hands the runtime over, verifies, publishes the web build,
-     * and runs smoke. The kept checkout stays; a failure here is recorded, and the release stays current.
-     *
-     * @return array<string, mixed>
-     */
-    private function resume(string $id, ?string $leftover, int $startedAt): array
-    {
-        $sha = (string) $this->layout->preparedCommit($id);
-        $phases = ['resume' => ['outcome' => 'started']];
-        $step = 'handoff';
-
-        try {
-            $phases['handoff'] = $this->runtime->handoff($id);
-            $step = 'verify';
-            $verified = $this->verifier->verify($sha);
-            $phases['verify'] = ['outcome' => 'passed', 'status' => $verified['status'], 'version' => $verified['version']];
-            $step = 'web';
-            $this->web->publish($id);
-            $phases['web'] = ['outcome' => 'published'];
-            $step = 'smoke';
-            $phases['smoke'] = $this->smoke->run($id, $sha);
-        } catch (Throwable $thrown) {
-            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $sha);
-            $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
-            $this->record($this->outcome($id, $sha, 'failed', false, null, $phases, $startedAt, $exception));
-
-            throw $exception;
-        }
-
-        $this->record($this->outcome($id, $sha, 'verified', false, null, $phases, $startedAt));
-
-        return ['adopted' => true, 'already' => true, 'resumed' => true, 'release' => $id, 'sha' => $sha, 'pre_adopt_path' => $leftover, ...$phases];
-    }
-
-    /** Adoption moves forward: the checkout's commit is an ancestor of the target. */
-    private function assertForward(string $head, string $sha): void
-    {
-        if ($head === $sha) {
-            return;
-        }
-
-        $result = $this->processes->run(new ProcessInvocation(['git', '-C', $this->layout->repositoryPath(), 'merge-base', '--is-ancestor', $head, $sha], timeout: 30.0));
-
-        if (! $result->succeeded()) {
-            throw new GatewayReleaseException(
-                step: 'guard',
-                errorCode: 'gateway.release_downgrade',
-                message: "Commit [{$sha}] does not descend from the checkout's commit [{$head}].",
-                status: 409,
-                sha: $sha,
-            );
         }
     }
 
@@ -284,19 +249,19 @@ final readonly class GatewayReleaseAdopter
     /**
      * @param  array<string, mixed>  $phases
      */
-    private function outcome(string $id, string $sha, string $outcome, bool $migrationsRan, ?string $snapshot, array $phases, int $startedAt, ?GatewayReleaseException $exception = null): DeployedGatewayRelease
+    private function outcome(string $id, string $sha, string $outcome, array $phases, int $startedAt, ?GatewayReleaseException $exception = null): DeployedGatewayRelease
     {
-        $handoff = $phases['handoff'] ?? null;
+        $scheduler = $phases['scheduler'] ?? null;
 
         return new DeployedGatewayRelease(
             id: $id,
             sha: $sha,
             outcome: $outcome,
             trigger: 'adopt',
-            migrationsRan: $migrationsRan,
+            migrationsRan: false,
             previousId: null,
-            snapshotPath: $snapshot,
-            cleanupPaused: is_array($handoff) && ($handoff['cleanup_paused'] ?? false) === true,
+            snapshotPath: null,
+            cleanupPaused: is_array($scheduler) && ($scheduler['cleanup_paused'] ?? false) === true,
             retryable: false,
             durationMs: $this->elapsed($startedAt),
             phases: $phases,
@@ -563,7 +528,7 @@ final readonly class GatewayReleaseAdopter
      *
      * @param  array<string, mixed>  $phases
      */
-    private function switchBack(GatewayReleaseException $exception, string $current, string $kept, string $id, string $sha, array $phases, int $startedAt): GatewayReleaseException
+    private function switchBack(GatewayReleaseException $exception, string $current, string $kept, string $id, string $sha, array $phases, int $startedAt, bool $scheduled): GatewayReleaseException
     {
         $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
         $outcome = 'switched_back';
@@ -578,10 +543,15 @@ final readonly class GatewayReleaseAdopter
             }
 
             @unlink($kept);
-            $this->web->restore($id);
             $environment = $this->restoreEnvironment($current);
-            // The checkout may predate the handoff command, so the release's code hands the runtime back to it.
-            $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $current, 'environment' => $environment, 'handoff' => $this->runtime->handoff($id)];
+            // The checkout may predate the handoff command, so this process's code hands the runtime back to it.
+            $back = ['outcome' => 'switched_back', 'to' => $current, 'environment' => $environment, 'handoff' => $this->runtime->handoff($id)];
+
+            if ($scheduled) {
+                $back['scheduler'] = $this->runtime->schedule($id);
+            }
+
+            $phases['switch_back'] = $back;
         } catch (Throwable $thrown) {
             $outcome = 'failed';
             $back = GatewayReleaseException::fromThrowable($thrown, 'switch_back', $sha);
@@ -596,21 +566,7 @@ final readonly class GatewayReleaseAdopter
             );
         }
 
-        $this->record(new DeployedGatewayRelease(
-            id: $id,
-            sha: $sha,
-            outcome: $outcome,
-            trigger: 'adopt',
-            migrationsRan: false,
-            previousId: null,
-            snapshotPath: null,
-            cleanupPaused: false,
-            retryable: false,
-            durationMs: $this->elapsed($startedAt),
-            phases: $phases,
-            errorCode: $exception->errorCode,
-            message: $exception->getMessage(),
-        ));
+        $this->record($this->outcome($id, $sha, $outcome, $phases, $startedAt, $exception));
 
         return $exception;
     }

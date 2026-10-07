@@ -68,7 +68,11 @@ final readonly class GatewayReleaseBuilder
         };
     }
 
-    public function prepare(string $revision): PreparedGatewayRelease
+    /**
+     * @param  bool  $withWeb  false for a release that serves no web build of its own, such as the first release of
+     *                         adoption, built from a commit that may predate the CI web artifact
+     */
+    public function prepare(string $revision, bool $withWeb = true): PreparedGatewayRelease
     {
         $startedAt = hrtime(true);
         $revision = GatewayReleaseCommit::parse($revision);
@@ -104,7 +108,10 @@ final readonly class GatewayReleaseBuilder
             $this->git('worktree', 'gateway.release_worktree_failed', ['worktree', 'add', '--detach', '--force', $path, $sha]);
             $this->linkShared($path);
             $this->installDependencies($path);
-            $this->web->install($id, $sha);
+            if ($withWeb) {
+                $this->web->install($id, $sha);
+            }
+
             $this->grantAccess($path);
             $this->writeRevision($path, $sha);
             $this->cacheConfiguration($path);

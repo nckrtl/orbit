@@ -49,7 +49,8 @@ describe('gateway:release:deploy', function (): void {
         expect($deployed->outcome)->toBe('verified')
             ->and($deployed->sha)->toBe($sha)
             ->and($this->fixture->layout->currentReleaseId())->toBe($deployed->id)
-            ->and($order->steps)->toBe(['handoff:'.$deployed->id, 'verify', 'web:publish', 'smoke'])
+            // Verify runs before the scheduler drain, so a broken release is found without waiting for it.
+            ->and($order->steps)->toBe(['handoff:'.$deployed->id, 'verify', 'schedule:'.$deployed->id, 'web:publish', 'smoke'])
             ->and(is_file($this->live.'/apps/gateway/live.txt'))->toBeFalse()
             ->and(GatewayRelease::query()->value('outcome'))->toBe('verified')
             ->and(Activity::query()->value('command'))->toBe('gateway:release:deploy')
@@ -91,12 +92,17 @@ describe('gateway:release:deploy', function (): void {
 
         expect(release_failure(fn () => $action->execute($sha))->step)->toBe('smoke')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            ->and($order->steps[0])->toBe('handoff:'.substr($sha, 0, 12))
-            ->and($order->steps[1])->toBe('verify')
-            ->and($order->steps[2])->toBe('web:publish')
-            ->and($order->steps[3])->toBe('smoke')
-            ->and($order->steps)->toContain('web:restore')
-            ->and($order->steps)->toContain('handoff:'.$first);
+            // The scheduler already moved, so switch-back moves it back too.
+            ->and($order->steps)->toBe([
+                'handoff:'.substr($sha, 0, 12),
+                'verify',
+                'schedule:'.substr($sha, 0, 12),
+                'web:publish',
+                'smoke',
+                'web:restore',
+                'handoff:'.$first,
+                'schedule:'.$first,
+            ]);
     });
 
     it('pauses on the new release when verification fails after migrations ran', function (): void {
@@ -489,6 +495,46 @@ describe('gateway:release:deploy', function (): void {
             ->and(readlink($this->live))->toBe($this->fixture->base.'/elsewhere');
     });
 
+    it('pauses instead of switching back onto a release that lacks a migration the database applied', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Fails verify after an earlier half-applied migration');
+        $database = new OpenReleaseDatabase;
+        // A paused release applied this migration; the previous release does not ship it.
+        $database->applied = ['2026_12_31_000000_marks'];
+        $database->files = [$this->fixture->layout->releasePath(substr($sha, 0, 12)) => ['2026_12_31_000000_marks.php']];
+        $order = new ReleaseSteps;
+        $verifier = passing_verifier($order);
+        $verifier->failSha = $sha;
+
+        $exception = release_failure(fn () => release_deployer($this->fixture, $verifier, recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+        $record = GatewayRelease::query()->sole();
+
+        expect($exception->errorCode)->toBe('gateway.release_verify_failed')
+            ->and($record->outcome)->toBe('paused')
+            ->and($record->phases['pause']['reason'])->toContain('2026_12_31_000000_marks')
+            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
+            ->and($order->steps)->not->toContain('handoff:'.$first);
+    });
+
+    it('keeps the previous release when pruning, also when it is the oldest one', function (): void {
+        $order = new ReleaseSteps;
+        $oldest = adopt_release($this->fixture);
+        touch($this->fixture->layout->releasePath($oldest).'/REVISION', time() - 1000);
+        $deploy = fn (int $kept): DeployGatewayReleaseAction => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), keptReleases: $kept);
+        $ids = [];
+
+        foreach (['B', 'C'] as $index => $name) {
+            $ids[$name] = $deploy(5)->execute($this->fixture->commit($name))->id;
+            touch($this->fixture->layout->releasePath($ids[$name]).'/REVISION', time() - 500 + $index);
+        }
+
+        release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($oldest);
+        $latest = $deploy(1)->execute($this->fixture->commit('D'))->id;
+
+        expect($this->fixture->layout->retainedReleaseIds())->toEqualCanonicalizing([$latest, $oldest])
+            ->and($this->fixture->layout->currentReleaseId())->toBe($latest);
+    });
+
     it('prints one JSON object for a deploy and refuses a branch name', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Command release');
@@ -559,6 +605,7 @@ function release_deployer(
             $recorder,
             $builder,
             $keptReleases,
+            guard: new GatewayReleaseGuard($fixture->layout, $database, $fixture),
         ),
         $recorder,
         new GatewayReleaseGuard($fixture->layout, $database, $fixture),
@@ -589,6 +636,7 @@ function release_rollback(
             $smoke,
             $recorder,
             $builder,
+            guard: new GatewayReleaseGuard($fixture->layout, $database, $fixture),
         ),
         $recorder,
         new GatewayReleaseGuard($fixture->layout, $database, $fixture),
@@ -615,6 +663,11 @@ function passing_verifier(?ReleaseSteps $order = null): GatewayReleaseVerifier
 
             return ['status' => 'ok', 'version' => $sha];
         }
+
+        public function serving(): array
+        {
+            return ['status' => 'ok', 'version' => 'dev'];
+        }
     };
 }
 
@@ -632,14 +685,14 @@ function recording_runtime(ReleaseSteps $order, ?string $crashOn = null): Gatewa
                 throw new RuntimeException('The handoff process ran out of memory.');
             }
 
-            return [
-                'caddy' => 'skipped',
-                'fpm' => 'skipped',
-                'scheduler' => 'skipped',
-                'cleanup' => 'skipped',
-                'agent_view' => 'skipped',
-                'cleanup_paused' => false,
-            ];
+            return ['caddy' => 'skipped', 'fpm' => 'skipped', 'agent_view' => 'skipped'];
+        }
+
+        public function schedule(string $id): array
+        {
+            $this->order->steps[] = 'schedule:'.$id;
+
+            return ['scheduler' => 'skipped', 'cleanup' => 'skipped', 'cleanup_paused' => false];
         }
     };
 }

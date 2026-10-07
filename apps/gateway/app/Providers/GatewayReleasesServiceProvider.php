@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
+use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\GatewayReleases\GatewayDocumentCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
@@ -33,6 +34,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
+use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\NoGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\NoGatewayReleaseWebBuild;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
@@ -132,6 +134,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 recorder: $app->make(GatewayReleaseRecorder::class),
                 builder: $app->make(GatewayReleaseBuilder::class),
                 keptReleases: max(1, Config::integer('orbit.gateway_releases.keep')),
+                guard: $app->make(GatewayReleaseGuard::class),
             ),
         );
         $this->app->bind(
@@ -141,13 +144,11 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 processes: $app->make(ProcessRunner::class),
                 builder: $app->make(GatewayReleaseBuilder::class),
                 exchange: new GatewayReleaseExchange($app->make(ProcessRunner::class)),
-                runtime: $app->make(GatewayReleaseRuntime::class),
+                runtime: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
                 verifier: $app->make(GatewayReleaseVerifier::class),
                 recorder: $app->make(GatewayReleaseRecorder::class),
-                database: $app->make(GatewayReleaseDatabase::class),
-                web: $app->make(GatewayReleaseWebBuild::class),
-                smoke: $app->make(GatewayReleaseSmoke::class),
                 guard: $app->make(GatewayReleaseGuard::class),
+                deploy: $app->make(DeployGatewayReleaseAction::class),
             ),
         );
     }

@@ -20,6 +20,10 @@ use Throwable;
  * configuration, migrates when it has pending migrations, then promotes it. Every attempt that
  * names a commit is recorded; {@see GatewayReleaseRetry} decides whether it may be tried again.
  * A refusal by the guard writes only an Activity entry. A failed migration pauses.
+ *
+ * A deploy writes its record when it ends. A record that marks an attempt as queued or running, and the check for one
+ * whose process died, belong to the automatic runner's record model; the step lock already refuses a release while a
+ * command of a dead attempt still runs ({@see GatewayReleaseLock}).
  */
 final readonly class DeployGatewayReleaseAction
 {
@@ -36,56 +40,64 @@ final readonly class DeployGatewayReleaseAction
     /** @param bool $force switch even when the commit does not descend from the current one or does not know an applied migration */
     public function execute(string $commit, bool $force = false): DeployedGatewayRelease
     {
-        return $this->lock->run(function () use ($commit, $force): DeployedGatewayRelease {
-            $startedAt = hrtime(true);
-            $step = 'prepare';
-            $prepared = null;
-            $phases = [];
-            $snapshot = null;
-            $migrationsRan = false;
+        return $this->lock->run(fn (): DeployedGatewayRelease => $this->deploy($commit, $force, 'deploy'));
+    }
 
-            try {
-                $prepared = $this->builder->prepare($commit);
-                $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
-                $step = 'guard';
-                $this->guard->assertForward($prepared->sha, $force);
-                $this->guard->assertSchema($prepared->id, $force);
-                $phases['guard'] = ['outcome' => 'passed', 'force' => $force];
-                // Before any migration: a configuration that cannot be cached must stop the release while nothing changed.
-                $step = 'configuration';
-                $this->builder->refreshConfiguration($prepared->id);
-                $phases['configuration'] = ['outcome' => 'cached'];
-                $step = 'snapshot';
-                $pending = $this->database->pending($prepared->path);
+    /**
+     * The deploy itself, for a caller that already holds the release lock, such as adoption's second phase.
+     *
+     * @param  string  $trigger  what the release record names as its trigger
+     */
+    public function deploy(string $commit, bool $force, string $trigger): DeployedGatewayRelease
+    {
+        $startedAt = hrtime(true);
+        $step = 'prepare';
+        $prepared = null;
+        $phases = [];
+        $snapshot = null;
+        $migrationsRan = false;
 
-                if ($pending === []) {
-                    $phases['snapshot'] = ['outcome' => 'skipped'];
-                    $phases['migrate'] = ['outcome' => 'skipped'];
-                } else {
-                    $snapshot = $this->database->snapshot($prepared->id);
-                    $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $snapshot, 'pending' => $pending];
-                    $step = 'migrate';
-                    $this->database->migrate($prepared->path);
-                    $migrationsRan = true;
-                    $phases['migrate'] = ['outcome' => 'migrated', 'pending' => $pending];
-                }
-            } catch (Throwable $thrown) {
-                $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
-                $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt);
+        try {
+            $prepared = $this->builder->prepare($commit);
+            $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
+            $step = 'guard';
+            $this->guard->assertForward($prepared->sha, $force);
+            $this->guard->assertSchema($prepared->id, $force);
+            $phases['guard'] = ['outcome' => 'passed', 'force' => $force];
+            // Before any migration: a configuration that cannot be cached must stop the release while nothing changed.
+            $step = 'configuration';
+            $this->builder->refreshConfiguration($prepared->id);
+            $phases['configuration'] = ['outcome' => 'cached'];
+            $step = 'snapshot';
+            $pending = $this->database->pending($prepared->path);
 
-                throw $exception;
+            if ($pending === []) {
+                $phases['snapshot'] = ['outcome' => 'skipped'];
+                $phases['migrate'] = ['outcome' => 'skipped'];
+            } else {
+                $snapshot = $this->database->snapshot($prepared->id);
+                $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $snapshot, 'pending' => $pending];
+                $step = 'migrate';
+                $this->database->migrate($prepared->path);
+                $migrationsRan = true;
+                $phases['migrate'] = ['outcome' => 'migrated', 'pending' => $pending];
             }
+        } catch (Throwable $thrown) {
+            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $prepared?->sha);
+            $this->recordFailure($exception, $step, $phases, $snapshot, $startedAt, $trigger);
 
-            return $this->promoter->promote(
-                id: $prepared->id,
-                sha: $prepared->sha,
-                trigger: 'deploy',
-                migrationsRan: $migrationsRan,
-                snapshotPath: $snapshot,
-                phases: $phases,
-                startedAt: $startedAt,
-            );
-        });
+            throw $exception;
+        }
+
+        return $this->promoter->promote(
+            id: $prepared->id,
+            sha: $prepared->sha,
+            trigger: $trigger,
+            migrationsRan: $migrationsRan,
+            snapshotPath: $snapshot,
+            phases: $phases,
+            startedAt: $startedAt,
+        );
     }
 
     /**
@@ -94,14 +106,14 @@ final readonly class DeployGatewayReleaseAction
      *
      * @param  array<string, mixed>  $phases
      */
-    private function recordFailure(GatewayReleaseException $exception, string $step, array $phases, ?string $snapshot, int $startedAt): void
+    private function recordFailure(GatewayReleaseException $exception, string $step, array $phases, ?string $snapshot, int $startedAt, string $trigger): void
     {
         $durationMs = intdiv(hrtime(true) - $startedAt, 1_000_000);
 
         try {
             if ($exception->sha === null || strlen($exception->sha) !== 40 || $step === 'guard') {
                 // A refusal changes nothing and does not mark the commit failed.
-                $this->recorder->refused('deploy', $exception, $durationMs);
+                $this->recorder->refused($trigger, $exception, $durationMs);
 
                 return;
             }
@@ -111,7 +123,7 @@ final readonly class DeployGatewayReleaseAction
                 id: substr($exception->sha, 0, 12),
                 sha: $exception->sha,
                 outcome: $migrating ? 'paused' : 'failed',
-                trigger: 'deploy',
+                trigger: $trigger,
                 migrationsRan: $migrating,
                 previousId: null,
                 snapshotPath: $snapshot,

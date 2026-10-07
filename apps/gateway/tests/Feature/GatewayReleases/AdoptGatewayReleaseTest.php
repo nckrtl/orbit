@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\GatewayReleases\AdoptGatewayReleaseAction;
+use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -13,7 +14,10 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
+use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
+use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Tests\Support\GatewayReleaseFixture;
@@ -32,7 +36,7 @@ afterEach(function (): void {
 });
 
 describe('gateway:release:adopt', function (): void {
-    it('converts the in-place checkout into a release, swaps it for the link in one step, and keeps the checkout', function (): void {
+    it('converts the in-place checkout into a release of its own commit, swaps it in one step, then deploys it', function (): void {
         $result = adoption($this->fixture, $this->steps)->execute();
         $layout = $this->fixture->layout;
         $kept = $layout->basePath().'/orbit.pre-adopt-20261007T120000Z';
@@ -42,33 +46,31 @@ describe('gateway:release:adopt', function (): void {
             ->and($result['switch']['method'])->toBe('exchange')
             ->and($result['switch']['gap_us'])->toBe(0)
             ->and($result['pre_adopt_path'])->toBe($kept)
+            ->and($result['phase1']['release'])->toBe($this->id)
+            ->and($result['deploy']['outcome'])->toBe('verified')
             ->and($layout->currentReleaseId())->toBe($this->id)
-            ->and(readlink($this->current))->toBe('releases/'.$this->id)
             ->and(is_dir($kept.'/.git'))->toBeTrue()
             ->and(readlink($kept.'/apps/gateway/.env'))->toBe($layout->environmentPath())
             ->and(file_get_contents($kept.'/apps/gateway/.env.pre-adopt'))->toBe("APP_ENV=production\nAPP_VERSION=0.1.0\n")
             ->and(fileperms($kept.'/apps/gateway/.env.pre-adopt') & 0o777)->toBe(0o600)
+            ->and(file_get_contents($layout->environmentPath()))->toStartWith("APP_ENV=production\n# APP_VERSION=0.1.0 (left out by gateway:release:adopt")
             ->and($result['shared']['storage'])->toBe('moved')
             ->and($result['shared']['storage_gap_us'])->toBeInt()
-            ->and($result['migrations_ran'])->toBeFalse()
-            ->and(file_get_contents($layout->environmentPath()))->toStartWith("APP_ENV=production\n# APP_VERSION=0.1.0 (left out by gateway:release:adopt")
-            ->and($result['shared']['app_version_removed'])->toBeTrue()
-            ->and(fileperms($layout->environmentPath()) & 0o777)->toBe(0o600)
             ->and(file_get_contents($layout->sharedPath().'/env-backups/.env.bak-deploy-1'))->toBe("APP_ENV=old\n")
-            ->and(file_exists($kept.'/apps/gateway/.env.bak-deploy-1'))->toBeTrue()
             ->and(readlink($kept.'/apps/gateway/storage'))->toBe($storage)
             ->and(file_get_contents($storage.'/framework/cache/data/aa/lock'))->toBe('held')
             ->and(fileperms($storage.'/logs/laravel.log') & 0o777)->toBe(0o640)
             ->and(trim($this->fixture->git($kept, 'status', '--porcelain', '--untracked-files=no')))->toBe('')
             ->and(trim($this->fixture->git($layout->repositoryPath(), 'rev-parse', 'refs/orbit/pre-adopt')))->toBe($this->sha)
             ->and(trim($this->fixture->git($layout->repositoryPath(), 'remote', 'get-url', 'origin')))->toBe('https://github.com/nckrtl/orbit.git')
-            ->and(trim($this->fixture->git($layout->repositoryPath(), 'rev-parse', 'refs/remotes/origin/main')))->toBe($this->sha)
-            ->and($layout->preparedCommit($this->id))->toBe($this->sha)
-            ->and(readlink($layout->releaseApplicationPath($this->id).'/storage'))->toBe($storage)
-            ->and($this->steps->steps)->toBe(['handoff:'.$this->id, 'verify:'.$this->sha, 'web:publish:'.$this->id, 'smoke:'.$this->id])
             ->and($this->steps->installed)->toBe([$this->id])
-            ->and(GatewayRelease::query()->sole()->trigger)->toBe('adopt')
-            ->and(GatewayRelease::query()->sole()->outcome)->toBe('verified')
+            // Phase 1 changes the layout with identical code and checks that it serves; phase 2 is a deploy.
+            ->and($this->steps->steps)->toBe([
+                'handoff:'.$this->id, 'serving', 'schedule:'.$this->id,
+                'handoff:'.$this->id, 'verify:'.$this->sha, 'schedule:'.$this->id, 'web:publish:'.$this->id, 'smoke:'.$this->id,
+            ])
+            ->and(GatewayRelease::query()->pluck('trigger')->all())->toBe(['adopt', 'adopt'])
+            ->and(GatewayRelease::query()->pluck('outcome')->all())->toBe(['verified', 'verified'])
             ->and(Activity::query()->value('command'))->toBe('gateway:release:adopt');
     });
 
@@ -78,7 +80,50 @@ describe('gateway:release:adopt', function (): void {
         $again = adoption($this->fixture, $this->steps)->execute();
 
         expect($again)->toMatchArray(['adopted' => true, 'already' => true, 'release' => $this->id])
-            ->and(GatewayRelease::query()->count())->toBe(1);
+            ->and(GatewayRelease::query()->count())->toBe(2);
+    });
+
+    it('adopts into a newer commit in two phases: the checkout\'s own commit first, then a deploy with migrations', function (): void {
+        $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
+        $target = $this->fixture->commit('Newer release with a migration');
+        $targetId = substr($target, 0, 12);
+        $source = $this->fixture->base.'/adopt-source';
+        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $this->steps->pending = ['2026_12_31_000000_add_marks'];
+
+        $result = adoption($this->fixture, $this->steps)->execute(substr($target, 0, 10), $source);
+        $kept = $this->fixture->layout->basePath().'/orbit.pre-adopt-20261007T120000Z';
+
+        expect($result)->toMatchArray(['release' => $targetId, 'sha' => $target, 'from' => $this->sha])
+            ->and($result['phase1']['release'])->toBe($this->id)
+            ->and($result['deploy']['migrations_ran'])->toBeTrue()
+            ->and($result['deploy']['previous'])->toBe($this->id)
+            ->and($this->fixture->layout->currentReleaseId())->toBe($targetId)
+            ->and(trim($this->fixture->git($kept, 'rev-parse', 'HEAD')))->toBe($this->sha)
+            // The first release serves the checkout's commit, which may predate the CI web build.
+            ->and($this->steps->installed)->toBe([$targetId])
+            ->and($this->steps->steps)->toBe([
+                'handoff:'.$this->id, 'serving', 'schedule:'.$this->id,
+                'snapshot:'.$targetId, 'migrate:'.$targetId,
+                'handoff:'.$targetId, 'verify:'.$target, 'schedule:'.$targetId, 'web:publish:'.$targetId, 'smoke:'.$targetId,
+            ])
+            ->and($this->steps->servingDuringMigrate)->toBe('release '.$this->id)
+            ->and(GatewayRelease::query()->orderBy('id')->pluck('release_id')->all())->toBe([$this->id, $targetId]);
+    });
+
+    it('stays adopted on the checkout\'s commit and pauses when the target\'s migration fails', function (): void {
+        $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
+        $target = $this->fixture->commit('Broken migration');
+        $source = $this->fixture->base.'/adopt-source';
+        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $this->steps->pending = ['2026_12_31_000000_add_marks'];
+        $this->steps->failMigrate = true;
+
+        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute($target, $source));
+
+        expect($exception->errorCode)->toBe('gateway.release_migrate_failed')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($this->id)
+            ->and(GatewayRelease::query()->orderBy('id')->pluck('outcome')->all())->toBe(['verified', 'paused']);
     });
 
     it('refuses a checkout with tracked changes before it changes anything', function (): void {
@@ -89,32 +134,43 @@ describe('gateway:release:adopt', function (): void {
         expect($exception->errorCode)->toBe('gateway.release_adopt_local_changes')
             ->and($exception->getMessage())->toContain('apps/gateway/public/index.php')
             ->and(file_exists($this->fixture->layout->sharedPath()))->toBeFalse()
-            ->and(is_dir($this->current.'/apps/gateway/storage'))->toBeTrue()
             ->and(is_link($this->current))->toBeFalse()
             ->and(Activity::query()->value('error_code'))->toBe('gateway.release_adopt_local_changes');
     });
 
-    it('puts the checkout back when verification fails, and finishes on the next run', function (): void {
-        $this->steps->failVerify = true;
+    it('puts the checkout and its env file back when the Gateway does not serve after the swap, and finishes on the next run', function (): void {
+        $this->steps->failServing = true;
 
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
 
         expect($exception->errorCode)->toBe('gateway.release_verify_failed')
             ->and(is_link($this->current))->toBeFalse()
-            ->and(is_dir($this->current.'/.git'))->toBeTrue()
             ->and(glob($this->fixture->layout->basePath().'/orbit.pre-adopt-*'))->toBe([])
             ->and(readlink($this->current.'/apps/gateway/storage'))->toBe($this->fixture->layout->storagePath())
             ->and(is_link($this->current.'/apps/gateway/.env'))->toBeFalse()
             ->and(file_get_contents($this->current.'/apps/gateway/.env'))->toBe("APP_ENV=production\nAPP_VERSION=0.1.0\n")
             ->and(GatewayRelease::query()->sole()->outcome)->toBe('switched_back')
-            ->and($this->steps->steps)->toBe(['handoff:'.$this->id, 'verify:'.$this->sha, 'web:restore:'.$this->id, 'handoff:'.$this->id]);
+            // The scheduler had not moved yet, so only the serving side is handed back.
+            ->and($this->steps->steps)->toBe(['handoff:'.$this->id, 'serving', 'handoff:'.$this->id]);
 
-        $this->steps->failVerify = false;
+        $this->steps->failServing = false;
         $result = adoption($this->fixture, $this->steps)->execute();
 
         expect($result['shared'])->toMatchArray(['repository' => 'existing', 'env' => 'existing', 'env_link' => 'linked', 'storage' => 'existing'])
-            ->and($this->fixture->layout->currentReleaseId())->toBe($this->id)
-            ->and(GatewayRelease::query()->latest('id')->value('outcome'))->toBe('verified');
+            ->and($this->fixture->layout->currentReleaseId())->toBe($this->id);
+    });
+
+    it('finishes an adoption that swapped but never verified when it runs again', function (): void {
+        adoption($this->fixture, $this->steps)->execute();
+        // The first run died between the swap and the end: no release verified the current release.
+        GatewayRelease::query()->delete();
+        $this->steps->steps = [];
+
+        $result = adoption($this->fixture, $this->steps)->execute();
+
+        expect($result)->toMatchArray(['already' => true, 'resumed' => true, 'release' => $this->id])
+            ->and(array_slice($this->steps->steps, 0, 3))->toBe(['handoff:'.$this->id, 'serving', 'schedule:'.$this->id])
+            ->and(GatewayRelease::query()->pluck('outcome')->all())->toBe(['verified', 'verified']);
     });
 
     it('falls back to two renames where an atomic swap is not available', function (): void {
@@ -133,88 +189,7 @@ describe('gateway:release:adopt', function (): void {
             ->and(is_link($this->current))->toBeFalse();
     });
 
-    it('adopts into a newer commit from another checkout of it, migrating before the swap while the checkout serves', function (): void {
-        $this->fixture->write('apps/gateway/database/migrations/2026_12_31_000000_add_marks.php', "<?php\n");
-        $target = $this->fixture->commit('Newer release with a migration');
-        $source = $this->fixture->base.'/adopt-source';
-        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
-        $this->steps->pending = ['2026_12_31_000000_add_marks'];
-
-        $result = adoption($this->fixture, $this->steps)->execute(substr($target, 0, 10), $source);
-        $kept = $this->fixture->layout->basePath().'/orbit.pre-adopt-20261007T120000Z';
-
-        expect($result)->toMatchArray(['release' => substr($target, 0, 12), 'sha' => $target, 'from' => $this->sha, 'migrations_ran' => true])
-            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($target, 0, 12))
-            ->and(trim($this->fixture->git($kept, 'rev-parse', 'HEAD')))->toBe($this->sha)
-            ->and($this->steps->steps)->toBe([
-                'snapshot:'.substr($target, 0, 12),
-                'migrate:'.substr($target, 0, 12),
-                'handoff:'.substr($target, 0, 12),
-                'verify:'.$target,
-                'web:publish:'.substr($target, 0, 12),
-                'smoke:'.substr($target, 0, 12),
-            ])
-            ->and($this->steps->servingDuringMigrate)->toBe($this->current.' in place')
-            ->and(GatewayRelease::query()->sole()->migrations_ran)->toBeTrue();
-    });
-
-    it('pauses on the release when verification fails after migrations ran', function (): void {
-        $this->steps->pending = ['2026_12_31_000000_add_marks'];
-        $this->steps->failVerify = true;
-
-        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
-
-        expect($exception->errorCode)->toBe('gateway.release_verify_failed')
-            ->and($this->fixture->layout->currentReleaseId())->toBe($this->id)
-            ->and(GatewayRelease::query()->sole()->outcome)->toBe('paused')
-            ->and(is_file($this->fixture->base.'/home/gateway-release.paused'))->toBeTrue();
-    });
-
-    it('keeps the checkout serving with its original env file when the migration fails', function (): void {
-        $this->steps->pending = ['2026_12_31_000000_add_marks'];
-        $this->steps->failMigrate = true;
-
-        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
-
-        expect($exception->errorCode)->toBe('gateway.release_migrate_failed')
-            ->and(is_link($this->current))->toBeFalse()
-            ->and(file_get_contents($this->current.'/apps/gateway/.env'))->toBe("APP_ENV=production\nAPP_VERSION=0.1.0\n")
-            ->and(GatewayRelease::query()->sole()->outcome)->toBe('paused')
-            ->and($this->steps->steps)->not->toContain('handoff:'.$this->id);
-    });
-
-    it('restores the web build and the checkout when smoke fails without migrations', function (): void {
-        $this->steps->failSmoke = true;
-
-        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
-
-        expect($exception->errorCode)->toBe('gateway.release_smoke_failed')
-            ->and(is_link($this->current))->toBeFalse()
-            ->and(GatewayRelease::query()->sole()->outcome)->toBe('switched_back')
-            ->and($this->steps->steps)->toBe([
-                'handoff:'.$this->id,
-                'verify:'.$this->sha,
-                'web:publish:'.$this->id,
-                'smoke:'.$this->id,
-                'web:restore:'.$this->id,
-                'handoff:'.$this->id,
-            ]);
-    });
-
-    it('finishes an adoption that swapped but never verified when it runs again', function (): void {
-        adoption($this->fixture, $this->steps)->execute();
-        // The first run died between the swap and the end: no release verified the current release.
-        GatewayRelease::query()->delete();
-        $this->steps->steps = [];
-
-        $result = adoption($this->fixture, $this->steps)->execute();
-
-        expect($result)->toMatchArray(['already' => true, 'resumed' => true, 'release' => $this->id])
-            ->and($this->steps->steps)->toBe(['handoff:'.$this->id, 'verify:'.$this->sha, 'web:publish:'.$this->id, 'smoke:'.$this->id])
-            ->and(GatewayRelease::query()->sole()->outcome)->toBe('verified');
-    });
-
-    it('refuses a target that does not know a migration the database applied, before the swap', function (): void {
+    it('refuses a database that applied a migration the checkout does not ship, before the swap', function (): void {
         $this->steps->applied = ['2026_09_09_000000_hotfix'];
 
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
@@ -243,101 +218,36 @@ describe('gateway:release:adopt', function (): void {
 function adoption(GatewayReleaseFixture $fixture, AdoptionSteps $steps, string $python = 'python3'): AdoptGatewayReleaseAction
 {
     $web = new AdoptionWebBuild($steps);
-    $database = new readonly class($steps, $fixture) implements GatewayReleaseDatabase
-    {
-        public function __construct(private AdoptionSteps $steps, private GatewayReleaseFixture $fixture) {}
-
-        public function pending(string $releasePath): array
-        {
-            return $this->steps->pending;
-        }
-
-        public function applied(): array
-        {
-            return $this->steps->applied;
-        }
-
-        public function snapshot(string $id): string
-        {
-            $this->steps->steps[] = 'snapshot:'.$id;
-
-            return '/var/tmp/orbit-pre-'.$id.'.sqlite';
-        }
-
-        public function migrate(string $releasePath): void
-        {
-            $this->steps->steps[] = 'migrate:'.basename($releasePath);
-            $current = $this->fixture->layout->currentPath();
-            $this->steps->servingDuringMigrate = $current.(is_link($current) ? ' linked' : ' in place');
-
-            if ($this->steps->failMigrate) {
-                throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'The release migrations failed.');
-            }
-        }
-
-        public function snapshotBytes(): int
-        {
-            return 0;
-        }
-
-        public function migrations(string $releasePath): array
-        {
-            return [];
-        }
-    };
+    $database = new AdoptionDatabase($steps, $fixture);
+    $runtime = new AdoptionRuntime($steps);
+    $verifier = new AdoptionVerifier($steps);
+    $smoke = new AdoptionSmoke($steps);
+    $builder = $fixture->builder($web);
+    $recorder = new GatewayReleaseRecorder($fixture->base.'/home');
+    $guard = new GatewayReleaseGuard($fixture->layout, $database, $fixture);
+    $lock = new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock');
+    $deploy = new DeployGatewayReleaseAction(
+        $lock,
+        $builder,
+        $database,
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, guard: $guard),
+        $recorder,
+        $guard,
+        new GatewayReleaseRetry,
+    );
 
     return new AdoptGatewayReleaseAction(
-        new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock'),
+        $lock,
         new GatewayReleaseAdopter(
             layout: $fixture->layout,
             processes: $fixture,
-            builder: $fixture->builder($web),
+            builder: $builder,
             exchange: new GatewayReleaseExchange($fixture, $python),
-            runtime: new readonly class($steps) implements GatewayReleaseRuntime
-            {
-                public function __construct(private AdoptionSteps $steps) {}
-
-                public function handoff(string $id): array
-                {
-                    $this->steps->steps[] = 'handoff:'.$id;
-
-                    return ['caddy' => 'reloaded', 'fpm' => 'unchanged', 'scheduler' => 'restarted', 'cleanup' => 'skipped', 'agent_view' => 'restarted', 'cleanup_paused' => false];
-                }
-            },
-            verifier: new readonly class($steps) implements GatewayReleaseVerifier
-            {
-                public function __construct(private AdoptionSteps $steps) {}
-
-                public function verify(string $sha): array
-                {
-                    $this->steps->steps[] = 'verify:'.$sha;
-
-                    if ($this->steps->failVerify) {
-                        throw new GatewayReleaseException('verify', 'gateway.release_verify_failed', 'Gateway status is [ok] at version [0.1.0].');
-                    }
-
-                    return ['status' => 'ok', 'version' => $sha];
-                }
-            },
-            recorder: new GatewayReleaseRecorder($fixture->base.'/home'),
-            database: $database,
-            web: $web,
-            smoke: new readonly class($steps) implements GatewayReleaseSmoke
-            {
-                public function __construct(private AdoptionSteps $steps) {}
-
-                public function run(string $id, string $sha): array
-                {
-                    $this->steps->steps[] = 'smoke:'.$id;
-
-                    if ($this->steps->failSmoke) {
-                        throw new GatewayReleaseException('smoke', 'gateway.release_smoke_failed', 'Smoke failed.');
-                    }
-
-                    return ['outcome' => 'passed', 'output' => '{}'];
-                }
-            },
-            guard: new GatewayReleaseGuard($fixture->layout, $database, $fixture),
+            runtime: $runtime,
+            verifier: $verifier,
+            recorder: $recorder,
+            guard: $guard,
+            deploy: $deploy,
             clock: static fn (): string => '20261007T120000Z',
         ),
     );
@@ -354,19 +264,77 @@ final class AdoptionSteps
     /** @var list<string> */
     public array $applied = [];
 
-    public bool $failVerify = false;
+    /** @var list<string> */
+    public array $installed = [];
+
+    public bool $failServing = false;
 
     public bool $failMigrate = false;
 
-    public ?string $servingDuringMigrate = null;
-
     public bool $failSmoke = false;
 
-    /** @var list<string> */
-    public array $installed = [];
+    public ?string $servingDuringMigrate = null;
 }
 
-/** The web build that prepare installs and adoption publishes or restores, in the order it happens. */
+final readonly class AdoptionRuntime implements GatewayReleaseRuntime
+{
+    public function __construct(private AdoptionSteps $steps) {}
+
+    public function handoff(string $id): array
+    {
+        $this->steps->steps[] = 'handoff:'.$id;
+
+        return ['caddy' => 'reloaded', 'fpm' => 'unchanged', 'agent_view' => 'restarted'];
+    }
+
+    public function schedule(string $id): array
+    {
+        $this->steps->steps[] = 'schedule:'.$id;
+
+        return ['scheduler' => 'restarted', 'cleanup' => 'skipped', 'cleanup_paused' => false];
+    }
+}
+
+final readonly class AdoptionVerifier implements GatewayReleaseVerifier
+{
+    public function __construct(private AdoptionSteps $steps) {}
+
+    public function verify(string $sha): array
+    {
+        $this->steps->steps[] = 'verify:'.$sha;
+
+        return ['status' => 'ok', 'version' => $sha];
+    }
+
+    public function serving(): array
+    {
+        $this->steps->steps[] = 'serving';
+
+        if ($this->steps->failServing) {
+            throw new GatewayReleaseException('verify', 'gateway.release_verify_failed', 'Gateway /up did not succeed.');
+        }
+
+        return ['status' => 'ok', 'version' => '0.1.0'];
+    }
+}
+
+final readonly class AdoptionSmoke implements GatewayReleaseSmoke
+{
+    public function __construct(private AdoptionSteps $steps) {}
+
+    public function run(string $id, string $sha): array
+    {
+        $this->steps->steps[] = 'smoke:'.$id;
+
+        if ($this->steps->failSmoke) {
+            throw new GatewayReleaseException('smoke', 'gateway.release_smoke_failed', 'Smoke failed.');
+        }
+
+        return ['outcome' => 'passed', 'output' => '{}'];
+    }
+}
+
+/** The web build that prepare installs and a release publishes or restores, in the order it happens. */
 final readonly class AdoptionWebBuild implements GatewayReleaseWebBuild
 {
     public function __construct(private AdoptionSteps $steps) {}
@@ -386,5 +354,52 @@ final readonly class AdoptionWebBuild implements GatewayReleaseWebBuild
     public function restore(string $id): void
     {
         $this->steps->steps[] = 'web:restore:'.$id;
+    }
+}
+
+final readonly class AdoptionDatabase implements GatewayReleaseDatabase
+{
+    public function __construct(private AdoptionSteps $steps, private GatewayReleaseFixture $fixture) {}
+
+    public function pending(string $releasePath): array
+    {
+        return $this->steps->pending;
+    }
+
+    public function applied(): array
+    {
+        return $this->steps->applied;
+    }
+
+    public function snapshot(string $id): string
+    {
+        $this->steps->steps[] = 'snapshot:'.$id;
+
+        return '/var/tmp/orbit-pre-'.$id.'.sqlite';
+    }
+
+    public function migrate(string $releasePath): void
+    {
+        $this->steps->steps[] = 'migrate:'.basename($releasePath);
+        $this->steps->servingDuringMigrate = 'release '.$this->fixture->layout->currentReleaseId();
+
+        if ($this->steps->failMigrate) {
+            throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'The release migrations failed.', 500);
+        }
+
+        $this->steps->applied = [...$this->steps->applied, ...$this->steps->pending];
+        $this->steps->pending = [];
+    }
+
+    public function snapshotBytes(): int
+    {
+        return 0;
+    }
+
+    public function migrations(string $releasePath): array
+    {
+        $directory = $releasePath.'/apps/gateway/database/migrations';
+
+        return is_dir($directory) ? array_values(array_diff(scandir($directory) ?: [], ['.', '..'])) : [];
     }
 }

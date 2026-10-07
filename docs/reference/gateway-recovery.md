@@ -148,16 +148,20 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA> --force
 
 After the switch, deploy:
 
-1. hands the runtime over (Caddy, PHP-FPM, the scheduler, document cleanup, and agent-view);
+1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, OPcache, and the units;
 2. verifies the release, as described below;
-3. switches the web app to the release's build;
-4. runs smoke against that web app.
+3. runs the scheduler phase of the handoff: the scheduler drain and restart, and document cleanup;
+4. switches the web app to the release's build;
+5. runs smoke against that web app.
+
+Verify runs before the scheduler phase, so a broken release is found and switched back without waiting for a long scheduled command.
 
 Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`). Status must be `ok`, and the version must be the full commit or its 12-digit id. A busy pool can queue `/up` behind long requests, so a failed check runs again after 2, 4, 8, 16, and 30 seconds.
 
 Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
 
-- Without migrations, deploy switches back to the previous release, restores its web build, and repeats the runtime handoff for it. The outcome is `switched_back`.
+- Without migrations, deploy switches back to the previous release and restores its web build. It repeats the handoff phases that already ran. The outcome is `switched_back`.
+- A previous release that lacks a migration the database applied gets no switch-back. Deploy pauses instead. This can follow an earlier pause.
 - After migrations, deploy pauses. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. It never switches back onto a schema the previous code has not run.
 - A switch that fails after migrations pauses too. The previous code then serves the new schema.
 
@@ -177,23 +181,39 @@ When some are pending, deploy first writes a consistent copy of the Gateway data
 
 #### Runtime handoff
 
-The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff` with the code of the release that just became current. A release that changes what the Gateway renders applies that change at once, although the deployer itself runs from the previous release. In order, the handoff:
+The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff --phase=serve`, then, after verify, `--phase=schedule`, with the code of the release that just became current. A release that changes what the Gateway renders applies that change at once, although the deployer itself runs from the previous release. In order, the handoff:
+
+The serving phase:
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
 3. resets the pool's OPcache, described below;
-4. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path;
-5. moves the scheduler to the new release without cutting off a scheduled command;
-6. restarts every other Gateway Node Process whose directory is in the Gateway application;
-7. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate).
+4. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path.
+
+The scheduler phase:
+
+1. moves the scheduler to the new release without cutting off a scheduled command;
+2. restarts every other Gateway Node Process whose directory is in the Gateway application;
+3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate).
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
-Release files never change in place, so OPcache never marks the scripts of an old release as wasted, and the cache fills up. The handoff therefore resets the pool's OPcache through the pool's socket, with a script outside `public/`.
+Release files never change in place, so OPcache never marks the scripts of an old release as wasted, and the cache fills up. The serving phase therefore resets OPcache through the pool's socket, with a script outside `public/`.
 
-OPcache restarts once no request uses the cache. A restart that stays pending for 180 seconds kills the workers that still serve a request, and a Gateway request may run 600 seconds. So the handoff resets only while the pool serves no request, and the restart happens with the next one. It waits up to 60 seconds for that moment; a pool that stays busy reports `opcache: deferred`, and a later release resets it. A failed reset reports `failed` and does not fail the release. The pool itself is unchanged, so PHP-FPM does not reload for this.
+All pools of the PHP-FPM master share one OPcache. OPcache restarts once no request uses the cache. A restart that stays pending for `opcache.force_restart_timeout` (180 seconds) kills the workers that still serve a request, and a Gateway request may run 600 seconds. So the handoff resets only while no enabled pool has a connection on its `listen` socket, and the restart happens with the next request. It waits up to 60 seconds for that moment. Then it asks the pool again until the restart has happened.
+
+| `opcache.outcome` | Meaning |
+| --- | --- |
+| `reset` | The cache restarted. `cache_full` and the memory figures from before and after are in the record. |
+| `deferred` | A pool stayed busy for 60 seconds. A later release resets it. |
+| `pending` | The reset was accepted, but the restart was still pending after 5 seconds. |
+| `failed` | The pool could not be asked. The release continues. |
+
+A request that starts in the milliseconds between the idle check and the reset, and runs longer than 180 seconds, could still be killed. Setting `opcache.force_restart_timeout` above 600 seconds closes that gap, but it needs a PHP-FPM restart, and a restart ends requests in flight while `process_control_timeout` is 0. Leave it for a planned PHP-FPM restart. The handoff never reloads PHP-FPM for OPcache.
 
 The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. Every Gateway runs one. A missing one fails the handoff with `gateway.release_scheduler_missing`, and one in another directory with `gateway.release_scheduler_mismatch`, because it would keep the old code. The handoff never cuts off a scheduled command in the normal path. It moves the scheduler in these steps:
+
+The drain needs the scheduler's PHP to have the `pcntl` extension, so `schedule:work` can handle SIGTERM. Without it, the handoff takes the forced path at once and records `reason: no_pcntl`.
 
 1. It runs `schedule:interrupt`, so repeating events such as `tasks:tick` stop after their current run.
 2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
@@ -222,7 +242,7 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
 | `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
 | `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. |
-| `gateway.release_scheduler_busy` | After the drain limit, a tasks tick held its lock for more than 330 seconds, so the scheduler was not stopped. It finishes its commands and exits; start its unit again. |
+| `gateway.release_scheduler_busy` | After the drain limit, a tasks tick held its lock for more than 330 seconds, so the scheduler was not stopped. See below. |
 | `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
 | `gateway.release_handoff_failed` | The release printed no handoff result. |
 | `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |
@@ -233,6 +253,8 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_migration_crossed` | The database has applied a migration the target release does not ship. |
 | `gateway.release_downgrade` | The commit does not descend from the current release. |
 | `gateway.release_scheduler_missing`, `gateway.release_scheduler_mismatch` | The Gateway Node has no scheduler Process, or it runs outside the Gateway application path. |
+
+When the handoff reports `gateway.release_scheduler_busy`, the old scheduler still finishes its commands and exits. With `Restart=always`, systemd then starts it on the current release. Otherwise, start its unit by hand.
 
 ### Roll back
 
@@ -270,18 +292,21 @@ Check these conditions on the Gateway before you run the command.
 
 ### Run adoption
 
-As `orbit`, make a temporary checkout of the commit to adopt into, `<SHA>`, and install its dependencies. Its env file is a link to the Gateway's, so the command reads the Gateway's configuration and state:
+As `orbit`, make a temporary checkout of the commit to adopt into, `<SHA>`, and install its dependencies. Its env file is a link to the Gateway's, so the command reads the Gateway's configuration and state. Keep its logs, which record the run:
 
 ```bash
 git clone --quiet https://github.com/nckrtl/orbit.git /home/orbit/adopt-tmp
 git -C /home/orbit/adopt-tmp checkout --quiet --detach <SHA>
 composer --working-dir=/home/orbit/adopt-tmp/apps/gateway install --prefer-dist --no-interaction
 ln -s /home/orbit/orbit/apps/gateway/.env /home/orbit/adopt-tmp/apps/gateway/.env
-php /home/orbit/adopt-tmp/apps/gateway/artisan gateway:release:adopt --commit=<SHA>
+php /home/orbit/adopt-tmp/apps/gateway/artisan gateway:release:adopt --commit=<SHA> | tee /home/orbit/.orbit/logs-adopt.json
+mv /home/orbit/adopt-tmp/apps/gateway/storage/logs /home/orbit/.orbit/logs-adopt-tmp
 rm -rf /home/orbit/adopt-tmp
 ```
 
-Without `--commit`, adoption uses the commit that the in-place checkout has. That commit then must have the command itself. Adoption holds the release lock and runs these steps:
+Adoption holds the release lock and runs in two phases. The first changes the layout but not the code. The second changes the code through a normal deploy. So no process ever runs code from two commits.
+
+Phase 1 runs these steps for the commit the in-place checkout has:
 
 | Step | What happens |
 | --- | --- |
@@ -291,18 +316,24 @@ Without `--commit`, adoption uses the commit that the in-place checkout has. Tha
 | Env link | The original stays as `apps/gateway/.env.pre-adopt`, and one rename replaces `.env` with a link to the shared file. The running code uses its cached configuration, so it serves the same. |
 | Env backups | Each `apps/gateway/.env.bak*` file is copied to `shared/env-backups/`. |
 | Storage | `apps/gateway/storage` moves to `shared/gateway-storage` and is linked back in one process, so its path is missing for microseconds only. |
-| Prepare | `releases/<id>` is built for `<SHA>`, with its web build. |
-| Migrate | When `<SHA>` has pending migrations, the database is snapshotted and migrated while the checkout still serves, as in a deploy. |
-| Swap | `renameat2(RENAME_EXCHANGE)` swaps the checkout directory with a link to the release. The directory stays as `/home/orbit/orbit.pre-adopt-<time>`. |
-| Release | The runtime handoff, verify, the web switch, and smoke run as in a deploy. |
+| Prepare | `releases/<id>` is built for the checkout's own commit. With `--commit`, it gets no web build, because that commit may predate the CI artifact. |
+| Swap | `renameat2(RENAME_EXCHANGE)` swaps the checkout directory with a link to that release. The directory stays as `/home/orbit/orbit.pre-adopt-<time>`. |
+| Handoff | The temporary checkout's code hands the runtime over, because the checkout's commit may predate the handoff command. The app code that serves is the same as before. |
+| Serving | `/up` is up and Gateway status is `ok`. The version may be `dev`, because `APP_VERSION` is commented out. |
 
-The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `migrations_ran`, `snapshot`, `shared`, `switch`, `handoff`, `verify`, `web`, and `smoke`. `switch.method` is `exchange`, or `rename` with the gap in `switch.gap_us`. `shared.storage_gap_us` is the storage gap. The attempt writes a release record with trigger `adopt` and an Activity entry. Running it again on an adopted Gateway prints `"already": true` and changes nothing.
+Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describes, with its snapshot, migrations, handoff, verify, web build, and smoke. Without `--commit`, it deploys the checkout's commit itself, which then must have the command; that adds the web build, the exact version check, and smoke.
+
+The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `shared`, `switch`, `phase1`, and `deploy`, the phase-2 release record. `switch.method` is `exchange`, or `rename` with the gap in `switch.gap_us`. `shared.storage_gap_us` is the storage gap. Each phase writes a release record with trigger `adopt` and an Activity entry.
+
+Running it again on a Gateway that finished adoption prints `"already": true` and changes nothing. When an earlier run swapped and then stopped before it verified, for example because its session dropped, the next run hands the runtime over and checks serving again, prints `"resumed": true`, and then runs phase 2.
 
 The kept checkout is a complete way back. Its `.env.pre-adopt` holds the original env file, so keep its permissions, and remove it once a few releases have verified:
 
 ```bash
 rm -rf /home/orbit/orbit.pre-adopt-<time>
 ```
+
+The first release has no web build of its own when it came from `--commit`. A rollback to it fails at the web step and switches back; roll back to a later release instead.
 
 ### When adoption fails
 
@@ -311,17 +342,16 @@ Each step checks whether it already ran, so after fixing the cause, run the comm
 | Failure | Result |
 | --- | --- |
 | A refusal, or a failure before the swap | The checkout keeps serving, with its original `.env` back. The storage link stays, as it reaches the same files. |
-| Handoff, verify, web switch, or smoke, without migrations | Adoption swaps the checkout back, restores the web build and the original `.env`, and hands the runtime back. The record says `switched_back`. |
-| A failed migration | Adoption pauses, and the checkout keeps serving. |
-| Any later step after migrations | Adoption pauses on the release, as a [deploy](#deploy-a-release) does. |
+| Phase-1 handoff or serving check | Adoption swaps the checkout back, restores the original `.env`, and hands the runtime back. The record says `switched_back`. |
+| Phase 2 | The Gateway stays adopted. The deploy switches back to the phase-1 release or pauses, as any deploy does. |
 
-When even the swap back fails, the outcome is `gateway.release_switch_back_failed`. Swap back by hand as `orbit`, then hand the runtime over with the release's code:
+When even the swap back fails, the outcome is `gateway.release_switch_back_failed`. Swap back by hand as `orbit`, then hand the runtime over with the temporary checkout's code:
 
 ```bash
 cd /home/orbit
 mv -T orbit orbit.adopt-link && mv -T orbit.pre-adopt-<time> orbit && rm orbit.adopt-link
 mv orbit/apps/gateway/.env.pre-adopt orbit/apps/gateway/.env
-php /home/orbit/releases/<id>/apps/gateway/artisan gateway:release:handoff
+php /home/orbit/adopt-tmp/apps/gateway/artisan gateway:release:handoff
 ```
 
 | Error code | Meaning |

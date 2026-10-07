@@ -46,13 +46,20 @@ describe('the stable Gateway application path', function (): void {
         $processes = new InstalledUnits;
 
         new NativeAgentViewConverger($processes)->converge();
+        $agentView = $processes->installed;
+        $processes->installed = [];
         new NativeRuntimeHibernatorConverger($processes)->converge();
-        $units = implode("\n", $processes->installed);
+        $hibernatorService = array_values(array_filter($processes->installed, static fn (string $unit): bool => str_contains($unit, 'ExecStart=')));
+        $stable = $this->base.'/orbit/apps/gateway';
 
-        expect($processes->installed)->not->toBe([])
-            ->and($units)->toContain('WorkingDirectory='.$this->base.'/orbit/apps/gateway')
-            ->and($units)->toContain($this->base.'/orbit/apps/gateway/artisan')
-            ->and($units)->not->toContain('releases/0123456789ab');
+        expect($agentView)->toHaveCount(1)
+            ->and($hibernatorService)->toHaveCount(1);
+
+        foreach ([$agentView[0], $hibernatorService[0]] as $unit) {
+            expect($unit)->toContain('WorkingDirectory='.$stable)
+                ->and($unit)->toContain($stable.'/artisan')
+                ->and($unit)->not->toContain('releases/0123456789ab');
+        }
     });
 });
 

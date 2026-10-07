@@ -36,6 +36,8 @@ final class HandoffProcessRunner implements ProcessRunner
     /** @var array<string, CommandResult> results by the joined first three arguments */
     public array $results = [];
 
+    public bool $pcntl = true;
+
     /** @var list<string> what `systemctl show -p MainPID` reports, one entry per call; the last one repeats */
     public array $mainPids = ['4242', '0'];
 
@@ -49,6 +51,10 @@ final class HandoffProcessRunner implements ProcessRunner
             $probe->release();
         }
         $this->tickLockFree[] = $free;
+
+        if (($invocation->arguments[1] ?? '') === '-r' && str_contains($invocation->arguments[2] ?? '', 'pcntl')) {
+            return new CommandResult(0, $this->pcntl ? 'yes' : 'no', '', 1, false);
+        }
 
         if (array_slice($invocation->arguments, 0, 4) === ['systemctl', 'show', '-p', 'MainPID']) {
             $pid = count($this->mainPids) > 1 ? array_shift($this->mainPids) : $this->mainPids[0];
@@ -161,7 +167,9 @@ final class SchedulerDrainProbe
     public int $cleared = 0;
 
     /** @var list<string> */
-    public array $opcacheScripts = [];
+    public array $opcacheCalls = [];
+
+    public bool $pending = false;
 
     /** @var list<int> open pool connections, one entry per look; the last one repeats */
     public array $connections = [0];
@@ -211,10 +219,10 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5): array
             applicationPath: HANDOFF_APP,
             orbitHome: $orbitHome,
             readLivePool: static fn (): string => $livePool ?? $rendered,
-            resetOpcache: static function (string $script) use ($probe): string {
-                $probe->opcacheScripts[] = $script;
+            resetOpcache: static function (string $script, string $query) use ($probe): string {
+                $probe->opcacheCalls[] = $script.'?'.$query;
 
-                return '{"reset":true}';
+                return json_encode(['reset' => $query === '', 'before' => ['restart_pending' => $probe->pending, 'cache_full' => false]], JSON_THROW_ON_ERROR);
             },
             fpmConnections: static fn (): int => count($probe->connections) > 1 ? array_shift($probe->connections) : $probe->connections[0],
             sleep: static function (): void {
@@ -295,6 +303,20 @@ describe('gateway:release:handoff', function (): void {
             ->and(Cache::lock(GatewaySchedulerHandoff::TickLock, 1)->get())->toBeTrue();
     });
 
+    it('takes the forced path and says why when the scheduler PHP has no pcntl, instead of reporting a drain', function (): void {
+        $scheduler = handoff_scheduler(handoff_gateway());
+        [$handoff, $processes, , , , $probe] = runtime_handoff();
+        $processes->pcntl = false;
+        $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
+
+        $result = $handoff->run();
+
+        expect($result['scheduler_drain'])->toMatchArray(['outcome' => 'forced', 'reason' => 'no_pcntl'])
+            ->and($processes->systemctl())->not->toContain("sudo systemctl kill --kill-whom=main --signal=SIGTERM {$unit}")
+            ->and($processes->systemctl())->toContain("sudo systemctl stop {$unit}")
+            ->and($probe->cleared)->toBe(1);
+    });
+
     it('starts a scheduler that is not running without a drain', function (): void {
         $scheduler = handoff_scheduler(handoff_gateway());
         [$handoff, $processes] = runtime_handoff();
@@ -311,7 +333,7 @@ describe('gateway:release:handoff', function (): void {
             ]);
     });
 
-    it('resets the pool OPcache with the release script once the pool serves no request, and defers it otherwise', function (): void {
+    it('resets OPcache once no pool serves a request, confirms the restart is done, and defers it otherwise', function (): void {
         handoff_scheduler(handoff_gateway());
         [$handoff, , , , , $probe] = runtime_handoff();
         $probe->connections = [2, 1, 0];
@@ -321,11 +343,20 @@ describe('gateway:release:handoff', function (): void {
         $busyProbe->connections = [1];
         $busy = $busyPool->run();
 
-        expect($reset['opcache'])->toBe('reset')
-            ->and($probe->opcacheScripts)->toBe([HANDOFF_APP.'/resources/fpm/opcache-reset.php'])
-            ->and($probe->connections)->toBe([0])
-            ->and($busy['opcache'])->toBe('deferred')
-            ->and($busyProbe->opcacheScripts)->toBe([]);
+        expect($reset['opcache'])->toMatchArray(['outcome' => 'reset', 'cache_full' => false])
+            ->and($probe->opcacheCalls)->toHaveCount(2)
+            ->and($probe->opcacheCalls[0])->toEndWith('/resources/fpm/opcache-reset.php?')
+            ->and($probe->opcacheCalls[1])->toEndWith('/resources/fpm/opcache-reset.php?status=1')
+            ->and($busy['opcache'])->toBe(['outcome' => 'deferred'])
+            ->and($busyProbe->opcacheCalls)->toBe([]);
+    });
+
+    it('reports a reset whose restart stays pending', function (): void {
+        handoff_scheduler(handoff_gateway());
+        [$handoff, , , , , $probe] = runtime_handoff();
+        $probe->pending = true;
+
+        expect($handoff->run()['opcache']['outcome'])->toBe('pending');
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {

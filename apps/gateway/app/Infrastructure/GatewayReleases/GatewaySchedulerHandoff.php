@@ -117,7 +117,9 @@ final readonly class GatewaySchedulerHandoff
 
         try {
             Artisan::call('schedule:interrupt');
-            $drain = $this->drain($unit);
+            $command = $process->runtime_config['command'] ?? [];
+            $php = is_array($command) && is_string($command[0] ?? null) ? $command[0] : 'php';
+            $drain = $this->signalsHandled($php) ? $this->drain($unit) : $this->noDrain($unit);
 
             if ($drain['outcome'] === 'forced') {
                 $this->forceRestart($unit);
@@ -171,6 +173,29 @@ final readonly class GatewaySchedulerHandoff
             ->get()
             ->filter(static fn (Process $process): bool => $process->runtime === ProcessRuntime::Systemd)
             ->values();
+    }
+
+    /**
+     * Laravel's `schedule:work` finishes its running commands on SIGTERM only with the pcntl extension. Without it,
+     * SIGTERM ends it at once, so the handoff must not report a drain it cannot get.
+     */
+    private function signalsHandled(string $php): bool
+    {
+        $result = $this->processes->run(new ProcessInvocation([$php, '-r', 'echo extension_loaded("pcntl") ? "yes" : "no";'], timeout: 15.0));
+
+        return $result->succeeded() && trim($result->stdout) === 'yes';
+    }
+
+    /**
+     * The forced path, without waiting, for a scheduler that cannot drain.
+     *
+     * @return array{outcome: string, waited_ms: int, running: list<string>, stopped: list<string>, reason: string}
+     */
+    private function noDrain(string $unit): array
+    {
+        $running = $this->others($unit);
+
+        return ['outcome' => 'forced', 'waited_ms' => 0, 'running' => $running, 'stopped' => $running, 'reason' => 'no_pcntl'];
     }
 
     /**

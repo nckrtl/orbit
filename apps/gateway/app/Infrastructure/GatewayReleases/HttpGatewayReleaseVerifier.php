@@ -40,6 +40,17 @@ final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifie
 
     public function verify(string $sha): array
     {
+        return $this->retrying($sha);
+    }
+
+    public function serving(): array
+    {
+        return $this->retrying(null);
+    }
+
+    /** @return array{status: string, version: string} */
+    private function retrying(?string $sha): array
+    {
         $delays = $this->backoff;
 
         while (true) {
@@ -58,7 +69,7 @@ final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifie
     }
 
     /** @return array{status: string, version: string} */
-    private function check(string $sha): array
+    private function check(?string $sha): array
     {
         $up = $this->get($this->origin.'/up');
 
@@ -77,11 +88,11 @@ final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifie
         $reportedStatus = is_array($data) && is_string($data['status'] ?? null) ? $data['status'] : '';
         $version = is_array($data) && is_string($data['version'] ?? null) ? $data['version'] : '';
 
-        if ($reportedStatus !== 'ok' || ! $this->versionMatches($sha, $version)) {
+        if ($reportedStatus !== 'ok' || ($sha !== null && ! $this->versionMatches($sha, $version))) {
             throw new GatewayReleaseException(
                 step: 'verify',
                 errorCode: 'gateway.release_verify_failed',
-                message: "Gateway status is [{$reportedStatus}] at version [{$version}], not commit [{$sha}].",
+                message: "Gateway status is [{$reportedStatus}] at version [{$version}]".($sha === null ? '.' : ", not commit [{$sha}]."),
             );
         }
 

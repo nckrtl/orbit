@@ -36,12 +36,10 @@ final readonly class GatewayRuntimeHandoff
 {
     public const string LivePool = '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf';
 
-    public const string FpmSocket = '/run/php/orbit-gateway.sock';
-
     /** @var Closure(string): (string|false) */
     private Closure $readLivePool;
 
-    /** @var Closure(string): string */
+    /** @var Closure(string, string): string */
     private Closure $resetOpcache;
 
     /** @var Closure(): int */
@@ -52,8 +50,8 @@ final readonly class GatewayRuntimeHandoff
 
     /**
      * @param  (Closure(string): (string|false))|null  $readLivePool
-     * @param  (Closure(string): string)|null  $resetOpcache  runs the reset script inside the pool and returns its JSON
-     * @param  (Closure(): int)|null  $fpmConnections  open connections to the pool socket, one for each request in flight
+     * @param  (Closure(string, string): string)|null  $resetOpcache  runs the reset script inside the pool with a query and returns its JSON
+     * @param  (Closure(): int)|null  $fpmConnections  requests in flight in every pool of the PHP-FPM master, which share one OPcache
      * @param  (Closure(int): void)|null  $sleep  microseconds
      */
     public function __construct(
@@ -75,7 +73,7 @@ final readonly class GatewayRuntimeHandoff
         private int $idleWaitSeconds = 60,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
-        $this->resetOpcache = $resetOpcache ?? static fn (string $script): string => new FpmScriptRequest()->request($script);
+        $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
         $this->fpmConnections = $fpmConnections ?? $this->socketConnections(...);
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
@@ -83,35 +81,65 @@ final readonly class GatewayRuntimeHandoff
     }
 
     /**
+     * Both phases, for an operator who runs the handoff by hand.
+     *
      * @return HandoffResult
      *
      * @throws GatewayReleaseException
      */
     public function run(): array
     {
+        return [...$this->serve(), ...$this->schedule()];
+    }
+
+    /**
+     * What serves requests: Caddy, PHP-FPM, OPcache, and the units. It runs before verify, so a broken release is
+     * found, and switched back, without waiting for the scheduler.
+     *
+     * @return HandoffResult
+     *
+     * @throws GatewayReleaseException
+     */
+    public function serve(): array
+    {
         $gateway = $this->gateway();
-        $generation = $this->cleanup->generation();
         $caddy = $this->caddy($gateway);
         $fpm = $this->fpm();
         $this->step('units', 'gateway.release_units_failed', function (): void {
             $this->hibernator->converge();
             $this->agentView->converge();
         });
-        $opcache = $this->opcache();
-        $scheduler = $this->scheduler->handoff($gateway);
-        $cleanup = $this->cleanup->resume($generation, $scheduler['outcome'] === 'restarted' || $fpm === 'reloaded');
 
         return [
             'caddy' => $caddy,
             'fpm' => $fpm,
-            'opcache' => $opcache,
+            'opcache' => $this->opcache(),
+            'agent_view' => 'restarted',
+        ];
+    }
+
+    /**
+     * What runs in the background: the scheduler drain and restart, then document cleanup. It runs after verify,
+     * because the drain can wait for a long scheduled command.
+     *
+     * @return HandoffResult
+     *
+     * @throws GatewayReleaseException
+     */
+    public function schedule(): array
+    {
+        $gateway = $this->gateway();
+        $generation = $this->cleanup->generation();
+        $scheduler = $this->scheduler->handoff($gateway);
+        $cleanup = $this->cleanup->resume($generation, true);
+
+        return [
             'scheduler' => $scheduler['outcome'],
             'scheduler_unit' => $scheduler['unit'],
             'scheduler_drain' => $scheduler['drain'],
             'processes_restarted' => $scheduler['restarted'],
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
-            'agent_view' => 'restarted',
             'cleanup_paused' => $cleanup['paused'],
         ];
     }
@@ -172,53 +200,118 @@ final readonly class GatewayRuntimeHandoff
     }
 
     /**
-     * Resets the pool's OPcache, so the scripts of releases that no longer serve do not fill it. Release files never
-     * change in place, so OPcache would never mark them wasted.
+     * Resets OPcache, so the scripts of releases that no longer serve do not fill it. Release files never change in
+     * place, so OPcache would never mark them wasted.
      *
      * OPcache restarts once no request uses the cache. A restart that stays pending for `opcache.force_restart_timeout`
-     * (180 seconds) kills the workers that still serve one, and a Gateway request may run 600 seconds. So the reset runs
-     * only while the pool serves no request: the restart then happens with the next request, and nothing waits for it.
-     * A pool that never goes idle within the wait is reset by a later release. A failure never fails this one.
+     * (180 seconds) kills the workers that still serve one, and a Gateway request may run 600 seconds. All pools of the
+     * PHP-FPM master share one OPcache, so the reset runs only while no pool serves a request, and the restart happens
+     * with the next one. A request that starts in the milliseconds between that check and the reset, and runs longer
+     * than 180 seconds, could still be killed. A master that never goes idle within the wait is reset by a later
+     * release. The reset then checks that the restart is no longer pending. A failure never fails the release.
+     *
+     * @return array<string, mixed>
      */
-    private function opcache(): string
+    private function opcache(): array
     {
         $deadline = hrtime(true) + $this->idleWaitSeconds * 1_000_000_000;
 
         while (($this->fpmConnections)() > 0) {
             if (hrtime(true) >= $deadline) {
-                return 'deferred';
+                return ['outcome' => 'deferred'];
             }
 
             ($this->sleep)(100_000);
         }
 
         $release = realpath($this->applicationPath);
+        $script = ($release === false ? $this->applicationPath : $release).'/resources/fpm/opcache-reset.php';
 
-        try {
-            $result = json_decode(($this->resetOpcache)(($release === false ? $this->applicationPath : $release).'/resources/fpm/opcache-reset.php'), true);
-        } catch (Throwable) {
-            return 'failed';
+        if (! is_file($script)) {
+            // A release that predates the script, such as adoption's first one: this process's copy is identical.
+            $script = base_path('resources/fpm/opcache-reset.php');
         }
 
-        return is_array($result) && ($result['reset'] ?? false) === true ? 'reset' : 'failed';
+        try {
+            $reset = json_decode(($this->resetOpcache)($script, ''), true);
+
+            if (! is_array($reset) || ($reset['reset'] ?? false) !== true) {
+                return ['outcome' => 'failed'];
+            }
+
+            foreach (range(1, 5) as $attempt) {
+                $status = json_decode(($this->resetOpcache)($script, 'status=1'), true);
+                $after = is_array($status) && is_array($status['before'] ?? null) ? $status['before'] : [];
+
+                if (($after['restart_pending'] ?? true) === false) {
+                    return ['outcome' => 'reset', 'cache_full' => $after['cache_full'] ?? null, 'before' => $reset['before'] ?? null, 'after' => $after];
+                }
+
+                ($this->sleep)(1_000_000);
+            }
+
+            return ['outcome' => 'pending', 'before' => $reset['before'] ?? null];
+        } catch (Throwable) {
+            return ['outcome' => 'failed'];
+        }
     }
 
-    /** Connected sockets whose local end is the pool socket: Caddy opens one for each request it passes on. */
+    /**
+     * Accepted connections on the `listen` socket of every enabled pool of the master: Caddy opens one for each
+     * request it passes on.
+     */
     private function socketConnections(): int
     {
-        $sockets = @file('/proc/net/unix', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        $connected = 0;
+        $connections = 0;
 
-        foreach ($sockets === false ? [] : array_slice($sockets, 1) as $line) {
-            $fields = preg_split('/\s+/', trim($line));
+        foreach (glob(dirname($this->livePool).'/*.conf') ?: [] as $pool) {
+            $contents = (string) @file_get_contents($pool);
 
-            // Num RefCount Protocol Flags Type St Inode Path; St 03 is connected.
-            if (is_array($fields) && ($fields[5] ?? '') === '03' && ($fields[7] ?? '') === self::FpmSocket) {
-                $connected++;
+            if (preg_match_all('/^\s*listen\s*=\s*(\S+)\s*$/m', $contents, $matches) < 1) {
+                continue;
+            }
+
+            foreach ($matches[1] as $listen) {
+                $connections += str_starts_with($listen, '/') ? $this->unixConnections($listen) : $this->tcpConnections($listen);
             }
         }
 
-        return $connected;
+        return $connections;
+    }
+
+    private function unixConnections(string $path): int
+    {
+        $count = 0;
+
+        foreach (array_slice(@file('/proc/net/unix', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [], 1) as $line) {
+            $fields = preg_split('/\s+/', trim($line));
+
+            // Num RefCount Protocol Flags Type St Inode Path; St 03 is connected.
+            if (is_array($fields) && ($fields[5] ?? '') === '03' && ($fields[7] ?? '') === $path) {
+                $count++;
+            }
+        }
+
+        return $count;
+    }
+
+    private function tcpConnections(string $listen): int
+    {
+        $port = sprintf('%04X', (int) substr($listen, (int) strrpos(':'.$listen, ':')));
+        $count = 0;
+
+        foreach (['/proc/net/tcp', '/proc/net/tcp6'] as $table) {
+            foreach (array_slice(@file($table, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [], 1) as $line) {
+                $fields = preg_split('/\s+/', trim($line));
+
+                // sl local_address rem_address st; st 01 is established.
+                if (is_array($fields) && str_ends_with($fields[1] ?? '', ':'.$port) && ($fields[3] ?? '') === '01') {
+                    $count++;
+                }
+            }
+        }
+
+        return $count;
     }
 
     /** @param Closure(): void $operation */
