@@ -1443,7 +1443,7 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
             os.unlink = unlink_and_pause
             PYTHON;
         $arguments = $command->arguments;
-        $arguments[2] = sprintf($pauseAfterUnlink, json_encode($this->trigger, JSON_THROW_ON_ERROR))
+        $arguments[2] = sprintf($pauseAfterUnlink, json_encode($this->trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ."\n".$arguments[2];
         $process = new SymfonyProcess($arguments);
         $process->start();

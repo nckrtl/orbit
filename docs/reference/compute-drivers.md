@@ -195,7 +195,9 @@ image preparation are integrated.
 
 The Gateway keeps the App private key and mints installation tokens scoped to the Project repository. Fetch and publication run directly in the owned VM over authenticated HTTPS. Tokens travel as protected SSH input, never in command arguments, stored origins, or Git configuration. Every Gateway operation obtains fresh access, so later turns do not depend on an expired token. Fetch updates remote-tracking refs without moving HEAD or replacing local work. Publication pushes the exact approved commit to `task-<id>` without force.
 
-Enrolled UpCloud VMs also have a Git credential helper. It requests a fresh repository token from the Gateway over WireGuard and verified HTTPS for each Git authentication. The Gateway derives the repository from the VM's current task ownership, requires its private Pi token, and refuses stopped, destroyed, detached, or ended groups. The helper accepts only the Project repository on github.com.
+Enrolled UpCloud VMs also have a Git credential helper. It requests a fresh repository token from the Gateway over WireGuard and verified HTTPS for each Git authentication. The Gateway derives the repository from the VM's current task ownership, requires binary access to its own Node and its private Pi token, and refuses stopped, destroyed, detached, or ended groups. The helper accepts only the Project repository on github.com.
+
+Provisioning grants the enrolled VM access to its own Node only. It grants no access to the Gateway or another Node.
 
 Cloud-init installs GitHub CLI. An owned `gh` wrapper runs it with the temporary token in its process environment, including access to Actions artifacts. The wrapper also supports `orbit-github gh …`. Neither helper stores the installation token. The Gateway CA and endpoint are provisioned through the pinned SSH channel. VMs require the App installation even when the Project uses `gh_cli` on shared machines. The App must be installed on the Project repository; no personal access token is needed. GitHub installation tokens expire after one hour. Cleanup blocks renewal; tokens already issued retain their GitHub expiry.
 

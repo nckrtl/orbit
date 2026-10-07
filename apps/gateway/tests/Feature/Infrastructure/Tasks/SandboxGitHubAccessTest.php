@@ -80,6 +80,7 @@ it('refuses credential renewal from a wrong peer, wrong secret, or unavailable o
     $address = $workspace->node->wireguard_ip;
     $secret = str_repeat('a', 64);
     match ($fault) {
+        'access' => $workspace->node->accessibleNodes()->detach(),
         'peer' => $address = '10.44.0.200',
         'secret' => $secret = str_repeat('c', 64),
         'stopped' => $sandbox->update(['state' => 'stopped']),
@@ -92,7 +93,7 @@ it('refuses credential renewal from a wrong peer, wrong secret, or unavailable o
     mock(GitHubApi::class)->shouldNotReceive('repositoryInstallation');
     $this->withServerVariables(['REMOTE_ADDR' => $address])->withToken($secret)
         ->postJson('/api/v1/compute/github-token')->assertForbidden();
-})->with(['peer', 'secret', 'stopped', 'destroying', 'detached', 'completed', 'backlog', 'revoked']);
+})->with(['access', 'peer', 'secret', 'stopped', 'destroying', 'detached', 'completed', 'backlog', 'revoked']);
 
 it('mints a fresh single-repository installation token including Actions read', function (): void {
     GitHubTestSupport::storeApp();

@@ -653,7 +653,7 @@ SUMMARIES = {
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
-    'compute:github-token': 'Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.',
+    'compute:github-token': 'Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
     'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',

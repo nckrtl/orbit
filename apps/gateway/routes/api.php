@@ -75,7 +75,7 @@ use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
     Route::post('compute/github-token', [SandboxGitHubTokensController::class, 'store'])
-        ->middleware(RequireActiveWireGuardPeer::class)
+        ->middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->withoutMiddleware(RecordCommandActivity::class)
         ->name('compute:github-token');
 

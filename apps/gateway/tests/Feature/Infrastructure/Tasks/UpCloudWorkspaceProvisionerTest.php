@@ -142,6 +142,7 @@ it('enrolls and prepares one owned workspace through initial admission or cloud 
         }
         expect($second->id)->toBe($first->id);
         expect($second->status)->toBe(InstanceState::SourceResolved);
+        expect($second->node->accessibleNodes()->pluck('nodes.id')->all())->toBe([$second->node_id]);
         expect($second->taskSandbox->pi_ready_at)->not->toBeNull();
         expect($phases)->toBe(['initialize', 'checkout', 'artifact', 'pi', 'github', 'inspect', 'artifact', 'pi', 'github']);
         expect(Instance::query()->where('task_sandbox_id', $first->task_sandbox_id)->count())->toBe(1);

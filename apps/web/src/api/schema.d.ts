@@ -339,7 +339,7 @@ export interface paths {
         put?: never;
         /**
          * Renew sandbox repository access
-         * @description Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.
+         * @description Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.
          */
         post: operations["compute-github-token"];
         delete?: never;
