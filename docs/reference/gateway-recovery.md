@@ -232,40 +232,48 @@ It caches the current release's configuration beside the live cache and renames 
 
 ## Adopt the release layout
 
-A Gateway installed with the [Quickstart](/quickstart) runs from an in-place checkout at `/home/orbit/orbit`. `gateway:release:adopt` converts it into the [release layout](#release-layout) once. Requests keep being served throughout: the checkout directory and the release link swap in one step. After adoption, deploy, roll back, and configure with the release commands. An update in place then fails, because each release is read-only.
+A Gateway installed with the [Quickstart](/quickstart) runs from an in-place checkout at `/home/orbit/orbit`. `gateway:release:adopt` converts it into the [release layout](#release-layout) once, and the Gateway keeps serving throughout. Run it from a temporary checkout of the commit to adopt into, so the in-place checkout needs no update first. After adoption, deploy, roll back, and configure with the release commands. An update in place then fails, because each release is read-only.
 
 ### Before you adopt
 
 Check these conditions on the Gateway before you run the command.
 
 - Back up as in [Back up before an update](#back-up-before-an-update).
-- The checkout must be at a commit that has `gateway:release:adopt`. Adoption builds its first release from that commit. An older checkout needs one last [in-place update](#update-in-place-before-adoption).
 - `git status --short --untracked-files=no` in `/home/orbit/orbit` prints nothing. Untracked files, such as `.env` backups, are fine.
-- The disk has room for one more release plus the free-space floor and a database snapshot. One release is about the size of the checkout without `.git`.
+- The disk has room for one release, about the size of the checkout without `.git`, plus the free-space floor and a database snapshot.
 - `python3` is installed. Ubuntu installs it by default. Without it, the swap uses two renames, and the path is missing for the microseconds between them.
 
 ### Run adoption
 
-As `orbit`, from the checkout:
+As `orbit`, make a temporary checkout of the commit to adopt into, `<SHA>`, and install its dependencies. Its env file is a link to the Gateway's, so the command reads the Gateway's configuration and state:
 
 ```bash
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:adopt
+git clone --quiet https://github.com/nckrtl/orbit.git /home/orbit/adopt-tmp
+git -C /home/orbit/adopt-tmp checkout --quiet --detach <SHA>
+composer --working-dir=/home/orbit/adopt-tmp/apps/gateway install --prefer-dist --no-interaction
+ln -s /home/orbit/orbit/apps/gateway/.env /home/orbit/adopt-tmp/apps/gateway/.env
+php /home/orbit/adopt-tmp/apps/gateway/artisan gateway:release:adopt --commit=<SHA>
+rm -rf /home/orbit/adopt-tmp
 ```
 
-Adoption holds the release lock and:
+Without `--commit`, adoption uses the commit that the in-place checkout has. That commit then must have the command itself. Adoption holds the release lock and runs these steps:
 
-1. refuses when the checkout has tracked changes, with `gateway.release_adopt_local_changes`;
-2. creates `shared/orbit.git` as a bare clone of the checkout's repository, with the same `origin` and remote branches;
-3. copies `apps/gateway/.env` to `shared/gateway.env`, with any `APP_VERSION` line commented out, so each release reports its own commit;
-4. copies each `apps/gateway/.env.bak*` file to `shared/env-backups/`;
-5. moves `apps/gateway/storage` to `shared/gateway-storage` in one rename and links it back, so files, permissions, and held locks stay as they are;
-6. prepares `releases/<id>` for the checkout's commit;
-7. swaps the checkout directory with a link to that release with `renameat2(RENAME_EXCHANGE)`, and keeps the directory as `/home/orbit/orbit.pre-adopt-<time>`;
-8. hands the runtime over to the release and verifies it, as a deploy does.
+| Step | What happens |
+| --- | --- |
+| Check | Tracked changes in the checkout refuse adoption with `gateway.release_adopt_local_changes`. |
+| Repository | `shared/orbit.git` is a bare clone of the checkout's repository, with the same `origin` and remote branches. `<SHA>` comes from the temporary checkout, or through the [GitHub App](/reference/github-app). |
+| Env file | `shared/gateway.env` is a copy of `apps/gateway/.env` with any `APP_VERSION` line commented out, so each release reports its own commit. |
+| Env link | The original stays as `apps/gateway/.env.pre-adopt`, and one rename replaces `.env` with a link to the shared file. The running code uses its cached configuration, so it serves the same. |
+| Env backups | Each `apps/gateway/.env.bak*` file is copied to `shared/env-backups/`. |
+| Storage | `apps/gateway/storage` moves to `shared/gateway-storage` and is linked back in one process, so its path is missing for microseconds only. |
+| Prepare | `releases/<id>` is built for `<SHA>`, with its web build. |
+| Migrate | When `<SHA>` has pending migrations, the database is snapshotted and migrated while the checkout still serves, as in a deploy. |
+| Swap | `renameat2(RENAME_EXCHANGE)` swaps the checkout directory with a link to the release. The directory stays as `/home/orbit/orbit.pre-adopt-<time>`. |
+| Release | The runtime handoff, verify, the web switch, and smoke run as in a deploy. |
 
-The command prints one JSON object with `release`, `sha`, `pre_adopt_path`, `shared`, `switch`, `handoff`, and `verify`. `switch.method` is `exchange`, or `rename` with the gap in `switch.gap_us`. The attempt writes a release record with trigger `adopt` and an Activity entry. Running it again on an adopted Gateway prints `"already": true` and changes nothing.
+The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `migrations_ran`, `snapshot`, `shared`, `switch`, `handoff`, `verify`, `web`, and `smoke`. `switch.method` is `exchange`, or `rename` with the gap in `switch.gap_us`. `shared.storage_gap_us` is the storage gap. The attempt writes a release record with trigger `adopt` and an Activity entry. Running it again on an adopted Gateway prints `"already": true` and changes nothing.
 
-The kept checkout still holds the original `.env` and backups, so it is a complete way back. It holds secrets: keep its permissions, and remove it once a few releases have verified:
+The kept checkout is a complete way back. Its `.env.pre-adopt` holds the original env file, so keep its permissions, and remove it once a few releases have verified:
 
 ```bash
 rm -rf /home/orbit/orbit.pre-adopt-<time>
@@ -275,14 +283,20 @@ rm -rf /home/orbit/orbit.pre-adopt-<time>
 
 Each step checks whether it already ran, so after fixing the cause, run the command again.
 
-- A refusal or a failure before the swap leaves the checkout serving. Only `shared/` and `releases/` are new, and the checkout's storage is a link to `shared/gateway-storage`.
-- When the handoff or verification fails, adoption swaps the checkout back, runs the handoff from it, and records `switched_back`.
-- When even that fails, the outcome is `gateway.release_switch_back_failed`. Swap back by hand as `orbit`, then run the handoff from the checkout:
+| Failure | Result |
+| --- | --- |
+| A refusal, or a failure before the swap | The checkout keeps serving, with its original `.env` back. The storage link stays, as it reaches the same files. |
+| Handoff, verify, web switch, or smoke, without migrations | Adoption swaps the checkout back, restores the web build and the original `.env`, and hands the runtime back. The record says `switched_back`. |
+| A failed migration | Adoption pauses, and the checkout keeps serving. |
+| Any later step after migrations | Adoption pauses on the release, as a [deploy](#deploy-a-release) does. |
+
+When even the swap back fails, the outcome is `gateway.release_switch_back_failed`. Swap back by hand as `orbit`, then hand the runtime over with the release's code:
 
 ```bash
 cd /home/orbit
 mv -T orbit orbit.adopt-link && mv -T orbit.pre-adopt-<time> orbit && rm orbit.adopt-link
-php /home/orbit/orbit/apps/gateway/artisan gateway:release:handoff
+mv orbit/apps/gateway/.env.pre-adopt orbit/apps/gateway/.env
+php /home/orbit/releases/<id>/apps/gateway/artisan gateway:release:handoff
 ```
 
 | Error code | Meaning |
@@ -297,36 +311,6 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:handoff
 ### After adoption
 
 The release directories are read-only, and `bin/bootstrap` refuses to run in a release. `orbit:gateway-web` converges the release link: it keeps `/home/orbit` and `/home/orbit/releases` traversable for Caddy and the shared env file at mode `0600`, and leaves the releases themselves unchanged.
-
-### Update in place before adoption
-
-Use these steps only to bring a checkout that predates `gateway:release:adopt` to a commit that has it. Keep requests and automation paused. As `orbit`, fetch the exact commit and install its locked dependencies:
-
-```bash
-cd /home/orbit/orbit
-git fetch --tags origin
-git checkout --detach <COMMIT>
-composer --working-dir=apps/cli install --prefer-dist --no-interaction
-composer --working-dir=apps/gateway install --prefer-dist --no-interaction
-composer --working-dir=apps/cli check-platform-reqs
-composer --working-dir=apps/gateway check-platform-reqs
-cd apps/gateway
-php artisan config:clear
-php artisan migrate --force
-php artisan config:cache
-```
-
-Do not run `composer update`, `composer setup`, `key:generate`, or Gateway bootstrap as an update step. Then start the services and verify before you resume automation:
-
-```bash
-sudo systemctl start php8.5-fpm caddy
-cd /home/orbit/orbit
-apps/cli/orbit gateway:status
-apps/cli/orbit node:list
-apps/cli/orbit doctor --json
-```
-
-`orbit-agent-view.service` exits within 60 seconds of a source change, and systemd starts it with the new code. The Gateway refuses to start when its cache store cannot hold locks across processes; the error names `CACHE_STORE=file` as the fix.
 
 ## Recover a failed update
 

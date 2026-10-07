@@ -18,9 +18,13 @@ final readonly class AdoptGatewayReleaseAction
         private GatewayReleaseAdopter $adopter,
     ) {}
 
-    /** @return array<string, mixed> */
-    public function execute(): array
+    /**
+     * @param  string|null  $commit  The commit to adopt into. Null adopts the checkout's own commit.
+     * @param  string|null  $source  The checkout this command runs from, which can supply that commit.
+     * @return array<string, mixed>
+     */
+    public function execute(?string $commit = null, ?string $source = null): array
     {
-        return $this->lock->run(fn (): array => $this->adopter->adopt());
+        return $this->lock->run(fn (): array => $this->adopter->adopt($commit, $source));
     }
 }

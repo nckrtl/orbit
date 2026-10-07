@@ -140,6 +140,9 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 runtime: $app->make(GatewayReleaseRuntime::class),
                 verifier: $app->make(GatewayReleaseVerifier::class),
                 recorder: $app->make(GatewayReleaseRecorder::class),
+                database: $app->make(GatewayReleaseDatabase::class),
+                web: $app->make(GatewayReleaseWebBuild::class),
+                smoke: $app->make(GatewayReleaseSmoke::class),
             ),
         );
     }

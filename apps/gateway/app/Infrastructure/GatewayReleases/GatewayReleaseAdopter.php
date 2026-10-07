@@ -6,10 +6,13 @@ namespace App\Infrastructure\GatewayReleases;
 
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
+use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
+use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
+use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -17,21 +20,24 @@ use Closure;
 use Throwable;
 
 /**
- * Converts the in-place checkout at `/home/orbit/orbit` into the release layout, once:
+ * Converts the in-place checkout at `/home/orbit/orbit` into the release layout, once, while it keeps serving:
  *
  * 1. refuses when the checkout has tracked changes;
- * 2. creates `shared/orbit.git` as a bare clone of the checkout's own repository, with its origin;
- * 3. copies the checkout's `.env` to `shared/gateway.env`, without `APP_VERSION`, and copies every
- *    `.env.bak-*` file to `shared/env-backups/`;
- * 4. moves `apps/gateway/storage` to `shared/gateway-storage` and links it back, so the checkout
- *    keeps working;
- * 5. prepares `releases/<id>` for the checkout's commit;
- * 6. swaps the checkout directory with a link to that release in one step, and keeps the
- *    directory as `orbit.pre-adopt-<time>`;
- * 7. hands the runtime over to the release and verifies it. A failure swaps the directory back.
+ * 2. creates `shared/orbit.git` as a bare clone of the checkout's own repository, with its origin, and fetches the
+ *    target commit from the checkout this command runs from when the clone lacks it;
+ * 3. writes `shared/gateway.env` from the checkout's `.env`, without `APP_VERSION`, keeps the original as
+ *    `.env.pre-adopt`, and replaces `.env` with a link to the shared file in one rename. `.env.bak*` files are copied
+ *    to `shared/env-backups/`;
+ * 4. moves `apps/gateway/storage` to `shared/gateway-storage` and links it back, so the checkout keeps working;
+ * 5. prepares `releases/<id>` for the target commit, the checkout's own commit by default, with its web build;
+ * 6. snapshots and migrates when the target has pending migrations, while the checkout still serves;
+ * 7. swaps the checkout directory with a link to the release in one step and keeps the directory as
+ *    `orbit.pre-adopt-<time>`;
+ * 8. hands the runtime over to the release, verifies it, publishes its web build, and runs smoke, as a deploy does.
  *
- * Every step can run again: a finished step is detected and skipped. The checkout's own `.env`
- * and backups stay in the kept directory, so swapping it back restores the Gateway as it was.
+ * A failure before the swap, or a failed handoff or verify without migrations, leaves the checkout serving with its
+ * original `.env` back in place. The storage link stays: it reaches the same files. After migrations ran, a failure
+ * pauses on the release instead, as a deploy does. Every step can run again.
  */
 final readonly class GatewayReleaseAdopter
 {
@@ -47,13 +53,20 @@ final readonly class GatewayReleaseAdopter
         private GatewayReleaseRuntime $runtime,
         private GatewayReleaseVerifier $verifier,
         private GatewayReleaseRecorder $recorder,
+        private GatewayReleaseDatabase $database,
+        private GatewayReleaseWebBuild $web,
+        private GatewayReleaseSmoke $smoke,
         ?Closure $clock = null,
     ) {
         $this->clock = $clock ?? static fn (): string => gmdate('Ymd\THis\Z');
     }
 
-    /** @return array<string, mixed> */
-    public function adopt(): array
+    /**
+     * @param  string|null  $commit  The commit to adopt into, as a hex SHA. Null adopts the checkout's own commit.
+     * @param  string|null  $source  A checkout of that commit, such as the one this command runs from, to fetch it from.
+     * @return array<string, mixed>
+     */
+    public function adopt(?string $commit = null, ?string $source = null): array
     {
         $startedAt = hrtime(true);
         $current = $this->layout->currentPath();
@@ -68,27 +81,52 @@ final readonly class GatewayReleaseAdopter
         }
 
         $sha = null;
+        $phases = [];
+        $migrationsRan = false;
+        $snapshot = null;
+        $step = 'adopt';
 
         try {
-            $sha = $this->assertCheckout($current);
+            $target = $commit === null ? null : GatewayReleaseCommit::parse($commit);
+            $head = $this->assertCheckout($current);
+            $shared = ['repository' => $this->repository($current, $head)];
+            $sha = $target === null ? $head : $this->target($target, $source);
             $id = GatewayReleaseCommit::id($sha);
-            $shared = [
-                'repository' => $this->repository($current, $sha),
-                ...$this->environment($current),
-                'storage' => $this->storage($current),
-            ];
+            $shared = [...$shared, ...$this->environment($current), ...$this->storage($current)];
+            $phases['shared'] = $shared;
+            $step = 'prepare';
             $prepared = $this->builder->prepare($sha);
-            $phases = [
-                'shared' => $shared,
-                'prepare' => ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs],
-            ];
+            $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
+            $step = 'snapshot';
+            $pending = $this->database->pending($prepared->path);
+
+            if ($pending === []) {
+                $phases['snapshot'] = ['outcome' => 'skipped'];
+                $phases['migrate'] = ['outcome' => 'skipped'];
+            } else {
+                $snapshot = $this->database->snapshot($id);
+                $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $snapshot, 'pending' => $pending];
+                $step = 'migrate';
+                $migrationsRan = true;
+                $this->database->migrate($prepared->path);
+                $phases['migrate'] = ['outcome' => 'migrated', 'pending' => $pending];
+            }
+
+            $step = 'switch';
             $kept = $this->layout->basePath().'/'.basename($current).'.pre-adopt-'.($this->clock)();
             $switch = $this->switch($current, $id, $kept);
             $phases['switch'] = $switch;
         } catch (Throwable $thrown) {
-            // Nothing that serves changed: the checkout is still the current path.
-            $exception = GatewayReleaseException::fromThrowable($thrown, 'adopt', $sha);
-            $this->recorder->refused('adopt', $exception, $this->elapsed($startedAt));
+            // The checkout still serves. Its original env file goes back; the storage link reaches the same files.
+            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $sha);
+            $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+            $phases['environment'] = $this->restoreEnvironment($current);
+
+            if ($sha === null || ! isset($id)) {
+                $this->recorder->refused('adopt', $exception, $this->elapsed($startedAt));
+            } else {
+                $this->record($this->outcome($id, $sha, $migrationsRan ? 'paused' : 'failed', $migrationsRan, $snapshot, $phases, $startedAt, $exception));
+            }
 
             throw $exception;
         }
@@ -100,37 +138,95 @@ final readonly class GatewayReleaseAdopter
             $step = 'verify';
             $verified = $this->verifier->verify($sha);
             $phases['verify'] = ['outcome' => 'passed', 'status' => $verified['status'], 'version' => $verified['version']];
+            $step = 'web';
+            $this->web->publish($id);
+            $phases['web'] = ['outcome' => 'published'];
+            $step = 'smoke';
+            $phases['smoke'] = $this->smoke->run($id, $sha);
         } catch (Throwable $thrown) {
-            throw $this->switchBack(GatewayReleaseException::fromThrowable($thrown, $step, $sha), $current, $kept, $id, $sha, $phases, $startedAt);
+            $exception = GatewayReleaseException::fromThrowable($thrown, $step, $sha);
+
+            if ($migrationsRan) {
+                // The checkout's code has not run on the migrated schema, so the release stays current.
+                $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+                $phases['pause'] = ['outcome' => 'paused', 'snapshot' => $snapshot, 'pre_adopt_path' => $kept];
+                $this->record($this->outcome($id, $sha, 'paused', true, $snapshot, $phases, $startedAt, $exception));
+
+                throw $exception;
+            }
+
+            throw $this->switchBack($exception, $current, $kept, $id, $sha, $phases, $startedAt);
         }
 
-        $this->record(new DeployedGatewayRelease(
-            id: $id,
-            sha: $sha,
-            outcome: 'verified',
-            trigger: 'adopt',
-            migrationsRan: false,
-            previousId: null,
-            snapshotPath: null,
-            cleanupPaused: $phases['handoff']['cleanup_paused'],
-            retryable: false,
-            durationMs: $this->elapsed($startedAt),
-            phases: $phases,
-        ));
+        $this->record($this->outcome($id, $sha, 'verified', $migrationsRan, $snapshot, $phases, $startedAt));
 
         return [
             'adopted' => true,
             'already' => false,
             'release' => $id,
             'sha' => $sha,
+            'from' => $head,
             'path' => $prepared->path,
             'pre_adopt_path' => $kept,
+            'migrations_ran' => $migrationsRan,
+            'snapshot' => $snapshot,
             'shared' => $shared,
             'switch' => $switch,
             'handoff' => $phases['handoff'],
             'verify' => $phases['verify'],
+            'web' => $phases['web'],
+            'smoke' => $phases['smoke'],
             'duration_ms' => $this->elapsed($startedAt),
         ];
+    }
+
+    /**
+     * The full SHA of the target commit. When the shared repository lacks it, it is fetched from the given checkout
+     * if that checkout is at it. Otherwise prepare fetches it through the GitHub App.
+     */
+    private function target(string $target, ?string $source): string
+    {
+        $repository = $this->layout->repositoryPath();
+
+        if ($source !== null && is_dir($source)) {
+            $head = $this->processes->run(new ProcessInvocation(['git', '-C', $source, 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}'], timeout: 30.0));
+
+            if ($head->succeeded() && str_starts_with(trim($head->stdout), $target)) {
+                $this->git($repository, ['fetch', '--quiet', '--no-tags', '--', $source, '+HEAD:refs/orbit/adopt-target'], 'gateway.release_adopt_repository_failed', null, 600.0);
+            }
+        }
+
+        $resolved = $this->processes->run(new ProcessInvocation(
+            ['git', '-C', $repository, 'rev-parse', '--verify', '--quiet', '--end-of-options', $target.'^{commit}'],
+            timeout: 30.0,
+        ));
+        $sha = trim($resolved->stdout);
+
+        return $resolved->succeeded() && GatewayReleaseCommit::isSha($sha) && str_starts_with($sha, $target) ? $sha : $target;
+    }
+
+    /**
+     * @param  array<string, mixed>  $phases
+     */
+    private function outcome(string $id, string $sha, string $outcome, bool $migrationsRan, ?string $snapshot, array $phases, int $startedAt, ?GatewayReleaseException $exception = null): DeployedGatewayRelease
+    {
+        $handoff = $phases['handoff'] ?? null;
+
+        return new DeployedGatewayRelease(
+            id: $id,
+            sha: $sha,
+            outcome: $outcome,
+            trigger: 'adopt',
+            migrationsRan: $migrationsRan,
+            previousId: null,
+            snapshotPath: $snapshot,
+            cleanupPaused: is_array($handoff) && ($handoff['cleanup_paused'] ?? false) === true,
+            retryable: false,
+            durationMs: $this->elapsed($startedAt),
+            phases: $phases,
+            errorCode: $exception?->errorCode,
+            message: $exception?->getMessage(),
+        );
     }
 
     /** The checkout's commit, after refusing a path that is not a clean in-place checkout. */
@@ -187,7 +283,7 @@ final readonly class GatewayReleaseAdopter
         }
 
         // The checkout's commit may be on no branch. A ref keeps it from garbage collection.
-        $this->git($partial, ['update-ref', 'refs/orbit/adopted', $sha], 'gateway.release_adopt_repository_failed');
+        $this->git($partial, ['update-ref', 'refs/orbit/pre-adopt', $sha], 'gateway.release_adopt_repository_failed');
 
         if (! @rename($partial, $repository)) {
             throw $this->failure('gateway.release_adopt_repository_failed', "[{$partial}] cannot be renamed to [{$repository}].");
@@ -197,21 +293,32 @@ final readonly class GatewayReleaseAdopter
     }
 
     /**
-     * `shared/gateway.env` from the checkout's `.env`. `APP_VERSION` is left out, so each release
-     * reports the commit in its `REVISION`. The checkout keeps its own file for a swap back.
+     * `shared/gateway.env` from the checkout's `.env`, without `APP_VERSION`, so each release reports its `REVISION`.
+     * The checkout's `.env` then becomes a link to it, through one rename, and the original stays as `.env.pre-adopt`.
+     * The running code caches its configuration, so the switch to the link changes nothing it serves.
      *
-     * @return array{env: string, app_version_removed: bool, env_backups: list<string>}
+     * @return array{env: string, env_link: string, app_version_removed: bool, env_backups: list<string>}
      */
     private function environment(string $current): array
     {
         $source = $current.'/apps/gateway/.env';
+        $saved = $source.'.pre-adopt';
         $target = $this->layout->environmentPath();
 
-        if (! is_file($source) || is_link($source)) {
+        if (is_link($source)) {
+            if (readlink($source) !== $target || ! is_file($saved) || is_link($saved)) {
+                throw $this->refusal('gateway.release_adopt_env_conflict', "[{$source}] is a link, but not to [{$target}] with the original kept as [{$saved}].");
+            }
+
+            $original = (string) file_get_contents($saved);
+            $linked = 'existing';
+        } elseif (is_file($source)) {
+            $original = (string) file_get_contents($source);
+            $linked = 'linked';
+        } else {
             throw $this->refusal('gateway.release_adopt_env_missing', "[{$source}] is not a regular file.");
         }
 
-        $original = (string) file_get_contents($source);
         $lines = preg_split('/(?<=\n)/', $original) ?: [];
         $removed = false;
 
@@ -252,14 +359,40 @@ final readonly class GatewayReleaseAdopter
             $backups[] = $copy;
         }
 
-        return ['env' => $env, 'app_version_removed' => $removed, 'env_backups' => $backups];
+        if ($linked === 'linked') {
+            $this->writePrivate($saved, $original);
+            $next = $source.'.adopt-link';
+            @unlink($next);
+
+            if (! @symlink($target, $next) || ! @rename($next, $source)) {
+                @unlink($next);
+
+                throw $this->failure('gateway.release_adopt_env_failed', "[{$source}] cannot be replaced by a link to [{$target}].");
+            }
+        }
+
+        return ['env' => $env, 'env_link' => $linked, 'app_version_removed' => $removed, 'env_backups' => $backups];
+    }
+
+    /** Puts the checkout's original `.env` back in one rename, after a failed adoption. */
+    private function restoreEnvironment(string $current): string
+    {
+        $source = $current.'/apps/gateway/.env';
+        $saved = $source.'.pre-adopt';
+
+        if (! is_link($source) || ! is_file($saved) || is_link($saved)) {
+            return 'unchanged';
+        }
+
+        return @rename($saved, $source) ? 'restored' : 'link_kept';
     }
 
     /**
      * Moves the checkout's storage to `shared/gateway-storage` in one rename, contents and
      * permissions as they are, and links it back so running processes keep their paths.
      */
-    private function storage(string $current): string
+    /** @return array{storage: string, storage_gap_us?: int} */
+    private function storage(string $current): array
     {
         $source = $current.'/apps/gateway/storage';
         $target = $this->layout->storagePath();
@@ -269,7 +402,7 @@ final readonly class GatewayReleaseAdopter
                 throw $this->refusal('gateway.release_adopt_storage_conflict', "[{$source}] links somewhere other than [{$target}].");
             }
 
-            return 'existing';
+            return ['storage' => 'existing'];
         }
 
         if (file_exists($target)) {
@@ -289,23 +422,14 @@ final readonly class GatewayReleaseAdopter
                 $this->git($current, ['update-index', '--skip-worktree', '--', ...$placeholders], 'gateway.release_adopt_storage_failed');
             }
 
-            if (! @rename($source, $target)) {
-                throw $this->failure('gateway.release_adopt_storage_failed', "[{$source}] cannot be moved to [{$target}].");
-            }
+            return ['storage' => 'moved', 'storage_gap_us' => $this->exchange->moveAndLink($source, $target)];
         }
 
         if (! @symlink($target, $source)) {
-            // A writer recreated the directory in the moment it was missing. Keep what it wrote beside it.
-            if ($this->isDirectory($source)) {
-                @rename($source, $source.'.stray-'.($this->clock)());
-            }
-
-            if (! @symlink($target, $source)) {
-                throw $this->failure('gateway.release_adopt_storage_failed', "[{$source}] cannot be linked to [{$target}].");
-            }
+            throw $this->failure('gateway.release_adopt_storage_failed', "[{$source}] cannot be linked to [{$target}].");
         }
 
-        return 'moved';
+        return ['storage' => 'linked'];
     }
 
     /**
@@ -358,7 +482,7 @@ final readonly class GatewayReleaseAdopter
     }
 
     /**
-     * Puts the checkout directory back after a failed handoff or verification, repeats the handoff
+     * Puts the checkout directory and the web build back after a failed handoff, verify, web switch, or smoke, repeats the handoff
      * from it, records the attempt, and returns the failure to throw.
      *
      * @param  array<string, mixed>  $phases
@@ -378,8 +502,10 @@ final readonly class GatewayReleaseAdopter
             }
 
             @unlink($kept);
-            $this->run([PHP_BINARY, $current.'/apps/gateway/artisan', 'gateway:release:handoff', '--no-interaction'], 'gateway.release_handoff_failed', 600.0);
-            $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $current];
+            $this->web->restore($id);
+            $environment = $this->restoreEnvironment($current);
+            // The checkout may predate the handoff command, so the release's code hands the runtime back to it.
+            $phases['switch_back'] = ['outcome' => 'switched_back', 'to' => $current, 'environment' => $environment, 'handoff' => $this->runtime->handoff($id)];
         } catch (Throwable $thrown) {
             $outcome = 'failed';
             $back = GatewayReleaseException::fromThrowable($thrown, 'switch_back', $sha);
@@ -434,14 +560,6 @@ final readonly class GatewayReleaseAdopter
         } catch (Throwable) {
             // The command output carries the outcome; a failed record write must not undo the adoption.
         }
-    }
-
-    /** A real directory, not a link to one. The file system can change between two checks. */
-    private function isDirectory(string $path): bool
-    {
-        clearstatcache(true, $path);
-
-        return is_dir($path) && ! is_link($path);
     }
 
     private function ensureDirectory(string $path, int $mode): void
