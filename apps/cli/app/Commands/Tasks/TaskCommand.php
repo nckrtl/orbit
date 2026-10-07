@@ -304,6 +304,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Project' => $group->project ?? $group->projectId,
             'Status' => $group->status,
             ...($group->taskCompute === null ? [] : ['Task compute' => $group->taskCompute]),
+            ...($group->taskCompute !== 'vm' ? [] : ['Sandbox power' => $group->sandboxPower]),
             ...($group->capacityWaitReason === null ? [] : ['Waiting for capacity' => $group->capacityWaitReason]),
             'Assistance' => $group->assistanceRequested,
             'Kind' => self::askingKind($group->assistanceRequested, $group->assistanceKind),

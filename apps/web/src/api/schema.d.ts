@@ -4115,6 +4115,8 @@ export interface components {
             /** @enum {string|null} */
             task_compute?: "shared" | "vm" | null;
             capacity_wait_reason?: string | null;
+            /** @enum {string|null} */
+            sandbox_power?: "running" | "stopped" | "destroyed" | null;
         };
         Task: {
             id?: number;

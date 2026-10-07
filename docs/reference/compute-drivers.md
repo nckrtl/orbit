@@ -251,4 +251,10 @@ Orbit revokes the model key, destroys owned compute, and confirms destruction be
 
 The sweep retries reservations with no Instance when their group has ended or been deleted. It does not adopt unrecorded host resources or remove an active group's reservation. Failed retries use the workspace sweep's time budget and backoff.
 
+## Saved pair identity
+
 The saved Orbit pair needs its network identity updated after cloning. The guest helper accepts either the existing four-Node topology or exactly a Gateway and a roleless operator. For the pair, it refuses additional Nodes or operator roles before changing addresses. It preserves private addresses, keys, DNS policy, and other settings while replacing the stored SSH addresses and Gateway endpoints.
+
+## Sandbox power
+
+Task group responses report `sandbox_power` separately from task status. It is `running`, `stopped`, or `destroyed` only when the owned reservation confirms that state. Shared groups, missing ownership, and transitions return `null`. Destroyed reservations remain visible after workspace cleanup. The CLI shows this value as **Sandbox power** for VM groups.

@@ -497,3 +497,17 @@ function task_fixture_send(string $fixture, GatewayRequest $request): object
 
     return $dto;
 }
+
+it('bounds observed sandbox power without inferring it from group status', function (mixed $value, ?string $expected): void {
+    $group = TaskGroupResponse::fromGatewayData([
+        'id' => 1, 'project_id' => 1, 'title' => 'Sandbox', 'brief' => 'Power is separate.',
+        'status' => 'waiting_for_review', 'task_compute' => 'vm', 'questions' => 0, 'escalations' => 0,
+        'sandbox_power' => $value,
+    ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+
+    expect($group->sandboxPower)->toBe($expected)
+        ->and($group->toArray()['sandbox_power'])->toBe($expected);
+})->with([
+    ['running', 'running'], ['stopped', 'stopped'], ['destroyed', 'destroyed'],
+    [null, null], ['starting', null], [['running'], null], [true, null],
+]);

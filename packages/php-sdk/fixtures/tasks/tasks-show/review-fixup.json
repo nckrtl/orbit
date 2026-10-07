@@ -156,7 +156,8 @@
             ],
             "execution_mode": "managed",
             "task_compute": null,
-            "capacity_wait_reason": null
+            "capacity_wait_reason": null,
+            "sandbox_power": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

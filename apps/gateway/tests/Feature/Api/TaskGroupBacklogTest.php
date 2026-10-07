@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Compute\SandboxState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestWatcher;
@@ -16,6 +18,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
+use App\Models\TaskSandbox;
 
 beforeEach(function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
@@ -773,3 +776,66 @@ function stored_test_deliverables(array $deliverables): array
         return $deliverable;
     }, $deliverables);
 }
+
+it('reports observed sandbox power independently of review status', function (SandboxState $state, ?string $power): void {
+    $group = Task::topLevel()->create([
+        'project_id' => $this->appRecord->id, 'title' => 'Power', 'brief' => 'Observed power.',
+        'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm,
+    ]);
+    $sandbox = TaskSandbox::query()->create([
+        'id' => '11111111-1111-4111-8111-111111111111', 'group_id' => $group->id,
+        'node_id' => Node::query()->firstOrFail()->id, 'provider' => 'incus', 'name' => 'power-proof',
+        'state' => $state, 'desired_power' => 'running', 'spec' => [],
+    ]);
+    $workspace = Instance::query()->create([
+        'project_id' => $group->project_id, 'node_id' => $sandbox->node_id,
+        'name' => 'task-'.$group->id, 'task_sandbox_id' => $sandbox->id, 'checkout_path' => '/home/orbit/orbit',
+    ]);
+    $group->update(['taskable_type' => Instance::class, 'taskable_id' => $workspace->id]);
+
+    $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()
+        ->assertJsonStructure(['data' => ['sandbox_power']])
+        ->assertJsonPath('data.status', 'waiting_for_review')->assertJsonPath('data.sandbox_power', $power);
+})->with([
+    'running' => [SandboxState::Running, 'running'],
+    'stopped despite running intent' => [SandboxState::Stopped, 'stopped'],
+    'destroyed' => [SandboxState::Destroyed, 'destroyed'],
+    'uncertain' => [SandboxState::Uncertain, null],
+    'starting' => [SandboxState::Starting, null],
+    'stopping' => [SandboxState::Stopping, null],
+    'reserved' => [SandboxState::Reserved, null],
+    'creating' => [SandboxState::Creating, null],
+    'destroying' => [SandboxState::Destroying, null],
+]);
+
+it('keeps destroyed power after workspace cleanup without trusting foreign reservations', function (): void {
+    $group = Task::topLevel()->create([
+        'project_id' => $this->appRecord->id, 'title' => 'Power', 'brief' => 'Retained audit.',
+        'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm,
+    ]);
+    $sandbox = TaskSandbox::query()->create([
+        'id' => '11111111-1111-4111-8111-111111111111', 'group_id' => $group->id,
+        'provider' => 'incus', 'name' => 'power-proof', 'state' => SandboxState::Destroyed,
+        'desired_power' => 'destroyed', 'spec' => [], 'destroyed_at' => now(),
+    ]);
+    $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()->assertJsonPath('data.sandbox_power', 'destroyed');
+
+    $sandbox->update(['state' => SandboxState::Running, 'destroyed_at' => null]);
+    TaskSandbox::query()->create([
+        'id' => '22222222-2222-4222-8222-222222222222', 'group_id' => $group->id,
+        'provider' => 'incus', 'name' => 'newer-destroyed-proof', 'state' => SandboxState::Destroyed,
+        'desired_power' => 'destroyed', 'spec' => [], 'destroyed_at' => now(),
+    ]);
+    $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()->assertJsonPath('data.sandbox_power', null);
+
+    $foreign = Task::topLevel()->create([
+        'project_id' => $this->appRecord->id, 'title' => 'Foreign', 'brief' => 'Other group.',
+        'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm,
+    ]);
+    $workspace = Instance::query()->create([
+        'project_id' => $group->project_id, 'node_id' => Node::query()->firstOrFail()->id,
+        'name' => 'task-'.$group->id, 'task_sandbox_id' => $sandbox->id, 'checkout_path' => '/home/orbit/orbit',
+    ]);
+    $foreign->update(['taskable_type' => Instance::class, 'taskable_id' => $workspace->id]);
+    $this->getJson('/api/v1/task-groups/'.$foreign->id)->assertOk()->assertJsonPath('data.sandbox_power', null);
+});

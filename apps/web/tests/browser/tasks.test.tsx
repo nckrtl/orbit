@@ -13,6 +13,7 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         execution_mode: "managed",
         task_compute: null,
         capacity_wait_reason: null,
+        sandbox_power: null,
         project: "example-project",
         project_code: "EXA",
         title: `Feature ${id}`,

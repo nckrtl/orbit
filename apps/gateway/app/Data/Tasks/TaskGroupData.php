@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
+use App\Domain\Compute\SandboxPower;
+use App\Domain\Compute\SandboxState;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskSandbox;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -53,6 +56,7 @@ final class TaskGroupData extends Data
         public TaskExecutionMode $executionMode,
         public ?TaskCompute $taskCompute = null,
         public ?string $capacityWaitReason = null,
+        public ?SandboxPower $sandboxPower = null,
     ) {}
 
     public static function fromModel(Task $group): self
@@ -65,6 +69,7 @@ final class TaskGroupData extends Data
             executionMode: $group->execution_mode,
             taskCompute: $group->task_compute,
             capacityWaitReason: $group->capacity_wait_reason,
+            sandboxPower: self::sandboxPower($group),
 
             id: $group->id,
             projectId: $group->project_id,
@@ -100,5 +105,34 @@ final class TaskGroupData extends Data
                 ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
                 ->all()),
         );
+    }
+
+    private static function sandboxPower(Task $group): ?SandboxPower
+    {
+        if ($group->task_compute !== TaskCompute::Vm || $group->parent_id !== null) {
+            return null;
+        }
+        $workspace = $group->taskable;
+        if (! $workspace instanceof Instance) {
+            if ($group->taskable_id !== null) {
+                return null;
+            }
+            $history = TaskSandbox::query()->where('group_id', $group->id)->get(['state', 'destroyed_at']);
+
+            return $history->isNotEmpty() && $history->every(static fn (TaskSandbox $sandbox): bool => $sandbox->state === SandboxState::Destroyed && $sandbox->destroyed_at !== null)
+                ? SandboxPower::Destroyed : null;
+        }
+        $sandbox = $workspace->taskSandbox;
+        if (! $sandbox instanceof TaskSandbox || $sandbox->group_id !== $group->id || $workspace->project_id !== $group->project_id) {
+            return null;
+        }
+        $expectedNode = $group->project->slug === 'orbit' && $sandbox->provider === 'incus'
+            ? ($sandbox->spec['host_id'] ?? null) : $sandbox->node_id;
+        if ($expectedNode === null || $workspace->node_id !== $expectedNode
+            || ($group->project->slug === 'orbit' && $sandbox->node_id !== null)) {
+            return null;
+        }
+
+        return SandboxPower::tryFrom($sandbox->state->value);
     }
 }

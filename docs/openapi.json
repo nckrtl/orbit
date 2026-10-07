@@ -29268,6 +29268,18 @@
               "string",
               "null"
             ]
+          },
+          "sandbox_power": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "running",
+              "stopped",
+              "destroyed",
+              null
+            ]
           }
         }
       },
