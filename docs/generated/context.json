@@ -796,55 +796,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0201-release-the-gateway-automatically-from-green-main.md",
-            "title": "ADR 0201: Release the Gateway automatically from green main",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Process",
-                "Project",
-                "Schedule"
-            ],
-            "governing_adrs": [
-                "0198",
-                "0201"
-            ]
-        },
-        {
-            "path": "docs/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update.md",
-            "title": "ADR 0202: The fleet follows the Gateway through orbit self-update",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/e2e",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Doctor",
-                "Gateway",
-                "Instance",
-                "Node",
-                "Node agent",
-                "Process",
-                "Role"
-            ],
-            "governing_adrs": [
-                "0201",
-                "0202"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -892,9 +843,7 @@
                 "0191",
                 "0196",
                 "0198",
-                "0200",
-                "0201",
-                "0202"
+                "0200"
             ]
         },
         {
@@ -1321,9 +1270,7 @@
                 "Task",
                 "Task check"
             ],
-            "governing_adrs": [
-                "0201"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/deployments.md",
@@ -1444,6 +1391,7 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
@@ -1452,10 +1400,7 @@
                 "Task definition",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0201",
-                "0202"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/gateway-response-fixtures.md",
@@ -1521,9 +1466,7 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": [
-                "0201"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/implementation-loop.md",
@@ -1549,9 +1492,7 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0201"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/incus-topologies.md",
@@ -1882,9 +1823,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0202"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/node-retarget.md",
@@ -2140,9 +2079,7 @@
                 "Process",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0202"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/service-metrics.md",
