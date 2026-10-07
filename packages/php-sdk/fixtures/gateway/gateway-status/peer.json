@@ -56,6 +56,14 @@
                         }
                     ]
                 }
+            },
+            "release": null,
+            "release_sha": null,
+            "auto_release": {
+                "enabled": false,
+                "paused": false,
+                "last_checked_at": null,
+                "last_result": null
             }
         },
         "meta": {

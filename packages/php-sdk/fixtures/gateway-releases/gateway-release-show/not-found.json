@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseRequest",
+    "route": "GET /api/v1/gateway/releases/{release}",
+    "status": 404,
+    "body": {
+        "error": {
+            "code": "gateway.release_not_found",
+            "message": "No release record exists for [99].",
+            "details": {}
+        }
+    }
+}
