@@ -24,6 +24,8 @@ Releases are public, need no login, and do not expire. A published release is ne
 
 ### Version and tag
 
+Each release has one version, derived from its commit, and a tag that names it.
+
 | Item | Format | Example |
 | --- | --- | --- |
 | Release number `N` | `git rev-list --count <commit>` | `4681` |
@@ -33,9 +35,11 @@ Releases are public, need no login, and do not expire. A published release is ne
 
 `N` counts every commit that the commit reaches, itself included. `main` only moves forward, so each later `main` commit has a larger `N`. Compare releases by `N`, not by tag text or release date. Release numbers have gaps, because only green commits are published.
 
-A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`. Only a release has a version that matches `^0\.[1-9][0-9]*\.0$`. A source checkout and the pull-request builds report `git describe --tags --always --dirty` output instead, such as `cli-v0.4681.0-3-g1a2b3c4`.
+A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`. Only a release has a version that matches `^0\.[1-9][0-9]*\.0$`. Other builds report a tag-prefixed or hex version that never matches. A pull-request build reports `git describe --tags --always --dirty`, such as `cli-v0.4681.0-3-g1a2b3c4`. A source checkout reports its nearest tag, `git describe --tags --abbrev=0`, such as `cli-v0.4681.0`.
 
 ### Assets
+
+Each release has one binary per supported platform and a checksum file.
 
 | Asset | Platform | Builder |
 | --- | --- | --- |
@@ -147,7 +151,9 @@ A client that verified a checksum must get the same file later, so a published r
 
 ### Hosted runners for every target
 
-PHPacker does not compile. It appends the PHAR to a prebuilt PHP binary for the target, so every host writes the same kind of file. What a native runner adds is the proof that the binary starts on its platform. The repository is public, so hosted macOS and Linux arm64 runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network.
+PHPacker does not compile. It appends the PHAR to a prebuilt PHP binary for the target, so every host writes the same kind of file. What a native runner adds is the proof that the binary starts on its platform. The repository is public, so hosted macOS and Linux arm64 runners cost nothing.
+
+An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network.
 
 ### Linux arm64
 
