@@ -78,7 +78,8 @@ resolved="$(git rev-parse --verify --quiet "${commit}^{commit}")" || fail "unkno
 
 if [ -n "$main_ref" ]; then
     git rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null || fail "unknown main ref: ${main_ref}"
-    if ! git rev-list --first-parent "$main_ref" | grep -qx "$resolved"; then
+    # grep reads all input: with -q it could exit first, and pipefail would turn the SIGPIPE into a miss.
+    if ! git rev-list --first-parent "$main_ref" | grep -x -- "$resolved" >/dev/null; then
         fail "${resolved} is not on the first-parent history of ${main_ref}"
     fi
 fi
