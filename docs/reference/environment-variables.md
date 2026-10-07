@@ -28,6 +28,8 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB` is the free space, in MiB, that [prepare](/reference/gateway-recovery#prepare-a-release) keeps in the releases directory. It defaults to `1024`. It is not an Instance key.
 
+`ORBIT_GATEWAY_VERIFY_ORIGIN` is the origin deploy uses for `/up` and Gateway status. It defaults to `https://gateway.orbit`. It is not an Instance key.
+
 `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are settings in the Gateway's own environment. They are not Instance keys. See [Tasks: OpsBot direction webhook](/reference/tasks#opsbot-direction-webhook). The Gateway never returns the secret. Setting Instance keys with those names does not configure the Gateway.
 
 `ORBIT_RELEASE_ALERT_WEBHOOK_URL` and `ORBIT_RELEASE_ALERT_WEBHOOK_SECRET` are settings in the Gateway's own environment too, not Instance keys. See [Release alerts](/reference/gateway-recovery#webhook). The Gateway never returns the secret.

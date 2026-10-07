@@ -21,7 +21,22 @@ final class GatewayReleaseException extends ResourceOperationException
         int $status = 409,
         ?Throwable $previous = null,
         public readonly ?CommandResult $result = null,
+        public readonly ?string $sha = null,
     ) {
         parent::__construct($errorCode, $message, $status, $previous);
+    }
+
+    /** The same failure, naming the commit it belongs to once that commit is known. */
+    public function withSha(string $sha): self
+    {
+        return new self(
+            step: $this->step,
+            errorCode: $this->errorCode,
+            message: $this->getMessage(),
+            status: $this->status,
+            previous: $this,
+            result: $this->result,
+            sha: $sha,
+        );
     }
 }

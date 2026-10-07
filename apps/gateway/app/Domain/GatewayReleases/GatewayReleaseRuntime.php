@@ -1,0 +1,20 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\GatewayReleases;
+
+/**
+ * What a switched release does before it is verified: Caddy and PHP-FPM only when their rendered
+ * output changed, the scheduler handoff, document-cleanup reconcile then resume, and agent-view.
+ * Switch-back runs the same handoff for the release it returns to.
+ *
+ * @phpstan-type HandoffResult array{caddy: string, fpm: string, scheduler: string, cleanup: string, agent_view: string, cleanup_paused: bool}
+ */
+interface GatewayReleaseRuntime
+{
+    /**
+     * @return HandoffResult
+     */
+    public function handoff(string $id): array;
+}

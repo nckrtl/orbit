@@ -90,15 +90,19 @@ final readonly class GatewayReleaseBuilder
             );
         }
 
-        $this->assertFreeSpace();
-        $this->removePartial($path);
-        $this->git('worktree', 'gateway.release_worktree_failed', ['worktree', 'add', '--detach', '--force', $path, $sha]);
-        $this->linkShared($path);
-        $this->installDependencies($path);
-        $this->web->install($id, $sha);
-        $this->grantAccess($path);
-        $this->writeRevision($path, $sha);
-        $this->cacheConfiguration($path);
+        try {
+            $this->assertFreeSpace();
+            $this->removePartial($path);
+            $this->git('worktree', 'gateway.release_worktree_failed', ['worktree', 'add', '--detach', '--force', $path, $sha]);
+            $this->linkShared($path);
+            $this->installDependencies($path);
+            $this->web->install($id, $sha);
+            $this->grantAccess($path);
+            $this->writeRevision($path, $sha);
+            $this->cacheConfiguration($path);
+        } catch (GatewayReleaseException $exception) {
+            throw $exception->sha === null ? $exception->withSha($sha) : $exception;
+        }
 
         return new PreparedGatewayRelease($id, $sha, $path, false, $this->elapsed($startedAt));
     }

@@ -36,6 +36,10 @@ return [
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
         characters: '/',
     ),
+    'gateway_verify_origin' => rtrim(
+        string: env(key: 'ORBIT_GATEWAY_VERIFY_ORIGIN', default: 'https://gateway.orbit'),
+        characters: '/',
+    ),
     'app_dev_domain' => trim(
         string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
         characters: '.',

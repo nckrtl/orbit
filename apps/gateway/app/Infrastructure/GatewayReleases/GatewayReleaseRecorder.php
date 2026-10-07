@@ -1,0 +1,112 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Infrastructure\GatewayReleases;
+
+use App\Domain\GatewayReleases\DeployedGatewayRelease;
+use App\Models\Activity;
+use App\Models\GatewayRelease;
+use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
+use Throwable;
+
+/**
+ * Writes the release row, the Activity entry, and the pause marker. The pause marker is a file in
+ * `ORBIT_HOME` so a later automatic release can see a pause even before it reads the table.
+ */
+final readonly class GatewayReleaseRecorder
+{
+    public function __construct(private ?string $orbitHome = null) {}
+
+    public function write(DeployedGatewayRelease $release): GatewayRelease
+    {
+        $row = GatewayRelease::query()->create([
+            'release_id' => $release->id,
+            'sha' => $release->sha,
+            'trigger' => $release->trigger,
+            'outcome' => $release->outcome,
+            'migrations_ran' => $release->migrationsRan,
+            'retryable' => $release->retryable,
+            'cleanup_paused' => $release->cleanupPaused,
+            'snapshot_path' => $release->snapshotPath,
+            'previous_release_id' => $release->previousId,
+            'phases' => $release->phases,
+            'error_code' => $release->errorCode,
+            'message' => $release->message,
+            'duration_ms' => $release->durationMs,
+        ]);
+
+        $this->pauseMarker($release);
+        $this->activity($release);
+
+        return $row;
+    }
+
+    private function pauseMarker(DeployedGatewayRelease $release): void
+    {
+        $path = $this->home().'/gateway-release.paused';
+
+        if ($release->outcome !== 'paused') {
+            if ($release->succeeded() && is_file($path)) {
+                @unlink($path);
+            }
+
+            return;
+        }
+
+        $directory = dirname($path);
+
+        if (! is_dir($directory) && ! @mkdir($directory, 0700, true) && ! is_dir($directory)) {
+            return;
+        }
+
+        $body = json_encode([
+            'release' => $release->id,
+            'sha' => $release->sha,
+            'error_code' => $release->errorCode,
+            'snapshot' => $release->snapshotPath,
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        @file_put_contents($path, $body."\n");
+        @chmod($path, 0600);
+    }
+
+    private function activity(DeployedGatewayRelease $release): void
+    {
+        try {
+            Activity::query()->create([
+                'log_name' => 'commands',
+                'description' => 'gateway:release:'.$release->trigger,
+                'event' => 'command',
+                'properties' => [
+                    'release' => $release->id,
+                    'sha' => $release->sha,
+                    'outcome' => $release->outcome,
+                    'migrations_ran' => $release->migrationsRan,
+                    'previous' => $release->previousId,
+                    'cleanup_paused' => $release->cleanupPaused,
+                    'snapshot' => $release->snapshotPath,
+                    'error_code' => $release->errorCode,
+                ],
+                'request_id' => (string) Str::uuid(),
+                'command' => 'gateway:release:'.$release->trigger,
+                'status' => $release->succeeded() ? 'succeeded' : 'failed',
+                'duration_ms' => $release->durationMs,
+                'exit_code' => $release->succeeded() ? 0 : 1,
+                'error_code' => $release->errorCode,
+            ]);
+        } catch (Throwable) {
+            // The release row is the durable record. A failed Activity write must not hide the outcome.
+        }
+    }
+
+    private function home(): string
+    {
+        if ($this->orbitHome !== null) {
+            return rtrim($this->orbitHome, '/');
+        }
+
+        return rtrim(Config::string('orbit.home'), '/');
+    }
+}

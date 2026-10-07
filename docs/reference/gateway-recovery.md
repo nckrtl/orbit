@@ -122,7 +122,47 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_current_incomplete` | The current release has no `REVISION`. Repair it before preparing it again. |
 | `gateway.release_layout_invalid` | `ORBIT_GATEWAY_CHECKOUT` is not an absolute `<base>/<checkout>/apps/gateway` path. |
 | `gateway.release_lock_unavailable` | The release lock file cannot be opened. |
-| `gateway.release_fetch_failed`, `gateway.release_worktree_failed`, `gateway.release_link_failed`, `gateway.release_dependencies_failed`, `gateway.release_access_failed`, `gateway.release_revision_failed`, `gateway.release_configuration_failed` | The named build step failed. The live release is unchanged. |
+| `gateway.release_fetch_failed`, `gateway.release_worktree_failed`, `gateway.release_link_failed`, `gateway.release_dependencies_failed`, `gateway.release_access_failed`, `gateway.release_revision_failed`, `gateway.release_configuration_failed` | The named build step failed. The live release is unchanged, and the commit is marked failed unless the failure is the machine (disk, lock, or a missing layout). |
+
+### Deploy a release
+
+Deploy is the manual release. It prepares the commit, then switches `/home/orbit/orbit` to that release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout is refused until `gateway:release:adopt`.
+
+```bash
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA>
+```
+
+After the switch, deploy:
+
+1. hands the runtime over (Caddy, PHP-FPM, the scheduler, document cleanup, and agent-view);
+2. verifies `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`): status is `ok` and the version is the commit;
+3. switches the web app to the release's build;
+4. runs smoke against that web app.
+
+Smoke does not run before the web switch. When verification or smoke fails and the release ran no migrations, deploy switches back to the previous release, restores its web build, and repeats the runtime handoff for it. The release record's outcome is `switched_back`. When migrations already ran, deploy leaves the new release current, writes `ORBIT_HOME/gateway-release.paused`, and records outcome `paused`. It does not switch back onto a schema the previous code has not run.
+
+`gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. The same attempt writes an Activity entry.
+
+One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.release_not_adopted` | `/home/orbit/orbit` is still an in-place checkout. |
+| `gateway.release_not_prepared` | The release id is not a finished release. |
+| `gateway.release_switch_failed` | The current link could not be replaced. It stays on the previous release. |
+| `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |
+| `gateway.release_smoke_failed` | Smoke failed after the web switch. |
+| `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
+| `gateway.release_migration_crossed` | Rollback would leave older code on a newer schema. |
+
+### Roll back
+
+```bash
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
+```
+
+`<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the current release ships a migration file the target does not. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
 
 ## Update source
 

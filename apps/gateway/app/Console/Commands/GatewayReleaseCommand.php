@@ -30,7 +30,7 @@ abstract class GatewayReleaseCommand extends Command
                 'message' => $exception->getMessage(),
             ]);
 
-            return $exception->status === 422 ? 2 : self::FAILURE;
+            return in_array($exception->status, [404, 422], true) ? 2 : self::FAILURE;
         }
     }
 
