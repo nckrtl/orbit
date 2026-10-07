@@ -88,7 +88,7 @@ Every release writes a **release record**: commit, trigger (`auto`, a manual cal
 | Failure | Action |
 | --- | --- |
 | In prepare | Nothing changed. The commit is marked failed, and a newer releasable commit is tried on a following tick |
-| In verify or smoke, no migrations ran | Switch back to the previous release and its web build. Mark the commit failed. Alert |
+| In verify or smoke, no migrations ran | Switch back to the previous release and its web build, and repeat the runtime handoff for it. Mark the commit failed. Alert |
 | In verify or smoke, after migrations ran | **Pause** auto-release and alert. Do not switch back automatically |
 
 Old code on a migrated schema is not proven safe. After a pause, the operator decides between a forward fix, `orbit gateway:release:rollback <sha12> --force`, and a restore from the snapshot.
