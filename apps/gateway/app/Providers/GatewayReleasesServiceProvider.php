@@ -33,11 +33,12 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
+use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
 use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
-use App\Infrastructure\GatewayReleases\NoGatewayReleaseSmoke;
-use App\Infrastructure\GatewayReleases\NoGatewayReleaseWebBuild;
+use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
+use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Support\Facades\Config;
@@ -49,8 +50,27 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(GatewayReleaseLayout::class, static fn (): GatewayReleaseLayout => GatewayReleaseLayout::fromConfig());
-        $this->app->bind(GatewayReleaseWebBuild::class, NoGatewayReleaseWebBuild::class);
-        $this->app->bind(GatewayReleaseSmoke::class, NoGatewayReleaseSmoke::class);
+        $this->app->bind(
+            GatewayReleaseWebBuild::class,
+            static fn (Application $app): GitHubArtifactWebBuild => new GitHubArtifactWebBuild(
+                layout: $app->make(GatewayReleaseLayout::class),
+                processes: $app->make(ProcessRunner::class),
+                actions: $app->make(GitHubActionsReader::class),
+                webRoot: rtrim(Config::string('orbit.gateway_web'), '/'),
+            ),
+        );
+        $this->app->bind(
+            ScriptGatewayReleaseSmoke::class,
+            static fn (Application $app): ScriptGatewayReleaseSmoke => new ScriptGatewayReleaseSmoke(
+                layout: $app->make(GatewayReleaseLayout::class),
+                processes: $app->make(ProcessRunner::class),
+                origin: rtrim(Config::string('orbit.gateway_verify_origin'), '/'),
+                webRoot: rtrim(Config::string('orbit.gateway_web'), '/'),
+                timeoutSeconds: Config::integer('orbit.gateway_release_smoke_timeout'),
+                writeCheckProject: Config::string('orbit.gateway_release_smoke_project'),
+            ),
+        );
+        $this->app->bind(GatewayReleaseSmoke::class, ScriptGatewayReleaseSmoke::class);
         $this->app->bind(
             GatewayReleaseDatabase::class,
             static fn (Application $app): SqliteGatewayReleaseDatabase => new SqliteGatewayReleaseDatabase(

@@ -13,7 +13,8 @@ use Throwable;
 /**
  * Gateway release commands run on the Gateway host as the Gateway account. Each prints one JSON
  * object on stdout. Success exits 0, a refused input exits 2, and every other failure exits 1
- * with `error_code`, `step`, and `message`.
+ * with `error_code`, `step`, and `message`, plus `detail` when the step reported what it saw,
+ * such as the smoke report.
  */
 abstract class GatewayReleaseCommand extends Command
 {
@@ -29,6 +30,7 @@ abstract class GatewayReleaseCommand extends Command
                 'error_code' => $exception->errorCode,
                 'step' => $exception->step,
                 'message' => $exception->getMessage(),
+                ...($exception->phase === [] ? [] : ['detail' => $exception->phase]),
             ]);
 
             return in_array($exception->status, [404, 422], true) ? 2 : self::FAILURE;

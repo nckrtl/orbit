@@ -10,10 +10,12 @@ use Throwable;
 
 /**
  * A Gateway release step that refused or failed. `step` names the release phase, so the release
- * record and the command output say where it stopped.
+ * record and the command output say where it stopped. `phase` holds what the step observed, such as
+ * the smoke report, and the release record keeps it with the failed phase.
  */
 final class GatewayReleaseException extends ResourceOperationException
 {
+    /** @param array<string, mixed> $phase */
     public function __construct(
         public readonly string $step,
         string $errorCode,
@@ -22,6 +24,7 @@ final class GatewayReleaseException extends ResourceOperationException
         ?Throwable $previous = null,
         public readonly ?CommandResult $result = null,
         public readonly ?string $sha = null,
+        public readonly array $phase = [],
     ) {
         parent::__construct($errorCode, $message, $status, $previous);
     }
@@ -57,6 +60,7 @@ final class GatewayReleaseException extends ResourceOperationException
             previous: $this,
             result: $this->result,
             sha: $sha,
+            phase: $this->phase,
         );
     }
 }

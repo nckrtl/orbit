@@ -84,6 +84,9 @@ final readonly class GatewayReleaseBuilder
         $path = $this->layout->releasePath($id);
 
         if ($this->layout->preparedCommit($id) === $sha) {
+            // The web build of a retained release can be gone, for example after `bin/web-deploy` pruned it.
+            $this->installWeb($id, $sha);
+
             return new PreparedGatewayRelease($id, $sha, $path, true, $this->elapsed($startedAt));
         }
 
@@ -151,7 +154,7 @@ final readonly class GatewayReleaseBuilder
         }
     }
 
-    /** Removes a retained release that is not current. */
+    /** Removes a retained release that is not current, and its web build. */
     public function remove(string $id): void
     {
         if ($this->layout->currentReleaseId() === $id) {
@@ -163,6 +166,16 @@ final readonly class GatewayReleaseBuilder
         }
 
         $this->removePartial($this->layout->releasePath($id));
+        $this->web->remove($id);
+    }
+
+    private function installWeb(string $id, string $sha): void
+    {
+        try {
+            $this->web->install($id, $sha);
+        } catch (GatewayReleaseException $exception) {
+            throw $exception->sha === null ? $exception->withSha($sha) : $exception;
+        }
     }
 
     private function assertLayout(): void

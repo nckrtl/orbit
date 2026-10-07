@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\GatewayReleases\ConfigureGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Actions\GatewayReleases\RollbackGatewayReleaseAction;
+use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -17,12 +18,14 @@ use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
+use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Artisan;
 use Tests\Support\GatewayReleaseFixture;
 
 beforeEach(function (): void {
@@ -105,6 +108,109 @@ describe('gateway:release:deploy', function (): void {
             ]);
     });
 
+    it('stores the smoke report on the release record and smokes against the handoff time', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Smoked release');
+        $order = new ReleaseSteps;
+        $smoke = recording_smoke($order);
+        $before = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke);
+
+        $deployed = $action->execute($sha);
+        $phases = GatewayRelease::query()->first()->phases;
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and($phases['smoke'])->toBe(['outcome' => 'passed', 'report' => ['passed' => true, 'expected_sha' => $sha]])
+            ->and($smoke->since)->toBeInstanceOf(DateTimeImmutable::class)
+            ->and($smoke->since >= $before)->toBeTrue()
+            ->and($smoke->since <= new DateTimeImmutable('now', new DateTimeZone('UTC')))->toBeTrue();
+    });
+
+    it('keeps the smoke report of a failed smoke on the switched-back record', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Smoke fails without migrations');
+        $order = new ReleaseSteps;
+        $smoke = recording_smoke($order);
+        $smoke->fail = true;
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke);
+
+        $exception = release_failure(fn () => $action->execute($sha));
+        $record = GatewayRelease::query()->first();
+
+        expect($exception->errorCode)->toBe('gateway.release_smoke_failed')
+            ->and($record->outcome)->toBe('switched_back')
+            ->and($record->migrations_ran)->toBeFalse()
+            ->and($record->phases['smoke'])->toBe([
+                'report' => ['passed' => false, 'failed_checks' => ['web']],
+                'outcome' => 'failed',
+                'error_code' => 'gateway.release_smoke_failed',
+            ])
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and(array_slice($order->steps, -2))->toBe(['web:restore', 'handoff:'.$first]);
+    });
+
+    it('pauses on the new release when smoke fails after migrations ran', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Smoke fails after migrations');
+        $order = new ReleaseSteps;
+        $database = new OpenReleaseDatabase;
+        $database->pending = ['2026_10_13_000000_create_gateway_releases_table'];
+        $smoke = recording_smoke($order);
+        $smoke->fail = true;
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), $database, recording_web($order), $smoke);
+
+        $exception = release_failure(fn () => $action->execute($sha));
+        $record = GatewayRelease::query()->first();
+
+        expect($exception->step)->toBe('smoke')
+            ->and($record->outcome)->toBe('paused')
+            ->and($record->migrations_ran)->toBeTrue()
+            ->and($record->phases['smoke']['report'])->toBe(['passed' => false, 'failed_checks' => ['web']])
+            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
+            ->and(is_file($this->fixture->base.'/home/gateway-release.paused'))->toBeTrue()
+            ->and($order->steps)->toBe(['handoff:'.substr($sha, 0, 12), 'verify', 'web:publish', 'smoke'])
+            ->and($order->steps)->not->toContain('handoff:'.$first);
+    });
+
+    it('switches back when the release smoke command runs past its limit', function (): void {
+        $first = adopt_release($this->fixture);
+        $this->fixture->write('bin/gateway-smoke', "#!/usr/bin/env bash\nsleep 60 &\nwait\n");
+        chmod($this->fixture->origin.'/bin/gateway-smoke', 0755);
+        $sha = $this->fixture->commit('Smoke hangs');
+        $order = new ReleaseSteps;
+        $smoke = new ScriptGatewayReleaseSmoke(
+            layout: $this->fixture->layout,
+            processes: $this->fixture,
+            origin: 'https://gateway.orbit',
+            webRoot: $this->fixture->base.'/web',
+            timeoutSeconds: 1,
+            graceSeconds: 0,
+        );
+        $action = release_deployer($this->fixture, passing_verifier($order), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke);
+
+        $exception = release_failure(fn () => $action->execute($sha));
+        $record = GatewayRelease::query()->first();
+
+        expect($exception->errorCode)->toBe('gateway.release_smoke_timeout')
+            ->and($record->outcome)->toBe('switched_back')
+            ->and($record->phases['smoke']['error_code'])->toBe('gateway.release_smoke_timeout')
+            ->and($record->phases['smoke']['timeout_seconds'])->toBe(1)
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first);
+    });
+
+    it('removes the web build of a release it prunes', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Next release');
+        $order = new ReleaseSteps;
+        $builder = $this->fixture->builder(recording_web($order));
+        $builder->prepare($sha);
+
+        $builder->remove(substr($sha, 0, 12));
+
+        expect($order->steps)->toBe(['web:remove:'.substr($sha, 0, 12)])
+            ->and(release_failure(fn () => $builder->remove($first))->errorCode)->toBe('gateway.release_current');
+    });
+
     it('pauses on the new release when verification fails after migrations ran', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Migrated release');
@@ -170,6 +276,45 @@ describe('gateway:release:deploy', function (): void {
             ->and(GatewayRelease::query()->first()->retryable)->toBeTrue()
             ->and(GatewayRelease::query()->first()->sha)->toBe($sha);
     });
+
+    it('marks a commit failed when its web build is missing, and retries when GitHub cannot be read', function (string $errorCode, bool $recorded): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Web build fails');
+        $order = new ReleaseSteps;
+        $web = new readonly class($errorCode) implements GatewayReleaseWebBuild
+        {
+            public function __construct(private string $errorCode) {}
+
+            public function install(string $id, string $sha): bool
+            {
+                throw new GatewayReleaseException('web', $this->errorCode, 'No web build.', sha: $sha);
+            }
+
+            public function publish(string $id): void {}
+
+            public function restore(string $id): void {}
+
+            public function remove(string $id): void {}
+        };
+
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, recording_smoke($order))->execute($sha));
+
+        expect($exception->errorCode)->toBe($errorCode)
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and($order->steps)->toBe([])
+            ->and(GatewayRelease::query()->count())->toBe($recorded ? 1 : 0);
+
+        if ($recorded) {
+            expect(GatewayRelease::query()->first()->outcome)->toBe('failed')
+                ->and(GatewayRelease::query()->first()->retryable)->toBeFalse()
+                ->and(GatewayRelease::query()->first()->phases)->toBe(['prepare' => ['outcome' => 'failed', 'error_code' => $errorCode]]);
+        }
+    })->with([
+        'missing artifact' => ['gateway.release_web_build_missing', true],
+        'invalid artifact' => ['gateway.release_web_build_invalid', true],
+        'GitHub unreadable' => ['gateway.release_web_build_unavailable', false],
+        'web directory missing' => ['gateway.release_web_directory_missing', false],
+    ]);
 
     it('refuses a second release step while one holds the lock', function (): void {
         $sha = $this->fixture->commit('Locked');
@@ -650,6 +795,70 @@ describe('gateway:release:deploy', function (): void {
     });
 });
 
+describe('gateway:release:smoke', function (): void {
+    it('prints the smoke report of the live release and changes nothing', function (): void {
+        $id = adopt_release($this->fixture);
+        $sha = (string) $this->fixture->layout->preparedCommit($id);
+        $this->app->instance(SmokeGatewayReleaseAction::class, new SmokeGatewayReleaseAction(
+            $this->fixture->layout,
+            command_smoke($this->fixture, passed: true),
+        ));
+
+        $exitCode = Artisan::call('gateway:release:smoke');
+        $printed = json_decode(Artisan::output(), true);
+
+        expect($exitCode)->toBe(0)
+            ->and($printed)->toBe(['release' => $id, 'sha' => $sha, 'outcome' => 'passed', 'report' => ['schema' => 1, 'passed' => true, 'checks' => []]]);
+
+        $this->artisan('gateway:release:smoke', ['commit' => substr($sha, 0, 7), '--since' => '2026-10-07T06:00:00Z'])
+            ->expectsOutputToContain('"sha":"'.substr($sha, 0, 7).'"')
+            ->assertExitCode(0);
+
+        expect(GatewayRelease::query()->count())->toBe(0)
+            ->and(file_get_contents($this->fixture->base.'/smoke-args'))->toContain("--since\n2026-10-07T06:00:00Z");
+    });
+
+    it('prints the failed report and exits 1, and refuses a time without a zone', function (): void {
+        adopt_release($this->fixture);
+        $this->app->instance(SmokeGatewayReleaseAction::class, new SmokeGatewayReleaseAction(
+            $this->fixture->layout,
+            command_smoke($this->fixture, passed: false),
+        ));
+
+        $exitCode = Artisan::call('gateway:release:smoke');
+        $printed = json_decode(Artisan::output(), true);
+
+        expect($exitCode)->toBe(1)
+            ->and($printed['error_code'])->toBe('gateway.release_smoke_failed')
+            ->and($printed['step'])->toBe('smoke')
+            ->and($printed['detail']['report']['failed_checks'])->toBe(['web']);
+
+        $this->artisan('gateway:release:smoke', ['--since' => '2026-10-07 06:00'])
+            ->expectsOutputToContain('"error_code":"gateway.release_since_invalid"')
+            ->assertExitCode(2);
+    });
+});
+
+/** A smoke runner whose `bin/gateway-smoke` in the current release is a stand-in that records its arguments. */
+function command_smoke(GatewayReleaseFixture $fixture, bool $passed): ScriptGatewayReleaseSmoke
+{
+    $script = $fixture->layout->currentPath().'/bin/gateway-smoke';
+    $release = (string) realpath($fixture->layout->currentPath());
+    exec('chmod u+w '.escapeshellarg($release).' && mkdir -p '.escapeshellarg($release.'/bin'));
+    $report = $passed
+        ? '{"schema":1,"passed":true,"checks":{}}'
+        : '{"schema":1,"passed":false,"error":"checks_failed","failed_checks":["web"],"message":"1 of 7 checks did not pass: web."}';
+    file_put_contents($script, "#!/usr/bin/env bash\nprintf '%s\\n' \"\$@\" > ".escapeshellarg($fixture->base.'/smoke-args')."\necho '".$report."'\n".($passed ? '' : "exit 1\n"));
+    chmod($script, 0755);
+
+    return new ScriptGatewayReleaseSmoke(
+        layout: $fixture->layout,
+        processes: $fixture,
+        origin: 'https://gateway.orbit',
+        webRoot: $fixture->base.'/web',
+    );
+}
+
 function adopt_release(GatewayReleaseFixture $fixture): string
 {
     $sha = $fixture->commit('Adopted release');
@@ -806,6 +1015,11 @@ function recording_web(ReleaseSteps $order): GatewayReleaseWebBuild
         {
             $this->order->steps[] = 'web:restore';
         }
+
+        public function remove(string $id): void
+        {
+            $this->order->steps[] = 'web:remove:'.$id;
+        }
     };
 }
 
@@ -817,15 +1031,18 @@ function recording_smoke(ReleaseSteps $order): GatewayReleaseSmoke
 
         public function __construct(private readonly ReleaseSteps $order) {}
 
-        public function run(string $id, string $sha): array
+        public ?DateTimeImmutable $since = null;
+
+        public function run(string $id, string $sha, ?DateTimeImmutable $since = null): array
         {
             $this->order->steps[] = 'smoke';
+            $this->since = $since;
 
             if ($this->fail) {
-                throw new GatewayReleaseException('smoke', 'gateway.release_smoke_failed', 'Smoke failed.');
+                throw new GatewayReleaseException('smoke', 'gateway.release_smoke_failed', 'Smoke failed.', phase: ['report' => ['passed' => false, 'failed_checks' => ['web']]]);
             }
 
-            return ['outcome' => 'passed', 'output' => '{}'];
+            return ['outcome' => 'passed', 'report' => ['passed' => true, 'expected_sha' => $sha]];
         }
     };
 }

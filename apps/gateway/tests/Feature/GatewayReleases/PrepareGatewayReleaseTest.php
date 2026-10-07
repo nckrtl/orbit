@@ -102,6 +102,8 @@ describe('gateway:release:prepare', function (): void {
             public function publish(string $id): void {}
 
             public function restore(string $id): void {}
+
+            public function remove(string $id): void {}
         };
 
         expect(release_failure(fn () => $this->fixture->builder($web)->prepare($sha))->errorCode)->toBe('gateway.release_web_build_missing');

@@ -22,9 +22,9 @@ The App is public on GitHub, so any GitHub account can install it. An installati
 
 The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway setting, and the private key as an encrypted one. No API response, Activity, or Doctor result contains the key or a token.
 
-## Read TIA artifacts
+## Read CI artifacts
 
-The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before baseline delivery works. Changing Orbit’s manifest affects new registrations only.
+The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) and the [web build of a Gateway release](/reference/gateway-recovery#web-build) read CI artifacts. Each uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
 ## Register and install
 

@@ -11,12 +11,15 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use DateTimeImmutable;
+use DateTimeZone;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * Switches to a prepared release, hands the runtime over, verifies, switches the web app, then
- * runs smoke. Verify and smoke see the new release. Smoke runs only after the web switch.
+ * runs smoke. Verify and smoke see the new release. Smoke runs only after the web switch, and it
+ * checks that the scheduler and agent view started after the handoff began.
  *
  * Any failure after the switch, expected or not, is handled the same way: without migrations the
  * previous release becomes current again and its runtime handoff repeats; after migrations the
@@ -70,6 +73,7 @@ final readonly class GatewayReleasePromoter
             $previous = $this->switcher->switchTo($id);
             $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
             $step = 'handoff';
+            $handoffAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
             $phases['handoff'] = $this->runtime->handoff($id);
             $step = 'verify';
             $verified = $this->verifier->verify($sha);
@@ -83,7 +87,7 @@ final readonly class GatewayReleasePromoter
             $this->web->publish($id);
             $phases['web'] = ['outcome' => 'published'];
             $step = 'smoke';
-            $phases['smoke'] = $this->smoke->run($id, $sha);
+            $phases['smoke'] = $this->smoke->run($id, $sha, $handoffAt);
         } catch (Throwable $exception) {
             $this->fail(
                 exception: GatewayReleaseException::fromThrowable($exception, $step, $sha),
@@ -137,7 +141,7 @@ final readonly class GatewayReleasePromoter
     ): never {
         $outcome = 'failed';
         $cleanupPaused = ($scheduled['cleanup_paused'] ?? false) === true;
-        $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+        $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
         $switched = $previous !== $id && $this->layout->currentReleaseId() === $id;
         $unknown = $switched && $previous !== null && ! $migrationsRan ? $this->schemaRefusal($previous) : null;
 
