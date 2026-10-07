@@ -30,13 +30,18 @@ final readonly class GatewayReleaseGuard
     /** @throws GatewayReleaseException */
     public function assertSchema(string $id, bool $force): void
     {
+        if ($force) {
+            return;
+        }
+
+        // An unreadable migrations table throws gateway.release_migrations_unreadable: the check fails closed.
         $files = array_fill_keys(array_map(
             static fn (string $file): string => substr($file, 0, -4),
             $this->database->migrations($this->layout->releasePath($id)),
         ), true);
         $unknown = array_values(array_filter($this->database->applied(), static fn (string $name): bool => ! isset($files[$name])));
 
-        if ($unknown === [] || $force) {
+        if ($unknown === []) {
             return;
         }
 

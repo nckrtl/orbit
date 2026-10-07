@@ -205,10 +205,9 @@ final readonly class GatewayReleasePromoter
 
         try {
             $this->guard->assertSchema($previous, false);
-        } catch (GatewayReleaseException $exception) {
-            return $exception;
-        } catch (Throwable) {
-            return null;
+        } catch (Throwable $exception) {
+            // Fail closed: a schema that cannot be read may hold migrations the previous code does not know.
+            return GatewayReleaseException::fromThrowable($exception, 'switch_back');
         }
 
         return null;

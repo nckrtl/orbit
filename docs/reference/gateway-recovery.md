@@ -137,7 +137,7 @@ Deploy is the manual release. Before it changes anything, it:
 3. refuses a commit that lacks a migration the `migrations` table has applied, with `gateway.release_migration_crossed`;
 4. caches the release's configuration again from the shared env file, so a broken env file stops the release before any migration.
 
-`--force` skips the two refusals. It never migrates backwards.
+An unreadable `migrations` table refuses with `gateway.release_migrations_unreadable`. `--force` skips these refusals. It never migrates backwards.
 
 Then it migrates when needed and switches `/home/orbit/orbit` to the release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout, or a link to something else, is refused until `gateway:release:adopt`.
 
@@ -163,6 +163,7 @@ Smoke does not run before the web switch. Any failure after the switch counts, a
 - Without migrations, deploy switches back to the previous release and restores its web build. It repeats the handoff phases that started. The outcome is `switched_back`.
 - A previous release whose code has no handoff command, or no phases, gets the handoff from the deploying process's code.
 - A previous release that lacks a migration the database applied gets no switch-back. Deploy pauses instead. This can follow an earlier pause.
+- When the `migrations` table cannot be read, deploy pauses too, because it cannot rule that out.
 - After migrations, deploy pauses. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. It never switches back onto a schema the previous code has not run.
 - A switch that fails after migrations pauses too. The previous code then serves the new schema.
 

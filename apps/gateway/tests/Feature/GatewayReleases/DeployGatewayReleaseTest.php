@@ -516,6 +516,56 @@ describe('gateway:release:deploy', function (): void {
             ->and(readlink($this->live))->toBe($this->fixture->base.'/elsewhere');
     });
 
+    it('pauses instead of switching back when the applied migrations cannot be read', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Fails verify while the schema cannot be read');
+        $database = new OpenReleaseDatabase;
+        $order = new ReleaseSteps;
+        $verifier = new class($database) implements GatewayReleaseVerifier
+        {
+            public function __construct(private readonly OpenReleaseDatabase $database) {}
+
+            public function verify(string $sha): array
+            {
+                // The database becomes unreadable between the deploy's own check and the switch-back.
+                $this->database->appliedUnreadable = true;
+
+                throw new GatewayReleaseException('verify', 'gateway.release_verify_failed', 'Version mismatch.');
+            }
+
+            public function serving(): array
+            {
+                return ['status' => 'ok', 'version' => 'dev'];
+            }
+        };
+
+        release_failure(fn () => release_deployer($this->fixture, $verifier, recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+        $record = GatewayRelease::query()->sole();
+
+        expect($record->outcome)->toBe('paused')
+            ->and($record->phases['pause']['reason'])->toContain('cannot be read')
+            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
+            ->and($order->steps)->not->toContain('handoff:'.$first);
+    });
+
+    it('refuses a deploy and a rollback when the applied migrations cannot be read, unless forced', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Second');
+        $database = new OpenReleaseDatabase;
+        $database->appliedUnreadable = true;
+        $order = new ReleaseSteps;
+        $deploy = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order));
+
+        $refused = release_failure(fn () => $deploy->execute($sha));
+        $forced = $deploy->execute($sha, force: true);
+        $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order));
+
+        expect($refused->errorCode)->toBe('gateway.release_migrations_unreadable')
+            ->and($forced->outcome)->toBe('verified')
+            ->and(release_failure(fn () => $rollback->execute($first))->errorCode)->toBe('gateway.release_migrations_unreadable')
+            ->and($rollback->execute($first, force: true)->outcome)->toBe('verified');
+    });
+
     it('hands the scheduler back when the scheduler phase fails after it started', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Scheduler phase fails after the restart');
@@ -803,8 +853,14 @@ final class OpenReleaseDatabase implements GatewayReleaseDatabase
 
     public bool $failMigrate = false;
 
+    public bool $appliedUnreadable = false;
+
     public function applied(): array
     {
+        if ($this->appliedUnreadable) {
+            throw new GatewayReleaseException('snapshot', 'gateway.release_migrations_unreadable', 'The Gateway migrations table cannot be read.', 500);
+        }
+
         return $this->applied;
     }
 
