@@ -11,6 +11,8 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
         id,
         project_id: 999,
         execution_mode: "managed",
+        task_compute: null,
+        capacity_wait_reason: null,
         project: "example-project",
         project_code: "EXA",
         title: `Feature ${id}`,
