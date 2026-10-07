@@ -42,6 +42,7 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
         private int $keptSnapshots = self::KeptSnapshots,
         private int $minimumFreeBytes = GatewayReleaseBuilder::MinimumFreeBytes,
         ?Closure $freeSpace = null,
+        private ?string $stepLock = null,
     ) {
         $this->freeSpace = $freeSpace ?? static fn (string $path): float|false => @disk_free_space($path);
     }
@@ -68,7 +69,7 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
         return $bytes;
     }
 
-    public function pending(string $releasePath): array
+    public function applied(): array
     {
         try {
             $ran = DB::connection($this->connection)->table(Config::string('database.migrations.table', 'migrations'))->pluck('migration')->all();
@@ -82,7 +83,12 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
             );
         }
 
-        $recorded = array_fill_keys(array_map(static fn (mixed $name): string => is_string($name) ? $name : '', $ran), true);
+        return array_values(array_filter($ran, is_string(...)));
+    }
+
+    public function pending(string $releasePath): array
+    {
+        $recorded = array_fill_keys($this->applied(), true);
         $pending = [];
 
         foreach ($this->migrations($releasePath) as $file) {
@@ -116,7 +122,8 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
             throw $this->snapshotFailed("The backup directory [{$directory}] cannot be created.");
         }
 
-        $target = $directory.'/pre-'.$id.'.sqlite';
+        // Every attempt gets its own file. A retry after a half-failed migration must not replace the clean copy.
+        $target = $directory.'/pre-'.$id.'-'.gmdate('Ymd\THis\Z').'-'.bin2hex(random_bytes(3)).'.sqlite';
         $partial = $target.'.partial';
         @unlink($partial);
         $this->assertRoom($directory);
@@ -143,7 +150,8 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
     public function migrate(string $releasePath): void
     {
         $result = $this->processes->run(new ProcessInvocation(
-            arguments: ReleaseArtisan::command($this->php, $releasePath.'/apps/gateway/artisan', ['migrate', '--force', '--no-interaction']),
+            // --isolated: a second migrate, such as one left running by a deployer that died, waits for this one.
+            arguments: ReleaseArtisan::command($this->php, $releasePath.'/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction'], stepLock: $this->stepLock),
             timeout: $this->migrateTimeout,
         ));
 
@@ -195,9 +203,23 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
         $snapshots = glob($directory.'/pre-*.sqlite') ?: [];
         usort($snapshots, static fn (string $left, string $right): int => [(int) @filemtime($right), $right] <=> [(int) @filemtime($left), $left]);
 
+        $paused = $this->pausedSnapshot();
+
         foreach (array_slice($snapshots, max(1, $this->keptSnapshots)) as $old) {
-            @unlink($old);
+            if ($old !== $paused) {
+                @unlink($old);
+            }
         }
+    }
+
+    /** The snapshot a paused release names: the state before its migrations, which a restore needs. */
+    private function pausedSnapshot(): ?string
+    {
+        $marker = @file_get_contents(rtrim($this->orbitHome, '/').'/gateway-release.paused');
+        $decoded = is_string($marker) ? json_decode($marker, true) : null;
+        $snapshot = is_array($decoded) ? ($decoded['snapshot'] ?? null) : null;
+
+        return is_string($snapshot) ? $snapshot : null;
     }
 
     private function snapshotFailed(string $message, ?Throwable $previous = null): GatewayReleaseException

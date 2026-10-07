@@ -4,25 +4,61 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Closure;
 
 /**
- * `/up` plus Gateway status, the same checks as `bin/deploy-verify`. The version matches when it
- * equals the commit or one is a prefix of the other.
+ * `/up` plus Gateway status, the same checks as `bin/deploy-verify`. The version matches only the
+ * full commit or its 12-digit release id. A busy pool can queue `/up` behind long requests, so a
+ * failed check is tried again with backoff before the release fails.
  */
 final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifier
 {
+    /** @var Closure(int): void */
+    private Closure $sleep;
+
+    /**
+     * @param  list<int>  $backoff  seconds to wait before each retry; about a minute in all by default
+     * @param  (Closure(int): void)|null  $sleep  seconds
+     */
     public function __construct(
         private ProcessRunner $processes,
         private string $origin = 'https://gateway.orbit',
         private string $caFile = '/etc/caddy/orbit-cert-current/root-ca.pem',
-    ) {}
+        private array $backoff = [2, 4, 8, 16, 30],
+        ?Closure $sleep = null,
+    ) {
+        $this->sleep = $sleep ?? static function (int $seconds): void {
+            sleep($seconds);
+        };
+    }
 
     public function verify(string $sha): array
+    {
+        $delays = $this->backoff;
+
+        while (true) {
+            try {
+                return $this->check($sha);
+            } catch (GatewayReleaseException $exception) {
+                $delay = array_shift($delays);
+
+                if ($delay === null) {
+                    throw $exception;
+                }
+
+                ($this->sleep)($delay);
+            }
+        }
+    }
+
+    /** @return array{status: string, version: string} */
+    private function check(string $sha): array
     {
         $up = $this->get($this->origin.'/up');
 
@@ -55,15 +91,10 @@ final readonly class HttpGatewayReleaseVerifier implements GatewayReleaseVerifie
     private function versionMatches(string $expected, string $observed): bool
     {
         $expected = strtolower($expected);
-        $observed = strtolower($observed);
+        $observed = strtolower(trim($observed));
 
-        if ($expected === '' || $observed === '' || $observed === 'dev') {
-            return false;
-        }
-
-        return $expected === $observed
-            || str_starts_with($expected, $observed)
-            || str_starts_with($observed, $expected);
+        return GatewayReleaseCommit::isSha($expected)
+            && ($observed === $expected || $observed === GatewayReleaseCommit::id($expected));
     }
 
     private function get(string $url): CommandResult

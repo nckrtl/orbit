@@ -46,6 +46,8 @@ final readonly class GatewayReleaseLock
                 );
             }
 
+            $this->assertNoStepRunning();
+
             try {
                 return $operation();
             } finally {
@@ -53,6 +55,39 @@ final readonly class GatewayReleaseLock
             }
         } finally {
             fclose($handle);
+        }
+    }
+
+    /** The lock that a release step's commands hold while they run, next to this lock. */
+    public function stepPath(): string
+    {
+        return dirname($this->path).'/gateway-release-step.lock';
+    }
+
+    /**
+     * Refuses while a command from an earlier release step still runs, for example a migration that went on after
+     * the process that started it died.
+     */
+    private function assertNoStepRunning(): void
+    {
+        $step = @fopen($this->stepPath(), 'ce');
+
+        if ($step === false) {
+            return;
+        }
+
+        try {
+            if (! flock($step, LOCK_EX | LOCK_NB)) {
+                throw new GatewayReleaseException(
+                    step: 'lock',
+                    errorCode: 'gateway.release_in_progress',
+                    message: 'A command from an earlier release step still runs, such as a migration whose release process died. Wait for it to finish.',
+                );
+            }
+
+            flock($step, LOCK_UN);
+        } finally {
+            fclose($step);
         }
     }
 

@@ -59,6 +59,7 @@ final readonly class GatewayReleaseBuilder
         ?Closure $checkoutAccess = null,
         private int $minimumFreeBytes = self::MinimumFreeBytes,
         ?Closure $reservedBytes = null,
+        private ?string $stepLock = null,
     ) {
         $this->reservedBytes = $reservedBytes ?? static fn (): int => 0;
         $this->freeSpace = $freeSpace ?? static fn (string $path): float|false => @disk_free_space($path);
@@ -72,6 +73,8 @@ final readonly class GatewayReleaseBuilder
         $startedAt = hrtime(true);
         $revision = GatewayReleaseCommit::parse($revision);
         $this->assertLayout();
+        // Before a fetch can write objects into the shared repository.
+        $this->assertFreeSpace();
         $sha = $this->resolve($revision);
         $id = GatewayReleaseCommit::id($sha);
         $path = $this->layout->releasePath($id);
@@ -97,7 +100,6 @@ final readonly class GatewayReleaseBuilder
         }
 
         try {
-            $this->assertFreeSpace();
             $this->removePartial($path);
             $this->git('worktree', 'gateway.release_worktree_failed', ['worktree', 'add', '--detach', '--force', $path, $sha]);
             $this->linkShared($path);
@@ -124,11 +126,12 @@ final readonly class GatewayReleaseBuilder
         $live = $application.'/bootstrap/cache/config.php';
         $candidate = $application.'/bootstrap/cache/config.next-'.bin2hex(random_bytes(6)).'.php';
         $result = $this->processes->run(new ProcessInvocation(
-            arguments: ReleaseArtisan::command($this->php, $application.'/artisan', ['config:cache', '--no-interaction'], ['APP_CONFIG_CACHE' => $candidate]),
+            arguments: ReleaseArtisan::command($this->php, $application.'/artisan', ['config:cache', '--no-interaction'], ['APP_CONFIG_CACHE' => $candidate], $this->stepLock),
             timeout: 120.0,
         ));
 
-        if (! $result->succeeded() || ! is_file($candidate) || ! @rename($candidate, $live)) {
+        // The cached configuration holds APP_KEY. PHP-FPM runs as orbit, so nobody else needs to read it.
+        if (! $result->succeeded() || ! is_file($candidate) || ! @chmod($candidate, 0o600) || ! @rename($candidate, $live)) {
             @unlink($candidate);
 
             throw new GatewayReleaseException(
@@ -333,6 +336,7 @@ final readonly class GatewayReleaseBuilder
         foreach (['apps/cli', 'apps/gateway'] as $project) {
             $directory = $path.'/'.$project;
             $this->run('dependencies', 'gateway.release_dependencies_failed', [
+                ...ReleaseArtisan::locked($this->stepLock),
                 $this->composer, '--working-dir='.$directory, 'install', '--prefer-dist', '--no-interaction', '--no-progress',
             ], $this->composerTimeout);
             $this->run('dependencies', 'gateway.release_dependencies_failed', [
@@ -343,8 +347,9 @@ final readonly class GatewayReleaseBuilder
 
     /**
      * Gives Caddy the access to the release's `public` directory that Gateway web setup gives a
-     * checkout, then removes write access from the source tree so an in-place `git checkout` or
-     * `composer install` inside a release fails instead of changing it.
+     * checkout, then removes write access from the source tree, its directories and its files, so an
+     * in-place `git checkout`, `composer install`, or `composer dump-autoload` inside a release fails
+     * instead of changing it.
      */
     private function grantAccess(string $path): void
     {
@@ -363,7 +368,7 @@ final readonly class GatewayReleaseBuilder
         $this->run('access', 'gateway.release_access_failed', [
             'find', '-P', $path,
             '(', '-path', $path.'/apps/gateway/bootstrap/cache', '-o', '-path', $path.'/apps/cli/storage', ')', '-prune',
-            '-o', '-type', 'd', '-exec', 'chmod', 'a-w', '--', '{}', '+',
+            '-o', '(', '-type', 'd', '-o', '-type', 'f', ')', '-exec', 'chmod', 'a-w', '--', '{}', '+',
         ], 120.0);
     }
 
@@ -391,8 +396,12 @@ final readonly class GatewayReleaseBuilder
     {
         try {
             $this->run('configuration', 'gateway.release_configuration_failed', ReleaseArtisan::command(
-                $this->php, $path.'/apps/gateway/artisan', ['config:cache', '--no-interaction'],
+                $this->php, $path.'/apps/gateway/artisan', ['config:cache', '--no-interaction'], stepLock: $this->stepLock,
             ), 120.0);
+
+            if (! @chmod($path.'/apps/gateway/bootstrap/cache/config.php', 0o600)) {
+                throw $this->failure('configuration', 'gateway.release_configuration_failed', 'The cached configuration cannot be made private.');
+            }
         } catch (GatewayReleaseException $exception) {
             $this->run('configuration', 'gateway.release_configuration_failed', ['chmod', 'u+w', '--', $path]);
             @unlink($path.'/REVISION');

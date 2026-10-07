@@ -25,6 +25,7 @@ use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
+use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
@@ -55,6 +56,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 keptSnapshots: max(1, Config::integer('orbit.gateway_releases.snapshots_keep')),
                 minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
+                stepLock: self::stepLock(),
             ),
         );
         $this->app->bind(
@@ -63,7 +65,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 layout: $app->make(GatewayReleaseLayout::class),
                 processes: $app->make(ProcessRunner::class),
                 // The scheduler drain, a forced stop's wait for the tick lock, and the rest of the handoff.
-                timeout: (float) (self::drainSeconds() + 330 + 300),
+                timeout: (float) (self::drainSeconds() + 330 + 600),
+                stepLock: self::stepLock(),
             ),
         );
         $this->app->bind(GatewayDocumentCleanup::class, ActionGatewayDocumentCleanup::class);
@@ -99,6 +102,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 web: $app->make(GatewayReleaseWebBuild::class),
                 minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
                 reservedBytes: static fn (): int => $app->make(GatewayReleaseDatabase::class)->snapshotBytes(),
+                stepLock: self::stepLock(),
             ),
         );
         $this->app->bind(
@@ -143,6 +147,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 database: $app->make(GatewayReleaseDatabase::class),
                 web: $app->make(GatewayReleaseWebBuild::class),
                 smoke: $app->make(GatewayReleaseSmoke::class),
+                guard: $app->make(GatewayReleaseGuard::class),
             ),
         );
     }
@@ -150,5 +155,10 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
     private static function drainSeconds(): int
     {
         return max(0, Config::integer('orbit.gateway_releases.scheduler_drain_seconds'));
+    }
+
+    private static function stepLock(): string
+    {
+        return rtrim(Config::string('orbit.home'), '/').'/gateway-release-step.lock';
     }
 }

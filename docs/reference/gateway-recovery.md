@@ -104,12 +104,14 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 1. creates the worktree `releases/<id>` for the exact commit;
 2. links the shared env file and the shared storage directory into it;
 3. runs `composer install` and `composer check-platform-reqs` for `apps/cli` and `apps/gateway`, with the committed locks;
-4. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories read-only;
-5. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version.
+4. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
+5. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version. The cache holds `APP_KEY`, so it is mode `0600`.
+
+Every artisan command of a release runs with a clean environment that has only `HOME`, `PATH`, and `LANG`, so the release reads its configuration from the shared env file alone. These commands, and `composer install`, hold `ORBIT_HOME/gateway-release-step.lock` while they run. When the process that started one dies, for example with its SSH session, the command still finishes. Until it has, the next release step is refused with `gateway.release_in_progress`.
 
 Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
 
-Prepare refuses before it writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories.
+Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories.
 
 The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.
 
@@ -118,7 +120,7 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters. |
 | `gateway.release_commit_unknown` | The repository does not have the commit, or the prefix names more than one commit. |
 | `gateway.release_layout_missing` | The shared repository or env file is missing. |
-| `gateway.release_in_progress` | Another release step holds the single-flight lock in `ORBIT_HOME/gateway-release.lock`. |
+| `gateway.release_in_progress` | Another release step holds the single-flight lock in `ORBIT_HOME/gateway-release.lock`, or a command of an earlier step still runs. |
 | `gateway.release_disk_low` | The releases directory has less free space than the floor. |
 | `gateway.release_conflict` | The release directory holds another commit with the same 12-digit id. |
 | `gateway.release_current_incomplete` | The current release has no `REVISION`. Repair it before preparing it again. |
@@ -128,18 +130,30 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 
 ### Deploy a release
 
-Deploy is the manual release. It prepares the commit and caches the release's configuration again from the shared env file. Then it switches `/home/orbit/orbit` to that release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout is refused until `gateway:release:adopt`.
+Deploy is the manual release. Before it changes anything, it:
+
+1. prepares the commit;
+2. refuses a commit that does not descend from the current release, with `gateway.release_downgrade`;
+3. refuses a commit that lacks a migration the `migrations` table has applied, with `gateway.release_migration_crossed`;
+4. caches the release's configuration again from the shared env file, so a broken env file stops the release before any migration.
+
+`--force` skips the two refusals. It never migrates backwards.
+
+Then it migrates when needed and switches `/home/orbit/orbit` to the release with one `mv -T`. The switch runs only when the current path is already a release link. An in-place checkout, or a link to something else, is refused until `gateway:release:adopt`.
 
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA>
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA> --force
 ```
 
 After the switch, deploy:
 
 1. hands the runtime over (Caddy, PHP-FPM, the scheduler, document cleanup, and agent-view);
-2. verifies `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`): status is `ok` and the version is the commit;
+2. verifies the release, as described below;
 3. switches the web app to the release's build;
 4. runs smoke against that web app.
+
+Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`). Status must be `ok`, and the version must be the full commit or its 12-digit id. A busy pool can queue `/up` behind long requests, so a failed check runs again after 2, 4, 8, 16, and 30 seconds.
 
 Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
 
@@ -153,9 +167,10 @@ After a verified release, deploy removes old releases. It keeps the newest `ORBI
 
 Before the switch, deploy compares the migration files the release ships with the `migrations` table. When none are pending, it neither snapshots nor migrates.
 
-When some are pending, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>.sqlite`, with mode `0600`. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
+When some are pending, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>-<time>-<random>.sqlite`, with mode `0600`. Each attempt writes its own file, so a retry after a failed migration never replaces the clean copy. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
 
-- The Gateway keeps the newest `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` snapshots (default 5).
+- The Gateway keeps the newest `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` snapshots (default 5), and always the one the pause marker names.
+- The release migrates with `migrate --isolated`, so a second migration waits for a running one.
 - A snapshot needs room for the database and its WAL plus the free-space floor. Prepare keeps that room too, so a release refuses with `gateway.release_disk_low` before it builds anything.
 - A failed snapshot changes nothing, and the commit is tried again later.
 - A failed migration may have applied part of its changes. Deploy then pauses with `gateway.release_migrate_failed` and names the snapshot. To go back to it, follow [Recover a failed update](#recover-a-failed-update) with the snapshot as the database file.
@@ -166,13 +181,17 @@ The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
-3. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path;
-4. moves the scheduler to the new release without cutting off a scheduled command;
-5. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate).
+3. resets the pool's OPcache, described below;
+4. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path;
+5. moves the scheduler to the new release without cutting off a scheduled command;
+6. restarts every other Gateway Node Process whose directory is in the Gateway application;
+7. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate).
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
-The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. A Gateway without one reports `not_found`. The handoff never cuts off a scheduled command in the normal path. It moves the scheduler in these steps:
+Release files never change in place, so OPcache never marks the scripts of an old release as wasted, and the cache fills up. The handoff therefore asks the pool to reset its OPcache, through the pool's socket, with a script outside `public/`. The pool sets `opcache.force_restart_timeout` to 660 seconds, above the 600-second request limit, so the reset waits for running requests and never kills a worker that serves one. Until a pool with that setting is live, the handoff skips the reset and reports `opcache: skipped`. A failed reset reports `failed` and does not fail the release.
+
+The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. Every Gateway runs one. A missing one fails the handoff with `gateway.release_scheduler_missing`, and one in another directory with `gateway.release_scheduler_mismatch`, because it would keep the old code. The handoff never cuts off a scheduled command in the normal path. It moves the scheduler in these steps:
 
 1. It runs `schedule:interrupt`, so repeating events such as `tasks:tick` stop after their current run.
 2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
@@ -184,9 +203,11 @@ The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default
 
 The new scheduler pauses document cleanup when it starts. The handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. When the report has differences or resume is refused, cleanup stays paused. The release record then has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release continues.
 
-The handoff prints one JSON object with `caddy`, `fpm`, `scheduler`, `scheduler_unit`, `cleanup`, `cleanup_error_code`, `agent_view`, and `cleanup_paused`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
+When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `cleanup`, `cleanup_error_code`, `agent_view`, and `cleanup_paused`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
-`gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. Every attempt that names a commit writes a record and an Activity entry. A failure about the machine, such as low disk, is recorded with `retryable: true`, so the commit is not marked failed. A refusal that names no release, such as an unknown commit, writes only a failed Activity entry. A step refused by the release lock writes nothing.
+`gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. Every attempt that names a commit writes a record and an Activity entry.
+
+A failure the commit itself causes, such as a downgrade or a failed migration, is final at once. Any other failure, such as low disk, a fetch error, a slow verify, or an unexpected error, is recorded with `retryable: true` for the first two attempts of a commit; the third is final. A refusal that changes nothing, such as an unknown commit or a downgrade, writes only a failed Activity entry. A step refused by the release lock writes nothing.
 
 One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
 
@@ -205,9 +226,11 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |
 | `gateway.release_smoke_failed` | Smoke failed after the web switch. |
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
-| `gateway.release_configuration_failed` | The release's configuration could not be cached again. Nothing switched. |
+| `gateway.release_configuration_failed` | The release's configuration could not be cached again. It runs before migrations, so nothing changed. |
 | `gateway.release_unexpected_failure` | A step failed with an error the release code did not expect. The message names it. |
-| `gateway.release_migration_crossed` | Rollback would leave older code on a newer schema. |
+| `gateway.release_migration_crossed` | The database has applied a migration the target release does not ship. |
+| `gateway.release_downgrade` | The commit does not descend from the current release. |
+| `gateway.release_scheduler_missing`, `gateway.release_scheduler_mismatch` | The Gateway Node has no scheduler Process, or it runs outside the Gateway application path. |
 
 ### Roll back
 
@@ -218,7 +241,7 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
 ```
 
-`<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the current release ships a migration file the target does not. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
+`<id>` is the first 12 hex digits of a retained release. Rollback switches to it and runs the same handoff, verify, web switch, and smoke as a deploy. It refuses when the database has applied a migration the target does not ship. `--force` switches the code anyway and names the newest pre-migration snapshot. It does not migrate backwards. A failed verification switches back to the release that was current, because rollback itself does not migrate.
 
 ### Apply an env change
 

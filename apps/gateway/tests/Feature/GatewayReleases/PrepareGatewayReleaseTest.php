@@ -208,6 +208,46 @@ describe('gateway:release:prepare', function (): void {
         expect($descriptors)->not->toContain('gateway-release.lock');
     });
 
+    it('holds the step lock while its commands run and refuses the next step while an orphaned one still holds it', function (): void {
+        $sha = $this->fixture->commit('Second commit');
+        $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock');
+        @mkdir($this->fixture->base.'/home', 0700, true);
+        $this->fixture->builder(stepLock: $lock->stepPath())->prepare($sha);
+        $locked = array_values(array_filter($this->fixture->commands, static fn (array $arguments): bool => in_array('install', $arguments, true) || in_array('config:cache', $arguments, true)));
+        // A migration left running by a release process that died.
+        $orphan = fopen($lock->stepPath(), 'c');
+        flock($orphan, LOCK_EX);
+
+        $exception = release_failure(fn () => $lock->run(static fn (): string => 'ran'));
+        flock($orphan, LOCK_UN);
+
+        expect($locked)->toHaveCount(3)
+            ->and(array_values(array_unique(array_map(static fn (array $arguments): string => $arguments[0].' '.$arguments[3], $locked))))->toBe(['flock '.$lock->stepPath()])
+            ->and($exception->errorCode)->toBe('gateway.release_in_progress')
+            ->and($exception->getMessage())->toContain('still runs')
+            ->and($lock->run(static fn (): string => 'ran'))->toBe('ran');
+    });
+
+    it('makes release files read-only, not only directories, and keeps the cached configuration private', function (): void {
+        $sha = $this->fixture->commit('Second commit');
+
+        $release = $this->fixture->builder()->prepare($sha);
+        $application = $release->path.'/apps/gateway';
+
+        expect(is_writable($application.'/artisan'))->toBeFalse()
+            ->and(is_writable($application.'/vendor/autoload.php'))->toBeFalse()
+            ->and(@file_put_contents($application.'/vendor/autoload.php', '<?php // dump-autoload'))->toBeFalse()
+            ->and(fileperms($application.'/bootstrap/cache/config.php') & 0o777)->toBe(0o600)
+            ->and(is_writable($application.'/bootstrap/cache'))->toBeTrue();
+    });
+
+    it('checks free space before it fetches anything', function (): void {
+        $exception = release_failure(fn () => $this->fixture->builder(freeBytes: 1_048_576)->prepare(str_repeat('e', 40)));
+
+        expect($exception->errorCode)->toBe('gateway.release_disk_low')
+            ->and(array_filter($this->fixture->commands, static fn (array $arguments): bool => in_array('fetch', $arguments, true)))->toBe([]);
+    });
+
     it('prints the prepared release as one JSON object', function (): void {
         $sha = $this->fixture->commit('Second commit');
         $this->app->instance(PrepareGatewayReleaseAction::class, new PrepareGatewayReleaseAction(

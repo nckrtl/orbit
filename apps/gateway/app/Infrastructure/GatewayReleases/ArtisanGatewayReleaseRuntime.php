@@ -22,12 +22,13 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
         private ProcessRunner $processes,
         private string $php = '/usr/bin/php8.5',
         private float $timeout = 1_230.0,
+        private ?string $stepLock = null,
     ) {}
 
     public function handoff(string $id): array
     {
         $result = $this->processes->run(new ProcessInvocation(
-            arguments: ReleaseArtisan::command($this->php, $this->layout->releaseApplicationPath($id).'/artisan', ['gateway:release:handoff', '--no-interaction']),
+            arguments: ReleaseArtisan::command($this->php, $this->layout->releaseApplicationPath($id).'/artisan', ['gateway:release:handoff', '--no-interaction'], stepLock: $this->stepLock),
             timeout: $this->timeout,
         ));
         $decoded = json_decode(trim($result->stdout), true);
@@ -49,9 +50,11 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
         return [
             'caddy' => (string) $data['caddy'],
             'fpm' => is_string($data['fpm'] ?? null) ? $data['fpm'] : 'unknown',
+            'opcache' => is_string($data['opcache'] ?? null) ? $data['opcache'] : 'unknown',
             'scheduler' => is_string($data['scheduler'] ?? null) ? $data['scheduler'] : 'unknown',
             'scheduler_unit' => is_string($data['scheduler_unit'] ?? null) ? $data['scheduler_unit'] : null,
             'scheduler_drain' => $this->drain($data['scheduler_drain'] ?? null),
+            'processes_restarted' => array_values(array_filter(is_array($data['processes_restarted'] ?? null) ? $data['processes_restarted'] : [], is_string(...))),
             'cleanup' => is_string($data['cleanup'] ?? null) ? $data['cleanup'] : 'unknown',
             'cleanup_error_code' => is_string($data['cleanup_error_code'] ?? null) ? $data['cleanup_error_code'] : null,
             'agent_view' => is_string($data['agent_view'] ?? null) ? $data['agent_view'] : 'unknown',

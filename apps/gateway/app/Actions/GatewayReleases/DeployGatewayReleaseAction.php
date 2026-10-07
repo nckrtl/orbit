@@ -8,46 +8,35 @@ use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use Throwable;
 
 /**
- * Prepares a commit, migrates when that release has pending migrations, then promotes it.
- * Every attempt that names a commit is recorded. A failure about the machine (disk, lock,
- * layout, or the database snapshot) is recorded as retryable, so the commit is not marked
- * failed. A failed migration pauses.
+ * Prepares a commit, checks that it moves forward and knows the applied schema, caches its
+ * configuration, migrates when it has pending migrations, then promotes it. Every attempt that
+ * names a commit is recorded; {@see GatewayReleaseRetry} decides whether it may be tried again.
+ * A refusal by the guard writes only an Activity entry. A failed migration pauses.
  */
 final readonly class DeployGatewayReleaseAction
 {
-    /** @var list<string> */
-    private const array RETRYABLE = [
-        'gateway.release_disk_low',
-        'gateway.release_in_progress',
-        'gateway.release_layout_missing',
-        'gateway.release_layout_invalid',
-        'gateway.release_lock_unavailable',
-        'gateway.release_commit_invalid',
-        'gateway.release_commit_unknown',
-        'gateway.release_fetch_failed',
-        'gateway.release_migrations_unreadable',
-        'gateway.release_snapshot_failed',
-        'gateway.release_snapshot_unavailable',
-        'gateway.release_unexpected_failure',
-    ];
-
     public function __construct(
         private GatewayReleaseLock $lock,
         private GatewayReleaseBuilder $builder,
         private GatewayReleaseDatabase $database,
         private GatewayReleasePromoter $promoter,
         private GatewayReleaseRecorder $recorder,
+        private GatewayReleaseGuard $guard,
+        private GatewayReleaseRetry $retry,
     ) {}
 
-    public function execute(string $commit): DeployedGatewayRelease
+    /** @param bool $force switch even when the commit does not descend from the current one or does not know an applied migration */
+    public function execute(string $commit, bool $force = false): DeployedGatewayRelease
     {
-        return $this->lock->run(function () use ($commit): DeployedGatewayRelease {
+        return $this->lock->run(function () use ($commit, $force): DeployedGatewayRelease {
             $startedAt = hrtime(true);
             $step = 'prepare';
             $prepared = null;
@@ -58,6 +47,14 @@ final readonly class DeployGatewayReleaseAction
             try {
                 $prepared = $this->builder->prepare($commit);
                 $phases['prepare'] = ['outcome' => $prepared->reused ? 'reused' : 'prepared', 'duration_ms' => $prepared->durationMs];
+                $step = 'guard';
+                $this->guard->assertForward($prepared->sha, $force);
+                $this->guard->assertSchema($prepared->id, $force);
+                $phases['guard'] = ['outcome' => 'passed', 'force' => $force];
+                // Before any migration: a configuration that cannot be cached must stop the release while nothing changed.
+                $step = 'configuration';
+                $this->builder->refreshConfiguration($prepared->id);
+                $phases['configuration'] = ['outcome' => 'cached'];
                 $step = 'snapshot';
                 $pending = $this->database->pending($prepared->path);
 
@@ -102,7 +99,8 @@ final readonly class DeployGatewayReleaseAction
         $durationMs = intdiv(hrtime(true) - $startedAt, 1_000_000);
 
         try {
-            if ($exception->sha === null || strlen($exception->sha) !== 40) {
+            if ($exception->sha === null || strlen($exception->sha) !== 40 || $step === 'guard') {
+                // A refusal changes nothing and does not mark the commit failed.
                 $this->recorder->refused('deploy', $exception, $durationMs);
 
                 return;
@@ -118,7 +116,7 @@ final readonly class DeployGatewayReleaseAction
                 previousId: null,
                 snapshotPath: $snapshot,
                 cleanupPaused: false,
-                retryable: ! $migrating && in_array($exception->errorCode, self::RETRYABLE, true),
+                retryable: ! $migrating && $this->retry->retryable($exception->errorCode, $exception->sha),
                 durationMs: $durationMs,
                 phases: [...$phases, $step => ['outcome' => 'failed', 'error_code' => $exception->errorCode]],
                 errorCode: $exception->errorCode,

@@ -11,9 +11,11 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -158,7 +160,8 @@ describe('gateway:release:deploy', function (): void {
         expect($exception->errorCode)->toBe('gateway.release_dependencies_failed')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
             ->and(GatewayRelease::query()->first()->outcome)->toBe('failed')
-            ->and(GatewayRelease::query()->first()->retryable)->toBeFalse()
+            // A dependency install can fail on the network, so the commit gets more attempts.
+            ->and(GatewayRelease::query()->first()->retryable)->toBeTrue()
             ->and(GatewayRelease::query()->first()->sha)->toBe($sha);
     });
 
@@ -184,6 +187,7 @@ describe('gateway:release:deploy', function (): void {
         ];
         $order = new ReleaseSteps;
         $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha);
+        $database->applied = ['2026_01_01_000000_one', '2026_02_01_000000_two'];
         GatewayRelease::query()->create([
             'release_id' => $deployed->id,
             'sha' => $sha,
@@ -199,6 +203,7 @@ describe('gateway:release:deploy', function (): void {
         $refused = release_failure(fn () => $rollback->execute($first));
 
         expect($refused->errorCode)->toBe('gateway.release_migration_crossed')
+            ->and($refused->getMessage())->toContain('2026_02_01_000000_two')
             ->and($refused->getMessage())->toContain('pre-'.$deployed->id.'.sqlite')
             ->and($this->fixture->layout->currentReleaseId())->toBe($deployed->id);
 
@@ -355,6 +360,135 @@ describe('gateway:release:deploy', function (): void {
             ->assertExitCode(1);
     });
 
+    it('refuses a commit that does not descend from the current release unless forced', function (): void {
+        $older = $this->fixture->commit('Older');
+        $this->fixture->builder()->prepare($older);
+        $current = adopt_release($this->fixture);
+        $order = new ReleaseSteps;
+        $action = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+
+        $refused = release_failure(fn () => $action->execute($older));
+
+        expect($refused->errorCode)->toBe('gateway.release_downgrade')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($current)
+            ->and(GatewayRelease::query()->count())->toBe(0)
+            ->and(Activity::query()->value('error_code'))->toBe('gateway.release_downgrade')
+            ->and($action->execute($older, force: true)->outcome)->toBe('verified');
+    });
+
+    it('refuses a commit that does not know a migration the database applied', function (): void {
+        $current = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Forward, but missing a hotfix migration');
+        $database = new OpenReleaseDatabase;
+        $database->applied = ['2026_09_09_000000_hotfix'];
+        $order = new ReleaseSteps;
+
+        $refused = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+
+        expect($refused->errorCode)->toBe('gateway.release_migration_crossed')
+            ->and($refused->getMessage())->toContain('2026_09_09_000000_hotfix')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($current)
+            ->and($order->steps)->toBe([]);
+    });
+
+    it('caches the configuration before it migrates, so a broken env file stops the release while nothing changed', function (): void {
+        $current = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Has a migration');
+        $this->fixture->builder()->prepare($sha);
+        $application = $this->fixture->layout->releaseApplicationPath(substr($sha, 0, 12));
+        chmod($application, 0755);
+        file_put_contents($application.'/config.fail', 'fail');
+        $database = new OpenReleaseDatabase;
+        $database->pending = ['2026_12_31_000000_marks'];
+        $order = new ReleaseSteps;
+
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+
+        expect($exception->errorCode)->toBe('gateway.release_configuration_failed')
+            ->and($database->migrated)->toBeFalse()
+            ->and($this->fixture->layout->currentReleaseId())->toBe($current)
+            ->and(GatewayRelease::query()->sole()->outcome)->toBe('failed')
+            ->and(GatewayRelease::query()->sole()->migrations_ran)->toBeFalse();
+    });
+
+    it('pauses without switching when the migration fails', function (): void {
+        $current = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Broken migration');
+        $database = new OpenReleaseDatabase;
+        $database->pending = ['2026_12_31_000000_marks'];
+        $database->failMigrate = true;
+        $order = new ReleaseSteps;
+
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+
+        expect($exception->errorCode)->toBe('gateway.release_migrate_failed')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($current)
+            ->and(GatewayRelease::query()->sole()->outcome)->toBe('paused')
+            ->and(GatewayRelease::query()->sole()->retryable)->toBeFalse()
+            ->and($order->steps)->toBe([]);
+    });
+
+    it('gives a retryable failure three attempts per commit, then marks it final', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Fails verify every time');
+        $order = new ReleaseSteps;
+        $verifier = passing_verifier($order);
+        $verifier->failSha = $sha;
+        $action = release_deployer($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
+
+        foreach (range(1, 3) as $attempt) {
+            release_failure(fn () => $action->execute($sha));
+        }
+
+        expect(GatewayRelease::query()->orderBy('id')->pluck('retryable')->all())->toBe([true, true, false]);
+    });
+
+    it('records switch_back_failed when returning to the previous release fails too', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Fails verify, and the way back fails');
+        $switcher = new GatewayReleaseSwitcher($this->fixture->layout, new class($this->fixture) implements ProcessRunner
+        {
+            private int $moves = 0;
+
+            public function __construct(private readonly GatewayReleaseFixture $fixture) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                if (($invocation->arguments[0] ?? '') === 'mv' && ++$this->moves > 1) {
+                    return new CommandResult(1, '', 'mv failed', 1, false);
+                }
+
+                return $this->fixture->run($invocation);
+            }
+        });
+        $order = new ReleaseSteps;
+        $verifier = passing_verifier($order);
+        $verifier->failSha = $sha;
+
+        $exception = release_failure(fn () => release_deployer($this->fixture, $verifier, recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order), $switcher)->execute($sha));
+        $record = GatewayRelease::query()->sole();
+
+        expect($exception->errorCode)->toBe('gateway.release_switch_back_failed')
+            ->and($record->outcome)->toBe('failed')
+            ->and($record->phases['switch_back']['outcome'])->toBe('failed')
+            ->and($record->retryable)->toBeFalse()
+            ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
+            ->and($this->fixture->layout->currentReleaseId())->not->toBe($first);
+    });
+
+    it('refuses to switch when the current path links to something other than a release', function (): void {
+        $sha = $this->fixture->commit('Release');
+        $this->fixture->builder()->prepare($sha);
+        exec('rm -rf '.escapeshellarg($this->live));
+        mkdir($this->fixture->base.'/elsewhere', 0755);
+        symlink($this->fixture->base.'/elsewhere', $this->live);
+
+        $exception = release_failure(fn () => new GatewayReleaseSwitcher($this->fixture->layout, $this->fixture)->switchTo(substr($sha, 0, 12)));
+
+        expect($exception->errorCode)->toBe('gateway.release_not_adopted')
+            ->and(readlink($this->live))->toBe($this->fixture->base.'/elsewhere');
+    });
+
     it('prints one JSON object for a deploy and refuses a branch name', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Command release');
@@ -427,6 +561,8 @@ function release_deployer(
             $keptReleases,
         ),
         $recorder,
+        new GatewayReleaseGuard($fixture->layout, $database, $fixture),
+        new GatewayReleaseRetry,
     );
 }
 
@@ -444,7 +580,6 @@ function release_rollback(
     return new RollbackGatewayReleaseAction(
         new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock'),
         $fixture->layout,
-        $database,
         new GatewayReleasePromoter(
             $fixture->layout,
             new GatewayReleaseSwitcher($fixture->layout, $fixture),
@@ -456,6 +591,7 @@ function release_rollback(
             $builder,
         ),
         $recorder,
+        new GatewayReleaseGuard($fixture->layout, $database, $fixture),
     );
 }
 
@@ -568,6 +704,18 @@ final class OpenReleaseDatabase implements GatewayReleaseDatabase
 
     public ?Throwable $unreadable = null;
 
+    /** @var list<string> */
+    public array $applied = [];
+
+    public bool $migrated = false;
+
+    public bool $failMigrate = false;
+
+    public function applied(): array
+    {
+        return $this->applied;
+    }
+
     public function pending(string $releasePath): array
     {
         if ($this->unreadable instanceof Throwable) {
@@ -582,7 +730,14 @@ final class OpenReleaseDatabase implements GatewayReleaseDatabase
         return '/var/tmp/orbit-pre-'.$id.'.sqlite';
     }
 
-    public function migrate(string $releasePath): void {}
+    public function migrate(string $releasePath): void
+    {
+        $this->migrated = true;
+
+        if ($this->failMigrate) {
+            throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'The release migrations failed.', 500);
+        }
+    }
 
     public function snapshotBytes(): int
     {

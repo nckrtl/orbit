@@ -33,14 +33,15 @@ function artisan_runtime(int $exit, string $stdout): array
 describe(ArtisanGatewayReleaseRuntime::class, function (): void {
     it('runs the handoff with the code of the release it hands over to', function (): void {
         [$runtime, $processes] = artisan_runtime(0, json_encode([
-            'caddy' => 'unchanged', 'fpm' => 'unchanged', 'scheduler' => 'restarted', 'scheduler_unit' => 'orbit-process-1-schedule-work.service',
+            'caddy' => 'unchanged', 'fpm' => 'unchanged', 'opcache' => 'reset', 'scheduler' => 'restarted', 'scheduler_unit' => 'orbit-process-1-schedule-work.service',
             'scheduler_drain' => ['outcome' => 'drained', 'waited_ms' => 1200, 'running' => []],
             'cleanup' => 'resumed', 'cleanup_error_code' => null, 'agent_view' => 'restarted', 'cleanup_paused' => false,
         ], JSON_THROW_ON_ERROR)."\n");
 
         expect($runtime->handoff('0123456789ab'))->toBe([
-            'caddy' => 'unchanged', 'fpm' => 'unchanged', 'scheduler' => 'restarted', 'scheduler_unit' => 'orbit-process-1-schedule-work.service',
+            'caddy' => 'unchanged', 'fpm' => 'unchanged', 'opcache' => 'reset', 'scheduler' => 'restarted', 'scheduler_unit' => 'orbit-process-1-schedule-work.service',
             'scheduler_drain' => ['outcome' => 'drained', 'waited_ms' => 1200, 'running' => []],
+            'processes_restarted' => [],
             'cleanup' => 'resumed', 'cleanup_error_code' => null, 'agent_view' => 'restarted', 'cleanup_paused' => false,
         ])->and($processes->ran)->toBe([
             ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['gateway:release:handoff', '--no-interaction']),

@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Models\Node;
@@ -38,7 +39,13 @@ final readonly class GatewayRuntimeHandoff
     /** @var Closure(string): (string|false) */
     private Closure $readLivePool;
 
-    /** @param (Closure(string): (string|false))|null $readLivePool */
+    /** @var Closure(string): string */
+    private Closure $resetOpcache;
+
+    /**
+     * @param  (Closure(string): (string|false))|null  $readLivePool
+     * @param  (Closure(string): string)|null  $resetOpcache  runs the reset script inside the pool and returns its JSON
+     */
     public function __construct(
         private NodeCaddyBuilds $builds,
         private GatewayFpmConfigRenderer $fpmRenderer,
@@ -52,8 +59,10 @@ final readonly class GatewayRuntimeHandoff
         private string $orbitHome,
         private string $livePool = self::LivePool,
         ?Closure $readLivePool = null,
+        ?Closure $resetOpcache = null,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
+        $this->resetOpcache = $resetOpcache ?? static fn (string $script): string => new FpmScriptRequest()->request($script);
     }
 
     /**
@@ -71,15 +80,18 @@ final readonly class GatewayRuntimeHandoff
             $this->hibernator->converge();
             $this->agentView->converge();
         });
+        $opcache = $this->opcache();
         $scheduler = $this->scheduler->handoff($gateway);
         $cleanup = $this->cleanup->resume($generation, $scheduler['outcome'] === 'restarted' || $fpm === 'reloaded');
 
         return [
             'caddy' => $caddy,
             'fpm' => $fpm,
+            'opcache' => $opcache,
             'scheduler' => $scheduler['outcome'],
             'scheduler_unit' => $scheduler['unit'],
-            'scheduler_drain' => $scheduler['drain'] ?? null,
+            'scheduler_drain' => $scheduler['drain'],
+            'processes_restarted' => $scheduler['restarted'],
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
             'agent_view' => 'restarted',
@@ -140,6 +152,30 @@ final readonly class GatewayRuntimeHandoff
         });
 
         return 'reloaded';
+    }
+
+    /**
+     * Resets the pool's OPcache, so the scripts of releases that no longer serve do not fill it. Release files never
+     * change in place, so OPcache would never mark them wasted. It resets only when the live pool lets running requests
+     * finish first; a failure leaves the release running with a fuller cache and does not fail it.
+     */
+    private function opcache(): string
+    {
+        $pool = ($this->readLivePool)($this->livePool);
+
+        if (! is_string($pool) || ! str_contains($pool, 'opcache.force_restart_timeout')) {
+            return 'skipped';
+        }
+
+        $release = realpath($this->applicationPath);
+
+        try {
+            $result = json_decode(($this->resetOpcache)(($release === false ? $this->applicationPath : $release).'/resources/fpm/opcache-reset.php'), true);
+        } catch (Throwable) {
+            return 'failed';
+        }
+
+        return is_array($result) && ($result['reset'] ?? false) === true ? 'reset' : 'failed';
     }
 
     /** @param Closure(): void $operation */

@@ -38,6 +38,7 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseRecorder $recorder,
         private GatewayReleaseBuilder $builder,
         private int $keptReleases = self::KeptReleases,
+        private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
     ) {}
 
     /**
@@ -57,8 +58,11 @@ final readonly class GatewayReleasePromoter
         $step = 'configuration';
 
         try {
-            $this->builder->refreshConfiguration($id);
-            $phases['configuration'] = ['outcome' => 'cached'];
+            if (! isset($phases['configuration'])) {
+                $this->builder->refreshConfiguration($id);
+                $phases['configuration'] = ['outcome' => 'cached'];
+            }
+
             $step = 'switch';
             $previous = $this->switcher->switchTo($id);
             $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
@@ -165,6 +169,7 @@ final readonly class GatewayReleasePromoter
             phases: $phases,
             errorCode: $exception->errorCode,
             message: $exception->getMessage(),
+            retryable: $outcome !== 'paused' && $this->retry->retryable($exception->errorCode, $sha),
         ));
 
         throw $exception;
@@ -202,6 +207,7 @@ final readonly class GatewayReleasePromoter
         array $phases,
         ?string $errorCode = null,
         ?string $message = null,
+        bool $retryable = false,
     ): DeployedGatewayRelease {
         return new DeployedGatewayRelease(
             id: $id,
@@ -212,7 +218,7 @@ final readonly class GatewayReleasePromoter
             previousId: $previousId,
             snapshotPath: $snapshotPath,
             cleanupPaused: $cleanupPaused,
-            retryable: false,
+            retryable: $retryable,
             durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000),
             phases: $phases,
             errorCode: $errorCode,

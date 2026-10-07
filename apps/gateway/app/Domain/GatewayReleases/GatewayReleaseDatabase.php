@@ -26,6 +26,15 @@ interface GatewayReleaseDatabase
 
     public function migrate(string $releasePath): void;
 
+    /**
+     * Migration names the `migrations` table has recorded.
+     *
+     * @return list<string>
+     *
+     * @throws GatewayReleaseException
+     */
+    public function applied(): array;
+
     /** The bytes a snapshot of the database needs now, so prepare can keep room for it. */
     public function snapshotBytes(): int;
 

@@ -6,9 +6,9 @@ namespace App\Actions\GatewayReleases;
 
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
-use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
@@ -16,8 +16,8 @@ use App\Models\GatewayRelease;
 use Throwable;
 
 /**
- * Switches back to a retained release. It refuses when the current release ships a migration the
- * target does not, unless the caller passes force. Force does not migrate backwards; it names the
+ * Switches back to a retained release. It refuses when the database has applied a migration the
+ * target does not ship, unless the caller passes force. Force does not migrate backwards; it names the
  * newest snapshot and leaves the schema where it is. A refusal changes nothing and writes a failed
  * Activity entry; an attempt that switches is recorded like a deploy.
  */
@@ -26,9 +26,9 @@ final readonly class RollbackGatewayReleaseAction
     public function __construct(
         private GatewayReleaseLock $lock,
         private GatewayReleaseLayout $layout,
-        private GatewayReleaseDatabase $database,
         private GatewayReleasePromoter $promoter,
         private GatewayReleaseRecorder $recorder,
+        private GatewayReleaseGuard $guard,
     ) {}
 
     public function execute(string $release, bool $force = false): DeployedGatewayRelease
@@ -86,9 +86,8 @@ final readonly class RollbackGatewayReleaseAction
             );
         }
 
-        if ($current !== $id) {
-            $this->assertMigrations($current, $id, $force);
-        }
+        // The applied schema, not the current release's files: the database may be ahead of both.
+        $this->guard->assertSchema($id, $force);
 
         $snapshot = GatewayRelease::query()
             ->where('migrations_ran', true)
@@ -97,30 +96,5 @@ final readonly class RollbackGatewayReleaseAction
             ->value('snapshot_path');
 
         return [$id, $sha, is_string($snapshot) ? $snapshot : null];
-    }
-
-    private function assertMigrations(string $current, string $target, bool $force): void
-    {
-        $currentFiles = $this->database->migrations($this->layout->releasePath($current));
-        $targetFiles = $this->database->migrations($this->layout->releasePath($target));
-        $crossed = array_values(array_diff($currentFiles, $targetFiles));
-
-        if ($crossed === [] || $force) {
-            return;
-        }
-
-        $snapshot = GatewayRelease::query()
-            ->where('migrations_ran', true)
-            ->whereNotNull('snapshot_path')
-            ->latest('id')
-            ->value('snapshot_path');
-        $where = is_string($snapshot) ? " Restore [{$snapshot}] or pass --force to switch the code and leave the schema." : ' Pass --force to switch the code and leave the schema.';
-
-        throw new GatewayReleaseException(
-            step: 'rollback',
-            errorCode: 'gateway.release_migration_crossed',
-            message: 'Release ['.$target.'] does not contain '.$crossed[0].'.'.$where,
-            status: 409,
-        );
     }
 }

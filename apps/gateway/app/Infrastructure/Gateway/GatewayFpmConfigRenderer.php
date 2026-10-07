@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Gateway;
 
+/**
+ * The Gateway's PHP-FPM pool. `opcache.force_restart_timeout` is above `request_terminate_timeout`, so an OPcache
+ * reset after a release switch waits for running requests instead of killing a worker that serves one.
+ */
 final readonly class GatewayFpmConfigRenderer
 {
     public function renderPool(string $checkoutPath, string $orbitHome): string
@@ -30,6 +34,7 @@ final readonly class GatewayFpmConfigRenderer
             env[PATH] = /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
             php_admin_value[opcache.validate_timestamps] = 1
             php_admin_value[opcache.revalidate_freq] = 0
+            php_admin_value[opcache.force_restart_timeout] = 660
             php_admin_value[max_execution_time] = 600
             FPM.PHP_EOL;
     }

@@ -56,7 +56,7 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
         $snapshot = $database->snapshot('0123456789ab');
         $copy = new PDO('sqlite:'.$snapshot);
 
-        expect($snapshot)->toBe($this->scratch.'/home/backups/pre-0123456789ab.sqlite')
+        expect($snapshot)->toStartWith($this->scratch.'/home/backups/pre-0123456789ab-')
             ->and($copy->query('SELECT body FROM notes')->fetchColumn())->toBe('kept')
             ->and(fileperms($snapshot) & 0o777)->toBe(0o600)
             ->and(file_exists($snapshot.'.partial'))->toBeFalse()
@@ -87,7 +87,7 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
         $processes->exit = 1;
         $exception = release_failure(fn () => $database->migrate('/home/orbit/releases/0123456789ab'));
 
-        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--no-interaction']))
+        expect($processes->ran[0]->arguments)->toBe(ReleaseArtisan::command('/usr/bin/php8.5', '/home/orbit/releases/0123456789ab/apps/gateway/artisan', ['migrate', '--force', '--isolated', '--no-interaction']))
             ->and(array_slice($processes->ran[0]->arguments, 0, 2))->toBe(['env', '-i'])
             ->and($exception->step)->toBe('migrate')
             ->and($exception->errorCode)->toBe('gateway.release_migrate_failed');
@@ -105,16 +105,45 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
 
         $refused = release_failure(fn () => $short->snapshot('0123456789ab'));
 
-        foreach (['aaaaaaaaaaa1', 'aaaaaaaaaaa2', 'aaaaaaaaaaa3'] as $id) {
-            $roomy->snapshot($id);
-            touch($this->scratch.'/home/backups/pre-'.$id.'.sqlite', time() - 100 + (int) substr($id, -1));
+        $made = [];
+
+        foreach (['aaaaaaaaaaa1', 'aaaaaaaaaaa2', 'aaaaaaaaaaa3'] as $index => $id) {
+            touch($made[] = $roomy->snapshot($id), time() - 100 + $index);
         }
 
         expect($short->snapshotBytes())->toBe($size)
             ->and($refused->errorCode)->toBe('gateway.release_disk_low')
             ->and($refused->step)->toBe('snapshot')
-            ->and(file_exists($this->scratch.'/home/backups/pre-0123456789ab.sqlite'))->toBeFalse()
-            ->and(array_map(basename(...), glob($this->scratch.'/home/backups/pre-*.sqlite')))->toBe(['pre-aaaaaaaaaaa2.sqlite', 'pre-aaaaaaaaaaa3.sqlite']);
+            ->and(glob($this->scratch.'/home/backups/pre-0123456789ab-*'))->toBe([])
+            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toEqualCanonicalizing([$made[1], $made[2]]);
+
+        DB::purge('release_snapshot');
+    });
+
+    it('never overwrites an earlier snapshot of the same release and keeps the one a paused release names', function (): void {
+        $live = $this->scratch.'/live.sqlite';
+        touch($live);
+        config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => $live, 'prefix' => '', 'foreign_key_constraints' => true]]);
+        $connection = DB::connection('release_snapshot');
+        $connection->statement('PRAGMA journal_mode=WAL');
+        $connection->statement('CREATE TABLE notes (body TEXT)');
+        $connection->table('notes')->insert(['body' => 'clean']);
+        $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_snapshot', keptSnapshots: 1, minimumFreeBytes: 0);
+
+        $clean = $database->snapshot('0123456789ab');
+        file_put_contents($this->scratch.'/home/gateway-release.paused', json_encode(['release' => '0123456789ab', 'snapshot' => $clean]));
+        touch($clean, time() - 60);
+        // A half-applied migration, then a retry of the same release.
+        $connection->table('notes')->insert(['body' => 'half-migrated']);
+        $writer = new PDO('sqlite:'.$live);
+        $writer->exec("INSERT INTO notes (body) VALUES ('concurrent')");
+        $retry = $database->snapshot('0123456789ab');
+        $read = static fn (string $path): array => new PDO('sqlite:'.$path)->query('SELECT body FROM notes ORDER BY rowid')->fetchAll(PDO::FETCH_COLUMN);
+
+        expect($retry)->not->toBe($clean)
+            ->and($read($clean))->toBe(['clean'])
+            ->and($read($retry))->toBe(['clean', 'half-migrated', 'concurrent'])
+            ->and(glob($this->scratch.'/home/backups/pre-*.sqlite'))->toEqualCanonicalizing([$clean, $retry]);
 
         DB::purge('release_snapshot');
     });

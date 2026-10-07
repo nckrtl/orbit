@@ -42,11 +42,11 @@ final readonly class GatewayReleaseSwitcher
             return $previous;
         }
 
-        if (file_exists($current) && ! is_link($current)) {
+        if ((file_exists($current) && ! is_link($current)) || (is_link($current) && $previous === null)) {
             throw new GatewayReleaseException(
                 step: 'switch',
                 errorCode: 'gateway.release_not_adopted',
-                message: "[{$current}] is an in-place checkout. Run gateway:release:adopt before deploying a release.",
+                message: "[{$current}] is an in-place checkout or a link to something other than a release. Run gateway:release:adopt before deploying a release.",
             );
         }
 

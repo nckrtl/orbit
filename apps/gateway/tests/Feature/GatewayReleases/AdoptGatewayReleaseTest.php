@@ -11,6 +11,7 @@ use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
+use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Models\Activity;
@@ -200,6 +201,29 @@ describe('gateway:release:adopt', function (): void {
             ]);
     });
 
+    it('finishes an adoption that swapped but never verified when it runs again', function (): void {
+        adoption($this->fixture, $this->steps)->execute();
+        // The first run died between the swap and the end: no release verified the current release.
+        GatewayRelease::query()->delete();
+        $this->steps->steps = [];
+
+        $result = adoption($this->fixture, $this->steps)->execute();
+
+        expect($result)->toMatchArray(['already' => true, 'resumed' => true, 'release' => $this->id])
+            ->and($this->steps->steps)->toBe(['handoff:'.$this->id, 'verify:'.$this->sha, 'web:publish:'.$this->id, 'smoke:'.$this->id])
+            ->and(GatewayRelease::query()->sole()->outcome)->toBe('verified');
+    });
+
+    it('refuses a target that does not know a migration the database applied, before the swap', function (): void {
+        $this->steps->applied = ['2026_09_09_000000_hotfix'];
+
+        $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute());
+
+        expect($exception->errorCode)->toBe('gateway.release_migration_crossed')
+            ->and(is_link($this->current))->toBeFalse()
+            ->and(is_link($this->current.'/apps/gateway/.env'))->toBeFalse();
+    });
+
     it('refuses a commit that is not a hex SHA before it changes anything', function (): void {
         $exception = release_failure(fn () => adoption($this->fixture, $this->steps)->execute('main'));
 
@@ -219,6 +243,48 @@ describe('gateway:release:adopt', function (): void {
 function adoption(GatewayReleaseFixture $fixture, AdoptionSteps $steps, string $python = 'python3'): AdoptGatewayReleaseAction
 {
     $web = new AdoptionWebBuild($steps);
+    $database = new readonly class($steps, $fixture) implements GatewayReleaseDatabase
+    {
+        public function __construct(private AdoptionSteps $steps, private GatewayReleaseFixture $fixture) {}
+
+        public function pending(string $releasePath): array
+        {
+            return $this->steps->pending;
+        }
+
+        public function applied(): array
+        {
+            return $this->steps->applied;
+        }
+
+        public function snapshot(string $id): string
+        {
+            $this->steps->steps[] = 'snapshot:'.$id;
+
+            return '/var/tmp/orbit-pre-'.$id.'.sqlite';
+        }
+
+        public function migrate(string $releasePath): void
+        {
+            $this->steps->steps[] = 'migrate:'.basename($releasePath);
+            $current = $this->fixture->layout->currentPath();
+            $this->steps->servingDuringMigrate = $current.(is_link($current) ? ' linked' : ' in place');
+
+            if ($this->steps->failMigrate) {
+                throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'The release migrations failed.');
+            }
+        }
+
+        public function snapshotBytes(): int
+        {
+            return 0;
+        }
+
+        public function migrations(string $releasePath): array
+        {
+            return [];
+        }
+    };
 
     return new AdoptGatewayReleaseAction(
         new GatewayReleaseLock($fixture->base.'/home/gateway-release.lock'),
@@ -254,43 +320,7 @@ function adoption(GatewayReleaseFixture $fixture, AdoptionSteps $steps, string $
                 }
             },
             recorder: new GatewayReleaseRecorder($fixture->base.'/home'),
-            database: new readonly class($steps, $fixture) implements GatewayReleaseDatabase
-            {
-                public function __construct(private AdoptionSteps $steps, private GatewayReleaseFixture $fixture) {}
-
-                public function pending(string $releasePath): array
-                {
-                    return $this->steps->pending;
-                }
-
-                public function snapshot(string $id): string
-                {
-                    $this->steps->steps[] = 'snapshot:'.$id;
-
-                    return '/var/tmp/orbit-pre-'.$id.'.sqlite';
-                }
-
-                public function migrate(string $releasePath): void
-                {
-                    $this->steps->steps[] = 'migrate:'.basename($releasePath);
-                    $current = $this->fixture->layout->currentPath();
-                    $this->steps->servingDuringMigrate = $current.(is_link($current) ? ' linked' : ' in place');
-
-                    if ($this->steps->failMigrate) {
-                        throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'The release migrations failed.');
-                    }
-                }
-
-                public function snapshotBytes(): int
-                {
-                    return 0;
-                }
-
-                public function migrations(string $releasePath): array
-                {
-                    return [];
-                }
-            },
+            database: $database,
             web: $web,
             smoke: new readonly class($steps) implements GatewayReleaseSmoke
             {
@@ -307,6 +337,7 @@ function adoption(GatewayReleaseFixture $fixture, AdoptionSteps $steps, string $
                     return ['outcome' => 'passed', 'output' => '{}'];
                 }
             },
+            guard: new GatewayReleaseGuard($fixture->layout, $database, $fixture),
             clock: static fn (): string => '20261007T120000Z',
         ),
     );
@@ -319,6 +350,9 @@ final class AdoptionSteps
 
     /** @var list<string> */
     public array $pending = [];
+
+    /** @var list<string> */
+    public array $applied = [];
 
     public bool $failVerify = false;
 

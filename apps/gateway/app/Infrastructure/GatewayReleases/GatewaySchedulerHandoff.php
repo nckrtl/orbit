@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Process;
 use Closure;
 use Illuminate\Contracts\Cache\LockTimeoutException;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Cache;
 
@@ -71,51 +72,105 @@ final readonly class GatewaySchedulerHandoff
         $this->members = $members ?? $this->unitMembers(...);
     }
 
-    /** The Process that runs the Gateway scheduler, or null when this Gateway has none. */
-    public function process(Node $gateway): ?Process
+    /**
+     * The Process that runs the Gateway scheduler. Every Gateway runs one ([Tasks](/reference/tasks)), so a missing one,
+     * or one outside the Gateway application path, fails the release instead of leaving the old code scheduling.
+     *
+     * @throws GatewayReleaseException
+     */
+    public function process(Node $gateway): Process
     {
         $application = rtrim($this->applicationPath, '/');
+        $schedulers = $this->systemdProcesses($gateway)->filter(static function (Process $process): bool {
+            $command = $process->runtime_config['command'] ?? null;
 
-        return Process::query()
-            ->whereMorphedTo('owner', $gateway)
-            ->orderBy('id')
-            ->get()
-            ->first(static function (Process $process) use ($application): bool {
-                $command = $process->runtime_config['command'] ?? null;
+            return is_array($command) && in_array('schedule:work', $command, true);
+        });
+        $scheduler = $schedulers->first(static fn (Process $process): bool => rtrim($process->working_directory, '/') === $application);
 
-                return $process->runtime === ProcessRuntime::Systemd
-                    && rtrim($process->working_directory, '/') === $application
-                    && is_array($command)
-                    && in_array('schedule:work', $command, true);
-            });
+        if ($scheduler instanceof Process) {
+            return $scheduler;
+        }
+
+        $found = $schedulers->first();
+
+        throw new GatewayReleaseException(
+            step: 'handoff',
+            errorCode: $found instanceof Process ? 'gateway.release_scheduler_mismatch' : 'gateway.release_scheduler_missing',
+            message: $found instanceof Process
+                ? "The Gateway scheduler Process [{$found->name}] runs in [{$found->working_directory}], not in [{$application}], so it would keep the old code."
+                : 'The Gateway Node has no systemd Process that runs schedule:work. Create it in the Gateway application directory before releasing.',
+            status: 500,
+        );
     }
 
     /**
-     * @return array{outcome: string, unit: string|null, drain?: array{outcome: string, waited_ms: int, running: list<string>, stopped?: list<string>}}
+     * @return array{outcome: string, unit: string, drain: array{outcome: string, waited_ms: int, running: list<string>, stopped?: list<string>}, restarted: list<string>}
      *
      * @throws GatewayReleaseException
      */
     public function handoff(Node $gateway): array
     {
         $process = $this->process($gateway);
-        $name = $process instanceof Process ? AgentProcessView::unitName($process) : null;
+        $unit = AgentProcessView::unitName($process).'.service';
+        $started = false;
 
-        if ($name === null) {
-            return ['outcome' => 'not_found', 'unit' => null];
+        try {
+            Artisan::call('schedule:interrupt');
+            $drain = $this->drain($unit);
+
+            if ($drain['outcome'] === 'forced') {
+                $this->forceRestart($unit);
+            } else {
+                $this->systemctl('start', $unit);
+                $this->waitActive($unit);
+            }
+
+            $started = true;
+        } finally {
+            if (! $started) {
+                // Whatever failed, the scheduler must not stay down. On an active unit this changes nothing.
+                $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', 'start', $unit], timeout: 60.0));
+            }
         }
 
-        $unit = $name.'.service';
-        Artisan::call('schedule:interrupt');
-        $drain = $this->drain($unit);
+        return ['outcome' => 'restarted', 'unit' => $unit, 'drain' => $drain, 'restarted' => $this->restartOthers($gateway, $process)];
+    }
 
-        if ($drain['outcome'] === 'forced') {
-            $this->forceRestart($unit);
-        } else {
-            $this->systemctl('start', $unit);
-            $this->waitActive($unit);
+    /**
+     * Other Gateway Node Processes that run from the Gateway application keep the old release until they restart.
+     *
+     * @return list<string> the restarted units
+     */
+    private function restartOthers(Node $gateway, Process $scheduler): array
+    {
+        $current = dirname(rtrim($this->applicationPath, '/'), 2);
+        $restarted = [];
+
+        foreach ($this->systemdProcesses($gateway) as $process) {
+            $directory = rtrim($process->working_directory, '/');
+
+            if ($process->is($scheduler) || ($directory !== $current && ! str_starts_with($directory, $current.'/'))) {
+                continue;
+            }
+
+            $unit = AgentProcessView::unitName($process).'.service';
+            $this->systemctl('try-restart', $unit);
+            $restarted[] = $unit;
         }
 
-        return ['outcome' => 'restarted', 'unit' => $unit, 'drain' => $drain];
+        return $restarted;
+    }
+
+    /** @return Collection<int, Process> */
+    private function systemdProcesses(Node $gateway): Collection
+    {
+        return Process::query()
+            ->whereMorphedTo('owner', $gateway)
+            ->orderBy('id')
+            ->get()
+            ->filter(static fn (Process $process): bool => $process->runtime === ProcessRuntime::Systemd)
+            ->values();
     }
 
     /**
@@ -242,7 +297,7 @@ final readonly class GatewaySchedulerHandoff
 
     private function systemctl(string $verb, string $unit): void
     {
-        $result = $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', $verb, $unit], timeout: 120.0));
+        $result = $this->processes->run(new ProcessInvocation(['sudo', 'systemctl', $verb, $unit], timeout: $verb === 'stop' ? 120.0 : 60.0));
 
         if (! $result->succeeded()) {
             throw new GatewayReleaseException(

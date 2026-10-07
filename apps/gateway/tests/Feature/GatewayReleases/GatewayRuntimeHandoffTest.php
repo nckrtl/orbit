@@ -161,6 +161,9 @@ final class SchedulerDrainProbe
     public int $cleared = 0;
 
     /** @var list<string> */
+    public array $opcacheScripts = [];
+
+    /** @var list<string> */
     public array $members = ['/usr/bin/php8.5 artisan schedule:work', "sh -c '/usr/bin/php8.5' 'artisan' orbit:deploy-development-defaults > '/dev/null' 2>&1"];
 }
 
@@ -205,6 +208,11 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5): array
             applicationPath: HANDOFF_APP,
             orbitHome: $orbitHome,
             readLivePool: static fn (): string => $livePool ?? $rendered,
+            resetOpcache: static function (string $script) use ($probe): string {
+                $probe->opcacheScripts[] = $script;
+
+                return '{"reset":true}';
+            },
         ),
         $processes,
         $cleanup,
@@ -295,8 +303,23 @@ describe('gateway:release:handoff', function (): void {
             ]);
     });
 
+    it('resets the pool OPcache with the release script, only when the live pool lets running requests finish first', function (): void {
+        handoff_scheduler(handoff_gateway());
+        [$handoff, , , , , $probe] = runtime_handoff();
+
+        $reset = $handoff->run();
+        [$oldPool, , , , , $oldProbe] = runtime_handoff(livePool: "[orbit-gateway]\nchdir = /old\n");
+        $old = $oldPool->run();
+
+        expect($reset['opcache'])->toBe('reset')
+            ->and($probe->opcacheScripts)->toBe([HANDOFF_APP.'/resources/fpm/opcache-reset.php'])
+            // The pool on disk predates the safe restart timeout until the reload this handoff did is in effect.
+            ->and($old['opcache'])->toBe('skipped')
+            ->and($oldProbe->opcacheScripts)->toBe([]);
+    });
+
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {
-        handoff_gateway();
+        handoff_scheduler(handoff_gateway());
         [$handoff, $processes] = runtime_handoff(livePool: "[orbit-gateway]\nchdir = /old\n");
 
         $result = $handoff->run();
@@ -307,18 +330,44 @@ describe('gateway:release:handoff', function (): void {
             ->and(array_values(array_filter($commands, static fn (string $command): bool => str_contains($command, 'php-fpm8.5 --test'))))->toHaveCount(1);
     });
 
-    it('reports a Gateway without a scheduler Process and does not restart anything for it', function (): void {
+    it('fails when the Gateway scheduler Process is missing, or runs outside the Gateway application path', function (): void {
         $gateway = handoff_gateway();
+        [$handoff, $processes] = runtime_handoff();
+
+        $missing = release_failure(fn () => $handoff->run());
         handoff_scheduler($gateway, directory: '/srv/other');
-        [$handoff, $processes, $cleanup] = runtime_handoff();
+        $mismatch = release_failure(fn () => $handoff->run());
+
+        expect($missing->errorCode)->toBe('gateway.release_scheduler_missing')
+            ->and($mismatch->errorCode)->toBe('gateway.release_scheduler_mismatch')
+            ->and($mismatch->getMessage())->toContain('/srv/other')
+            ->and(array_filter($processes->systemctl(), static fn (string $command): bool => str_contains($command, 'orbit-process-')))->toBe([]);
+    });
+
+    it('restarts other Gateway Node Processes that run from the Gateway application', function (): void {
+        $gateway = handoff_gateway();
+        $scheduler = handoff_scheduler($gateway);
+        $worker = handoff_scheduler($gateway, directory: '/home/orbit/orbit/apps/cli', name: 'cli-worker');
+        $worker->update(['runtime_config' => ['command' => ['/usr/bin/php8.5', 'orbit', 'watch'], 'environment_file' => '']]);
+        handoff_scheduler($gateway, directory: '/srv/elsewhere', name: 'unrelated')->update(['runtime_config' => ['command' => ['sleep', 'infinity'], 'environment_file' => '']]);
+        [$handoff, $processes] = runtime_handoff();
 
         $result = $handoff->run();
 
-        expect($result['scheduler'])->toBe('not_found')
-            ->and($result['scheduler_unit'])->toBeNull()
-            ->and($result['cleanup'])->toBe('running')
-            ->and($processes->systemctl())->toBe([])
-            ->and($cleanup->calls)->not->toContain('reconcile');
+        expect($result['processes_restarted'])->toBe(["orbit-process-{$worker->id}-cli-worker.service"])
+            ->and($processes->systemctl())->toContain("sudo systemctl try-restart orbit-process-{$worker->id}-cli-worker.service")
+            ->and($result['scheduler_unit'])->toBe("orbit-process-{$scheduler->id}-schedule-work.service");
+    });
+
+    it('starts the scheduler again when the forced stop fails', function (): void {
+        $scheduler = handoff_scheduler(handoff_gateway());
+        [$handoff, $processes] = runtime_handoff(drainSeconds: 0);
+        $processes->mainPids = ['4242'];
+        $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
+        $processes->results['sudo systemctl stop'] = new CommandResult(1, '', 'stop failed', 1, false);
+
+        expect(release_failure(fn () => $handoff->run())->errorCode)->toBe('gateway.release_scheduler_failed')
+            ->and(array_slice($processes->systemctl(), -1))->toBe(["sudo systemctl start {$unit}"]);
     });
 
     it('refuses to stop the scheduler after the drain limit while a tasks tick holds its lock', function (): void {
