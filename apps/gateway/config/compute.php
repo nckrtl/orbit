@@ -15,6 +15,10 @@ return [
         'hosts' => json_decode((string) env('ORBIT_INCUS_HOSTS', '[]'), true),
     ],
     'upcloud' => [
+        'enrollment_enabled' => (bool) env('ORBIT_UPCLOUD_ENROLLMENT_ENABLED', false),
+        'dev_cluster_id' => (int) env('ORBIT_UPCLOUD_DEV_CLUSTER_ID', 0),
+        'model_address' => env('ORBIT_UPCLOUD_MODEL_ADDRESS'),
+        'model_port' => (int) env('ORBIT_UPCLOUD_MODEL_PORT', 8317),
         'enabled' => (bool) env('ORBIT_UPCLOUD_ENABLED', false),
         'token_file' => env('ORBIT_UPCLOUD_TOKEN_FILE'),
         'max_vms' => max(0, (int) env('ORBIT_UPCLOUD_MAX_VMS', 0)),

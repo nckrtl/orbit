@@ -1197,6 +1197,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Cluster",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -1351,6 +1352,7 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "Cluster",
                 "Deployment",
                 "Doctor",
                 "Gateway",

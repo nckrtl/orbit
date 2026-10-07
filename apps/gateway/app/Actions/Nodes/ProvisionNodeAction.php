@@ -49,10 +49,12 @@ use App\Domain\Tools\ToolManagerName;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Domain\WireGuard\WireGuardEndpoint;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Ssh\SshHostKeyScanException;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\TaskSandbox;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -77,6 +79,7 @@ final readonly class ProvisionNodeAction
         private ManagedUserAccountResolver $accounts,
         private ActiveTldScopeGuard $tldScope,
         private EnrollMacOsNodeAction $macNodes,
+        private SandboxFleetIdentity $sandboxIdentity,
         private ?RouteMutationReconciler $routes = null,
         private ?ConvergeRouteAction $convergeRoute = null,
         private ?RouterLanIngressReconciler $lanIngress = null,
@@ -87,10 +90,40 @@ final readonly class ProvisionNodeAction
     public function execute(ProvisionNodeData $data): Node
     {
         try {
-            return $this->provisioningLock->run($data->name, fn (): Node => $this->provision($data));
+            return $this->provisioningLock->run($data->name, function () use ($data): Node {
+                if (Node::query()->where('name', $data->name)->whereNotNull('compute_sandbox_id')->exists()) {
+                    throw new ResourceOperationException('node.sandbox_managed', 'Manage sandbox Node provisioning through its reservation.', 409);
+                }
+
+                return $this->provision($data);
+            });
         } catch (NodeProvisioningLockException $exception) {
             throw $exception->toBusyException();
         }
+    }
+
+    public function executeSandbox(ProvisionNodeData $data, TaskSandbox $sandbox): Node
+    {
+        return $this->provisioningLock->run($data->name, function () use ($data, $sandbox): Node {
+            $sandbox->refresh();
+            $node = Node::query()->findOrFail($sandbox->node_id);
+            $this->sandboxIdentity->assertActive($sandbox);
+            $this->sandboxIdentity->assertOwned($sandbox, $node);
+            if ($data->name !== $node->name || $data->publicSshHost !== $node->public_ssh_host
+                || $data->roles !== [RoleName::AppDev] || $data->user !== 'orbit' || $data->orbitUser !== 'orbit'
+                || $data->wireguardIp !== $node->wireguard_ip || $data->clusterId !== $node->cluster_id
+                || $data->expectedSshHostFingerprint !== $node->ssh_host_fingerprint
+                || $data->platform !== 'linux' || $data->architecture !== 'x86_64' || $data->publicSshPort !== 22
+                || $data->settingsProvided || $data->tldProvided || $data->lanIpProvided
+                || $data->settings !== null || $data->tld !== null || $data->lanIp !== null
+                || $data->wireguardEndpointOverride !== null || $data->dnsServerOverride !== null
+                || ! isset($sandbox->enrollment['hub_confirmed_at'])
+                || $sandbox->network_policy !== 'sealed') {
+                throw new ResourceOperationException('node.sandbox_managed', 'The sandbox Node provisioning intent changed.', 409);
+            }
+
+            return $this->provision($data);
+        });
     }
 
     private function announceCreated(Node $node): Node

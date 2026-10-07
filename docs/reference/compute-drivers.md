@@ -9,6 +9,7 @@ covers:
   - apps/gateway/config/compute.php
   - apps/gateway/resources/compute/**
   - apps/gateway/database/migrations/*create_task_sandboxes_table.php
+  - apps/gateway/database/migrations/*add_fleet_enrollment_to_task_sandboxes.php
 ---
 
 # Compute drivers
@@ -50,6 +51,24 @@ Set these values in the Gateway environment before provisioning a sandbox.
 Changing a setting applies to new reservations. Existing reservations keep their recorded network and image. Disabling new provisioning does not disable observation or cleanup.
 
 ## Observe, park, resume, and destroy
+
+### Enroll an owned project VM
+
+`EnrollUpCloudSandboxAction` is an internal, separately gated enrollment step. It does not enable scheduler claims or start an agent. Set `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT` to prepare project-lane enrollment. The selected development Cluster must have an active router. The Gateway and WireGuard hub must have active role assignments. The model address must be a WireGuard IPv4 address; it is not a subscription credential.
+
+Before any remote enrollment mutation, the action reserves a Node and records both sides of its sandbox ownership in one database transaction. The reservation retains its cluster, hub, Gateway, router, model endpoint, and WireGuard address. Retries use that identity, refuse changed endpoints or foreign Node ownership, and never adopt an existing Node merely because its name matches. Generic Node provisioning refuses these owned Nodes.
+
+The Gateway verifies the provider server and disk, then pins the newly assigned public address's first SSH host key. This initial key scan is trust on first use over the provider-owned address; it is not a provider-signed key attestation. Later key changes are refused. The action checks that cloud-init has finished successfully and that no `orbit-worker` account exists, then seals provider metadata access.
+
+Before publishing the sandbox's WireGuard peer, the Gateway installs an owned nftables policy on the hub. Rules run before the hub's normal forwarding accept rules. Only DNS on the hub, the Gateway API, the recorded model endpoint, and control/preview connections from the Gateway and dev router are permitted. Other tunnel traffic is dropped, including fleet, LAN, metadata, and other task destinations. Public HTTP(S) and DNS still use the VM's provider network. The sandbox has no outgoing Node access grants.
+
+The hub policy has a separate owned table and protected files per reservation. Repeating the same policy verifies it; changed intent, foreign files, or rule drift refuse mutation. A systemd dependency loads the policy before the WireGuard interface at boot. A failure retains the Node and reservation for recovery and prevents enrollment from being reported complete. The hub needs nftables, Python 3, systemd, and root network-namespace support for validation. Enrollment never installs packages on the shared hub.
+
+The recorded helper source is immutable for that reservation; an upgrade that changes it requires draining the reservation or an explicit migration. The fixed preview ports are 80, 443, and 5173; other preview listeners remain blocked.
+
+The managed `orbit` user performs enrollment. This step provisions the native Node and its `app-dev` role, without Pi, model keys, GitHub access, or project source. Pi/runtime preparation, workspace creation, task claim admission, and cloud reconstruction remain later steps. Cleanup must remove the owned fleet peer before removing its hub policy or provider resources.
+
+The packet regression fixture runs in disposable network namespaces on Linux: `sudo -n unshare --net python3 tests/Fixtures/Compute/sandbox_hub_network_test.py resources/compute/sandbox-hub-network.py --packets` from `apps/gateway`. It tests real nftables traffic, drift refusal, retries, and file ownership. It mocks systemd operations and does not prove boot ordering. Incus boot and deployed fleet acceptance remain rollout checks.
 
 Each call makes a bounded set of provider requests. No call waits in a sleep loop for boot or shutdown. Call `observe` again to see the next provider state. `running` means the provider reports the server started and the firewall matches the recorded bootstrap or sealed policy; SSH, cloud-init, Pi, and Instance readiness are separate checks.
 

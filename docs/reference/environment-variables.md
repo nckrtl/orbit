@@ -20,7 +20,7 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 `ORBIT_INCUS_ENABLED` and `ORBIT_INCUS_HOSTS` configure [local sandbox placement](/reference/compute-drivers#configure-local-placement). They default to disabled with no hosts.
 
-`ORBIT_UPCLOUD_ENABLED`, `ORBIT_UPCLOUD_TOKEN_FILE`, `ORBIT_UPCLOUD_MAX_VMS`, `ORBIT_UPCLOUD_ZONE`, `ORBIT_UPCLOUD_GATEWAY_ADDRESS`, `ORBIT_UPCLOUD_WIREGUARD_ADDRESS`, and `ORBIT_UPCLOUD_WIREGUARD_PORT` configure the Gateway's [compute driver](/reference/compute-drivers#gateway-configuration). They are not Instance keys. The provider token stays in its protected file on the Gateway.
+`ORBIT_UPCLOUD_ENABLED`, `ORBIT_UPCLOUD_TOKEN_FILE`, `ORBIT_UPCLOUD_MAX_VMS`, `ORBIT_UPCLOUD_ZONE`, `ORBIT_UPCLOUD_GATEWAY_ADDRESS`, `ORBIT_UPCLOUD_WIREGUARD_ADDRESS`, and `ORBIT_UPCLOUD_WIREGUARD_PORT` configure the Gateway's [compute driver](/reference/compute-drivers#gateway-configuration). They are not Instance keys. The provider token stays in its protected file on the Gateway. `ORBIT_UPCLOUD_ENROLLMENT_ENABLED`, `ORBIT_UPCLOUD_DEV_CLUSTER_ID`, `ORBIT_UPCLOUD_MODEL_ADDRESS`, and `ORBIT_UPCLOUD_MODEL_PORT` configure the separately gated [owned project VM enrollment](/reference/compute-drivers#enroll-an-owned-project-vm). Enrollment stays disabled by default.
 
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 

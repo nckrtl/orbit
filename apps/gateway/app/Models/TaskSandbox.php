@@ -36,6 +36,8 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $parked_at
  * @property Carbon|null $resume_requested_at
  * @property bool $preview
+ * @property array<string, mixed>|null $enrollment
+ * @property Carbon|null $enrolled_at
  */
 final class TaskSandbox extends Model
 {
@@ -66,6 +68,7 @@ final class TaskSandbox extends Model
             'model_key_registered_at' => 'datetime', 'model_key_revoked_at' => 'datetime',
             'create_attempted_at' => 'datetime', 'firewall_configured_at' => 'datetime', 'destroyed_at' => 'datetime',
             'review_started_at' => 'datetime', 'parked_at' => 'datetime', 'preview' => 'boolean', 'resume_requested_at' => 'datetime',
+            'enrollment' => 'array', 'enrolled_at' => 'datetime',
         ];
     }
 
