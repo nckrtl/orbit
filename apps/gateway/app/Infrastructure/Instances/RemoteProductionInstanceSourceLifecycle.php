@@ -9,6 +9,7 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\DevelopmentSourceResolution;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Projects\ProjectType;
@@ -28,6 +29,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function prepareUser(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         [$user, $home] = $this->identity($instance);
         $this->ssh->execute(
@@ -70,6 +72,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function prepareSource(Instance $instance, bool $allowExisting): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), <<<'BASH'
@@ -190,6 +193,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function resolve(Instance $instance): DevelopmentSourceResolution
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $branch = $instance->branch_override
@@ -273,6 +277,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function inspectProfile(Instance $instance): DevelopmentSourceProfile
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $root = $instance->root ?? $instance->project->root;
@@ -344,6 +349,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function prepareCaddyAccess(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $root = $instance->root ?? $instance->project->root;
@@ -435,11 +441,13 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function validateCurrent(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->releaseLayout($instance, false);
     }
 
     public function clearCurrent(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->releaseLayout($instance, true);
     }
 

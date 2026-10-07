@@ -14,6 +14,7 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\ProjectDoctorIssueCode;
 use App\Domain\Doctor\ProjectStateInspector;
 use App\Domain\Instances\InstanceProvisionProgress;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Tasks\TaskWorkspaceLifecycle;
 use App\Models\Instance;
@@ -121,7 +122,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
     {
         $query = Instance::query()
             ->with(['project', 'tasks'])
-            ->where('node_id', $nodeId)
+            ->whereNull('task_sandbox_id')->where('node_id', $nodeId)
             ->where('status', '!=', InstanceState::Removing);
         if ($projectId !== null) {
             $query->where('project_id', $projectId);
@@ -141,7 +142,7 @@ final readonly class ProjectDoctorProbe implements DoctorFamilyProbe
     {
         $settled = TaskWorkspaceLifecycle::settledState($instance);
 
-        return ! InstanceProvisionProgress::isInFlight($instance, $settled);
+        return ! InstanceSandboxGuard::isSandbox($instance) && ! InstanceProvisionProgress::isInFlight($instance, $settled);
     }
 
     private function hasCheckoutsOutsideRemoval(Project $project, int $nodeId): bool

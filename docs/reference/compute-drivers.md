@@ -189,3 +189,7 @@ Sandbox MCP files are installed through the guest transport. For Orbit they name
 ### Prepare source inside the guest
 
 `SandboxWorkspaceSource` initializes a blank checkout with a sandbox ownership marker, imports remote refs through the trusted bundle broker, and creates the task branch from its published branch or the Project default. No clone runs in the guest. Retrying a prepared checkout preserves local commits and uncommitted files. A foreign directory, changed origin, or changed checkout branch fails without replacing its contents. This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
+
+### Keep guest paths off the host
+
+Generic Instance operations refuse sandbox workspaces with `instance.sandbox_managed`. This includes source preparation, deployment, removal, setup, dependency commands, logs, environment operations, and host runtime projection. A missing reservation on a VM task also refuses the operation. Manage sandbox workspaces through their task group and the compute driver. Task checks, receipts, source preparation, and publication use the sandbox transports described above. Physical host doctor reports exclude sandbox workspaces; their guest paths do not describe host drift.
