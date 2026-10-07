@@ -9,9 +9,11 @@ on:
 permissions:
   contents: read
 
+# A pull request keeps only its newest run. Each main commit gets its own group, so a newer push neither
+# cancels a running main run nor replaces a pending one, and every main commit gets a complete result.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   project:

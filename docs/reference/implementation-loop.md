@@ -76,13 +76,15 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | API reference | `bin/docs-openapi --check` and `bin/mcp-tools --check` |
-| Web | Generated API types, formatting, lint, types, tests, and build |
+| Web | Generated API types, formatting, lint, types, tests, and build. |
 | Pi server | Formatting, lint, types, tests, and build |
 | Agent annotation | Formatting, lint, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
 | Required checks | Passes only when every other job passes |
 
 On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest` and `ComposerConfigurationTest`, because TIA does not link a workflow file to the tests that read it. On a push to `main` or a manual dispatch, it runs the full suite once with `--tia --fresh`, which also records a new TIA graph, and saves that graph to the cache.
+
+A new push to a pull request cancels that pull request's older run. A push to `main` never cancels or replaces another run. Each `main` commit has its own concurrency group, so every `main` commit gets a complete `Required checks` result, even when several merges land close together. A shared `main` group would not be enough: GitHub keeps one pending run per group and cancels the older pending run when a newer one queues. Automatic Gateway releases, proposed in ADR 0201, deploy the newest `main` commit with a successful result, so a run must not disappear because a later merge followed it.
 
 On `main`, GitHub enforces three rules. The branch cannot be deleted, and it accepts no force pushes, with no bypass. A change to `main` also needs a passing `Required checks` status from GitHub Actions. The branch does not have to be up to date first, so the merge rules in [Merge and cleanup](#merge-and-cleanup) still check the merged result. GitHub requires no review.
 

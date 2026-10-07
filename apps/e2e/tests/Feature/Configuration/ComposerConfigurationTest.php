@@ -399,6 +399,16 @@ it('keeps privileged tests required in CI on trusted and fork branches', functio
     expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
 });
 
+it('lets every main push finish CI while a pull request keeps only its newest run', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+
+    // A shared main group would still replace a pending main run, so each main commit needs its own group.
+    expect($workflow['concurrency'])->toBe([
+        'group' => "ci-\${{ github.workflow }}-\${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
+        'cancel-in-progress' => "\${{ github.event_name == 'pull_request' }}",
+    ]);
+});
+
 it('excludes privileged feedback through configuration while retaining TIA and ignores feedback in CI', function (bool $ci): void {
     $directory = temporaryPath('orbit-feedback-', 6);
     mkdir($directory);
