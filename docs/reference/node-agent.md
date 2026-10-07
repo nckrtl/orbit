@@ -398,7 +398,8 @@ The agent has these limits.
 - The agent reports presence, Process state, and task checkout Git state, and tails logs only for live log streams.
 - One-shot log reads, task reads that gate an action, the Horizon queue, and `ufw status` run over SSH.
 - The agent does not report CPU or memory. The Gateway pushes them from Prometheus as [Process usage](#process-usage).
-- The agent supports Linux on `x86_64` and `aarch64` only.
+- The agent supports Linux on `x86_64` and `aarch64` only. There is no macOS agent.
+- The agent cannot trigger `orbit self-update`. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs it over SSH.
 
 ## Why it works this way
 
@@ -407,6 +408,8 @@ These reasons explain the design. Check them before you propose a change.
 ### The agent only observes
 
 An agent that also runs commands would be a second way to change a Node, with its own authorization, listener, and recovery, while SSH would still be needed when the agent breaks. So the agent listens on no port, runs nothing on anyone's behalf, and SSH stays the only way to change a Node. A compromised Gateway gains no new way into a Node, and a compromised Node can only report false state about itself.
+
+The same boundary keeps updates out of the agent. An agent that pulls and applies updates would make a compromised Gateway, Reverb secret, or release key a root code-execution path to every Node. It would need offline signing and a privileged updater first, and it would still not cover Macs, which have no agent. So the Gateway runs [`orbit self-update`](/reference/self-update) on each Node over SSH. A self-update that an agent signal triggers stays possible, but it needs its own decision, with signed manifests and a narrow privileged trigger.
 
 ### Rust
 

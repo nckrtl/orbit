@@ -76,7 +76,7 @@ The archive contains secrets. Do not attach it to a bug report or commit it to G
 
 ## Release layout
 
-A Gateway in the release layout runs from immutable releases instead of an in-place checkout ([ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main)). Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
+A Gateway in the release layout runs from immutable releases instead of an in-place checkout. Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
 
 | Path | Content |
 | --- | --- |
@@ -384,7 +384,7 @@ It caches the current release's configuration beside the live cache and renames 
 
 ## Automatic releases
 
-The Gateway can release itself from its own branch ([ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main)). Automatic releases are disabled by default. An operator turns them on after [adoption](#release-layout) and a first release by hand.
+The Gateway can release itself from its own branch. A timer looks for a new commit that passed CI's `Required checks` every minute, and the release goes live without a maintenance window. Automatic releases are disabled by default. An operator turns them on after [adoption](#release-layout) and a first release by hand. The operator also decides what happens after a [pause](#pause).
 
 ```bash
 orbit gateway:release:auto:enable
@@ -660,7 +660,7 @@ The body serves two kinds of receivers. A receiver that verifies the signature r
 
 ## Fleet rollout
 
-After each verified Gateway release, the Gateway brings every managed workload Node to the same release, one Node at a time ([ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update)). A fleet failure never rolls the Gateway back. [`fleet`](/cli/fleet) shows and resumes the rollout.
+After each verified Gateway release, the Gateway brings every managed workload Node to the same release, one Node at a time. Each Node runs [`orbit self-update`](/reference/self-update), the same command an operator runs on a Mac. A fleet failure never rolls the Gateway back. [`fleet`](/cli/fleet) shows and resumes the rollout.
 
 ### Turn it on
 
@@ -709,7 +709,7 @@ The order goes lowest risk first. Each role has a group. A Node with several rol
 | 3 | `database`, `websocket`, `vpn`, `router` |
 | 4 | `app-prod`, `ingress` |
 
-The ADR also names `agent` (group 1) and `s3` (group 2). Orbit has no such roles yet, and the groups are ready for them.
+Orbit has no `agent` or `s3` role yet. The order already places `agent` in group 1 and `s3` in group 2.
 
 ### Desired state
 
@@ -791,7 +791,73 @@ So a Node that was offline is converged within 5 minutes after it returns.
 
 Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. `observed` says why: `no rollout yet`, `not in the rollout`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a run already resolved; it never asks Git or GitHub.
 
-### Why it works this way
+## Limits
 
-A failed Node halts the rollout, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. An unreachable Node changed nothing, so it does not halt the fleet; the catch-up converges it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release that adds the units does not reach Nodes before an operator prepared them.
+Automatic releases and the fleet rollout have these limits.
 
+### Release limits
+
+A release that fails after its migrations ran pauses automatic releases until an operator acts. A release never switches back over a migration, because migrations follow no compatibility policy, such as expand and contract. Orbit cannot prove that older code runs on a migrated schema.
+
+Pre-migration snapshots stay on the Gateway host, in `ORBIT_HOME/backups`. Orbit does not copy them off the host. Keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
+
+The release steps up to the switch run the code of the release that was current. A change to those steps takes effect from the release after the one that ships it.
+
+### Rollout limits
+
+The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order). An operator updates an operator machine or a macOS Node with `orbit self-update`, and the CLI [tells the operator](/reference/self-update#the-newer-release-notice) about a newer release.
+
+The rollout visits one Node at a time, so it takes longer as the fleet grows. A halted rollout blocks every later rollout until an operator resumes it.
+
+The Gateway pushes the rendered footprint over SSH. `orbit self-update` replaces only the CLI and the agent. Caddy, cAdvisor, the FPM exporter, Prometheus, Grafana, Plausible, and Reverb keep their own update paths.
+
+### Not built
+
+Each of these needs its own decision:
+
+- copies of the pre-migration snapshots off the Gateway host;
+- an expand and contract policy for Gateway migrations;
+- `orbit self-update` that applies the rendered footprint on the Node, so the Gateway stops pushing configuration over SSH;
+- automatic updates on operator Macs;
+- a macOS Node agent;
+- a self-update that an agent signal triggers instead of SSH ([The agent only observes](/reference/node-agent#the-agent-only-observes)).
+
+## Why it works this way
+
+These reasons explain the design. Check them before you propose a change.
+
+### The Gateway pulls from GitHub
+
+The Gateway is private, so GitHub cannot reach it, and the GitHub App has [no webhooks](/reference/github-app#no-webhooks). A CI job that pushes to a deploy endpoint with a GitHub OIDC identity was rejected: it needs a new trusted path into the Gateway and new credential handling, and an earlier attempt stalled on exactly that.
+
+A CI deploy job that connects to the Gateway over SSH was rejected too: the CI runners are kept off the Gateway on purpose, so CI jobs cannot reach the control plane ([Self-hosted Gateway runner](/reference/implementation-loop#self-hosted-gateway-runner)). Pulling through the existing GitHub App adds no network path, credential, or Node grant.
+
+### Code decides what ships
+
+Whether a commit passed its checks, and whether a release serves, are deterministic questions. `Required checks`, verify, and smoke answer them, not an agent's judgment. A deploy bot was planned for this duty and rejected for that reason. Judgment is needed only after a pause, and the operator gives it. Every step is a `gateway:release:*` command that an agent can run and a person can read.
+
+### Immutable releases behind one link
+
+An update in place serves a half-changed tree while `git checkout` and `composer install` run, because the Gateway's PHP-FPM pool checks every script for changes on each request. It also needs a maintenance window. A release that is built beside the live one and switched with one rename never serves a mix of two commits. The in-place procedure is gone, not kept beside the release commands, so there is one way to update a Gateway.
+
+### No PHP-FPM restart
+
+A PHP-FPM restart or reload ends the requests in flight, and a Gateway request may run 600 seconds. Caddy resolves the release link for each request instead, so a running request finishes on its release and the next one runs the new release.
+
+### Pause after migrations, never switch back
+
+Older code on a newer schema is untested, and it can damage live data without a visible error. So a release that fails after its migrations pauses, and a person chooses between a forward fix, a forced rollback, and a restore from the snapshot. Refusing automatic releases for commits with migrations was rejected: most commits that change the Gateway ship a migration, so automation would rarely run. The snapshot and the pause cover the risk.
+
+### The Gateway is not an Orbit Instance
+
+The Instance pipeline deploys to Nodes over SSH and runs one PHP-FPM pool per Instance. The Gateway is the control plane on its own host. Its release cannot depend on a healthy Gateway to run it.
+
+### The rollout runs one command on each Node
+
+`orbit self-update` is the one node-local updater, on a Node and on an operator's Mac. A rollout in which the Gateway runs each update step over SSH would work, but it keeps the update logic in the Gateway. With one node-local command, a later move to another trigger changes only the trigger.
+
+### One Node at a time, and a halt
+
+Converging Nodes in parallel is faster, but a bad release would break many Nodes at once. A failed Node halts the rollout, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. A fleet failure never rolls the Gateway back, because the Gateway already verified and serves.
+
+An unreachable Node changed nothing, so it does not halt the fleet; the catch-up converges it. Halting on it would let one offline Node block every other. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release that adds the units does not reach Nodes before an operator prepared them.

@@ -301,9 +301,9 @@ Loopback publication plus SSH forwarding gives Mac access without a public liste
 
 Files copied into the Gateway checkout's `public` directory would follow Gateway deploys, and a deploy that cleans the checkout would remove them. A separate web directory lets a web release and a Gateway deploy happen independently. A rollback only moves `current`.
 
-### A build on the operator's machine
+### A build from CI
 
-Building on the Gateway host would need Node or Bun there only for this step.
+Building on the Gateway would need Node and Bun on the control plane only for this step. CI already builds the web app for every `main` commit, so a Gateway release installs that build. `bin/web-deploy` builds on the operator's machine for a commit CI did not publish.
 
 ### Grafana through the Metrics site
 

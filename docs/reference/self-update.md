@@ -13,7 +13,7 @@ covers:
 
 # Orbit self-update
 
-`orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. On a managed Linux Node it also replaces `orbit-agent` when the binary differs from the Gateway's pin. The Gateway serves what to install as the **desired fleet state**. [ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) describes the fleet rollout that runs this command on each Node.
+`orbit self-update` updates one machine to the Gateway's release. It replaces the `orbit` binary with the CLI release that CI published for the Gateway's commit. On a managed Linux Node it also replaces `orbit-agent` when the binary differs from the Gateway's pin. The Gateway serves what to install as the **desired fleet state**. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs this command on each managed Node, and an operator runs it on a Mac.
 
 ## Desired fleet state
 
@@ -224,6 +224,16 @@ Orbit 0.4681.0 is available (this is 0.4600.0). Run orbit self-update.
 ```
 
 The CLI prints it at most once every 24 hours, and only when standard error is a terminal and `CI` is unset. It keeps the time of the last notice in `$ORBIT_HOME/self-update-notice.json`, mode `0600`. It never prints the notice in JSON mode, from a source checkout or other build that is not a release, or when it cannot record the time. `self-update` prints no notice.
+
+## Limits
+
+`orbit self-update` has these limits.
+
+- It replaces only the CLI and, on a managed Linux Node, the agent. The fleet rollout re-applies the Gateway-rendered footprint over SSH.
+- Nothing runs it on an operator machine automatically. The operator runs it after the notice.
+- No agent signal triggers it.
+
+[Update and recover a Gateway: Limits](/reference/gateway-recovery#limits) lists what is not built yet.
 
 ## Why it works this way
 

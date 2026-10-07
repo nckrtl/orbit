@@ -146,7 +146,7 @@ On any mismatch the JSON names the mismatch. For an unmerged pull request, the n
 
 Read the live tip version, `/up`, and gateway status. Pass when `APP_VERSION` equals the given merged SHA, `/up` is up, and gateway status is `ok`. Those are the checks recorded in ops verified-merges. Do not deploy and do not roll back.
 
-[ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) runs the same checks as the verify step of each Gateway release. The command stays a read-only check from outside the Gateway.
+Each [Gateway release](/reference/gateway-recovery#deploy-a-release) runs the same checks as its verify step. The command stays a read-only check from outside the Gateway.
 
 ```bash
 bin/deploy-verify --sha SHA [--up-url URL] [--status-url URL] [--dry-run] [--fixture FILE]
@@ -176,7 +176,7 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 
 ## bin/gateway-smoke
 
-Smoke-test a Gateway release after its switch, on the Gateway host. Step 8 of a release in [ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
+Smoke-test a Gateway release after its switch, on the Gateway host. Each [Gateway release](/reference/gateway-recovery#smoke) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
 
 ```bash
 bin/gateway-smoke --sha SHA [--since TIME] [--tick-within SECONDS] [--timeout SECONDS] [--skip CHECK ...] [--write-check --smoke-project PROJECT] [--dry-run]

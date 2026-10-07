@@ -192,7 +192,7 @@ Step 9 runs whenever a Metrics role exists. A Metrics reconcile failure does not
 
 ## Orbit CLI
 
-Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI ([ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update)). Provisioning, role converge, and the fleet rollout install it with the same step.
+Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI, so the fleet rollout can run [`orbit self-update`](/reference/self-update) there. Provisioning, role converge, and the fleet rollout install it with the same step.
 
 | Item | Path or value |
 | --- | --- |
@@ -442,6 +442,10 @@ When `gateway` runs on another machine, that machine is itself a WireGuard peer.
 ### A kernel setting for Caddy reloads
 
 Caddy's `grace_period` and `shutdown_delay`, a reload through the admin API, and a certificate cache that survives reloads leave the reset count unchanged in measurements. Handing Caddy a systemd socket would change every listener for the same effect. `net.ipv4.tcp_migrate_req` cut the resets by about 93%. It needs Linux 5.14 or newer, which every supported Ubuntu release has.
+
+### The footprint converge, not node:add
+
+After a Gateway release, a Node needs only what the Gateway renders from its own code and pins. `node:add` refuses a Node that owns Instances, and a role converge does far more than the Orbit footprint. So the footprint converge re-applies only the artifacts whose digest changed, and it never changes an Instance.
 
 ### A Mac needs no service role
 
