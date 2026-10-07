@@ -1,5 +1,6 @@
 from pathlib import Path
 import os
+import json
 import runpy
 import subprocess
 import sys
@@ -105,6 +106,95 @@ class GuestSource(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.call('checkout')
         self.assertEqual((self.target / 'file').read_text(), 'do not replace')
+
+    def seeded(self):
+        self.git(self.target, 'init', '-q', '-b', 'main')
+        self.git(self.target, 'fetch', '-q', str(self.source), 'main')
+        self.git(self.target, 'reset', '--hard', self.initial)
+        self.git(self.target, 'config', 'remote.origin.url', self.request['repository'])
+        template = {'id': str(uuid.uuid4()), 'repository': self.request['repository'], 'base': 'main', 'commit': self.initial}
+        (self.target / '.git/orbit-sandbox-template.json').write_text(json.dumps(template))
+        self.request['source_template'] = template
+        return template
+
+    def test_adopts_only_the_pinned_template_then_imports_work_and_preserves_dependencies_on_retry(self):
+        self.seeded()
+        (self.target / '.git/info/exclude').write_text('/vendor/\n')
+        (self.target / 'vendor').mkdir()
+        (self.target / 'vendor/cache').write_text('prepared dependencies')
+        self.assertTrue(self.call('initialize')['initialized'])
+        (self.source / 'file').write_text('published task work')
+        self.git(self.source, 'commit', '-qam', 'published')
+        published = self.git(self.source, 'rev-parse', 'HEAD')
+        bundle = self.root / 'published.bundle'
+        self.git(self.source, 'bundle', 'create', str(bundle), 'main')
+        self.git(self.target, 'fetch', '-q', str(bundle), 'main:refs/remotes/origin/main', 'main:refs/remotes/origin/task-1')
+        self.assertEqual(published, self.call('checkout')['starting_commit'])
+        (self.target / 'file').write_text('unfinished task work')
+        (self.target / '.git/orbit-sandbox-template.json').unlink()
+        self.assertTrue(self.call('initialize')['initialized'])
+        self.assertEqual(published, self.call('inspect')['head'])
+        self.assertEqual('unfinished task work', (self.target / 'file').read_text())
+        self.assertEqual('prepared dependencies', (self.target / 'vendor/cache').read_text())
+        for changes in ({'source_template': None}, {'source_template': {**self.request['source_template'], 'commit': 'f' * 40}}, {'sandbox_id': str(uuid.uuid4())}):
+            with self.assertRaises(ValueError):
+                self.call('initialize', **changes)
+
+    def test_template_checks_refuse_before_claiming_or_replacing_anything(self):
+        template = self.seeded()
+        marker = self.target / '.git/orbit-sandbox-template.json'
+        owner = self.target / '.git/orbit-sandbox-source.json'
+        marker.write_text(json.dumps({**template, 'commit': 'f' * 40}))
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+        self.request['source_template'] = {**template, 'commit': 'f' * 40}
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+        self.request['source_template'] = template
+        marker.write_text(json.dumps(template))
+        (self.target / 'file').write_text('existing unfinished work')
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+        self.assertEqual('existing unfinished work', (self.target / 'file').read_text())
+        self.git(self.target, 'checkout', '--', 'file')
+        self.git(self.target, 'branch', 'task-999')
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+        self.git(self.target, 'branch', '-D', 'task-999')
+        self.git(self.target, 'config', 'remote.origin.url', 'https://github.com/acme/foreign.git')
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+        self.git(self.target, 'config', 'remote.origin.url', template['repository'])
+        self.git(self.target, 'config', 'include.path', '/nonexistent/untrusted-config')
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+        self.git(self.target, 'config', '--unset', 'include.path')
+        marker.unlink()
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+        marker.symlink_to(self.root / 'missing-marker')
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse(owner.exists())
+
+    def test_template_does_not_adopt_an_empty_or_already_owned_checkout(self):
+        self.request['source_template'] = {'id': str(uuid.uuid4()), 'repository': self.request['repository'], 'base': 'main', 'commit': self.initial}
+        with self.assertRaises(ValueError):
+            self.call('initialize')
+        self.assertFalse((self.target / '.git').exists())
+        descriptor = self.request.pop('source_template')
+        self.imported()
+        self.call('checkout')
+        with self.assertRaises(ValueError):
+            self.call('initialize', source_template=descriptor)
+        self.assertEqual('task-1', self.git(self.target, 'branch', '--show-current'))
 
     @unittest.skipUnless(os.environ.get('ORBIT_TEST_ROOT_VOLUME') == '1', 'Requires the privileged test lane')
     def test_claims_only_empty_root_owned_volumes(self):

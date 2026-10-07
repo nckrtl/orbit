@@ -21,6 +21,58 @@ def has_ref(root, ref):
     return ref in git(root, 'for-each-ref', '--format=%(refname)', ref).splitlines()
 
 
+def source_template(value, repository, base):
+    if value is None:
+        return None
+    if (not isinstance(value, dict) or set(value) != {'id', 'repository', 'base', 'commit'}
+            or not isinstance(value['id'], str) or str(uuid.UUID(value['id'])) != value['id']
+            or value['repository'] != repository or value['base'] != base
+            or not isinstance(value['commit'], str) or not re.fullmatch(r'[a-f0-9]{40}(?:[a-f0-9]{24})?', value['commit'])):
+        raise ValueError('The source template identity does not match')
+    return value
+
+
+def adopt_template(root, metadata, marker, template, owner):
+    seed = metadata / 'orbit-sandbox-template.json'
+    if (root.stat().st_uid != os.geteuid() or metadata.is_symlink() or not metadata.is_dir()
+            or seed.is_symlink() or not seed.is_file() or seed.stat().st_size > 8192
+            or json.loads(seed.read_text()) != template):
+        raise ValueError('The checkout is not the published source template')
+    for path in (metadata / 'config', metadata / 'objects'):
+        if path.is_symlink() or not path.exists():
+            raise ValueError('The template Git directory is not local')
+    if any(path.exists() or path.is_symlink() for path in (metadata / 'objects/info/alternates', metadata / 'info/grafts')):
+        raise ValueError('The template uses external or replaced history')
+    allowed = {'core.repositoryformatversion', 'core.filemode', 'core.bare', 'core.logallrefupdates',
+               'core.ignorecase', 'core.precomposeunicode', 'extensions.objectformat', 'user.name', 'user.email', 'remote.origin.url'}
+    configuration = git(root, 'config', '--local', '--no-includes', '--list').splitlines()
+    if (any(line.split('=', 1)[0] not in allowed for line in configuration)
+            or 'core.bare=false' not in configuration
+            or [line for line in configuration if line.startswith('remote.')] != ['remote.origin.url=' + template['repository']]):
+        raise ValueError('The template has unexpected Git configuration')
+    base = template['base']
+    git(root, 'check-ref-format', 'refs/heads/' + base)
+    permitted_refs = {'refs/heads/' + base, 'refs/remotes/origin/' + base, 'refs/remotes/origin/HEAD'}
+    refs = git(root, 'for-each-ref', '--format=%(refname)', 'refs/heads', 'refs/remotes', 'refs/replace').splitlines()
+    if (any(ref not in permitted_refs for ref in refs) or git(root, 'rev-parse', '--show-toplevel') != str(root)
+            or git(root, 'symbolic-ref', 'HEAD') != 'refs/heads/' + base
+            or git(root, 'rev-parse', '--verify', 'HEAD^{commit}') != template['commit']
+            or git(root, 'status', '--porcelain', '--untracked-files=all')):
+        raise ValueError('The template source is changed or belongs to another branch')
+    default_ref = 'refs/remotes/origin/' + base
+    if has_ref(root, default_ref) and git(root, 'rev-parse', '--verify', default_ref + '^{commit}') != template['commit']:
+        raise ValueError('The template default reference does not match its commit')
+    if has_ref(root, 'refs/remotes/origin/HEAD') and git(root, 'symbolic-ref', '-q', 'refs/remotes/origin/HEAD') != default_ref:
+        raise ValueError('The template default reference changed')
+    temporary = metadata / ('orbit-source-' + str(uuid.uuid4()))
+    try:
+        with temporary.open('x') as output:
+            json.dump(owner, output)
+        os.link(temporary, marker)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
 def prepare(request):
     if request['operation'] not in ('initialize', 'checkout', 'inspect'):
         raise ValueError('Invalid source operation')
@@ -33,9 +85,12 @@ def prepare(request):
         raise ValueError('Invalid repository')
     if not re.fullmatch(r'task-[1-9][0-9]*', branch) or not isinstance(base, str) or not base or base.startswith('-'):
         raise ValueError('Invalid branch')
+    template = source_template(request.get('source_template'), repository, base)
     root = Path(request['checkout'])
     if not root.is_absolute() or root.resolve() != root or not root.is_dir():
         raise ValueError('The checkout must be an existing real directory')
+    if template is not None and root.stat().st_uid != os.geteuid():
+        raise ValueError('The template must belong to the managed user')
     if request['operation'] == 'initialize' and root.stat().st_uid != os.geteuid():
         # New Incus volumes may be root-only. Verify emptiness through a pinned directory
         # descriptor before changing ownership; never adopt a populated foreign checkout.
@@ -51,17 +106,19 @@ finally:
                        check=True, capture_output=True, timeout=15)
     metadata = root / '.git'
     marker = metadata / 'orbit-sandbox-source.json'
-    owner = {'sandbox_id': identity, 'repository': repository, 'branch': branch, 'base': base}
-    if request['operation'] == 'initialize' and not metadata.exists():
+    owner = {'sandbox_id': identity, 'repository': repository, 'branch': branch, 'base': base, 'source_template': template}
+    if request['operation'] == 'initialize' and template is not None and not marker.exists() and not marker.is_symlink():
+        adopt_template(root, metadata, marker, template, owner)
+    if request['operation'] == 'initialize' and template is None and not metadata.exists():
         if any(root.iterdir()):
             raise ValueError('Refusing a nonempty unowned checkout')
         metadata.mkdir(mode=0o700)
         with marker.open('x') as output:
             json.dump(owner, output)
-    if metadata.is_symlink() or not metadata.is_dir() or marker.is_symlink() or not marker.is_file():
+    if metadata.is_symlink() or not metadata.is_dir() or marker.is_symlink() or not marker.is_file() or marker.stat().st_size > 8192:
         raise ValueError('Source ownership is unavailable')
     recorded = json.loads(marker.read_text())
-    if any(recorded.get(key) != value for key, value in owner.items()):
+    if not isinstance(recorded, dict) or any(recorded.get(key) != value for key, value in owner.items()):
         raise ValueError('Source ownership does not match')
     if request['operation'] == 'initialize':
         git(root, 'init', '--quiet', '--initial-branch=' + branch)

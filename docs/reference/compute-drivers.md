@@ -272,3 +272,9 @@ Set `orbit_source_template` on an Incus host configuration to bind its Orbit ima
 The host validates the complete template before creating resources. It copies the snapshot into the group's worktree volume with group ownership in the create request. A retry accepts only that group's volume with the same template identity. It does not overwrite group work or adopt an unrelated populated volume. Requests without a template still create an empty volume for the existing source-initialization path.
 
 This copy protocol is an internal building block. Image sanitation, source adoption, pair retargeting, and runtime readiness must all pass before a scheduler claim can use a saved pair. VM claims remain gated until the full lane is proven.
+
+### Adopt a template checkout
+
+A source template includes `.git/orbit-sandbox-template.json` with the same descriptor as its reservation. Before first use, the guest checks that marker, the pinned commit, the default branch, and a clean tracked and untracked tree. Ignored dependency caches can remain. The template uses a real local Git directory, contains only the default local and remote branches, and exposes only its canonical origin URL. Git includes, custom filters, alternate object stores, and replacement history are refused.
+
+After validation, the guest records group ownership without replacing an existing marker. It imports the task branch through the trusted bundle path and selects that branch, or the current default branch for new work. The template commit is the seed; the imported branch supplies the task's starting commit. Repeated preparation checks the recorded template identity and preserves local commits, dirty files, and dependencies. A populated checkout without the matching template marker remains refused.

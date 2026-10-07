@@ -33,6 +33,13 @@ final readonly class SandboxWorkspaceSource
         }
         $request = ['sandbox_id' => $workspace->task_sandbox_id, 'checkout' => $workspace->checkout_path,
             'repository' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'branch' => 'task-'.$group->id, 'base' => $base];
+        $template = $workspace->taskSandbox?->spec['source_template'] ?? null;
+        if ($template !== null) {
+            if (! is_array($template) || ($template['repository'] ?? null) !== $request['repository'] || ($template['base'] ?? null) !== $base) {
+                throw new TaskPullRequestException('The sandbox source template does not match the Project.');
+            }
+            $request['source_template'] = $template;
+        }
         if (in_array($workspace->status, [InstanceState::SourceResolved, InstanceState::Active], true)) {
             $this->execute($workspace, ['operation' => 'inspect', ...$request]);
 
@@ -52,7 +59,7 @@ final readonly class SandboxWorkspaceSource
         return $workspace->refresh();
     }
 
-    /** @param array<string, string> $request
+    /** @param array<string, mixed> $request
      * @return array<array-key, mixed>
      */
     private function execute(Instance $workspace, array $request): array

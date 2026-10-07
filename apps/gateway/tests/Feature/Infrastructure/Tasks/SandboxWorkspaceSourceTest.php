@@ -92,3 +92,35 @@ describe('sandbox source preparation', function (): void {
         expect(fn () => app(SandboxWorkspaceSource::class)->prepare($group->fresh()))->toThrow(TaskPullRequestException::class);
     });
 });
+
+it('sends only the reservation template through source initialization and inspection', function (): void {
+    $group = source_group();
+    $template = ['id' => '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('c', 40)];
+    $sandbox = $group->taskable->taskSandbox;
+    $sandbox->update(['spec' => [...$sandbox->spec, 'source_template' => $template]]);
+    mock(SshExecutor::class)->shouldReceive('execute')->times(3)->andReturnUsing(function ($connection, RemoteCommand $command) use ($template): CommandResult {
+        $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+        $request = json_decode(base64_decode($envelope['guest']['stdin']), true, flags: JSON_THROW_ON_ERROR);
+        expect($request['source_template'])->toBe($template);
+        $response = $request['operation'] === 'initialize' ? ['initialized' => true] : ['head' => str_repeat('a', 40), 'starting_commit' => str_repeat('a', 40)];
+
+        return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
+            'stdout' => base64_encode(json_encode($response)), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
+    });
+    mock(TaskBaseBranchFetcher::class)->shouldReceive('fetchForTurn')->once();
+
+    $source = app(SandboxWorkspaceSource::class);
+    expect($source->prepare($group->fresh())->starting_commit)->toBe(str_repeat('a', 40));
+    expect($source->prepare($group->fresh())->status)->toBe(InstanceState::SourceResolved);
+});
+
+it('refuses a template from another Project before guest contact or fetching credentials', function (): void {
+    $group = source_group();
+    $sandbox = $group->taskable->taskSandbox;
+    $sandbox->update(['spec' => [...$sandbox->spec, 'source_template' => ['repository' => 'https://github.com/acme/foreign.git', 'base' => 'main']]]);
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+    mock(TaskBaseBranchFetcher::class)->shouldReceive('fetchForTurn')->never();
+
+    expect(fn () => app(SandboxWorkspaceSource::class)->prepare($group->fresh()))->toThrow(TaskPullRequestException::class);
+    expect($group->taskable->fresh()->status)->toBe(InstanceState::Reserved);
+});
