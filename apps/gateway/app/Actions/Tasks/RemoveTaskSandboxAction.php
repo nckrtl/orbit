@@ -50,7 +50,7 @@ final readonly class RemoveTaskSandboxAction
             if ($groupId !== null && (! $group instanceof Task || $group->task_compute !== TaskCompute::Vm || $group->execution_mode !== TaskExecutionMode::Managed)) {
                 throw $this->ownership();
             }
-            if ($endedOnly && $group instanceof Task && (! in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
+            if ($endedOnly && $sandbox->desired_power !== 'destroyed' && $group instanceof Task && (! in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled], true)
                 || ($group->reserved_at !== null && $group->reserved_at->greaterThan(RemoveTaskWorkspaceAction::reservationCutoff())))) {
                 throw new ComputeException('compute.group_active', 'The sandbox still belongs to an active task claim.');
             }
@@ -60,15 +60,15 @@ final readonly class RemoveTaskSandboxAction
             } elseif (Instance::query()->where('task_sandbox_id', $sandbox->id)->exists() || ($group instanceof Task && $group->taskable_id !== null)) {
                 throw $this->ownership();
             }
-            if ($sandbox->node_id !== null) {
+            if ($sandbox->node_id !== null && $sandbox->provider !== 'upcloud') {
                 throw new ComputeException('compute.node_attached', 'Remove the sandbox Node from the fleet before destroying its VM.');
             }
 
             $result = $this->lifecycle->destroy($sandbox, $this->drivers->forSandbox($sandbox));
             if ($result->state !== SandboxState::Destroyed) {
-                throw new ComputeException('compute.cleanup_pending', 'Sandbox destruction has not been confirmed. Orbit retains its workspace for retry.');
+                throw new ComputeException('compute.cleanup_pending', 'Sandbox destruction has not been confirmed. Orbit retains its reservation for retry.');
             }
-            if ($instance instanceof Instance) {
+            if ($instance instanceof Instance && Instance::query()->whereKey($instance->id)->exists()) {
                 DB::transaction(function () use ($sandbox, $instance, $group): void {
                     $instance->refresh();
                     $group?->refresh();
@@ -86,7 +86,8 @@ final readonly class RemoveTaskSandboxAction
         if (! $group instanceof Task || $instance->task_sandbox_id !== $sandbox->id || $instance->project_id !== $group->project_id
             || ($group->taskable_id !== null && ($group->taskable_id !== $instance->id || $group->taskable_type !== $instance->getMorphClass()))
             || ($group->taskable_id === null && ($instance->name !== TaskWorkspaceName::for($group) || $instance->branch_override !== $instance->name))
-            || $group->project->slug !== 'orbit' || $sandbox->provider !== 'incus' || $instance->node_id !== ($sandbox->spec['host_id'] ?? null)
+            || ! (($group->project->slug === 'orbit' && $sandbox->provider === 'incus' && $instance->node_id === ($sandbox->spec['host_id'] ?? null))
+                || ($group->project->slug !== 'orbit' && $sandbox->provider === 'upcloud' && $instance->node_id === $sandbox->node_id))
             || Task::withoutGlobalScope('subtask')->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)
                 ->whereKeyNot($group->id)->exists()) {
             throw $this->ownership();

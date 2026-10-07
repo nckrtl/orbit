@@ -131,6 +131,18 @@ final readonly class SandboxFleetIdentity
         }
     }
 
+    /** Attached workspaces use this check without repeating initial enrollment. */
+    public function assertReady(TaskSandbox $sandbox, Node $node): void
+    {
+        $this->assertOwned($sandbox, $node);
+        if ($sandbox->provider !== 'upcloud' || $sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running'
+            || $sandbox->network_policy !== 'sealed' || ! is_string($sandbox->enrollment['hub_confirmed_at'] ?? null)
+            || $sandbox->enrolled_at === null || $node->status !== LifecycleStatus::Active
+            || ! $node->roles()->where('role', RoleName::AppDev->value)->where('status', LifecycleStatus::Active)->exists()) {
+            throw new ComputeException('compute.enrollment_not_ready', 'The owned sandbox Node is not ready.');
+        }
+    }
+
     private function role(RoleName $role): Node
     {
         $nodes = Node::query()->where('status', LifecycleStatus::Active)

@@ -6,6 +6,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -76,7 +77,7 @@ function view_workspace(Instance $instance, array $overrides = [], float $ageSec
 
 function view_diff_reader(AppDevFakeSshExecutor $transport): AgentViewTaskWorkspaceDiffReader
 {
-    return new AgentViewTaskWorkspaceDiffReader(app(CacheAgentStateView::class), new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(view_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class))));
+    return new AgentViewTaskWorkspaceDiffReader(app(CacheAgentStateView::class), new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(view_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class))));
 }
 
 describe('task workspace reads from the agent view', function (): void {

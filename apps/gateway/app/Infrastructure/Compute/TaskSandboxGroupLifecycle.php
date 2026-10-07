@@ -88,6 +88,12 @@ final readonly class TaskSandboxGroupLifecycle
     {
         $group->load(['project', 'taskable']);
         $workspace = $group->taskable;
+        if ($workspace === null && $group->taskable_id === null) {
+            $cleanup = TaskSandbox::query()->where('group_id', $group->id)->where('provider', 'upcloud')->where('desired_power', 'destroyed')->latest('created_at')->first();
+            if ($cleanup !== null) {
+                return $cleanup;
+            }
+        }
         $sandbox = $workspace instanceof Instance ? $workspace->taskSandbox : null;
         if (! $workspace instanceof Instance || ! $sandbox instanceof TaskSandbox || $sandbox->group_id !== $group->id
             || $workspace->project_id !== $group->project_id || $group->parent_id !== null || $group->task_compute !== TaskCompute::Vm) {

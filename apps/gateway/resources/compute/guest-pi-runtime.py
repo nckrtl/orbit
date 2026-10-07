@@ -19,7 +19,7 @@ BINARY = Path('/usr/local/bin/orbit-pi-server')
 
 
 def validate(request):
-    if set(request) - {'model_relay_address'} != {'sandbox_id', 'checkout', 'pi_token', 'model_key', 'models'}:
+    if set(request) - {'model_relay_address', 'model_relay_kind', 'model_relay_port'} != {'sandbox_id', 'checkout', 'pi_token', 'model_key', 'models'}:
         raise ValueError('Invalid runtime request')
     identity = request['sandbox_id']
     if str(uuid.UUID(identity)) != identity:
@@ -30,9 +30,18 @@ def validate(request):
     if request['checkout'] != '/home/orbit/orbit':
         raise ValueError('Unsupported sandbox checkout')
     relay = request.get('model_relay_address')
+    kind = request.get('model_relay_kind', 'incus')
+    port = request.get('model_relay_port', 8317)
+    if kind not in ('incus', 'upcloud') or type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError('Invalid model relay contract')
+    if kind == 'upcloud' and relay is None:
+        raise ValueError('Missing enrolled model relay')
+    if kind == 'incus' and port != 8317:
+        raise ValueError('Invalid bridge model port')
     if relay is not None:
         address = ipaddress.ip_address(relay)
-        if address.version != 4 or address not in ipaddress.ip_network('10.233.0.0/16') or int(address) % 256 != 1:
+        network = '10.44.0.0/16' if kind == 'upcloud' else '10.233.0.0/16'
+        if address.version != 4 or address not in ipaddress.ip_network(network) or (kind == 'incus' and int(address) % 256 != 1):
             raise ValueError('Invalid group model relay')
     models = request['models']
     if not isinstance(models, list) or not 1 <= len(models) <= 100:
@@ -127,7 +136,7 @@ After=network.target
 [Service]
 User=orbit
 Group=orbit
-ExecStart=/usr/lib/systemd/systemd-socket-proxyd ''' + relay + ''':8317
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd ''' + relay + ':' + str(request.get('model_relay_port', 8317)) + '''
 NoNewPrivileges=true
 '''
     # Validate all existing files before adding missing files. A retry never rotates secrets.

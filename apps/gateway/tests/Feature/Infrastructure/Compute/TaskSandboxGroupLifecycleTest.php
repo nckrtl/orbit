@@ -22,6 +22,7 @@ use App\Models\Task;
 use App\Models\TaskSandbox;
 use Illuminate\Support\Str;
 use Tests\Support\FakeSandboxModelProxy;
+use Tests\Support\UpCloudRuntimeWorkspace;
 
 use function Pest\Laravel\mock;
 
@@ -203,3 +204,19 @@ it('keeps cloud preview waiting for a branch rebuild without starting the old se
     'restore pending' => [SandboxState::Stopped, 'running'],
     'expired' => [SandboxState::Destroyed, 'destroyed'],
 ]);
+
+it('retains the cloud reservation after workspace cleanup and blocks resume until reconstruction exists', function (): void {
+    $workspace = UpCloudRuntimeWorkspace::create();
+    $sandbox = $workspace->taskSandbox;
+    $group = $sandbox->group;
+    $group->taskable()->dissociate();
+    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/acme/dlf/pull/42']);
+    $workspace->delete();
+    $sandbox->update(['state' => SandboxState::Destroyed, 'desired_power' => 'destroyed']);
+    $lifecycle = app(TaskSandboxGroupLifecycle::class);
+    $lifecycle->review($group);
+    expect($group->fresh()->capacity_wait_reason)->toBeNull();
+
+    expect($lifecycle->resume($group->fresh()))->toBeFalse();
+    expect($group->fresh()->capacity_wait_reason)->toContain('rebuilt from its published branch');
+});

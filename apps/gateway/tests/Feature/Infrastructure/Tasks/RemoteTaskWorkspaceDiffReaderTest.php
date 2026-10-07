@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
@@ -81,7 +82,7 @@ it('reads insertions and deletions from git shortstat', function (): void {
         new CommandResult(0, " 3 files changed, 13 insertions(+), 3 deletions(-)\n", '', 1, false),
     ]);
 
-    $diff = new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->lineChanges(
+    $diff = new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->lineChanges(
         remote_diff_instance(),
         'main',
     );
@@ -121,7 +122,7 @@ it('leaves a merged default branch out of the line counts', function (): void {
         $git("{$root}/task", 'fetch', '--quiet', 'origin');
         $git("{$root}/task", 'merge', '--quiet', '--no-edit', 'origin/main');
 
-        expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->lineChanges(
+        expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh(new LocalShellSshExecutor), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->lineChanges(
             remote_diff_instance("{$root}/task"),
             'main',
         ))->toBe(['additions' => 2, 'deletions' => 0]);
@@ -135,7 +136,7 @@ it('reports commits after a revision or date', function (): void {
         new CommandResult(0, "2\n", '', 1, false),
     ]);
 
-    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->hasCommitsSince(
+    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->hasCommitsSince(
         remote_diff_instance(),
         str_repeat('a', 40),
     ))->toBeTrue()
@@ -147,7 +148,7 @@ it('returns false when the workspace has no commits since the marker', function 
         new CommandResult(0, "0\n", '', 1, false),
     ]);
 
-    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->hasCommitsSince(
+    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->hasCommitsSince(
         remote_diff_instance(),
         '2026-09-21T00:00:00+00:00',
     ))->toBeFalse();
@@ -156,7 +157,7 @@ it('returns false when the workspace has no commits since the marker', function 
 it('returns 0 when remote git cannot read the diff', function (): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(1, '', 'missing', 1, false)]);
 
-    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->lineDiff(
+    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->lineDiff(
         remote_diff_instance(),
         'main',
     ))->toBe(0);
@@ -165,7 +166,7 @@ it('returns 0 when remote git cannot read the diff', function (): void {
 it('reads a shortstat with only insertions or only deletions', function (string $output, array $expected): void {
     $transport = new AppDevFakeSshExecutor([new CommandResult(0, $output, '', 1, false)]);
 
-    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class)))->lineChanges(remote_diff_instance(), 'main'))->toBe($expected);
+    expect(new RemoteTaskWorkspaceDiffReader(new TaskWorkspaceExecutor(remote_diff_ssh($transport), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)))->lineChanges(remote_diff_instance(), 'main'))->toBe($expected);
 })->with([
     'insertions' => [" 5500 files changed, 5500 insertions(+)\n", ['additions' => 5500, 'deletions' => 0]],
     'one deletion' => [" 1 file changed, 1 deletion(-)\n", ['additions' => 0, 'deletions' => 1]],
