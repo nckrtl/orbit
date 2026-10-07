@@ -7,14 +7,19 @@ namespace App\Providers;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\GatewayReleases\GatewayDocumentCleanup;
+use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
+use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
+use App\Domain\Settings\SettingRepository;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
 use App\Infrastructure\Gateway\GatewayApplicationPath;
@@ -24,20 +29,26 @@ use App\Infrastructure\GatewayReleases\ActionGatewayDocumentCleanup;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
+use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseExchange;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
+use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
+use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Infrastructure\GatewayReleases\GatewayRuntimeHandoff;
 use App\Infrastructure\GatewayReleases\GatewaySchedulerHandoff;
 use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GatewayReleases\HttpGatewayReleaseVerifier;
 use App\Infrastructure\GatewayReleases\LocalGatewayReleaseRuntime;
+use App\Infrastructure\GatewayReleases\NativeGatewayReleaseUnitConverger;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SqliteGatewayReleaseDatabase;
+use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
 use App\Infrastructure\GitHub\GitHubActionsReader;
 use App\Infrastructure\Processes\ProcessRunner;
 use Illuminate\Contracts\Foundation\Application;
@@ -102,6 +113,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 files: $app->make(ProtectedFileWriter::class),
                 hibernator: $app->make(RuntimeHibernatorConverger::class),
                 agentView: $app->make(AgentViewConverger::class),
+                releaseUnits: $app->make(GatewayReleaseUnitConverger::class),
                 scheduler: new GatewaySchedulerHandoff(
                     processes: $app->make(ProcessRunner::class),
                     applicationPath: GatewayApplicationPath::resolve(),
@@ -142,7 +154,45 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 $app->make(ProcessRunner::class),
             ),
         );
-        $this->app->bind(GatewayReleaseRecorder::class, GatewayReleaseRecorder::class);
+        $this->app->bind(
+            GatewayReleaseSource::class,
+            static fn (Application $app): GatewayReleaseSource => new GatewayReleaseSource(
+                processes: $app->make(ProcessRunner::class),
+                branch: Config::string('orbit.gateway_releases.branch'),
+                checkName: Config::string('orbit.gateway_releases.check'),
+            ),
+        );
+        $this->app->bind(
+            GatewayReleaseSupersession::class,
+            static fn (Application $app): GatewayReleaseSupersession => new GatewayReleaseSupersession(
+                source: $app->make(GatewayReleaseSource::class),
+                resolver: $app->make(GreenCommitResolver::class),
+            ),
+        );
+        $this->app->bind(
+            GatewayReleaseRecorder::class,
+            static fn (Application $app): GatewayReleaseRecorder => new GatewayReleaseRecorder(
+                alerts: $app->make(GatewayReleaseAlerts::class),
+                automation: $app->make(GatewayReleaseAutomation::class),
+                units: $app->make(GatewayReleaseUnitStarter::class),
+                retry: $app->make(GatewayReleaseRetry::class),
+            ),
+        );
+        $this->app->bind(
+            GatewayReleaseAutomation::class,
+            static fn (Application $app): GatewayReleaseAutomation => new GatewayReleaseAutomation(
+                settings: $app->make(SettingRepository::class),
+                pauseMarker: rtrim(Config::string('orbit.home'), '/').'/gateway-release.paused',
+            ),
+        );
+        $this->app->bind(
+            GatewayReleaseUnitConverger::class,
+            static fn (Application $app): NativeGatewayReleaseUnitConverger => new NativeGatewayReleaseUnitConverger($app->make(ProcessRunner::class)),
+        );
+        $this->app->bind(
+            GatewayReleaseUnitStarter::class,
+            static fn (Application $app): SystemdGatewayReleaseUnitStarter => new SystemdGatewayReleaseUnitStarter($app->make(ProcessRunner::class)),
+        );
         $this->app->bind(
             GatewayReleasePromoter::class,
             static fn (Application $app): GatewayReleasePromoter => new GatewayReleasePromoter(
@@ -155,6 +205,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 recorder: $app->make(GatewayReleaseRecorder::class),
                 builder: $app->make(GatewayReleaseBuilder::class),
                 keptReleases: max(1, Config::integer('orbit.gateway_releases.keep')),
+                retry: $app->make(GatewayReleaseRetry::class),
                 guard: $app->make(GatewayReleaseGuard::class),
             ),
         );

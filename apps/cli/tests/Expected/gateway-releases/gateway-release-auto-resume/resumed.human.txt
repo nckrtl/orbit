@@ -1,0 +1,32 @@
+Resuming automatic releases...
+
+┌  Resume automatic releases
+│
+├  ● Resumed automatic releases
+│
+└  Resumed automatic releases.
+
+
+┌  Automatic releases
+│
+├  Enabled           yes
+│
+├  Paused            no
+│
+├  Current release   0123456789ab
+│
+├  Current commit    0123456789ab0123456789ab0123456789ab0123
+│
+├  Source            main, check Required checks
+│
+├  Last check        2026-10-07T12:00:00Z
+│
+├  Last result       paused
+│
+├  Stalled since     —
+│
+├  Branch head       —
+│
+└  Behind since      —
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

@@ -193,6 +193,8 @@ Smoke does not run before the web switch. Any failure after the switch counts, a
 - After migrations, deploy pauses. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. It never switches back onto a schema the previous code has not run.
 - A switch that fails after migrations pauses too. The previous code then serves the new schema.
 
+To decide, deploy compares the migrations the database has applied with the previous release's files, never with what is pending now. A killed attempt of the same commit can leave such a migration.
+
 After a verified release, deploy removes old releases. It keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` releases (default 5), and always the current and the previous one.
 
 #### Migrations and the snapshot
@@ -215,7 +217,7 @@ The serving phase:
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
-3. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path.
+3. installs the hibernator, agent-view, and [release units](#release-units) again and restarts agent-view. The units name the stable `/home/orbit/orbit/apps/gateway` path.
 
 The scheduler phase:
 
@@ -280,11 +282,48 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:smoke [<SHA>] [--sinc
 
 It prints one JSON object with `release`, `sha`, `outcome`, and the smoke `report`. A failed smoke exits 1 with `error_code`, `step`, `message`, and the report under `detail.report`. A commit or `--since` value it cannot read exits 2.
 
-`gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. Every attempt that names a commit writes a record and an Activity entry.
+#### Release records
 
-A failure the commit itself causes, such as a downgrade, a failed migration, or a missing or invalid web build, is final at once. Any other failure, such as low disk, a fetch error, a slow verify, or an unexpected error, is recorded with `retryable: true` for the first two attempts of a commit; the third is final. A refusal that changes nothing, such as an unknown commit or a downgrade, writes only a failed Activity entry. A step refused by the release lock writes nothing.
+Every attempt writes one release record. The record exists from the start of the attempt and stores each step as it ends, so a caller can follow it. The same attempt writes an Activity entry with the command `gateway:release:<trigger>`. A refusal that changes nothing, such as an unknown commit or a downgrade, ends its record `failed` and retryable, so the commit is not marked failed. A step refused by the release lock writes nothing, unless it ran for a queued record, which then ends `failed`.
+
+| Field | Content |
+| --- | --- |
+| `id` | The record id |
+| `release`, `sha` | The release id and the full commit. Both are null while a queued deploy names a short SHA that prepare has not resolved |
+| `requested` | The commit or release id the caller named |
+| `trigger` | `deploy` for a manual release, `auto` for the [automatic runner](#automatic-releases), or `rollback` |
+| `outcome` | `queued` or `running` while the attempt runs, then `verified`, `switched_back`, `paused`, `failed`, or `interrupted` |
+| `finished` | False while the outcome is `queued` or `running` |
+| `retryable` | True when the commit may be tried again. A retryable failure does not mark the commit failed |
+| `phases` | Each step that ended, in order, with its outcome |
+| `alert` | The receipt of the [release alert](#release-alerts) the record raised, or null |
+
+A failure the commit itself causes, such as a downgrade, a failed migration, or a missing or invalid web build, is final at once. Any other failure, such as low disk, a fetch error, a slow verify, or an unexpected error, is recorded with `retryable: true` for the first two attempts of a commit; the third is final. Only earlier finished attempts that failed, switched back, or were interrupted count, from a deploy, an automatic release, or an adoption. A rollback, a verified release, and the attempt that runs do not count.
+
+`gateway:release:list` reads the 50 newest records. `gateway:release:show` takes a record id of one to six digits, or a hex SHA of 7 to 40 characters for the newest record of that commit.
+
+A record is `interrupted` when its process ended before it wrote an outcome, for example after a kill or a unit timeout. Three places end such a record with `gateway.release_interrupted`:
+
+- the release unit's `ExecStopPost`, which runs `gateway:release:settle` as soon as its main process exits;
+- every tick of the automatic runner, under the release lock;
+- every new release attempt and every API request, under the release lock.
+
+Under the lock no release process runs, so a `running` record is dead. `ExecStopPost` also ends a `running` record only while the lock is free. A `queued` record is dead when its unit does not run two minutes after the request. When an interrupted record's steps show a snapshot, a migration, or a switch, it pauses automatic releases and alerts, because a retry could run old code on a migrated schema.
+
+Otherwise it spends one attempt of the commit's retry budget, and it alerts once that budget is spent. An attempt that died before prepare named the commit counts by the full SHA it requested.
 
 One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
+
+#### Deploy through the API
+
+`orbit gateway:release:deploy <sha>` and `orbit gateway:release:rollback <id>` ask the Gateway API for the release. The release never runs in the PHP-FPM worker that answers, because it can restart the scheduler and reload PHP-FPM. Instead the Gateway:
+
+1. ends the records of dead releases, then checks that no release step holds the lock and no requested release waits to start;
+2. writes a `queued` record;
+3. starts `orbit-gateway-release-run@<record>.service` with `sudo systemctl start --no-block`;
+4. answers 202 with the queued record.
+
+The unit runs `gateway:release:run <record>`, which claims the record and runs the same deploy or rollback as the commands above. The CLI follows the record until it finishes. A queued start is no proof, so the Gateway reads the unit state for up to five seconds after it. When systemd refuses the unit, the unit fails, or it neither runs nor claims the record in time, the request fails with `gateway.release_unit_failed` and the record ends as failed. Install the units with `orbit:gateway-web` on the Gateway.
 
 | Error code | Meaning |
 | --- | --- |
@@ -311,6 +350,10 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_migration_crossed` | The database has applied a migration the target release does not ship. |
 | `gateway.release_downgrade` | The commit does not descend from the current release. |
 | `gateway.release_scheduler_missing`, `gateway.release_scheduler_mismatch` | The Gateway Node has no scheduler Process, or it runs outside the Gateway application path. |
+| `gateway.release_unit_failed` | systemd did not start the release unit for a requested release. |
+| `gateway.release_not_queued` | `gateway:release:run` named a record that is not queued. |
+| `gateway.release_not_found` | No release record matches the id or commit. |
+| `gateway.release_interrupted` | The process of a running record ended before it wrote an outcome. |
 
 When the handoff reports `gateway.release_scheduler_busy`, the old scheduler still finishes its commands and exits. With `Restart=always`, systemd then starts it on the current release. Otherwise, start its unit by hand.
 
@@ -336,6 +379,93 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
 ```
 
 It caches the current release's configuration beside the live cache and renames it into place, so a request never reads half of it. Do not run `php artisan config:cache` in a release: it rewrites the live cache in place. A deploy or rollback caches its target again, so a retained release picks up the edit when it goes current.
+
+## Automatic releases
+
+The Gateway can release itself from its own branch ([ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main)). Automatic releases are disabled by default. An operator turns them on after [adoption](#release-layout) and a first release by hand.
+
+```bash
+orbit gateway:release:auto:enable
+orbit gateway:release:auto:status
+orbit gateway:release:auto:disable
+```
+
+### Release units
+
+The Gateway runs releases in systemd units, never in PHP-FPM or the scheduler. `orbit:gateway-web` and every [runtime handoff](#runtime-handoff) install them. The handoff writes the units and enables the timer, but it never starts or restarts a release unit, so the release that runs the handoff keeps running.
+
+| Unit | Runs |
+| --- | --- |
+| `orbit-gateway-release.timer` | Starts `orbit-gateway-release.service` every minute, with up to 10 seconds of random delay. It does not catch up missed runs |
+| `orbit-gateway-release.service` | One `gateway:release:auto` tick |
+| `orbit-gateway-release-run@.service` | One [requested release](#deploy-through-the-api), with the record id as the instance |
+
+Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts from the release that is current. It sets `PATH`, `HOME`, and `LANG=C.UTF-8`, so `php`, `git`, and `composer` resolve as they do for the account. A unit may run for one hour, because prepare runs `composer install`. A timer tick that comes while the service still runs starts nothing. After the main process exits, `ExecStopPost` runs `gateway:release:settle`: the run unit with its record id, the service without one.
+
+### What a tick does
+
+Each tick of `gateway:release:auto` takes these steps and stops at the first that ends it:
+
+1. It stops when automatic releases are disabled or paused. A stall ends then.
+2. A requested release that waits for its unit goes first. The tick stops.
+3. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
+4. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
+5. It asks GitHub for the newest [green commit](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
+6. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
+7. It deploys that commit with the trigger `auto`, under the release lock.
+
+The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts.
+
+Every tick stores its result as the last tick. A tick prints it as one JSON object. It exits 1 only when it ran a release that failed.
+
+| Result | Meaning |
+| --- | --- |
+| `disabled`, `paused`, `busy` | Automatic releases are off or paused, or another release step runs or waits for its unit. A `busy` result counts toward a stall |
+| `not_adopted`, `no_deployed_release` | The Gateway does not run from a release, or its `REVISION` is unreadable. Deploy the first release by hand |
+| `up_to_date` | No newer commit qualifies |
+| `backing_off` | The newest commit failed for a retryable reason less than 10 minutes ago |
+| `source_unavailable` | GitHub, the App, or the shared repository's origin did not answer. The tick is skipped |
+| `released` | The tick released a commit, and it went live |
+| `failed` | The tick released a commit, and the release failed or switched back |
+
+### Pause
+
+A pause is durable state with a reason. It holds until `resume` or until a deploy ends `verified`, whatever other release records come after it. The start of every pause raises one `release_paused` alert that names the reason.
+
+| Reason | Cause |
+| --- | --- |
+| `migration_failure` | A release failed after its migrations ran. It stays current |
+| `rollback` | A rollback went live. The runner does not release a newer commit over it |
+| `manual_deploy` | A manual deploy went live while a newer green commit already existed: a deliberate pin of an older commit. The runner does not undo it |
+| `interrupted` | A release died after a snapshot, a migration, or a switch |
+| `marker` | Only `ORBIT_HOME/gateway-release.paused` exists, as an older Gateway wrote it |
+
+A manual deploy or rollback still runs during a pause. A manual deploy, an automatic release, or an adoption that ends `verified` ends a pause, so a forward fix hands back to automation. An adoption that ends `resumed` serves a release that was never verified, so it keeps the pause. A rollback that goes live starts a `rollback` pause instead.
+
+When a manual deploy goes live, the Gateway asks GitHub whether a newer green commit exists. It stores the answer on the record as the `newest_green` step: `superseded` with that commit, `newest`, or `unknown` when GitHub did not answer. `superseded` and `unknown` make the next tick pause with `manual_deploy`, so a pin is never undone on a guess. After a GitHub outage, a manual deploy may need one `resume`. A manual deploy of the newest green commit hands back to automation, and a newer commit that turns green later is released as usual.
+
+After a failure, decide between a forward fix, a [rollback](#roll-back) with `--force`, and a restore from the snapshot. Then clear a pause that is left:
+
+```bash
+orbit gateway:release:auto:resume
+```
+
+Resume removes the pause and the marker. The next tick releases the newest green commit, also over a manual release from before the resume. Resume refuses with `gateway.release_not_paused` when nothing is paused. A commit that failed is not released again automatically.
+
+### Failure and alerts
+
+A release record that ends `paused`, or that ends `switched_back`, `failed`, or `interrupted` with no retry left, raises one [release alert](#release-alerts). An `interrupted` record that touched live state alerts at once, because it pauses. A pause that a rollback or a manual deploy starts alerts too. So does a release that goes live but leaves document cleanup paused. The receipt is stored on the record, so the record never alerts twice. A retryable failure does not alert by itself.
+
+Two stalls alert once with the kind `release_stalled`. The subject is the deployed commit.
+
+- A GitHub error, a retryable failure, or a busy release lock lasted 30 minutes. The next tick that reaches GitHub ends the stall.
+- The branch head stayed unreleased for 6 hours. This check also runs during a pause. A deployed head ends it.
+
+While it is up to date, the runner reads the branch head at most every 15 minutes. The second stall covers a deployed commit that left the branch after a force push, because then no newer commit can qualify.
+
+### Read the state
+
+`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, and the stalls. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes means the timer does not run. Check it with `systemctl status orbit-gateway-release.timer` on the Gateway.
 
 ## Adopt the release layout
 
@@ -446,8 +576,10 @@ A release command raises an alert when a release fails, when it pauses automatic
 | Kind | When |
 | --- | --- |
 | `release_failed` | A release failed. Nothing went live, or the previous release serves again |
-| `release_paused` | A release failed after its migrations ran, and automatic releases are paused |
+| `release_paused` | A release failed after its migrations ran, or died after it touched the schema or the current link, and automatic releases are paused |
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
+| `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
+| `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
 
 Every alert names its subject, a summary, and an optional evidence link. The summary passes through the Gateway log redactor and is cut at 1,000 characters. A field outside these limits is a bug in the calling command, which refuses it before it records anything.
 

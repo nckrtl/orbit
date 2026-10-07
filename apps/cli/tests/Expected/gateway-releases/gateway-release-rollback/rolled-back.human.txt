@@ -1,0 +1,29 @@
+Queuing release...
+Switching release...
+Handing off runtime...
+Verifying release...
+Moving scheduler...
+Publishing web app...
+Running smoke tests...
+
+┌  Roll back Gateway to release fedcba987654
+│
+├  ● Queued release
+│    Record 1.
+│
+├  ● Switched release
+│
+├  ● Handed off runtime
+│
+├  ● Verified release
+│
+├  ● Moved scheduler
+│
+├  ● Published web app
+│
+├  ● Passed smoke tests
+│
+└  Rolled back to release fedcba987654.
+
+Release record: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

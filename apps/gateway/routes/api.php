@@ -17,6 +17,8 @@ use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\FleetFirewallRulesController;
 use App\Http\Controllers\Api\GatewayDesiredFleetStatesController;
+use App\Http\Controllers\Api\GatewayReleaseAutomationController;
+use App\Http\Controllers\Api\GatewayReleasesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
@@ -103,6 +105,23 @@ Route::prefix('v1')->group(function (): void {
     Route::middleware([RequireActiveWireGuardPeer::class])
         ->get('gateway/desired-fleet-state', [GatewayDesiredFleetStatesController::class, 'show'])
         ->name('gateway:desired-fleet-state');
+
+    // Gateway releases run in their own systemd unit; deploy and rollback answer 202 with the queued record.
+    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
+        ->prefix('gateway')->group(function (): void {
+            Route::get('releases', [GatewayReleasesController::class, 'index'])->name('gateway:release:list');
+            Route::post('releases', [GatewayReleasesController::class, 'store'])->name('gateway:release:deploy');
+            Route::get('releases/{release}', [GatewayReleasesController::class, 'show'])
+                ->where('release', '[0-9a-f]{1,40}')
+                ->name('gateway:release:show');
+            Route::post('releases/{release}/rollback', [GatewayReleasesController::class, 'rollback'])
+                ->where('release', '[0-9a-f]{12}')
+                ->name('gateway:release:rollback');
+            Route::get('release-automation', [GatewayReleaseAutomationController::class, 'show'])->name('gateway:release:auto:status');
+            Route::post('release-automation/enable', [GatewayReleaseAutomationController::class, 'enable'])->name('gateway:release:auto:enable');
+            Route::post('release-automation/disable', [GatewayReleaseAutomationController::class, 'disable'])->name('gateway:release:auto:disable');
+            Route::post('release-automation/resume', [GatewayReleaseAutomationController::class, 'resume'])->name('gateway:release:auto:resume');
+        });
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,

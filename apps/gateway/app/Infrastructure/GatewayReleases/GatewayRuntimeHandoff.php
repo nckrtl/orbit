@@ -6,6 +6,7 @@ namespace App\Infrastructure\GatewayReleases;
 
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
@@ -27,7 +28,8 @@ use Throwable;
  *
  * 1. Caddy publishes the Node's Caddyfile only when it changed, with a graceful reload.
  * 2. PHP-FPM reloads only when the rendered pool differs from the live pool. Requests keep running otherwise.
- * 3. The hibernator and agent-view units are installed again; agent-view restarts on the new code.
+ * 3. The hibernator, agent-view, and release units are installed again; agent-view restarts on the new code.
+ *    The release units are only written and the timer enabled, so the release that runs the handoff keeps running.
  * 4. The scheduler finishes its running commands and starts on the new release ({@see GatewaySchedulerHandoff}).
  * 5. Document cleanup is reconciled and resumed ({@see GatewayCleanupHandoff}).
  *
@@ -62,6 +64,7 @@ final readonly class GatewayRuntimeHandoff
         private ProtectedFileWriter $files,
         private RuntimeHibernatorConverger $hibernator,
         private AgentViewConverger $agentView,
+        private GatewayReleaseUnitConverger $releaseUnits,
         private GatewaySchedulerHandoff $scheduler,
         private GatewayCleanupHandoff $cleanup,
         private string $applicationPath,
@@ -109,6 +112,7 @@ final readonly class GatewayRuntimeHandoff
         $this->step('units', 'gateway.release_units_failed', function (): void {
             $this->hibernator->converge();
             $this->agentView->converge();
+            $this->releaseUnits->converge();
         });
 
         return [

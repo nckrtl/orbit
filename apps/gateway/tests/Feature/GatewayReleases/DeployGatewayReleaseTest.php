@@ -27,6 +27,7 @@ use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\GatewayReleaseFixture;
+use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
     $this->fixture = new GatewayReleaseFixture;
@@ -530,7 +531,7 @@ describe('gateway:release:deploy', function (): void {
             ->and($order->steps)->toBe([]);
     });
 
-    it('records a refused rollback as a failed Activity entry and changes nothing', function (): void {
+    it('ends a refused rollback as a failed retryable record with no commit and changes nothing', function (): void {
         $first = adopt_release($this->fixture);
         $order = new ReleaseSteps;
         $rollback = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order));
@@ -539,7 +540,11 @@ describe('gateway:release:deploy', function (): void {
 
         expect($exception->errorCode)->toBe('gateway.release_not_prepared')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            ->and(GatewayRelease::query()->count())->toBe(0)
+            ->and(GatewayRelease::query()->sole())
+            ->outcome->toBe('failed')
+            ->retryable->toBeTrue()
+            ->sha->toBeNull()
+            ->trigger->toBe('rollback')
             ->and(Activity::query()->value('command'))->toBe('gateway:release:rollback')
             ->and(Activity::query()->value('error_code'))->toBe('gateway.release_not_prepared');
     });
@@ -609,7 +614,10 @@ describe('gateway:release:deploy', function (): void {
 
         expect($refused->errorCode)->toBe('gateway.release_downgrade')
             ->and($this->fixture->layout->currentReleaseId())->toBe($current)
-            ->and(GatewayRelease::query()->count())->toBe(0)
+            ->and(GatewayRelease::query()->sole())
+            ->outcome->toBe('failed')
+            ->retryable->toBeTrue()
+            ->error_code->toBe('gateway.release_downgrade')
             ->and(Activity::query()->value('error_code'))->toBe('gateway.release_downgrade')
             ->and($action->execute($older, force: true)->outcome)->toBe('verified');
     });
@@ -991,6 +999,7 @@ function release_deployer(
         $recorder,
         new GatewayReleaseGuard($fixture->layout, $database, $fixture),
         new GatewayReleaseRetry,
+        GatewayReleasePipeline::newestGreen(),
     );
 }
 

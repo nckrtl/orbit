@@ -1,0 +1,41 @@
+Loading Gateway release...
+
+┌  Show Gateway release
+│
+├  ● Loaded Gateway release
+│
+└  Loaded Gateway release.
+
+
+┌  Gateway release: fedcba987654
+│
+├  Record       1
+│
+├  Commit       fedcba9876543210fedcba9876543210fedcba98
+│
+├  Trigger      deploy
+│
+├  Outcome      verified
+│
+├  Previous     0123456789ab
+│
+├  Migrations   none
+│
+├  Snapshot     —
+│
+├  Steps        prepare prepared, guard passed, configuration cached, snapshot skipped, migrate skipped, switch
+│               switched, handoff done, verify passed, scheduler done, web published, smoke passed
+│
+├  Error        —
+│
+├  Message      —
+│
+├  Alert        —
+│
+├  Duration     58 s
+│
+├  Started      2026-10-07T12:00:00+00:00
+│
+└  Updated      2026-10-07T12:00:00+00:00
+
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

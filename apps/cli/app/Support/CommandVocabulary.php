@@ -31,7 +31,7 @@ final readonly class CommandVocabulary
         'doctor' => ['doctor'],
         'env' => ['import', 'sync'],
         'firewall' => ['allow', 'deny'],
-        'gateway' => ['status', 'trust', 'use'],
+        'gateway' => ['deploy', 'resume', 'rollback', 'status', 'trust', 'use'],
         'instance' => [
             'clone',
             'deploy',

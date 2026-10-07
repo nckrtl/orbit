@@ -11,6 +11,7 @@ use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseSmoke;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
+use App\Models\GatewayRelease;
 use DateTimeImmutable;
 use DateTimeZone;
 use Illuminate\Support\Facades\Log;
@@ -24,7 +25,8 @@ use Throwable;
  * Any failure after the switch, expected or not, is handled the same way: without migrations the
  * previous release becomes current again and its runtime handoff repeats; after migrations the
  * release pauses. A failure after migrations always pauses, also when the switch itself failed,
- * because the previous code then serves a schema it has not run. Every outcome is recorded.
+ * because the previous code then serves a schema it has not run. Every outcome is recorded, and
+ * each step is stored on the release record as it ends.
  */
 final readonly class GatewayReleasePromoter
 {
@@ -57,6 +59,7 @@ final readonly class GatewayReleasePromoter
         ?string $snapshotPath,
         array $phases,
         int $startedAt,
+        ?GatewayRelease $record = null,
     ): DeployedGatewayRelease {
         $previous = $this->layout->currentReleaseId();
         $scheduled = null;
@@ -69,22 +72,29 @@ final readonly class GatewayReleasePromoter
                 $phases['configuration'] = ['outcome' => 'cached'];
             }
 
+            $this->recorder->progress($record, $phases, $sha);
+
             $step = 'switch';
             $previous = $this->switcher->switchTo($id);
             $phases['switch'] = ['outcome' => 'switched', 'from' => $previous, 'to' => $id];
+            $this->recorder->progress($record, $phases);
             $step = 'handoff';
             $handoffAt = new DateTimeImmutable('now', new DateTimeZone('UTC'));
             $phases['handoff'] = $this->runtime->handoff($id);
+            $this->recorder->progress($record, $phases);
             $step = 'verify';
             $verified = $this->verifier->verify($sha);
             $phases['verify'] = ['outcome' => 'passed', 'status' => $verified['status'], 'version' => $verified['version']];
+            $this->recorder->progress($record, $phases);
             $step = 'scheduler';
             // The scheduler may restart on the new release before a later part of this phase fails.
             $scheduleStarted = true;
             $scheduled = $this->runtime->schedule($id);
             $phases['scheduler'] = $scheduled;
+            $this->recorder->progress($record, $phases);
             $step = 'web';
             $phases['web'] = $this->publishWeb($id, $sha, $trigger);
+            $this->recorder->progress($record, $phases);
             $step = 'smoke';
             $phases['smoke'] = $this->smoke->run($id, $sha, $handoffAt, $phases['web']['outcome'] === 'kept' ? ['web'] : []);
         } catch (Throwable $exception) {
@@ -100,6 +110,7 @@ final readonly class GatewayReleasePromoter
                 previous: $previous,
                 scheduled: $scheduled,
                 scheduleStarted: $scheduleStarted,
+                record: $record,
             );
         }
 
@@ -115,7 +126,7 @@ final readonly class GatewayReleasePromoter
             startedAt: $startedAt,
             phases: $phases,
         );
-        $this->record($release);
+        $this->record($release, $record);
         $this->prune($id, $previous);
 
         return $release;
@@ -137,12 +148,14 @@ final readonly class GatewayReleasePromoter
         ?string $previous,
         ?array $scheduled,
         bool $scheduleStarted,
+        ?GatewayRelease $record,
     ): never {
         $outcome = 'failed';
         $cleanupPaused = ($scheduled['cleanup_paused'] ?? false) === true;
         $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
         $switched = $previous !== $id && $this->layout->currentReleaseId() === $id;
         $unknown = $switched && $previous !== null && ! $migrationsRan ? $this->schemaRefusal($previous) : null;
+        $this->recorder->progress($record, $phases);
 
         if ($migrationsRan || $unknown instanceof GatewayReleaseException) {
             // Never switch back onto code that has not run on the applied schema.
@@ -193,8 +206,8 @@ final readonly class GatewayReleasePromoter
             phases: $phases,
             errorCode: $exception->errorCode,
             message: $exception->getMessage(),
-            retryable: $outcome !== 'paused' && $this->retry->retryable($exception->errorCode, $sha),
-        ));
+            retryable: $outcome !== 'paused' && $this->retry->retryable($exception->errorCode, $sha, $record?->id),
+        ), $record);
 
         throw $exception;
     }
@@ -216,10 +229,10 @@ final readonly class GatewayReleasePromoter
      * Writes the record without letting a failed write change the outcome: a verified release is
      * not switched back because its row could not be stored.
      */
-    private function record(DeployedGatewayRelease $release): void
+    private function record(DeployedGatewayRelease $release, ?GatewayRelease $record = null): void
     {
         try {
-            $this->recorder->write($release);
+            $this->recorder->write($release, $record);
         } catch (Throwable $exception) {
             Log::error('The Gateway release record could not be written.', [
                 'release' => $release->toArray(),

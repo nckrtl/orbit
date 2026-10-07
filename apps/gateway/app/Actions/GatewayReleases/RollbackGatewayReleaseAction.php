@@ -18,8 +18,8 @@ use Throwable;
 /**
  * Switches back to a retained release. It refuses when the database has applied a migration the
  * target does not ship, unless the caller passes force. Force does not migrate backwards; it names the
- * newest snapshot and leaves the schema where it is. A refusal changes nothing and writes a failed
- * Activity entry; an attempt that switches is recorded like a deploy.
+ * newest snapshot and leaves the schema where it is. A refusal changes nothing; its record ends
+ * failed and retryable. An attempt that switches is recorded like a deploy.
  */
 final readonly class RollbackGatewayReleaseAction
 {
@@ -31,30 +31,50 @@ final readonly class RollbackGatewayReleaseAction
         private GatewayReleaseGuard $guard,
     ) {}
 
-    public function execute(string $release, bool $force = false): DeployedGatewayRelease
+    /** @param GatewayRelease|null $record a queued record to claim, or null to start a new one */
+    public function execute(string $release, bool $force = false, ?GatewayRelease $record = null): DeployedGatewayRelease
     {
-        return $this->lock->run(function () use ($release, $force): DeployedGatewayRelease {
+        return $this->lock->run(function () use ($release, $force, $record): DeployedGatewayRelease {
             $startedAt = hrtime(true);
+            $record = $this->recorder->begin('rollback', $release, $record, $force);
 
             try {
                 [$id, $sha, $snapshot] = $this->target($release, $force);
             } catch (Throwable $thrown) {
                 $exception = GatewayReleaseException::fromThrowable($thrown, 'rollback');
-                $this->recorder->refused('rollback', $exception, intdiv(hrtime(true) - $startedAt, 1_000_000));
+                $this->recorder->fail($record, $exception, retryable: true, durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000));
 
                 throw $exception;
             }
 
-            return $this->promoter->promote(
-                id: $id,
-                sha: $sha,
-                trigger: 'rollback',
-                migrationsRan: false,
-                snapshotPath: $snapshot,
-                phases: ['rollback' => ['outcome' => 'started', 'force' => $force, 'snapshot' => $snapshot]],
-                startedAt: $startedAt,
-            );
+            try {
+                return $this->promoter->promote(
+                    id: $id,
+                    sha: $sha,
+                    trigger: 'rollback',
+                    migrationsRan: false,
+                    snapshotPath: $snapshot,
+                    phases: ['rollback' => ['outcome' => 'started', 'force' => $force, 'snapshot' => $snapshot]],
+                    startedAt: $startedAt,
+                    record: $record,
+                );
+            } catch (Throwable $exception) {
+                $this->recorder->fail($record, $exception, retryable: true, durationMs: intdiv(hrtime(true) - $startedAt, 1_000_000));
+
+                throw $exception;
+            }
         });
+    }
+
+    /**
+     * The commit of a retained release that may become current. A caller checks this before it
+     * queues a rollback, and the rollback checks it again under the lock.
+     *
+     * @throws GatewayReleaseException
+     */
+    public function check(string $release, bool $force): string
+    {
+        return $this->target($release, $force)[1];
     }
 
     /**

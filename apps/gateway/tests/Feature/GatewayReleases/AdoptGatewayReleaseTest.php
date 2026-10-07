@@ -24,6 +24,7 @@ use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Schema;
 use Tests\Support\GatewayReleaseFixture;
+use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\WebArtifactFixture;
 
 beforeEach(function (): void {
@@ -370,6 +371,7 @@ function adoption(
         $recorder,
         $guard,
         new GatewayReleaseRetry,
+        GatewayReleasePipeline::newestGreen(),
     );
 
     return new AdoptGatewayReleaseAction(

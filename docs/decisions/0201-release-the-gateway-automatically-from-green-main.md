@@ -47,7 +47,7 @@ A **releasable commit** is the newest commit on `main` where all of these hold:
 
 The Gateway pulls. A systemd timer, `orbit-gateway-release.timer`, starts the oneshot `orbit-gateway-release.service` every minute. The service runs `php artisan gateway:release:auto` from the **current** release. It never runs inside PHP-FPM or the scheduler, because it restarts the scheduler and can reload PHP-FPM. It reads GitHub through the existing GitHub App with Checks and Actions read tokens.
 
-Auto-release is **disabled by default**. `orbit gateway:release:auto enable|disable|status` turns it on and off. The same steps run manually with `orbit gateway:release:deploy <sha>`.
+Auto-release is **disabled by default**. `orbit gateway:release:auto:enable`, `gateway:release:auto:disable`, and `gateway:release:auto:status` turn it on and off and show it. The same steps run manually with `orbit gateway:release:deploy <sha>`. A manual release from the API also runs in a systemd unit, `orbit-gateway-release-run@<record>.service`, never in the API request.
 
 ### Release layout
 
@@ -91,7 +91,7 @@ Every release writes a **release record**: commit, trigger (`auto`, a manual cal
 | In verify or smoke, no migrations ran | Switch back to the previous release and its web build, and repeat the runtime handoff for it. Mark the commit failed. Alert |
 | In verify or smoke, after migrations ran | **Pause** auto-release and alert. Do not switch back automatically |
 
-Old code on a migrated schema is not proven safe. After a pause, the operator decides between a forward fix, `orbit gateway:release:rollback <sha12> --force`, and a restore from the snapshot.
+Old code on a migrated schema is not proven safe. After a pause, the operator decides between a forward fix, `orbit gateway:release:rollback <sha12> --force`, and a restore from the snapshot. A release that goes live ends the pause; otherwise `orbit gateway:release:auto:resume` ends it.
 
 An **alert** is a failed Activity entry plus an outbound HMAC webhook. The [outer loop](/reference/tasks#outer-loop) collects the failed entry, and `problems:file` files it as a problem. The webhook uses the pattern of the existing Coder settle notifier and is configured to reach Anna.
 

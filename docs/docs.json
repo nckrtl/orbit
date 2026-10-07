@@ -222,6 +222,14 @@
             "pages": [
               "GET /api/v1/ca/root",
               "GET /api/v1/gateway/desired-fleet-state",
+              "GET /api/v1/gateway/release-automation",
+              "POST /api/v1/gateway/release-automation/disable",
+              "POST /api/v1/gateway/release-automation/enable",
+              "POST /api/v1/gateway/release-automation/resume",
+              "GET /api/v1/gateway/releases",
+              "POST /api/v1/gateway/releases",
+              "GET /api/v1/gateway/releases/{release}",
+              "POST /api/v1/gateway/releases/{release}/rollback",
               "GET /api/v1/gateway/status"
             ]
           },
