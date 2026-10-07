@@ -143,7 +143,7 @@ A Node or an updater needs a binary that is always there and needs no login. Wor
 
 ### A version from the commit count
 
-An updater must refuse downgrades, so versions need a total order. `git rev-list --count` gives that order on `main` and maps each version to exactly one commit, with no counter to store. A workflow run number would also be ordered, but a re-run or a missed run would break the link to the commit. A version from the commit date is not ordered, because commit dates can go backwards.
+An updater must refuse downgrades, so versions need a total order. `git rev-list --count` gives that order on `main` and maps each version to exactly one commit, with no counter to store. The order holds because the `main` ruleset refuses force pushes, so every later `main` commit descends from every earlier one. A workflow run number would also be ordered, but a re-run or a missed run would break the link to the commit. A version from the commit date is not ordered, because commit dates can go backwards.
 
 ### Immutable releases that never take Latest
 
