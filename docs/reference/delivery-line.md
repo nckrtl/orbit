@@ -214,6 +214,8 @@ All checks run at the same time. Each has its own time limit, and `--timeout` bo
 | `--write-check`, `--smoke-project` | off | Run `documents` in that Project, by ID or slug. Both or neither. |
 | `--dry-run` | off | Print each check and its target. Call nothing. |
 
+Each check command runs in a session of its own. When the run itself receives `SIGTERM`, `SIGINT`, or `SIGHUP`, it first kills every running check command. Then it prints a result with `error` `terminated` and exits `128` plus the signal number. So a caller that stops smoke leaves no check behind.
+
 The write check is off by default, because it writes to the live Gateway on every release. Use a dedicated Project for it. The file is named `gateway-smoke-<sha12>-<random>.txt`. When a step fails after create, the check removes the file and records `cleanup` as `removed`. When that fails too, `cleanup` is `failed` and the message names the entry to remove.
 
 ### Result
@@ -233,7 +235,7 @@ The command prints one JSON object and exits `0` when no check failed or timed o
 | `checks.<name>.error` | `null`, or a stable token from the table below. |
 | `checks.<name>.message` | One sentence about the result. |
 | `checks.<name>.duration_ms`, `checks.<name>.detail` | The check's time, and what it read: URLs, status codes, units, timestamps, or the deploy-verify JSON. |
-| `error`, `failed_checks`, `message`, `next` | Present on failure. `error` is `checks_failed`. |
+| `error`, `failed_checks`, `message`, `next` | Present on failure. `error` is `checks_failed`, or `terminated` when a signal stopped the run; a terminated result has no `checks` or `failed_checks`. |
 
 | `error` | Check | Meaning |
 | --- | --- | --- |
