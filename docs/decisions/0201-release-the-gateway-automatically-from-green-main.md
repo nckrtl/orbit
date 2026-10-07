@@ -75,9 +75,9 @@ One release runs at a time, under a single-flight lock:
    - Restart `orbit-agent-view`.
 6. **Verify:** `/up` is up, Gateway status is `ok`, and its version equals the commit. These are the `bin/deploy-verify` checks.
 7. **Switch the web** `current` link to `web/releases/<sha12>`.
-8. **Smoke test** with the repository command `bin/gateway-smoke` (JSON, about 60 s), run against the new release:
+8. **Smoke test** with the repository command [`bin/gateway-smoke`](/reference/delivery-line#bingateway-smoke) (JSON, about 60 s), run against the new release with `--since` set to the handoff time:
    - authenticated CLI reads on the Gateway;
-   - the web app's `index.html` and one hashed asset served through Caddy;
+   - the web app's `index.html` and one hashed asset of `web/releases/<sha12>`, served through Caddy;
    - the scheduler running and `tasks:tick` firing after the handoff;
    - agent-view running.
 
@@ -136,6 +136,7 @@ An **alert** is a failed Activity entry plus an outbound HMAC webhook. The [oute
   - [Web app](/reference/web-app): the web app comes from the CI artifact; `bin/web-deploy` remains for manual use.
   - [Feature delivery: CI](/reference/implementation-loop#ci): `.github/workflows/ci.yml` cancels only pull-request runs and uploads `web-dist-<sha>` on `main`.
   - [Delivery-line proofs: bin/deploy-verify](/reference/delivery-line#bindeploy-verify): the same checks run as each release's verify step.
+  - [Delivery-line proofs: bin/gateway-smoke](/reference/delivery-line#bingateway-smoke): the smoke checks, their limits, and the JSON the release record stores.
 - Verify: tests and a disposable Gateway clone prove these outcomes.
   - A failed or interrupted prepare leaves the live release untouched.
   - A continuous HTTP probe and a long request across the switch see no errors, on a disposable Gateway clone.

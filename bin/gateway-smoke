@@ -1,0 +1,694 @@
+#!/usr/bin/env python3
+"""Read-only smoke test of a Gateway release on the Gateway host.
+
+Run the deploy-verify checks, authenticated CLI reads, the web release that Caddy
+serves, and the scheduler and agent-view units, each with its own time limit and
+all within one total limit. Print one JSON object with one result per check.
+Do not deploy, switch, restart, or roll back. The document write check runs only
+with --write-check.
+"""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import re
+import secrets
+import shutil
+import signal
+import ssl
+import subprocess
+import sys
+import threading
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime, timedelta, timezone
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+from pathlib import Path
+
+SCHEMA = 1
+ROOT = Path(__file__).resolve().parent.parent
+DEPLOY_VERIFY = ROOT / 'bin/deploy-verify'
+CHECKS = ('deploy_verify', 'node_list', 'tasks_list', 'web', 'scheduler', 'tasks_tick', 'agent_view', 'documents')
+CHECK_LIMITS = {
+    'deploy_verify': 35,
+    'node_list': 20,
+    'tasks_list': 20,
+    'web': 20,
+    'scheduler': 10,
+    'agent_view': 10,
+    'documents': 45,
+}
+COMMAND_LIMIT = 20
+TICK_POLL_SECONDS = 2
+SHA = re.compile(r'\A[0-9a-fA-F]{7,40}\Z')
+UNIT = re.compile(r'\A[A-Za-z0-9:_.@-]+\.service\Z')
+HASHED_ASSET = re.compile(r'''(?:src|href)=["'](/assets/[A-Za-z0-9._/-]*-[A-Za-z0-9_-]{6,}\.(?:js|css))["']''')
+DEFAULT_WEB_URL = 'https://gateway.orbit/'
+DEFAULT_WEB_DIR = '/home/orbit/web'
+DEFAULT_CHECKOUT = '/home/orbit/orbit'
+DEFAULT_AGENT_VIEW_UNIT = 'orbit-agent-view.service'
+FAILED_NEXT = (
+    'Do not treat the release as healthy. Read the error and message of each failed check, '
+    'fix the cause or switch back, then run again.'
+)
+
+
+def load_deploy_verify():
+    loader = SourceFileLoader('orbit_deploy_verify', str(DEPLOY_VERIFY))
+    module = module_from_spec(spec_from_loader(loader.name, loader))
+    loader.exec_module(module)
+    return module
+
+
+deploy_verify = load_deploy_verify()
+
+
+class SmokeParser(argparse.ArgumentParser):
+    def error(self, message):
+        self.print_usage(sys.stderr)
+        print(f'{self.prog}: {message}', file=sys.stderr)
+        print('Pass --sha with the released commit, or run --help. Do not deploy.', file=sys.stderr)
+        sys.exit(2)
+
+
+def emit(payload):
+    sys.stdout.write(json.dumps(payload, indent=2, ensure_ascii=True) + '\n')
+    sys.stdout.flush()
+
+
+def usage(message, next_step):
+    payload = {'schema': SCHEMA, 'passed': False, 'error': 'usage', 'message': message, 'next': next_step}
+    emit(payload)
+    print(next_step, file=sys.stderr)
+    return 2
+
+
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
+def iso(moment):
+    return moment.astimezone(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+
+
+def parse_time(value):
+    if not isinstance(value, str) or value.strip() == '':
+        return None
+    try:
+        moment = datetime.fromisoformat(value.strip().replace('Z', '+00:00'))
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        return None
+    return moment.astimezone(timezone.utc)
+
+
+class Budget:
+    """One check's time limit, never past the run's total limit."""
+
+    def __init__(self, deadline, limit):
+        self.deadline = min(deadline, time.monotonic() + limit)
+
+    def remaining(self):
+        return max(0.0, self.deadline - time.monotonic())
+
+    def cap(self, seconds):
+        return max(0.1, min(seconds, self.remaining()))
+
+
+class CheckFailed(Exception):
+    def __init__(self, error, message, detail=None):
+        super().__init__(message)
+        self.error = error
+        self.message = message
+        self.detail = detail or {}
+
+
+class CheckTimedOut(CheckFailed):
+    def __init__(self, message, detail=None):
+        super().__init__('timeout', message, detail)
+
+
+class CheckSkipped(Exception):
+    def __init__(self, message, detail=None):
+        super().__init__(message)
+        self.message = message
+        self.detail = detail or {}
+
+
+def run_command(argv, budget, limit=COMMAND_LIMIT, what=None):
+    """Run argv in its own process group and kill the whole group when the time limit passes."""
+    what = what or ' '.join(argv)
+    timeout = budget.cap(limit)
+    try:
+        process = subprocess.Popen(
+            argv,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            start_new_session=True,
+            env={**os.environ, 'NO_COLOR': '1'},
+        )
+    except OSError as error:
+        raise CheckFailed('command_unavailable', f'{what} could not start: {error.strerror or error}.') from error
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.communicate()
+        raise CheckTimedOut(f'{what} did not finish within {timeout:.0f} seconds.')
+    return process.returncode, stdout.decode('utf-8', errors='replace'), stderr.decode('utf-8', errors='replace')
+
+
+def orbit_json(options, budget, *arguments, limit=COMMAND_LIMIT):
+    argv = [options.orbit, *arguments, '--json']
+    what = 'orbit ' + ' '.join(arguments)
+    code, stdout, stderr = run_command(argv, budget, limit, what)
+    try:
+        body = json.loads(stdout)
+    except json.JSONDecodeError:
+        body = None
+    if code == 0 and isinstance(body, dict) and 'error' not in body:
+        return body
+    error = body.get('error') if isinstance(body, dict) else None
+    if isinstance(error, dict):
+        raise CheckFailed(
+            'cli_failed',
+            f'{what} failed with {error.get("code")}: {error.get("message")}',
+            {'command': what, 'exit_code': code, 'cli_error': error},
+        )
+    raise CheckFailed(
+        'cli_failed',
+        f'{what} exited {code} without a JSON result.',
+        {'command': what, 'exit_code': code, 'stderr': stderr.strip()[-500:]},
+    )
+
+
+def http_get(url, budget, limit=10):
+    timeout = budget.cap(limit)
+    request = urllib.request.Request(url, method='GET', headers={'Accept': '*/*', 'Cache-Control': 'no-cache'})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return response.getcode(), response.headers.get('Content-Type', ''), response.read()
+    except urllib.error.HTTPError as error:
+        return error.code, error.headers.get('Content-Type', '') if error.headers else '', error.read() if error.fp else b''
+    except (TimeoutError, OSError, ssl.SSLError, urllib.error.URLError) as error:
+        reason = getattr(error, 'reason', error)
+        if isinstance(reason, TimeoutError) or 'timed out' in str(reason).lower():
+            raise CheckTimedOut(f'{url} did not answer within {timeout:.0f} seconds.', {'url': url}) from error
+        raise CheckFailed(
+            'unreachable',
+            f'{url} is not reachable: {reason}',
+            {'url': url, 'next': deploy_verify.unreachable_next(error)},
+        ) from error
+
+
+def sha256(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def systemctl(budget, *arguments):
+    binary = shutil.which('systemctl')
+    if binary is None:
+        raise CheckFailed('systemctl_unavailable', 'systemctl is not available. Run the smoke test on the Gateway host.')
+    code, stdout, stderr = run_command([binary, *arguments], budget, 10, 'systemctl ' + ' '.join(arguments))
+    if code != 0:
+        raise CheckFailed(
+            'systemctl_failed',
+            f'systemctl {" ".join(arguments)} exited {code}: {stderr.strip() or stdout.strip()}',
+        )
+    return stdout
+
+
+def show_units(budget, units, properties):
+    """Read unit properties with one `systemctl show`, keyed by unit name."""
+    arguments = ['show', '--no-pager', '--timestamp=unix', *(f'--property={name}' for name in ('Id', *properties)), '--', *units]
+    shown = {}
+    for block in re.split(r'\n\s*\n', systemctl(budget, *arguments).strip()):
+        values = {}
+        for line in block.splitlines():
+            key, separator, value = line.partition('=')
+            if separator:
+                values[key] = value
+        if values.get('Id'):
+            shown[values['Id']] = values
+    return shown
+
+
+def unix_timestamp(value):
+    match = re.fullmatch(r'@(\d+)', (value or '').strip())
+    return datetime.fromtimestamp(int(match.group(1)), timezone.utc) if match else None
+
+
+def unit_state(budget, unit, since):
+    values = show_units(budget, [unit], ('LoadState', 'ActiveState', 'SubState', 'ExecMainStartTimestamp')).get(unit, {})
+    started = unix_timestamp(values.get('ExecMainStartTimestamp'))
+    detail = {
+        'unit': unit,
+        'load_state': values.get('LoadState'),
+        'active_state': values.get('ActiveState'),
+        'sub_state': values.get('SubState'),
+        'started_at': iso(started) if started else None,
+    }
+    if values.get('LoadState') in (None, 'not-found'):
+        raise CheckFailed('unit_missing', f'{unit} is not installed.', detail)
+    if values.get('ActiveState') != 'active' or values.get('SubState') != 'running':
+        raise CheckFailed(
+            'unit_inactive',
+            f'{unit} is {values.get("ActiveState")} ({values.get("SubState")}), not active and running.',
+            detail,
+        )
+    if since is not None:
+        if started is None:
+            raise CheckFailed('unit_start_unknown', f'The start time of {unit} is unknown, so it cannot be checked against --since.', detail)
+        if started < since:
+            raise CheckFailed(
+                'unit_not_restarted',
+                f'{unit} started at {iso(started)}, before {iso(since)}. It still runs code from before the handoff.',
+                detail,
+            )
+    return detail
+
+
+def exec_argv(value):
+    """The argv words of a `systemctl show -p ExecStart` value."""
+    match = re.search(r'argv\[\]=([^;]*)', value or '')
+    return match.group(1).split() if match else []
+
+
+def find_scheduler_unit(options, budget):
+    listing = systemctl(budget, 'list-units', '--all', '--type=service', '--plain', '--no-legend', '--no-pager', 'orbit-process-*')
+    units = [line.split()[0] for line in listing.splitlines() if line.strip()]
+    if not units:
+        raise CheckFailed('scheduler_missing', 'No orbit-process unit is loaded on this host.', {'checkout': options.checkout})
+    checkout = os.path.realpath(options.checkout)
+    matches = []
+    for unit, values in show_units(budget, units, ('ExecStart', 'WorkingDirectory')).items():
+        directory = values.get('WorkingDirectory') or ''
+        if 'schedule:work' not in exec_argv(values.get('ExecStart')) or directory == '':
+            continue
+        resolved = os.path.realpath(directory)
+        if resolved == checkout or resolved.startswith(checkout.rstrip('/') + '/'):
+            matches.append(unit)
+    if not matches:
+        raise CheckFailed(
+            'scheduler_missing',
+            f'No orbit-process unit runs schedule:work in {options.checkout}.',
+            {'checkout': options.checkout, 'candidates': units},
+        )
+    if len(matches) > 1:
+        raise CheckFailed(
+            'scheduler_ambiguous',
+            f'More than one unit runs schedule:work in {options.checkout}: {", ".join(sorted(matches))}. Pass --scheduler-unit.',
+            {'checkout': options.checkout, 'candidates': sorted(matches)},
+        )
+    return matches[0]
+
+
+def check_deploy_verify(options, budget):
+    argv = [sys.executable, str(DEPLOY_VERIFY), '--sha', options.sha]
+    if options.up_url:
+        argv += ['--up-url', options.up_url]
+    if options.status_url:
+        argv += ['--status-url', options.status_url]
+    code, stdout, _stderr = run_command(argv, budget, CHECK_LIMITS['deploy_verify'], 'bin/deploy-verify')
+    try:
+        result = json.loads(stdout)
+    except json.JSONDecodeError:
+        result = None
+    if not isinstance(result, dict):
+        raise CheckFailed('deploy_verify_failed', f'bin/deploy-verify exited {code} without a JSON result.')
+    if code != 0 or result.get('passed') is not True:
+        raise CheckFailed(result.get('error') or 'deploy_verify_failed', result.get('message') or 'bin/deploy-verify did not pass.', result)
+    return f'The live version is {result.get("app_version")}, /up is up, and Gateway status is ok.', result
+
+
+def check_node_list(options, budget):
+    body = orbit_json(options, budget, 'node:list')
+    nodes = body.get('nodes')
+    if not isinstance(nodes, list) or not nodes:
+        raise CheckFailed('cli_unexpected', 'orbit node:list returned no Nodes. The Gateway Node is always listed.', {'command': 'orbit node:list'})
+    return f'orbit node:list returned {len(nodes)} Nodes.', {'command': 'orbit node:list', 'nodes': len(nodes), 'request_id': body.get('request_id')}
+
+
+def check_tasks_list(options, budget):
+    try:
+        body = orbit_json(options, budget, 'tasks:list')
+    except CheckFailed as failure:
+        if (failure.detail.get('cli_error') or {}).get('code') == 'extension.disabled':
+            raise CheckSkipped('The tasks extension is disabled.', {'command': 'orbit tasks:list'}) from failure
+        raise
+    groups = body.get('task_groups')
+    if not isinstance(groups, list):
+        raise CheckFailed('cli_unexpected', 'orbit tasks:list returned no task_groups list.', {'command': 'orbit tasks:list'})
+    return f'orbit tasks:list returned {len(groups)} task groups.', {'command': 'orbit tasks:list', 'task_groups': len(groups), 'request_id': body.get('request_id')}
+
+
+def check_web(options, budget):
+    current = Path(options.web_dir) / 'current'
+    detail = {'url': options.web_url, 'web_dir': options.web_dir}
+    if not (current / 'index.html').is_file():
+        raise CheckFailed('web_current_missing', f'{current}/index.html does not exist. No web release is current.', detail)
+    target = os.readlink(current) if current.is_symlink() else None
+    expected = options.sha[:12].lower()
+    detail['current_release'] = Path(target).name if target else None
+    detail['expected_release'] = expected
+    if detail['current_release'] != expected:
+        raise CheckFailed(
+            'web_release_mismatch',
+            f'{current} points to {target or "no release link"}, not releases/{expected}. The web build of this commit is not current.',
+            detail,
+        )
+    status, content_type, index = http_get(options.web_url, budget)
+    detail.update({'status_code': status, 'content_type': content_type, 'index_sha256': sha256(index)})
+    if status != 200 or 'text/html' not in content_type.lower():
+        raise CheckFailed('web_index_failed', f'{options.web_url} answered {status} {content_type or "without a content type"}, not an HTML page.', detail)
+    if sha256(index) != sha256((current / 'index.html').read_bytes()):
+        raise CheckFailed('web_not_current', f'{options.web_url} does not serve {current}/index.html.', detail)
+    match = HASHED_ASSET.search(index.decode('utf-8', errors='replace'))
+    if match is None:
+        raise CheckFailed('web_asset_missing', 'The served index.html references no hashed asset under /assets/.', detail)
+    asset = match.group(1)
+    asset_url = urllib.parse.urljoin(options.web_url, asset)
+    asset_status, _asset_type, body = http_get(asset_url, budget)
+    local = current / asset.lstrip('/')
+    detail['asset'] = {'url': asset_url, 'status_code': asset_status, 'size_bytes': len(body)}
+    if asset_status != 200 or body == b'':
+        raise CheckFailed('web_asset_failed', f'{asset_url} answered {asset_status} with {len(body)} bytes.', detail)
+    if not local.is_file() or sha256(body) != sha256(local.read_bytes()):
+        raise CheckFailed('web_not_current', f'{asset_url} does not serve {local}.', detail)
+    return f'Caddy serves index.html and {asset} from web release {expected}.', detail
+
+
+def check_scheduler(options, budget):
+    unit = options.scheduler_unit or find_scheduler_unit(options, budget)
+    detail = unit_state(budget, unit, options.since)
+    detail['discovered'] = options.scheduler_unit is None
+    return f'{unit} is active and running.', detail
+
+
+def check_tasks_tick(options, budget):
+    threshold = options.since or (utc_now() - timedelta(seconds=options.tick_within))
+    detail = {'command': 'orbit tasks:status', 'tick_after': iso(threshold), 'last_tick_at': None, 'reads': 0}
+    while True:
+        body = orbit_json(options, budget, 'tasks:status')
+        detail['reads'] += 1
+        if body.get('enabled') is False:
+            raise CheckSkipped('The tasks extension is disabled, so the scheduler does not run tasks:tick.', detail)
+        if 'last_tick_at' not in body:
+            raise CheckFailed('tick_unreported', 'orbit tasks:status does not report last_tick_at. The Gateway predates the tick record.', detail)
+        detail['last_tick_at'] = body.get('last_tick_at')
+        started = parse_time(body.get('last_tick_at'))
+        if started is not None and started >= threshold:
+            return f'tasks:tick started at {iso(started)}, at or after {iso(threshold)}.', detail
+        if budget.remaining() <= TICK_POLL_SECONDS:
+            seen = iso(started) if started else 'never'
+            raise CheckFailed('tick_stale', f'No tasks:tick started at or after {iso(threshold)}. The last one started {seen}.', detail)
+        time.sleep(TICK_POLL_SECONDS)
+
+
+def check_agent_view(options, budget):
+    detail = unit_state(budget, options.agent_view_unit, options.since)
+    return f'{options.agent_view_unit} is active and running.', detail
+
+
+def document_data(body, what):
+    data = body.get('data')
+    if not isinstance(data, dict):
+        raise CheckFailed('cli_unexpected', f'{what} returned no data object.')
+    return data
+
+
+def check_documents(options, budget):
+    if not options.write_check:
+        raise CheckSkipped('The write check runs only with --write-check.')
+    project = options.smoke_project
+    token = secrets.token_hex(4)
+    name = f'gateway-smoke-{options.sha[:12].lower()}-{token}.txt'
+    renamed = f'gateway-smoke-{options.sha[:12].lower()}-{token}-renamed.txt'
+    content = f'Orbit Gateway smoke test {options.sha} {token}'
+    detail = {'project': project, 'entry_id': None, 'name': name, 'steps': [], 'cleanup': 'not_needed'}
+    entry = None
+    try:
+        created = document_data(orbit_json(
+            options, budget, 'project:document:create', project, name,
+            '--kind=file', f'--content={content}', '--media-type=text/plain',
+        ), 'project:document:create')
+        entry, revision = created.get('id'), created.get('revision')
+        detail['entry_id'] = entry
+        if not isinstance(entry, int) or not isinstance(revision, int):
+            raise CheckFailed('cli_unexpected', 'project:document:create returned no entry id and revision.', detail)
+        detail['steps'].append('create')
+        read = document_data(orbit_json(options, budget, 'project:document:read', project, str(entry)), 'project:document:read')
+        if read.get('content_text') != content:
+            raise CheckFailed('document_mismatch', 'project:document:read returned other content than was written.', detail)
+        detail['steps'].append('read')
+        updated = document_data(orbit_json(
+            options, budget, 'project:document:update', project, str(entry),
+            f'--name={renamed}', f'--expected-revision={revision}',
+        ), 'project:document:update')
+        if updated.get('name') != renamed or not isinstance(updated.get('revision'), int):
+            raise CheckFailed('document_mismatch', 'project:document:update did not rename the entry.', detail)
+        detail['steps'].append('update')
+        removed = document_data(orbit_json(
+            options, budget, 'project:document:remove', project, str(entry),
+            f'--expected-revision={updated["revision"]}', '--yes',
+        ), 'project:document:remove')
+        if removed.get('removed') is not True:
+            raise CheckFailed('document_mismatch', 'project:document:remove did not remove the entry.', detail)
+        detail['steps'].append('remove')
+        entry = None
+    except CheckFailed as failure:
+        cause = failure.detail
+        if isinstance(entry, int):
+            detail['cleanup'] = remove_document(options, budget, project, entry)
+        if detail['cleanup'] == 'failed':
+            failure.message += f' Entry {entry} in Project {project} was left behind; remove it.'
+        failure.detail = detail if cause is detail or not cause else {**detail, 'cause': cause}
+        raise
+    return f'Created, read, renamed, and removed {name} in Project {project}.', detail
+
+
+def remove_document(options, budget, project, entry):
+    """Remove an entry a failed write check left behind, within the time the check has left."""
+    try:
+        shown = document_data(orbit_json(options, budget, 'project:document:show', project, str(entry)), 'project:document:show')
+        orbit_json(options, budget, 'project:document:remove', project, str(entry), f'--expected-revision={shown.get("revision")}', '--yes')
+    except CheckFailed:
+        return 'failed'
+    return 'removed'
+
+
+RUNNERS = {
+    'deploy_verify': check_deploy_verify,
+    'node_list': check_node_list,
+    'tasks_list': check_tasks_list,
+    'web': check_web,
+    'scheduler': check_scheduler,
+    'tasks_tick': check_tasks_tick,
+    'agent_view': check_agent_view,
+    'documents': check_documents,
+}
+
+
+def result(status, started, message, error=None, detail=None):
+    return {
+        'status': status,
+        'error': error,
+        'message': message,
+        'duration_ms': int((time.monotonic() - started) * 1000),
+        'detail': detail or {},
+    }
+
+
+def run_check(name, options, deadline):
+    started = time.monotonic()
+    limit = options.timeout if name == 'tasks_tick' else CHECK_LIMITS[name]
+    try:
+        message, detail = RUNNERS[name](options, Budget(deadline, limit))
+        return result('passed', started, message, detail=detail)
+    except CheckSkipped as skipped:
+        return result('skipped', started, skipped.message, detail=skipped.detail)
+    except CheckTimedOut as timed_out:
+        return result('timeout', started, timed_out.message, 'timeout', timed_out.detail)
+    except CheckFailed as failure:
+        return result('failed', started, failure.message, failure.error, failure.detail)
+    except Exception as error:  # A defect in one check must not hide the others.
+        return result('failed', started, f'The check stopped unexpectedly: {type(error).__name__}: {error}', 'check_crashed')
+
+
+def run(options):
+    started_at = utc_now()
+    started = time.monotonic()
+    deadline = started + options.timeout
+    results = {}
+    threads = []
+    for name in CHECKS:
+        if name in options.skip:
+            results[name] = result('skipped', time.monotonic(), 'Skipped by --skip.')
+            continue
+
+        def work(check=name):
+            results[check] = run_check(check, options, deadline)
+
+        thread = threading.Thread(target=work, name=name, daemon=True)
+        thread.start()
+        threads.append((name, thread))
+    for name, thread in threads:
+        thread.join(max(0.0, deadline + 1 - time.monotonic()))
+        if thread.is_alive():
+            results[name] = result('timeout', started, f'The check did not finish within the total limit of {options.timeout} seconds.', 'timeout')
+    checks = {name: results[name] for name in CHECKS}
+    summary = {status: sum(1 for check in checks.values() if check['status'] == status) for status in ('passed', 'failed', 'timeout', 'skipped')}
+    failed = [name for name, check in checks.items() if check['status'] in ('failed', 'timeout')]
+    payload = {
+        'schema': SCHEMA,
+        'passed': not failed,
+        'source': 'live',
+        'expected_sha': options.sha,
+        'since': iso(options.since) if options.since else None,
+        'started_at': iso(started_at),
+        'finished_at': iso(utc_now()),
+        'duration_ms': int((time.monotonic() - started) * 1000),
+        'timeout_seconds': options.timeout,
+        'summary': summary,
+        'checks': checks,
+    }
+    if failed:
+        payload.update({
+            'error': 'checks_failed',
+            'failed_checks': failed,
+            'message': f'{len(failed)} of {len(checks) - summary["skipped"]} checks did not pass: {", ".join(failed)}.',
+            'next': FAILED_NEXT,
+        })
+        emit(payload)
+        print(payload['message'] + ' ' + FAILED_NEXT, file=sys.stderr)
+        return 1
+    emit(payload)
+    return 0
+
+
+def plan(options):
+    calls = {
+        'deploy_verify': {'command': ['bin/deploy-verify', '--sha', options.sha]
+                          + (['--up-url', options.up_url] if options.up_url else [])
+                          + (['--status-url', options.status_url] if options.status_url else [])},
+        'node_list': {'command': [options.orbit, 'node:list', '--json']},
+        'tasks_list': {'command': [options.orbit, 'tasks:list', '--json']},
+        'web': {'url': options.web_url, 'web_dir': options.web_dir},
+        'scheduler': {'unit': options.scheduler_unit, 'checkout': options.checkout},
+        'tasks_tick': {'command': [options.orbit, 'tasks:status', '--json'], 'tick_within_seconds': options.tick_within},
+        'agent_view': {'unit': options.agent_view_unit},
+        'documents': {'project': options.smoke_project},
+    }
+    for name in CHECKS:
+        enabled = name not in options.skip and (name != 'documents' or options.write_check)
+        calls[name]['runs'] = enabled
+    emit({
+        'schema': SCHEMA,
+        'dry_run': True,
+        'source': 'dry-run',
+        'expected_sha': options.sha,
+        'since': iso(options.since) if options.since else None,
+        'timeout_seconds': options.timeout,
+        'checks': calls,
+    })
+    return 0
+
+
+def positive_seconds(value):
+    try:
+        seconds = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f'{value!r} is not a whole number of seconds.') from None
+    if seconds < 1 or seconds > 600:
+        raise argparse.ArgumentTypeError(f'{value} must be between 1 and 600 seconds.')
+    return seconds
+
+
+def build_parser():
+    parser = SmokeParser(
+        prog='bin/gateway-smoke',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description='Read-only smoke test of a Gateway release. Print one JSON object. Do not deploy, switch, restart, or roll back.',
+        epilog=f"""
+Checks, all run at once:
+  deploy_verify  bin/deploy-verify --sha: live version, /up, and gateway status
+  node_list      orbit node:list --json lists at least one Node
+  tasks_list     orbit tasks:list --json answers (skipped while tasks are disabled)
+  web            web/current is releases/<sha12> of --sha, and Caddy serves its
+                 index.html and one hashed /assets/ file
+  scheduler      the orbit-process unit running schedule:work is active
+  tasks_tick     orbit tasks:status --json reports a tick at or after --since,
+                 or within --tick-within seconds (skipped while tasks are disabled)
+  agent_view     {DEFAULT_AGENT_VIEW_UNIT} is active
+  documents      create, read, rename, and remove one Project Document
+                 (only with --write-check and --smoke-project)
+
+Exit 0 when no check failed or timed out, 1 when one did, and 2 on wrong flags.
+Each check has its own time limit, and --timeout bounds the whole run.
+
+Run it as the Gateway account on the Gateway host. Python HTTPS calls need
+SSL_CERT_FILE set to Orbit's root CA, the Gateway profile ca_path after
+orbit gateway:trust.
+
+Examples:
+  bin/gateway-smoke --sha 2f214816deaed1d961f4a64c7f40762088c64226 --dry-run
+  bin/gateway-smoke --sha 2f214816deae --since 2026-10-07T06:00:00Z
+  bin/gateway-smoke --sha 2f214816deae --write-check --smoke-project gateway-smoke
+""",
+    )
+    parser.add_argument('--sha', required=True, help='Released commit expected as the live version.')
+    parser.add_argument('--since', help='Runtime handoff time (ISO 8601 with a zone). The scheduler and agent-view must have started, and a tick must have started, at or after it.')
+    parser.add_argument('--tick-within', type=positive_seconds, default=60, help='Without --since, the latest tick must have started this many seconds before the run at most. Default: 60.')
+    parser.add_argument('--timeout', type=positive_seconds, default=60, help='Total time limit in seconds. Default: 60.')
+    parser.add_argument('--up-url', help='/up URL for deploy-verify. Default: its own default.')
+    parser.add_argument('--status-url', help='Gateway status URL for deploy-verify. Default: its own default.')
+    parser.add_argument('--web-url', default=os.environ.get('ORBIT_SMOKE_WEB_URL', DEFAULT_WEB_URL), help=f'Web app URL served by Caddy. Default: {DEFAULT_WEB_URL}.')
+    parser.add_argument('--web-dir', default=os.environ.get('ORBIT_WEB_DIR', DEFAULT_WEB_DIR), help=f'Gateway web directory that holds current. Default: {DEFAULT_WEB_DIR}.')
+    parser.add_argument('--checkout', default=os.environ.get('ORBIT_GATEWAY_CHECKOUT', DEFAULT_CHECKOUT), help=f'Gateway checkout the scheduler runs in. Default: {DEFAULT_CHECKOUT}.')
+    parser.add_argument('--orbit', default=os.environ.get('ORBIT_SMOKE_ORBIT', str(ROOT / 'apps/cli/orbit')), help='Orbit CLI to run. Default: apps/cli/orbit in this checkout.')
+    parser.add_argument('--scheduler-unit', help='Scheduler unit. Default: the one orbit-process unit that runs schedule:work in --checkout.')
+    parser.add_argument('--agent-view-unit', default=DEFAULT_AGENT_VIEW_UNIT, help=f'Agent view unit. Default: {DEFAULT_AGENT_VIEW_UNIT}.')
+    parser.add_argument('--skip', action='append', default=[], choices=CHECKS, metavar='CHECK', help='Skip one check. Repeatable.')
+    parser.add_argument('--write-check', action='store_true', help='Also run the documents write check. Off by default.')
+    parser.add_argument('--smoke-project', help='Project ID or slug for the documents write check.')
+    parser.add_argument('--dry-run', action='store_true', help='Print the checks and their targets. Do not call anything.')
+    return parser
+
+
+def main(argv=None):
+    options = build_parser().parse_args(argv)
+    options.sha = options.sha.strip()
+    if not SHA.fullmatch(options.sha):
+        return usage(f'{options.sha!r} is not a commit SHA.', 'Pass --sha with 7 to 40 hexadecimal characters of the released commit.')
+    if options.since is not None:
+        since = parse_time(options.since)
+        if since is None:
+            return usage(f'{options.since!r} is not an ISO 8601 time with a zone.', 'Pass --since like 2026-10-07T06:00:00Z.')
+        options.since = since
+    if options.write_check != (options.smoke_project is not None):
+        return usage('--write-check and --smoke-project go together.', 'Pass both to run the documents write check, or neither.')
+    if options.write_check and 'documents' in options.skip:
+        return usage('--write-check conflicts with --skip documents.', 'Pass one of them.')
+    for unit in (options.scheduler_unit, options.agent_view_unit):
+        if unit is not None and not UNIT.fullmatch(unit):
+            return usage(f'{unit!r} is not a systemd service name.', 'Pass a unit name that ends in .service.')
+    if set(CHECKS) - {'documents'} <= set(options.skip):
+        return usage('Every read check is skipped.', 'Skip fewer checks.')
+    options.skip = set(options.skip)
+    if options.dry_run:
+        return plan(options)
+    return run(options)
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -1277,16 +1277,20 @@
             "title": "Delivery-line proofs",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
                 "Deliverable",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
+                "Schedule",
                 "Subtask",
                 "Task",
                 "Task check"

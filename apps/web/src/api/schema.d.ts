@@ -4225,6 +4225,7 @@ export interface components {
         TasksStatus: {
             enabled?: boolean;
             assistance?: components["schemas"]["TaskAssistance"][];
+            last_tick_at?: string | null;
         };
         TaskAssistance: {
             id?: number;
