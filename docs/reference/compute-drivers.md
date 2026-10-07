@@ -66,6 +66,8 @@ The hub policy has a separate owned table and protected files per reservation. R
 
 The recorded helper source is immutable for that reservation; an upgrade that changes it requires draining the reservation or an explicit migration. The fixed preview ports are 80, 443, and 5173; other preview listeners remain blocked.
 
+The native WireGuard peer listens on the UDP port recorded in the sandbox specification. This matches the provider firewall rule for hub replies; a random guest port would prevent the handshake.
+
 The managed `orbit` user performs enrollment. This step provisions the native Node and its `app-dev` role, without Pi, model keys, GitHub access, or project source. Pi/runtime preparation, workspace creation, task claim admission, and cloud reconstruction remain later steps. Cleanup must remove the owned fleet peer before removing its hub policy or provider resources.
 
 The packet regression fixture runs in disposable network namespaces on Linux: `sudo -n unshare --net python3 tests/Fixtures/Compute/sandbox_hub_network_test.py resources/compute/sandbox-hub-network.py --packets` from `apps/gateway`. It tests real nftables traffic, drift refusal, retries, and file ownership. It mocks systemd operations and does not prove boot ordering. Incus boot and deployed fleet acceptance remain rollout checks.
