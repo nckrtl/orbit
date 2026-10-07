@@ -146,7 +146,7 @@ describe('gateway:release:deploy', function (): void {
                 'error_code' => 'gateway.release_smoke_failed',
             ])
             ->and($this->fixture->layout->currentReleaseId())->toBe($first)
-            ->and(array_slice($order->steps, -2))->toBe(['web:restore', 'handoff:'.$first]);
+            ->and(array_slice($order->steps, -3))->toBe(['web:restore', 'handoff:'.$first, 'schedule:'.$first]);
     });
 
     it('pauses on the new release when smoke fails after migrations ran', function (): void {
@@ -168,7 +168,7 @@ describe('gateway:release:deploy', function (): void {
             ->and($record->phases['smoke']['report'])->toBe(['passed' => false, 'failed_checks' => ['web']])
             ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
             ->and(is_file($this->fixture->base.'/home/gateway-release.paused'))->toBeTrue()
-            ->and($order->steps)->toBe(['handoff:'.substr($sha, 0, 12), 'verify', 'web:publish', 'smoke'])
+            ->and($order->steps)->toBe(['handoff:'.substr($sha, 0, 12), 'verify', 'schedule:'.substr($sha, 0, 12), 'web:publish', 'smoke'])
             ->and($order->steps)->not->toContain('handoff:'.$first);
     });
 

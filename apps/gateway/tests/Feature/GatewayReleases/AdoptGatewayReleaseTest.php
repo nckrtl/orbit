@@ -17,9 +17,9 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleasePromoter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
-use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
+use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Schema;
@@ -68,7 +68,8 @@ describe('gateway:release:adopt', function (): void {
             ->and(trim($this->fixture->git($kept, 'status', '--porcelain', '--untracked-files=no')))->toBe('')
             ->and(trim($this->fixture->git($layout->repositoryPath(), 'rev-parse', 'refs/orbit/pre-adopt')))->toBe($this->sha)
             ->and(trim($this->fixture->git($layout->repositoryPath(), 'remote', 'get-url', 'origin')))->toBe('https://github.com/nckrtl/orbit.git')
-            ->and($this->steps->installed)->toBe([$this->id])
+            // Phase 1 prepares the release with its web build; phase 2 reuses that release and installs the web build again only when it is missing.
+            ->and($this->steps->installed)->toBe([$this->id, $this->id])
             // Phase 1 changes the layout with identical code and checks that it serves; phase 2 is a deploy.
             ->and($this->steps->steps)->toBe([
                 'handoff:'.$this->id, 'serving', 'schedule:'.$this->id,
