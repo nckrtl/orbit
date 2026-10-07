@@ -1,13 +1,12 @@
 """Publish immutable Incus pair images and source; never promote or enable claims."""
-import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import runpy
 import subprocess
 import sys
-import tempfile
 import urllib.parse
 import uuid
 
@@ -169,6 +168,11 @@ print('{}')
                             json.dumps({'checkout': '/home/orbit/orbit', 'source_template': self.template}), 'orbit')
         if result.get('source_template') != self.template or result.get('head') != self.template['commit']:
             raise Refusal('Candidate source preparation failed.')
+        health = self.guest('operator', (self.helpers / 'guest-template-health.py').read_text(),
+                            json.dumps({'commit': self.template['commit']}), 'orbit')
+        if health.get('ready') is not True or health.get('head') != self.template['commit'] or health.get('gateway_version') != self.template['commit']:
+            raise Refusal('Candidate native pair is not ready.')
+        report['native_health'] = health
         # Revalidate all host identities immediately before changing power.
         self.preflight()
         for role in ('operator', 'gateway'):
@@ -215,21 +219,9 @@ def main():
     if len(raw) > 8192:
         raise Refusal('Publication request is too large.')
     publisher = Publisher(json.loads(raw))
-    # Lock the pair and template across concurrent command invocations by this compute account.
-    locks = []
-    try:
-        for identity in sorted({publisher.name, publisher.target}):
-            path = Path(tempfile.gettempdir()) / ('orbit-template-' + str(os.geteuid()) + '-' + identity + '.lock')
-            fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-            locks.append(fd)
-            details = os.fstat(fd)
-            if details.st_uid != os.geteuid() or details.st_nlink != 1 or details.st_mode & 0o077:
-                raise Refusal('Unsafe publication lock.')
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    locked = runpy.run_path(str(publisher.helpers / 'template-lock.py'))['locked']
+    with locked({publisher.name, publisher.target}):
         print(json.dumps(publisher.preflight() if sys.argv[1] == '--plan' else publisher.publish()))
-    finally:
-        for fd in locks:
-            os.close(fd)
 
 if __name__ == '__main__':
     try:

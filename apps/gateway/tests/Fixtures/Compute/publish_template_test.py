@@ -21,6 +21,7 @@ class FakePublisher(Publisher):
         self.calls = []
         self.fail_publish = False
         self.fail_audit = False
+        self.fail_health = False
         self.image_rows = []
         self.volume_rows = []
         self.snapshots = []
@@ -81,11 +82,13 @@ class FakePublisher(Publisher):
 
     def guest(self, role, script, data=None, user='root'):
         self.calls.append(('guest', role, user))
+        if self.fail_health and 'sandbox_template_native_health_failed' in script:
+            return {'ready': False}
         if user == 'root':
             if self.fail_audit:
                 raise Refusal('Guest has credentials')
             return {'ready': True, 'scanned_files': 20}
-        return {'head': self.template['commit'], 'source_template': self.template}
+        return {'head': self.template['commit'], 'source_template': self.template, 'ready': True, 'gateway_version': self.template['commit']}
 
 
 class Publication(unittest.TestCase):
@@ -136,6 +139,15 @@ class Publication(unittest.TestCase):
         self.assertEqual(publisher.image_rows, [])
         self.assertEqual(publisher.volume_rows, [])
         self.assertEqual(publisher.calls, [('guest', 'operator', 'root')])
+
+    def test_unready_native_pair_is_not_stopped_or_published(self):
+        publisher = FakePublisher()
+        publisher.fail_health = True
+        with self.assertRaises(Refusal):
+            publisher.publish()
+        self.assertEqual([], publisher.image_rows)
+        self.assertTrue(all(row['status'] == 'Running' for row in publisher.instances))
+        self.assertFalse(any(call[0] == 'stop' for call in publisher.calls))
 
     def test_lost_publish_response_cleans_owned_outputs_and_preserves_candidate(self):
         publisher = FakePublisher()

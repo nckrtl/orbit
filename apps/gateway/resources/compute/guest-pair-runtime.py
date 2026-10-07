@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import tempfile
 import uuid
 
 PROJECTS = ('packages/php-sdk', 'apps/gateway', 'apps/cli', 'apps/e2e', 'apps/docs')
@@ -59,6 +60,19 @@ def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
             operation = ['install', '--prefer-dist'] if changed or not (path / 'vendor/autoload.php').is_file() else ['dump-autoload']
             run(['composer', '--working-dir=' + str(path), *operation, '--no-interaction', '--no-scripts'], root, home)
         gateway = root / 'apps/gateway'
+        environment = gateway / '.env'
+        if environment.resolve() != environment or not environment.is_file() or environment.stat().st_uid != os.geteuid():
+            raise ValueError('The Gateway environment is not local')
+        lines = [line for line in environment.read_text().splitlines() if not re.match(r'^\s*(?:export\s+)?APP_VERSION\s*=', line)]
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(mode='w', prefix='.orbit-version-', dir=gateway, delete=False) as output:
+                temporary = Path(output.name)
+                output.write('\n'.join([*lines, 'APP_VERSION=' + head]) + '\n')
+            os.replace(temporary, environment)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         cached = gateway / 'bootstrap/cache/config.php'
         if cached.is_symlink():
             raise ValueError('The Gateway config cache is not local')
@@ -91,6 +105,10 @@ def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
                 or {node.get('name') for node in nodes} != {'gateway', 'operator'}
                 or any(node.get('status') != 'active' for node in nodes)):
             raise ValueError('The isolated pair is not ready')
+        status = json.loads(run([str(root / 'apps/cli/orbit'), 'gateway:status', '--json'], root, home, timeout=60))
+        if (not isinstance(status, dict) or status.get('status') != 'ok'
+                or status.get('url') != 'https://10.44.0.1' or status.get('version') != head):
+            raise ValueError('The isolated Gateway is not serving the branch version')
     if git(['rev-parse', '--verify', 'HEAD^{commit}'], root, home) != head:
         raise ValueError('The pair source changed during preparation')
     return {'sandbox_id': request['sandbox_id'], 'head': head, 'ready': True}

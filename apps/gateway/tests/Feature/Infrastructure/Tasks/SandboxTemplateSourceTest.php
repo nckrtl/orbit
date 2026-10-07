@@ -24,3 +24,17 @@ it('verifies pinned cold-build inputs and refuses unsafe archives without extrac
 
     expect($process->getExitCode())->toBe(0);
 });
+
+it('constructs only new cold candidates and requires matching preparation receipts before native convergence', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/Compute/prepare_template_test.py'), resource_path('compute/prepare-template.py')]);
+    $process->mustRun();
+
+    expect($process->getExitCode())->toBe(0);
+});
+
+it('requires the isolated native pair and matching Gateway version before template publication', function (): void {
+    $process = new Process(['python3', base_path('tests/Fixtures/Compute/guest_template_health_test.py'), resource_path('compute/guest-template-health.py')]);
+    $process->mustRun();
+
+    expect($process->getExitCode())->toBe(0);
+});

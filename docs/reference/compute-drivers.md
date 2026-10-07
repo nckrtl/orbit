@@ -309,6 +309,16 @@ The command verifies every SHA-256 digest and checks both gzip tar archives with
 
 Input verification does not install packages, create a candidate, certify upstream provenance, or publish an image. The builder must obtain packages and tool checksums from trusted sources, import the pinned commit's green CI baselines, and verify the same inputs again in the guest before use. Keep package acquisition outside the guests. Install the closed package set with an empty APT index and no external source; keep removals and downgrades disabled. Complete native enrollment and the publisher's guest audit before marking a template ready.
 
+### Build a cold candidate
+
+`bin/sandbox-template-build --plan` verifies inputs and refuses existing candidate resources. `--prepare` allocates a new isolated pair through the production Incus helper, installs the pinned offline inputs, creates the managed `orbit` account, and verifies the shared source and CI baseline hashes. `--converge` bootstraps the private Gateway and enrolls its roleless operator through native Orbit commands. Each mode accepts the same JSON object with exactly `project`, `pool`, `sandbox_id`, `budget`, `subnet`, `blocked_networks`, `base_image`, `inputs`, and `source_manifest`. `project` must be a dedicated, owned `orbit-sandbox-proof-<name>` project. `base_image` is an imported x86_64 VM fingerprint. `inputs` uses the offline verifier's schema. `source_manifest` contains exactly `source_template`, `ci_run`, `projects`, and `sha256`; the final hash must identify the source archive.
+
+The source manifest pins Composer lock hashes for the root and all five PHP projects, CI graph hashes for those five projects, and Bun lock hashes for the annotation package, web app, and Pi server. It records the green CI run used to prepare those graphs. Acquire and verify upstream image, package, tool, and CI artifacts before construction; a supplied hash or run ID alone is not proof of origin. Tool inputs include Node 24.21.0, Vite+ 0.3.0, Bun 1.4.2, and compatible pinned Agent and Pi binaries. The fresh base must have no `orbit` or `orbit-worker` account and no UID or GID 1002.
+
+Preparation refuses reused resources and a populated source volume. It retains a partial candidate after failure for inspection and explicit owned cleanup. Convergence accepts only that candidate's completed preparation receipt and matching inputs. Commands serialize with publication for the pair and template. Native convergence needs permitted public egress for package-source verification; the builder never adds host firewall rules. Complete any required host-policy approval separately.
+
+Convergence confirms the pinned source commit, the isolated operator profile, and active Gateway and roleless operator inventory. Publication repeats that native readiness check. No builder mode promotes an alias, enables claims, or changes a live Gateway.
+
 ### Prepare a copied source volume
 
 The internal `guest-template-source.py` helper prepares a disposable source copy before publication. Run it as the managed user, with a JSON request on standard input containing `checkout` and `source_template`. The descriptor has exactly `id`, `repository`, `base`, and `commit`. The copy must already contain `.git/orbit-template-candidate.json` with that descriptor. The host builder must verify its own candidate volume and exclusive attachment before writing this marker.
@@ -337,7 +347,9 @@ After validation, the guest records group ownership without replacing an existin
 
 Pair preparation checks group source ownership before changing the test Gateway. It repairs the saved Gateway inventory and the operator's WireGuard endpoint on the group's subnet. The Gateway ships copies of the same repair helpers tested by the E2E harness; its quality check verifies that they match.
 
-The test Gateway validates Composer manifests and lock files. It refreshes dependency autoloaders and installs dependencies when lock files changed or dependencies are missing. It clears branch runtime caches, runs migrations against its own SQLite database, repairs Caddy’s checkout access, and restarts PHP-FPM. The operator then uses its isolated Gateway profile to list the active Gateway and roleless operator. Preparation reports success only when both guests confirm the same branch commit. It never routes these commands through a shared host or a project-lane Node.
+The test Gateway validates Composer manifests and lock files. It refreshes dependency autoloaders and installs dependencies when lock files changed or dependencies are missing. It sets the private Gateway version to the verified branch commit, clears branch runtime caches, runs migrations against its own SQLite database, repairs Caddy’s checkout access, and restarts PHP-FPM.
+
+The operator then uses its isolated Gateway profile to list the active Gateway and roleless operator. Preparation reports success only when both guests confirm the same branch commit and the Gateway API reports that version. It never routes these commands through a shared host or a project-lane Node.
 
 ### Admit an Orbit sandbox claim
 

@@ -37,6 +37,8 @@ class PairRuntime(unittest.TestCase):
         (self.home / '.orbit').mkdir()
         (self.home / '.orbit/gateway.sqlite').touch()
         (self.home / '.orbit/config.json').write_text(json.dumps({'active_gateway': 'test', 'gateways': {'test': {'url': 'https://10.44.0.1'}}}))
+        (self.root / 'apps/gateway/.env').write_text('APP_KEY=private-test-key\nAPP_VERSION=old-template\n')
+        self.api_version = None
         self.calls = []
         self.nodes = [{'name': 'gateway', 'status': 'active'}, {'name': 'operator', 'status': 'active'}]
         self.fail = False
@@ -56,6 +58,8 @@ class PairRuntime(unittest.TestCase):
             raise subprocess.CalledProcessError(1, ['composer'])
         if self.fail_access and arguments[:2] == ['php', '-r']:
             raise subprocess.CalledProcessError(1, ['php'])
+        if arguments[-2:] == ['gateway:status', '--json']:
+            return json.dumps({'status': 'ok', 'url': 'https://10.44.0.1', 'version': self.api_version or self.head})
         return json.dumps({'nodes': self.nodes}) if arguments[-2:] == ['node:list', '--json'] else ''
 
     def call(self, phase, **changes):
@@ -75,6 +79,23 @@ class PairRuntime(unittest.TestCase):
         self.assertEqual(['sudo', '-n', 'systemctl', 'restart', 'php8.5-fpm'], self.calls[-1])
         self.assertTrue(self.call('operator')['ready'])
         self.assertEqual('cached dependencies', (self.root / 'apps/gateway/vendor/autoload.php').read_text())
+
+    def test_reports_branch_version_and_preserves_the_private_gateway_environment(self):
+        self.call('gateway')
+        self.assertEqual('APP_KEY=private-test-key\nAPP_VERSION=' + self.head + '\n', (self.root / 'apps/gateway/.env').read_text())
+        self.api_version = 'old-template'
+        with self.assertRaisesRegex(ValueError, 'branch version'):
+            self.call('operator')
+
+    def test_refuses_a_linked_gateway_environment_without_modifying_its_target(self):
+        environment = self.root / 'apps/gateway/.env'
+        environment.unlink()
+        target = self.home / 'unrelated.env'
+        target.write_text('untouched')
+        environment.symlink_to(target)
+        with self.assertRaisesRegex(ValueError, 'environment is not local'):
+            self.call('gateway')
+        self.assertEqual('untouched', target.read_text())
 
     def test_changed_manifests_install_locked_dependencies_and_failure_prevents_migration(self):
         path = self.root / 'apps/gateway/composer.lock'
