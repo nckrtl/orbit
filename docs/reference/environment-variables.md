@@ -24,6 +24,8 @@ The Gateway owns the environment configuration of every Instance. It stores each
 
 The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 
+`APP_VERSION` in the Gateway's own `.env` sets the version that `gateway:status` reports. When it is unset or empty, the Gateway reports the commit in its release's `REVISION` file, or `dev` outside a release. Leave it unset in the [release layout](/reference/gateway-recovery#release-layout), so every release reports its own commit. It is not an Instance key.
+
 `ORBIT_OPSBOT_WEBHOOK_URL` and `ORBIT_OPSBOT_WEBHOOK_SECRET` are settings in the Gateway's own environment. They are not Instance keys. See [Tasks: OpsBot direction webhook](/reference/tasks#opsbot-direction-webhook). The Gateway never returns the secret. Setting Instance keys with those names does not configure the Gateway.
 
 `ORBIT_RELEASE_ALERT_WEBHOOK_URL` and `ORBIT_RELEASE_ALERT_WEBHOOK_SECRET` are settings in the Gateway's own environment too, not Instance keys. See [Release alerts](/reference/gateway-recovery#webhook). The Gateway never returns the secret.

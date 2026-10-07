@@ -117,6 +117,9 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_in_progress` | Another release step holds the single-flight lock in `ORBIT_HOME/gateway-release.lock`. |
 | `gateway.release_disk_low` | The releases directory has less than 1 GiB free. |
 | `gateway.release_conflict` | The release directory holds another commit with the same 12-digit id. |
+| `gateway.release_current_incomplete` | The current release has no `REVISION`. Repair it before preparing it again. |
+| `gateway.release_layout_invalid` | `ORBIT_GATEWAY_CHECKOUT` is not an absolute `<base>/<checkout>/apps/gateway` path. |
+| `gateway.release_lock_unavailable` | The release lock file cannot be opened. |
 | `gateway.release_fetch_failed`, `gateway.release_worktree_failed`, `gateway.release_link_failed`, `gateway.release_dependencies_failed`, `gateway.release_access_failed`, `gateway.release_revision_failed`, `gateway.release_configuration_failed` | The named build step failed. The live release is unchanged. |
 
 ## Update source
