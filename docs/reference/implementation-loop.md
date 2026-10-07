@@ -76,7 +76,7 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 | --- | --- |
 | One job per Composer project: CLI, Docs, Gateway, E2E, PHP SDK | `composer validate --strict`, `composer check`, the classification-fakes check, and the tests |
 | API reference | `bin/docs-openapi --check` and `bin/mcp-tools --check` |
-| Web | Generated API types, formatting, lint, types, tests, and build. A push to `main` also publishes the build |
+| Web | Generated API types, formatting, lint, types, tests, and build. A run on `main` also publishes the build |
 | Pi server | Formatting, lint, types, tests, and build |
 | Agent annotation | Formatting, lint, tests, and build |
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
@@ -88,7 +88,9 @@ A new push to a pull request cancels that pull request's older run. A push to `m
 
 The project jobs check out the branch by name. On `main` they then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for.
 
-On a push to `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dist-<commit>`, named with the full commit SHA, and keeps it for 14 days. The upload includes hidden files and fails when the build produced nothing. The build runs from a clean checkout with no `VITE_*` variables, as [`bin/web-deploy`](/reference/web-app#release-a-build) builds a release. Pull requests and manual dispatches publish no web build. Successful project jobs on `main` also publish the [sandbox test baselines](/reference/compute-drivers#image-test-baselines).
+On `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dist-<commit>`, named with the full 40-character commit SHA, and keeps it for 14 days. A manual dispatch on `main` uploads it too, so every successful `Required checks` run on `main` comes with the web build of its commit. The artifact holds the contents of `dist` at its root, so `index.html` is at the top level.
+
+The upload includes hidden files and fails when the build produced nothing. The build runs from a clean checkout with no `VITE_*` variables, as [`bin/web-deploy`](/reference/web-app#release-a-build) builds a release. Pull requests and runs on other branches publish no web build. Successful project jobs on `main` also publish the [sandbox test baselines](/reference/compute-drivers#image-test-baselines).
 
 On `main`, GitHub enforces three rules. The branch cannot be deleted, and it accepts no force pushes, with no bypass. A change to `main` also needs a passing `Required checks` status from GitHub Actions. The branch does not have to be up to date first, so the merge rules in [Merge and cleanup](#merge-and-cleanup) still check the merged result. GitHub requires no review.
 

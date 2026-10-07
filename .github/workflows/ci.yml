@@ -363,8 +363,9 @@ jobs:
         run: bun run build
 
       # Automatic Gateway releases (ADR 0201) install this build for the same commit, so the Gateway needs no Node or Bun.
+      # Every run on main publishes it, a manual dispatch too, so each successful Required checks result on main has one.
       - name: Publish web build
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: web-dist-${{ github.sha }}

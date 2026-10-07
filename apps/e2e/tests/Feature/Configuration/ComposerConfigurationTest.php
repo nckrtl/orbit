@@ -432,7 +432,7 @@ it('publishes the web build of each main push for the Gateway to install', funct
 
     expect($steps['Publish web build'])->toBe([
         'name' => 'Publish web build',
-        'if' => "github.event_name == 'push' && github.ref == 'refs/heads/main'",
+        'if' => "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
         'uses' => 'actions/upload-artifact@v7',
         'with' => [
             'name' => 'web-dist-${{ github.sha }}',
