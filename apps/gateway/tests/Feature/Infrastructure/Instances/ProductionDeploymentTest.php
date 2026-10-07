@@ -30,6 +30,8 @@ use Tests\Feature\GitHub\GitHubTestSupport;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LinuxHost;
 
+pest()->group('privileged');
+
 it('prepares a fresh branch-pinned release without changing current', function (string $webRoot, string $target): void {
     [$deployment, $ssh, $instance] = orb219_remote_deployment([
         new CommandResult(0, "20260911-a1\t".str_repeat('a', 40)."\n", '', 1, false),

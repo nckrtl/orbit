@@ -205,6 +205,45 @@ jobs:
           path: ${{ matrix.directory }}/.orbit-tia
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
+  privileged:
+    name: Gateway privileged
+    # Trusted branches use Sabre. Forks run the same gate on an isolated hosted runner.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/gateway
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@v2
+        if: runner.environment == 'github-hosted'
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          node-version: '24'
+      - uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478
+        if: runner.environment == 'github-hosted'
+      - name: Install hosted runner prerequisites
+        if: runner.environment == 'github-hosted'
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl attr wireguard-tools
+          brew install caddy openssl@3
+          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+      - name: Install Gateway dependencies
+        run: |
+          cp .env.example .env
+          composer install --no-interaction --prefer-dist
+      - name: Run every privileged test
+        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
+
   api-reference:
     name: API reference
     runs-on: ubuntu-26.04
@@ -396,15 +435,16 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, api-reference, web, agent-annotation, pi-server, agent]
+    needs: [project, privileged, api-reference, web, agent-annotation, pi-server, agent]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
         env:
           PROJECT_RESULT: ${{ needs.project.result }}
+          PRIVILEGED_RESULT: ${{ needs.privileged.result }}
           API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
           WEB_RESULT: ${{ needs.web.result }}
           ANNOTATION_RESULT: ${{ needs.agent-annotation.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
           AGENT_RESULT: ${{ needs.agent.result }}
-        run: test "$PROJECT_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success
+        run: test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success

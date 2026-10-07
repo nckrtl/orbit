@@ -19,6 +19,8 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TaskWorkerSshExecutor;
 
+pest()->group('privileged');
+
 function task_signer_instance(string $checkout = '/srv/orbit/apps/orbit/task-9'): Instance
 {
     $project = Project::query()->create([

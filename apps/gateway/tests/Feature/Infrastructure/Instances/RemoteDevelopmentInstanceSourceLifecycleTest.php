@@ -67,6 +67,8 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
 
+pest()->group('privileged');
+
 beforeEach(function (): void {
     $this->files = new Filesystem;
     $this->sandbox = sys_get_temp_dir().'/orbit-app-instance-source-'.Str::uuid();

@@ -210,6 +210,7 @@ function orb277_run_gate(
 
     expect($process->getExitCode())->toBe($expectedExit, $process->getOutput().$process->getErrorOutput());
     expect($paths)->toBeArray()->toHaveCount(1);
+    expect(fileperms(dirname($paths[0])) & 0070)->toBe(0050);
 
     return [
         'process' => $process,

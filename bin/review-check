@@ -232,6 +232,7 @@ def main():
     reports = common / 'orbit-checks' / head
     reports.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
+    directory.chmod(0o750)
     base, paths = candidate_paths(root, head, committed)
     test_base = task_test_base(root, head)
     test_paths = paths_since(root, test_base, head, committed) if test_base else paths

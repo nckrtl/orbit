@@ -25,6 +25,8 @@ use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TaskWorkerSshExecutor;
 use Tests\Support\TestOrbitHome;
 
+pest()->group('privileged');
+
 /** @param  list<string>  $arguments */
 function fetcher_git(string $directory, array $arguments): string
 {

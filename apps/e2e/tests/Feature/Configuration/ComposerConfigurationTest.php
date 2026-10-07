@@ -279,7 +279,6 @@ describe('Composer configuration', function (): void {
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact')
             ->toContain("github.event_name == 'push' || github.event_name == 'workflow_dispatch'")
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
-            ->not->toContain('--no-tia')
             ->toContain('tests/Unit/Architecture')
             ->toContain("github.event_name == 'pull_request'")
             ->toContain("github.event_name == 'workflow_dispatch'")
@@ -389,3 +388,46 @@ describe('Composer configuration', function (): void {
             ->not->toContain('TIA does not apply to partial runs');
     });
 });
+
+it('keeps privileged tests required in CI on trusted and fork branches', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $job = $workflow['jobs']['privileged'];
+    expect($job['runs-on'])->toContain('self-hosted', 'sabre', 'head.repo.full_name', 'ubuntu-26.04');
+    $commands = array_column($job['steps'], 'run');
+    expect(implode("\n", $commands))->toContain('--group=privileged', '--no-tia', '--fail-on-empty-test-suite');
+    expect($workflow['jobs']['required']['needs'])->toContain('privileged');
+    expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
+});
+
+it('excludes privileged feedback through configuration while retaining TIA and ignores feedback in CI', function (bool $ci): void {
+    $directory = temporaryPath('orbit-feedback-', 6);
+    mkdir($directory);
+    file_put_contents($directory.'/composer.json', '{"name":"nckrtl/orbit-gateway"}');
+    file_put_contents($directory.'/phpunit.xml', '<phpunit bootstrap="tests/bootstrap.php"><testsuites><testsuite name="Feature"><directory>tests</directory></testsuite></testsuites></phpunit>');
+    $probe = <<<'PY'
+import json,os,sys,xml.etree.ElementTree as ET
+args=sys.argv[1:]
+config=ET.parse(args[args.index('--configuration')+1]).getroot() if '--configuration' in args else None
+print(json.dumps({'args':args,'excluded':None if config is None else config.find('groups/exclude/group').text,'bootstrap':None if config is None else config.get('bootstrap'),'cache':os.environ.get('ORBIT_TIA_DIRECTORY')}))
+PY;
+    file_put_contents($directory.'/probe.py', $probe);
+    $process = new Process(['python3', base_path('../../bin/task-feedback-tests'), 'python3', $directory.'/probe.py', '--tia'], $directory, [
+        'ORBIT_TASK_FEEDBACK' => 'shared', 'CI' => $ci ? 'true' : false, 'GITHUB_ACTIONS' => false, 'ORBIT_TIA_DIRECTORY' => false,
+    ]);
+    try {
+        $process->mustRun();
+        $result = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+        expect($result['args'])->toContain('--tia')->not->toContain('--exclude-group');
+        expect($result['excluded'])->toBe($ci ? null : 'privileged');
+        expect($result['bootstrap'])->toBe($ci ? null : $directory.'/tests/bootstrap.php');
+        expect($result['cache'])->toBe($ci ? null : $directory.'/.orbit-tia/task-feedback');
+        if (! $ci) {
+            expect(file_exists($result['args'][array_search('--configuration', $result['args'], true) + 1]))->toBeFalse();
+        }
+    } finally {
+        unlink($directory.'/probe.py');
+        unlink($directory.'/composer.json');
+        unlink($directory.'/phpunit.xml');
+        rmdir($directory);
+    }
+})->with([true, false]);

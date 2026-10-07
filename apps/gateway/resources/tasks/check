@@ -554,6 +554,9 @@ def perform(checkout, head, tree, setup, deliverables, command, started_at, work
             log.flush()
             environment = dict(os.environ)
             environment.pop('ORBIT_TASK_CHECK_BASE', None)
+            environment.pop('ORBIT_TASK_FEEDBACK', None)
+            if worker:
+                environment['ORBIT_TASK_FEEDBACK'] = 'shared'
             if deliverables:
                 with open(deliverables) as source:
                     test_base = json.load(source).get('test_base')

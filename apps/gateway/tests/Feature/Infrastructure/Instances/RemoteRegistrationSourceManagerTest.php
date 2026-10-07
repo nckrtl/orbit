@@ -27,6 +27,8 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Support\SeparateFilesystem;
 
+pest()->group('privileged');
+
 describe('TaskCheckWorkerUser', function (): void {
     it('inspects registration content with worker filters and preserves managed ownership', function (string $filter): void {
         $fixture = orb105_relocation_fixture(false);
@@ -1433,8 +1435,10 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
             import os, signal
             original_unlink = os.unlink
             def unlink_and_pause(path, *args, **kwargs):
+                directory = kwargs.get('dir_fd')
+                absolute = os.path.join(os.readlink('/proc/self/fd/' + str(directory)), path) if directory is not None else path
                 original_unlink(path, *args, **kwargs)
-                if path == %s:
+                if absolute == %s:
                     os.kill(os.getpid(), signal.SIGSTOP)
             os.unlink = unlink_and_pause
             PYTHON;

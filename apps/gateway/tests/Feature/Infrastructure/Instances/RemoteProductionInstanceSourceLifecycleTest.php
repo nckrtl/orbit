@@ -21,6 +21,8 @@ use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LinuxHost;
 
+pest()->group('privileged');
+
 it('prepares the recorded user and home and resolves only the Project default branch', function (): void {
     [$source, $ssh, $instance] = production_source_lifecycle([
         new CommandResult(0, '', '', 1, false),

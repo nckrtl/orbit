@@ -9,6 +9,8 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 use Tests\Support\LinuxHost;
 
+pest()->group('privileged');
+
 it('leaves out sites that have no checkout to grant access to', function (): void {
     $site = static fn (string $checkoutPath, ?string $localHttpUpstream = null): DevelopmentSite => new DevelopmentSite(
         nodeId: 1,

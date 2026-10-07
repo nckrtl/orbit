@@ -23,6 +23,8 @@ use Tests\Support\LinuxHost;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\ResolvedVp;
 
+pest()->group('privileged');
+
 beforeEach(function (): void {
     $this->directory = sys_get_temp_dir().'/orbit-workspace-tmpdir-'.bin2hex(random_bytes(8));
     $this->allocated = [];

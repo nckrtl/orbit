@@ -369,3 +369,7 @@ Hosted CI keeps its caches in GitHub Actions cache, keyed by branch and inputs. 
 ### Findings are fixed, not silenced
 
 A PHPStan ignore, a baseline, or a silencing cast keeps the wrong type in the code, and new code can repeat it. Fixing the value at its source lets CI catch these errors before review, so a reviewer spends the review on behavior. The [contributor guide](/contributor-guide#static-analysis) lists the rules.
+
+### Shared-worker feedback
+
+Shared Orbit task checks exclude the Gateway `privileged` test group. These tests need host sudo or another Unix identity and always run in the required Gateway privileged CI job. The task test wrapper keeps Pest TIA enabled and uses a separate feedback cache. CI ignores the feedback setting. VM checks run the privileged tests as the managed user. Check report directories permit group reads so the worker can inspect failures.

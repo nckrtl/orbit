@@ -40,6 +40,8 @@ use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TiaBaselineTestSource;
 
+pest()->group('privileged');
+
 function check_runner_checkout(string $check): string
 {
     $checkout = test()->directory.'/'.bin2hex(random_bytes(6));
@@ -1170,6 +1172,19 @@ it('passes the handoff test base only to a scoped project check', function (bool
     $deliverables = $scoped ? ['start' => $base, 'commands' => [], 'test_base' => $base] : null;
 
     $process = $runner->start($instance, $command, deliverables: $deliverables);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->exitCode)->toBe(0);
+})->with([true, false]);
+
+it('selects shared feedback only when the check has a worker account', function (bool $shared): void {
+    config(['orbit.tasks.worker_user' => $shared ? 'nobody' : null]);
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $command = $shared ? 'test "$ORBIT_TASK_FEEDBACK" = shared' : 'test -z "${ORBIT_TASK_FEEDBACK+set}"';
+
+    $process = $runner->start($instance, $command);
     $reading = check_runner_wait($runner, $instance, $process);
 
     expect($reading->exitCode)->toBe(0);
