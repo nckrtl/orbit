@@ -11,6 +11,9 @@ use App\Services\Git\GitRegistrationDiscovery;
 use App\Services\Git\NativeGitRegistrationDiscovery;
 use App\Services\Profile\CurlProfileRequestProfiler;
 use App\Services\Profile\ProfileRequestProfiler;
+use App\Services\SelfUpdate\CliReleaseNotice;
+use App\Services\SelfUpdate\NativeSelfUpdateHost;
+use App\Services\SelfUpdate\SelfUpdateHost;
 use App\Support\Console\StandardInput;
 use App\Support\Console\StandardInputReader;
 use App\Support\Logs\LogFollowClock;
@@ -21,6 +24,7 @@ use App\Support\Realtime\WebSocketTransport;
 use Design\Support\FixtureReplay;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Http\Client\Factory as HttpFactory;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\ServiceProvider;
 
 final class AppServiceProvider extends ServiceProvider
@@ -52,6 +56,20 @@ final class AppServiceProvider extends ServiceProvider
         $this->app->bind(LogFollowClock::class, SystemLogFollowClock::class);
         $this->app->singleton(ResolvesLocalDns::class, LocalResolver::class);
         $this->app->singleton(GitRegistrationDiscovery::class, NativeGitRegistrationDiscovery::class);
+        $this->app->singleton(
+            CliReleaseNotice::class,
+            static fn (): CliReleaseNotice => new CliReleaseNotice(
+                statePath: OrbitHome::path().'/'.CliReleaseNotice::StateFile,
+                currentVersion: is_string($version = config('app.version')) ? $version : '',
+            ),
+        );
+        $this->app->bind(
+            SelfUpdateHost::class,
+            static fn (): NativeSelfUpdateHost => new NativeSelfUpdateHost(
+                agentUnitPath: Config::string('orbit.self_update.agent_unit'),
+                agentBinaryPath: Config::string('orbit.self_update.agent_binary'),
+            ),
+        );
         $this->app->singleton(
             GatewayConfigRepository::class,
             static fn (): GatewayConfigRepository => new GatewayConfigRepository(
