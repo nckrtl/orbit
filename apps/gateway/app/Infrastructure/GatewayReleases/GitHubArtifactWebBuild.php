@@ -271,7 +271,9 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
                     continue;
                 }
 
-                if (! is_string($artifact['digest'] ?? null) || preg_match('/\Asha256:[0-9a-f]{64}\z/D', strtolower($artifact['digest'])) !== 1) {
+                $expected = $artifact['digest'] ?? null;
+
+                if (! is_string($expected) || preg_match('/\Asha256:[0-9a-f]{64}\z/D', strtolower($expected)) !== 1) {
                     throw $this->invalid("The web build artifact [{$name}] has no SHA-256 digest, so its download cannot be checked.");
                 }
 
@@ -280,9 +282,8 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
                 }
 
                 $digest = $this->actions->download($this->actions->archiveLocation($repository, $id, $token), $archive, self::MaxArchiveBytes);
-                $expected = $artifact['digest'] ?? null;
 
-                if (! is_string($expected) || ! hash_equals(strtolower($expected), 'sha256:'.$digest)) {
+                if (! hash_equals(strtolower($expected), 'sha256:'.$digest)) {
                     throw $this->invalid("The downloaded web build [{$name}] does not match its artifact digest.");
                 }
 
