@@ -8,6 +8,7 @@ use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Domain\Tasks\TaskCompute;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +27,7 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property string|null $task_check
+ * @property TaskCompute $task_compute
  * @property bool $task_workspace_routed
  * @property-read Collection<int, Task> $tasks
  */
@@ -36,11 +38,12 @@ final class Project extends Model
     protected $attributes = [
         'type' => 'laravel-app',
         'source_access' => 'github_app',
+        'task_compute' => 'shared',
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute'];
 
     /** @var list<string> */
     #[\Override]
@@ -130,6 +133,7 @@ final class Project extends Model
             'type' => ProjectType::class,
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',
+            'task_compute' => TaskCompute::class,
         ];
     }
 }

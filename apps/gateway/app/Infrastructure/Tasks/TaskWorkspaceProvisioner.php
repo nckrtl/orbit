@@ -29,6 +29,7 @@ use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
@@ -61,6 +62,9 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     private function provisionWorkspace(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
         $group = $intent->group->loadMissing(['project', 'taskable']);
+        if (($group->task_compute ?? $group->project->task_compute) === TaskCompute::Vm) {
+            throw new TaskCapacityException(false, 'Task sandbox compute is not configured on this Gateway.');
+        }
         $existing = $group->taskable;
 
         if ($existing instanceof Instance) {

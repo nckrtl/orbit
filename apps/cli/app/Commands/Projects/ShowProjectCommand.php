@@ -65,6 +65,7 @@ final class ShowProjectCommand extends GatewayCommand
             'Source access' => $project->sourceAccess,
             'Default branch' => $project->defaultBranch,
             'Web root' => $project->root,
+            ...($project->taskCompute === null ? [] : ['Task compute' => $project->taskCompute]),
             'Task check' => $project->taskCheck,
             'Task workspace routed' => $project->taskWorkspaceRouted,
             ...($project->excludedNodes === null ? [] : [

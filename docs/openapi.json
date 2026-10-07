@@ -14975,6 +14975,14 @@
                   "task_workspace_routed": {
                     "type": "boolean",
                     "description": "Whether new task workspaces get a Route (true or false)"
+                  },
+                  "task_compute": {
+                    "type": "string",
+                    "enum": [
+                      "shared",
+                      "vm"
+                    ],
+                    "description": "Compute for future task groups (shared or vm)"
                   }
                 },
                 "required": [
@@ -15335,6 +15343,14 @@
                   "task_workspace_routed": {
                     "type": "boolean",
                     "description": "Change routing for future task workspaces (true or false)"
+                  },
+                  "task_compute": {
+                    "type": "string",
+                    "enum": [
+                      "shared",
+                      "vm"
+                    ],
+                    "description": "Compute for future task groups (shared or vm)"
                   }
                 },
                 "additionalProperties": false
@@ -27817,6 +27833,13 @@
           },
           "task_workspace_routed": {
             "type": "boolean"
+          },
+          "task_compute": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "vm"
+            ]
           }
         }
       },
@@ -29225,6 +29248,23 @@
             "enum": [
               "managed",
               "existing_thread"
+            ]
+          },
+          "task_compute": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "shared",
+              "vm",
+              null
+            ]
+          },
+          "capacity_wait_reason": {
+            "type": [
+              "string",
+              "null"
             ]
           }
         }

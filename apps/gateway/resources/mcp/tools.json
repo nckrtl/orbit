@@ -4572,6 +4572,14 @@
           "task_workspace_routed": {
             "type": "boolean",
             "description": "Whether new task workspaces get a Route (true or false)"
+          },
+          "task_compute": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "vm"
+            ],
+            "description": "Compute for future task groups (shared or vm)"
           }
         },
         "additionalProperties": false,
@@ -6385,6 +6393,14 @@
           "task_workspace_routed": {
             "type": "boolean",
             "description": "Change routing for future task workspaces (true or false)"
+          },
+          "task_compute": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "vm"
+            ],
+            "description": "Compute for future task groups (shared or vm)"
           }
         },
         "additionalProperties": false,

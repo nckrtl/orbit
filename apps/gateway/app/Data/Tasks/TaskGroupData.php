@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Tasks;
 
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Models\Instance;
@@ -50,6 +51,8 @@ final class TaskGroupData extends Data
         public int $escalations,
         public array $tasks,
         public TaskExecutionMode $executionMode,
+        public ?TaskCompute $taskCompute = null,
+        public ?string $capacityWaitReason = null,
     ) {}
 
     public static function fromModel(Task $group): self
@@ -60,6 +63,8 @@ final class TaskGroupData extends Data
 
         return new self(
             executionMode: $group->execution_mode,
+            taskCompute: $group->task_compute,
+            capacityWaitReason: $group->capacity_wait_reason,
 
             id: $group->id,
             projectId: $group->project_id,

@@ -3744,6 +3744,8 @@ export interface components {
             root?: string | null;
             task_check?: string | null;
             task_workspace_routed?: boolean;
+            /** @enum {string} */
+            task_compute?: "shared" | "vm";
         };
         Annotation: {
             id?: string;
@@ -4110,6 +4112,9 @@ export interface components {
             tasks?: components["schemas"]["Task"][];
             /** @enum {string} */
             execution_mode?: "managed" | "existing_thread";
+            /** @enum {string|null} */
+            task_compute?: "shared" | "vm" | null;
+            capacity_wait_reason?: string | null;
         };
         Task: {
             id?: number;
@@ -12223,6 +12228,11 @@ export interface operations {
                     task_check?: string | null;
                     /** @description Whether new task workspaces get a Route (true or false) */
                     task_workspace_routed?: boolean;
+                    /**
+                     * @description Compute for future task groups (shared or vm)
+                     * @enum {string}
+                     */
+                    task_compute?: "shared" | "vm";
                 };
             };
         };
@@ -12414,6 +12424,11 @@ export interface operations {
                     task_check?: string | null;
                     /** @description Change routing for future task workspaces (true or false) */
                     task_workspace_routed?: boolean;
+                    /**
+                     * @description Compute for future task groups (shared or vm)
+                     * @enum {string}
+                     */
+                    task_compute?: "shared" | "vm";
                 };
             };
         };

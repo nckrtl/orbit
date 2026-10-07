@@ -12,6 +12,9 @@ final readonly class TaskConcurrencyGuard
 {
     public function canActivate(Task $group): bool
     {
+        if (($group->task_compute ?? $group->project->task_compute) === TaskCompute::Vm) {
+            return true;
+        }
         $nodeId = $this->nodeId($group);
 
         if ($nodeId === null) {
@@ -35,6 +38,7 @@ final readonly class TaskConcurrencyGuard
             ->select('id');
 
         return $this->activeQuery($exceptGroupId)
+            ->where(fn (Builder $query) => $query->whereNull('task_compute')->orWhere('task_compute', TaskCompute::Shared))
             ->whereIn('taskable_type', Instance::morphTypes())
             ->whereIn('taskable_id', $instanceIds)
             ->count();

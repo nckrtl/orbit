@@ -328,3 +328,16 @@ function orbit_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('preserves explicit compute modes and omits an unspecified mode', function (?string $mode): void {
+    $create = new CreateProjectRequest(slug: 'orbit', repositoryUrl: 'https://github.com/nckrtl/orbit.git', root: '.', taskCompute: $mode);
+    $update = new UpdateProjectRequest(projectId: 3, taskCompute: $mode);
+    foreach ([$create, $update] as $request) {
+        $body = $request->body()->all();
+        if ($mode === null) {
+            expect($body)->not->toHaveKey('task_compute');
+        } else {
+            expect($body['task_compute'])->toBe($mode);
+        }
+    }
+})->with([null, 'shared', 'vm']);

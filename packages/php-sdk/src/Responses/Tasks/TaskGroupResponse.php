@@ -42,6 +42,8 @@ final readonly class TaskGroupResponse
         public int $escalations,
         public array $tasks,
         public string $requestId,
+        public ?string $taskCompute = null,
+        public ?string $capacityWaitReason = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -79,6 +81,8 @@ final readonly class TaskGroupResponse
             escalations: TaskFields::count($data, 'escalations', 'task group', $requestId),
             tasks: self::subtasks($data['tasks'] ?? [], $requestId),
             requestId: $requestId,
+            taskCompute: TaskFields::nullableText($data, 'task_compute'),
+            capacityWaitReason: TaskFields::nullableText($data, 'capacity_wait_reason'),
         );
     }
 
@@ -131,6 +135,8 @@ final readonly class TaskGroupResponse
 
                 return $data;
             }, $this->tasks),
+            ...($this->taskCompute === null ? [] : ['task_compute' => $this->taskCompute]),
+            ...($this->capacityWaitReason === null ? [] : ['capacity_wait_reason' => $this->capacityWaitReason]),
             'request_id' => $this->requestId,
         ];
     }

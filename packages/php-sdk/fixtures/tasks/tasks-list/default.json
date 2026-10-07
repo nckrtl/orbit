@@ -62,7 +62,9 @@
                         "fixup_problem": null
                     }
                 ],
-                "execution_mode": "managed"
+                "execution_mode": "managed",
+                "task_compute": null,
+                "capacity_wait_reason": null
             },
             {
                 "id": 1,
@@ -175,7 +177,9 @@
                         "fixup_problem": null
                     }
                 ],
-                "execution_mode": "managed"
+                "execution_mode": "managed",
+                "task_compute": null,
+                "capacity_wait_reason": null
             }
         ],
         "meta": {

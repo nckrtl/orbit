@@ -11,6 +11,7 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
+use App\Domain\Tasks\TaskCompute;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
@@ -34,6 +35,7 @@ final class UpdateProjectRequest extends FormRequest
             'root' => ['sometimes', 'required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
+            'task_compute' => ['sometimes', 'required', 'string', Rule::enum(TaskCompute::class)],
         ];
     }
 
@@ -43,7 +45,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed'],
+                ['code', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -64,6 +66,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('root')
                 && ! $this->exists('task_check')
                 && ! $this->exists('task_workspace_routed')
+                && ! $this->exists('task_compute')
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -121,6 +124,7 @@ final class UpdateProjectRequest extends FormRequest
             sourceAccess: is_string($validated['source_access'] ?? null) ? ProjectSourceAccess::tryFrom($validated['source_access']) : null,
             taskWorkspaceRoutedProvided: array_key_exists('task_workspace_routed', $validated),
             taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
+            taskCompute: is_string($validated['task_compute'] ?? null) ? TaskCompute::from($validated['task_compute']) : null,
         );
     }
 

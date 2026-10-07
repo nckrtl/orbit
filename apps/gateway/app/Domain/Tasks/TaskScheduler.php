@@ -2065,6 +2065,8 @@ final readonly class TaskScheduler
                         continue;
                     }
 
+                    $group->task_compute ??= $group->project->task_compute;
+                    $group->capacity_wait_reason = null;
                     $group->status = TaskGroupStatus::Reserved;
                     $group->reserved_at = now();
                     $group->save();
@@ -2082,7 +2084,7 @@ final readonly class TaskScheduler
             try {
                 $instance = $this->provisioning->provision(InstanceProvisionIntent::for($reserved));
             } catch (TaskCapacityException $exception) {
-                $this->releaseReservation($reserved);
+                $this->releaseReservation($reserved, $exception->getMessage());
                 $this->removeEndedWorkspace($reserved, null);
 
                 if ($exception->fleetFull) {
@@ -2254,14 +2256,15 @@ final readonly class TaskScheduler
      * Returns a group to todo only while this claim still holds its reservation, so a claim never overwrites a
      * group that the tick released, a cancel ended, or a newer claim reserved.
      */
-    private function releaseReservation(Task $reserved): void
+    private function releaseReservation(Task $reserved, string $reason): void
     {
-        DB::transaction(function () use ($reserved): void {
+        DB::transaction(function () use ($reserved, $reason): void {
             $group = Task::topLevel()->lockForUpdate()->find($reserved->id);
             if (! $group instanceof Task || ! $this->holdsReservation($group, $reserved)) {
                 return;
             }
 
+            $group->capacity_wait_reason = $reason;
             $group->status = TaskGroupStatus::Todo;
             if ($group->assistance_kind !== AssistanceKind::Direction && self::isClaimFailureReason($group->assistance_reason)) {
                 $group->fill(TaskAssistance::cleared());

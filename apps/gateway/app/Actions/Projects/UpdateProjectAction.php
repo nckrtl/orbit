@@ -93,7 +93,7 @@ final readonly class UpdateProjectAction
             ->all());
 
         if (! $data->hasReconcilableChanges()) {
-            if ($data->taskCheckProvided || $data->taskWorkspaceRoutedProvided) {
+            if ($data->taskCheckProvided || $data->taskWorkspaceRoutedProvided || $data->taskCompute !== null) {
                 $project = $this->operations->run(
                     $instanceIds,
                     fn (): Project => $this->applyProjectCommands($project->fresh() ?? $project, $data),
@@ -149,6 +149,9 @@ final readonly class UpdateProjectAction
     private function applyProjectCommands(Project $project, UpdateProjectData $data): Project
     {
         $changes = [];
+        if ($data->taskCompute !== null) {
+            $changes['task_compute'] = $data->taskCompute;
+        }
         if ($data->taskCheckProvided) {
             $changes['task_check'] = $data->taskCheck;
         }

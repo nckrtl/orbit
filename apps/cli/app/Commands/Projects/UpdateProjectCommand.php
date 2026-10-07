@@ -27,6 +27,7 @@ final class UpdateProjectCommand extends GatewayCommand
         {--task-check= : New task check command for task baselines and handoffs}
         {--clear-task-check : Remove the task check command so tasks run no check command}
         {--task-workspace-routed= : Change routing for future task workspaces (true or false)}
+        {--task-compute= : Compute for future task groups (shared or vm)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -87,6 +88,12 @@ final class UpdateProjectCommand extends GatewayCommand
             return $this->renderGatewayFailure('project.task_check_invalid', 'Task check command is invalid.');
         }
 
+        $taskCompute = $this->option('task-compute');
+
+        if ($this->input->hasParameterOption('--task-compute') && ! in_array($taskCompute, ['shared', 'vm'], true)) {
+            return $this->renderGatewayFailure('project.task_compute_invalid', 'Task compute must be shared or vm.');
+        }
+
         $taskWorkspaceRouted = $this->taskWorkspaceRouted();
 
         if (! $taskWorkspaceRouted['valid']) {
@@ -96,7 +103,7 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
-        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null) {
+        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null && $taskCompute === null) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -122,6 +129,7 @@ final class UpdateProjectCommand extends GatewayCommand
                 taskCheckProvided: $clearTaskCheck || $taskCheck !== null,
                 sourceAccess: $sourceAccess,
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
+                taskCompute: is_string($taskCompute) ? $taskCompute : null,
             ),
             ProjectResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

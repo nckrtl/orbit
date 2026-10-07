@@ -265,3 +265,12 @@ Renaming the monorepo folders, the Laravel root namespace, the `app/` source fol
 Reading a stored placeholder or activity class under a different spelling, as if it were the current name, was rejected: that reading is an alias, and synchronization and activity resolution then fail on rows that use the other spelling. The migration renames tables and columns in place. There is no compatibility view and no dual-write. A caller that sends a removed field, or code that imports a removed class, fails. There is no compatibility period.
 
 A repository check fails when an App-domain name is present in app code, database code, the SDK, the CLI, web sources, or these pages. A monorepo path under `apps/` is not that name. A `covers:` glob names a file that exists, and the check rejects an App-domain name left in that glob.
+
+### Task compute
+
+`task_compute` selects `shared` or `vm` for future task group claims. It defaults to `shared` while sandbox rollout is in progress. The first reservation records the selected mode on the group. That mode stays fixed through retries, review, and resume, even if the Project setting changes. Existing groups that have already started keep `shared`. A VM group waits with a visible reason when its sandbox is unavailable and never uses a shared workspace as a fallback. Enable `vm` only after the corresponding lane has passed its disposable proof.
+
+Set the mode with `orbit project:create ... --task-compute=shared|vm` or
+`orbit project:update <id> --task-compute=shared|vm`. `project:show` shows the
+Project setting. `tasks:show` shows the group's pinned mode and its capacity wait
+reason. Omitting the option on update preserves the setting.

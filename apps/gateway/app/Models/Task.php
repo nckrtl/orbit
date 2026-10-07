@@ -8,6 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskExecutionMode;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -82,6 +83,8 @@ use LogicException;
  * @property string $implementer_model
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
+ * @property string|null $capacity_wait_reason
+ * @property TaskCompute|null $task_compute
  * @property TaskExecutionMode $execution_mode
  * @property string $implementer_agent_driver
  * @property string $reviewer_agent_driver
@@ -136,6 +139,8 @@ final class Task extends Model
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
         'reserved_at',
+        'task_compute',
+        'capacity_wait_reason',
     ];
 
     /** @var list<string> */
@@ -240,6 +245,8 @@ final class Task extends Model
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
         'reserved_at',
+        'task_compute',
+        'capacity_wait_reason',
     ];
 
     #[\Override]
@@ -250,6 +257,9 @@ final class Task extends Model
         });
 
         self::saving(static function (Task $task): void {
+            if ($task->exists && $task->getRawOriginal('task_compute') !== null && $task->isDirty('task_compute')) {
+                throw new LogicException('A claimed task group cannot change compute mode.');
+            }
             $task->ensureParentId();
             $task->applyLevelDefaults();
             $task->guardHierarchy();
@@ -416,6 +426,7 @@ final class Task extends Model
             'position' => 'integer',
             'status' => TaskLevelStatusCast::class,
             'execution_mode' => TaskExecutionMode::class,
+            'task_compute' => TaskCompute::class,
             'notify_coder' => 'boolean',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',

@@ -6,6 +6,7 @@ namespace App\Data\Projects;
 
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Tasks\TaskCompute;
 use App\Models\Project;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -26,6 +27,7 @@ final class ProjectData extends Data
         public ?string $root,
         public ?string $taskCheck,
         public bool $taskWorkspaceRouted,
+        public TaskCompute $taskCompute = TaskCompute::Shared,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -42,6 +44,7 @@ final class ProjectData extends Data
             root: $project->root,
             taskCheck: $project->taskCheckCommand(),
             taskWorkspaceRouted: $project->task_workspace_routed,
+            taskCompute: $project->task_compute,
         );
     }
 }

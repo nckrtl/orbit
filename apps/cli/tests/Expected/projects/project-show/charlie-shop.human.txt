@@ -17,6 +17,8 @@ Fetching Instances...
 │
 ├  Web root                web/public
 │
+├  Task compute            shared
+│
 ├  Task check              —
 │
 ├  Task workspace routed   yes

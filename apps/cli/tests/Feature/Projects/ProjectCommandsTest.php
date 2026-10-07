@@ -930,3 +930,36 @@ it('renders an explicit empty list and preserves the empty machine collection', 
         expect($output)->toContain('No Projects found.', app_request_id())->not->toContain('Operation failed.');
     }
 })->with([false, true]);
+
+describe('Project task compute', function (): void {
+    it('transports a supplied mode on create and on a compute-only update', function (string $mode): void {
+        $mock = MockClient::global([
+            CreateProjectRequest::class => app_mock_response(201),
+            UpdateProjectRequest::class => app_mock_response(),
+        ]);
+        $this->artisan('project:create', [
+            'slug' => 'orbit', 'type' => 'monorepo',
+            'repository' => 'https://github.com/nckrtl/orbit.git',
+            '--task-compute' => $mode, '--json' => true,
+        ])->assertExitCode(0);
+        expect($mock->getLastRequest()?->body()->all()['task_compute'])->toBe($mode);
+
+        $this->artisan('project:update', [
+            'project' => '3', '--task-compute' => $mode, '--json' => true,
+        ])->assertExitCode(0);
+        expect($mock->getLastRequest()?->body()->all())->toBe(['task_compute' => $mode]);
+    })->with(['shared', 'vm']);
+
+    it('refuses invalid or bare compute flags without Gateway IO', function (?string $mode): void {
+        $mock = MockClient::global();
+        foreach ([
+            'project:create' => ['slug' => 'orbit', 'type' => 'monorepo', 'repository' => 'https://github.com/nckrtl/orbit.git'],
+            'project:update' => ['project' => '3'],
+        ] as $command => $arguments) {
+            $this->artisan($command, [...$arguments, '--task-compute' => $mode, '--json' => true])
+                ->expectsOutputToContain('project.task_compute_invalid')
+                ->assertExitCode(1);
+        }
+        expect($mock->getLastPendingRequest())->toBeNull();
+    })->with(['auto', 'VM', '', null]);
+});

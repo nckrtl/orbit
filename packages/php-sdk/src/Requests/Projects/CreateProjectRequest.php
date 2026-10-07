@@ -30,6 +30,7 @@ final class CreateProjectRequest extends GatewayRequest implements HasBody
         private readonly bool $taskCheckProvided = false,
         private readonly ?string $sourceAccess = null,
         private readonly ?bool $taskWorkspaceRouted = null,
+        private readonly ?string $taskCompute = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -57,6 +58,7 @@ final class CreateProjectRequest extends GatewayRequest implements HasBody
                 'source_access' => $this->sourceAccess,
                 'default_branch' => $this->defaultBranch,
                 'root' => $this->root,
+                'task_compute' => $this->taskCompute,
                 ...($this->taskCheckProvided ? ['task_check' => $this->taskCheck] : []),
                 ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
             ],
