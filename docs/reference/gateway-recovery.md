@@ -8,6 +8,8 @@ covers:
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/app/Domain/Gateway/GatewayCacheStore.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
+  - apps/gateway/app/**/GatewayReleases/**
+  - apps/gateway/app/**/*GatewayRelease*.php
 ---
 
 # Update and recover a Gateway
@@ -69,6 +71,53 @@ sudo tar -tzf /root/orbit-backups/gateway-before-update.tar.gz
 Adjust the paths when `ORBIT_HOME` or `DB_DATABASE` differs. Include an external database path and its `-wal` and `-shm` files, as [SQLite WAL default](/solutions/sqlite-wal-default) explains. Pause Gateway timers and external automation too; stopping the web services alone does not stop console writers. Do not copy a live SQLite file without its journal state. Transfer the archive to protected storage and verify that it can be read before changing source.
 
 The archive contains secrets. Do not attach it to a bug report or commit it to Git. A successful archive listing verifies readability, not restore behavior.
+
+## Release layout
+
+A Gateway in the release layout runs from immutable releases instead of an in-place checkout. Each release is one exact commit, built beside the live one, so preparing a release never changes what the Gateway serves.
+
+| Path | Content |
+| --- | --- |
+| `/home/orbit/releases/<id>/` | One release: a linked Git worktree of one commit, with its own `vendor/` for `apps/cli` and `apps/gateway`, and a `REVISION` file. `<id>` is the first 12 hex digits of the commit. |
+| `/home/orbit/orbit` | A link to the current release. `PATH`, systemd units, the PHP-FPM `chdir`, and the Caddy root keep using this path. |
+| `/home/orbit/shared/orbit.git` | The bare repository every release is a worktree of. Its `origin` is the Orbit repository. |
+| `/home/orbit/shared/gateway.env` | The one Gateway env file. `apps/gateway/.env` in every release links to it. |
+| `/home/orbit/shared/gateway-storage/` | The Gateway storage directory. `apps/gateway/storage` in every release links to it, so the file cache, its locks, and the logs stay the same across releases. |
+| `ORBIT_HOME` | Gateway state, outside every release, as before. |
+
+The paths come from `ORBIT_GATEWAY_CHECKOUT`, which names `apps/gateway` below the current link. A release directory is never changed after it is prepared. Its source directories are read-only, so an in-place `git checkout` or `composer install` inside a release fails instead of changing it. Only `apps/gateway/bootstrap/cache` and `apps/cli/storage` stay writable.
+
+The Gateway reports its version in `gateway:status`. When `APP_VERSION` is unset or empty, the version is the full commit in the release's `REVISION` file, so `bin/deploy-verify --sha` works without an env edit. Without either, the version is `dev`. Leave `APP_VERSION` out of the shared env file in the release layout; a set value always wins.
+
+### Prepare a release
+
+As `orbit`, build a release for one commit:
+
+```bash
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:prepare <SHA>
+```
+
+Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and other revision syntax are refused. Prepare fetches the repository's branches through the [GitHub App](/reference/github-app) when the commit is not present yet, and fetches a full SHA directly when no branch holds it any more. Then it:
+
+1. creates the worktree `releases/<id>` for the exact commit;
+2. links the shared env file and the shared storage directory into it;
+3. runs `composer install` and `composer check-platform-reqs` for `apps/cli` and `apps/gateway`, with the committed locks;
+4. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories read-only;
+5. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version.
+
+Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so after a change to the shared env file, run `php artisan config:cache` in `/home/orbit/orbit/apps/gateway`. A release that already has it is reused without another build step. A partial release from a failed or interrupted prepare is removed and built again on the next run. Prepare refuses when the releases directory has less than 1 GiB free. It never touches the current release link, the database, or a running service.
+
+The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters. |
+| `gateway.release_commit_unknown` | The repository does not have the commit, or the prefix names more than one commit. |
+| `gateway.release_layout_missing` | The shared repository or env file is missing. |
+| `gateway.release_in_progress` | Another release step holds the single-flight lock in `ORBIT_HOME/gateway-release.lock`. |
+| `gateway.release_disk_low` | The releases directory has less than 1 GiB free. |
+| `gateway.release_conflict` | The release directory holds another commit with the same 12-digit id. |
+| `gateway.release_fetch_failed`, `gateway.release_worktree_failed`, `gateway.release_link_failed`, `gateway.release_dependencies_failed`, `gateway.release_access_failed`, `gateway.release_revision_failed`, `gateway.release_configuration_failed` | The named build step failed. The live release is unchanged. |
 
 ## Update source
 
