@@ -20,6 +20,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseRetry;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSwitcher;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
+use Illuminate\Support\Facades\Schema;
 use Tests\Support\GatewayReleaseFixture;
 
 beforeEach(function (): void {
@@ -109,6 +110,21 @@ describe('gateway:release:adopt', function (): void {
             ])
             ->and($this->steps->servingDuringMigrate)->toBe('release '.$this->id)
             ->and(GatewayRelease::query()->orderBy('id')->pluck('release_id')->all())->toBe([$this->id, $targetId]);
+    });
+
+    it('records phase 1 after phase 2 when the checkout\'s database has no release records yet', function (): void {
+        $this->fixture->write('apps/gateway/database/migrations/2026_10_13_000000_create_gateway_releases_table.php', "<?php\n");
+        $target = $this->fixture->commit('Adds the release records');
+        $source = $this->fixture->base.'/adopt-source';
+        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $this->steps->pending = ['2026_10_13_000000_create_gateway_releases_table'];
+        Schema::rename('gateway_releases', 'gateway_releases_later');
+        $this->steps->onMigrate = static fn () => Schema::rename('gateway_releases_later', 'gateway_releases');
+
+        adoption($this->fixture, $this->steps)->execute($target, $source);
+
+        expect(GatewayRelease::query()->pluck('release_id')->sort()->values()->all())->toEqualCanonicalizing([$this->id, substr($target, 0, 12)])
+            ->and(GatewayRelease::query()->where('release_id', $this->id)->value('outcome'))->toBe('verified');
     });
 
     it('stays adopted on the checkout\'s commit and pauses when the target\'s migration fails', function (): void {
@@ -274,6 +290,8 @@ final class AdoptionSteps
     public bool $failSmoke = false;
 
     public ?string $servingDuringMigrate = null;
+
+    public ?Closure $onMigrate = null;
 }
 
 final readonly class AdoptionRuntime implements GatewayReleaseRuntime
@@ -385,6 +403,10 @@ final readonly class AdoptionDatabase implements GatewayReleaseDatabase
 
         if ($this->steps->failMigrate) {
             throw new GatewayReleaseException('migrate', 'gateway.release_migrate_failed', 'The release migrations failed.', 500);
+        }
+
+        if ($this->steps->onMigrate instanceof Closure) {
+            ($this->steps->onMigrate)();
         }
 
         $this->steps->applied = [...$this->steps->applied, ...$this->steps->pending];

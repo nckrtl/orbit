@@ -88,7 +88,18 @@ final readonly class GatewayReleaseAdopter
 
         // Phase 2 runs the target through the deploy path. For the checkout's own commit it installs the web build,
         // verifies the exact version, and runs smoke, which phase 1 does not.
-        $deployed = $this->deploy->deploy($sha, false, 'adopt');
+        try {
+            $deployed = $this->deploy->deploy($sha, false, 'adopt');
+        } finally {
+            // A checkout that predates the release records has no table for phase 1 until phase 2 migrates.
+            $unrecorded = $layout['unrecorded'] ?? null;
+
+            if ($unrecorded instanceof DeployedGatewayRelease) {
+                $this->record($unrecorded);
+            }
+        }
+
+        unset($layout['unrecorded']);
 
         return [...$layout, 'adopted' => true, 'release' => $deployed->id, 'sha' => $deployed->sha, 'deploy' => $deployed->toArray()];
     }
@@ -159,9 +170,10 @@ final readonly class GatewayReleaseAdopter
             throw $this->switchBack(GatewayReleaseException::fromThrowable($thrown, $step, $head), $current, $kept, $id, $head, $phases, $startedAt, $scheduled);
         }
 
-        $this->record($this->outcome($id, $head, 'verified', $phases, $startedAt));
+        $verified = $this->outcome($id, $head, 'verified', $phases, $startedAt);
 
         return [
+            'unrecorded' => $this->record($verified) ? null : $verified,
             'adopted' => true,
             'already' => false,
             'from' => $head,
@@ -585,12 +597,15 @@ final readonly class GatewayReleaseAdopter
         return @rename($next, $kept) ? $kept : $next;
     }
 
-    private function record(DeployedGatewayRelease $release): void
+    /** Writes the record, and says whether it could; a failed write must not undo the adoption. */
+    private function record(DeployedGatewayRelease $release): bool
     {
         try {
             $this->recorder->write($release);
+
+            return true;
         } catch (Throwable) {
-            // The command output carries the outcome; a failed record write must not undo the adoption.
+            return false;
         }
     }
 
