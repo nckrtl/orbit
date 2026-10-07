@@ -34,6 +34,14 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(policy.canonical(original), {'nftables': [{'rule': {'expr': [{'drop': None}]}}]})
         self.assertNotEqual(policy.canonical(original), policy.canonical({'nftables': [{'rule': {'expr': [{'accept': None}]}}]}))
 
+    def test_lock_waits_for_concurrent_boot_and_bounds_busy_failure(self):
+        with patch.object(policy.fcntl, 'flock', side_effect=[BlockingIOError(), None]) as lock, patch.object(policy.time, 'sleep'):
+            policy.acquire(123)
+            self.assertEqual(lock.call_count, 2)
+        with patch.object(policy.fcntl, 'flock', side_effect=BlockingIOError()), patch.object(policy.time, 'monotonic', side_effect=[0, 61]):
+            with self.assertRaises(ValueError):
+                policy.acquire(123)
+
     def test_files_refuse_drift_and_symlinks(self):
         if os.geteuid() != 0:
             self.skipTest('root file ownership assertions require root')

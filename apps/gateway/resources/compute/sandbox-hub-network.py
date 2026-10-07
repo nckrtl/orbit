@@ -8,6 +8,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import time
 import uuid
 
 ROOT = pathlib.Path('/etc/orbit/task-networks')
@@ -163,7 +164,7 @@ def apply(spec, operation, boot=False):
         manifest: json.dumps(spec, sort_keys=True).encode(), script: source(), rules: text.encode(),
         unit: (f'[Unit]\nDescription=Orbit sandbox network {identity}\nDefaultDependencies=no\n'
                'After=local-fs.target\nBefore=wg-quick@orbit.service\n'
-               f'[Service]\nType=oneshot\nRemainAfterExit=yes\nExecStart=/usr/bin/python3 -I {script} boot {identity}\n'
+               f'[Service]\nType=oneshot\nTimeoutStartSec=120\nRemainAfterExit=yes\nExecStart=/usr/bin/python3 -I {script} boot {identity}\n'
                '[Install]\nWantedBy=multi-user.target\n').encode(),
         dependency: f'[Unit]\nRequires={unit_name}\nAfter={unit_name}\n'.encode(),
     }
@@ -198,6 +199,17 @@ def apply(spec, operation, boot=False):
         run(['systemctl', 'daemon-reload'])
 
 
+def acquire(fd, timeout=60):
+    deadline = time.monotonic() + timeout
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            require(time.monotonic() < deadline)
+            time.sleep(0.1)
+
+
 def main():
     require(os.geteuid() == 0 and all(shutil.which(name) for name in ('nft', 'unshare', 'python3', 'systemctl')))
     boot = len(sys.argv) == 3 and sys.argv[1] == 'boot'
@@ -215,7 +227,7 @@ def main():
     try:
         info = os.fstat(fd)
         require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == 0o600 and info.st_nlink == 1)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        acquire(fd)
         apply(spec, request['operation'], boot)
     finally:
         os.close(fd)
