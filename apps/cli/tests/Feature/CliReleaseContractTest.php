@@ -168,6 +168,23 @@ describe('CLI release version', function (): void {
         expect($versions)->toBe([1, 2, 3, 5]);
     });
 
+    it('releases only commits on the first-parent history of main', function (): void {
+        $repo = cli_release_fixture_repo();
+        $base = cli_release_commit($repo, 'base');
+        cli_release_git($repo, 'checkout', '--quiet', '-b', 'feature');
+        $feature = cli_release_commit($repo, 'feature');
+        cli_release_git($repo, 'checkout', '--quiet', 'main');
+        $mainOnly = cli_release_commit($repo, 'main only');
+        cli_release_git($repo, 'merge', '--quiet', '--no-ff', '-m', 'Merge feature', 'feature');
+        $merge = cli_release_git($repo, 'rev-parse', 'HEAD');
+
+        expect(cli_release_version($repo, '--on-main', 'main', $base)[0])->toBe(0)
+            ->and(cli_release_version($repo, '--on-main', 'main', $mainOnly)[0])->toBe(0)
+            ->and(cli_release_version($repo, '--tag', '--on-main', 'main', $merge))->toBe([0, 'cli-v0.4.0', ''])
+            ->and(cli_release_version($repo, '--on-main', 'main', $feature)[0])->toBe(1)
+            ->and(cli_release_version($repo, '--on-main', 'main', $feature)[2])->toContain('first-parent history');
+    });
+
     it('refuses a shallow clone because its count is wrong', function (): void {
         $repo = cli_release_fixture_repo();
         cli_release_commit($repo, 'first');
@@ -271,10 +288,9 @@ describe('CLI release workflow', function (): void {
             ->and($workflow)->toContain("github.event.workflow_run.event == 'push'")
             ->and($workflow)->toContain("github.event.workflow_run.conclusion == 'success'")
             ->and($workflow)->toContain('check_name=Required%20checks')
-            ->and($workflow)->toContain('git merge-base --is-ancestor "$REQUESTED_COMMIT" origin/main')
             ->and($workflow)->toContain('fetch-depth: 0')
-            ->and($workflow)->toContain('bin/orbit-cli-release-version "$REQUESTED_COMMIT"')
-            ->and($workflow)->toContain('bin/orbit-cli-release-version --tag "$REQUESTED_COMMIT"')
+            ->and($workflow)->toContain('bin/orbit-cli-release-version --on-main origin/main "$REQUESTED_COMMIT"')
+            ->and($workflow)->toContain('bin/orbit-cli-release-version --tag --on-main origin/main "$REQUESTED_COMMIT"')
             ->and($workflow)->toContain('uses: ./.github/workflows/orbit-cli-binary.yml')
             ->and($workflow)->toContain('bin/orbit-cli-release-assets "$VERSION" artifacts release')
             ->and($workflow)->toContain('--latest=false')

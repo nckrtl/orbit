@@ -18,7 +18,7 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when the `CI` run for a push to `main` completes. It confirms that the commit is on `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green.
+Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when the `CI` run for a push to `main` completes. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green.
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -33,7 +33,7 @@ Each release has one version, derived from its commit, and a tag that names it.
 | Tag | `cli-v0.N.0`, a lightweight tag on the commit | `cli-v0.4681.0` |
 | Title | `orbit 0.N.0` | `orbit 0.4681.0` |
 
-`N` counts every commit that the commit reaches, itself included. `main` only moves forward, so each later `main` commit has a larger `N`. Compare releases by `N`, not by tag text or release date. Release numbers have gaps, because only green commits are published.
+`N` counts every commit that the commit reaches, itself included. `main` only moves forward, so each later `main` commit has a larger `N`. Compare releases by `N`, not by tag text or release date. Release numbers have gaps, because only green commits are published. Only a commit on the first-parent history of `main` is a release commit. A side commit brought in by a merge can reach the same count as a different `main` commit, so it is not given a version.
 
 A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`. Only a release has a version that matches `^0\.[1-9][0-9]*\.0$`. Other builds report a tag-prefixed or hex version that never matches. A pull-request build reports `git describe --tags --always --dirty`, such as `cli-v0.4681.0-3-g1a2b3c4`. A source checkout reports its nearest tag, `git describe --tags --abbrev=0`, such as `cli-v0.4681.0`.
 
@@ -88,7 +88,7 @@ On a Mac, use `orbit-${version}-macos-arm64` and `shasum -a 256 --check` instead
 
 ### Publish a missed commit
 
-When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` and pass the full commit SHA. It applies the same checks. When the release already exists for that commit with every asset, the run changes nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
+When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` and pass the full commit SHA. It applies the same checks, including the first-parent history check. When the release already exists for that commit with every asset, the run changes nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
 
 ## Pull-request builds
 
@@ -143,7 +143,7 @@ A Node or an updater needs a binary that is always there and needs no login. Wor
 
 ### A version from the commit count
 
-An updater must refuse downgrades, so versions need a total order. `git rev-list --count` gives that order on `main` and maps each version to exactly one commit, with no counter to store. The order holds because the `main` ruleset refuses force pushes, so every later `main` commit descends from every earlier one. A workflow run number would also be ordered, but a re-run or a missed run would break the link to the commit. A version from the commit date is not ordered, because commit dates can go backwards.
+An updater must refuse downgrades, so versions need a total order. `git rev-list --count` gives that order on `main` and maps each version to exactly one commit, with no counter to store. The order holds because the `main` ruleset refuses force pushes, so every later `main` commit descends from every earlier one. The release workflow accepts only that first-parent history, because a side commit merged into `main` is not in that line and can share a count with a `main` commit. A workflow run number would also be ordered, but a re-run or a missed run would break the link to the commit. A version from the commit date is not ordered, because commit dates can go backwards.
 
 ### Immutable releases that never take Latest
 

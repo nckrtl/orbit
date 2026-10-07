@@ -51,11 +51,15 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$REQUESTED_COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Pass a full 40-character commit SHA, not ${REQUESTED_COMMIT}."; exit 1; }
-          git merge-base --is-ancestor "$REQUESTED_COMMIT" origin/main || { echo "::error::${REQUESTED_COMMIT} is not on main."; exit 1; }
+          # Assignment, not echo "$(...)", so a refusal stops this step.
+          # --on-main refuses a side commit: two commits that are not in one
+          # line of history can reach the same count and would share a version.
+          version="$(bin/orbit-cli-release-version --on-main origin/main "$REQUESTED_COMMIT")"
+          tag="$(bin/orbit-cli-release-version --tag --on-main origin/main "$REQUESTED_COMMIT")"
           {
             echo "commit=${REQUESTED_COMMIT}"
-            echo "version=$(bin/orbit-cli-release-version "$REQUESTED_COMMIT")"
-            echo "tag=$(bin/orbit-cli-release-version --tag "$REQUESTED_COMMIT")"
+            echo "version=${version}"
+            echo "tag=${tag}"
           } >> "$GITHUB_OUTPUT"
 
       - name: Require green Required checks on the commit
