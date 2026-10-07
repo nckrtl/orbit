@@ -205,6 +205,12 @@ describe('web build publish and restore', function (): void {
         expect($this->web->releases())->toBe(['aaaaaaaaaaaa']);
     });
 
+    it('prunes nothing when it is given no retained release', function (): void {
+        $this->web->build()->prune([]);
+
+        expect($this->web->releases())->toEqualCanonicalizing(['aaaaaaaaaaaa', 'bbbbbbbbbbbb']);
+    });
+
     it('prunes web builds of no retained release, but never the current one', function (): void {
         foreach (['cccccccccccc', 'dddddddddddd'] as $id) {
             mkdir($this->web->web.'/releases/'.$id, 0750);

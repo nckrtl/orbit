@@ -100,6 +100,19 @@ final readonly class ScriptGatewayReleaseSmoke implements GatewayReleaseSmoke
 
         $report = $this->report($result);
 
+        // 137 is also what a SIGKILL from elsewhere, such as the OOM killer, looks like. Only one that came after the
+        // limit is ours.
+        if ($result->exitCode === self::Killed && $result->durationMs < $limit * 1000) {
+            throw new GatewayReleaseException(
+                step: 'smoke',
+                errorCode: 'gateway.release_smoke_killed',
+                message: sprintf('Smoke was killed after %d ms, before its limit of %d seconds.', $result->durationMs, $limit),
+                status: 500,
+                result: $result,
+                phase: ['command' => $arguments, 'timeout_seconds' => $limit, 'exit_code' => $result->exitCode, 'duration_ms' => $result->durationMs, 'report' => $report],
+            );
+        }
+
         if (in_array($result->exitCode, [self::TimedOut, self::Killed], true)) {
             throw new GatewayReleaseException(
                 step: 'smoke',

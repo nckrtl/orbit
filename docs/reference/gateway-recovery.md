@@ -146,7 +146,7 @@ The web app ships with the Gateway release of the same commit. On every CI run o
 
 Extraction accepts only regular files and directories with plain relative names. It refuses links, special files, absolute names, `..`, duplicate and encrypted entries, and entries whose size or checksum differs from their header. It also refuses more than 20,000 entries or more than 512 MiB of files.
 
-A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves.
+A complete build is reused. Nothing serves it until the release verified: deploy then switches `web/current` to it in one rename. A failure leaves no partial build behind. After a verified release, the Gateway removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed later, or an older `bin/web-deploy` build. It never removes the build `current` serves. When the releases directory cannot be read, it skips this cleanup and logs a warning.
 
 CI's `Required checks` job needs the Web job, and the Web job uploads the artifact before it succeeds. So a commit with passing checks has its artifact, and a missing or expired one fails the commit at once instead of waiting for it. A newer commit is released instead. The artifact expires after 14 days, so deploying or adopting an older commit fails at this step.
 
@@ -303,6 +303,7 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_web_publish_failed` | `web/current` could not be switched. It stays on the build it served. |
 | `gateway.release_smoke_failed` | Smoke failed after the web switch, or printed no result. |
 | `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
+| `gateway.release_smoke_killed` | Smoke was killed before its limit by something else, such as the kernel's out-of-memory killer. |
 | `gateway.release_smoke_missing` | The release has no `bin/gateway-smoke`. |
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |
 | `gateway.release_configuration_failed` | The release's configuration could not be cached again. It runs before migrations, so nothing changed. |

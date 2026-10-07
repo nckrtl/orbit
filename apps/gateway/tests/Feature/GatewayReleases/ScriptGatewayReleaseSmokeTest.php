@@ -26,6 +26,7 @@ function smoke_release(string $base, string $id): string
             fail) printf '{"schema":1,"passed":false,"error":"checks_failed","failed_checks":["web"],"message":"1 of 7 checks did not pass: web.","checks":{"web":{"status":"failed","error":"web_release_mismatch"}}}\n'; exit 1 ;;
             garbage) echo 'Traceback (most recent call last)' >&2; exit 1 ;;
             hang) sleep 60 & echo $! > "$root/smoke-child"; wait ;;
+            killed) kill -9 $$ ;;
             terminated) trap 'printf "{\"schema\":1,\"passed\":false,\"error\":\"terminated\"}\n"; exit 143' TERM; sleep 60 & wait ;;
         esac
         BASH);
@@ -140,6 +141,15 @@ describe('release smoke', function (): void {
         expect($exception->errorCode)->toBe('gateway.release_smoke_timeout')
             ->and($exception->phase['exit_code'])->toBe(124)
             ->and($exception->phase['report'])->toBe(['schema' => 1, 'passed' => false, 'error' => 'terminated']);
+    });
+
+    it('tells a smoke run killed from elsewhere before its limit apart from a timeout', function (): void {
+        file_put_contents($this->release.'/smoke-mode', 'killed');
+
+        $exception = release_failure(fn () => smoke_runner($this->layout)->run($this->id, $this->sha));
+
+        expect($exception->errorCode)->toBe('gateway.release_smoke_killed')
+            ->and($exception->phase['exit_code'])->toBe(137);
     });
 
     it('passes the checks to skip to smoke', function (): void {

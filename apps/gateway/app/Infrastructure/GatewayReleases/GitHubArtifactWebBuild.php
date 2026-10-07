@@ -152,6 +152,11 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
 
     public function prune(array $retained): void
     {
+        // An empty list means the releases directory could not be read, never that no release is retained.
+        if ($retained === []) {
+            return;
+        }
+
         $entries = @scandir($this->releasesPath());
 
         if ($entries === false) {

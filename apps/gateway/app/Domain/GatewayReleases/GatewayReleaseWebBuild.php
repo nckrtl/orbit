@@ -39,7 +39,7 @@ interface GatewayReleaseWebBuild
      * Removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed
      * after the web install, unless the web app still serves it.
      *
-     * @param  list<string>  $retained  The ids of the retained releases.
+     * @param  list<string>  $retained  The ids of the retained releases. An empty list prunes nothing.
      */
     public function prune(array $retained): void;
 }

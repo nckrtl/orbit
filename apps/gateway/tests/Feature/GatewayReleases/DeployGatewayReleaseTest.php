@@ -374,6 +374,33 @@ describe('gateway:release:deploy', function (): void {
         expect($order->pruned)->toEqualCanonicalizing([$first, substr($sha, 0, 12)]);
     });
 
+    it('skips pruning web builds when the releases directory cannot be read', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Release while the releases directory turns unreadable');
+        $order = new ReleaseSteps;
+        $releases = $this->fixture->layout->releasesPath();
+        $smoke = new readonly class($releases) implements GatewayReleaseSmoke
+        {
+            public function __construct(private string $releases) {}
+
+            public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
+            {
+                chmod($this->releases, 0o300);
+
+                return ['outcome' => 'passed', 'report' => ['passed' => true]];
+            }
+        };
+
+        try {
+            $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), $smoke)->execute($sha);
+        } finally {
+            chmod($releases, 0o755);
+        }
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and($order->pruned)->toBeNull();
+    });
+
     it('installs a missing web build from CI when it rolls back', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Release to roll back from');

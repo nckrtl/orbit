@@ -319,8 +319,18 @@ final readonly class GatewayReleasePromoter
             }
         }
 
+        $retained = $this->layout->retainedReleaseIds();
+
+        // A verified release is retained, so an empty list means the releases directory could not be read. Pruning
+        // the web builds against it would remove every build but the current one.
+        if ($retained === [] || ! is_readable($this->layout->releasesPath())) {
+            Log::warning('Gateway release skipped pruning web builds: the releases directory cannot be read.', ['releases' => $this->layout->releasesPath()]);
+
+            return;
+        }
+
         try {
-            $this->web->prune($this->layout->retainedReleaseIds());
+            $this->web->prune($retained);
         } catch (Throwable) {
             // A web build that cannot be removed now is removed by a later release.
         }
