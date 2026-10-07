@@ -434,6 +434,27 @@ describe('gateway:release:deploy', function (): void {
             ->and($order->steps)->toBe([]);
     });
 
+    it('keeps naming the clean snapshot when a paused commit is tried again', function (): void {
+        adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Half-failing migration');
+        $database = new OpenReleaseDatabase;
+        $database->pending = ['2026_12_31_000000_marks'];
+        $database->failMigrate = true;
+        $database->directory = $this->fixture->base.'/home';
+        $order = new ReleaseSteps;
+        $deploy = fn (): GatewayReleaseException => release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), $database, recording_web($order), recording_smoke($order))->execute($sha));
+
+        $deploy();
+        $deploy();
+        $records = GatewayRelease::query()->orderBy('id')->get();
+        $marker = json_decode((string) file_get_contents($this->fixture->base.'/home/gateway-release.paused'), true);
+        $clean = $this->fixture->base.'/home/pre-'.substr($sha, 0, 12).'-1.sqlite';
+
+        expect($records->pluck('snapshot_path')->all())->toBe([$clean, $clean])
+            ->and($records[1]->phases['snapshot']['path'])->toBe($this->fixture->base.'/home/pre-'.substr($sha, 0, 12).'-2.sqlite')
+            ->and($marker['snapshot'])->toBe($clean);
+    });
+
     it('gives a retryable failure three attempts per commit, then marks it final', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Fails verify every time');
@@ -778,9 +799,20 @@ final class OpenReleaseDatabase implements GatewayReleaseDatabase
         return $this->pending;
     }
 
+    public int $snapshots = 0;
+
+    public ?string $directory = null;
+
     public function snapshot(string $id): string
     {
-        return '/var/tmp/orbit-pre-'.$id.'.sqlite';
+        if ($this->directory === null) {
+            return '/var/tmp/orbit-pre-'.$id.'.sqlite';
+        }
+
+        $path = $this->directory.'/pre-'.$id.'-'.++$this->snapshots.'.sqlite';
+        touch($path);
+
+        return $path;
     }
 
     public function migrate(string $releasePath): void

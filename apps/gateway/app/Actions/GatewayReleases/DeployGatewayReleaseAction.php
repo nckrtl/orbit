@@ -75,8 +75,10 @@ final readonly class DeployGatewayReleaseAction
                 $phases['snapshot'] = ['outcome' => 'skipped'];
                 $phases['migrate'] = ['outcome' => 'skipped'];
             } else {
-                $snapshot = $this->database->snapshot($prepared->id);
-                $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $snapshot, 'pending' => $pending];
+                $taken = $this->database->snapshot($prepared->id);
+                // A retry of a paused commit keeps naming the copy from before its first migration attempt.
+                $snapshot = $this->recorder->pausedSnapshot($prepared->sha) ?? $taken;
+                $phases['snapshot'] = ['outcome' => 'snapshotted', 'path' => $taken, 'clean' => $snapshot, 'pending' => $pending];
                 $step = 'migrate';
                 $this->database->migrate($prepared->path);
                 $migrationsRan = true;

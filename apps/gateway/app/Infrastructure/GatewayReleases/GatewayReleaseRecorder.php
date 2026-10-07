@@ -74,6 +74,22 @@ final readonly class GatewayReleaseRecorder
         }
     }
 
+    /**
+     * The snapshot the pause marker names for this commit: the state before its first migration attempt. A retry of a
+     * paused commit snapshots a database its failed migration already changed, so that copy is not the clean one.
+     */
+    public function pausedSnapshot(string $sha): ?string
+    {
+        $marker = @file_get_contents($this->home().'/gateway-release.paused');
+        $decoded = is_string($marker) ? json_decode($marker, true) : null;
+
+        if (! is_array($decoded) || ($decoded['sha'] ?? null) !== $sha || ! is_string($decoded['snapshot'] ?? null)) {
+            return null;
+        }
+
+        return is_file($decoded['snapshot']) ? $decoded['snapshot'] : null;
+    }
+
     private function pauseMarker(DeployedGatewayRelease $release): void
     {
         $path = $this->home().'/gateway-release.paused';
