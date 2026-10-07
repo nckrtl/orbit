@@ -780,6 +780,40 @@ it('runs setup steps in order before composer check, and records the tree after 
         ->and($reading->changedPaths)->toBe([]);
 });
 
+it('runs setup payloads larger than the operating system argument limit', function (): void {
+    $checkout = check_runner_checkout('test -f ignored/baseline && echo checked');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $payload = str_repeat('x', 512 * 1024);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+        ['name' => 'Restore baseline', 'command' => "mkdir -p ignored; cat > ignored/baseline <<'BASELINE'\n".$payload."\nBASELINE\nprintf '%s' \"\$0\" > ignored/setup-script\n", 'timeout_seconds' => 10],
+    ]));
+
+    expect($reading->exitCode)->toBe(0)
+        ->and($reading->failedStep)->toBeNull()
+        ->and(file_get_contents($checkout.'/ignored/baseline'))->toBe($payload."\n")
+        ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
+        ->and($reading->output)->toContain('checked');
+});
+
+it('removes setup scripts after failure or timeout and skips later work', function (string $command, int $exit): void {
+    $checkout = check_runner_checkout('touch check-ran');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+        ['name' => 'Stop', 'command' => 'mkdir -p ignored; printf "%s" "$0" > ignored/setup-script; '.$command, 'timeout_seconds' => 1],
+        ['name' => 'Never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
+    ]));
+
+    expect($reading->exitCode)->toBe($exit)
+        ->and($reading->failedStep)->toBe('Stop')
+        ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
+        ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
+        ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
+})->with(['failure' => ['exit 5', 5], 'timeout' => ['sleep 10', 124]]);
+
 it('stops at the first failing setup step without running composer check', function (): void {
     $checkout = check_runner_checkout('echo checked');
     $instance = check_runner_instance($checkout);
