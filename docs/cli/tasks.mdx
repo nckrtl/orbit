@@ -73,7 +73,7 @@ orbit tasks:list [--project=ID] [--status=STATUS] [--json]
 | Option | Meaning |
 | --- | --- |
 | `--project=ID` | Only tasks of this numeric Project ID. |
-| `--status=STATUS` | Only tasks in this status: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `completed`, `failed`, or `cancelled`. |
+| `--status=STATUS` | Only tasks in this status: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, `completed`, `failed`, or `cancelled`. |
 
 An invalid filter fails with `tasks.project_invalid` or `tasks.status_invalid` before the request. The CLI does not prompt for a filter.
 
@@ -164,11 +164,11 @@ orbit tasks:cancel [group] [--yes] [--json]
 | --- | --- |
 | `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
 
-In a terminal, the task list leaves out `settling` and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When its Node answers, the Gateway first pushes the latest approved commit to the task branch; a failed push fails with `tasks.push_failed` and keeps the task. When the Node is unreachable, the task is still marked `cancelled`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#cancel-a-stuck-task) describes.
+In a terminal, the task list leaves out `settling`, `waiting_for_review`, and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When its Node answers, the Gateway first pushes the latest approved commit to the task branch; a failed push fails with `tasks.push_failed` and keeps the task. When the Node is unreachable, the task is still marked `cancelled`, the Instance stays attached, and the scheduler retries removal, as the [tasks reference](/reference/tasks#cancel-a-stuck-task) describes.
 
 ## orbit tasks:complete
 
-Complete a `settling` task after its pull request is reviewed and merged. Also complete a `running` or `reviewing` task whose watched pull request has merged or closed. The Gateway marks the task `completed` and removes its shared Instance.
+Complete a `settling` or `waiting_for_review` task after its pull request is reviewed and merged. Also complete a `running` or `reviewing` task whose watched pull request has merged or closed. The Gateway marks the task `completed` and removes its shared Instance.
 
 On the `running` or `reviewing` path it stores the ended state, stops the running implementer or reviewer and any running check, then cancels each open subtask and marks the task `completed` in one transaction. A failed stop returns `tasks.subtask_interrupt_failed`, keeps the task and its subtasks open, and leaves the stored completion for retry. The [tasks reference](/reference/tasks#complete-and-cleanup) defines how a crash resumes without another GitHub read. Completing a completed task whose checkout is already gone succeeds and changes nothing. Completing a completed task that still has its Instance retries removal. There is no `tasks:continue` command.
 
@@ -184,7 +184,7 @@ In a terminal, the task list shows only `settling` tasks. Pass the task id to co
 
 ## orbit tasks:subtask:create
 
-Append one subtask to a task at the next position, with status `todo`. This works in every task status except `completed` and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the task is `settling` with an open pull request, or with no pull request, the next tick returns the task to `running` and starts this subtask. Another assistance cause keeps the task `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
+Append one subtask to a task at the next position, with status `todo`. This works in every task status except `completed` and `cancelled`. Outside `backlog`, the subtask needs deliverables. When the task is `settling` or `waiting_for_review` with an open pull request, or with no pull request, the next tick returns the task to `running` and starts this subtask. Another assistance cause keeps the task `settling`. The [tasks reference](/reference/tasks#fix-a-settling-pull-request) owns that transition.
 
 ```bash
 orbit tasks:subtask:create [group] [title] [--brief=TEXT] [--deliverables=FILE] [--json]
@@ -211,7 +211,7 @@ A `--json` or `-n` call fails with `tasks.title_required` or `tasks.brief_requir
 
 ## orbit tasks:subtask:update
 
-Change a subtask's title, brief, position, or deliverables while its task is in `backlog`. In `todo`, `running`, `reviewing`, or `settling` tasks, change any of those fields only while the subtask is `todo`. Deliverables cannot be empty. A new position moves only among `todo` subtasks; it cannot put one before a started or finished subtask. Positions stay gapless. Started subtasks keep their existing restrictions, and tasks in `completed` or `cancelled` are read-only.
+Change a subtask's title, brief, position, or deliverables while its task is in `backlog`. In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` tasks, change any of those fields only while the subtask is `todo`. Deliverables cannot be empty. A new position moves only among `todo` subtasks; it cannot put one before a started or finished subtask. Positions stay gapless. Started subtasks keep their existing restrictions, and tasks in `completed` or `cancelled` are read-only.
 
 ```bash
 orbit tasks:subtask:update [group] [subtask] [--title=TEXT] [--brief=TEXT] [--position=N] [--deliverables=FILE] [--json]
@@ -246,7 +246,7 @@ In a terminal, the task list shows only `backlog` tasks. The question names the 
 
 ## orbit tasks:subtask:cancel
 
-Cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, or `settling` task; cancellation marks it `cancelled`, starts nothing, and does not ask for assistance. If it was the last open subtask, the task settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the task and its Instance, and starts the next `todo` subtask. The task settles only when no open subtask remains. The [tasks reference](/reference/tasks#cancel-a-subtask) owns these effects.
+Cancel a `todo` or `running` subtask. A `todo` subtask can be cancelled in a `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review` task; cancellation marks it `cancelled`, starts nothing, and does not ask for assistance. If it was the last open subtask, the task settles as after a completed subtask. Cancelling a running subtask stops its implementer and running check, keeps the task and its Instance, and starts the next `todo` subtask. The task settles only when no open subtask remains. The [tasks reference](/reference/tasks#cancel-a-subtask) owns these effects.
 
 ```bash
 orbit tasks:subtask:cancel [group] [subtask] [--yes] [--json]

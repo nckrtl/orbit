@@ -78,7 +78,8 @@ A task moves through these statuses from preparation to its end.
 | `reserved` | The scheduler claimed it and provisions its workspace. |
 | `running` | A subtask is running: its baseline check, its implementer, or its handoff check. |
 | `reviewing` | A subtask waits for its reviewer, or Orbit publishes its approved commit. |
-| `settling` | Every subtask has ended. Orbit watches the pull request until it merges. |
+| `settling` | Every subtask has ended. Shared tasks watch the pull request here; VM tasks wait here until publication is recorded. |
+| `waiting_for_review` | A VM task has published its pull request and waits for human review and CI. VM power is separate from this status. |
 | `completed` | The pull request merged, or an operator completed the task. The workspace is removed. |
 | `failed` | An agent could not start. |
 | `cancelled` | An operator cancelled the task. |
@@ -982,7 +983,9 @@ After that reminder, the Gateway waits for a newer stopped reviewer turn. When t
 
 Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
-After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head. Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. It stores `pr_url` and moves the task to `settling`.
+After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head.
+
+Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. It stores `pr_url` and moves a shared task to `settling`, or a VM task to `waiting_for_review`. Both statuses use the same pull request watch, fixup, and completion rules.
 
 A failed push or open keeps the subtask in `reviewing` and keeps its commit. It retries after 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. The fifth failure asks for assistance with a reason that starts with `Approved commit publication failed: `. The reason names Git's error. When GitHub refuses a push that changes `.github/workflows/`, it names the missing `Workflows` permission. A later success clears only that reason.
 
@@ -996,7 +999,7 @@ While a task has a subtask in `todo`, `running`, or `reviewing`, Orbit looks for
 
 The list can contain more than one pull request. Orbit watches the first open pull request in GitHub's default order. When the list has no open pull request, Orbit watches the first pull request on the page. It stores the URL, number, and state in `watched_pr_url`, `watched_pr_number`, and `watched_pr_state`. These fields appear on the task in the API and `tasks:show --json`. It does not write `pr_url`. An empty list or an unreadable list leaves `watched_pr_url` and the assistance flag as they are, and the task keeps starting subtasks.
 
-`pr_url` remains the pull request Orbit opens on the last subtask. That approval still requires the pull request description, and Jev still checks `brief_coverage`. Cancel still treats only a `settling` task with `pr_url` as published. `watched_pr_url` does not change those rules.
+`pr_url` remains the pull request Orbit opens on the last subtask. That approval still requires the pull request description, and Jev still checks `brief_coverage`. Cancel treats a `settling` or `waiting_for_review` task with `pr_url` as published. `watched_pr_url` does not change those rules.
 
 When the watched pull request is `merged` or `closed` and a subtask is still open, Orbit starts no new subtask and asks for assistance. The task keeps its status, and this tick does not complete it.
 

@@ -36,8 +36,8 @@ final readonly class CancelTaskGroupAction
 
         $group->refresh()->load(['project', 'tasks', 'taskable']);
 
-        $unpublished = $group->status === TaskGroupStatus::Settling && ($group->pr_url === null || $group->pr_url === '');
-        if ($group->status === TaskGroupStatus::Completed || ($group->status === TaskGroupStatus::Settling && ! $unpublished)) {
+        $unpublished = in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && ($group->pr_url === null || $group->pr_url === '');
+        if ($group->status === TaskGroupStatus::Completed || (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && ! $unpublished)) {
             throw new ResourceOperationException(
                 errorCode: 'tasks.not_cancellable',
                 message: __('A completed task group, or a settling one with a pull request, cannot be cancelled.'),

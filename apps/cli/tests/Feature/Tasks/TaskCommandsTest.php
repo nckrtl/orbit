@@ -190,6 +190,14 @@ describe('requests', function (): void {
             && (string) $request->body() === '{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":9}');
     });
 
+    it('accepts the VM review wait as a list filter', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-list/default'));
+
+        expect(Artisan::call('tasks:list', ['--status' => 'waiting_for_review', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
+            && $request->query()->all() === ['status' => 'waiting_for_review']);
+    });
+
     it('filters the question list and renders an empty list', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/default'));
 

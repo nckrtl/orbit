@@ -141,7 +141,7 @@ final readonly class TaskScheduler
 
         $groups = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
             ->with(['project', 'tasks', 'taskable'])
-            ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling])
+            ->whereIn('status', [TaskGroupStatus::Running, TaskGroupStatus::Reviewing, TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview])
             ->orderBy('id')
             ->get();
         $runningAtStart = [];
@@ -167,7 +167,7 @@ final readonly class TaskScheduler
             if ($this->endedPullRequests->execute($group)) {
                 continue;
             }
-            if ($group->status !== TaskGroupStatus::Settling) {
+            if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
                 continue;
             }
             if (! is_string($group->pr_url) || $group->pr_url === '') {
@@ -2037,7 +2037,7 @@ final readonly class TaskScheduler
             return;
         }
 
-        if ($group->status === TaskGroupStatus::Settling) {
+        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
             $this->settle($group);
         }
     }
@@ -2400,7 +2400,7 @@ final readonly class TaskScheduler
                 $removed++;
             } catch (Throwable $exception) {
                 report($exception);
-                $prefix = $group->status === TaskGroupStatus::Settling
+                $prefix = in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
                     ? RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix
                     : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
                 $this->workspaces->recordFailure($group, $exception, $prefix);
@@ -2480,7 +2480,7 @@ final readonly class TaskScheduler
                 || $group->reserved_at->lessThanOrEqualTo(RemoveTaskWorkspaceAction::reservationCutoff());
         }
 
-        return $group->status === TaskGroupStatus::Settling
+        return in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)
             && is_string($group->assistance_reason)
             && str_starts_with($group->assistance_reason, RemoveTaskWorkspaceAction::MergeCleanupFailedPrefix);
     }
@@ -2620,7 +2620,7 @@ final readonly class TaskScheduler
                                 ->orWhere('tasks.reserved_at', '<=', $cutoff);
                         });
                 })->orWhere(function ($settling) use ($mergePrefix): void {
-                    $settling->where('tasks.status', TaskGroupStatus::Settling->value)
+                    $settling->whereIn('tasks.status', TaskGroupStatus::awaitingCompletion())
                         ->where('tasks.assistance_reason', 'like', $mergePrefix);
                 });
             })
@@ -2944,6 +2944,7 @@ final readonly class TaskScheduler
                     TaskGroupStatus::Running,
                     TaskGroupStatus::Reviewing,
                     TaskGroupStatus::Settling,
+                    TaskGroupStatus::WaitingForReview,
                 ], true)) {
                     throw new ResourceOperationException(
                         errorCode: 'tasks.subtask_not_running',
@@ -2966,7 +2967,7 @@ final readonly class TaskScheduler
                 return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
             });
 
-            if ($group->status === TaskGroupStatus::Settling) {
+            if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
                 return $this->settle($group, requestMissingPullRequest: false, checkReturningPullRequest: false);
             }
 
@@ -3031,7 +3032,7 @@ final readonly class TaskScheduler
             $this->beginRunningTask($next);
         }
 
-        if ($group->status === TaskGroupStatus::Settling) {
+        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
             return $this->settle($group);
         }
 
@@ -3085,7 +3086,7 @@ final readonly class TaskScheduler
             $this->assignImplementer($next);
         }
 
-        if ($group->status === TaskGroupStatus::Settling) {
+        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
             return $this->settle($group);
         }
 
@@ -3100,7 +3101,7 @@ final readonly class TaskScheduler
         $group->requireManagedExecution();
         $group->loadMissing(['project', 'tasks', 'taskable']);
 
-        if ($group->status !== TaskGroupStatus::Settling) {
+        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
             return $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
         }
 
@@ -3126,6 +3127,9 @@ final readonly class TaskScheduler
         $group->questions = $metrics->questions;
         $group->escalations = $metrics->escalations;
         $group->settled_at ??= now();
+        if ($group->task_compute === TaskCompute::Vm && $group->status === TaskGroupStatus::Settling) {
+            $group->status = TaskGroupStatus::WaitingForReview;
+        }
         $group->save();
 
         $settled = $group->fresh(['tasks', 'project', 'taskable']) ?? $group;
@@ -3535,7 +3539,7 @@ final readonly class TaskScheduler
             $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                 ->lockForUpdate()
                 ->findOrFail($group->id);
-            if ($locked->status !== TaskGroupStatus::Settling || $this->otherAssistance($locked)) {
+            if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || $this->otherAssistance($locked)) {
                 return null;
             }
 
@@ -3617,13 +3621,13 @@ final readonly class TaskScheduler
         }
 
         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
-        if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
+        if (! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {
             return;
         }
         if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
             return;
         }
-        if ($group->status === TaskGroupStatus::Settling && $this->resumeBlocked($group)) {
+        if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $this->resumeBlocked($group)) {
             return;
         }
         if ($this->hasBusyTask($group->tasks)) {
@@ -3636,7 +3640,7 @@ final readonly class TaskScheduler
         }
 
         $base = $this->conflictBase($todo);
-        if ($base !== null && $group->status === TaskGroupStatus::Settling) {
+        if ($base !== null && in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
             $this->leaveSettling($group);
         }
         if (! $this->prepareResumedWorkspace($group, $todo)) {
@@ -3697,13 +3701,13 @@ final readonly class TaskScheduler
                 $group = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)
                     ->lockForUpdate()
                     ->findOrFail($locked->parent_id);
-                if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::Running], true)) {
+                if (TaskExecutionHold::active($group) || ! in_array($group->status, [TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)) {
                     return null;
                 }
                 if ($group->status === TaskGroupStatus::Running && $this->progressBlockedByAssistance($group)) {
                     return null;
                 }
-                if ($group->status === TaskGroupStatus::Settling && $this->resumeBlocked($group)) {
+                if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $this->resumeBlocked($group)) {
                     return null;
                 }
 
@@ -3711,7 +3715,7 @@ final readonly class TaskScheduler
                 if ($this->hasBusyTask($tasks)) {
                     return null;
                 }
-                if ($group->status === TaskGroupStatus::Settling) {
+                if (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
                     $this->clearResumeAssistance($group);
                     $group->status = TaskGroupStatus::Running;
                     $group->save();

@@ -86,7 +86,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     protected static ?string $deliverablesRefusal = null;
 
     /** @var list<string> */
-    public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'completed', 'failed', 'cancelled'];
+    public const array GROUP_STATUSES = ['backlog', 'todo', 'reserved', 'running', 'reviewing', 'settling', 'waiting_for_review', 'completed', 'failed', 'cancelled'];
 
     /** @var list<string> */
     public const array PLANNING_STATUSES = ['backlog', 'todo'];

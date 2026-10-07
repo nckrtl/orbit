@@ -71,7 +71,7 @@ final class UpdateSubtaskCommand extends TaskCommand
         }
 
         // A todo subtask can change in a group that is still open; started subtasks keep their restrictions.
-        $groupId ??= $this->selectGroup($connector, ['backlog', 'todo', 'running', 'reviewing', 'settling']);
+        $groupId ??= $this->selectGroup($connector, ['backlog', 'todo', 'running', 'reviewing', 'settling', 'waiting_for_review']);
 
         if ($groupId === null) {
             return self::FAILURE;

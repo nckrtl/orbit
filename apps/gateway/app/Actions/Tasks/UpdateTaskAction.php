@@ -32,6 +32,7 @@ final readonly class UpdateTaskAction
                 TaskGroupStatus::Running,
                 TaskGroupStatus::Reviewing,
                 TaskGroupStatus::Settling,
+                TaskGroupStatus::WaitingForReview,
             ], true);
 
             if (! $backlog && ! $todoOutsideBacklog) {

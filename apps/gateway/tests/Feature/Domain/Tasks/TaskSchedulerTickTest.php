@@ -1412,8 +1412,9 @@ it('appends one conflict fixup and reuses its turn fetch before fast-forwarding 
         ->and($agents->spawned)->toBe([$fixup->id]);
 });
 
-it('appends one check fixup naming the failed check and its url', function (): void {
+it('appends one check fixup naming the failed check and its url', function (TaskGroupStatus $status): void {
     $group = tick_settling_group();
+    $group->update(['status' => $status]);
     $agents = tick_running_agents();
     tick_watch_pulls([tick_open_pull()], ['abc123' => [[
         'name' => 'Custom', 'status' => 'completed', 'conclusion' => 'timed_out', 'html_url' => 'https://github.com/acme/orbit/runs/9',
@@ -1433,7 +1434,7 @@ it('appends one check fixup naming the failed check and its url', function (): v
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($agents->fetched)->toBe([])
         ->and($agents->spawned)->toBe([$fixup->id]);
-});
+})->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
 
 it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
     $group = tick_settling_group();
@@ -6605,8 +6606,9 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
 
-it('updates a behind pull request without creating an agent fixup and waits for the new head', function (): void {
+it('updates a behind pull request without creating an agent fixup and waits for the new head', function (TaskGroupStatus $status): void {
     $group = tick_settling_group();
+    $group->update(['status' => $status]);
     $agents = tick_running_agents();
     // Captured from the disposable GitHub proof PR #973 (2026-10-07).
     tick_watch_pulls([tick_open_pull(['mergeable_state' => 'behind']), tick_open_pull(['mergeable_state' => 'behind'])], ['abc123' => []], 202, 'Updating pull request branch.');
@@ -6614,14 +6616,14 @@ it('updates a behind pull request without creating an agent fixup and waits for 
     app(TaskScheduler::class)->tick();
     app(TaskScheduler::class)->tick();
 
-    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+    expect($group->fresh()->status)->toBe($status)
         ->and($group->tasks()->whereNotNull('fixup_problem')->count())->toBe(0)
         ->and($agents->spawned)->toBe([]);
     $updates = Http::recorded(static fn (Request $request): bool => str_ends_with($request->url(), '/update-branch'));
     expect($updates)->toHaveCount(1);
     expect($updates->first()[0]->method())->toBe('PUT')
         ->and($updates->first()[0]->data())->toBe(['expected_head_sha' => 'abc123']);
-});
+})->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
 
 it('waits visibly without a fixup when a branch update is refused without a merge conflict', function (int $status, string $message): void {
     $group = tick_settling_group();

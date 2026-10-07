@@ -152,6 +152,7 @@ const activeStatuses: ReadonlySet<TaskGroup["status"]> = new Set([
     "running",
     "reviewing",
     "settling",
+    "waiting_for_review",
 ]);
 
 /** Whether a group's status is active, as the Gateway's `TaskGroupStatus::isActive()` defines it. */
@@ -182,6 +183,7 @@ export const taskStatusLabels: Record<TaskGroup["status"], string> = {
     running: "Running",
     reviewing: "In review",
     settling: "Awaiting completion",
+    waiting_for_review: "Waiting for review",
     completed: "Completed",
     failed: "Failed",
     cancelled: "Cancelled",

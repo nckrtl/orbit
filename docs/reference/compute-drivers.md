@@ -238,4 +238,4 @@ Guest preparation uses systemd socket forwarding from `127.0.0.1:8317` to the ow
 
 Incus retains its stopped snapshot until resume or destruction. UpCloud retention ends one hour after the review wait began, including any grace period or failed park attempt. Expiry uses the normal credential revocation and destruction path. An enrolled Node must leave the fleet before that path can remove its VM. Failures retain the deadline and ownership for retry. Preview retention does not prevent explicit merge cleanup.
 
-Review timing, confirmed parking time, and VM power are stored separately. A confirmed activation clears review timing for the next cycle. A failed activation retains it. Scheduler status transitions and automatic reconciliation remain prerequisites for enabling VM claims; the lifecycle entry point alone does not schedule these operations.
+Review timing, confirmed parking time, and VM power are stored separately. A confirmed activation clears review timing for the next cycle. A failed activation retains it. Automatic compute reconciliation remains a prerequisite for enabling VM claims; the lifecycle entry point alone does not schedule these operations.

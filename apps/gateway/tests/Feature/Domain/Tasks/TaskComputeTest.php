@@ -6,6 +6,8 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
+use App\Domain\Tasks\TaskSettleMetrics;
+use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
 use App\Models\Node;
@@ -62,4 +64,37 @@ describe('task compute rollout', function (): void {
             ->toThrow(LogicException::class, 'cannot change compute mode');
         expect($group->fresh()->task_compute)->toBe(TaskCompute::Vm);
     });
+});
+
+it('records a separate review wait for a published VM group while shared groups keep settling', function (TaskCompute $mode, TaskGroupStatus $expected): void {
+    $project = compute_project();
+    $group = Task::topLevel()->create([
+        'project_id' => $project->id, 'title' => 'Published task', 'brief' => 'Wait for review.',
+        'status' => TaskGroupStatus::Settling, 'task_compute' => $mode,
+        'pr_url' => 'https://github.com/acme/sandbox/pull/42',
+    ]);
+    $metrics = \Pest\Laravel\mock(TaskSettleMetricsCollector::class);
+    $metrics->shouldReceive('collect')->twice()->andReturn(new TaskSettleMetrics(12, 3, 1000, 0, 0));
+    $scheduler = app(TaskScheduler::class);
+    $scheduler->settle($group);
+    $settledAt = $group->fresh()->settled_at;
+    $this->travel(10)->minutes();
+    $scheduler->settle($group->fresh(), checkReturningPullRequest: false);
+
+    expect($group->fresh()->status)->toBe($expected)
+        ->and($group->fresh()->settled_at->equalTo($settledAt))->toBeTrue()
+        ->and($group->fresh()->tokens)->toBe(12);
+})->with([
+    'VM' => [TaskCompute::Vm, TaskGroupStatus::WaitingForReview],
+    'shared' => [TaskCompute::Shared, TaskGroupStatus::Settling],
+]);
+
+it('keeps an unpublished VM group in settling', function (): void {
+    $group = Task::topLevel()->create([
+        'project_id' => compute_project()->id, 'title' => 'Unpublished task', 'brief' => 'Publish first.',
+        'status' => TaskGroupStatus::Settling, 'task_compute' => TaskCompute::Vm,
+    ]);
+    app(TaskScheduler::class)->settle($group, requestMissingPullRequest: false);
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)->and($group->fresh()->settled_at)->toBeNull();
 });

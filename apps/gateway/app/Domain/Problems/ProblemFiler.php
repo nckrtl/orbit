@@ -312,6 +312,7 @@ final readonly class ProblemFiler
             TaskGroupStatus::Running,
             TaskGroupStatus::Reviewing,
             TaskGroupStatus::Settling,
+            TaskGroupStatus::WaitingForReview,
         ], true);
     }
 
@@ -325,6 +326,7 @@ final readonly class ProblemFiler
             TaskGroupStatus::Running->value,
             TaskGroupStatus::Reviewing->value,
             TaskGroupStatus::Settling->value,
+            TaskGroupStatus::WaitingForReview->value,
         ];
     }
 
