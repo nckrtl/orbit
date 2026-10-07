@@ -205,7 +205,7 @@ it('keeps cloud preview waiting for a branch rebuild without starting the old se
     'expired' => [SandboxState::Destroyed, 'destroyed'],
 ]);
 
-it('retains the cloud reservation after workspace cleanup and blocks resume until reconstruction exists', function (): void {
+it('retains the cloud reservation after workspace cleanup and blocks recovery while rollout is disabled', function (): void {
     $workspace = UpCloudRuntimeWorkspace::create();
     $sandbox = $workspace->taskSandbox;
     $group = $sandbox->group;
@@ -218,5 +218,5 @@ it('retains the cloud reservation after workspace cleanup and blocks resume unti
     expect($group->fresh()->capacity_wait_reason)->toBeNull();
 
     expect($lifecycle->resume($group->fresh()))->toBeFalse();
-    expect($group->fresh()->capacity_wait_reason)->toContain('rebuilt from its published branch');
+    expect($group->fresh()->capacity_wait_reason)->toContain('Project sandbox compute is disabled');
 });

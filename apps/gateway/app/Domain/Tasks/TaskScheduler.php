@@ -3972,6 +3972,11 @@ final readonly class TaskScheduler
      */
     private function needsBaseline(Task $task): bool
     {
+        $sandboxId = $task->parent->taskable instanceof Instance ? $task->parent->taskable->task_sandbox_id : null;
+        if ($sandboxId !== null) {
+            return ! TaskCheck::query()->where('task_sandbox_id', $sandboxId)->where('kind', TaskCheckKind::Baseline->value)
+                ->where('status', TaskCheckStatus::Passed->value)->whereHas('task', fn ($query) => $query->where('parent_id', $task->parent_id))->exists();
+        }
         $started = Task::query()->where('parent_id', $task->parent_id)->whereNotNull('implementer_agent_thread_id')->exists()
             || AgentThread::query()->where('task_group_id', $task->parent_id)->where('role', TaskThreadRole::Implementer->value)->where('external_id', 'not like', TaskAgentSpawner::PendingPrefix.'%')->exists();
 
@@ -4134,7 +4139,8 @@ final readonly class TaskScheduler
             if (TaskExecutionHold::active($group) || $locked->status !== TaskStatus::Running) {
                 return null;
             }
-            $running = TaskCheck::query()
+            $sandboxId = $group->taskable instanceof Instance ? $group->taskable->task_sandbox_id : null;
+            $running = TaskCheck::query()->where('task_sandbox_id', $sandboxId)
                 ->where('task_id', $locked->id)
                 ->where('kind', TaskCheckKind::Baseline->value)
                 ->where('status', TaskCheckStatus::Running->value)
@@ -4146,6 +4152,7 @@ final readonly class TaskScheduler
 
             return TaskCheck::query()->create([
                 'task_id' => $locked->id,
+                'task_sandbox_id' => $sandboxId,
                 'kind' => TaskCheckKind::Baseline,
                 'task_comment_id' => $locked->resolution_delivered_comment_id,
                 'status' => TaskCheckStatus::Running,
@@ -4172,7 +4179,8 @@ final readonly class TaskScheduler
      */
     private function baselineCheck(Task $task): ?TaskCheck
     {
-        $running = TaskCheck::query()
+        $sandboxId = $task->parent->taskable instanceof Instance ? $task->parent->taskable->task_sandbox_id : null;
+        $running = TaskCheck::query()->where('task_sandbox_id', $sandboxId)
             ->where('task_id', $task->id)
             ->where('kind', TaskCheckKind::Baseline->value)
             ->where('status', TaskCheckStatus::Running->value)
@@ -4182,7 +4190,7 @@ final readonly class TaskScheduler
             return $running;
         }
 
-        return TaskCheck::query()
+        return TaskCheck::query()->where('task_sandbox_id', $sandboxId)
             ->where('task_id', $task->id)
             ->where('kind', TaskCheckKind::Baseline->value)
             ->when($task->resolution_delivered_comment_id !== null, static fn ($query) => $query->where('task_comment_id', $task->resolution_delivered_comment_id))

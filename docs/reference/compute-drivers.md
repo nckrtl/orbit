@@ -343,4 +343,8 @@ Provisioning reserves and attaches an owned workspace before preparing source, t
 
 The claim reserves and starts one VM, enrolls its owned Node, attaches one private task workspace, imports source through the Git bundle broker, and prepares Pi. It then returns the source-resolved workspace to the scheduler. The scheduler runs the project's setup steps, including the TIA baseline restore, and its baseline check before starting the implementer. Retries keep the reservation and preserve prepared source. The task workspace has no preview Route.
 
-Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention. Reconstruction after destruction remains unavailable and reports `compute.rebuild_required`; do not enable unattended project claims until that recovery path is implemented and validated.
+Review expiry, merge, and cancellation use the owned cleanup path. A failed cleanup retains destruction intent and provider IDs. Review feedback can use the original running VM during retention.
+
+When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation has finished cleanup. It restores `task-{group id}` at the confirmed pull request commit through the Git bundle broker, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
+
+Orbit does not recreate a VM just for preview access because private task workspaces have no preview Route. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.

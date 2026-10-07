@@ -85,6 +85,9 @@ def prepare(request):
         raise ValueError('Invalid repository')
     if not re.fullmatch(r'task-[1-9][0-9]*', branch) or not isinstance(base, str) or not base or base.startswith('-'):
         raise ValueError('Invalid branch')
+    required = request.get('required_commit')
+    if required is not None and (not isinstance(required, str) or not re.fullmatch(r'[a-f0-9]{40}', required)):
+        raise ValueError('Invalid recovery commit')
     template = source_template(request.get('source_template'), repository, base)
     root = Path(request['checkout'])
     if not root.is_absolute() or root.resolve() != root or not root.is_dir():
@@ -147,18 +150,26 @@ finally:
             raise ValueError('The checkout is not ready or contains uncommitted files')
         selected = 'refs/remotes/origin/' + branch
         if not has_ref(root, selected):
+            if required is not None:
+                raise ValueError('The published task branch has not been imported')
             selected = 'refs/remotes/origin/' + base
         commit = git(root, 'rev-parse', '--verify', selected + '^{commit}')
+        if required is not None and commit != required:
+            raise ValueError('The published task branch changed before recovery')
         git(root, 'checkout', '--quiet', '-b', branch, commit)
     if git(root, 'symbolic-ref', 'HEAD') != 'refs/heads/' + branch:
         raise ValueError('The checkout branch changed')
     head = git(root, 'rev-parse', '--verify', 'HEAD^{commit}')
     if 'starting_commit' not in recorded:
+        if required is not None and head != required:
+            raise ValueError('The initial recovery checkout changed')
         recorded['starting_commit'] = head
         temporary = metadata / ('orbit-source-' + str(uuid.uuid4()))
         with temporary.open('x') as output:
             json.dump(recorded, output)
         os.replace(temporary, marker)
+    if required is not None and recorded['starting_commit'] != required:
+        raise ValueError('The recorded recovery commit changed')
     if not re.fullmatch(r'[a-f0-9]{40}(?:[a-f0-9]{24})?', recorded['starting_commit']):
         raise ValueError('Invalid recorded source commit')
     return {'head': head, 'starting_commit': recorded['starting_commit']}

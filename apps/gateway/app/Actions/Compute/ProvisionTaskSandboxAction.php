@@ -20,13 +20,16 @@ final readonly class ProvisionTaskSandboxAction
 {
     public function __construct(private ComputeDriver $driver, private ComputeLocks $locks, private SshKeyProvider $keys, private TaskSandboxLifecycle $lifecycle) {}
 
-    public function execute(Task $group): TaskSandbox
+    public function execute(Task $group, ?string $restoreCommit = null): TaskSandbox
     {
+        if ($restoreCommit !== null && preg_match('/\A[a-f0-9]{40}\z/D', $restoreCommit) !== 1) {
+            throw new ComputeException('compute.invalid_spec', 'The recovery commit is invalid.');
+        }
         $group->requireManagedExecution();
         if (! $group->exists || $group->parent_id !== null) {
             throw new ComputeException('compute.invalid_group', 'A sandbox requires a persisted managed task group.');
         }
-        $sandbox = $this->locks->upcloud(function () use ($group): TaskSandbox {
+        $sandbox = $this->locks->upcloud(function () use ($group, $restoreCommit): TaskSandbox {
             $group->refresh();
             if (in_array($group->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed], true)) {
                 throw new ComputeException('compute.invalid_group', 'An ended task group cannot provision a sandbox.');
@@ -34,6 +37,10 @@ final readonly class ProvisionTaskSandboxAction
             $existing = TaskSandbox::query()->where('group_id', $group->id)
                 ->where('state', '!=', SandboxState::Destroyed->value)->first();
             if ($existing instanceof TaskSandbox) {
+                if (($existing->spec['restore_commit'] ?? null) !== $restoreCommit) {
+                    throw new ComputeException('compute.placement_conflict', 'The recovery reservation identity changed.');
+                }
+
                 return $existing;
             }
             if ($group->taskable_id !== null) {
@@ -55,7 +62,7 @@ final readonly class ProvisionTaskSandboxAction
 
             return TaskSandbox::query()->create([
                 'id' => $id, 'group_id' => $group->id, 'provider' => 'upcloud', 'name' => 'orbit-sandbox-'.$id,
-                'state' => SandboxState::Reserved, 'desired_power' => 'running', 'spec' => $spec->toArray(),
+                'state' => SandboxState::Reserved, 'desired_power' => 'running', 'spec' => $restoreCommit === null ? $spec->toArray() : [...$spec->toArray(), 'restore_commit' => $restoreCommit],
             ]);
         });
 

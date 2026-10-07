@@ -501,6 +501,22 @@ describe('UpCloud reservation and credentials', function (): void {
         expect(Http::recorded(fn (Request $request): bool => str_starts_with($request->url(), 'https://api.upcloud.com/')))->toHaveCount(4);
     });
 
+    it('pins recovery identity before a provider timeout and refuses a changed retry', function (): void {
+        compute_config();
+        compute_keys();
+        $group = compute_group();
+        Http::fake(['https://api.upcloud.com/1.3/server' => fn (Request $request) => $request->method() === 'POST'
+            ? Http::failedConnection()($request) : Http::response(['servers' => ['server' => []]])]);
+        $action = app(ProvisionTaskSandboxAction::class);
+        expect(fn () => $action->execute($group, str_repeat('a', 40)))->toThrow(ComputeException::class);
+        $sandbox = TaskSandbox::query()->sole();
+        expect($sandbox->spec['restore_commit'])->toBe(str_repeat('a', 40));
+        expect(fn () => $action->execute($group, str_repeat('a', 40)))->toThrow(ComputeException::class);
+        expect(fn () => $action->execute($group, str_repeat('b', 40)))->toThrow(ComputeException::class, 'identity changed');
+        expect(TaskSandbox::query()->count())->toBe(1);
+        expect(Http::recorded(fn (Request $request): bool => $request->method() === 'POST'))->toHaveCount(1);
+    });
+
     it('does not allocate another reservation when the VM budget is full', function (): void {
         compute_config();
         compute_keys();
