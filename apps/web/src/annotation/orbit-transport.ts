@@ -50,7 +50,11 @@ export function orbitTransport(options: OrbitTransportOptions): AnnotationTransp
         void fetch(url, { signal: AbortSignal.timeout(5000) })
             .then(async (response) => {
                 if (!response.ok) throw new Error("Discovery unavailable");
-                return (await response.json()) as { id?: unknown; title?: unknown; status?: unknown };
+                return (await response.json()) as {
+                    id?: unknown;
+                    title?: unknown;
+                    status?: unknown;
+                };
             })
             .then((result) => {
                 const automaticId = typeof result.id === "string" ? result.id : "";
@@ -82,7 +86,10 @@ export function orbitTransport(options: OrbitTransportOptions): AnnotationTransp
         pending ??= (async (): Promise<TransportAvailability> => {
             try {
                 const endpoint = new URL(options.serviceUrl, window.location.href);
-                const tasksUrl = new URL(options.tasksStatusUrl ?? "/api/v1/tasks/status", endpoint);
+                const tasksUrl = new URL(
+                    options.tasksStatusUrl ?? "/api/v1/tasks/status",
+                    endpoint,
+                );
                 const init = {
                     headers: { Accept: "application/json" },
                     signal: AbortSignal.timeout(5000),
@@ -96,7 +103,9 @@ export function orbitTransport(options: OrbitTransportOptions): AnnotationTransp
                 if (!status.data.enabled) throw new Error("Enable the tasks extension in Orbit.");
                 const annotations = await fetch(endpoint, init);
                 if (!annotations.ok)
-                    throw new Error(`Cannot access Orbit annotations (HTTP ${annotations.status}).`);
+                    throw new Error(
+                        `Cannot access Orbit annotations (HTTP ${annotations.status}).`,
+                    );
                 if (!Array.isArray((await annotations.json()).data))
                     throw new Error("Invalid Orbit annotation endpoint.");
                 return { state: "available", reason: "Orbit available" };

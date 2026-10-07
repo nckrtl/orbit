@@ -144,9 +144,7 @@ export default defineConfig({
         orbitBuild(rootDir),
     ],
     resolve: {
-        alias: [
-            { find: "@", replacement: path.join(rootDir, "src") },
-        ],
+        alias: [{ find: "@", replacement: path.join(rootDir, "src") }],
         dedupe: ["react", "react-dom"],
     },
     define: { __ORBIT_GATEWAY__: "null" },

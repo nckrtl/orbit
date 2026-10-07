@@ -123,8 +123,8 @@ Orbit runs the annotator as an Instance Process and publishes it under the Insta
 
 The Gateway vendors the server files and the injection asset of the `@nckrtl/annotator` version that `apps/web/bun.lock` locks, in `apps/gateway/resources/annotator`. After you update the package in `apps/web`, run `bin/annotator-build` and commit its outputs. `composer check` in the Gateway runs `bin/annotator-build --check`, which fails when the vendored version differs from the locked one or a vendored file changed. Installation verifies every file against the manifest and refuses a missing or changed file instead of starting a health-only server.
 
-The preset passes `--allow-origin` for the Instance origin, `t3code://app`, and `t3code-dev://app`.
+### Loading the overlay from the Process
 
-A page that loads `/__orbit/annotator/inject.js` needs no configuration: with no server URL and no saved delivery choice, the overlay probes `/__orbit/annotator/annotations`, next to the script, and uses it when the response identifies `meta.service` as `@nckrtl/annotator`. A page that bundles the overlay passes `serverUrl: "/__orbit/annotator/annotations"` to `mountAnnotation`, or sets it in `window.__AGENT_ANNOTATION__`.
+A page that loads `/__orbit/annotator/inject.js` needs no configuration. When it has no server URL and no saved delivery choice, the overlay probes `/__orbit/annotator/annotations`, next to the script, and uses it when the response identifies `meta.service` as `@nckrtl/annotator`. A page that bundles the overlay passes `serverUrl: "/__orbit/annotator/annotations"` to `mountAnnotation`, or sets it in `window.__AGENT_ANNOTATION__`.
 
 `GET /skill?mode=queue` serves instructions for an orchestrating T3 thread: claim until the queue is empty, delegate independent annotations to sub-agents, keep related work together, complete with a summary, and end the turn. The package README describes the agent API and questions.
