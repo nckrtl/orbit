@@ -156,6 +156,8 @@ verify the group, Project, workspace, provider, host, and running state before
 sending a command. A VM group with missing sandbox ownership fails closed.
 Shared workspaces retain their managed-host transport and worker account.
 
+Guest checkout paths are scoped to a sandbox, so different VMs on one host can use the same path. Shared Instances retain their unique Node and checkout path. Each sandbox still owns at most one workspace.
+
 Sandbox checks use the guest's runtime and home. They do not borrow the host's
 Vite+ installation, dependency seed, or `orbit-worker` account. Workspace
 provisioning remains gated while bundle publication, agent credentials, and
@@ -175,3 +177,9 @@ changing its current branch or working tree. Repository tokens stay in the
 Gateway's protected process input and temporary credential file. No token or
 credential helper enters the sandbox. Transfer files are removed after the
 operation; destroying the sandbox also removes interrupted guest transfers.
+
+### Pi sessions stay bound to their sandbox
+
+A sandbox reserves a random Pi token before guest configuration. The Gateway encrypts it at rest and excludes it from model serialization. Retries reuse the same token. Sandbox Pi connections never use the Gateway-wide token or the host Node’s Pi settings.
+
+A thread records the sandbox reservation as its runtime identity. Creation and later requests check the owning group, workspace, placement, and running state. An Orbit connection uses the configured Incus host’s private address and the sandbox’s reserved proxy port. A Project connection uses its enrolled guest Node. A parked, destroyed, replaced, or unconfigured sandbox refuses requests instead of selecting another server. Proxy provisioning and image setup remain prerequisites for enabling VM claims.

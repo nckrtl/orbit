@@ -12,8 +12,10 @@ use App\Domain\Tasks\AgentObservation;
 use App\Domain\Tasks\AgentThreadEvent;
 use App\Domain\Tasks\AgentThreadStart;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskCompute;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Models\AgentThread;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\Log;
@@ -31,6 +33,7 @@ final readonly class PiDriver implements AgentDriver
         private PiClient $client,
         private PiConnection $connection,
         private PiNodeEligibility $nodes,
+        private SandboxPiConnection $sandboxes,
     ) {}
 
     public function key(): string
@@ -50,7 +53,8 @@ final readonly class PiDriver implements AgentDriver
             throw new AgentDriverException('The workspace has no checkout path.');
         }
         $id = $intent->externalId ?? (string) Str::uuid();
-        $this->client->create($intent->node, [
+        $node = $this->sandboxes->endpoint($intent->workspace, $intent->node);
+        $this->client->create($node, [
             'id' => $id,
             'cwd' => $cwd,
             'model' => PiModel::forModel($intent->model, $this->configuredProvider()),
@@ -61,7 +65,7 @@ final readonly class PiDriver implements AgentDriver
             return $id;
         }
         try {
-            $this->deliver($intent->node, $id, $intent->prompt, $intent->openingKey);
+            $this->deliver($node, $id, $intent->prompt, $intent->openingKey);
         } catch (AgentDriverException $exception) {
             // The session exists. A lost response is still that session, and a new id would not
             // see the key Pi already accepted.
@@ -193,7 +197,7 @@ final readonly class PiDriver implements AgentDriver
             : null;
     }
 
-    private function deliver(Node $node, string $sessionId, string $message, ?string $key = null): void
+    private function deliver(Node|PiEndpoint $node, string $sessionId, string $message, ?string $key = null): void
     {
         $key ??= (string) Str::uuid();
         try {
@@ -210,7 +214,7 @@ final readonly class PiDriver implements AgentDriver
     }
 
     /** @param array<string, mixed> $snapshot */
-    private function snapshotObservation(array $snapshot, PiTranscript $transcript, Node $node): AgentObservation
+    private function snapshotObservation(array $snapshot, PiTranscript $transcript, Node|PiEndpoint $node): AgentObservation
     {
         // A tool result replaces its running call in place, so entries are keyed by ID.
         $entries = [];
@@ -227,7 +231,7 @@ final readonly class PiDriver implements AgentDriver
             }
         }
 
-        return $this->observation($snapshot, $this->redactEntries(array_values($entries), $node));
+        return $this->observation($this->redactObject($snapshot, $node), $this->redactEntries(array_values($entries), $node));
     }
 
     /**
@@ -273,7 +277,7 @@ final readonly class PiDriver implements AgentDriver
     /** @param array<array-key, mixed> $data
      * @return array<array-key, mixed>
      */
-    private function redact(array $data, Node $node): array
+    private function redact(array $data, Node|PiEndpoint $node): array
     {
         $token = $this->connection->token($node);
         array_walk_recursive($data, static function (mixed &$value) use ($token): void {
@@ -288,7 +292,7 @@ final readonly class PiDriver implements AgentDriver
     /** @param array<array-key, mixed> $data
      * @return array<string, mixed>
      */
-    private function redactObject(array $data, Node $node): array
+    private function redactObject(array $data, Node|PiEndpoint $node): array
     {
         return ValidatedData::object($this->redact($data, $node));
     }
@@ -297,7 +301,7 @@ final readonly class PiDriver implements AgentDriver
      * @param  array<array-key, mixed>  $entries
      * @return list<array{id: string, kind: string, label: string, text: string, at: string}>
      */
-    private function redactEntries(array $entries, Node $node): array
+    private function redactEntries(array $entries, Node|PiEndpoint $node): array
     {
         $redacted = $this->redact($entries, $node);
         $result = [];
@@ -334,10 +338,24 @@ final readonly class PiDriver implements AgentDriver
         return is_string($provider) && $provider !== '' ? $provider : null;
     }
 
-    private function node(AgentThread $thread): Node
+    private function node(AgentThread $thread): Node|PiEndpoint
     {
         $node = $thread->node;
-        if ($node === null || $node->status !== LifecycleStatus::Active || $thread->runtime_key !== 'node:'.$node->id) {
+        if ($node === null || $node->status !== LifecycleStatus::Active) {
+            throw new AgentDriverException('The original agent Node is unavailable.');
+        }
+        $group = $thread->parent()->with('taskable')->first();
+        $workspace = $group?->taskable;
+        if ($group?->task_compute === TaskCompute::Vm || str_starts_with($thread->runtime_key, 'sandbox:')
+            || ($workspace instanceof Instance && $workspace->task_sandbox_id !== null)) {
+            if (! $workspace instanceof Instance || $workspace->task_sandbox_id === null
+                || $thread->runtime_key !== 'sandbox:'.$workspace->task_sandbox_id) {
+                throw new AgentDriverException('The original sandbox Pi server is unavailable.');
+            }
+
+            return $this->sandboxes->endpoint($workspace, $node);
+        }
+        if ($thread->runtime_key !== 'node:'.$node->id) {
             throw new AgentDriverException('The original agent Node is unavailable.');
         }
 

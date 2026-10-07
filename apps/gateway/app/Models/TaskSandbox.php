@@ -27,6 +27,7 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $firewall_configured_at
  * @property Carbon|null $destroyed_at
  * @property string|null $error_code
+ * @property string|null $pi_token
  */
 final class TaskSandbox extends Model
 {
@@ -35,6 +36,10 @@ final class TaskSandbox extends Model
 
     #[\Override]
     protected $keyType = 'string';
+
+    /** @var list<string> */
+    #[\Override]
+    protected $hidden = ['pi_token'];
 
     /** @var list<string> */
     #[\Override]
@@ -48,7 +53,7 @@ final class TaskSandbox extends Model
     protected function casts(): array
     {
         return [
-            'state' => SandboxState::class, 'spec' => 'array',
+            'state' => SandboxState::class, 'spec' => 'array', 'pi_token' => 'encrypted',
             'create_attempted_at' => 'datetime', 'firewall_configured_at' => 'datetime', 'destroyed_at' => 'datetime',
         ];
     }
