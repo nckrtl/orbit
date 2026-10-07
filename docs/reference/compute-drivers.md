@@ -185,3 +185,7 @@ A sandbox reserves a random Pi token before guest configuration. The Gateway enc
 A thread records the sandbox reservation as its runtime identity. Creation and later requests check the owning group, workspace, placement, and running state. An Orbit connection uses the configured Incus host’s private address and the sandbox’s reserved proxy port. A Project connection uses its enrolled guest Node. A parked, destroyed, replaced, or unconfigured sandbox refuses requests instead of selecting another server. Proxy provisioning and image setup remain prerequisites for enabling VM claims.
 
 Sandbox MCP files are installed through the guest transport. For Orbit they name the disposable test Gateway at `https://gateway.orbit/mcp/search`; Project sandboxes use the configured live Gateway. Shared topology acquisition is refused for sandbox workspaces. The compute driver must prepare and enroll requested workload nodes before the VM topology path can be enabled.
+
+### Prepare source inside the guest
+
+`SandboxWorkspaceSource` initializes a blank checkout with a sandbox ownership marker, imports remote refs through the trusted bundle broker, and creates the task branch from its published branch or the Project default. No clone runs in the guest. Retrying a prepared checkout preserves local commits and uncommitted files. A foreign directory, changed origin, or changed checkout branch fails without replacing its contents. This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
