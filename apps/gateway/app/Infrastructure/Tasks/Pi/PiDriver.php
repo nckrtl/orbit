@@ -57,7 +57,7 @@ final readonly class PiDriver implements AgentDriver
         $this->client->create($node, [
             'id' => $id,
             'cwd' => $cwd,
-            'model' => PiModel::forModel($intent->model, $this->configuredProvider()),
+            'model' => $node instanceof PiEndpoint ? PiModel::forSandbox($intent->model) : PiModel::forModel($intent->model, $this->configuredProvider()),
             'thinkingLevel' => $intent->effort,
             'appendSystemPrompt' => null,
         ]);

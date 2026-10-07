@@ -69,19 +69,21 @@ describe('sandbox Pi identity', function (): void {
         expect($first->node->fresh()->settings['pi']['token'])->toBe('host-secret');
     });
 
-    it('creates a sandbox session at its proxy and keeps the host token out of the request', function (): void {
+    it('creates a sandbox session at its proxy and keeps the host token out of the request', function (string $model): void {
         [$workspace, $sandbox] = sandbox_pi_workspace();
+        config(['orbit.pi.provider' => 'host-proxy']);
         $sandbox->forceFill(['model_key' => str_repeat('d', 64)])->save();
         Http::fake(['http://10.44.0.20:22000/sessions' => Http::response(['id' => 'sandbox-session'], 201)]);
-        $id = app(PiDriver::class)->create(new AgentThreadStart($workspace->node, $workspace, 'Work', 'Implement', 'gpt-5.6-luna', 'low', TaskThreadRole::Implementer,
+        $id = app(PiDriver::class)->create(new AgentThreadStart($workspace->node, $workspace, 'Work', 'Implement', $model, 'low', TaskThreadRole::Implementer,
             externalId: 'sandbox-session', deferOpeningTurn: true));
 
         expect($id)->toBe('sandbox-session');
         Http::assertSent(fn (Request $request): bool => $request['cwd'] === '/home/orbit/orbit'
+            && $request['model'] === 'orbit-sandbox/gpt-5.6-luna'
             && $request->hasHeader('Authorization', 'Bearer '.$sandbox->pi_token)
             && ! $request->hasHeader('Authorization', 'Bearer '.$sandbox->model_key));
         Http::assertSentCount(1);
-    });
+    })->with(['gpt-5.6-luna', 'openai-codex/gpt-5.6-luna']);
 
     it('preserves shared checkout uniqueness and refuses schema rollback while sandbox workspaces exist', function (): void {
         [$workspace] = sandbox_pi_workspace();
