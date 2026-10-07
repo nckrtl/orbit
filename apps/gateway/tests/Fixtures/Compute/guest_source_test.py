@@ -44,6 +44,7 @@ class GuestSource(unittest.TestCase):
     def test_default_branch_and_retry_preserve_dirty_files_and_local_commits(self):
         self.imported()
         self.assertEqual(self.call('checkout')['starting_commit'], self.initial)
+        self.assertEqual(self.git(self.target, 'symbolic-ref', 'refs/remotes/origin/HEAD'), 'refs/remotes/origin/main')
         self.git(self.target, 'config', 'user.name', 'Proof')
         self.git(self.target, 'config', 'user.email', 'proof@example.invalid')
         (self.target / 'file').write_text('local commit')
@@ -63,6 +64,17 @@ class GuestSource(unittest.TestCase):
         self.git(self.target, 'fetch', '-q', str(self.source), 'main:refs/remotes/origin/task-1')
         self.assertEqual(self.call('checkout')['starting_commit'], commit)
         self.assertEqual((self.target / 'file').read_text(), 'published work')
+
+    def test_binds_default_branch_and_refuses_default_ref_drift(self):
+        self.imported()
+        self.call('checkout')
+        with self.assertRaises(ValueError):
+            self.call('initialize', base='changed-default')
+        self.git(self.target, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/other')
+        for operation in ['checkout', 'inspect']:
+            with self.assertRaises(ValueError):
+                self.call(operation)
+        self.assertEqual(self.git(self.target, 'symbolic-ref', 'refs/remotes/origin/HEAD'), 'refs/remotes/origin/other')
 
     def test_refuses_foreign_ownership_origin_and_branch_without_replacement(self):
         self.imported()

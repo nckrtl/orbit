@@ -51,7 +51,7 @@ finally:
                        check=True, capture_output=True, timeout=15)
     metadata = root / '.git'
     marker = metadata / 'orbit-sandbox-source.json'
-    owner = {'sandbox_id': identity, 'repository': repository, 'branch': branch}
+    owner = {'sandbox_id': identity, 'repository': repository, 'branch': branch, 'base': base}
     if request['operation'] == 'initialize' and not metadata.exists():
         if any(root.iterdir()):
             raise ValueError('Refusing a nonempty unowned checkout')
@@ -72,6 +72,19 @@ finally:
     if request['operation'] == 'initialize':
         git(root, 'config', '--local', 'remote.origin.url', repository)
         return {'initialized': True}
+    default_ref = 'refs/remotes/origin/' + base
+    if not has_ref(root, default_ref):
+        raise ValueError('The default branch has not been imported')
+    try:
+        current_default = git(root, 'symbolic-ref', '-q', 'refs/remotes/origin/HEAD')
+    except subprocess.CalledProcessError as error:
+        if error.returncode != 1 or has_ref(root, 'refs/remotes/origin/HEAD'):
+            raise ValueError('The default branch reference is invalid') from error
+        current_default = None
+    if current_default != default_ref:
+        if current_default is not None or request['operation'] == 'inspect':
+            raise ValueError('The default branch reference changed')
+        git(root, 'symbolic-ref', 'refs/remotes/origin/HEAD', default_ref)
     if not has_ref(root, 'refs/heads/' + branch):
         if request['operation'] == 'inspect' or git(root, 'status', '--porcelain'):
             raise ValueError('The checkout is not ready or contains uncommitted files')

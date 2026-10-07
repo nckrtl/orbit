@@ -99,6 +99,8 @@ Sandbox images need a test baseline from CI. Each successful project job on `mai
 
 Download the artifact outside the sandbox from a successful `main` CI run. Pass its extracted directory to `bin/tia-cache import-ci --project <path> --artifact <directory> --commit <tested-sha>` inside the image checkout. The command validates checksums, configuration, portable graph paths, test results, and commit ancestry. It seeds only an absent private graph and preserves an existing one. It does not fetch credentials or publish the imported graph to a shared cache store.
 
+When Orbit prepares a checkout from bundles, it records the Project's default branch as `origin/HEAD` without contacting GitHub. Pest uses that local reference to select its baseline. The source ownership record fixes the default branch for the checkout; a changed branch or reference is refused before another turn.
+
 ### Power and recovery
 
 A lock on the host serializes provisioning and power operations. Starting and
