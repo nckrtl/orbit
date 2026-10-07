@@ -36,15 +36,25 @@ final readonly class GatewayRuntimeHandoff
 {
     public const string LivePool = '/etc/php/8.5/fpm/pool.d/orbit-gateway.conf';
 
+    public const string FpmSocket = '/run/php/orbit-gateway.sock';
+
     /** @var Closure(string): (string|false) */
     private Closure $readLivePool;
 
     /** @var Closure(string): string */
     private Closure $resetOpcache;
 
+    /** @var Closure(): int */
+    private Closure $fpmConnections;
+
+    /** @var Closure(int): void */
+    private Closure $sleep;
+
     /**
      * @param  (Closure(string): (string|false))|null  $readLivePool
      * @param  (Closure(string): string)|null  $resetOpcache  runs the reset script inside the pool and returns its JSON
+     * @param  (Closure(): int)|null  $fpmConnections  open connections to the pool socket, one for each request in flight
+     * @param  (Closure(int): void)|null  $sleep  microseconds
      */
     public function __construct(
         private NodeCaddyBuilds $builds,
@@ -60,9 +70,16 @@ final readonly class GatewayRuntimeHandoff
         private string $livePool = self::LivePool,
         ?Closure $readLivePool = null,
         ?Closure $resetOpcache = null,
+        ?Closure $fpmConnections = null,
+        ?Closure $sleep = null,
+        private int $idleWaitSeconds = 60,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script): string => new FpmScriptRequest()->request($script);
+        $this->fpmConnections = $fpmConnections ?? $this->socketConnections(...);
+        $this->sleep = $sleep ?? static function (int $microseconds): void {
+            usleep($microseconds);
+        };
     }
 
     /**
@@ -156,15 +173,23 @@ final readonly class GatewayRuntimeHandoff
 
     /**
      * Resets the pool's OPcache, so the scripts of releases that no longer serve do not fill it. Release files never
-     * change in place, so OPcache would never mark them wasted. It resets only when the live pool lets running requests
-     * finish first; a failure leaves the release running with a fuller cache and does not fail it.
+     * change in place, so OPcache would never mark them wasted.
+     *
+     * OPcache restarts once no request uses the cache. A restart that stays pending for `opcache.force_restart_timeout`
+     * (180 seconds) kills the workers that still serve one, and a Gateway request may run 600 seconds. So the reset runs
+     * only while the pool serves no request: the restart then happens with the next request, and nothing waits for it.
+     * A pool that never goes idle within the wait is reset by a later release. A failure never fails this one.
      */
     private function opcache(): string
     {
-        $pool = ($this->readLivePool)($this->livePool);
+        $deadline = hrtime(true) + $this->idleWaitSeconds * 1_000_000_000;
 
-        if (! is_string($pool) || ! str_contains($pool, 'opcache.force_restart_timeout')) {
-            return 'skipped';
+        while (($this->fpmConnections)() > 0) {
+            if (hrtime(true) >= $deadline) {
+                return 'deferred';
+            }
+
+            ($this->sleep)(100_000);
         }
 
         $release = realpath($this->applicationPath);
@@ -176,6 +201,24 @@ final readonly class GatewayRuntimeHandoff
         }
 
         return is_array($result) && ($result['reset'] ?? false) === true ? 'reset' : 'failed';
+    }
+
+    /** Connected sockets whose local end is the pool socket: Caddy opens one for each request it passes on. */
+    private function socketConnections(): int
+    {
+        $sockets = @file('/proc/net/unix', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        $connected = 0;
+
+        foreach ($sockets === false ? [] : array_slice($sockets, 1) as $line) {
+            $fields = preg_split('/\s+/', trim($line));
+
+            // Num RefCount Protocol Flags Type St Inode Path; St 03 is connected.
+            if (is_array($fields) && ($fields[5] ?? '') === '03' && ($fields[7] ?? '') === self::FpmSocket) {
+                $connected++;
+            }
+        }
+
+        return $connected;
     }
 
     /** @param Closure(): void $operation */

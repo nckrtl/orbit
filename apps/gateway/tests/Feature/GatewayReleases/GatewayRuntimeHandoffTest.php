@@ -163,6 +163,9 @@ final class SchedulerDrainProbe
     /** @var list<string> */
     public array $opcacheScripts = [];
 
+    /** @var list<int> open pool connections, one entry per look; the last one repeats */
+    public array $connections = [0];
+
     /** @var list<string> */
     public array $members = ['/usr/bin/php8.5 artisan schedule:work', "sh -c '/usr/bin/php8.5' 'artisan' orbit:deploy-development-defaults > '/dev/null' 2>&1"];
 }
@@ -213,6 +216,11 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5): array
 
                 return '{"reset":true}';
             },
+            fpmConnections: static fn (): int => count($probe->connections) > 1 ? array_shift($probe->connections) : $probe->connections[0],
+            sleep: static function (): void {
+                usleep(20_000);
+            },
+            idleWaitSeconds: 1,
         ),
         $processes,
         $cleanup,
@@ -303,19 +311,21 @@ describe('gateway:release:handoff', function (): void {
             ]);
     });
 
-    it('resets the pool OPcache with the release script, only when the live pool lets running requests finish first', function (): void {
+    it('resets the pool OPcache with the release script once the pool serves no request, and defers it otherwise', function (): void {
         handoff_scheduler(handoff_gateway());
         [$handoff, , , , , $probe] = runtime_handoff();
+        $probe->connections = [2, 1, 0];
 
         $reset = $handoff->run();
-        [$oldPool, , , , , $oldProbe] = runtime_handoff(livePool: "[orbit-gateway]\nchdir = /old\n");
-        $old = $oldPool->run();
+        [$busyPool, , , , , $busyProbe] = runtime_handoff();
+        $busyProbe->connections = [1];
+        $busy = $busyPool->run();
 
         expect($reset['opcache'])->toBe('reset')
             ->and($probe->opcacheScripts)->toBe([HANDOFF_APP.'/resources/fpm/opcache-reset.php'])
-            // The pool on disk predates the safe restart timeout until the reload this handoff did is in effect.
-            ->and($old['opcache'])->toBe('skipped')
-            ->and($oldProbe->opcacheScripts)->toBe([]);
+            ->and($probe->connections)->toBe([0])
+            ->and($busy['opcache'])->toBe('deferred')
+            ->and($busyProbe->opcacheScripts)->toBe([]);
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {
