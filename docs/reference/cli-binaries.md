@@ -18,7 +18,7 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when the `CI` run for a push to `main` completes. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green.
+Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green.
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -35,7 +35,7 @@ Each release has one version, derived from its commit, and a tag that names it.
 
 `N` counts every commit that the commit reaches, itself included. `main` only moves forward, so each later `main` commit has a larger `N`. Compare releases by `N`, not by tag text or release date. Release numbers have gaps, because only green commits are published. Only a commit on the first-parent history of `main` is a release commit. A side commit brought in by a merge can reach the same count as a different `main` commit, so it is not given a version.
 
-A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`. Only a release has a version that matches `^0\.[1-9][0-9]*\.0$`. Other builds report a tag-prefixed or hex version that never matches. A pull-request build reports `git describe --tags --always --dirty`, such as `cli-v0.4681.0-3-g1a2b3c4`. A source checkout reports its nearest tag, `git describe --tags --abbrev=0`, such as `cli-v0.4681.0`.
+A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`. The build passes the version to Laravel Zero's `app:build --build-version`, which stores it in the PHAR, and each build job runs the binary and requires that output. Only a release has a version that matches `^0\.[1-9][0-9]*\.0$`. Other builds report a tag-prefixed or hex version that never matches. A pull-request build reports `git describe --tags --always --dirty` from a checkout without tags, so it prints the short commit hash, such as `Orbit 60bccef`. A source checkout reports its nearest tag of any kind, `git describe --tags --abbrev=0`, such as `cli-v0.4681.0`.
 
 ### Assets
 
@@ -49,6 +49,24 @@ Each release has one binary per supported platform and a checksum file.
 | `SHA256SUMS` | Checksums of the three binaries | |
 
 Each binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the `orbit-agent` release does. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
+
+### Release contract for clients
+
+The Gateway, a Node installer, and `orbit self-update` rely on these rules. They do not change without a new ADR.
+
+| Item | Rule |
+| --- | --- |
+| Tag for commit `C` | `cli-v0.N.0`, where `N` is `git rev-list --count C` |
+| What `N` counts | Every commit that `C` reaches, not only first-parent commits. A shallow clone gives a wrong `N` |
+| Asset URL | `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/orbit-<version>-<platform>` |
+| Platforms | `linux-x86_64`, `linux-aarch64`, `macos-arm64` |
+| Checksums URL | `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/SHA256SUMS` |
+| Commits with a release | Commits on the first-parent history of `main` with a successful `Required checks` run. A side commit never has one |
+| Immutability | A published asset never changes. The tag points at `C`, and the release appears with all four assets at once |
+
+`bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
+
+A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. The Gateway can deploy a commit before its CLI release exists, and until then every URL above returns 404. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead.
 
 ### Find the release for a commit
 
@@ -88,7 +106,9 @@ On a Mac, use `orbit-${version}-macos-arm64` and `shasum -a 256 --check` instead
 
 ### Publish a missed commit
 
-When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` and pass the full commit SHA. It applies the same checks, including the first-parent history check. When the release already exists for that commit with every asset, the run changes nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
+When a green `main` commit has no release, for example because the workflow failed on a GitHub outage, run `Orbit CLI Release` with `workflow_dispatch` on `main` and pass the full commit SHA. A dispatch from another branch does nothing. The run applies the same checks, including the first-parent history check.
+
+The build uses the commit's own builder, so a commit from before CLI releases existed cannot be published: its builder has no Linux arm64 target. When the release already exists for that commit with every asset, the run changes nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
 
 ## Pull-request builds
 
@@ -136,6 +156,8 @@ These reasons explain the design. Check them before you propose a change.
 ### Separate workflows
 
 Packaging time and artifacts stay out of the quality checks in `ci.yml`, so a packaging failure never hides a test failure, and the reverse. The release workflow waits for the `CI` run instead of joining it, so it can publish only what `Required checks` accepted. Both release paths reuse one build workflow, so a pull request tests the same steps that publish a release.
+
+The release workflow runs from `main` with a token that can write releases. Only the publish job holds that token, and it runs only the workflow's own scripts from `main`. The build jobs run the release commit's code with a read-only token. A pull request's code never runs in the release workflow.
 
 ### Releases for green main commits
 

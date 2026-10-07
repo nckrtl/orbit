@@ -22,9 +22,12 @@ concurrency:
 jobs:
   resolve:
     name: Resolve release
+    # A CI run on main, from a push or a manual dispatch, can make a commit green. A pull-request run never
+    # releases. A backfill runs only main's copy of this workflow, so another branch cannot change how it publishes.
     if: >-
-      github.event_name == 'workflow_dispatch' || (
-        github.event.workflow_run.event == 'push' &&
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || (
+        github.event_name == 'workflow_run' &&
+        contains(fromJSON('["push", "workflow_dispatch"]'), github.event.workflow_run.event) &&
         github.event.workflow_run.conclusion == 'success' &&
         github.event.workflow_run.head_repository.full_name == github.repository
       )
@@ -43,6 +46,7 @@ jobs:
         with:
           ref: main
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve commit, version and tag
         id: release
@@ -130,10 +134,12 @@ jobs:
       VERSION: ${{ needs.resolve.outputs.version }}
       TAG: ${{ needs.resolve.outputs.tag }}
     steps:
-      - name: Check out the release commit
+      # This job holds a write token, so it runs only this workflow's own scripts from main, never the release
+      # commit's. The release commit's code runs only in the build jobs, which have a read-only token.
+      - name: Check out the release scripts
         uses: actions/checkout@v7
         with:
-          ref: ${{ needs.resolve.outputs.commit }}
+          persist-credentials: false
 
       - name: Download binaries
         uses: actions/download-artifact@v8

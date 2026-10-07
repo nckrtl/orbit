@@ -118,7 +118,7 @@ Each Composer project job caches three sets of files in GitHub Actions cache.
 
 A job restores the newest cache for its branch, then for `main`, then any cache for the project. It saves each cache only after its checks succeed. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
 
-The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After `CI` passes on a `main` push, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
+The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After a `CI` run on `main` passes, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
 
 ## Local checks
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
+use Symfony\Component\Yaml\Yaml;
 
 afterEach(function (): void {
     foreach (cli_release_temp() as $path) {
@@ -280,12 +281,23 @@ describe('CLI release assets', function (): void {
     });
 });
 
+/**
+ * @return array<string, mixed>
+ */
+function cli_release_workflow(): array
+{
+    $workflow = Yaml::parseFile(cli_release_repo_root().'/.github/workflows/orbit-cli-release.yml');
+    expect($workflow)->toBeArray();
+
+    /** @var array<string, mixed> $workflow */
+    return $workflow;
+}
+
 describe('CLI release workflow', function (): void {
     it('publishes only green main commits through the shared builder', function (): void {
         $workflow = (string) file_get_contents(cli_release_repo_root().'/.github/workflows/orbit-cli-release.yml');
 
         expect($workflow)->toContain("workflow_run:\n    workflows: [CI]\n    types: [completed]\n    branches: [main]")
-            ->and($workflow)->toContain("github.event.workflow_run.event == 'push'")
             ->and($workflow)->toContain("github.event.workflow_run.conclusion == 'success'")
             ->and($workflow)->toContain('check_name=Required%20checks')
             ->and($workflow)->toContain('fetch-depth: 0')
@@ -297,5 +309,32 @@ describe('CLI release workflow', function (): void {
             ->and($workflow)->toContain('Published releases are never replaced.')
             ->and(substr_count($workflow, 'contents: write'))->toBe(1)
             ->and($workflow)->toContain('cancel-in-progress: false');
+    });
+
+    it('releases after a green CI run on main from a push or a dispatch, never from a pull request', function (): void {
+        $workflow = cli_release_workflow();
+
+        // A CI dispatch on main can be the run that makes a commit green, and the Gateway releases any green commit.
+        expect(preg_replace('/\s+/', ' ', $workflow['jobs']['resolve']['if']))->toBe(
+            "(github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') || ( "
+            ."github.event_name == 'workflow_run' && "
+            ."contains(fromJSON('[\"push\", \"workflow_dispatch\"]'), github.event.workflow_run.event) && "
+            ."github.event.workflow_run.conclusion == 'success' && "
+            .'github.event.workflow_run.head_repository.full_name == github.repository )',
+        );
+    });
+
+    it('never runs release-commit code with the write token', function (): void {
+        $jobs = cli_release_workflow()['jobs'];
+
+        expect($jobs['publish']['permissions'])->toBe(['contents' => 'write'])
+            ->and($jobs['publish']['steps'][0])->toBe([
+                'name' => 'Check out the release scripts',
+                'uses' => 'actions/checkout@v7',
+                'with' => ['persist-credentials' => false],
+            ])
+            ->and($jobs['build'])->not->toHaveKey('permissions')
+            ->and(cli_release_workflow()['permissions'])->toBe(['contents' => 'read'])
+            ->and($jobs['resolve']['permissions'])->toBe(['contents' => 'read', 'checks' => 'read']);
     });
 });
