@@ -54,7 +54,8 @@ def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
             raise ValueError('The isolated Gateway database is unavailable')
         for project in PROJECTS:
             path = root / project
-            changed = git(['diff', '--name-only', seed['commit'], head, '--', project + '/composer.json', project + '/composer.lock'], root, home)
+            run(['composer', '--working-dir=' + str(path), 'validate', '--check-lock', '--no-check-publish', '--no-interaction', '--no-plugins', '--no-scripts'], root, home)
+            changed = git(['diff', '--name-only', seed['commit'], head, '--', project + '/composer.lock'], root, home)
             operation = ['install', '--prefer-dist'] if changed or not (path / 'vendor/autoload.php').is_file() else ['dump-autoload']
             run(['composer', '--working-dir=' + str(path), *operation, '--no-interaction', '--no-scripts'], root, home)
         gateway = root / 'apps/gateway'

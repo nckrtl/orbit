@@ -67,7 +67,7 @@ class PairRuntime(unittest.TestCase):
         self.assertTrue(self.call('inspect')['ready'])
         self.assertEqual([], self.calls)
         self.assertTrue(self.call('gateway')['ready'])
-        composers = [call for call in self.calls if call[0] == 'composer']
+        composers = [call for call in self.calls if call[0] == 'composer' and 'validate' not in call]
         self.assertEqual(len(module['PROJECTS']), len(composers))
         self.assertTrue(all('dump-autoload' in call and '--no-scripts' in call for call in composers))
         self.assertIn(['php', str(self.root / 'apps/gateway/artisan'), 'migrate', '--no-interaction', '--force'], self.calls)
@@ -77,7 +77,7 @@ class PairRuntime(unittest.TestCase):
         self.assertEqual('cached dependencies', (self.root / 'apps/gateway/vendor/autoload.php').read_text())
 
     def test_changed_manifests_install_locked_dependencies_and_failure_prevents_migration(self):
-        path = self.root / 'apps/gateway/composer.json'
+        path = self.root / 'apps/gateway/composer.lock'
         path.write_text('{"description":"changed"}\n')
         self.git('add', str(path))
         self.git('-c', 'user.name=Proof', '-c', 'user.email=proof@example.invalid', 'commit', '-qm', 'change manifests')
@@ -91,6 +91,16 @@ class PairRuntime(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.call('gateway')
         self.assertFalse(any('migrate' in call for call in self.calls))
+
+    def test_script_only_manifest_change_refreshes_autoload_without_install(self):
+        path = self.root / 'apps/gateway/composer.json'
+        path.write_text('{"scripts":{"check":"true"}}\n')
+        self.git('add', str(path))
+        self.git('-c', 'user.name=Proof', '-c', 'user.email=proof@example.invalid', 'commit', '-qm', 'change check script')
+        self.head = self.git('rev-parse', 'HEAD')
+        self.call('gateway')
+        self.assertFalse(any('install' in call for call in self.calls))
+        self.assertEqual(len(module['PROJECTS']), sum('validate' in call and '--check-lock' in call for call in self.calls))
 
     def test_access_repair_failure_prevents_serving_branch(self):
         self.fail_access = True

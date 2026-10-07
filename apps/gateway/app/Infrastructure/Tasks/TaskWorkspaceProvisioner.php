@@ -52,6 +52,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
+        private SandboxWorkspaceProvisioner $sandboxes,
     ) {}
 
     public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
@@ -63,7 +64,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
     {
         $group = $intent->group->loadMissing(['project', 'taskable']);
         if (($group->task_compute ?? $group->project->task_compute) === TaskCompute::Vm) {
-            throw new TaskCapacityException(false, 'Task sandbox compute is not configured on this Gateway.');
+            return $this->sandboxes->provision($group);
         }
         $existing = $group->taskable;
 

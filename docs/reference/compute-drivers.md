@@ -283,4 +283,10 @@ After validation, the guest records group ownership without replacing an existin
 
 Pair preparation checks group source ownership before changing the test Gateway. It repairs the saved Gateway inventory and the operator's WireGuard endpoint on the group's subnet. The Gateway ships copies of the same repair helpers tested by the E2E harness; its quality check verifies that they match.
 
-The test Gateway refreshes dependency autoloaders, installs locked dependencies when manifests changed, clears branch runtime caches, runs migrations against its own SQLite database, repairs Caddy’s checkout access, and restarts PHP-FPM. The operator then uses its isolated Gateway profile to list the active Gateway and roleless operator. Preparation reports success only when both guests confirm the same branch commit. It never routes these commands through a shared host or a project-lane Node.
+The test Gateway validates Composer manifests and lock files. It refreshes dependency autoloaders and installs dependencies when lock files changed or dependencies are missing. It clears branch runtime caches, runs migrations against its own SQLite database, repairs Caddy’s checkout access, and restarts PHP-FPM. The operator then uses its isolated Gateway profile to list the active Gateway and roleless operator. Preparation reports success only when both guests confirm the same branch commit. It never routes these commands through a shared host or a project-lane Node.
+
+### Admit an Orbit sandbox claim
+
+`ORBIT_SANDBOX_ORBIT_CLAIMS_ENABLED` defaults to false. Keep it off until the complete Orbit lane and host connectivity policy are proven. With the switch enabled, an Orbit claim needs local pair images, a pinned source template, the private Pi endpoint, the model relay, and Pi model configuration. Other Projects keep a visible wait until their lane is enabled.
+
+Provisioning reserves and attaches an owned workspace before preparing source, the isolated pair, and Pi in that order. It holds the group's execution lock during preparation. A failed step retains the reservation and workspace for retry; it never adopts an unrelated workspace or falls back to shared compute. Only successful preparation returns the workspace to the scheduler, which runs the Project's baseline setup and check before starting an implementer.
