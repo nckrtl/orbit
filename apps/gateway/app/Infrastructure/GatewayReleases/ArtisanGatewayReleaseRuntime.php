@@ -23,29 +23,36 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
         private string $php = '/usr/bin/php8.5',
         private float $timeout = 1_230.0,
         private ?string $stepLock = null,
+        /** Runs the handoff in this process for a release whose code has no handoff command or no phases. */
+        private ?GatewayReleaseRuntime $fallback = null,
     ) {}
 
     public function handoff(string $id): array
     {
-        return $this->phase($id, 'serve', 'caddy');
+        return $this->phase($id, 'serve', 'caddy') ?? $this->fallback()->handoff($id);
     }
 
     public function schedule(string $id): array
     {
-        $result = $this->phase($id, 'schedule', 'scheduler');
+        $result = $this->phase($id, 'schedule', 'scheduler') ?? $this->fallback()->schedule($id);
         $result['cleanup_paused'] = ($result['cleanup_paused'] ?? true) === true;
 
         return $result;
     }
 
+    private function fallback(): GatewayReleaseRuntime
+    {
+        return $this->fallback ?? throw new GatewayReleaseException(step: 'handoff', errorCode: 'gateway.release_handoff_failed', message: 'No handoff fallback is configured.', status: 500);
+    }
+
     /**
      * Runs one phase of `gateway:release:handoff` and returns its JSON object as it is, for the release record.
      *
-     * @return array<string, mixed>
+     * @return array<string, mixed>|null null when the release's code cannot run this phase and a fallback can
      *
      * @throws GatewayReleaseException
      */
-    private function phase(string $id, string $phase, string $required): array
+    private function phase(string $id, string $phase, string $required): ?array
     {
         $result = $this->processes->run(new ProcessInvocation(
             arguments: ReleaseArtisan::command($this->php, $this->layout->releaseApplicationPath($id).'/artisan', ['gateway:release:handoff', '--phase='.$phase, '--no-interaction'], stepLock: $this->stepLock),
@@ -56,6 +63,17 @@ final readonly class ArtisanGatewayReleaseRuntime implements GatewayReleaseRunti
 
         foreach (is_array($decoded) ? $decoded : [] as $key => $value) {
             $data[(string) $key] = $value;
+        }
+
+        $output = $result->stdout.$result->stderr;
+
+        if (
+            $data === []
+            && $this->fallback instanceof GatewayReleaseRuntime
+            && (str_contains($output, 'is not defined') || str_contains($output, 'option does not exist'))
+        ) {
+            // An older release, such as the first release of adoption, built from a commit before the handoff phases.
+            return null;
         }
 
         if (! $result->succeeded() || ! is_string($data[$required] ?? null)) {

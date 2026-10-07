@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\ReleaseArtisan;
 use App\Infrastructure\Processes\CommandResult;
@@ -66,4 +67,43 @@ describe(ArtisanGatewayReleaseRuntime::class, function (): void {
             fn (GatewayReleaseException $exception) => expect($exception->errorCode)->toBe('gateway.release_handoff_failed'),
         );
     });
+
+    it('hands over in this process when the release has no handoff command or phases, such as adoption\'s first release', function (string $output): void {
+        $processes = new class($output) implements ProcessRunner
+        {
+            public function __construct(private readonly string $output) {}
+
+            public function run(ProcessInvocation $invocation): CommandResult
+            {
+                return new CommandResult(1, '', $this->output, 1, false);
+            }
+        };
+        $local = new class implements GatewayReleaseRuntime
+        {
+            /** @var list<string> */
+            public array $calls = [];
+
+            public function handoff(string $id): array
+            {
+                $this->calls[] = 'handoff:'.$id;
+
+                return ['caddy' => 'unchanged'];
+            }
+
+            public function schedule(string $id): array
+            {
+                $this->calls[] = 'schedule:'.$id;
+
+                return ['scheduler' => 'restarted', 'cleanup_paused' => false];
+            }
+        };
+        $runtime = new ArtisanGatewayReleaseRuntime(new GatewayReleaseLayout('/home/orbit/orbit/apps/gateway'), $processes, fallback: $local);
+
+        expect($runtime->handoff('0123456789ab'))->toBe(['caddy' => 'unchanged'])
+            ->and($runtime->schedule('0123456789ab')['scheduler'])->toBe('restarted')
+            ->and($local->calls)->toBe(['handoff:0123456789ab', 'schedule:0123456789ab']);
+    })->with([
+        'no command' => 'Command "gateway:release:handoff" is not defined.',
+        'no phases' => 'The "--phase" option does not exist.',
+    ]);
 });

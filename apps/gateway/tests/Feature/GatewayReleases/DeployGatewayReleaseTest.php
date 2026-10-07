@@ -516,6 +516,20 @@ describe('gateway:release:deploy', function (): void {
             ->and(readlink($this->live))->toBe($this->fixture->base.'/elsewhere');
     });
 
+    it('hands the scheduler back when the scheduler phase fails after it started', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Scheduler phase fails after the restart');
+        $order = new ReleaseSteps;
+
+        release_failure(fn () => release_deployer($this->fixture, passing_verifier($order), recording_runtime($order, scheduleCrashOn: substr($sha, 0, 12)), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha));
+
+        expect($order->steps)->toBe([
+            'handoff:'.substr($sha, 0, 12), 'verify', 'schedule:'.substr($sha, 0, 12),
+            'web:restore', 'handoff:'.$first, 'schedule:'.$first,
+        ])
+            ->and(GatewayRelease::query()->sole()->outcome)->toBe('switched_back');
+    });
+
     it('pauses instead of switching back onto a release that lacks a migration the database applied', function (): void {
         $first = adopt_release($this->fixture);
         $sha = $this->fixture->commit('Fails verify after an earlier half-applied migration');
@@ -692,11 +706,11 @@ function passing_verifier(?ReleaseSteps $order = null): GatewayReleaseVerifier
     };
 }
 
-function recording_runtime(ReleaseSteps $order, ?string $crashOn = null): GatewayReleaseRuntime
+function recording_runtime(ReleaseSteps $order, ?string $crashOn = null, ?string $scheduleCrashOn = null): GatewayReleaseRuntime
 {
-    return new readonly class($order, $crashOn) implements GatewayReleaseRuntime
+    return new readonly class($order, $crashOn, $scheduleCrashOn) implements GatewayReleaseRuntime
     {
-        public function __construct(private ReleaseSteps $order, private ?string $crashOn) {}
+        public function __construct(private ReleaseSteps $order, private ?string $crashOn, private ?string $scheduleCrashOn) {}
 
         public function handoff(string $id): array
         {
@@ -712,6 +726,10 @@ function recording_runtime(ReleaseSteps $order, ?string $crashOn = null): Gatewa
         public function schedule(string $id): array
         {
             $this->order->steps[] = 'schedule:'.$id;
+
+            if ($this->scheduleCrashOn === $id) {
+                throw new GatewayReleaseException('handoff', 'gateway.release_units_failed', 'A Process under the Gateway path could not restart.');
+            }
 
             return ['scheduler' => 'skipped', 'cleanup' => 'skipped', 'cleanup_paused' => false];
         }

@@ -13,6 +13,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuilds;
 use App\Infrastructure\Files\ProtectedFileWriter;
+use App\Infrastructure\Gateway\FpmPoolConnections;
 use App\Infrastructure\Gateway\FpmScriptRequest;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
@@ -74,7 +75,7 @@ final readonly class GatewayRuntimeHandoff
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
-        $this->fpmConnections = $fpmConnections ?? $this->socketConnections(...);
+        $this->fpmConnections = $fpmConnections ?? new FpmPoolConnections(dirname($this->livePool))->count(...);
         $this->sleep = $sleep ?? static function (int $microseconds): void {
             usleep($microseconds);
         };
@@ -255,64 +256,6 @@ final readonly class GatewayRuntimeHandoff
         } catch (Throwable) {
             return ['outcome' => 'failed'];
         }
-    }
-
-    /**
-     * Accepted connections on the `listen` socket of every enabled pool of the master: Caddy opens one for each
-     * request it passes on.
-     */
-    private function socketConnections(): int
-    {
-        $connections = 0;
-
-        foreach (glob(dirname($this->livePool).'/*.conf') ?: [] as $pool) {
-            $contents = (string) @file_get_contents($pool);
-
-            if (preg_match_all('/^\s*listen\s*=\s*(\S+)\s*$/m', $contents, $matches) < 1) {
-                continue;
-            }
-
-            foreach ($matches[1] as $listen) {
-                $connections += str_starts_with($listen, '/') ? $this->unixConnections($listen) : $this->tcpConnections($listen);
-            }
-        }
-
-        return $connections;
-    }
-
-    private function unixConnections(string $path): int
-    {
-        $count = 0;
-
-        foreach (array_slice(@file('/proc/net/unix', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [], 1) as $line) {
-            $fields = preg_split('/\s+/', trim($line));
-
-            // Num RefCount Protocol Flags Type St Inode Path; St 03 is connected.
-            if (is_array($fields) && ($fields[5] ?? '') === '03' && ($fields[7] ?? '') === $path) {
-                $count++;
-            }
-        }
-
-        return $count;
-    }
-
-    private function tcpConnections(string $listen): int
-    {
-        $port = sprintf('%04X', (int) substr($listen, (int) strrpos(':'.$listen, ':')));
-        $count = 0;
-
-        foreach (['/proc/net/tcp', '/proc/net/tcp6'] as $table) {
-            foreach (array_slice(@file($table, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) ?: [], 1) as $line) {
-                $fields = preg_split('/\s+/', trim($line));
-
-                // sl local_address rem_address st; st 01 is established.
-                if (is_array($fields) && str_ends_with($fields[1] ?? '', ':'.$port) && ($fields[3] ?? '') === '01') {
-                    $count++;
-                }
-            }
-        }
-
-        return $count;
     }
 
     /** @param Closure(): void $operation */

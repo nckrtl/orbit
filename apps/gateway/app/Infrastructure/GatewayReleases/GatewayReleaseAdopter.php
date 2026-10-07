@@ -218,9 +218,18 @@ final readonly class GatewayReleaseAdopter
             throw $exception;
         }
 
-        $this->record($this->outcome($id, $sha, 'verified', $phases, $startedAt));
+        // Only the serving check ran; phase 2's deploy verifies the exact version.
+        $resumed = $this->outcome($id, $sha, 'resumed', $phases, $startedAt);
 
-        return ['adopted' => true, 'already' => true, 'resumed' => true, 'release' => $id, 'pre_adopt_path' => $leftover, 'phase1' => $phases];
+        return [
+            'unrecorded' => $this->record($resumed) ? null : $resumed,
+            'adopted' => true,
+            'already' => true,
+            'resumed' => true,
+            'release' => $id,
+            'pre_adopt_path' => $leftover,
+            'phase1' => $phases,
+        ];
     }
 
     /** Whether a release attempt verified the current release, so adoption finished. */
@@ -441,48 +450,104 @@ final readonly class GatewayReleaseAdopter
     }
 
     /**
-     * Moves the checkout's storage to `shared/gateway-storage` in one rename, contents and
-     * permissions as they are, and links it back so running processes keep their paths.
+     * Moves the checkout's storage to `shared/gateway-storage` without the storage path ever missing or being a new,
+     * empty directory, which a request writing its file cache or log could otherwise create:
+     *
+     * 1. `shared/gateway-storage` becomes a link to `storage.adopt-link` next to the storage directory, and
+     *    `storage.adopt-link` a link to `shared/gateway-storage`. Neither is in use yet.
+     * 2. One exchange swaps `storage` and `storage.adopt-link`: `storage` is now a link that reaches the real
+     *    directory through `shared/gateway-storage`.
+     * 3. One exchange swaps `shared/gateway-storage` and `storage.adopt-link`: the real directory now is
+     *    `shared/gateway-storage`, and `storage` still reaches it. The leftover link is removed.
+     *
+     * An interrupted move is finished by the next run. Without an atomic exchange it falls back to a rename and a
+     * link back to back, and reports the gap.
+     *
+     * @return array{storage: string, storage_method?: string, storage_gap_us?: int}
      */
-    /** @return array{storage: string, storage_gap_us?: int} */
     private function storage(string $current): array
     {
         $source = $current.'/apps/gateway/storage';
         $target = $this->layout->storagePath();
+        $parking = $source.'.adopt-link';
 
         if (is_link($source)) {
             if (readlink($source) !== $target) {
                 throw $this->refusal('gateway.release_adopt_storage_conflict', "[{$source}] links somewhere other than [{$target}].");
             }
 
+            if (is_link($target) && readlink($target) === $parking && $this->isDirectory($parking)) {
+                $this->exchangeOrFail($target, $parking);
+                @unlink($parking);
+
+                return ['storage' => 'moved', 'storage_method' => 'exchange', 'storage_gap_us' => 0];
+            }
+
+            if (! $this->isDirectory($target)) {
+                throw $this->refusal('gateway.release_adopt_storage_conflict', "[{$source}] links to [{$target}], which is not a directory.");
+            }
+
             return ['storage' => 'existing'];
         }
 
-        if (file_exists($target)) {
-            if (is_dir($source)) {
-                throw $this->refusal('gateway.release_adopt_storage_conflict', "Both [{$source}] and [{$target}] exist. Merge them by hand, then remove one.");
-            }
-        } else {
-            if (! is_dir($source)) {
-                throw $this->refusal('gateway.release_adopt_storage_missing', "[{$source}] is not a directory.");
-            }
-
-            // The tracked placeholders move with the directory, so Git must not report them as deleted.
-            $tracked = $this->git($current, ['ls-files', '--', 'apps/gateway/storage'], 'gateway.release_adopt_storage_failed');
-            $placeholders = array_values(array_filter(explode("\n", trim($tracked->stdout)), static fn (string $line): bool => $line !== ''));
-
-            if ($placeholders !== []) {
-                $this->git($current, ['update-index', '--skip-worktree', '--', ...$placeholders], 'gateway.release_adopt_storage_failed');
-            }
-
-            return ['storage' => 'moved', 'storage_gap_us' => $this->exchange->moveAndLink($source, $target)];
+        if (! $this->isDirectory($source)) {
+            throw $this->refusal('gateway.release_adopt_storage_missing', "[{$source}] is not a directory.");
         }
 
-        if (! @symlink($target, $source)) {
-            throw $this->failure('gateway.release_adopt_storage_failed', "[{$source}] cannot be linked to [{$target}].");
+        // Links from a run that stopped before its first exchange.
+        if (is_link($target) && readlink($target) === $parking) {
+            @unlink($target);
         }
 
-        return ['storage' => 'linked'];
+        if (is_link($parking) && readlink($parking) === $target) {
+            @unlink($parking);
+        }
+
+        if (file_exists($target) || is_link($target) || file_exists($parking) || is_link($parking)) {
+            throw $this->refusal('gateway.release_adopt_storage_conflict', "[{$target}] or [{$parking}] exists beside [{$source}]. Merge them by hand, then remove one.");
+        }
+
+        // The tracked placeholders move with the directory, so Git must not report them as deleted.
+        $tracked = $this->git($current, ['ls-files', '--', 'apps/gateway/storage'], 'gateway.release_adopt_storage_failed');
+        $placeholders = array_values(array_filter(explode("\n", trim($tracked->stdout)), static fn (string $line): bool => $line !== ''));
+
+        if ($placeholders !== []) {
+            $this->git($current, ['update-index', '--skip-worktree', '--', ...$placeholders], 'gateway.release_adopt_storage_failed');
+        }
+
+        if (! @symlink($parking, $target) || ! @symlink($target, $parking)) {
+            @unlink($target);
+            @unlink($parking);
+
+            throw $this->failure('gateway.release_adopt_storage_failed', "The links to move [{$source}] cannot be created.");
+        }
+
+        if (! $this->exchange->swap($source, $parking)) {
+            @unlink($target);
+            @unlink($parking);
+
+            return ['storage' => 'moved', 'storage_method' => 'rename', 'storage_gap_us' => $this->exchange->moveAndLink($source, $target)];
+        }
+
+        $this->exchangeOrFail($target, $parking);
+        @unlink($parking);
+
+        return ['storage' => 'moved', 'storage_method' => 'exchange', 'storage_gap_us' => 0];
+    }
+
+    private function exchangeOrFail(string $first, string $second): void
+    {
+        if (! $this->exchange->swap($first, $second)) {
+            throw $this->failure('gateway.release_adopt_storage_failed', "[{$first}] and [{$second}] cannot be exchanged.");
+        }
+    }
+
+    /** A real directory, not a link to one. The file system can change between two checks. */
+    private function isDirectory(string $path): bool
+    {
+        clearstatcache(true, $path);
+
+        return is_dir($path) && ! is_link($path);
     }
 
     /**

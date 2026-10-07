@@ -55,8 +55,9 @@ describe('gateway:release:adopt', function (): void {
             ->and(file_get_contents($kept.'/apps/gateway/.env.pre-adopt'))->toBe("APP_ENV=production\nAPP_VERSION=0.1.0\n")
             ->and(fileperms($kept.'/apps/gateway/.env.pre-adopt') & 0o777)->toBe(0o600)
             ->and(file_get_contents($layout->environmentPath()))->toStartWith("APP_ENV=production\n# APP_VERSION=0.1.0 (left out by gateway:release:adopt")
-            ->and($result['shared']['storage'])->toBe('moved')
-            ->and($result['shared']['storage_gap_us'])->toBeInt()
+            ->and($result['shared'])->toMatchArray(['storage' => 'moved', 'storage_method' => 'exchange', 'storage_gap_us' => 0])
+            ->and(is_dir($storage) && ! is_link($storage))->toBeTrue()
+            ->and(file_exists($kept.'/apps/gateway/storage.adopt-link') || is_link($kept.'/apps/gateway/storage.adopt-link'))->toBeFalse()
             ->and(file_get_contents($layout->sharedPath().'/env-backups/.env.bak-deploy-1'))->toBe("APP_ENV=old\n")
             ->and(readlink($kept.'/apps/gateway/storage'))->toBe($storage)
             ->and(file_get_contents($storage.'/framework/cache/data/aa/lock'))->toBe('held')
@@ -186,7 +187,43 @@ describe('gateway:release:adopt', function (): void {
 
         expect($result)->toMatchArray(['already' => true, 'resumed' => true, 'release' => $this->id])
             ->and(array_slice($this->steps->steps, 0, 3))->toBe(['handoff:'.$this->id, 'serving', 'schedule:'.$this->id])
-            ->and(GatewayRelease::query()->pluck('outcome')->all())->toBe(['verified', 'verified']);
+            // The serving check alone does not verify the version; phase 2 does.
+            ->and(GatewayRelease::query()->orderBy('id')->pluck('outcome')->all())->toBe(['resumed', 'verified']);
+    });
+
+    it('records a resumed adoption once phase 2 has created the record table', function (): void {
+        adoption($this->fixture, $this->steps)->execute();
+        GatewayRelease::query()->delete();
+        Schema::rename('gateway_releases', 'gateway_releases_later');
+        $this->fixture->write('apps/gateway/database/migrations/2026_10_13_000000_create_gateway_releases_table.php', "<?php\n");
+        $target = $this->fixture->commit('Adds the release records');
+        $source = $this->fixture->base.'/adopt-source';
+        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $this->steps->pending = ['2026_10_13_000000_create_gateway_releases_table'];
+        $this->steps->onMigrate = static fn () => Schema::rename('gateway_releases_later', 'gateway_releases');
+
+        $result = adoption($this->fixture, $this->steps)->execute($target, $source);
+
+        expect($result['resumed'])->toBeTrue()
+            ->and(GatewayRelease::query()->where('release_id', $this->id)->value('outcome'))->toBe('resumed')
+            ->and(GatewayRelease::query()->where('release_id', substr($target, 0, 12))->value('outcome'))->toBe('verified');
+    });
+
+    it('finishes a storage move that stopped between its two exchanges', function (): void {
+        $storage = $this->current.'/apps/gateway/storage';
+        $shared = $this->fixture->layout->storagePath();
+        mkdir($this->fixture->layout->sharedPath(), 0750, true);
+        // The state after the first exchange: storage links through shared to the real directory beside it.
+        rename($storage, $storage.'.adopt-link');
+        symlink($storage.'.adopt-link', $shared);
+        symlink($shared, $storage);
+        $this->fixture->git($this->current, 'update-index', '--skip-worktree', '--', 'apps/gateway/storage/logs/.gitignore', 'apps/gateway/storage/framework/cache/.gitignore');
+
+        $result = adoption($this->fixture, $this->steps)->execute();
+
+        expect($result['shared'])->toMatchArray(['storage' => 'moved', 'storage_method' => 'exchange'])
+            ->and(is_dir($shared) && ! is_link($shared))->toBeTrue()
+            ->and(file_get_contents($shared.'/framework/cache/data/aa/lock'))->toBe('held');
     });
 
     it('falls back to two renames where an atomic swap is not available', function (): void {
@@ -194,6 +231,8 @@ describe('gateway:release:adopt', function (): void {
 
         expect($result['switch']['method'])->toBe('rename')
             ->and($result['switch']['gap_us'])->toBeInt()
+            ->and($result['shared']['storage_method'])->toBe('rename')
+            ->and(readlink($this->fixture->layout->basePath().'/orbit.pre-adopt-20261007T120000Z/apps/gateway/storage'))->toBe($this->fixture->layout->storagePath())
             ->and($this->fixture->layout->currentReleaseId())->toBe($this->id);
     });
 

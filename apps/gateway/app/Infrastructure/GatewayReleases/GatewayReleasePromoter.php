@@ -57,6 +57,7 @@ final readonly class GatewayReleasePromoter
     ): DeployedGatewayRelease {
         $previous = $this->layout->currentReleaseId();
         $scheduled = null;
+        $scheduleStarted = false;
         $step = 'configuration';
 
         try {
@@ -74,6 +75,8 @@ final readonly class GatewayReleasePromoter
             $verified = $this->verifier->verify($sha);
             $phases['verify'] = ['outcome' => 'passed', 'status' => $verified['status'], 'version' => $verified['version']];
             $step = 'scheduler';
+            // The scheduler may restart on the new release before a later part of this phase fails.
+            $scheduleStarted = true;
             $scheduled = $this->runtime->schedule($id);
             $phases['scheduler'] = $scheduled;
             $step = 'web';
@@ -92,7 +95,8 @@ final readonly class GatewayReleasePromoter
                 phases: $phases,
                 startedAt: $startedAt,
                 previous: $previous,
-                scheduled: $scheduled ?? null,
+                scheduled: $scheduled,
+                scheduleStarted: $scheduleStarted,
             );
         }
 
@@ -129,6 +133,7 @@ final readonly class GatewayReleasePromoter
         int $startedAt,
         ?string $previous,
         ?array $scheduled,
+        bool $scheduleStarted,
     ): never {
         $outcome = 'failed';
         $cleanupPaused = ($scheduled['cleanup_paused'] ?? false) === true;
@@ -151,7 +156,7 @@ final readonly class GatewayReleasePromoter
                 $this->web->restore($previous);
                 $back = ['outcome' => 'switched_back', 'to' => $previous, 'handoff' => $this->runtime->handoff($previous)];
 
-                if ($scheduled !== null) {
+                if ($scheduleStarted) {
                     $back['scheduler'] = $this->runtime->schedule($previous);
                     $cleanupPaused = ($back['scheduler']['cleanup_paused'] ?? false) === true;
                 }

@@ -30,9 +30,10 @@ final readonly class DeployedGatewayRelease
         public ?string $message = null,
     ) {}
 
+    /** `resumed`: an interrupted adoption's first release was handed over again and serves. */
     public function succeeded(): bool
     {
-        return $this->outcome === 'verified';
+        return in_array($this->outcome, ['verified', 'resumed'], true);
     }
 
     /** @return array<string, mixed> */

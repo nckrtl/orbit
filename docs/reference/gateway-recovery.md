@@ -160,7 +160,8 @@ Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (def
 
 Smoke does not run before the web switch. Any failure after the switch counts, also an error the release code did not expect (`gateway.release_unexpected_failure`):
 
-- Without migrations, deploy switches back to the previous release and restores its web build. It repeats the handoff phases that already ran. The outcome is `switched_back`.
+- Without migrations, deploy switches back to the previous release and restores its web build. It repeats the handoff phases that started. The outcome is `switched_back`.
+- A previous release whose code has no handoff command, or no phases, gets the handoff from the deploying process's code.
 - A previous release that lacks a migration the database applied gets no switch-back. Deploy pauses instead. This can follow an earlier pause.
 - After migrations, deploy pauses. It writes `ORBIT_HOME/gateway-release.paused` and records outcome `paused`. It never switches back onto a schema the previous code has not run.
 - A switch that fails after migrations pauses too. The previous code then serves the new schema.
@@ -315,7 +316,7 @@ Phase 1 runs these steps for the commit the in-place checkout has:
 | Env file | `shared/gateway.env` is a copy of `apps/gateway/.env` with any `APP_VERSION` line commented out, so each release reports its own commit. |
 | Env link | The original stays as `apps/gateway/.env.pre-adopt`, and one rename replaces `.env` with a link to the shared file. The running code uses its cached configuration, so it serves the same. |
 | Env backups | Each `apps/gateway/.env.bak*` file is copied to `shared/env-backups/`. |
-| Storage | `apps/gateway/storage` moves to `shared/gateway-storage` and is linked back in one process, so its path is missing for microseconds only. |
+| Storage | `apps/gateway/storage` moves to `shared/gateway-storage` through two exchanges with prepared links, so its path always reaches the same directory and is never missing. |
 | Prepare | `releases/<id>` is built for the checkout's own commit. With `--commit`, it gets no web build, because that commit may predate the CI artifact. |
 | Swap | `renameat2(RENAME_EXCHANGE)` swaps the checkout directory with a link to that release. The directory stays as `/home/orbit/orbit.pre-adopt-<time>`. |
 | Handoff | The temporary checkout's code hands the runtime over, because the checkout's commit may predate the handoff command. The app code that serves is the same as before. |
@@ -323,9 +324,9 @@ Phase 1 runs these steps for the commit the in-place checkout has:
 
 Phase 2 deploys `<SHA>` exactly as [Deploy a release](#deploy-a-release) describes, with its snapshot, migrations, handoff, verify, web build, and smoke. Without `--commit`, it deploys the checkout's commit itself, which then must have the command; that adds the web build, the exact version check, and smoke.
 
-The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `shared`, `switch`, `phase1`, and `deploy`, the phase-2 release record. `switch.method` is `exchange`, or `rename` with the gap in `switch.gap_us`. `shared.storage_gap_us` is the storage gap. Each phase writes a release record with trigger `adopt` and an Activity entry.
+The command prints one JSON object with `release`, `sha`, `from`, `pre_adopt_path`, `shared`, `switch`, `phase1`, and `deploy`, the phase-2 release record. `switch.method` and `shared.storage_method` are `exchange`, or `rename` with the gap in `switch.gap_us` and `shared.storage_gap_us`. Each phase writes a release record with trigger `adopt` and an Activity entry.
 
-Running it again on a Gateway that finished adoption prints `"already": true` and changes nothing. When an earlier run swapped and then stopped before it verified, for example because its session dropped, the next run hands the runtime over and checks serving again, prints `"resumed": true`, and then runs phase 2.
+Running it again on a Gateway that finished adoption prints `"already": true` and changes nothing. When an earlier run swapped and then stopped before it verified, for example because its session dropped, the next run hands the runtime over and checks serving again. It records outcome `resumed`, prints `"resumed": true`, and then runs phase 2, which verifies the exact version.
 
 The kept checkout is a complete way back. Its `.env.pre-adopt` holds the original env file, so keep its permissions, and remove it once a few releases have verified:
 
@@ -344,6 +345,8 @@ Each step checks whether it already ran, so after fixing the cause, run the comm
 | A refusal, or a failure before the swap | The checkout keeps serving, with its original `.env` back. The storage link stays, as it reaches the same files. |
 | Phase-1 handoff or serving check | Adoption swaps the checkout back, restores the original `.env`, and hands the runtime back. The record says `switched_back`. |
 | Phase 2 | The Gateway stays adopted. The deploy switches back to the phase-1 release or pauses, as any deploy does. |
+
+The phase-1 release may have no handoff command of its own. A switch-back to it then gets the handoff from the deploying process's code.
 
 When even the swap back fails, the outcome is `gateway.release_switch_back_failed`. Swap back by hand as `orbit`, then hand the runtime over with the temporary checkout's code:
 

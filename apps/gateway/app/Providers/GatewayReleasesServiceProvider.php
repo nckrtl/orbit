@@ -69,6 +69,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 // The scheduler drain, a forced stop's wait for the tick lock, and the rest of the handoff.
                 timeout: (float) (self::drainSeconds() + 330 + 600),
                 stepLock: self::stepLock(),
+                fallback: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
             ),
         );
         $this->app->bind(GatewayDocumentCleanup::class, ActionGatewayDocumentCleanup::class);
