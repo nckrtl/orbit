@@ -28,6 +28,10 @@ return [
         string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit-gateway'),
         characters: '/',
     ),
+    // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
+    'gateway_releases' => [
+        'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
+    ],
     'gateway_web' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
         characters: '/',

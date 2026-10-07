@@ -10,7 +10,8 @@ use Closure;
 /**
  * The single-flight lock every release step runs under. It is a `flock` on a file in
  * `ORBIT_HOME`, held for the life of the process, so a crashed release frees it at once and no
- * time-to-live has to outlast a slow `composer install`.
+ * time-to-live has to outlast a slow `composer install`. The file is opened close-on-exec, so a
+ * child that outlives the release, such as a detached `git gc`, never holds the lock.
  */
 final readonly class GatewayReleaseLock
 {
@@ -30,7 +31,7 @@ final readonly class GatewayReleaseLock
             throw $this->unavailable();
         }
 
-        $handle = @fopen($this->path, 'c');
+        $handle = @fopen($this->path, 'ce');
 
         if ($handle === false) {
             throw $this->unavailable();

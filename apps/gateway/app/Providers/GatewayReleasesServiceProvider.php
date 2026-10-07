@@ -33,6 +33,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 processes: $app->make(ProcessRunner::class),
                 readAccess: $app->make(RepositoryReadAccess::class),
                 web: $app->make(GatewayReleaseWebBuild::class),
+                minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
             ),
         );
     }

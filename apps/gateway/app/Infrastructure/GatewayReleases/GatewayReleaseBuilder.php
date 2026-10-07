@@ -26,7 +26,10 @@ use Closure;
  */
 final readonly class GatewayReleaseBuilder
 {
-    /** Below this much free space in the releases directory, prepare refuses before it writes. */
+    /**
+     * The default floor: below this much free space in the releases directory, prepare refuses
+     * before it writes. `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB` changes it.
+     */
     public const int MinimumFreeBytes = 1_073_741_824;
 
     /** @var Closure(string): (float|false) */
@@ -38,6 +41,7 @@ final readonly class GatewayReleaseBuilder
     /**
      * @param  (Closure(string): (float|false))|null  $freeSpace
      * @param  (Closure(string): void)|null  $checkoutAccess  Grants Caddy access to one release's Gateway application.
+     * @param  int  $minimumFreeBytes  The free space prepare keeps in the releases directory.
      */
     public function __construct(
         private GatewayReleaseLayout $layout,
@@ -49,6 +53,7 @@ final readonly class GatewayReleaseBuilder
         private float $composerTimeout = 900.0,
         ?Closure $freeSpace = null,
         ?Closure $checkoutAccess = null,
+        private int $minimumFreeBytes = self::MinimumFreeBytes,
     ) {
         $this->freeSpace = $freeSpace ?? static fn (string $path): float|false => @disk_free_space($path);
         $this->checkoutAccess = $checkoutAccess ?? static function (string $application) use ($processes): void {
@@ -202,11 +207,11 @@ final readonly class GatewayReleaseBuilder
     {
         $free = ($this->freeSpace)($this->layout->releasesPath());
 
-        if ($free !== false && $free < self::MinimumFreeBytes) {
+        if ($free !== false && $free < $this->minimumFreeBytes) {
             throw new GatewayReleaseException(
                 step: 'worktree',
                 errorCode: 'gateway.release_disk_low',
-                message: sprintf('The releases directory has %d MiB free; a release needs at least %d MiB.', (int) ($free / 1_048_576), self::MinimumFreeBytes / 1_048_576),
+                message: sprintf('The releases directory has %d MiB free; prepare needs at least %d MiB.', (int) ($free / 1_048_576), intdiv($this->minimumFreeBytes, 1_048_576)),
             );
         }
     }

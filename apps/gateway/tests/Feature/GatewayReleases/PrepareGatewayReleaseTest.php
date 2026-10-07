@@ -6,6 +6,8 @@ use App\Actions\GatewayReleases\PrepareGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseWebBuild;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
+use App\Infrastructure\Processes\NativeProcessRunner;
+use App\Infrastructure\Processes\ProcessInvocation;
 use Tests\Support\GatewayReleaseFixture;
 
 beforeEach(function (): void {
@@ -155,6 +157,15 @@ describe('gateway:release:prepare', function (): void {
             ->and(file_exists($this->fixture->layout->releasePath(substr($sha, 0, 12))))->toBeFalse();
     });
 
+    it('refuses below the configured free-space floor', function (): void {
+        $sha = $this->fixture->commit('Second commit');
+        $exception = release_failure(fn () => $this->fixture->builder(freeBytes: 2 * 1_073_741_824, minimumFreeBytes: 3 * 1_073_741_824)->prepare($sha));
+
+        expect($exception->errorCode)->toBe('gateway.release_disk_low')
+            ->and($exception->getMessage())->toContain('needs at least 3072 MiB')
+            ->and(file_exists($this->fixture->layout->releasePath(substr($sha, 0, 12))))->toBeFalse();
+    });
+
     it('refuses without the shared repository that adoption creates', function (): void {
         exec('rm -rf '.escapeshellarg($this->fixture->layout->repositoryPath()));
 
@@ -170,6 +181,16 @@ describe('gateway:release:prepare', function (): void {
 
         expect($exception->errorCode)->toBe('gateway.release_in_progress')
             ->and($this->fixture->commands)->toBe([]);
+    });
+
+    it('does not hand the lock to the commands a release step runs', function (): void {
+        $lock = new GatewayReleaseLock($this->fixture->base.'/home/gateway-release.lock');
+
+        $descriptors = $lock->run(fn (): string => new NativeProcessRunner()->run(
+            new ProcessInvocation(['sh', '-c', 'ls -l /proc/$$/fd'], timeout: 10.0),
+        )->stdout);
+
+        expect($descriptors)->not->toContain('gateway-release.lock');
     });
 
     it('prints the prepared release as one JSON object', function (): void {

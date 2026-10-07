@@ -105,7 +105,9 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 4. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories read-only;
 5. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version.
 
-Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so after a change to the shared env file, run `php artisan config:cache` in `/home/orbit/orbit/apps/gateway`. A release that already has it is reused without another build step. A partial release from a failed or interrupted prepare is removed and built again on the next run. Prepare refuses when the releases directory has less than 1 GiB free. It never touches the current release link, the database, or a running service.
+Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so after a change to the shared env file, run `php artisan config:cache` in `/home/orbit/orbit/apps/gateway`. A release that already has it is reused without another build step. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
+
+Prepare refuses before it writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories.
 
 The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.
 
@@ -115,7 +117,7 @@ The command prints one JSON object. Success exits 0 with `release`, `sha`, `path
 | `gateway.release_commit_unknown` | The repository does not have the commit, or the prefix names more than one commit. |
 | `gateway.release_layout_missing` | The shared repository or env file is missing. |
 | `gateway.release_in_progress` | Another release step holds the single-flight lock in `ORBIT_HOME/gateway-release.lock`. |
-| `gateway.release_disk_low` | The releases directory has less than 1 GiB free. |
+| `gateway.release_disk_low` | The releases directory has less free space than the floor. |
 | `gateway.release_conflict` | The release directory holds another commit with the same 12-digit id. |
 | `gateway.release_current_incomplete` | The current release has no `REVISION`. Repair it before preparing it again. |
 | `gateway.release_layout_invalid` | `ORBIT_GATEWAY_CHECKOUT` is not an absolute `<base>/<checkout>/apps/gateway` path. |
