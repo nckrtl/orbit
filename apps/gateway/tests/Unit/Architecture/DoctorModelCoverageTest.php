@@ -14,13 +14,14 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
+use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceDependencyEdge;
 use App\Models\InstanceDependencyObservation;
 use App\Models\InstanceDependencyResolution;
 use App\Models\InstanceDependencyScanAttempt;
-use App\Models\InstanceDeployment;
 use App\Models\InstanceDeployStep;
+use App\Models\InstanceDeployment;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRemoval;
 use App\Models\InstanceRemovalMember;
@@ -91,6 +92,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
     ];
     $excluded = [
         TaskSandbox::class,
+        GatewayRelease::class,
         Annotation::class,
         DependencyPackage::class,
         InstanceDependencyObservation::class,

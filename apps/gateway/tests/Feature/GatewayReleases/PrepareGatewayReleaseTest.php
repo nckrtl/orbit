@@ -21,17 +21,6 @@ afterEach(function (): void {
     $this->fixture->cleanup();
 });
 
-function release_failure(Closure $operation): GatewayReleaseException
-{
-    try {
-        $operation();
-    } catch (GatewayReleaseException $exception) {
-        return $exception;
-    }
-
-    throw new RuntimeException('The release step did not fail.');
-}
-
 describe('gateway:release:prepare', function (): void {
     it('builds an immutable worktree of the exact commit with shared env, storage, dependencies, and REVISION', function (): void {
         $sha = $this->fixture->commit('Second commit');

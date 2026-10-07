@@ -157,6 +157,8 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 
 ### Roll back
 
+Roll back to return the Gateway to a release it still keeps, for example after a pause or a bad release that verify and smoke did not catch.
+
 ```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id>
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:rollback <id> --force
