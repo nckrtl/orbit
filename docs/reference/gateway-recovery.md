@@ -167,18 +167,20 @@ The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
 3. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path;
-4. restarts the scheduler without cutting off a tasks tick;
+4. moves the scheduler to the new release without cutting off a scheduled command;
 5. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate).
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
-The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. A Gateway without one reports `not_found`. The handoff restarts it in these steps:
+The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. A Gateway without one reports `not_found`. The handoff never cuts off a scheduled command in the normal path. It moves the scheduler in these steps:
 
-1. It runs `schedule:interrupt`, so no new scheduled command starts.
-2. It takes the `tasks:tick` lock and waits up to 330 seconds for a running tick to finish.
-3. It stops the unit. A scheduled command other than the tick that is still running stops with it.
-4. It clears the schedule's overlap locks with `schedule:clear-cache`, starts the unit, and waits until it is active.
-5. It releases the tick lock.
+1. It runs `schedule:interrupt`, so repeating events such as `tasks:tick` stop after their current run.
+2. It sends SIGTERM to the `schedule:work` main process only. That process starts no new `schedule:run` and waits for the running ones, so a long command such as a development deploy finishes on the release it started on.
+3. When the main process has exited, it starts the unit, which now runs the new release, and waits until it is active.
+
+Each command ran to its end and released its own overlap lock, so the handoff clears none. While the old scheduler drains, it starts nothing, so `tasks:tick` pauses for the drain at most.
+
+The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600). After that limit, the handoff takes the `tasks:tick` lock and stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
 
 The new scheduler pauses document cleanup when it starts. The handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. When the report has differences or resume is refused, cleanup stays paused. The release record then has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release continues.
 
@@ -197,7 +199,7 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
 | `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
 | `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. |
-| `gateway.release_scheduler_busy` | A tasks tick held its lock for more than 330 seconds, so the scheduler was not restarted. |
+| `gateway.release_scheduler_busy` | After the drain limit, a tasks tick held its lock for more than 330 seconds, so the scheduler was not stopped. It finishes its commands and exits; start its unit again. |
 | `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
 | `gateway.release_handoff_failed` | The release printed no handoff result. |
 | `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |

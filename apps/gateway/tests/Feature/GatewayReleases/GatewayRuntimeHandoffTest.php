@@ -36,15 +36,25 @@ final class HandoffProcessRunner implements ProcessRunner
     /** @var array<string, CommandResult> results by the joined first three arguments */
     public array $results = [];
 
+    /** @var list<string> what `systemctl show -p MainPID` reports, one entry per call; the last one repeats */
+    public array $mainPids = ['4242', '0'];
+
     public function run(ProcessInvocation $invocation): CommandResult
     {
         $this->ran[] = $invocation->arguments;
+
         $probe = Cache::lock(GatewaySchedulerHandoff::TickLock, 1);
         $free = $probe->get();
         if ($free) {
             $probe->release();
         }
         $this->tickLockFree[] = $free;
+
+        if (array_slice($invocation->arguments, 0, 4) === ['systemctl', 'show', '-p', 'MainPID']) {
+            $pid = count($this->mainPids) > 1 ? array_shift($this->mainPids) : $this->mainPids[0];
+
+            return new CommandResult(0, $pid."\n", '', 1, false);
+        }
 
         return $this->results[implode(' ', array_slice($invocation->arguments, 0, 3))]
             ?? new CommandResult(0, '', '', 1, false);
@@ -146,12 +156,21 @@ function handoff_scheduler(Node $node, string $directory = HANDOFF_APP, string $
     ]);
 }
 
+final class SchedulerDrainProbe
+{
+    public int $cleared = 0;
+
+    /** @var list<string> */
+    public array $members = ['/usr/bin/php8.5 artisan schedule:work', "sh -c '/usr/bin/php8.5' 'artisan' orbit:deploy-development-defaults > '/dev/null' 2>&1"];
+}
+
 /**
- * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits}
+ * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5): array
 {
     $processes = new HandoffProcessRunner;
+    $probe = new SchedulerDrainProbe;
     $cleanup = new FakeDocumentCleanup;
     $builds = new FakeNodeCaddyBuilds;
     $units = new RecordingHandoffUnits('units');
@@ -166,9 +185,20 @@ function runtime_handoff(?string $livePool = null): array
             files: new ProtectedFileWriter,
             hibernator: $units,
             agentView: $units,
-            scheduler: new GatewaySchedulerHandoff($processes, HANDOFF_APP, tickWaitSeconds: 1, startWaitSeconds: 1, sleep: static function (): void {
-                usleep(50_000);
-            }),
+            scheduler: new GatewaySchedulerHandoff(
+                $processes,
+                HANDOFF_APP,
+                tickWaitSeconds: 1,
+                startWaitSeconds: 1,
+                sleep: static function (): void {
+                    usleep(50_000);
+                },
+                drainSeconds: $drainSeconds,
+                clearMutexes: static function () use ($probe): void {
+                    $probe->cleared++;
+                },
+                members: static fn (): array => $probe->members,
+            ),
             cleanup: new GatewayCleanupHandoff($cleanup, generationWaitSeconds: 1, sleep: static function (): void {
                 usleep(50_000);
             }),
@@ -180,14 +210,16 @@ function runtime_handoff(?string $livePool = null): array
         $cleanup,
         $builds,
         $units,
+        $probe,
     ];
 }
 
 describe('gateway:release:handoff', function (): void {
-    it('restarts the scheduler under the tick lock, resumes cleanup in the new generation, and leaves FPM alone', function (): void {
+    it('lets the old scheduler finish its running commands, starts it on the new release, and resumes cleanup', function (): void {
         $gateway = handoff_gateway();
         $scheduler = handoff_scheduler($gateway);
-        [$handoff, $processes, $cleanup, $builds, $units] = runtime_handoff();
+        [$handoff, $processes, $cleanup, $builds, $units, $probe] = runtime_handoff();
+        $processes->mainPids = ['4242', '4242', '4242', '0'];
         $cleanup->statuses = [
             ['cleanup_state' => 'running', 'cleanup_generation' => 'g1'],
             ['cleanup_state' => 'running', 'cleanup_generation' => 'g1'],
@@ -206,20 +238,61 @@ describe('gateway:release:handoff', function (): void {
             'agent_view' => 'restarted',
             'cleanup_paused' => false,
         ])
+            ->and($result['scheduler_drain']['outcome'])->toBe('drained')
+            ->and($result['scheduler_drain']['running'])->toBe([$probe->members[1]])
             ->and($builds->built)->toBe(['gateway'])
             ->and($units->converged)->toBe(['units', 'units'])
             ->and($processes->systemctl())->toBe([
+                "systemctl show -p MainPID --value {$unit}",
+                "sudo systemctl kill --kill-whom=main --signal=SIGTERM {$unit}",
+                "systemctl show -p MainPID --value {$unit}",
+                "systemctl show -p MainPID --value {$unit}",
+                "systemctl show -p MainPID --value {$unit}",
+                "sudo systemctl start {$unit}",
+                "systemctl is-active --quiet {$unit}",
+            ])
+            ->and($probe->cleared)->toBe(0)
+            ->and(array_filter($processes->ran, static fn (array $arguments): bool => in_array('php-fpm8.5', $arguments, true)))->toBe([])
+            ->and($cleanup->calls)->toContain('reconcile', 'resume:r1');
+    });
+
+    it('stops the scheduler only after the drain limit, under the tick lock, and then clears the overlap mutexes', function (): void {
+        $scheduler = handoff_scheduler(handoff_gateway());
+        [$handoff, $processes, , , , $probe] = runtime_handoff(drainSeconds: 0);
+        $processes->mainPids = ['4242'];
+        $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
+
+        $result = $handoff->run();
+        $commands = $processes->systemctl();
+        $stop = array_search("sudo systemctl stop {$unit}", $commands, true);
+        $held = array_map(static fn (bool $free): bool => ! $free, array_slice($processes->tickLockFree, (int) array_search(['sudo', 'systemctl', 'stop', $unit], $processes->ran, true)));
+
+        expect($result['scheduler_drain'])->toMatchArray(['outcome' => 'forced', 'stopped' => [$probe->members[1]]])
+            ->and($stop)->toBeInt()
+            ->and(array_slice($commands, (int) $stop))->toBe([
                 "sudo systemctl stop {$unit}",
                 "sudo systemctl start {$unit}",
                 "systemctl is-active --quiet {$unit}",
             ])
-            ->and(array_filter($processes->ran, static fn (array $arguments): bool => in_array('php-fpm8.5', $arguments, true)))->toBe([])
-            ->and($cleanup->calls)->toContain('reconcile', 'resume:r1');
-
-        // The tick lock is held from the stop until the unit is active, and free again afterwards.
-        $held = array_map(static fn (bool $free): bool => ! $free, $processes->tickLockFree);
-        expect($held)->toBe([true, true, true])
+            ->and($held)->toBe([true, true, true])
+            ->and($probe->cleared)->toBe(1)
             ->and(Cache::lock(GatewaySchedulerHandoff::TickLock, 1)->get())->toBeTrue();
+    });
+
+    it('starts a scheduler that is not running without a drain', function (): void {
+        $scheduler = handoff_scheduler(handoff_gateway());
+        [$handoff, $processes] = runtime_handoff();
+        $processes->mainPids = ['0'];
+        $unit = "orbit-process-{$scheduler->id}-schedule-work.service";
+
+        $result = $handoff->run();
+
+        expect($result['scheduler_drain']['outcome'])->toBe('not_running')
+            ->and($processes->systemctl())->toBe([
+                "systemctl show -p MainPID --value {$unit}",
+                "sudo systemctl start {$unit}",
+                "systemctl is-active --quiet {$unit}",
+            ]);
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {
@@ -248,9 +321,10 @@ describe('gateway:release:handoff', function (): void {
             ->and($cleanup->calls)->not->toContain('reconcile');
     });
 
-    it('refuses to restart the scheduler while a tasks tick holds its lock', function (): void {
-        handoff_scheduler(handoff_gateway());
-        [$handoff, $processes] = runtime_handoff();
+    it('refuses to stop the scheduler after the drain limit while a tasks tick holds its lock', function (): void {
+        $scheduler = handoff_scheduler(handoff_gateway());
+        [$handoff, $processes] = runtime_handoff(drainSeconds: 0);
+        $processes->mainPids = ['4242'];
         $tick = Cache::lock(GatewaySchedulerHandoff::TickLock, 300);
         expect($tick->get())->toBeTrue();
 
@@ -259,7 +333,7 @@ describe('gateway:release:handoff', function (): void {
 
         expect($exception->errorCode)->toBe('gateway.release_scheduler_busy')
             ->and($exception->step)->toBe('handoff')
-            ->and($processes->systemctl())->toBe([]);
+            ->and($processes->systemctl())->not->toContain("sudo systemctl stop orbit-process-{$scheduler->id}-schedule-work.service");
     });
 
     it('fails the handoff when the scheduler unit does not come back', function (): void {

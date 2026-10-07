@@ -62,6 +62,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): ArtisanGatewayReleaseRuntime => new ArtisanGatewayReleaseRuntime(
                 layout: $app->make(GatewayReleaseLayout::class),
                 processes: $app->make(ProcessRunner::class),
+                // The scheduler drain, a forced stop's wait for the tick lock, and the rest of the handoff.
+                timeout: (float) (self::drainSeconds() + 330 + 300),
             ),
         );
         $this->app->bind(GatewayDocumentCleanup::class, ActionGatewayDocumentCleanup::class);
@@ -77,6 +79,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 scheduler: new GatewaySchedulerHandoff(
                     processes: $app->make(ProcessRunner::class),
                     applicationPath: GatewayApplicationPath::resolve(),
+                    drainSeconds: self::drainSeconds(),
                 ),
                 cleanup: new GatewayCleanupHandoff($app->make(GatewayDocumentCleanup::class)),
                 applicationPath: GatewayApplicationPath::resolve(),
@@ -139,5 +142,10 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 recorder: $app->make(GatewayReleaseRecorder::class),
             ),
         );
+    }
+
+    private static function drainSeconds(): int
+    {
+        return max(0, Config::integer('orbit.gateway_releases.scheduler_drain_seconds'));
     }
 }
