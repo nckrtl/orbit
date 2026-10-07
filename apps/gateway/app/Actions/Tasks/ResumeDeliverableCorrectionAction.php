@@ -58,7 +58,7 @@ final readonly class ResumeDeliverableCorrectionAction
             $task = Task::query()->findOrFail($task->id);
             $resume = $task->deliverable_correction_resume;
             if ($resume === null || $resume['state'] !== 'pending' || $task->status !== TaskStatus::Running
-                || self::directionPending($task, $task->parent)) {
+                || self::endedPullRequest($task, $task->parent) || self::directionPending($task, $task->parent)) {
                 return;
             }
             $comment = TaskComment::query()->findOrFail($resume['comment_id']);
@@ -73,7 +73,7 @@ final readonly class ResumeDeliverableCorrectionAction
                 $task->refresh();
                 $group->refresh();
                 if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
-                    || self::directionPending($task, $group)) {
+                    || self::endedPullRequest($task, $group) || self::directionPending($task, $group)) {
                     return;
                 }
                 // The remote metadata commit is keyed too. A lost prepare reply cannot erase a resumed receipt.
@@ -81,7 +81,7 @@ final readonly class ResumeDeliverableCorrectionAction
                 $task->refresh();
                 $group->refresh();
                 if ($task->deliverable_correction_resume !== $resume || $task->status !== TaskStatus::Running
-                    || self::directionPending($task, $group)) {
+                    || self::endedPullRequest($task, $group) || self::directionPending($task, $group)) {
                     return;
                 }
                 // Pi reconciles acceptance with the same key, even when both replies to a send were lost.
@@ -94,7 +94,7 @@ final readonly class ResumeDeliverableCorrectionAction
                 $parent = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
                 $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
                 if ($locked->deliverable_correction_resume !== $resume || TaskExecutionHold::active($parent)
-                    || $locked->status !== TaskStatus::Running) {
+                    || $locked->status !== TaskStatus::Running || self::endedPullRequest($locked, $parent)) {
                     return;
                 }
                 $direction = self::directionPending($locked, $parent);
@@ -145,6 +145,12 @@ final readonly class ResumeDeliverableCorrectionAction
             'caller_node_id' => $resume['caller_node_id'] ?? null, 'caller_ip' => $resume['caller_ip'] ?? null,
             'request_id' => $resume['request_id'] ?? (string) Str::uuid(), 'command' => 'tasks:comment', 'status' => 'completed',
         ]);
+    }
+
+    private static function endedPullRequest(Task $task, Task $group): bool
+    {
+        return RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
+            || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason);
     }
 
     private static function directionPending(Task $task, Task $group): bool

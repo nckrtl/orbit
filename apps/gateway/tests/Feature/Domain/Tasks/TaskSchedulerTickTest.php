@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\CancelTaskCheckAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
@@ -5242,6 +5243,90 @@ it('replays a held direction review from the stored resolution after the flag wr
         ->and($task->fresh()?->resolution_delivered_comment_id)->toBe($comment->id)
         ->and(TaskQuestion::query()->count())->toBe(1)
         ->and(data_get($opening, 'message.text'))->toContain('Follow ADR 0098.');
+});
+
+it('refuses pending correction recovery for either real ended PR reason on scheduler retry', function (string $held): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update(['deliverable_correction_check_id' => 1, 'completion_attempt' => 2]);
+    $comment = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator', 'posted_at' => now()]);
+    app(ResumeDeliverableCorrectionAction::class)->reserve($task, $comment);
+    $pending = $task->fresh()?->deliverable_correction_resume;
+    $driver = new FakeAgentDriver;
+    $driver->observation = new AgentObservation(AgentThreadState::Idle);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['driver' => 'example']);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $receipts = new FakeTaskTurnReceipts([null]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $group->update(['watched_pr_url' => 'https://github.com/example/app/pull/965', 'watched_pr_state' => 'merged']);
+    app(RequestEndedPullRequestAssistanceAction::class)->execute($group);
+    $reason = $group->fresh()?->assistance_reason;
+    expect(RequestEndedPullRequestAssistanceAction::isReason($reason))->toBeTrue();
+    ($held === 'task' ? $group : $task)->update(TaskAssistance::attributes(AssistanceKind::Failure, null, 'Original invalid deliverable hold.'));
+    $taskReason = $task->fresh()?->assistance_reason;
+    $groupReason = $group->fresh()?->assistance_reason;
+    app(TaskExtensionState::class)->enable();
+
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+    expect($task->fresh()?->assistance_reason)->toBe($taskReason)
+        ->and($group->fresh()?->assistance_reason)->toBe($groupReason);
+    app(TaskScheduler::class)->tick();
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+
+    expect($task->fresh()?->deliverable_correction_resume)->toBe($pending)
+        ->and($task->fresh()?->completion_attempt)->toBe(2)
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBeNull();
+    expect($task->fresh()?->assistance_reason)->toBe($taskReason)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason);
+    expect($receipts->prepared)->toBe([]);
+    $noticeKey = $task->fresh()?->ended_pr_notice_key;
+    expect($noticeKey)->not->toBe($pending['key']);
+    expect(array_column($driver->calls, 'key'))->toBe([$noticeKey]);
+})->with(['task', 'group']);
+
+it('preserves a real ended PR hold arriving during correction send before the final guarded commit', function (): void {
+    $group = tick_group();
+    $task = $group->tasks->sole();
+    $task->update(['assistance_requested' => true, 'deliverable_correction_check_id' => 1, 'completion_attempt' => 2]);
+    $comment = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator', 'posted_at' => now()]);
+    app(ResumeDeliverableCorrectionAction::class)->reserve($task, $comment);
+    $pending = $task->fresh()?->deliverable_correction_resume;
+    $driver = new FakeAgentDriver;
+    $driver->observation = new AgentObservation(AgentThreadState::Idle);
+    AgentThread::query()->where('task_group_id', $group->id)->update(['driver' => 'example']);
+    app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
+    $receipts = new FakeTaskTurnReceipts([null]);
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $reason = null;
+    $transactionLevel = DB::transactionLevel();
+    $driver->beforeTurn = function () use ($driver, $group, &$reason, $transactionLevel): void {
+        $driver->beforeTurn = null;
+        expect(DB::transactionLevel())->toBe($transactionLevel);
+        $group->update(['watched_pr_url' => 'https://github.com/example/app/pull/965', 'watched_pr_state' => 'closed']);
+        app(RequestEndedPullRequestAssistanceAction::class)->execute($group->fresh() ?? $group);
+        $reason = $group->fresh()?->assistance_reason;
+    };
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+    $calls = $driver->calls;
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+    app(TaskScheduler::class)->tick();
+
+    expect($task->fresh()?->deliverable_correction_resume)->toBe($pending)
+        ->and($task->fresh()?->completion_attempt)->toBe(2)
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBeNull();
+    expect(RequestEndedPullRequestAssistanceAction::isReason($reason))->toBeTrue();
+    expect($task->fresh()?->assistance_reason)->toBe($reason)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure);
+    $noticeKey = $task->fresh()?->ended_pr_notice_key;
+    expect($noticeKey)->not->toBe($pending['key']);
+    expect(array_column($calls, 'key'))->toBe([$noticeKey, $pending['key']]);
+    expect($driver->calls)->toBe($calls)
+        ->and($receipts->prepared)->toBe(['implementer']);
+    expect(Activity::query()->where('description', 'deliverable correction resumed')->count())->toBe(0);
 });
 
 it('supersedes an uncertain correction after completed direction without erasing the newer real turn or receipt', function (string $failure): void {
