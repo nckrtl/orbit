@@ -24,7 +24,7 @@ Every log entry written during an HTTP request carries that request's `request_i
 
 Gateway log files rotate daily and keep 14 days. `LOG_DAILY_DAYS` changes the count.
 
-Gateway web setup lets Caddy read the regular files and directories under the checkout's `public` directory, also files restored with restrictive permissions. It does not follow symlinks there or change the permissions of other source files. The Gateway `.env` stays at mode `0600`.
+Gateway web setup lets Caddy read the regular files and directories under the checkout's `public` directory, also files restored with restrictive permissions. It does not follow symlinks there or change the permissions of other source files. The Gateway `.env` stays at mode `0600`. In the [release layout](#release-layout), each release gets this access when it is prepared.
 
 ## Preserve a complete state set
 
@@ -67,6 +67,8 @@ sudo tar --acls --xattrs -czpf /root/orbit-backups/gateway-before-update.tar.gz 
 sudo chmod 0600 /root/orbit-backups/gateway-before-update.tar.gz
 sudo tar -tzf /root/orbit-backups/gateway-before-update.tar.gz
 ```
+
+In the release layout, archive `home/orbit/shared/gateway.env` instead of `home/orbit/orbit/apps/gateway/.env`, which is a link there.
 
 Adjust the paths when `ORBIT_HOME` or `DB_DATABASE` differs. Include an external database path and its `-wal` and `-shm` files, as [SQLite WAL default](/solutions/sqlite-wal-default) explains. Pause Gateway timers and external automation too; stopping the web services alone does not stop console writers. Do not copy a live SQLite file without its journal state. Transfer the archive to protected storage and verify that it can be read before changing source.
 
@@ -226,16 +228,82 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:configure
 
 It caches the current release's configuration beside the live cache and renames it into place, so a request never reads half of it. Do not run `php artisan config:cache` in a release: it rewrites the live cache in place. A deploy or rollback caches its target again, so a retained release picks up the edit when it goes current.
 
-## Update source
+## Adopt the release layout
 
-[ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) replaces this in-place procedure with immutable releases that the Gateway builds and switches itself. Until that is built, update the Gateway with the steps in this section.
+A Gateway installed with the [Quickstart](/quickstart) runs from an in-place checkout at `/home/orbit/orbit`. `gateway:release:adopt` converts it into the [release layout](#release-layout) once. Requests keep being served throughout: the checkout directory and the release link swap in one step. After adoption, deploy, roll back, and configure with the release commands. An update in place then fails, because each release is read-only.
 
-Keep requests and automation paused. As `orbit`, fetch the selected release or exact commit and install its locked dependencies:
+### Before you adopt
+
+Check these conditions on the Gateway before you run the command.
+
+- Back up as in [Back up before an update](#back-up-before-an-update).
+- The checkout must be at a commit that has `gateway:release:adopt`. Adoption builds its first release from that commit. An older checkout needs one last [in-place update](#update-in-place-before-adoption).
+- `git status --short --untracked-files=no` in `/home/orbit/orbit` prints nothing. Untracked files, such as `.env` backups, are fine.
+- The disk has room for one more release plus the free-space floor and a database snapshot. One release is about the size of the checkout without `.git`.
+- `python3` is installed. Ubuntu installs it by default. Without it, the swap uses two renames, and the path is missing for the microseconds between them.
+
+### Run adoption
+
+As `orbit`, from the checkout:
+
+```bash
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:adopt
+```
+
+Adoption holds the release lock and:
+
+1. refuses when the checkout has tracked changes, with `gateway.release_adopt_local_changes`;
+2. creates `shared/orbit.git` as a bare clone of the checkout's repository, with the same `origin` and remote branches;
+3. copies `apps/gateway/.env` to `shared/gateway.env`, with any `APP_VERSION` line commented out, so each release reports its own commit;
+4. copies each `apps/gateway/.env.bak*` file to `shared/env-backups/`;
+5. moves `apps/gateway/storage` to `shared/gateway-storage` in one rename and links it back, so files, permissions, and held locks stay as they are;
+6. prepares `releases/<id>` for the checkout's commit;
+7. swaps the checkout directory with a link to that release with `renameat2(RENAME_EXCHANGE)`, and keeps the directory as `/home/orbit/orbit.pre-adopt-<time>`;
+8. hands the runtime over to the release and verifies it, as a deploy does.
+
+The command prints one JSON object with `release`, `sha`, `pre_adopt_path`, `shared`, `switch`, `handoff`, and `verify`. `switch.method` is `exchange`, or `rename` with the gap in `switch.gap_us`. The attempt writes a release record with trigger `adopt` and an Activity entry. Running it again on an adopted Gateway prints `"already": true` and changes nothing.
+
+The kept checkout still holds the original `.env` and backups, so it is a complete way back. It holds secrets: keep its permissions, and remove it once a few releases have verified:
+
+```bash
+rm -rf /home/orbit/orbit.pre-adopt-<time>
+```
+
+### When adoption fails
+
+Each step checks whether it already ran, so after fixing the cause, run the command again.
+
+- A refusal or a failure before the swap leaves the checkout serving. Only `shared/` and `releases/` are new, and the checkout's storage is a link to `shared/gateway-storage`.
+- When the handoff or verification fails, adoption swaps the checkout back, runs the handoff from it, and records `switched_back`.
+- When even that fails, the outcome is `gateway.release_switch_back_failed`. Swap back by hand as `orbit`, then run the handoff from the checkout:
+
+```bash
+cd /home/orbit
+mv -T orbit orbit.adopt-link && mv -T orbit.pre-adopt-<time> orbit && rm orbit.adopt-link
+php /home/orbit/orbit/apps/gateway/artisan gateway:release:handoff
+```
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.release_adopt_local_changes` | The checkout has tracked changes. |
+| `gateway.release_adopt_not_checkout`, `gateway.release_adopt_unsupported` | `/home/orbit/orbit` is not an in-place checkout, or is a link to something other than a release. |
+| `gateway.release_adopt_env_missing`, `gateway.release_adopt_env_conflict` | The checkout has no `.env` file, or `shared/gateway.env` exists with other contents. |
+| `gateway.release_adopt_storage_missing`, `gateway.release_adopt_storage_conflict` | The storage directory is missing, or both it and `shared/gateway-storage` exist. |
+| `gateway.release_adopt_repository_conflict` | `shared/orbit.git` exists without the checkout's commit. |
+| `gateway.release_adopt_conflict` | A link or kept checkout from an earlier attempt is in the way. |
+
+### After adoption
+
+The release directories are read-only, and `bin/bootstrap` refuses to run in a release. `orbit:gateway-web` converges the release link: it keeps `/home/orbit` and `/home/orbit/releases` traversable for Caddy and the shared env file at mode `0600`, and leaves the releases themselves unchanged.
+
+### Update in place before adoption
+
+Use these steps only to bring a checkout that predates `gateway:release:adopt` to a commit that has it. Keep requests and automation paused. As `orbit`, fetch the exact commit and install its locked dependencies:
 
 ```bash
 cd /home/orbit/orbit
 git fetch --tags origin
-git checkout --detach <NEW_RELEASE_TAG_OR_COMMIT>
+git checkout --detach <COMMIT>
 composer --working-dir=apps/cli install --prefer-dist --no-interaction
 composer --working-dir=apps/gateway install --prefer-dist --no-interaction
 composer --working-dir=apps/cli check-platform-reqs
@@ -243,15 +311,10 @@ composer --working-dir=apps/gateway check-platform-reqs
 cd apps/gateway
 php artisan config:clear
 php artisan migrate --force
+php artisan config:cache
 ```
 
-The agent view subscriber, `orbit-agent-view.service`, writes only to its cache files in `ORBIT_HOME/cache/agent-view`, never to the database, so it can keep running during a backup and an update. A backup does not need those files: the view rebuilds within seconds. Within 60 seconds of a source change, it exits and systemd starts it with the new code. [Gateway view](/reference/node-agent#gateway-view) describes it.
-
-The Gateway refuses to start when its cache store cannot hold locks across processes. The error names `CACHE_STORE=file` as the fix. `composer install`, `php artisan config:clear`, and `php artisan optimize:clear` still run, so a stale cached configuration can be cleared after `.env` is fixed.
-
-Read the release notes before migrations. Do not run `composer update`, `composer setup`, `key:generate`, or Gateway bootstrap as a generic update step. Dependency installation uses the committed locks; bootstrap changes machine configuration and needs its own explicit instructions.
-
-If every command succeeds, start the services and verify before resuming automation:
+Do not run `composer update`, `composer setup`, `key:generate`, or Gateway bootstrap as an update step. Then start the services and verify before you resume automation:
 
 ```bash
 sudo systemctl start php8.5-fpm caddy
@@ -261,7 +324,7 @@ apps/cli/orbit node:list
 apps/cli/orbit doctor --json
 ```
 
-Repeat the first application's DNS and HTTPS check from the [Quickstart](/quickstart#open-the-page). Check the actual body, certificate verification, expected records, and stable identities. A migration exit code alone does not prove a working update. Restart `orbit-runtime-hibernator.timer` and other paused automation only after verification. Retain the backup until these checks and a disposable restore succeed.
+`orbit-agent-view.service` exits within 60 seconds of a source change, and systemd starts it with the new code. The Gateway refuses to start when its cache store cannot hold locks across processes; the error names `CACHE_STORE=file` as the fix.
 
 ## Recover a failed update
 
