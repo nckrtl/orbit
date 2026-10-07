@@ -199,7 +199,7 @@ Each agent converge reads the file's hash with `sudo sha256sum` and keeps the se
 
 The converge writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. Doctor then reports `mismatch`, and the next converge repairs it.
 
-One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
+One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 7 minutes, which covers the wait for the Node's update lock below. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
 
 ## Gateway view
 
@@ -316,9 +316,15 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, and deploy the Gateway. Then run `sudo orbit self-update` on each Node. It reads the pin from the Gateway's [desired fleet state](/reference/self-update#desired-fleet-state) and replaces the binary only when it differs from the pin, with the candidate, checksum, owner, mode, and rename steps above. It then restarts `orbit-agent.service` and restores the previous binary when the agent does not stay up.
+To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, and release the Gateway. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) then runs `sudo orbit self-update` on each Node of the rollout set, one at a time. It reads the pin from the Gateway's [desired fleet state](/reference/self-update#desired-fleet-state) and replaces the binary only when it differs from the pin, with the candidate, checksum, owner, mode, and rename steps above. It then restarts `orbit-agent.service` and restores the previous binary when the agent does not stay up.
 
-The converge moves its binary into place under `/run/lock/orbit-self-update.lock`, the lock `orbit self-update` holds, so the two never swap the agent together. It changes no configuration, certificate, secret, or unit; a converge still owns those. Doctor reports each Node that runs another version. [ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) runs `orbit self-update` on every Node after each Gateway release. The agent still only observes.
+The converge holds `/run/lock/orbit-self-update.lock`, the lock `orbit self-update` holds, from the secret check through the agent restart. So it never swaps or restarts the agent while a self-update replaces it or watches its health.
+
+The converge holds the lock across its SSH commands through a transient unit, `orbit-update-lock-<random>`, that waits up to 5 minutes for the lock and keeps it until the converge stops the unit. The unit ends after 30 minutes in any case, so a Gateway process that dies cannot keep the lock. A self-update that keeps the lock longer than 5 minutes fails the converge with `node.update_busy`.
+
+`self-update` changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another version. The agent still only observes.
+
+The agent sends its version with each channel authorization. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `self-update`, and the catch-up visits a Node whose agent reports another version.
 
 ## Failures
 
@@ -356,6 +362,7 @@ Doctor checks the agent in the `node` family on every managed Linux Node.
 | `node.agent_inactive` | The unit exists but is not active. |
 | `node.agent_secret_mismatch` | The secret file is `missing`, or its hash does not match the stored one: `mismatch`. Doctor reads only the hash, and the report shows neither the secret nor a hash. |
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
+| `node.release_lag` | The [fleet rollout](/reference/gateway-recovery#catch-up) is on, and this Node of the rollout set does not run the desired state of the Gateway's commit. |
 
 Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances. Repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
 

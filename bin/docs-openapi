@@ -563,6 +563,7 @@ TAGS = [
     ('node', 'Nodes', 'Machines in the fleet, their roles, access grants, and storage settings.'),
     ('cluster', 'Clusters', 'Groups of Nodes with one Router and one development TLD.'),
     ('firewall', 'Firewall', 'Named UFW rules on one Node.'),
+    ('fleet', 'Fleet rollout', 'The rollout of each verified Gateway release to the managed Nodes, and its catch-up.'),
     ('tool', 'Tools', 'Packages that Orbit installs on a Node through a Tool Manager.'),
     ('metrics', 'Metrics', 'The Prometheus and Grafana role and its exporters.'),
     ('github', 'GitHub App', "The Gateway's own read-only GitHub App and the accounts that installed it."),

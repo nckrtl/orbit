@@ -36,6 +36,7 @@ final class SelfUpdateCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'self-update
         {--allow-downgrade : Install the Gateway\'s CLI release even when it is older than this orbit, or this orbit is not a release}
+        {--allow-downgrade-to= : Allow a downgrade only to this CLI release version, such as 0.4681.0}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -90,7 +91,10 @@ final class SelfUpdateCommand extends GatewayCommand
 
         $version = config('app.version');
         $currentVersion = is_string($version) ? $version : '';
-        $allowDowngrade = $this->option('allow-downgrade') === true;
+        $downgradeTo = $this->option('allow-downgrade-to');
+        // The Gateway passes the exact version after a rollback; any other release still counts as a downgrade.
+        $allowDowngrade = $this->option('allow-downgrade') === true
+            || (is_string($downgradeTo) && $downgradeTo !== '' && $downgradeTo === $state->cli->version);
 
         // The CLI goes last: when its first update turns the plain binary into a link, this process can load no
         // more code from its path.

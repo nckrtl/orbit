@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\AgentView\AgentViewConverger;
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayDocumentCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -22,7 +23,9 @@ use App\Infrastructure\Processes\ProcessRunner;
 use App\Models\Node;
 use App\Models\Process;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Tests\Support\FakeNodeCaddyBuilds;
+use Tests\Support\Fleet\FakeFleetConvergeUnits;
 
 const HANDOFF_APP = '/home/orbit/orbit/apps/gateway';
 
@@ -182,7 +185,7 @@ final class SchedulerDrainProbe
 /**
  * @return array{GatewayRuntimeHandoff, HandoffProcessRunner, FakeDocumentCleanup, FakeNodeCaddyBuilds, RecordingHandoffUnits, SchedulerDrainProbe}
  */
-function runtime_handoff(?string $livePool = null, int $drainSeconds = 5): array
+function runtime_handoff(?string $livePool = null, int $drainSeconds = 5, ?FleetConvergeUnits $fleet = null): array
 {
     $processes = new HandoffProcessRunner;
     $probe = new SchedulerDrainProbe;
@@ -231,6 +234,7 @@ function runtime_handoff(?string $livePool = null, int $drainSeconds = 5): array
                 usleep(20_000);
             },
             idleWaitSeconds: 1,
+            fleet: $fleet,
         ),
         $processes,
         $cleanup,
@@ -372,6 +376,39 @@ describe('gateway:release:handoff', function (): void {
         $probe->pending = true;
 
         expect($handoff->run()['opcache']['outcome'])->toBe('pending');
+    });
+
+    it('installs the fleet rollout units while it hands over what serves, and only warns when that fails', function (): void {
+        handoff_scheduler(handoff_gateway());
+        $fleet = new FakeFleetConvergeUnits;
+        [$handoff] = runtime_handoff(fleet: $fleet);
+
+        $handoff->serve();
+
+        expect($fleet->converged)->toBe(1);
+
+        $failing = new class implements FleetConvergeUnits
+        {
+            public function converge(): void
+            {
+                throw new RuntimeException('sudo refused');
+            }
+
+            public function start(): bool
+            {
+                return false;
+            }
+
+            public function startLater(): bool
+            {
+                return false;
+            }
+        };
+        Log::spy();
+        [$handoff] = runtime_handoff(fleet: $failing);
+
+        expect($handoff->serve()['agent_view'])->toBe('restarted');
+        Log::shouldHaveReceived('warning')->withArgs(static fn (string $message): bool => str_contains($message, 'fleet rollout units'))->once();
     });
 
     it('reloads FPM only when the rendered pool differs from the live pool', function (): void {

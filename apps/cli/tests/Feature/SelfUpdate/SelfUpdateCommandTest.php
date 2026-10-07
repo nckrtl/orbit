@@ -228,6 +228,28 @@ describe('self-update CLI step', function (): void {
             ->and(self_update_commands($this))->toBe(['curl cli-v0.4681.0/SHA256SUMS']);
     });
 
+    it('allows a downgrade only to the version --allow-downgrade-to names', function (): void {
+        config()->set('app.version', '0.4700.0');
+        MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
+        fake_self_update_processes($this);
+
+        expect(self_update_step(run_self_update(['--allow-downgrade-to' => '0.4600.0'], exitCode: 1), 'cli')['error']['code'])->toBe('self_update.downgrade_refused');
+
+        MockClient::destroyGlobal();
+        MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
+
+        expect(self_update_step(run_self_update(['--allow-downgrade-to' => '0.4681.0']), 'cli')['outcome'])->toBe('updated')
+            ->and(self_update_bin($this))->toContain('orbit -> orbit-0.4681.0');
+    });
+
+    it('still refuses a short commit version as not a release', function (): void {
+        config()->set('app.version', '12715ff83047');
+        MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
+        fake_self_update_processes($this);
+
+        expect(self_update_step(run_self_update(exitCode: 1), 'cli')['error']['code'])->toBe('self_update.version_unknown');
+    });
+
     it('refuses a downgrade unless it is allowed', function (): void {
         config()->set('app.version', '0.4700.0');
         MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
@@ -247,6 +269,19 @@ describe('self-update CLI step', function (): void {
             ->and(self_update_step($allowed, 'cli')['before']['version'])->toBe('0.4700.0')
             ->and(self_update_step($allowed, 'cli')['after']['version'])->toBe('0.4681.0')
             ->and(file_get_contents($this->machine.'/bin/orbit'))->toBe(self_update_release_bytes('orbit-0.4681.0-linux-x86_64'));
+    });
+
+    it('updates a pre-release build that reports its commit, and keeps it', function (): void {
+        config()->set('app.version', '12715ff83047c0e51f4b86618779b637b040471f');
+        MockClient::global(gateway_fixture_mock('gateway/self-update/available'));
+        fake_self_update_processes($this);
+
+        $result = run_self_update();
+
+        expect(self_update_step($result, 'cli'))->toMatchArray(['outcome' => 'updated'])
+            ->and(self_update_step($result, 'cli')['before']['version'])->toBe('12715ff83047c0e51f4b86618779b637b040471f')
+            ->and(self_update_bin($this))->toBe(['orbit -> orbit-0.4681.0', 'orbit-0.4681.0', 'orbit.orbit-previous'])
+            ->and(file_get_contents($this->machine.'/bin/orbit.orbit-previous'))->toBe(SELF_UPDATE_OLD_BINARY);
     });
 
     it('treats a build that is not a release like a downgrade', function (): void {

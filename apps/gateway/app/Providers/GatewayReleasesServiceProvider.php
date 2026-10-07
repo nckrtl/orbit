@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
 use App\Domain\AgentView\AgentViewConverger;
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayDocumentCleanup;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
@@ -122,6 +123,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 cleanup: new GatewayCleanupHandoff($app->make(GatewayDocumentCleanup::class)),
                 applicationPath: GatewayApplicationPath::resolve(),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
+                fleet: $app->make(FleetConvergeUnits::class),
             ),
         );
         $this->app->singleton(
@@ -207,6 +209,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 keptReleases: max(1, Config::integer('orbit.gateway_releases.keep')),
                 retry: $app->make(GatewayReleaseRetry::class),
                 guard: $app->make(GatewayReleaseGuard::class),
+                fleet: $app->make(FleetConvergeUnits::class),
             ),
         );
         $this->app->bind(

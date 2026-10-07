@@ -118,7 +118,7 @@ Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a
 
 ### One update at a time
 
-The command holds a lock while it runs: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds and then fails with `self_update.busy`. The Gateway's [agent converge](/reference/node-agent#install-and-upgrade) moves a new agent into place under the same lock, so the two never swap the agent at the same time.
+The command holds a lock while it runs: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds and then fails with `self_update.busy`. The Gateway's [agent converge](/reference/node-agent#install-and-upgrade) holds the same lock from its secret check through the agent restart, and the [fleet rollout](/reference/gateway-recovery#one-node) holds it for its CLI install and footprint steps. So a Gateway step never swaps or restarts the agent while a self-update replaces it or watches its health. Those Gateway steps wait up to 300 seconds for the lock.
 
 Each candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
 
@@ -134,7 +134,8 @@ The CLI step decides from the running binary, the release status, and the versio
 | The CLI release is `unavailable` | `skipped`, with the Gateway's reason |
 | No release binary exists for this platform | `skipped`, reason `platform_unsupported` |
 | The binary already has the release's SHA-256 | `unchanged` |
-| The release is older than this `orbit`, or this `orbit` is not a release | Refused with `self_update.downgrade_refused` or `self_update.version_unknown`, unless `--allow-downgrade` is passed |
+| This `orbit` is a pre-release build that reports its full 40-character commit instead of `0.N.0` | Updated like an older release. The old file is kept as `orbit.orbit-previous` |
+| The release is older than this `orbit`, or this `orbit` is another build that is not a release | Refused with `self_update.downgrade_refused` or `self_update.version_unknown`, unless `--allow-downgrade` is passed, or `--allow-downgrade-to` names the release's exact version |
 | Otherwise | The release is installed: `updated` |
 
 Versions compare by `N`, the commit count. A binary with the release's version but another SHA-256 is replaced, so a damaged binary is repaired.

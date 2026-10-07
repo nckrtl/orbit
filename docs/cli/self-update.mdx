@@ -19,12 +19,13 @@ The command accepts `--json`.
 ## orbit self-update
 
 ```bash
-orbit self-update [--allow-downgrade] [--json]
+orbit self-update [--allow-downgrade] [--allow-downgrade-to=<version>] [--json]
 ```
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--allow-downgrade` | off | Install the Gateway's CLI release even when it is older than this `orbit`, or when this `orbit` is not a release build. |
+| `--allow-downgrade-to=<version>` | none | Allow that downgrade only when the Gateway's CLI release is exactly this version, such as `0.4681.0`. The [fleet rollout](/reference/gateway-recovery#one-node) passes it after a Gateway rollback. |
 
 ```bash
 orbit self-update

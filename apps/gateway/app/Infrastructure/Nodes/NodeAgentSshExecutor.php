@@ -33,9 +33,10 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
     /**
      * How long one converge may hold the Node's agent lock. A converge that crashes without releasing
      * it, such as a PHP-FPM worker killed at `request_terminate_timeout`, blocks the Node's next agent
-     * converge for at most this long.
+     * converge for at most this long. It covers the wait for the Node's update lock, which a self-update
+     * holds for up to {@see NodeUpdateLock::WaitSeconds} seconds.
      */
-    private const int LockSeconds = 240;
+    private const int LockSeconds = 420;
 
     /** How long the agent download may take to connect, and in total, so one step stays inside the lock term. */
     private const int DownloadConnectSeconds = 20;
@@ -64,6 +65,8 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         private ManagedUserAccountResolver $accounts,
         private StorageRootResolver $storageRoots,
         private NodeSettingsNormalizer $nodeSettings,
+        /** The Node's update lock, which `orbit self-update` also holds. */
+        private NodeUpdateLock $updateLock,
         private ?NodeLocks $locks = null,
         /** How long a converge waits for another converge of the same Node agent. */
         private int $lockWaitSeconds = 120,
@@ -242,23 +245,31 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         // applies the final one, so the directory keeps the secret's candidate from other users (ADR 0155).
         $this->run($node, new RemoteCommand(['sudo', 'install', '-d', '-o', 'root', '-g', 'root', '-m', '0700', '/etc/orbit/agent']), 'agent.install_failed');
         $this->holdLock($lock);
-        $hash = $this->convergeSecret($node);
-        $changed = $hash->written;
-        $this->holdLock($lock);
-        $changed = $this->installBinary($node, $checksum, $architecture, fn () => $this->holdLock($lock)) || $changed;
-        $this->holdLock($lock);
-        $changed = $this->publishFile($node, NodeAgentFootprint::ConfigurationPath, $configuration, 0644) || $changed;
-        $changed = $this->publishFile($node, NodeAgentFootprint::CertificatePath, $certificate, 0644) || $changed;
-        $changed = $this->publishFile($node, NodeAgentFootprint::UnitPath, $unit, 0644) || $changed;
-        $this->closeInstanceEnvironments($node, $root);
 
-        $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), 'agent.install_failed');
+        // From the secret through the restart, the converge holds the Node's update lock, so `orbit self-update`
+        // never swaps the agent or watches its health while this converge changes or restarts it.
+        $hash = $this->updateLock->run($node, function () use ($lock, $node, $checksum, $architecture, $root, $configuration, $certificate, $unit): AgentSecretHash {
+            $this->holdLock($lock);
+            $hash = $this->convergeSecret($node);
+            $changed = $hash->written;
+            $this->holdLock($lock);
+            $changed = $this->installBinary($node, $checksum, $architecture, fn () => $this->holdLock($lock)) || $changed;
+            $this->holdLock($lock);
+            $changed = $this->publishFile($node, NodeAgentFootprint::ConfigurationPath, $configuration, 0644) || $changed;
+            $changed = $this->publishFile($node, NodeAgentFootprint::CertificatePath, $certificate, 0644) || $changed;
+            $changed = $this->publishFile($node, NodeAgentFootprint::UnitPath, $unit, 0644) || $changed;
+            $this->closeInstanceEnvironments($node, $root);
 
-        $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'enable', '--now', NodeAgentFootprint::Service]), 'agent.install_failed');
+            $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'daemon-reload']), 'agent.install_failed');
 
-        if ($changed) {
-            $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'restart', NodeAgentFootprint::Service]), 'agent.install_failed');
-        }
+            $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'enable', '--now', NodeAgentFootprint::Service]), 'agent.install_failed');
+
+            if ($changed) {
+                $this->run($node, new RemoteCommand(['sudo', 'systemctl', 'restart', NodeAgentFootprint::Service]), 'agent.install_failed');
+            }
+
+            return $hash;
+        });
 
         $this->holdLock($lock);
         $this->recordSecret($node, $hash->value);
@@ -418,10 +429,8 @@ final readonly class NodeAgentSshExecutor implements NodeAgentRuntime
         $this->run($node, new RemoteCommand(['sudo', 'chown', 'root:root', '--', $candidate]), 'agent.install_failed');
         $this->run($node, new RemoteCommand(['sudo', 'chmod', '0755', '--', $candidate]), 'agent.install_failed');
         $beforeSwap();
-        $this->run($node, new RemoteCommand([
-            'sudo', 'flock', '--timeout', '120', NodeAgentFootprint::UpdateLockPath,
-            'mv', '-fT', '--', $candidate, NodeAgentFootprint::BinaryPath,
-        ]), 'agent.install_failed');
+        // The caller holds the Node's update lock ({@see NodeUpdateLock}) through the restart.
+        $this->run($node, new RemoteCommand(['sudo', 'mv', '-fT', '--', $candidate, NodeAgentFootprint::BinaryPath]), 'agent.install_failed');
 
         return true;
     }

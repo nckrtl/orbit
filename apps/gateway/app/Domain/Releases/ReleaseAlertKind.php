@@ -11,6 +11,8 @@ enum ReleaseAlertKind: string
     case ReleaseStalled = 'release_stalled';
     case ReleaseCleanupPaused = 'release_cleanup_paused';
     case RolloutHalted = 'rollout_halted';
+    case RolloutStalled = 'rollout_stalled';
+    case RolloutCaddySkipped = 'rollout_caddy_skipped';
 
     public function label(): string
     {
@@ -20,6 +22,8 @@ enum ReleaseAlertKind: string
             self::ReleaseStalled => 'Release stalled',
             self::ReleaseCleanupPaused => 'Document cleanup paused after release',
             self::RolloutHalted => 'Rollout halted',
+            self::RolloutStalled => 'Rollout stalled',
+            self::RolloutCaddySkipped => 'Rollout kept a live Caddyfile',
         };
     }
 }

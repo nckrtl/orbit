@@ -155,9 +155,7 @@ The binary contract has these limits.
 - Only Linux x86_64, Linux arm64, and macOS on Apple silicon are built. Windows and Intel Macs are not.
 - The binaries are not notarized. The macOS binary keeps the ad-hoc signature of PHPacker's PHP build. A download with `curl` gets no quarantine flag and runs; a browser download needs `xattr -d com.apple.quarantine`.
 - `SHA256SUMS` comes from the same release, so it detects a damaged download, not a forged release.
-- Orbit does not install the binary on Nodes, track which Node runs which version, or roll out upgrades.
-
-[ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) lifts the last limit: the Gateway installs the CLI on managed Nodes and runs `orbit self-update` on each Node after a release.
+- The Gateway installs the binary only on the Nodes of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order), as `/usr/local/bin/orbit-<version>` behind the `/usr/local/bin/orbit` link that `orbit self-update` also switches ([Orbit CLI](/reference/node-provisioning#orbit-cli)). Operator machines update themselves with `orbit self-update`.
 
 ## Why it works this way
 

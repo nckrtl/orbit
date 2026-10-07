@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Actions\GatewayReleases;
 
+use App\Data\Fleet\FleetRolloutData;
 use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Models\FleetRollout;
 use App\Models\GatewayRelease;
 
 /**
@@ -16,7 +18,15 @@ final readonly class ShowGatewayReleaseAction
     /** @return array<string, mixed> */
     public function execute(string $release): array
     {
-        return $this->find($release)->payload();
+        $row = $this->find($release);
+        $rollout = FleetRollout::query()->where('gateway_release_id', $row->id)->first()
+            ?? FleetRollout::query()->where('commit', $row->sha)->latest('id')->first();
+
+        // The fleet rollout that followed this release (ADR 0202), with each Node's result.
+        return [
+            ...$row->payload(),
+            'fleet_rollout' => $rollout instanceof FleetRollout ? FleetRolloutData::fromModel($rollout)->toArray() : null,
+        ];
     }
 
     public function find(string $release): GatewayRelease

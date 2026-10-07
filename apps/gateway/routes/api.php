@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\FleetFirewallRulesController;
+use App\Http\Controllers\Api\FleetRolloutsController;
 use App\Http\Controllers\Api\GatewayDesiredFleetStatesController;
 use App\Http\Controllers\Api\GatewayReleaseAutomationController;
 use App\Http\Controllers\Api\GatewayReleasesController;
@@ -40,6 +41,7 @@ use App\Http\Controllers\Api\InstanceTransfersController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeExcludedProjectsController;
+use App\Http\Controllers\Api\NodeFootprintsController;
 use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
@@ -225,6 +227,13 @@ Route::prefix('v1')->group(function (): void {
             ->name('doctor');
         Route::get('nodes/{node}', [NodesController::class, 'show'])
             ->name('node:show');
+        Route::post('nodes/{node}/converge', [NodeFootprintsController::class, 'converge'])
+            ->whereNumber('node')
+            ->name('node:converge');
+        Route::get('fleet/rollout', [FleetRolloutsController::class, 'show'])
+            ->name('fleet:rollout:status');
+        Route::post('fleet/rollout/resume', [FleetRolloutsController::class, 'resume'])
+            ->name('fleet:rollout:resume');
         Route::get('nodes/{node}/roles', [NodeRolesController::class, 'index'])
             ->whereNumber('node')
             ->name('node:role:list');

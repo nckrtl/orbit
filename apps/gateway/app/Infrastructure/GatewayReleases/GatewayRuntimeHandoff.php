@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\GatewayReleases;
 
 use App\Domain\AgentView\AgentViewConverger;
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
@@ -20,6 +21,7 @@ use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Models\Node;
 use Closure;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
@@ -75,6 +77,7 @@ final readonly class GatewayRuntimeHandoff
         ?Closure $fpmConnections = null,
         ?Closure $sleep = null,
         private int $idleWaitSeconds = 60,
+        private ?FleetConvergeUnits $fleet = null,
     ) {
         $this->readLivePool = $readLivePool ?? static fn (string $path): string|false => @file_get_contents($path);
         $this->resetOpcache = $resetOpcache ?? static fn (string $script, string $query): string => new FpmScriptRequest()->request($script, $query);
@@ -114,6 +117,7 @@ final readonly class GatewayRuntimeHandoff
             $this->agentView->converge();
             $this->releaseUnits->converge();
         });
+        $this->fleetUnits();
 
         return [
             'caddy' => $caddy,
@@ -148,6 +152,20 @@ final readonly class GatewayRuntimeHandoff
             // Last, after verify: the reset may wait up to a minute for the pools to go idle.
             'opcache' => $this->opcache(),
         ];
+    }
+
+    /**
+     * Installs the fleet rollout units of this release. A failure only logs a warning: the fleet never
+     * holds back or rolls back a Gateway release (ADR 0202), and the next handoff or
+     * `orbit:gateway-web` installs them again.
+     */
+    private function fleetUnits(): void
+    {
+        try {
+            $this->fleet?->converge();
+        } catch (Throwable $exception) {
+            Log::warning('The fleet rollout units could not be installed.', ['error' => $exception->getMessage()]);
+        }
     }
 
     private function gateway(): Node

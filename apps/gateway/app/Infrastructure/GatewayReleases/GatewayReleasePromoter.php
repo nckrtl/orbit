@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\GatewayReleases;
 
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
+use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
@@ -33,6 +35,9 @@ final readonly class GatewayReleasePromoter
     /** The default number of prepared releases kept, newest first, besides the current and previous one. */
     public const int KeptReleases = 5;
 
+    /** The command `orbit-fleet-converge.service` runs, relative to a release's Gateway application. */
+    public const string FleetCommand = 'app/Console/Commands/FleetConvergeCommand.php';
+
     public function __construct(
         private GatewayReleaseLayout $layout,
         private GatewayReleaseSwitcher $switcher,
@@ -46,6 +51,7 @@ final readonly class GatewayReleasePromoter
         private GatewayReleaseGuard $guard,
         private int $keptReleases = self::KeptReleases,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
+        private ?FleetConvergeUnits $fleet = null,
     ) {}
 
     /**
@@ -128,6 +134,7 @@ final readonly class GatewayReleasePromoter
         );
         $this->record($release, $record);
         $this->prune($id, $previous);
+        $this->followFleet($id, $sha, $phases['verify']);
 
         return $release;
     }
@@ -276,7 +283,33 @@ final readonly class GatewayReleasePromoter
         );
     }
 
-    /** Keeps the newest releases plus the current and the previous one, whatever their age. */
+    /**
+     * The fleet follows a verified release (ADR 0202). The rollout runs in its own unit from the new release, and
+     * starting it never fails or rolls back this release. It starts only when the release has a desired fleet
+     * state: the Gateway serves the release's exact commit, not `dev`, and the release ships the rollout command.
+     * Adopt's phase 1 never comes here; it records its own outcome.
+     *
+     * @param  array<string, mixed>  $verify
+     */
+    private function followFleet(string $id, string $sha, array $verify): void
+    {
+        if (! $this->fleet instanceof FleetConvergeUnits) {
+            return;
+        }
+
+        $version = is_string($verify['version'] ?? null) ? strtolower(trim($verify['version'])) : '';
+        $exact = GatewayReleaseCommit::isSha($sha)
+            && ($version === strtolower($sha) || $version === GatewayReleaseCommit::id($sha));
+
+        if (! $exact || ! is_file($this->layout->releaseApplicationPath($id).'/'.self::FleetCommand)) {
+            Log::info('The fleet rollout does not follow this release: it has no desired fleet state.', ['release' => $id, 'version' => $version]);
+
+            return;
+        }
+
+        $this->fleet->start();
+    }
+
     /**
      * Switches the web app to the release's build. A deploy fails without that build. A rollback is often an
      * emergency, so it installs a missing build from CI first, and when CI no longer has it, keeps the web app as it
@@ -310,6 +343,7 @@ final readonly class GatewayReleasePromoter
         }
     }
 
+    /** Keeps the newest releases plus the current and the previous one, whatever their age. */
     private function prune(string $current, ?string $previous): void
     {
         $ids = $this->layout->retainedReleaseIds();

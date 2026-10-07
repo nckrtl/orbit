@@ -16,6 +16,7 @@ use App\Domain\Clusters\ActiveTldScopeGuard;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Firewall\FirewallOperationException;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Fleet\NodeCliConvergence;
 use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Metrics\ExporterDegradationRepository;
 use App\Domain\Metrics\MetricsFleetReconcileException;
@@ -545,6 +546,9 @@ final readonly class ProvisionNodeAction
 
                 throw $failure;
             }
+
+            // The Orbit CLI on a Node of the rollout set (ADR 0202). Best effort: the fleet catch-up retries it.
+            app(NodeCliConvergence::class)->converge($node);
         }
 
         $result = $node->refresh()->load('roles');
