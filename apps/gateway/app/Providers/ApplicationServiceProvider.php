@@ -59,6 +59,7 @@ use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
@@ -840,6 +841,7 @@ final class ApplicationServiceProvider extends ServiceProvider
                 hibernator: app(RuntimeHibernatorConverger::class),
                 agentView: app(AgentViewConverger::class),
                 releaseUnits: app(GatewayReleaseUnitConverger::class),
+                fleet: app(FleetConvergeUnits::class),
             ),
         );
         $this->app->singleton(

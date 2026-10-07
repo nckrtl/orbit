@@ -1,0 +1,9 @@
+Resuming fleet rollout...
+
+┌  Resume fleet rollout
+│
+├  ● Resuming fleet rollout
+│
+└  Operation failed.
+
+No fleet rollout is halted.

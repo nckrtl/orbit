@@ -1,0 +1,9 @@
+Converging Node footprint...
+
+┌  Converge Node footprint
+│
+├  ● Converging Node footprint
+│
+└  Operation failed.
+
+Only an active, managed Linux Node has a Gateway-rendered footprint.

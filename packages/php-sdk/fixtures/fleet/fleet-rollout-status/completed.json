@@ -1,0 +1,121 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest",
+    "route": "GET /api/v1/fleet/rollout",
+    "status": 200,
+    "body": {
+        "data": {
+            "enabled": true,
+            "status": "completed",
+            "desired_commit": "0123456789abcdef0123456789abcdef01234567",
+            "rollout": {
+                "id": 1,
+                "release": null,
+                "commit": "0123456789abcdef0123456789abcdef01234567",
+                "status": "completed",
+                "halted_node": null,
+                "error_code": null,
+                "message": null,
+                "alert": {
+                    "kind": "rollout_halted",
+                    "request_id": "request-1",
+                    "activity_id": 7,
+                    "problem": {
+                        "outcome": "done"
+                    },
+                    "webhook": {
+                        "outcome": "skipped",
+                        "reason": "not_configured"
+                    }
+                },
+                "desired_state": {
+                    "commit": "0123456789abcdef0123456789abcdef01234567",
+                    "cli": {
+                        "status": "available",
+                        "reason": null,
+                        "version": "0.4681.0",
+                        "tag": "cli-v0.4681.0",
+                        "checksums_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS",
+                        "assets": [
+                            {
+                                "platform": "linux-x86_64",
+                                "name": "orbit-0.4681.0-linux-x86_64",
+                                "url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/orbit-0.4681.0-linux-x86_64",
+                                "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+                            }
+                        ]
+                    },
+                    "agent": {
+                        "version": "0.3.0",
+                        "assets": [
+                            {
+                                "platform": "linux-x86_64",
+                                "name": "orbit-agent-0.3.0-linux-x86_64",
+                                "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64",
+                                "sha256": "f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a"
+                            },
+                            {
+                                "platform": "linux-aarch64",
+                                "name": "orbit-agent-0.3.0-linux-aarch64",
+                                "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-aarch64",
+                                "sha256": "84306df202904277c6f6cd78d4050fae97e54c3e515a2ad09585dd5a5e568811"
+                            }
+                        ]
+                    },
+                    "footprints": {
+                        "app-dev": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9",
+                        "app-prod": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9"
+                    }
+                },
+                "nodes": [
+                    {
+                        "node_id": 2,
+                        "node": "app-dev",
+                        "position": 1,
+                        "outcome": "skipped",
+                        "step": "self-update",
+                        "error_code": "fleet.self_update_failed",
+                        "message": "self-update failed on app-dev",
+                        "evidence": {
+                            "exit_code": 1
+                        },
+                        "cli_version": null,
+                        "agent_version": null,
+                        "footprint_digest": null,
+                        "attempts": 1,
+                        "started_at": "2026-10-07T12:00:00+00:00",
+                        "finished_at": "2026-10-07T12:00:00+00:00"
+                    },
+                    {
+                        "node_id": 3,
+                        "node": "app-prod",
+                        "position": 2,
+                        "outcome": "converged",
+                        "step": null,
+                        "error_code": null,
+                        "message": null,
+                        "evidence": null,
+                        "cli_version": "0.4681.0",
+                        "agent_version": "0.3.0",
+                        "footprint_digest": "32e0a361717ab14b662bfc022d9d73402ae58bcda9dafca0265e63767307cba9",
+                        "attempts": 1,
+                        "started_at": "2026-10-07T12:00:00+00:00",
+                        "finished_at": "2026-10-07T12:00:00+00:00"
+                    }
+                ],
+                "started_at": "2026-10-07T12:00:00+00:00",
+                "finished_at": "2026-10-07T12:00:00+00:00"
+            },
+            "excluded": [
+                {
+                    "node_id": 1,
+                    "node": "gateway",
+                    "reason": "gateway"
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

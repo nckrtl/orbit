@@ -275,6 +275,20 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/fleet.mdx",
+            "title": "fleet",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/gateway.mdx",
             "title": "gateway",
             "kind": "product",
@@ -1151,9 +1165,7 @@
                 "Node",
                 "Project"
             ],
-            "governing_adrs": [
-                "0202"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/cli-command-vocabulary.md",
@@ -1434,12 +1446,15 @@
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Schedule",
                 "Task",
-                "Task definition"
+                "Task definition",
+                "Tool"
             ],
             "governing_adrs": [
-                "0201"
+                "0201",
+                "0202"
             ]
         },
         {
@@ -1843,9 +1858,7 @@
                 "Task",
                 "Tool"
             ],
-            "governing_adrs": [
-                "0202"
-            ]
+            "governing_adrs": []
         },
         {
             "path": "docs/reference/node-provisioning.md",

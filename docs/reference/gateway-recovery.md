@@ -1,15 +1,15 @@
 ---
 title: "Update and recover a Gateway"
-description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, find the request logs, and receive release alerts."
+description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, find the request logs, receive release alerts, and follow the fleet rollout."
 covers:
   - apps/gateway/app/{Domain,Infrastructure}/Releases/**
-  - apps/gateway/config/app.php
-  - apps/gateway/config/logging.php
+  - apps/gateway/config/{app,logging}.php
   - apps/gateway/app/Infrastructure/Logging/**
   - apps/gateway/app/Domain/Gateway/GatewayCacheStore.php
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
+  - apps/gateway/{app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
 ---
 
 # Update and recover a Gateway
@@ -254,6 +254,8 @@ Each command ran to its end and released its own overlap lock, so the handoff cl
 The drain waits at most `ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS` (default 600). After that limit, the handoff takes the `tasks:tick` lock and stops the unit, which ends what still runs. It then clears the schedule's overlap locks with `schedule:clear-cache`, because the stopped commands cannot release them, and starts the unit. The release record's `handoff.scheduler_drain` shows `outcome` (`drained`, `forced`, or `not_running`), `waited_ms`, the commands that were `running` when the drain began, and, after a forced stop, the commands it `stopped`.
 
 The new scheduler pauses document cleanup when it starts. The handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. When the report has differences or resume is refused, cleanup stays paused. The release record then has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release continues.
+
+The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning.
 
 When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `cleanup`, `cleanup_error_code`, `agent_view`, and `cleanup_paused`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 
@@ -580,6 +582,8 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
+| `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for its CLI release. The rollout does not halt |
+| `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 
 Every alert names its subject, a summary, and an optional evidence link. The summary passes through the Gateway log redactor and is cut at 1,000 characters. A field outside these limits is a bug in the calling command, which refuses it before it records anything.
 
@@ -649,3 +653,141 @@ The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with H
 | `failed` | `error` | Any other failure |
 
 The body serves two kinds of receivers. A receiver that verifies the signature reads the typed fields, such as an agent's intake webhook. A Slack incoming webhook shows `text` and ignores the signature, because its URL is the credential. The Gateway still needs a secret to send, so set any random value for such a receiver.
+
+## Fleet rollout
+
+After each verified Gateway release, the Gateway brings every managed workload Node to the same release, one Node at a time ([ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update)). A fleet failure never rolls the Gateway back. [`fleet`](/cli/fleet) shows and resumes the rollout.
+
+### Turn it on
+
+The rollout is off until you set `ORBIT_FLEET_ROLLOUT=true` in the Gateway's environment. While it is off, `orbit-fleet-converge.service` exits at once, and Doctor reports no `node.release_lag`. `fleet:rollout:status` shows `Rollout off`.
+
+| Variable | Default | Effect |
+| --- | --- | --- |
+| `ORBIT_FLEET_ROLLOUT` | `false` | Run rollouts and the catch-up |
+| `ORBIT_FLEET_ROLLOUT_ORDER` | empty | Node names, comma-separated, that go first, in this order. The other Nodes follow in the default order. It never adds or removes a Node |
+
+### Units
+
+`php artisan orbit:gateway-web` and the [runtime handoff](#runtime-handoff) of each release install two units through local `sudo`. A failed install in the handoff only logs a warning; it never fails the release.
+
+| Unit | Work |
+| --- | --- |
+| `orbit-fleet-converge.service` | A oneshot that runs `php artisan orbit:fleet-converge` as `orbit` from the current release. It never runs inside PHP-FPM or the scheduler |
+| `orbit-fleet-converge.timer` | Starts the service 5 minutes after its last run ends, for the catch-up |
+
+After a release is recorded `verified`, the release command runs `sudo systemctl start --no-block orbit-fleet-converge.service` and returns. The service runs the new release's code, so it resolves the desired state of the commit that now serves. A refused start only logs a warning; the timer starts the service within 5 minutes.
+
+The release command starts the service only for a release with a desired fleet state: verify saw the Gateway serve the release's exact commit, and the release ships `orbit:fleet-converge`. Phase 1 of [adopt](#adopt-the-release-layout) never starts it. Its `verified` record only shows that the Gateway serves, often as `dev`, so a rollout never follows that record alone. The rollout follows the phase 2 deploy.
+
+A run that is still busy when a newer release goes current does not take the start; systemd joins it to the running job. So before the run plans and before each Node, it compares the release directory that the current path links to with the directory it runs from. When they differ, the run stops, visits no further Node, and asks systemd for a fresh run 15 seconds later with `sudo systemd-run --on-active=15`. A run never applies an older desired state than the current one. It compares directories, not versions, so a leftover `APP_VERSION` never makes it restart over and over.
+
+### Rollout set and order
+
+The rollout visits a Node when all of these hold:
+
+- it is `active` and runs Linux;
+- the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
+- it holds at least one active role other than `gateway`;
+- it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
+- its `/usr/local/bin/orbit` is not a CLI that Orbit did not install.
+
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. `fleet:rollout:status` lists every Node it leaves out, with the reason `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
+
+A Node leaves the rollout set as `foreign_cli` when the [CLI install](/reference/node-provisioning#orbit-cli) finds a link, a script, or another program at `/usr/local/bin/orbit`. That visit is `skipped`, never `failed`, and Doctor reports `node.cli_foreign`. Every later run probes the Node and, when it answers, inspects the path again, so the Node rejoins once an operator moved the file aside.
+
+The order goes lowest risk first. Each role has a group. A Node with several roles goes in the latest group of its roles, so it waits until every lower-risk Node is done. Inside a group, the Node ID decides.
+
+| Group | Roles |
+| --- | --- |
+| 1 | `app-dev` |
+| 2 | `metrics`, `analytics` |
+| 3 | `database`, `websocket`, `vpn`, `router` |
+| 4 | `app-prod`, `ingress` |
+
+The ADR also names `agent` (group 1) and `s3` (group 2). Orbit has no such roles yet, and the groups are ready for them.
+
+### Desired state
+
+One run resolves the desired state of the commit the Gateway serves: the CLI release `cli-v0.N.0` with the SHA-256 of each binary, the agent pin with the SHA-256 of each binary, and the footprint digest of each Node. A footprint digest covers only what Orbit renders from its own code and pins, never a user's sites, Routes, or DNS records. It stores the state on a rollout record for that commit. The record belongs to the commit's `verified` release record, and [`gateway:release:show`](#deploy-a-release) shows it under `fleet_rollout`, with each Node's result.
+
+A Gateway in the release layout rolls out only a commit whose release record is `verified`. A run during a release, before the record exists, does nothing (`release_unverified`). When the configured layout cannot be read, or its link names no complete release, the run rolls out nothing (`release_layout_unreadable`). An in-place Gateway, whose current path is a checkout, has no release records, and its running commit is the desired state. A Gateway version that is not a commit, such as `dev`, rolls out nothing.
+
+CI publishes the CLI release a few minutes after the commit's checks pass, and the Gateway usually deploys the commit first. Until the release exists, the rollout is `waiting` and changes nothing on any Node. Once the release appears, the catch-up starts the sequential visit, which brings the footprint and the CLI to each Node together, with its verify and halt. A rollout that waits longer than 2 hours raises `rollout_stalled` once: CI most likely never published the release. A Node whose `orbit self-update` reports the release as pending is `waiting` too.
+
+### One Node
+
+For each Node, the run takes the Node's role lock, the lock every role converge takes, and runs these steps. The `cli` and `footprint` steps also hold the Node's update lock, `/run/lock/orbit-self-update.lock`; `self-update` takes that lock itself, in between. So a Gateway step and a self-update never run on one Node at the same time. A self-update that keeps the lock longer than 5 minutes leaves the Node `deferred` with `node.update_busy`.
+
+| Step | Work |
+| --- | --- |
+| `ssh` | Open a new SSH connection. A Node that does not answer is `unreachable`, and nothing runs |
+| `node-lock` | Wait up to 2 minutes for the role lock. A busy Node is `deferred` |
+| `baseline` | Run Doctor's `node` and `role` families for the Node |
+| `cli` | [Install the CLI](/reference/node-provisioning#orbit-cli) when it is missing, and write the Node profile. A foreign CLI makes the Node `skipped` |
+| `self-update` | Run `sudo /usr/local/bin/orbit self-update --json` over SSH. `pending` or `incomplete` leaves the Node `waiting`; `self_update.busy` leaves it `deferred`; `failed` fails it |
+| `footprint` | [Re-apply the Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint) where its digest changed, and the artifact that repairs an owned issue the baseline shows |
+| `verify` | Wait up to 90 seconds for the agent to report the pinned version in presence, then run Doctor again |
+
+A step that fails while the Node still answers SSH runs once more, because a dropped channel or a timeout is usually transient. When the Node does not answer a new probe, it is `unreachable`. A `self-update` that answered with its JSON verdict is not retried. A step that meets a busy lock (`node_role.node_busy`, `node.update_busy`, `self_update.busy`, `agent.converge_busy`, `agent.converge_lock_lost`, `node.lock_lost`, `tool.operation_locked`) leaves the Node `deferred`.
+
+When the baseline shows an owned issue, the footprint step re-applies the artifact that repairs it even though its digest matches: `agent` for an agent issue, `caddy` for Caddy drift.
+
+A Caddyfile that the render refuses, because a site cannot be built, is `skipped`: the live Caddyfile stays, Doctor keeps reporting `role.caddy_build_drift`, and the verify tolerates that issue on this Node. A Caddyfile that `caddy validate` refuses can also be a fault in Orbit's own template or Caddy pin.
+
+When the Caddy digest changed, so Orbit's own Caddy code is new, a refusal on the first Node of a rollout, before any Node converged, fails the Node with `node.footprint_caddy_failed` and halts. A refusal on a later Node, or while the step only repairs live drift that the baseline showed, is `skipped` like a render refusal. The first skip in a rollout raises `rollout_caddy_skipped` once, so a kept Caddyfile is never silent.
+
+After a Gateway rollback, the desired CLI release is older than the Nodes' CLI, and `self-update` refuses with `self_update.downgrade_refused`. When the desired state belongs to a `verified` release record, the step runs `self-update` once more with `--allow-downgrade-to=<desired version>`, which allows a downgrade to exactly that version and to no other. An in-place Gateway has no release records, so it never passes the option.
+
+The verify fails when Doctor reports an issue that was not there in the baseline, or any issue the rollout owns: `node.ssh_unreachable`, `node.agent_missing`, `node.agent_binary_mismatch`, `node.agent_inactive`, `node.agent_secret_mismatch`, `node.cli_foreign`, or `role.caddy_build_drift`. It checks Doctor three times, 10 seconds apart, before it fails, because a restarted agent or a reloaded Caddy settles within seconds. An older issue the rollout does not own, such as `node.disk_low`, is kept as evidence. The presence check fails only when the agent reports another version. Without an active `websocket` role, or without any report from the Node's agent, Doctor's binary check stands in for it.
+
+| Outcome | What the rollout does |
+| --- | --- |
+| `converged` | A step changed the Node and the verify passed. Continue |
+| `unchanged` | Nothing changed and the verify passed. Continue |
+| `unreachable` | Record it and continue. The catch-up visits the Node again |
+| `deferred` | Another operation held a lock the step needs. Continue; the catch-up visits the Node again |
+| `waiting` | `self-update` reported `pending`, because the CLI release is not published yet, or `incomplete`, because it skipped a step that should have run. Continue; the catch-up visits the Node again |
+| `failed` | The Node answered, but a step or the verify failed. Halt |
+| `skipped` | An operator resumed past the Node with `--skip`, or the Node has a foreign CLI and left the rollout set |
+
+### Halt and resume
+
+At the first `failed` Node, the rollout stops. The Nodes after it stay as they were. The rollout record becomes `halted` with the Node, the error code, the message, and the step evidence: the CLI install result, the `self-update` report or its exit code and output, the footprint result, and the verify issues. The Gateway raises the `rollout_halted` [release alert](#release-alerts) once, with the target `fleet` and the release id `fleet-rollout-<id>`, and stores the receipt on the record.
+
+A Node whose `self-update` stays `incomplete` for 6 visits in a row, 30 minutes of catch-ups, raises `rollout_stalled` once, with the reasons in the step evidence. A `deferred` or `unreachable` visit in between keeps the count. It does not halt the rollout.
+
+A halted rollout blocks every later rollout and the catch-up. Fix the cause, then resume:
+
+```bash
+orbit fleet:rollout:status
+orbit fleet:rollout:resume                 # visit the failed Node again first
+orbit fleet:rollout:resume --skip=<node>   # leave that Node for later
+```
+
+`fleet:rollout:resume` sets the failed Node back to `pending`, starts the service, and returns. A skipped Node stays `skipped` in this rollout; the next desired state visits it again. When the Gateway moved to a newer commit since the halt, the halted rollout becomes `superseded`, and a rollout of the newest desired state opens with the skip carried over.
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `fleet.rollout_not_halted` | 409 | No rollout is halted |
+| `fleet.node_not_in_rollout` | 422 | `--skip` names a Node outside the halted rollout |
+| `fleet.node_already_converged` | 422 | `--skip` names a Node that already runs the desired state |
+
+### Catch-up
+
+After the rollout, every run visits some Nodes again, one at a time and with the same rules:
+
+| Node | Why the catch-up visits it |
+| --- | --- |
+| `pending`, `unreachable`, `deferred`, or `waiting` | The rollout did not converge it |
+| New in the rollout set | It joined after the rollout opened |
+| `converged` or `unchanged`, but drifted | Its agent reports another version, its CLI version differs from the desired release, or its footprint digest differs from the one it last received |
+
+So a Node that was offline is converged within 5 minutes after it returns.
+
+Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. `observed` says why: `no rollout yet`, `not in the rollout`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a run already resolved; it never asks Git or GitHub.
+
+### Why it works this way
+
+A failed Node halts the rollout, because the next Node would most likely fail the same way, and one broken Node is easier to repair than a fleet. An unreachable Node changed nothing, so it does not halt the fleet; the catch-up converges it. A missing CLI release is the normal state for a few minutes after each deploy, so it waits instead of failing. The rollout is off by default, so a Gateway release that adds the units does not reach Nodes before an operator prepared them.
+

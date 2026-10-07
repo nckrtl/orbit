@@ -1854,6 +1854,47 @@
       }
     },
     {
+      "name": "fleet-rollout-resume",
+      "extension": null,
+      "title": "fleet:rollout:resume",
+      "description": "Resume the halted fleet rollout. The Gateway runs it in orbit-fleet-converge.service.",
+      "method": "POST",
+      "path": "/api/v1/fleet/rollout/resume",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "skip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "Node ID or name to leave out of this rollout, usually the Node it halted on"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fleet-rollout-status",
+      "extension": null,
+      "title": "fleet:rollout:status",
+      "description": "Show the newest fleet rollout, each Node's result, and the Nodes it leaves out.",
+      "method": "GET",
+      "path": "/api/v1/fleet/rollout",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "gateway-desired-fleet-state",
       "extension": null,
       "title": "Show the desired fleet state",
@@ -3872,6 +3913,37 @@
         "additionalProperties": false,
         "required": [
           "name"
+        ]
+      }
+    },
+    {
+      "name": "node-converge",
+      "extension": null,
+      "title": "node:converge",
+      "description": "Re-apply the Gateway-rendered Orbit footprint of a Node. It never changes an Instance or a role.",
+      "method": "POST",
+      "path": "/api/v1/nodes/{node}/converge",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Re-apply every artifact, not only the ones whose digest changed"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
         ]
       }
     },

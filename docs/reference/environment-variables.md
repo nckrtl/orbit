@@ -40,6 +40,8 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_CLI_RELEASE_REPOSITORY` is a setting in the Gateway's own environment, not an Instance key. It names the repository whose CLI releases make up the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it). The default is `https://github.com/nckrtl/orbit`. On the machine that runs `orbit self-update`, `ORBIT_SELF_UPDATE_RELEASES` replaces the release download location, `https://github.com/nckrtl/orbit/releases/download`, for a mirror you trust. The Gateway never sets it.
 
+`ORBIT_FLEET_ROLLOUT` and `ORBIT_FLEET_ROLLOUT_ORDER` are settings in the Gateway's own environment, not Instance keys. They [turn the fleet rollout on](/reference/gateway-recovery#turn-it-on) and name the Nodes it visits first. The rollout is off by default. `ORBIT_CLI_RELEASE_STATIC_MANIFEST` is for tests only: it replaces Git history and GitHub with a local CLI release manifest on a disposable topology. Never set it on a real Gateway.
+
 `ORBIT_RELEASE_ALERT_WEBHOOK_URL` and `ORBIT_RELEASE_ALERT_WEBHOOK_SECRET` are settings in the Gateway's own environment too, not Instance keys. See [Release alerts](/reference/gateway-recovery#webhook). The Gateway never returns the secret.
 
 Set `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` in the Gateway's `.env` to choose how many consecutive workspace provisioning failures request failure assistance (default `3`, minimum `1`). A successful start resets the count. See [Claim and provision](/reference/tasks#claim-and-provision) for the cause-carrying reason and logging.

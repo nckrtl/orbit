@@ -312,7 +312,12 @@ describe('repository guidance bootstrap', function (): void {
             'Orbit\\Sdk\\Requests\\Projects\\DestroyProjectDevelopmentDeployStepRequest',
         ];
         $proxycliSwitchRequests = [SetupProxyCliRequest::class, TeardownProxyCliRequest::class];
-        $fleetRequests = ['Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest'];
+        $fleetRequests = [
+            'Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest',
+            'Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest',
+            'Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest',
+            'Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest',
+        ];
         $expectedOperationCount = count($fleetRequests) + count($developmentDeployRequests) + count($extensionRequests) + count($exclusionRequests) + count($lifecycleRequests) + $preScheduleOperationCount + count($scheduleRequests) + count($databaseRequests) + count($databaseServerRequests) + count($gitHubRequests) + count($gatewayReleaseRequests) + count($proxycliRequests) + count($taskRequests) + count($logRequests) + 15;
         $expectedRequests = [
             'Orbit\\Sdk\\Requests\\Tools\\ListToolManagersRequest',

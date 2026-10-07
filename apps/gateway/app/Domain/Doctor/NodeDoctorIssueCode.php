@@ -17,6 +17,8 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
     case AgentInactive = 'node.agent_inactive';
     case AgentViewStale = 'node.agent_view_stale';
     case AgentSecretMismatch = 'node.agent_secret_mismatch';
+    case ReleaseLag = 'node.release_lag';
+    case CliForeign = 'node.cli_foreign';
     case InspectionFailed = 'node.inspection_failed';
 
     public function code(): string

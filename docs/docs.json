@@ -200,6 +200,7 @@
               "cli/activity",
               "cli/realtime",
               "cli/extension",
+              "cli/fleet",
               "cli/tasks",
               "cli/proxycli"
             ]
@@ -241,6 +242,7 @@
               "POST /api/v1/nodes",
               "DELETE /api/v1/nodes/{node}",
               "GET /api/v1/nodes/{node}",
+              "POST /api/v1/nodes/{node}/converge",
               "GET /api/v1/nodes/{node}/excluded-projects",
               "DELETE /api/v1/nodes/{node}/excluded-projects/{project}",
               "POST /api/v1/nodes/{node}/excluded-projects/{project}",
@@ -281,6 +283,14 @@
               "DELETE /api/v1/nodes/{node}/firewall-rules/{firewall_rule}",
               "GET /api/v1/nodes/{node}/live-firewall-rules",
               "GET /api/v1/nodes/{node}/managed-firewall-rules"
+            ]
+          },
+          {
+            "group": "Fleet rollout",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/fleet/rollout",
+              "POST /api/v1/fleet/rollout/resume"
             ]
           },
           {

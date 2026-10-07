@@ -14,6 +14,8 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
+use App\Models\FleetRollout;
+use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceDependencyEdge;
@@ -29,6 +31,7 @@ use App\Models\InstanceTransfer;
 use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeFootprint;
 use App\Models\NodeRole;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
@@ -93,6 +96,9 @@ it('partitions every persisted model across doctor dispositions', function (): v
     $excluded = [
         TaskSandbox::class,
         GatewayRelease::class,
+        FleetRollout::class,
+        FleetRolloutNode::class,
+        NodeFootprint::class,
         Annotation::class,
         DependencyPackage::class,
         InstanceDependencyObservation::class,

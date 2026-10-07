@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\GatewayReleases\AdoptGatewayReleaseAction;
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\GatewayReleases\DeployedGatewayRelease;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
@@ -23,6 +24,7 @@ use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Schema;
+use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
 use Tests\Support\WebArtifactFixture;
@@ -79,6 +81,26 @@ describe('gateway:release:adopt', function (): void {
             ->and(GatewayRelease::query()->pluck('trigger')->all())->toBe(['adopt', 'adopt'])
             ->and(GatewayRelease::query()->pluck('outcome')->all())->toBe(['verified', 'verified'])
             ->and(Activity::query()->value('command'))->toBe('gateway:release:adopt');
+    });
+
+    it('starts the fleet rollout only after phase 2 verifies the exact commit, never after phase 1', function (): void {
+        $this->fixture->write('apps/gateway/'.GatewayReleasePromoter::FleetCommand, "<?php\n");
+        $target = $this->fixture->commit('Ships the fleet rollout');
+        $source = $this->fixture->base.'/adopt-source';
+        $this->fixture->git($this->fixture->base, 'clone', '--quiet', $this->fixture->origin, $source);
+        $fleet = new FakeFleetConvergeUnits;
+        $this->steps->failVerify = true;
+
+        release_failure(fn () => adoption($this->fixture, $this->steps, fleet: $fleet)->execute($target, $source));
+
+        // Phase 1 recorded `verified` after a serving check, and phase 2 failed: the fleet stays where it is.
+        expect(GatewayRelease::query()->orderBy('id')->pluck('outcome')->first())->toBe('verified')
+            ->and($fleet->started)->toBe(0);
+
+        $this->steps->failVerify = false;
+        adoption($this->fixture, $this->steps, fleet: $fleet)->execute($target, $source);
+
+        expect($fleet->started)->toBe(1);
     });
 
     it('does nothing the second time', function (): void {
@@ -353,6 +375,7 @@ function adoption(
     string $python = 'python3',
     ?GatewayReleaseWebBuild $web = null,
     ?GatewayReleaseSmoke $smoke = null,
+    ?FleetConvergeUnits $fleet = null,
 ): AdoptGatewayReleaseAction {
     $web ??= new AdoptionWebBuild($steps);
     $database = new AdoptionDatabase($steps, $fixture);
@@ -367,7 +390,7 @@ function adoption(
         $lock,
         $builder,
         $database,
-        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, guard: $guard),
+        new GatewayReleasePromoter($fixture->layout, new GatewayReleaseSwitcher($fixture->layout, $fixture), $runtime, $verifier, $web, $smoke, $recorder, $builder, guard: $guard, fleet: $fleet),
         $recorder,
         $guard,
         new GatewayReleaseRetry,
