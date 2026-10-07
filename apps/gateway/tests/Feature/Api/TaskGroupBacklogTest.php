@@ -839,3 +839,53 @@ it('keeps destroyed power after workspace cleanup without trusting foreign reser
     $foreign->update(['taskable_type' => Instance::class, 'taskable_id' => $workspace->id]);
     $this->getJson('/api/v1/task-groups/'.$foreign->id)->assertOk()->assertJsonPath('data.sandbox_power', null);
 });
+
+it('stores preview intent on groups only and preserves explicit false', function (?bool $preview): void {
+    $data = backlog_group($this, ['One'], $preview === null ? [] : ['preview' => $preview]);
+    expect($data['preview'])->toBe($preview ?? false);
+    $group = Task::topLevel()->findOrFail($data['id']);
+    expect($group->preview)->toBe($preview ?? false)->and($group->tasks()->firstOrFail()->preview)->toBeNull();
+    $group->tasks()->firstOrFail()->update(['title' => 'Subtask still editable']);
+})->with([true, false, null]);
+
+it('changes preview intent during review while preserving title restrictions', function (): void {
+    $data = backlog_group($this);
+    $group = Task::topLevel()->findOrFail($data['id']);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm]);
+    $url = '/api/v1/task-groups/'.$group->id;
+
+    $this->patchJson($url, ['preview' => true])->assertOk()->assertJsonPath('data.preview', true)
+        ->assertJsonPath('data.status', 'waiting_for_review')->assertJsonPath('data.sandbox_power', null);
+    $this->json('PATCH', $url, [], [], JSON_FORCE_OBJECT)->assertOk()->assertJsonPath('data.preview', true);
+    $this->patchJson($url, ['preview' => false])->assertOk()->assertJsonPath('data.preview', false);
+    $this->patchJson($url, ['title' => 'Too late', 'preview' => true])->assertConflict();
+    expect($group->fresh()->preview)->toBeFalse();
+});
+
+it('refuses preview changes for ended groups', function (TaskGroupStatus $status): void {
+    $data = backlog_group($this);
+    $group = Task::topLevel()->findOrFail($data['id']);
+    $group->update(['status' => $status]);
+
+    $this->patchJson('/api/v1/task-groups/'.$group->id, ['preview' => true])->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.preview_closed');
+    expect($group->fresh()->preview)->toBeFalse();
+})->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
+
+it('requires a strict JSON boolean for preview intent', function (mixed $value): void {
+    $data = backlog_group($this);
+    $this->patchJson('/api/v1/task-groups/'.$data['id'], ['preview' => $value])->assertUnprocessable();
+    $this->postJson('/api/v1/task-groups', [
+        'project_id' => $this->appRecord->id, 'title' => 'Invalid', 'brief' => 'Invalid flag.', 'preview' => $value,
+    ])->assertUnprocessable();
+})->with([0, 1, 'true', 'false', null, [[]]]);
+
+it('backfills preview only for preexisting groups without changing their subtasks', function (): void {
+    $data = backlog_group($this, ['Existing subtask']);
+    $migration = require database_path('migrations/2026_10_12_000800_add_preview_to_tasks_table.php');
+    $migration->down();
+    $migration->up();
+
+    $group = Task::topLevel()->findOrFail($data['id']);
+    expect($group->preview)->toBeFalse()->and($group->tasks()->firstOrFail()->preview)->toBeNull();
+});

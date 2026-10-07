@@ -511,3 +511,14 @@ it('bounds observed sandbox power without inferring it from group status', funct
     ['running', 'running'], ['stopped', 'stopped'], ['destroyed', 'destroyed'],
     [null, null], ['starting', null], [['running'], null], [true, null],
 ]);
+
+it('transports preview omission and explicit booleans', function (?bool $preview): void {
+    foreach ([new CreateTaskGroupRequest(1, 'Work', 'Brief', preview: $preview), new UpdateTaskGroupRequest(1, preview: $preview)] as $request) {
+        $body = json_decode($request->body()->all(), true, flags: JSON_THROW_ON_ERROR);
+        if ($preview === null) {
+            expect($body)->not->toHaveKey('preview');
+        } else {
+            expect($body['preview'])->toBe($preview);
+        }
+    }
+})->with([null, false, true]);

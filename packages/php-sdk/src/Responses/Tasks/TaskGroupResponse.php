@@ -45,6 +45,7 @@ final readonly class TaskGroupResponse
         public ?string $taskCompute = null,
         public ?string $capacityWaitReason = null,
         public ?string $sandboxPower = null,
+        public bool $preview = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -84,6 +85,7 @@ final readonly class TaskGroupResponse
             requestId: $requestId,
             taskCompute: TaskFields::nullableText($data, 'task_compute'),
             capacityWaitReason: TaskFields::nullableText($data, 'capacity_wait_reason'),
+            preview: ($data['preview'] ?? false) === true,
             sandboxPower: in_array($data['sandbox_power'] ?? null, ['running', 'stopped', 'destroyed'], true) ? $data['sandbox_power'] : null,
         );
     }
@@ -140,6 +142,7 @@ final readonly class TaskGroupResponse
             ...($this->taskCompute === null ? [] : ['task_compute' => $this->taskCompute]),
             ...($this->capacityWaitReason === null ? [] : ['capacity_wait_reason' => $this->capacityWaitReason]),
             ...($this->taskCompute !== 'vm' && $this->sandboxPower === null ? [] : ['sandbox_power' => $this->sandboxPower]),
+            'preview' => $this->preview,
             'request_id' => $this->requestId,
         ];
     }

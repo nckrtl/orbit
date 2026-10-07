@@ -4117,6 +4117,7 @@ export interface components {
             capacity_wait_reason?: string | null;
             /** @enum {string|null} */
             sandbox_power?: "running" | "stopped" | "destroyed" | null;
+            preview?: boolean;
         };
         Task: {
             id?: number;
@@ -16920,6 +16921,8 @@ export interface operations {
                      * @enum {string}
                      */
                     status?: "backlog" | "todo";
+                    /** @description Keep the sandbox running during review */
+                    preview?: boolean;
                     /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
                     notify_on_settle?: boolean;
@@ -17068,6 +17071,8 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /** @description Keep the sandbox running during review */
+                    preview?: boolean;
                     /** @description New title */
                     title?: string;
                     /** @description New brief */

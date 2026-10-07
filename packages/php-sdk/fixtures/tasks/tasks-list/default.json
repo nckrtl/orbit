@@ -65,7 +65,8 @@
                 "execution_mode": "managed",
                 "task_compute": null,
                 "capacity_wait_reason": null,
-                "sandbox_power": null
+                "sandbox_power": null,
+                "preview": false
             },
             {
                 "id": 1,
@@ -181,7 +182,8 @@
                 "execution_mode": "managed",
                 "task_compute": null,
                 "capacity_wait_reason": null,
-                "sandbox_power": null
+                "sandbox_power": null,
+                "preview": false
             }
         ],
         "meta": {

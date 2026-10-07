@@ -23,6 +23,7 @@ final class UpdateTaskGroupRequest extends GatewayRequest implements HasBody
         private readonly ?string $title = null,
         private readonly ?string $brief = null,
         private readonly ?string $status = null,
+        private readonly ?bool $preview = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -48,6 +49,7 @@ final class UpdateTaskGroupRequest extends GatewayRequest implements HasBody
                 'title' => $this->title,
                 'brief' => $this->brief,
                 'status' => $this->status,
+                'preview' => $this->preview,
             ],
             static fn (mixed $value): bool => $value !== null,
         );

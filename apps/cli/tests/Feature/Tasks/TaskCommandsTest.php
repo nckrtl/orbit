@@ -757,3 +757,27 @@ it('shows compute mode, observed power and capacity wait in human and JSON outpu
         expect($output)->toContain('Task compute', 'vm', 'Sandbox power', $power ?? '—', 'Waiting for capacity', 'The local VM budget is full.');
     }
 })->with([false, true])->with(['running', 'stopped', 'destroyed', null]);
+
+it('sends explicit preview updates without changing review status', function (bool $preview): void {
+    $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
+    $fixture['body']['data']['preview'] = $preview;
+    $fixture['body']['data']['status'] = 'waiting_for_review';
+    $mock = MockClient::global([UpdateTaskGroupRequest::class => MockResponse::make($fixture['body'])]);
+
+    expect(Artisan::call('tasks:update', ['group' => '1', $preview ? '--preview' : '--no-preview' => true, '--json' => true]))->toBe(0);
+    expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))->toBe(['preview' => $preview]);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBe($preview);
+})->with([true, false]);
+
+it('refuses conflicting preview flags before a Gateway request', function (): void {
+    $mock = MockClient::global([]);
+    expect(Artisan::call('tasks:update', ['group' => '1', '--preview' => true, '--no-preview' => true, '--json' => true]))->toBe(1);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('tasks.preview_conflict');
+    $mock->assertNothingSent();
+});
+
+it('requests a preview on task group creation', function (): void {
+    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
+    expect(Artisan::call('tasks:create', ['title' => 'Preview', '--project' => '1', '--brief' => 'Keep it running.', '--preview' => true, '--json' => true]))->toBe(0);
+    expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBeTrue();
+});

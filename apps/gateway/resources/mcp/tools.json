@@ -7348,6 +7348,10 @@
             ],
             "description": "backlog (default) or todo"
           },
+          "preview": {
+            "type": "boolean",
+            "description": "Keep the sandbox running during review"
+          },
           "notify_coder": {
             "type": "boolean",
             "description": "Post the Coder settle webhook when the group settles"
@@ -8508,6 +8512,10 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Task group ID."
+          },
+          "preview": {
+            "type": "boolean",
+            "description": "Keep the sandbox running during review"
           },
           "title": {
             "type": "string",

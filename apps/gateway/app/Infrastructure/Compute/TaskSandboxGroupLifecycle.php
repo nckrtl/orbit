@@ -40,7 +40,10 @@ final readonly class TaskSandboxGroupLifecycle
             }
             try {
                 $sandbox = $this->sandbox($group);
-                $this->lifecycle->review($sandbox, $this->drivers->forSandbox($sandbox), $sandbox->preview, $this->capacityWaiting($group));
+                if ($group->preview && $sandbox->provider === 'upcloud' && ($sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running')) {
+                    throw new ComputeException('compute.rebuild_required', 'The cloud sandbox must be rebuilt from its published branch before preview resumes.');
+                }
+                $this->lifecycle->review($sandbox, $this->drivers->forSandbox($sandbox), $group->preview ?? false, $this->capacityWaiting($group));
                 $this->clearWait($group);
             } catch (Throwable $exception) {
                 $this->wait($group, $exception);

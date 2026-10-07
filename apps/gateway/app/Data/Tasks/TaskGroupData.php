@@ -57,6 +57,7 @@ final class TaskGroupData extends Data
         public ?TaskCompute $taskCompute = null,
         public ?string $capacityWaitReason = null,
         public ?SandboxPower $sandboxPower = null,
+        public bool $preview = false,
     ) {}
 
     public static function fromModel(Task $group): self
@@ -70,6 +71,7 @@ final class TaskGroupData extends Data
             taskCompute: $group->task_compute,
             capacityWaitReason: $group->capacity_wait_reason,
             sandboxPower: self::sandboxPower($group),
+            preview: $group->preview ?? false,
 
             id: $group->id,
             projectId: $group->project_id,

@@ -31,6 +31,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'title' => ['required', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
+            'preview' => ['sometimes', 'boolean:strict'],
             'notify_coder' => ['sometimes', 'boolean'],
             'notify_on_settle' => ['sometimes', 'boolean'],
             'tasks' => ['sometimes', 'array', 'max:50'],
@@ -60,6 +61,7 @@ final class CreateTaskGroupRequest extends FormRequest
                 'title',
                 'brief',
                 'status',
+                'preview',
                 'notify_coder',
                 'notify_on_settle',
                 'tasks',
@@ -93,6 +95,7 @@ final class CreateTaskGroupRequest extends FormRequest
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             notifyCoder: $this->boolean('notify_coder') || $this->boolean('notify_on_settle'),
             tasks: $tasks,
+            preview: $this->boolean('preview'),
         );
     }
 }

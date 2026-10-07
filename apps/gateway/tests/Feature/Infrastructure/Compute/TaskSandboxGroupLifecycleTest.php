@@ -164,3 +164,42 @@ it('attempts a waiting VM resume before provisioning a new todo group', function
 
     expect($host->calls)->toBe([])->and($waiting->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview);
 });
+
+it('reconciles requester preview intent through park and resume without resetting the review deadline', function (): void {
+    [$group, $sandbox, $host] = review_sandbox_group();
+    $started = now()->startOfSecond()->subMinutes(6);
+    $sandbox->update(['review_started_at' => $started]);
+    $group->update(['preview' => true]);
+    $lifecycle = app(TaskSandboxGroupLifecycle::class);
+    $lifecycle->review($group);
+    expect($host->calls)->toBe([])->and($sandbox->fresh()->preview)->toBeTrue();
+
+    $group->update(['preview' => false]);
+    $lifecycle->review($group);
+    expect($host->calls)->toBe(['park'])->and($sandbox->fresh()->preview)->toBeFalse();
+
+    $group->update(['preview' => true]);
+    $lifecycle->review($group);
+    expect($host->calls)->toBe(['park', 'resume'])->and($sandbox->fresh()->state)->toBe(SandboxState::Running)
+        ->and($sandbox->fresh()->review_started_at->equalTo($started))->toBeTrue();
+});
+
+it('keeps cloud preview waiting for a branch rebuild without starting the old server', function (SandboxState $state, string $power): void {
+    [$group, $sandbox, $host] = review_sandbox_group();
+    $group->project->update(['slug' => 'dlf']);
+    $group->update(['preview' => true]);
+    $sandbox->update(['provider' => 'upcloud', 'node_id' => $group->taskable->node_id, 'state' => $state, 'desired_power' => $power]);
+
+    app(TaskSandboxGroupLifecycle::class)->review($group);
+
+    expect($host->calls)->toBe([])
+        ->and($group->fresh()->preview)->toBeTrue()
+        ->and($group->fresh()->capacity_wait_reason)->toContain('rebuilt from its published branch')
+        ->and($sandbox->fresh()->state)->toBe($state)
+        ->and($sandbox->fresh()->desired_power)->toBe($power);
+})->with([
+    'parked' => [SandboxState::Stopped, 'stopped'],
+    'park pending' => [SandboxState::Running, 'stopped'],
+    'restore pending' => [SandboxState::Stopped, 'running'],
+    'expired' => [SandboxState::Destroyed, 'destroyed'],
+]);

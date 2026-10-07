@@ -79,6 +79,7 @@ use LogicException;
  * @property int|null $watched_pr_number
  * @property string|null $watched_pr_state
  * @property string|null $watched_pr_completion
+ * @property bool|null $preview
  * @property bool $notify_coder
  * @property string $implementer_model
  * @property string $reviewer_model
@@ -129,6 +130,7 @@ final class Task extends Model
         'taskable_type',
         'taskable_id',
         'pr_url',
+        'preview',
         'notify_coder',
         'implementer_model',
         'reviewer_model',
@@ -235,6 +237,7 @@ final class Task extends Model
         'taskable_type',
         'taskable_id',
         'pr_url',
+        'preview',
         'notify_coder',
         'implementer_model',
         'reviewer_model',
@@ -427,6 +430,7 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'execution_mode' => TaskExecutionMode::class,
             'task_compute' => TaskCompute::class,
+            'preview' => 'boolean',
             'notify_coder' => 'boolean',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
@@ -557,6 +561,7 @@ final class Task extends Model
                 'execution_mode' => TaskExecutionMode::Managed->value,
                 'implementer_agent_driver' => 'pi',
                 'reviewer_agent_driver' => 'pi',
+                'preview' => false,
                 'notify_coder' => false,
                 'assistance_requested' => false,
                 'implementer_model' => TaskAgentDefaults::ImplementerModel,
