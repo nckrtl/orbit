@@ -31,7 +31,7 @@ def digest(path):
 def validate(request):
     if not isinstance(request, dict) or set(request) != {'role', 'inputs', 'source_manifest'}:
         raise ValueError('Invalid preparation request')
-    if request['role'] not in ('operator', 'gateway') or not isinstance(request['inputs'], dict) or request['inputs'].get('root') != str(ROOT):
+    if request['role'] not in ('operator', 'gateway', 'app-dev', 'app-prod', 'app-prod-2') or not isinstance(request['inputs'], dict) or request['inputs'].get('root') != str(ROOT):
         raise ValueError('Invalid guest scope')
     manifest = request['source_manifest']
     if not isinstance(manifest, dict) or set(manifest) != {'source_template', 'ci_run', 'projects', 'sha256'}:

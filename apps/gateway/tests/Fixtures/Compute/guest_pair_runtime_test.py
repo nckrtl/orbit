@@ -40,7 +40,8 @@ class PairRuntime(unittest.TestCase):
         (self.root / 'apps/gateway/.env').write_text('APP_KEY=private-test-key\nAPP_VERSION=old-template\n')
         self.api_version = None
         self.calls = []
-        self.nodes = [{'name': 'gateway', 'status': 'active'}, {'name': 'operator', 'status': 'active'}]
+        self.nodes = [{'name': 'gateway', 'status': 'active'}, {'name': 'operator', 'status': 'active', 'roles': []}]
+        self.doctor_fault = None
         self.fail = False
         self.fail_access = False
 
@@ -58,6 +59,15 @@ class PairRuntime(unittest.TestCase):
             raise subprocess.CalledProcessError(1, ['composer'])
         if self.fail_access and arguments[:2] == ['php', '-r']:
             raise subprocess.CalledProcessError(1, ['php'])
+        if 'doctor' in arguments:
+            node_id = int(next(arg[7:] for arg in arguments if arg.startswith('--node=')))
+            node = next(node for node in self.nodes if node['id'] == node_id)
+            report = {'healthy': True, 'nodes': [{'node_id': node_id, 'node_name': node['name'], 'healthy': True,
+                      'families': [{'family': family, 'status': 'healthy'} for family in ('node', 'role', 'firewall')]}]}
+            if self.doctor_fault == 'unhealthy': report['healthy'] = False
+            if self.doctor_fault == 'wrong node': report['nodes'][0]['node_id'] += 99
+            if self.doctor_fault == 'missing family': report['nodes'][0]['families'].pop()
+            return json.dumps(report)
         if arguments[-2:] == ['gateway:status', '--json']:
             return json.dumps({'status': 'ok', 'url': 'https://10.44.0.1', 'version': self.api_version or self.head})
         return json.dumps({'nodes': self.nodes}) if arguments[-2:] == ['node:list', '--json'] else ''
@@ -86,6 +96,17 @@ class PairRuntime(unittest.TestCase):
         self.api_version = 'old-template'
         with self.assertRaisesRegex(ValueError, 'branch version'):
             self.call('operator')
+
+    def test_version_probe_reports_stale_gateway_without_runtime_mutation(self):
+        self.api_version = 'b' * 40
+        environment = self.root / 'apps/gateway/.env'
+        before = environment.read_text()
+        report = self.call('version')
+        self.assertEqual(self.head, report['head'])
+        self.assertEqual(self.api_version, report['gateway_head'])
+        self.assertEqual('https://10.44.0.1', report['gateway_url'])
+        self.assertEqual(before, environment.read_text())
+        self.assertEqual([[str(self.root / 'apps/cli/orbit'), 'gateway:status', '--json']], self.calls)
 
     def test_refuses_a_linked_gateway_environment_without_modifying_its_target(self):
         environment = self.root / 'apps/gateway/.env'
@@ -158,6 +179,49 @@ class PairRuntime(unittest.TestCase):
         self.nodes[1]['status'] = 'failed'
         with self.assertRaises(ValueError):
             self.call('operator')
+
+
+    def test_expanded_inventory_matches_recorded_roles_and_keeps_pair_strict(self):
+        for roles in (['app-dev'], ['app-dev', 'app-prod'], ['app-dev', 'app-prod', 'app-prod-2']):
+            with self.subTest(roles=roles):
+                self.nodes = [{'name': 'gateway', 'status': 'active'}, {'name': 'operator', 'status': 'active', 'roles': []}]
+                self.nodes += [{'name': name, 'status': 'active', 'roles': ['app-prod' if name == 'app-prod-2' else name]} for name in roles]
+                self.assertTrue(self.call('operator', inventory=['gateway', 'operator', *roles])['ready'])
+                with self.assertRaises(ValueError):
+                    self.call('operator')
+                self.nodes[-1]['roles'] = []
+                with self.assertRaisesRegex(ValueError, 'workload role'):
+                    self.call('operator', inventory=['gateway', 'operator', *roles])
+
+    def test_foreign_or_duplicate_recorded_inventory_never_contacts_gateway(self):
+        for inventory in (None, [], ['gateway', 'operator', 'operator'], ['gateway', 'app-dev'], ['gateway', 'operator', 'foreign']):
+            with self.subTest(inventory=inventory), self.assertRaises(ValueError):
+                self.call('operator', inventory=inventory)
+        self.assertEqual([], self.calls)
+
+    def test_operator_role_and_extra_node_refuse_readiness(self):
+        self.nodes[1]['roles'] = ['app-dev']
+        with self.assertRaisesRegex(ValueError, 'roleless'):
+            self.call('operator')
+        self.nodes[1]['roles'] = []
+        self.nodes += [{'name': 'app-dev', 'status': 'active', 'roles': ['app-dev']}]
+        with self.assertRaises(ValueError):
+            self.call('operator', inventory=['gateway', 'operator', 'app-prod'])
+
+
+    def test_fresh_doctor_checks_every_exact_node_and_refuses_wrong_or_incomplete_results(self):
+        self.nodes[0]['id'] = 1
+        self.nodes[1]['id'] = 2
+        self.nodes += [{'id': 3, 'name': 'app-dev', 'status': 'active', 'roles': ['app-dev']}]
+        inventory = ['gateway', 'operator', 'app-dev']
+        report = self.call('operator', inventory=inventory, doctor=True)
+        self.assertEqual(inventory, report['doctor_nodes'])
+        self.assertEqual('https://10.44.0.1', report['gateway_url'])
+        self.assertEqual(3, sum('doctor' in call for call in self.calls))
+        for fault in ('unhealthy', 'wrong node', 'missing family'):
+            self.doctor_fault = fault
+            with self.subTest(fault=fault), self.assertRaisesRegex(ValueError, 'doctor readiness'):
+                self.call('operator', inventory=inventory, doctor=True)
 
 
 unittest.main()

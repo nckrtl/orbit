@@ -108,6 +108,7 @@ use LogicException;
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
  * @property string|null $fixup_head_sha
+ * @property list<string>|null $topology
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read Task $parent
@@ -171,6 +172,7 @@ final class Task extends Model
         'review_workspace_head',
         'review_workspace_tree',
         'deliverables',
+        'topology',
         'fixup_problem',
         'fixup_head_sha',
         'communication_failures',
@@ -215,6 +217,7 @@ final class Task extends Model
         'fixup_problem',
         'fixup_head_sha',
         'deliverables',
+        'topology',
         'settled_at',
         'completion_attempt',
         'completion_handoff_comment_id',
@@ -448,6 +451,7 @@ final class Task extends Model
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'deliverables' => 'array',
+            'topology' => 'array',
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',

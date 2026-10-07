@@ -212,7 +212,7 @@ A sandbox reserves a random Pi token before guest configuration. The Gateway enc
 
 A thread records the sandbox reservation as its runtime identity. Creation and later requests check the owning group, workspace, placement, and running state. An Orbit connection uses the configured Incus host’s private address and the sandbox’s reserved proxy port. A Project connection uses its enrolled guest Node. A parked, destroyed, replaced, or unconfigured sandbox refuses requests instead of selecting another server. Proxy provisioning and image setup remain prerequisites for enabling VM claims.
 
-Sandbox MCP files are installed through the guest transport. For Orbit they name the disposable test Gateway at `https://gateway.orbit/mcp/search`; Project sandboxes use the configured live Gateway. Shared topology acquisition is refused for sandbox workspaces. The compute driver must prepare and enroll requested workload nodes before the VM topology path can be enabled.
+Sandbox MCP files are installed through the guest transport. For Orbit they name the disposable test Gateway at `https://gateway.orbit/mcp/search`; Project sandboxes use the configured live Gateway. Shared topology acquisition is refused for sandbox workspaces. VM reviewer requests record workload requirements and use the owned compute driver and private Gateway readiness gate.
 
 ### Prepare source inside the guest
 
@@ -279,6 +279,18 @@ For Incus, Orbit revokes the model key, destroys owned compute, and confirms des
 
 The sweep retries reservations with no Instance when their group has ended, has been deleted, or has already recorded destruction intent. It does not adopt unrecorded host resources or start cleanup of an active group. Failed retries use the workspace sweep's time budget and backoff.
 
+## Declared workload nodes
+
+An Orbit subtask can declare `topology: ["app-dev", "app-prod", "app-prod-2"]`. The list names distinct workload nodes; omit it or use an empty list for the default operator and test Gateway. Subtask creation, group creation, and stored task definitions preserve this declaration. Only a subtask that has not started can change it.
+
+Before dispatch, Orbit reserves the additional VM capacity, starts the pinned workload images on the group's network, and enrolls them with its private test Gateway. Each requested node must pass its native readiness check before the agent starts. A missing image, full budget, or failed enrollment leaves a visible wait. Workload nodes never join the live fleet. Resume repairs incomplete native enrollment before verifying the recorded expanded inventory. Cleanup includes every added node.
+
+A reviewer’s `topology_requested` fallback records `app-dev` and `app-prod` as requirements on the current subtask. It uses the owned sandbox and its private Gateway. Orbit waits for capacity and fresh doctor readiness before resuming the reviewer. Repeated requests keep existing workload nodes. Project VM groups refuse this Orbit-only request and continue in their Project workspace.
+
+Native enrollment gives each workload a fresh SSH host key and records its ownership outside the shared checkout. Retries keep that key and the native Node identity. The private Gateway pins the key, provisions the requested role, and grants operator access through Orbit. Each guest must match the recorded source, subnet, and Node inventory before doctor can admit a turn.
+
+Adding a workload node requires host images from the sandbox’s recorded template and the same pinned pair images. A host configuration change cannot replace a running group’s template. An incomplete expansion retries its recorded images; it does not adopt new configured images. Workload commands require the complete source descriptor to match the Project repository and default branch.
+
 ## Saved pair identity
 
 The saved Orbit pair needs its network identity updated after cloning. The guest helper accepts either the existing four-Node topology or exactly a Gateway and a roleless operator. For the pair, it refuses additional Nodes or operator roles before changing addresses. It preserves private addresses, keys, DNS policy, and other settings while replacing the stored SSH addresses and Gateway endpoints.
@@ -311,13 +323,23 @@ Input verification does not install packages, create a candidate, certify upstre
 
 ### Build a cold candidate
 
-`bin/sandbox-template-build --plan` verifies inputs and refuses existing candidate resources. `--prepare` allocates a new isolated pair through the production Incus helper, installs the pinned offline inputs, creates the managed `orbit` account, and verifies the shared source and CI baseline hashes. `--converge` bootstraps the private Gateway and enrolls its roleless operator through native Orbit commands. Each mode accepts the same JSON object with exactly `project`, `pool`, `sandbox_id`, `budget`, `subnet`, `blocked_networks`, `base_image`, `inputs`, and `source_manifest`. `project` must be a dedicated, owned `orbit-sandbox-proof-<name>` project. `base_image` is an imported x86_64 VM fingerprint. `inputs` uses the offline verifier's schema. `source_manifest` contains exactly `source_template`, `ci_run`, `projects`, and `sha256`; the final hash must identify the source archive.
+`bin/sandbox-template-build --plan` verifies inputs and refuses existing candidate resources. `--prepare` allocates a new isolated pair through the production Incus helper, installs the pinned offline inputs, creates the managed `orbit` account, and verifies the shared source and CI baseline hashes. `--converge` bootstraps the private Gateway and enrolls its roleless operator through native Orbit commands.
+
+Each mode accepts the same JSON object with the required fields `project`, `pool`, `sandbox_id`, `budget`, `subnet`, `blocked_networks`, `base_image`, `inputs`, and `source_manifest`. `workload_roles` is an optional ordered list from `app-dev`, `app-prod`, and `app-prod-2`. Omission builds only the pair. The budget must cover all requested guests.
+
+`project` must be a dedicated, owned `orbit-sandbox-proof-<name>` project. `base_image` is an imported x86_64 VM fingerprint. `inputs` uses the offline verifier's schema. `source_manifest` contains exactly `source_template`, `ci_run`, `projects`, and `sha256`; the final hash must identify the source archive.
 
 The source manifest pins Composer lock hashes for the root and all five PHP projects, CI graph hashes for those five projects, and Bun lock hashes for the annotation package, web app, and Pi server. It records the green CI run used to prepare those graphs. Acquire and verify upstream image, package, tool, and CI artifacts before construction; a supplied hash or run ID alone is not proof of origin. Tool inputs include Node 24.21.0, Vite+ 0.3.0, Bun 1.4.2, and compatible pinned Agent and Pi binaries. The fresh base must have no `orbit` or `orbit-worker` account and no UID or GID 1002.
 
 Preparation refuses reused resources and a populated source volume. It retains a partial candidate after failure for inspection and explicit owned cleanup. Convergence accepts only that candidate's completed preparation receipt and matching inputs. Commands serialize with publication for the pair and template. Native convergence needs permitted public egress for package-source verification; the builder never adds host firewall rules. Complete any required host-policy approval separately.
 
 Convergence confirms the pinned source commit, the isolated operator profile, and active Gateway and roleless operator inventory. Publication repeats that native readiness check. No builder mode promotes an alias, enables claims, or changes a live Gateway.
+
+Before each agent dispatch, admission compares the private Gateway version with the owned branch commit. It refreshes Gateway dependencies, migrations, and services only when the version differs, then requires fresh doctor readiness. A running baseline is polled before this preparation can modify the checkout.
+
+The builder can prepare blank workload guests alongside the pair. All guests share the pinned source and verified offline inputs, including Docker prerequisites for workload roles. Convergence enrolls only the operator. Publication audits each workload for prerequisites and absence of enrollment state, then publishes every requested role with the same immutable source descriptor. Pass the same `workload_roles` to the publisher. Adding roles requires a new template; published templates cannot be extended in place.
+
+Task runtime preparation uses the sandbox’s recorded image roles as its exact private Node inventory. For an expanded resume, it refreshes the private Gateway branch runtime and retries owned workload enrollment before strict retargeting. It retargets every recorded peer, requires an active workload role on each declared Node, and refuses foreign or extra Nodes. The operator stays roleless. Template publication keeps the stricter default-pair check.
 
 ### Prepare a copied source volume
 
@@ -329,9 +351,9 @@ This helper prepares source only. It does not certify ignored files, dependency 
 
 ### Publish a disposable candidate
 
-`bin/sandbox-template-publish --plan` validates a candidate without changing it. `--apply` prepares its source, stops the pair, and publishes two private VM images and a dedicated source volume with a `ready` snapshot. Both modes accept one JSON object on standard input and return one JSON object. The required fields are `project`, `pool`, `sandbox_id`, and `source_template`. The template descriptor is the same as the source helper's descriptor.
+`bin/sandbox-template-publish --plan` validates a candidate without changing it. `--apply` prepares its source, stops every candidate guest, and publishes a private VM image for each recorded role and a dedicated source volume with a `ready` snapshot. Both modes accept one JSON object on standard input and return one JSON object. The required fields are `project`, `pool`, `sandbox_id`, and `source_template`. The optional `workload_roles` list must match the builder request. The template descriptor is the same as the source helper's descriptor.
 
-The builder must mark both candidate VMs and their source volume with `user.orbit.template.candidate=<template UUID>`. The names and compute ownership must match `sandbox_id`. Only the pair may attach the source volume. The candidate must be running, have only its root disk, source disk, and group network, and contain no task-source or Pi/model runtime state. The command refuses existing template volumes or matching image identities. It never changes a promoted alias or accepts an unmarked pair.
+The builder must mark every candidate VM and its source volume with `user.orbit.template.candidate=<template UUID>`. The names and compute ownership must match `sandbox_id`. Only the recorded candidate guests may attach the source volume. The candidate must be running, have only its root disk, source disk, and group network, and contain no task-source or Pi/model runtime state. The command refuses existing template volumes or matching image identities. It never changes a promoted alias or accepts an unmarked pair.
 
 The command checks guest prerequisites and known credential locations before source changes. It refuses GitHub tokens in guest files or process environments, subscription credentials, and the shared worker account. This audit complements a clean image build; it cannot establish provenance for arbitrary candidate files. The cold builder must still supply verified packages, tools, dependencies, and CI baselines.
 

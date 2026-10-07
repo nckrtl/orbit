@@ -6,7 +6,10 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Compute\SandboxState;
+use App\Domain\GitHub\GitHubRepository;
+use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskCompute;
+use App\Domain\Tasks\TaskTopology;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
@@ -16,6 +19,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskSandbox;
+use Illuminate\Support\Str;
 use Throwable;
 
 /** Routes task operations by persisted workspace ownership; never by available capacity. */
@@ -25,7 +29,7 @@ final readonly class TaskWorkspaceExecutor
 
     public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace', string $role = 'operator'): CommandResult
     {
-        if (! in_array($role, ['operator', 'gateway'], true) || ($role !== 'operator' && $workspace->task_sandbox_id === null)) {
+        if (! in_array($role, ['operator', 'gateway', ...TaskTopology::Roles], true) || ($role !== 'operator' && $workspace->task_sandbox_id === null)) {
             throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
         }
         if ($workspace->task_sandbox_id === null) {
@@ -36,7 +40,7 @@ final readonly class TaskWorkspaceExecutor
             return $this->shared->execute($workspace->node, $command, $step, $errorCode, $commandTimeout, $failureLabel);
         }
         try {
-            $sandbox = $workspace->taskSandbox;
+            $sandbox = $workspace->taskSandbox?->fresh();
             $group = $sandbox?->group;
             if (! $sandbox instanceof TaskSandbox || $group === null || $group->task_compute !== TaskCompute::Vm
                 || $group->project_id !== $workspace->project_id || $group->taskable_id !== $workspace->id
@@ -44,8 +48,10 @@ final readonly class TaskWorkspaceExecutor
                 || $sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running') {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The task sandbox ownership or running state is unavailable.');
             }
-            if ($role === 'gateway' && ($sandbox->provider !== 'incus' || $group->project->slug !== 'orbit'
-                || ! is_array($sandbox->spec['images'] ?? null) || ! is_string($sandbox->spec['images']['gateway'] ?? null))) {
+            if ($role !== 'operator' && ($sandbox->provider !== 'incus' || $group->project->slug !== 'orbit'
+                || ! is_array($sandbox->spec['images'] ?? null) || ! is_string($sandbox->spec['images'][$role] ?? null)
+                || preg_match('/\A[a-f0-9]{64}\z/D', $sandbox->spec['images'][$role]) !== 1
+                || (in_array($role, TaskTopology::Roles, true) && ! $this->workloadSourceMatches($workspace, $sandbox)))) {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
             }
             if ($sandbox->provider === 'upcloud') {
@@ -82,5 +88,19 @@ final readonly class TaskWorkspaceExecutor
         } catch (Throwable $exception) {
             throw new RuntimeConvergenceException($step, $errorCode, 'The task sandbox could not be reached.', previous: $exception);
         }
+    }
+
+    private function workloadSourceMatches(Instance $workspace, TaskSandbox $sandbox): bool
+    {
+        $template = $sandbox->spec['source_template'] ?? null;
+        $repository = GitHubRepository::fromOrigin($workspace->project->repository_url);
+
+        return is_array($template) && count($template) === 4
+            && is_string($template['id'] ?? null) && Str::isUuid($template['id']) && strtolower($template['id']) === $template['id']
+            && is_string($template['commit'] ?? null) && preg_match('/\A[a-f0-9]{40}(?:[a-f0-9]{24})?\z/D', $template['commit']) === 1
+            && is_string($template['base'] ?? null) && GitBranchName::isValid($template['base'])
+            && $template['base'] === $workspace->project->default_branch
+            && $repository instanceof GitHubRepository
+            && ($template['repository'] ?? null) === 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git';
     }
 }

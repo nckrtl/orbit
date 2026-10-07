@@ -1207,6 +1207,7 @@
                 "Project",
                 "Role",
                 "Route",
+                "Subtask",
                 "Task",
                 "Task workspace",
                 "Tool"

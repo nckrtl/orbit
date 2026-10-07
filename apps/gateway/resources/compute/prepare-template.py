@@ -16,22 +16,24 @@ HERE = Path(__file__).resolve().parent
 publication = runpy.run_path(str(HERE / 'publish-template.py'))
 Publisher, Refusal = publication['Publisher'], publication['Refusal']
 verify_inputs = runpy.run_path(str(HERE / 'template-inputs.py'))['verify']
+workload_roles = publication['workload_roles']
 validate_guest = runpy.run_path(str(HERE / 'guest-template-install.py'))['validate']
 
 
 class Builder(Publisher):
     def __init__(self, request):
         expected = {'project', 'pool', 'sandbox_id', 'budget', 'subnet', 'blocked_networks', 'base_image', 'inputs', 'source_manifest'}
-        if not isinstance(request, dict) or set(request) != expected:
+        if not isinstance(request, dict) or set(request) - {'workload_roles'} != expected:
             raise Refusal('Invalid cold candidate request.')
+        roles = workload_roles(request)
         if not isinstance(request['inputs'], dict):
             raise Refusal('Invalid offline inputs.')
         validate_guest({'role': 'operator', 'inputs': {**request['inputs'], 'root': '/root/orbit-template-inputs'}, 'source_manifest': request['source_manifest']})
-        super().__init__({key: request[key] for key in ('project', 'pool', 'sandbox_id')} | {'source_template': request['source_manifest']['source_template']})
+        super().__init__({key: request[key] for key in ('project', 'pool', 'sandbox_id')} | {'source_template': request['source_manifest']['source_template'], **({'workload_roles': roles} if 'workload_roles' in request else {})})
         self.build = request
         if not re.fullmatch(r'orbit-sandbox-proof-[a-z0-9]+', self.project):
             raise Refusal('Invalid sandbox project.')
-        if type(request['budget']) is not int or not 2 <= request['budget'] <= 64:
+        if type(request['budget']) is not int or not 2 + len(roles) <= request['budget'] <= 64:
             raise Refusal('Invalid pair budget.')
         if not isinstance(request['base_image'], str) or not re.fullmatch('[a-f0-9]{64}', request['base_image']):
             raise Refusal('Pin the upstream VM fingerprint.')
@@ -85,12 +87,12 @@ class Builder(Publisher):
         report = self.new_candidate()
         envelope = {'project': self.project, 'sandbox_id': self.request['sandbox_id'], 'budget': self.build['budget'], 'operation': 'provision',
                     'spec': {'pool': self.pool, 'subnet': self.build['subnet'], 'blocked_networks': self.build['blocked_networks'],
-                             'images': dict.fromkeys(('operator', 'gateway'), self.build['base_image'])}}
+                             'images': dict.fromkeys(self.roles, self.build['base_image'])}}
         helper = HERE.parents[2] / 'agent/resources/incus-sandbox.py'
         result = subprocess.run([sys.executable, str(helper)], input=json.dumps(envelope), capture_output=True, text=True, timeout=1200)
         if result.returncode or json.loads(result.stdout).get('power') != 'running':
             raise Refusal('Candidate provisioning failed; inspect owned resources.')
-        for role in ('operator', 'gateway'):
+        for role in self.roles:
             name = self.name + '-' + role
             value = self.query('/1.0/instances/' + name)
             self.own_unmarked(value)
@@ -98,7 +100,7 @@ class Builder(Publisher):
                 raise Refusal('Candidate base image changed.')
         volume = self.query(self.volume_path(self.name + '-worktree'))
         self.own_unmarked(volume)
-        for role in ('operator', 'gateway'):
+        for role in self.roles:
             self.run('config', 'set', self.name + '-' + role, 'user.orbit.template.candidate=' + self.template['id'])
         self.run('storage', 'volume', 'set', self.pool, self.name + '-worktree', 'user.orbit.template.candidate=' + self.template['id'])
         self.preflight()
@@ -107,7 +109,7 @@ class Builder(Publisher):
         reserved = {'template-inputs.py', 'guest-template-source.py', 'guest-template-install.py'}
         if any(item['file'] in reserved for item in files):
             raise Refusal('Input file conflicts with a preparation helper.')
-        for role in ('operator', 'gateway'):
+        for role in self.roles:
             name = self.name + '-' + role
             for _ in range(120):
                 try:
@@ -124,7 +126,7 @@ class Builder(Publisher):
                 self.push(role, HERE / filename, filename)
             guest_request = {'role': role, 'inputs': {**inputs, 'root': '/root/orbit-template-inputs'}, 'source_manifest': self.build['source_manifest']}
             ready = json.loads(self.run('exec', name, '--', 'python3', '-I', '/root/orbit-template-inputs/guest-template-install.py', data=json.dumps(guest_request), timeout=3600))
-            if ready.get('prepared') is not True or ready.get('source_template') != self.template:
+            if ready.get('prepared') is not True or ready.get('role') != role or ready.get('source_template') != self.template:
                 raise Refusal('Candidate guest preparation failed.')
             template = self.run('config', 'template', 'show', name, 'hosts.tpl')
             entry = '127.0.0.1 telemetry.sury.org # Orbit image: avoid network-dependent FPM startup'
@@ -132,7 +134,7 @@ class Builder(Publisher):
                 raise Refusal('Cold image has an unexpected hosts template override.')
             self.run('config', 'template', 'edit', name, 'hosts.tpl', data=template + '\n' + entry + '\n')
         self.preflight()
-        for role in ('operator', 'gateway'):
+        for role in self.roles:
             self.run('config', 'set', self.name + '-' + role, 'user.orbit.template.prepared=' + self.prepared_digest)
         self.run('storage', 'volume', 'set', self.pool, self.name + '-worktree', 'user.orbit.template.prepared=' + self.prepared_digest)
         report.update(prepared=True, native_bootstrap=False, prepared_digest=self.prepared_digest)
@@ -140,7 +142,7 @@ class Builder(Publisher):
 
     def prepared(self):
         self.preflight()
-        resources = [self.query('/1.0/instances/' + self.name + '-' + role) for role in ('operator', 'gateway')]
+        resources = [self.query('/1.0/instances/' + self.name + '-' + role) for role in self.roles]
         resources.append(self.query(self.volume_path(self.name + '-worktree')))
         if any(value.get('config', {}).get('user.orbit.template.prepared') != self.prepared_digest for value in resources):
             raise Refusal('Candidate preparation receipt does not match.')
@@ -200,9 +202,14 @@ print('{}')
         self.source_ready()
         self.prepared()
         health = self.guest('operator', (HERE / 'guest-template-health.py').read_text(), json.dumps({'commit': self.template['commit']}), 'orbit')
+        for role in workload_roles(self.build):
+            self.shell(role, 'systemctl enable --now ssh docker\nsystemctl disable --now dnsmasq\n')
+            audit = self.guest(role, (HERE / 'guest-template-audit.py').read_text(), json.dumps({'role': role}))
+            if audit.get('ready') is not True or audit.get('role') != role:
+                raise Refusal('Blank workload prerequisites are unavailable.')
         if health.get('ready') is not True or health.get('head') != self.template['commit'] or health.get('gateway_version') != self.template['commit']:
             raise Refusal('Native candidate readiness failed.')
-        for role in ('operator', 'gateway'):
+        for role in self.roles:
             self.run('config', 'set', self.name + '-' + role, 'user.orbit.template.ready=' + self.prepared_digest)
         self.run('storage', 'volume', 'set', self.pool, self.name + '-worktree', 'user.orbit.template.ready=' + self.prepared_digest)
         return {'converged': True, 'candidate': self.name, 'source_template': self.template, 'native_health': health}

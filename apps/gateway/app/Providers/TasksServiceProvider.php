@@ -28,6 +28,7 @@ use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
+use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
@@ -55,6 +56,7 @@ use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceSigner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceTopology;
+use App\Infrastructure\Tasks\SandboxTopologyAdmission;
 use App\Infrastructure\Tasks\T3\HttpT3Dispatcher;
 use App\Infrastructure\Tasks\T3\HttpT3ThreadReader;
 use App\Infrastructure\Tasks\T3\T3Dispatcher;
@@ -77,6 +79,7 @@ final class TasksServiceProvider extends ServiceProvider
         SandboxNetworkPolicy::class => SandboxHubNetwork::class,
         InstanceProvisioning::class => TaskWorkspaceProvisioner::class,
         TaskWorkspaceTopology::class => RemoteTaskWorkspaceTopology::class,
+        TaskTopologyAdmission::class => SandboxTopologyAdmission::class,
         AgentSpawner::class => TaskAgentSpawner::class,
         TaskWorkspaceMcp::class => RemoteTaskWorkspaceMcp::class,
         T3Dispatcher::class => HttpT3Dispatcher::class,

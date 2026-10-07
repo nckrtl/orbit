@@ -1,4 +1,4 @@
-"""Publish immutable Incus pair images and source; never promote or enable claims."""
+"""Publish immutable Incus pair and blank workload images and source; never promote or enable claims."""
 import hashlib
 import json
 import os
@@ -15,9 +15,21 @@ class Refusal(ValueError):
     pass
 
 
+WORKLOAD_ROLES = ('app-dev', 'app-prod', 'app-prod-2')
+
+
+def workload_roles(request):
+    roles = request.get('workload_roles', [])
+    if (not isinstance(roles, list) or any(not isinstance(role, str) for role in roles)
+            or roles != [role for role in WORKLOAD_ROLES if role in roles]):
+        raise Refusal('Invalid workload image roles.')
+    return roles
+
+
 def validate(request):
-    if not isinstance(request, dict) or set(request) != {'project', 'pool', 'sandbox_id', 'source_template'}:
+    if not isinstance(request, dict) or set(request) - {'workload_roles'} != {'project', 'pool', 'sandbox_id', 'source_template'}:
         raise Refusal('Invalid publication request.')
+    workload_roles(request)
     for key in ('project', 'pool'):
         if not isinstance(request[key], str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_.-]{0,62}', request[key]):
             raise Refusal('Invalid Incus scope.')
@@ -45,6 +57,7 @@ class Publisher:
         self.request = validate(request)
         self.project, self.pool = request['project'], request['pool']
         self.template = request['source_template']
+        self.roles = ('operator', 'gateway', *workload_roles(request))
         self.name = 'ot-' + hashlib.sha256(request['sandbox_id'].encode()).hexdigest()[:10]
         self.target = 'ot-template-' + hashlib.sha256(self.template['id'].encode()).hexdigest()[:10]
         self.metadata = {'user.orbit.template.owner': 'orbit-task-template',
@@ -91,11 +104,12 @@ class Publisher:
         images, volumes = self.outputs()
         if images or volumes:
             raise Refusal('Template output already exists; inspect it before retrying.')
-        pair = {self.name + '-' + role for role in ('operator', 'gateway')}
+        pair = {self.name + '-' + role for role in self.roles}
         instances = self.query('/1.0/instances?recursion=1')
         selected = [item for item in instances if item['name'] in pair]
-        if len(selected) != 2:
-            raise Refusal('The disposable pair is incomplete.')
+        owned = [item for item in instances if item.get('config', {}).get('user.orbit.compute.id') == self.request['sandbox_id']]
+        if len(selected) != len(self.roles) or {item['name'] for item in owned} != pair:
+            raise Refusal('The disposable candidate inventory is incomplete or foreign.')
         for instance in selected:
             self.candidate(instance)
             devices = instance.get('expanded_devices', instance.get('devices', {}))
@@ -145,9 +159,10 @@ class Publisher:
     def publish(self):
         self.preflight()
         report = {'source_template': self.template, 'images': {}, 'guest_audits': {}}
-        for role in ('operator', 'gateway'):
-            audit = self.guest(role, (self.helpers / 'guest-template-audit.py').read_text())
-            if audit.get('ready') is not True:
+        for role in self.roles:
+            audit = self.guest(role, (self.helpers / 'guest-template-audit.py').read_text(),
+                               json.dumps({'role': role}) if role in WORKLOAD_ROLES else None)
+            if audit.get('ready') is not True or (role in WORKLOAD_ROLES and audit.get('role') != role):
                 raise Refusal('Candidate guest did not pass its audit.')
             report['guest_audits'][role] = audit
         marker_script = """import json,os,pathlib,sys
@@ -175,9 +190,9 @@ print('{}')
         report['native_health'] = health
         # Revalidate all host identities immediately before changing power.
         self.preflight()
-        for role in ('operator', 'gateway'):
+        for role in self.roles:
             self.run('stop', self.name + '-' + role, '--timeout', '60')
-        for role in ('operator', 'gateway'):
+        for role in self.roles:
             value = self.query('/1.0/instances/' + self.name + '-' + role)
             self.candidate(value)
             if value.get('status') != 'Stopped':
@@ -189,7 +204,7 @@ print('{}')
             self.owned_output(self.query(self.volume_path(self.target)))
             self.run('storage', 'volume', 'snapshot', 'create', self.pool, self.target, 'ready')
             self.owned_output(self.query(self.volume_path(self.target) + '/snapshots/ready'))
-            for role in ('operator', 'gateway'):
+            for role in self.roles:
                 self.run('publish', self.name + '-' + role, '--compression', 'none',
                          *[key + '=' + value for key, value in {**self.metadata, 'user.orbit.template.role': role}.items()])
                 matches = [image for image in self.images() if image.get('properties', {}).get('user.orbit.template.id') == self.template['id']

@@ -73,6 +73,13 @@ describe('task response fixtures', function (): void {
         ]);
     });
 
+    it('records a subtask with declared workload nodes', function (): void {
+        $group = task_fixture_group($this->project);
+        record_fixture($this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
+            'title' => 'Use a workload node', 'brief' => 'Verify the private app-dev node.', 'topology' => ['app-dev'],
+        ])->assertCreated(), 'tasks/tasks-subtask-create/topology', CreateSubtaskRequest::class, 'POST /api/v1/task-groups/{group}/tasks');
+    });
+
     it('records tasks status', function (): void {
         record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/enabled', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });

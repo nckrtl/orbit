@@ -29,8 +29,11 @@ def request():
 
 
 class FakeBuilder(Builder):
-    def __init__(self):
-        super().__init__(request())
+    def __init__(self, workload_roles=None):
+        value = request()
+        if workload_roles is not None:
+            value.update(workload_roles=workload_roles, budget=2 + len(workload_roles))
+        super().__init__(value)
         self.calls, self.instances, self.volumes = [], [], []
         self.fail_install = False
         self.fail_health = False
@@ -55,9 +58,9 @@ class FakeBuilder(Builder):
         self.calls.append(('allocate', args))
         assert Path(args[1]).is_file() and args[1].endswith('/apps/agent/resources/incus-sandbox.py')
         value = json.loads(kwargs['input'])
-        assert value['spec']['images'] == dict.fromkeys(('operator', 'gateway'), self.build['base_image'])
+        assert value['spec']['images'] == dict.fromkeys(('operator', 'gateway', *self.build.get('workload_roles', [])), self.build['base_image'])
         owner = {'user.orbit.compute.owner': 'orbit-task-sandbox', 'user.orbit.compute.id': self.request['sandbox_id']}
-        for role in ('operator', 'gateway'):
+        for role in ('operator', 'gateway', *self.build.get('workload_roles', [])):
             self.instances.append({'name': self.name + '-' + role, 'type': 'virtual-machine', 'status': 'Running', 'profiles': [],
                                    'config': {**owner, 'volatile.base_image': self.build['base_image']}, 'expanded_devices': {
                                        'root': {'type': 'disk', 'pool': self.pool, 'path': '/'},
@@ -82,7 +85,7 @@ class FakeBuilder(Builder):
         elif args[0] == 'exec' and args[-1] == '/root/orbit-template-inputs/guest-template-install.py':
             if self.fail_install:
                 raise Refusal('Guest preparation failed')
-            return json.dumps({'prepared': True, 'source_template': self.template})
+            return json.dumps({'prepared': True, 'role': json.loads(data)['role'], 'source_template': self.template})
         elif args[0] == 'exec' and args[-1] == '/home/orbit/.orbit/ssh/id_ed25519.pub':
             return 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFixture'
         return ''
@@ -91,7 +94,7 @@ class FakeBuilder(Builder):
         self.calls.append(('guest', role, user))
         if 'sandbox_template_native_health_failed' in script:
             return {'ready': not self.fail_health, 'head': self.template['commit'], 'gateway_version': self.template['commit']}
-        return {'head': self.template['commit'], 'source_template': self.template}
+        return {'head': self.template['commit'], 'source_template': self.template, 'ready': True, 'role': role}
 
     def apply(self):
         with patch.dict(self.new_candidate.__globals__, verify_inputs=lambda _: {'verified': True}), patch('subprocess.run', self.provision):
@@ -155,6 +158,30 @@ class BuilderTest(unittest.TestCase):
         with self.assertRaises(Refusal):
             builder.converge()
         self.assertTrue(all('user.orbit.template.ready' not in value['config'] for value in builder.instances))
+
+    def test_workload_images_are_prepared_with_the_pair_and_never_enrolled_during_convergence(self):
+        builder = FakeBuilder(['app-dev', 'app-prod', 'app-prod-2'])
+        self.assertTrue(builder.apply()['prepared'])
+        self.assertEqual(5, len(builder.instances))
+        self.assertTrue(builder.converge()['converged'])
+        self.assertTrue(all(row['config']['user.orbit.template.ready'] == builder.prepared_digest for row in builder.instances))
+        native = [call for call in builder.calls if call[0] == 'exec' and any(isinstance(argument, str) and argument.endswith('/converge-operator.sh') for argument in call)]
+        self.assertEqual(1, len(native))
+        self.assertFalse(any('orbit:node-provision' in call for call in builder.calls))
+        builder.instances[-1]['config']['user.orbit.template.prepared'] = 'foreign'
+        with self.assertRaises(Refusal):
+            builder.converge()
+
+    def test_workload_roles_and_budget_are_closed_before_allocating(self):
+        for roles in (None, 'app-dev', ['gateway'], ['app-dev', 'app-dev'], ['app-prod', 'app-dev'], [True]):
+            value = request()
+            value['workload_roles'] = roles
+            with self.subTest(roles=roles), self.assertRaises(ValueError):
+                Builder(value)
+        value = request()
+        value.update(workload_roles=['app-dev'], budget=2)
+        with self.assertRaises(ValueError):
+            Builder(value)
 
     def test_closed_schema_and_complete_provenance_are_required(self):
         for mutate in (lambda r: r.update(extra=True), lambda r: r.update(project='orbit-task-sandboxes'),

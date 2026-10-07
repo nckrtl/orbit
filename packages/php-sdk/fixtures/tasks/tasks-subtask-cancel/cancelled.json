@@ -26,6 +26,7 @@
                     "directory": "packages/php-sdk"
                 }
             ],
+            "topology": [],
             "status": "cancelled",
             "implementer_agent_thread_id": null,
             "tokens": null,

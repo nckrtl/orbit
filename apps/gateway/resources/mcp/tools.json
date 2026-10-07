@@ -7373,6 +7373,18 @@
                   "type": "string",
                   "maxLength": 8000
                 },
+                "topology": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "app-dev",
+                      "app-prod",
+                      "app-prod-2"
+                    ]
+                  }
+                },
                 "deliverables": {
                   "type": "array",
                   "maxItems": 5,
@@ -8271,6 +8283,19 @@
             "maxLength": 8000,
             "description": "Goal and acceptance of the step"
           },
+          "topology": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "enum": [
+                "app-dev",
+                "app-prod",
+                "app-prod-2"
+              ]
+            },
+            "description": "JSON array of required workload nodes; [] removes declarations"
+          },
           "deliverables": {
             "type": "array",
             "maxItems": 5,
@@ -8417,6 +8442,19 @@
             "type": "integer",
             "minimum": 1,
             "description": "New position, starting at 1"
+          },
+          "topology": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "enum": [
+                "app-dev",
+                "app-prod",
+                "app-prod-2"
+              ]
+            },
+            "description": "JSON array of required workload nodes; [] removes declarations"
           },
           "deliverables": {
             "type": "array",

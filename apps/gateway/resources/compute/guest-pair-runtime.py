@@ -26,12 +26,39 @@ def git(arguments, root, home):
     return run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', *arguments], root, home)
 
 
+def private_gateway_version(root, home):
+    config_path = home / '.orbit/config.json'
+    if config_path.is_symlink() or not config_path.is_file():
+        raise ValueError('The isolated Gateway profile is unavailable')
+    configuration = json.loads(config_path.read_text())
+    active = configuration.get('active_gateway') if isinstance(configuration, dict) else None
+    gateways = configuration.get('gateways') if isinstance(configuration, dict) else None
+    if (not isinstance(active, str) or not isinstance(gateways, dict) or set(gateways) != {active}
+            or not isinstance(gateways[active], dict) or gateways[active].get('url') != 'https://10.44.0.1'):
+        raise ValueError('The operator profile does not name the isolated Gateway')
+    status = json.loads(run([str(root / 'apps/cli/orbit'), 'gateway:status', '--json'], root, home, timeout=60))
+    if (not isinstance(status, dict) or status.get('status') != 'ok'
+            or status.get('url') != 'https://10.44.0.1'
+            or not isinstance(status.get('version'), str)
+            or not re.fullmatch(r'[a-f0-9]{40}(?:[a-f0-9]{24})?', status['version'])):
+        raise ValueError('The isolated Gateway is not serving the branch version')
+    return status['version']
+
+
 def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
-    if (not isinstance(request, dict) or set(request) - {'head'} != {'sandbox_id', 'branch', 'phase'}
-            or request['phase'] not in ('inspect', 'gateway', 'operator')
+    if (not isinstance(request, dict) or set(request) - {'head', 'inventory', 'doctor'} != {'sandbox_id', 'branch', 'phase'}
+            or request['phase'] not in ('inspect', 'gateway', 'operator', 'version')
             or not isinstance(request['sandbox_id'], str) or str(uuid.UUID(request['sandbox_id'])) != request['sandbox_id']
             or not isinstance(request['branch'], str) or not re.fullmatch(r'task-[1-9][0-9]*', request['branch'])):
         raise ValueError('Invalid pair runtime request')
+    if 'doctor' in request and request['doctor'] is not True:
+        raise ValueError('Invalid doctor request')
+    inventory = request.get('inventory', ['gateway', 'operator'])
+    if (not isinstance(inventory, list) or not 2 <= len(inventory) <= 5
+            or any(not isinstance(role, str) for role in inventory)
+            or len(set(inventory)) != len(inventory) or not {'gateway', 'operator'} <= set(inventory)
+            or set(inventory) - {'gateway', 'operator', 'app-dev', 'app-prod', 'app-prod-2'}):
+        raise ValueError('Invalid recorded inventory')
     if not root.is_dir() or root.resolve() != root or root.stat().st_uid != os.geteuid():
         raise ValueError('The pair source is unavailable')
     metadata = root / '.git'
@@ -89,29 +116,47 @@ def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
         )
         run(['php', '-r', access], root, home)
         run(['sudo', '-n', 'systemctl', 'restart', 'php8.5-fpm'], root, home)
+    elif request['phase'] == 'version':
+        version = private_gateway_version(root, home)
     elif request['phase'] == 'operator':
-        config_path = home / '.orbit/config.json'
-        if config_path.is_symlink() or not config_path.is_file():
-            raise ValueError('The isolated Gateway profile is unavailable')
-        configuration = json.loads(config_path.read_text())
-        active = configuration.get('active_gateway') if isinstance(configuration, dict) else None
-        gateways = configuration.get('gateways') if isinstance(configuration, dict) else None
-        if (not isinstance(active, str) or not isinstance(gateways, dict) or set(gateways) != {active}
-                or not isinstance(gateways[active], dict) or gateways[active].get('url') != 'https://10.44.0.1'):
-            raise ValueError('The operator profile does not name the isolated Gateway')
+        version = private_gateway_version(root, home)
         data = json.loads(run([str(root / 'apps/cli/orbit'), 'node:list', '--json'], root, home, timeout=60))
         nodes = data.get('nodes') if isinstance(data, dict) else None
-        if (not isinstance(nodes, list) or len(nodes) != 2 or any(not isinstance(node, dict) for node in nodes)
-                or {node.get('name') for node in nodes} != {'gateway', 'operator'}
+        if (not isinstance(nodes, list) or len(nodes) != len(inventory) or any(not isinstance(node, dict) for node in nodes)
+                or {node.get('name') for node in nodes} != set(inventory)
                 or any(node.get('status') != 'active' for node in nodes)):
-            raise ValueError('The isolated pair is not ready')
-        status = json.loads(run([str(root / 'apps/cli/orbit'), 'gateway:status', '--json'], root, home, timeout=60))
-        if (not isinstance(status, dict) or status.get('status') != 'ok'
-                or status.get('url') != 'https://10.44.0.1' or status.get('version') != head):
+            raise ValueError('The isolated recorded inventory is not ready')
+        for node in nodes:
+            roles = node.get('roles')
+            required = 'app-prod' if node['name'] == 'app-prod-2' else node['name']
+            if node['name'] == 'operator' and roles != []:
+                raise ValueError('The operator is not roleless')
+            if node['name'] not in ('gateway', 'operator') and (not isinstance(roles, list) or required not in roles):
+                raise ValueError('A workload role is not active')
+        if version != head:
             raise ValueError('The isolated Gateway is not serving the branch version')
+        if request.get('doctor'):
+            for node in nodes:
+                node_id = node.get('id')
+                if type(node_id) is not int or node_id < 1:
+                    raise ValueError('Invalid doctor Node identity')
+                report = json.loads(run([str(root / 'apps/cli/orbit'), 'doctor', '--node=' + str(node_id), '--family=node', '--family=role', '--family=firewall', '--json'], root, home, timeout=90))
+                observations = report.get('nodes') if isinstance(report, dict) else None
+                if (not isinstance(report, dict) or report.get('healthy') is not True
+                        or not isinstance(observations, list) or len(observations) != 1
+                        or not isinstance(observations[0], dict) or observations[0].get('node_id') != node_id
+                        or observations[0].get('node_name') != node['name'] or observations[0].get('healthy') is not True):
+                    raise ValueError('The recorded Node failed fresh doctor readiness')
+                families = observations[0].get('families')
+                if (not isinstance(families, list) or len(families) != 3
+                        or any(not isinstance(family, dict) or family.get('status') != 'healthy' for family in families)
+                        or {family.get('family') for family in families} != {'node', 'role', 'firewall'}):
+                    raise ValueError('The doctor readiness families are incomplete')
     if git(['rev-parse', '--verify', 'HEAD^{commit}'], root, home) != head:
         raise ValueError('The pair source changed during preparation')
-    return {'sandbox_id': request['sandbox_id'], 'head': head, 'ready': True}
+    return {'sandbox_id': request['sandbox_id'], 'head': head, 'ready': True,
+            **({'gateway_head': version, 'gateway_url': 'https://10.44.0.1'} if request['phase'] == 'version' else {}),
+            **({'gateway_url': 'https://10.44.0.1', 'doctor_nodes': inventory} if request.get('doctor') else {})}
 
 
 if __name__ == '__main__':

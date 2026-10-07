@@ -42,6 +42,7 @@ use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupMetricsRefresher;
@@ -63,6 +64,7 @@ use App\Domain\Tasks\TaskSettleMetricsCollector;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadObservation;
 use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTopologyAdmission;
 use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskTurnInstructions;
 use App\Domain\Tasks\TaskTurnPullRequest;
@@ -3286,4 +3288,134 @@ it('refuses a workspace commit that is not the stored commit recorded for review
         ->and($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($dispatcher->commands)->toHaveCount(1)
         ->and($dispatcher->commands[0]['message']['text'])->toContain(TaskScheduler::WorkspaceChangedReminder);
+});
+
+it('waits for topology before baseline and retries without failed spawns or communication failures', function (): void {
+    $project = scheduler_app('topology-baseline');
+    $project->update(['task_check' => 'composer check']);
+    $instance = scheduler_instance($project, scheduler_node('topology-baseline-node', '10.44.0.94'), 'baseline');
+    $group = queued_group($project, 'Topology baseline', $instance);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    $checks = new FakeTaskCheckRunner([FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $state = (object) ['ready' => false];
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function () use ($state): void {
+        if (! $state->ready) {
+            throw new TaskCapacityException(false, 'Declared topology is waiting for capacity.');
+        }
+    });
+
+    app(TaskScheduler::class)->claimNext();
+    test_pass_baseline();
+
+    expect($checks->starts)->toBe(0)->and($spawner->events)->toBe([])
+        ->and($group->fresh()->capacity_wait_reason)->toBe('Declared topology is waiting for capacity.')
+        ->and($group->fresh()->assistance_requested)->toBeFalse()
+        ->and($group->tasks()->sole()->communication_failures)->toBe(0);
+    $state->ready = true;
+    test_pass_baseline();
+    expect($checks->starts)->toBe(1)->and($spawner->events)->toBe([]);
+    $state->ready = false;
+    test_pass_baseline();
+    expect($spawner->events)->toBe([])->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed);
+    $state->ready = true;
+    test_pass_baseline();
+    expect($spawner->events)->toBe(['implementer:1'])->and($group->fresh()->capacity_wait_reason)->toBeNull();
+});
+
+it('polls a running baseline without mutating topology and rechecks readiness after it finishes', function (): void {
+    $project = scheduler_app('topology-running-baseline');
+    $project->update(['task_check' => 'composer check']);
+    $instance = scheduler_instance($project, scheduler_node('topology-running-node', '10.44.0.95'), 'baseline');
+    $group = queued_group($project, 'Running topology baseline', $instance);
+    $spawner = scheduler_recording_spawner();
+    scheduler_bind_claim($instance, $spawner);
+    $checks = new FakeTaskCheckRunner([TaskCheckReading::running(), FakeTaskCheckRunner::passed()]);
+    app()->instance(TaskCheckRunner::class, $checks);
+    $state = (object) ['calls' => 0, 'ready' => true];
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function () use ($state): void {
+        $state->calls++;
+        if (! $state->ready) {
+            throw new TaskCapacityException(false, 'The branch runtime is waiting.');
+        }
+    });
+
+    app(TaskScheduler::class)->claimNext();
+    $state->ready = false;
+    test_pass_baseline();
+
+    expect($state->calls)->toBe(1)->and($checks->starts)->toBe(1)
+        ->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Running)
+        ->and($spawner->events)->toBe([]);
+    test_pass_baseline();
+    expect($state->calls)->toBe(2)->and(TaskCheck::query()->sole()->status)->toBe(TaskCheckStatus::Passed)
+        ->and($spawner->events)->toBe([])
+        ->and($group->fresh()->capacity_wait_reason)->toBe('The branch runtime is waiting.');
+});
+
+it('routes a VM reviewer topology fallback through private admission and retries capacity before resuming', function (): void {
+    [$group, $task, , , , $dispatcher] = scheduler_review([
+        FakeTaskTurnReceipts::contents('topology_requested', 'Need private workload Nodes.'),
+    ]);
+    $group->project->update(['slug' => 'orbit']);
+    $group->update(['task_compute' => TaskCompute::Vm]);
+    $task->update(['topology' => ['app-prod-2']]);
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    $state = (object) ['waiting' => true, 'calls' => 0];
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->andReturnUsing(function (Task $actualGroup, Task $actualTask) use ($state, $group, $task): void {
+        expect($actualGroup->id)->toBe($group->id);
+        expect($actualTask->id)->toBe($task->id);
+        expect($actualTask->fresh()->topology)->toBe(['app-prod-2', 'app-dev', 'app-prod']);
+        $state->calls++;
+        if ($state->waiting) {
+            throw new TaskCapacityException(false, 'Private workload capacity is full.');
+        }
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($topology->calls)->toBe([]);
+    expect($dispatcher->commands)->toBe([]);
+    expect($group->fresh()->capacity_wait_reason)->toBe('Private workload capacity is full.');
+    expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
+    expect($task->fresh()->communication_failures)->toBe(0);
+    expect(TaskQuestion::query()->count())->toBe(0);
+
+    $state->waiting = false;
+    app(TaskScheduler::class)->tick();
+
+    expect($topology->calls)->toBe([]);
+    expect($dispatcher->commands)->toHaveCount(1);
+    expect(json_encode($dispatcher->commands))->toContain('private Gateway');
+    expect($group->fresh()->capacity_wait_reason)->toBeNull();
+    expect($task->fresh()->comments()->count())->toBe(1);
+    expect($state->calls)->toBe(2);
+});
+
+it('refuses an Orbit topology fallback on the Project VM lane without blocking its review', function (): void {
+    [$group, $task, , , , $dispatcher] = scheduler_review([
+        FakeTaskTurnReceipts::contents('topology_requested', 'Need discovery.'),
+    ]);
+    $group->project->update(['slug' => 'dlf']);
+    $group->update(['task_compute' => TaskCompute::Vm]);
+    $task->update(['topology' => []]);
+    $topology = new FakeTaskWorkspaceTopology;
+    app()->instance(TaskWorkspaceTopology::class, $topology);
+    mock(TaskTopologyAdmission::class)->shouldReceive('prepare')->once()->andReturnUsing(function (Task $actualGroup, Task $actualTask): void {
+        expect($actualGroup->project->slug)->toBe('dlf');
+        expect($actualTask->topology)->toBe([]);
+    });
+
+    app(TaskScheduler::class)->tick();
+
+    expect($topology->calls)->toBe([]);
+    expect($dispatcher->commands)->toHaveCount(1);
+    expect(json_encode($dispatcher->commands))->toContain('Project workspace');
+    expect($group->fresh()->capacity_wait_reason)->toBeNull();
+    expect($group->fresh()->task_compute)->toBe(TaskCompute::Vm);
+    expect($task->fresh()->topology)->toBe([]);
+    expect($task->fresh()->status)->toBe(TaskStatus::Reviewing);
+    expect(TaskQuestion::query()->count())->toBe(0);
 });
