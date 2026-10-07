@@ -147,6 +147,22 @@ Smoke does not run before the web switch. Any failure after the switch counts, a
 
 After a verified release, deploy removes old releases. It keeps the newest `ORBIT_GATEWAY_RELEASES_KEEP` releases (default 5), and always the current and the previous one.
 
+#### Migrations and the snapshot
+
+Before the switch, deploy compares the migration files the release ships with the `migrations` table. When none are pending, it neither snapshots nor migrates. When some are pending, it first writes a consistent copy of the Gateway database with SQLite `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>.sqlite`, with mode `0600`. The copy needs no `sqlite3` binary, and the Gateway keeps the newest five. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves. A failed snapshot changes nothing and the commit is tried again later. A failed migration may have applied part of its changes, so deploy pauses with `gateway.release_migrate_failed` and names the snapshot. To go back to it, follow [Recover a failed update](#recover-a-failed-update) with the snapshot as the database file.
+
+#### Runtime handoff
+
+The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff` with the code of the release that just became current, so a release that changes what the Gateway renders applies that change at once. The deployer itself runs from the previous release. In order, the handoff:
+
+1. publishes the Gateway Node's Caddyfile when the render changed. Caddy reloads gracefully. The Gateway site resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`), so a request that started before the switch finishes on its release and the next one runs the new release. PHP-FPM is not restarted;
+2. reloads PHP-FPM only when the rendered pool differs from `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf`. A reload ends requests in flight, so an unchanged pool is left alone;
+3. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path;
+4. restarts the scheduler: the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. It runs `schedule:interrupt`, takes the `tasks:tick` lock so no tick is cut off, stops the unit, clears the schedule's overlap locks with `schedule:clear-cache`, starts the unit, waits until it is active, and releases the tick lock. A Gateway without such a Process reports `not_found`;
+5. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate). The new scheduler pauses cleanup when it starts, so the handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. A report with differences, or a resume that is refused, leaves cleanup paused: the release record has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release still continues.
+
+The handoff prints one JSON object with `caddy`, `fpm`, `scheduler`, `scheduler_unit`, `cleanup`, `cleanup_error_code`, `agent_view`, and `cleanup_paused`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
+
 `gateway:release:list` and `gateway:release:show <id>` read the release records, newest first. Each record has the commit, the trigger (`deploy` or `rollback`), the outcome, whether migrations ran, the snapshot path, and each step. Every attempt that names a commit writes a record and an Activity entry. A failure about the machine, such as low disk, is recorded with `retryable: true`, so the commit is not marked failed. A refusal that names no release, such as an unknown commit, writes only a failed Activity entry. A step refused by the release lock writes nothing.
 
 One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
@@ -156,6 +172,13 @@ One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refus
 | `gateway.release_not_adopted` | `/home/orbit/orbit` is still an in-place checkout. |
 | `gateway.release_not_prepared` | The release id is not a finished release. |
 | `gateway.release_switch_failed` | The current link could not be replaced. It stays on the previous release. |
+| `gateway.release_migrations_unreadable` | The `migrations` table could not be read. Nothing changed. |
+| `gateway.release_snapshot_failed`, `gateway.release_snapshot_unavailable` | The pre-migration snapshot failed, or the database is not SQLite. Nothing changed. |
+| `gateway.release_migrate_failed` | The release's migrations failed. The release pauses. |
+| `gateway.release_caddy_failed`, `gateway.release_fpm_failed`, `gateway.release_units_failed` | The handoff could not publish Caddy, reload PHP-FPM, or install the Gateway units. |
+| `gateway.release_scheduler_busy` | A tasks tick held its lock for more than 330 seconds, so the scheduler was not restarted. |
+| `gateway.release_scheduler_failed` | The scheduler unit did not stop, start, or become active. |
+| `gateway.release_handoff_failed` | The release printed no handoff result. |
 | `gateway.release_verify_failed` | `/up` or Gateway status did not match the commit. |
 | `gateway.release_smoke_failed` | Smoke failed after the web switch. |
 | `gateway.release_switch_back_failed` | The failure was real, and returning to the previous release also failed. |

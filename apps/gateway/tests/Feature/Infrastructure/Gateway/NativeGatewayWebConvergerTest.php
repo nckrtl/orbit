@@ -259,6 +259,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'root * /home/orbit/orbit-gateway/public',
                 'tls /etc/caddy/orbit-cert-current/gateway.pem /etc/caddy/orbit-cert-current/gateway.key',
                 'php_fastcgi unix//run/php/orbit-gateway.sock',
+                'resolve_root_symlink',
                 'dial_timeout 10s',
                 'read_timeout 600s',
                 'write_timeout 600s',

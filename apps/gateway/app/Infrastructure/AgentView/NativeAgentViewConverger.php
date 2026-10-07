@@ -6,6 +6,7 @@ namespace App\Infrastructure\AgentView;
 
 use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -16,6 +17,7 @@ use Throwable;
 /**
  * Installs `orbit-agent-view.service` on the Gateway host, enables it, and restarts it so it runs
  * the checkout's current code. It runs the PHP that PHP-FPM runs, as the private DNS listener does.
+ * The unit names the stable Gateway path, so a restart after a release switch runs the new release.
  */
 final readonly class NativeAgentViewConverger implements AgentViewConverger
 {
@@ -36,9 +38,9 @@ final readonly class NativeAgentViewConverger implements AgentViewConverger
     {
         $unit = $this->units->render(
             $this->phpBinary,
-            $this->artisan !== '' ? $this->artisan : base_path('artisan'),
+            $this->artisan !== '' ? $this->artisan : GatewayApplicationPath::resolve().'/artisan',
             $this->orbitHome !== '' ? $this->orbitHome : StoredValue::string(config('orbit.home')),
-            $this->workingDirectory !== '' ? $this->workingDirectory : base_path(),
+            $this->workingDirectory !== '' ? $this->workingDirectory : GatewayApplicationPath::resolve(),
             $this->user !== '' ? $this->user : 'orbit',
         );
 

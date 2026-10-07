@@ -237,6 +237,7 @@ use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
+use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
@@ -599,7 +600,8 @@ final class ApplicationServiceProvider extends ServiceProvider
                 caPath: rtrim(string: Config::string('orbit.home'), characters: '/').'/ca/root.pem',
                 commit: static function () use ($app): ?string {
                     $result = $app->make(ProcessRunner::class)->run(
-                        new ProcessInvocation(['git', '-C', base_path(), 'rev-parse', 'HEAD'], timeout: 10.0),
+                        // The stable path follows a release switch; base_path() stays on the release this process runs.
+                        new ProcessInvocation(['git', '-C', GatewayApplicationPath::resolve(), 'rev-parse', 'HEAD'], timeout: 10.0),
                     );
 
                     return $result->succeeded() ? trim($result->stdout) : null;

@@ -9,7 +9,7 @@ namespace App\Domain\GatewayReleases;
  * output changed, the scheduler handoff, document-cleanup reconcile then resume, and agent-view.
  * Switch-back runs the same handoff for the release it returns to.
  *
- * @phpstan-type HandoffResult array{caddy: string, fpm: string, scheduler: string, cleanup: string, agent_view: string, cleanup_paused: bool}
+ * @phpstan-type HandoffResult array{caddy: string, fpm: string, scheduler: string, scheduler_unit: string|null, cleanup: string, cleanup_error_code: string|null, agent_view: string, cleanup_paused: bool}
  */
 interface GatewayReleaseRuntime
 {

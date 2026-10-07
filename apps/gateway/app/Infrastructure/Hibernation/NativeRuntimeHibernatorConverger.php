@@ -7,6 +7,7 @@ namespace App\Infrastructure\Hibernation;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
+use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
 use App\Infrastructure\Processes\ProtectedInput;
@@ -29,9 +30,9 @@ final readonly class NativeRuntimeHibernatorConverger implements RuntimeHibernat
 
     public function converge(): void
     {
-        $artisan = $this->artisan !== '' ? $this->artisan : base_path('artisan');
+        $artisan = $this->artisan !== '' ? $this->artisan : GatewayApplicationPath::resolve().'/artisan';
         $orbitHome = $this->orbitHome !== '' ? $this->orbitHome : StoredValue::string(config('orbit.home'));
-        $workingDirectory = $this->workingDirectory !== '' ? $this->workingDirectory : base_path();
+        $workingDirectory = $this->workingDirectory !== '' ? $this->workingDirectory : GatewayApplicationPath::resolve();
         $user = $this->user !== '' ? $this->user : 'orbit';
         $service = $this->units->renderService($this->phpBinary, $artisan, $orbitHome, $workingDirectory, $user);
         $timer = $this->units->renderTimer($this->sweepSeconds);
