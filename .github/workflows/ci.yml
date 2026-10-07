@@ -205,6 +205,43 @@ jobs:
           path: ${{ matrix.directory }}/.orbit-tia
           key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
 
+      - name: Export sandbox TIA baseline
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          PROJECT: ${{ matrix.directory }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          graph = Path('.orbit-tia/graph.json')
+          data = json.loads(graph.read_text())
+          baseline = data['baselines']['main']
+          if data.get('schema') != 1 or baseline.get('sha') != os.environ['GITHUB_SHA'] or not baseline.get('results'):
+              raise SystemExit('The sandbox baseline must describe this tested main commit.')
+          files = ['composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist']
+          manifest = {
+              'schema': 1,
+              'project': os.environ['PROJECT'],
+              'commit': os.environ['GITHUB_SHA'],
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'graph_sha256': hashlib.sha256(graph.read_bytes()).hexdigest(),
+              'inputs': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files if Path(name).is_file()},
+          }
+          Path('.orbit-tia/manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+
+      - name: Publish sandbox TIA baseline
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}
+          path: |
+            ${{ matrix.directory }}/.orbit-tia/graph.json
+            ${{ matrix.directory }}/.orbit-tia/manifest.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
   privileged:
     name: Gateway privileged
     # Trusted branches use Sabre. Forks run the same gate on an isolated hosted runner.

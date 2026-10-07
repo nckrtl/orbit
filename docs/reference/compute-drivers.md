@@ -93,6 +93,10 @@ match. Public HTTP(S) and public DNS are permitted; fleet, private, host, metada
 and other group addresses are excluded. Host forwarding policy must also permit
 the dedicated bridge. This driver does not change the host firewall.
 
+### Image test baselines
+
+Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums. Image preparation must select a successful CI run and validate that manifest before importing the graph. Pull request runs do not publish these image inputs. A baseline accelerates local feedback; CI on the published task commit remains the merge gate.
+
 ### Power and recovery
 
 A lock on the host serializes provisioning and power operations. Starting and
