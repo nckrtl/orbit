@@ -159,6 +159,10 @@ class Builder(Publisher):
     def converge(self):
         self.prepared()
         self.source_ready()
+        for role in self.roles:
+            sources = self.guest(role, (HERE / 'guest-template-package-sources.py').read_text())
+            if sources.get('sources_https') is not True:
+                raise Refusal('Candidate package sources are unsafe.')
         for role in ('operator', 'gateway'):
             self.shell(role, 'systemctl enable --now ssh php8.5-fpm\nsystemctl disable --now dnsmasq\ninstall -d -o orbit -g orbit -m 0700 /home/orbit/.orbit\n')
         for project in ('.', 'apps/cli', 'apps/gateway', 'apps/e2e', 'apps/docs', 'packages/php-sdk'):

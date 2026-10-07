@@ -1,4 +1,5 @@
 import copy
+from threading import Barrier
 import subprocess
 import json
 from pathlib import Path
@@ -171,7 +172,39 @@ class Publication(unittest.TestCase):
         self.assertEqual([row['status'] for row in publisher.instances], ['Running', 'Running'])
         self.assertEqual(publisher.image_rows, [])
         self.assertEqual(publisher.volume_rows, [])
-        self.assertEqual(publisher.calls, [('guest', 'operator', 'root')])
+        self.assertEqual({('guest', 'operator', 'root'), ('guest', 'gateway', 'root')}, set(publisher.calls))
+
+    def test_independent_audits_run_together_before_source_or_power_changes(self):
+        publisher = FakePublisher(['app-dev', 'app-prod', 'app-prod-2'])
+        gate = Barrier(5, timeout=5)
+        original = publisher.guest
+        def synchronized(role, script, data=None, user='root'):
+            if user == 'root':
+                gate.wait()
+                self.assertFalse(any(call[0] in ('stop', 'copy', 'publish') for call in publisher.calls))
+            return original(role, script, data, user)
+        publisher.guest = synchronized
+        result = publisher.publish()
+        self.assertEqual(['operator', 'gateway', 'app-dev', 'app-prod', 'app-prod-2'], list(result['guest_audits']))
+        self.assertTrue(result['published'])
+
+    def test_one_failed_parallel_workload_audit_keeps_all_guests_running_and_unpublished(self):
+        publisher = FakePublisher(['app-dev', 'app-prod', 'app-prod-2'])
+        gate = Barrier(5, timeout=5)
+        original = publisher.guest
+        def fail_one(role, script, data=None, user='root'):
+            if user == 'root':
+                gate.wait()
+                if role == 'app-prod':
+                    raise Refusal('Workload contains a credential')
+            return original(role, script, data, user)
+        publisher.guest = fail_one
+        with self.assertRaises(Refusal):
+            publisher.publish()
+        self.assertEqual([], publisher.image_rows)
+        self.assertEqual([], publisher.volume_rows)
+        self.assertTrue(all(row['status'] == 'Running' for row in publisher.instances))
+        self.assertFalse(any(call[0] != 'guest' or call[2] != 'root' for call in publisher.calls))
 
     def test_unready_native_pair_is_not_stopped_or_published(self):
         publisher = FakePublisher()

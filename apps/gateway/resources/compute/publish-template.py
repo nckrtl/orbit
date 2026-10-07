@@ -1,4 +1,5 @@
 """Publish immutable Incus pair and blank workload images and source; never promote or enable claims."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 import os
@@ -159,12 +160,15 @@ class Publisher:
     def publish(self):
         self.preflight()
         report = {'source_template': self.template, 'images': {}, 'guest_audits': {}}
-        for role in self.roles:
-            audit = self.guest(role, (self.helpers / 'guest-template-audit.py').read_text(),
-                               json.dumps({'role': role}) if role in WORKLOAD_ROLES else None)
-            if audit.get('ready') is not True or (role in WORKLOAD_ROLES and audit.get('role') != role):
-                raise Refusal('Candidate guest did not pass its audit.')
-            report['guest_audits'][role] = audit
+        program = (self.helpers / 'guest-template-audit.py').read_text()
+        with ThreadPoolExecutor(max_workers=len(self.roles)) as workers:
+            pending = {role: workers.submit(self.guest, role, program,
+                       json.dumps({'role': role}) if role in WORKLOAD_ROLES else None) for role in self.roles}
+            for role, result in pending.items():
+                audit = result.result()
+                if audit.get('ready') is not True or (role in WORKLOAD_ROLES and audit.get('role') != role):
+                    raise Refusal('Candidate guest did not pass its audit.')
+                report['guest_audits'][role] = audit
         marker_script = """import json,os,pathlib,sys
 root=pathlib.Path('/home/orbit/orbit')
 assert root.resolve()==root and root.stat().st_uid==os.geteuid()

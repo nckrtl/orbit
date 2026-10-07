@@ -13,6 +13,7 @@ from unittest.mock import patch
 module = runpy.run_path(sys.argv.pop(1))
 Builder, Refusal = module['Builder'], module['Refusal']
 guest = runpy.run_path(str(Path(module['__file__']).with_name('guest-template-install.py')))
+secure_sources = runpy.run_path(str(Path(module['__file__']).with_name('guest-template-package-sources.py')))['secure_sources']
 locked = runpy.run_path(str(Path(module['__file__']).with_name('template-lock.py')))['locked']
 
 
@@ -37,6 +38,7 @@ class FakeBuilder(Builder):
         self.calls, self.instances, self.volumes = [], [], []
         self.fail_install = False
         self.fail_health = False
+        self.fail_sources = False
 
     def query(self, path, method='GET', data=None):
         self.calls.append(('read', path))
@@ -92,6 +94,9 @@ class FakeBuilder(Builder):
 
     def guest(self, role, script, data=None, user='root'):
         self.calls.append(('guest', role, user))
+        if 'sandbox_template_package_sources_failed' in script:
+            self.calls.append(('package-sources', role))
+            return {'sources_https': not self.fail_sources}
         if 'sandbox_template_native_health_failed' in script:
             return {'ready': not self.fail_health, 'head': self.template['commit'], 'gateway_version': self.template['commit']}
         return {'head': self.template['commit'], 'source_template': self.template, 'ready': True, 'role': role}
@@ -151,6 +156,71 @@ class BuilderTest(unittest.TestCase):
             builder.converge()
         self.assertFalse(any(call[0] == 'exec' for call in builder.calls[before:]))
 
+    def test_unsafe_sources_prevent_native_convergence_and_readiness(self):
+        builder = FakeBuilder()
+        builder.apply()
+        builder.fail_sources = True
+        before = len(builder.calls)
+        with self.assertRaises(Refusal):
+            builder.converge()
+        self.assertFalse(any(call[0] == 'exec' for call in builder.calls[before:]))
+        self.assertTrue(all('user.orbit.template.ready' not in value['config'] for value in builder.instances))
+
+    def test_standard_archives_use_https_and_other_source_state_is_preserved_on_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / 'sources.list.d').mkdir()
+            legacy = root / 'sources.list'
+            legacy.write_text('# http://archive.ubuntu.com/ubuntu stays a comment\ndeb http://archive.ubuntu.com/ubuntu resolute main\ndeb http://custom.example/ubuntu resolute main\n')
+            modern = root / 'sources.list.d/ubuntu.sources'
+            modern.write_text('Types: deb\nURIs: http://security.ubuntu.com/ubuntu/\nSuites: resolute-security\nComponents: main universe\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n')
+            modern.chmod(0o600)
+            self.assertEqual({'sources_https': True, 'changed_files': 2}, secure_sources(root))
+            self.assertEqual('# http://archive.ubuntu.com/ubuntu stays a comment\ndeb https://archive.ubuntu.com/ubuntu resolute main\ndeb http://custom.example/ubuntu resolute main\n', legacy.read_text())
+            self.assertEqual('Types: deb\nURIs: https://security.ubuntu.com/ubuntu/\nSuites: resolute-security\nComponents: main universe\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n', modern.read_text())
+            self.assertEqual(0o600, modern.stat().st_mode & 0o777)
+            self.assertEqual({'sources_https': True, 'changed_files': 0}, secure_sources(root))
+
+    def test_failed_atomic_replace_preserves_the_source_and_removes_temporary_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / 'sources.list'
+            original = 'deb http://archive.ubuntu.com/ubuntu resolute main\n'
+            source.write_text(original)
+            with patch('os.replace', side_effect=OSError('Failed replacement')), self.assertRaises(OSError):
+                secure_sources(root)
+            self.assertEqual(original, source.read_text())
+            self.assertEqual([source], list(root.iterdir()))
+
+    def test_symlinked_or_writable_sources_refuse_before_changing_other_sources(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sources = root / 'sources.list.d'
+            sources.mkdir()
+            legacy = root / 'sources.list'
+            original = 'deb http://archive.ubuntu.com/ubuntu resolute main\n'
+            legacy.write_text(original)
+            foreign = root / 'foreign'
+            foreign.write_text(original)
+            unsafe = sources / 'unsafe.sources'
+            unsafe.symlink_to(foreign)
+            with self.assertRaises(ValueError):
+                secure_sources(root)
+            self.assertEqual(original, legacy.read_text())
+            self.assertEqual(original, foreign.read_text())
+            unsafe.unlink()
+            unsafe.write_text(original)
+            unsafe.chmod(0o666)
+            with self.assertRaises(ValueError):
+                secure_sources(root)
+            self.assertEqual(original, legacy.read_text())
+            unsafe.unlink()
+            sources.rmdir()
+            sources.symlink_to(root)
+            with self.assertRaises(ValueError):
+                secure_sources(root)
+            self.assertEqual(original, legacy.read_text())
+
     def test_native_failure_does_not_mark_the_candidate_ready(self):
         builder = FakeBuilder()
         builder.apply()
@@ -164,6 +234,7 @@ class BuilderTest(unittest.TestCase):
         self.assertTrue(builder.apply()['prepared'])
         self.assertEqual(5, len(builder.instances))
         self.assertTrue(builder.converge()['converged'])
+        self.assertEqual(set(builder.roles), {call[1] for call in builder.calls if call[0] == 'package-sources'})
         self.assertTrue(all(row['config']['user.orbit.template.ready'] == builder.prepared_digest for row in builder.instances))
         native = [call for call in builder.calls if call[0] == 'exec' and any(isinstance(argument, str) and argument.endswith('/converge-operator.sh') for argument in call)]
         self.assertEqual(1, len(native))
