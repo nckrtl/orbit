@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
+use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
+use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Infrastructure\GatewayReleases\GitHubArtifactWebBuild;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use Illuminate\Support\Str;
@@ -162,5 +165,29 @@ describe('release smoke', function (): void {
         unlink($this->release.'/bin/gateway-smoke');
 
         expect(release_failure(fn () => smoke_runner($this->layout)->run($this->id, $this->sha))->errorCode)->toBe('gateway.release_smoke_missing');
+    });
+});
+
+describe('web build and smoke from the container', function (): void {
+    it('wires deploy and its prepare with the CI web build, and smoke with the configured limit and write check', function (): void {
+        config([
+            'orbit.gateway_checkout' => '/home/orbit/orbit/apps/gateway',
+            'orbit.gateway_web' => '/home/orbit/web',
+            'orbit.gateway_release_smoke_timeout' => 120,
+            'orbit.gateway_release_smoke_project' => 'gateway-smoke',
+        ]);
+        $deploy = app(DeployGatewayReleaseAction::class);
+        $promoter = new ReflectionProperty($deploy, 'promoter')->getValue($deploy);
+        $builder = new ReflectionProperty($deploy, 'builder')->getValue($deploy);
+        $smoke = new ReflectionProperty($promoter, 'smoke')->getValue($promoter);
+        $web = new ReflectionProperty($promoter, 'web')->getValue($promoter);
+
+        expect($web)->toBeInstanceOf(GitHubArtifactWebBuild::class)
+            ->and(new ReflectionProperty($web, 'webRoot')->getValue($web))->toBe('/home/orbit/web')
+            ->and(new ReflectionProperty($builder, 'web')->getValue($builder))->toBeInstanceOf(GitHubArtifactWebBuild::class)
+            ->and($smoke)->toBeInstanceOf(ScriptGatewayReleaseSmoke::class)
+            ->and(new ReflectionProperty($smoke, 'timeoutSeconds')->getValue($smoke))->toBe(120)
+            ->and(new ReflectionProperty($smoke, 'writeCheckProject')->getValue($smoke))->toBe('gateway-smoke')
+            ->and(app(SmokeGatewayReleaseAction::class))->toBeInstanceOf(SmokeGatewayReleaseAction::class);
     });
 });
