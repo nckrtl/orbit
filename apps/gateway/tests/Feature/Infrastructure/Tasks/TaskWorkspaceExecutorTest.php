@@ -154,3 +154,18 @@ it('allocates a private sandbox check directory without invoking host ACL tools'
     $process->mustRun();
     expect($process->getExitCode())->toBe(0);
 });
+
+it('never routes a test Gateway role through shared or project-lane transport', function (string $case): void {
+    $workspace = sandbox_workspace();
+    if ($case === 'shared') {
+        $workspace->update(['task_sandbox_id' => null]);
+    } else {
+        $workspace->project->update(['slug' => 'dlf']);
+        $sandbox = $workspace->taskSandbox;
+        $sandbox->update(['spec' => [...$sandbox->spec, 'images' => ['gateway' => str_repeat('a', 64)]]]);
+    }
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => app(TaskWorkspaceExecutor::class)->execute($workspace, new RemoteCommand(['id']), 'proof', 'tasks.proof', role: 'gateway'))
+        ->toThrow(RuntimeConvergenceException::class, 'requested sandbox role');
+})->with(['shared', 'project']);

@@ -278,3 +278,9 @@ This copy protocol is an internal building block. Image sanitation, source adopt
 A source template includes `.git/orbit-sandbox-template.json` with the same descriptor as its reservation. Before first use, the guest checks that marker, the pinned commit, the default branch, and a clean tracked and untracked tree. Ignored dependency caches can remain. The template uses a real local Git directory, contains only the default local and remote branches, and exposes only its canonical origin URL. Git includes, custom filters, alternate object stores, and replacement history are refused.
 
 After validation, the guest records group ownership without replacing an existing marker. It imports the task branch through the trusted bundle path and selects that branch, or the current default branch for new work. The template commit is the seed; the imported branch supplies the task's starting commit. Repeated preparation checks the recorded template identity and preserves local commits, dirty files, and dependencies. A populated checkout without the matching template marker remains refused.
+
+### Prepare the isolated pair
+
+Pair preparation checks group source ownership before changing the test Gateway. It repairs the saved Gateway inventory and the operator's WireGuard endpoint on the group's subnet. The Gateway ships copies of the same repair helpers tested by the E2E harness; its quality check verifies that they match.
+
+The test Gateway refreshes dependency autoloaders, installs locked dependencies when manifests changed, clears branch runtime caches, runs migrations against its own SQLite database, repairs Caddy’s checkout access, and restarts PHP-FPM. The operator then uses its isolated Gateway profile to list the active Gateway and roleless operator. Preparation reports success only when both guests confirm the same branch commit. It never routes these commands through a shared host or a project-lane Node.

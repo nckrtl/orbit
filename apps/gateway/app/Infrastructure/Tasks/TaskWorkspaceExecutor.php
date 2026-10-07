@@ -22,8 +22,11 @@ final readonly class TaskWorkspaceExecutor
 {
     public function __construct(private DevelopmentSshExecutor $shared, private IncusSandboxHost $host, private TaskSandboxDrivers $drivers) {}
 
-    public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace'): CommandResult
+    public function execute(Instance $workspace, RemoteCommand $command, string $step, string $errorCode, ?float $commandTimeout = null, string $failureLabel = 'Task workspace', string $role = 'operator'): CommandResult
     {
+        if (! in_array($role, ['operator', 'gateway'], true) || ($role !== 'operator' && $workspace->task_sandbox_id === null)) {
+            throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
+        }
         if ($workspace->task_sandbox_id === null) {
             if (Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->where('task_compute', TaskCompute::Vm->value)->exists()) {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The VM task workspace has no sandbox reservation.');
@@ -39,6 +42,10 @@ final readonly class TaskWorkspaceExecutor
                 || $group->taskable_type !== (new Instance)->getMorphClass()
                 || $sandbox->state !== SandboxState::Running || $sandbox->desired_power !== 'running') {
                 throw new RuntimeConvergenceException($step, $errorCode, 'The task sandbox ownership or running state is unavailable.');
+            }
+            if ($role === 'gateway' && ($sandbox->provider !== 'incus' || $group->project->slug !== 'orbit'
+                || ! is_array($sandbox->spec['images'] ?? null) || ! is_string($sandbox->spec['images']['gateway'] ?? null))) {
+                throw new RuntimeConvergenceException($step, $errorCode, 'The requested sandbox role is unavailable.');
             }
             if ($sandbox->provider === 'upcloud') {
                 if ($sandbox->node_id !== $workspace->node_id || $group->project->slug === 'orbit') {
@@ -61,7 +68,7 @@ final readonly class TaskWorkspaceExecutor
             if ($commandTimeout !== null && $command->timeout === null) {
                 $command = new RemoteCommand($command->arguments, input: $command->input, protectedInput: $command->protectedInput, maxOutputBytes: $command->maxOutputBytes, output: $command->output, cancelled: $command->cancelled, timeout: $commandTimeout, terminateGraceSeconds: $command->terminateGraceSeconds);
             }
-            $result = $this->host->executeGuest($node, $settings['project'], $sandbox->id, $settings['max_vms'], $command);
+            $result = $this->host->executeGuest($node, $settings['project'], $sandbox->id, $settings['max_vms'], $command, $role);
             if (! $result->succeeded()) {
                 throw new RuntimeConvergenceException($step, $errorCode, $failureLabel.' step ['.$step.'] failed in the sandbox.', result: $result);
             }

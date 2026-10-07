@@ -70,7 +70,8 @@
             "@rector",
             "@format:check",
             "@analyse",
-            "@annotator:check"
+            "@annotator:check",
+            "@compute-guests:check"
         ],
         "annotator:check": "python3 ../../bin/annotator-build --check",
         "format": "vendor/bin/pint",
@@ -98,7 +99,8 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
-        ]
+        ],
+        "compute-guests:check": "python3 ../../bin/compute-guest-build --check"
     },
     "extra": {
         "laravel": {
