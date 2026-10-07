@@ -241,3 +241,12 @@ Incus retains its stopped snapshot until resume or destruction. UpCloud retentio
 Review timing, confirmed parking time, and VM power are stored separately. A confirmed activation clears review timing for the next cycle. A failed activation retains it. Resume intent is recorded before the driver runs and stays until running power is confirmed, so an uncertain resume retries restoration instead of provisioning.
 
 The scheduler reconciles review retention after publication and on later ticks. It restores Incus compute before fetching or starting resumed work. Eligible VM review resumes are attempted before new todo claims. A compute failure remains visible in `capacity_wait_reason`; it cannot start an agent through a shared workspace. Cloud rebuild, fleet removal, and workspace cleanup remain prerequisites for opening VM claims.
+
+
+## Task workspace cleanup
+
+Merge and cancellation remove an Orbit-lane workspace through its sandbox reservation. Under the group admission lock, Orbit checks the group, Project, Instance, reservation, and compute host. It refuses foreign group references and unexpected live Routes, Processes, Schedules, or database connections. Guest checkout paths never reach the shared-host Instance remover.
+
+Orbit revokes the model key, destroys owned compute, and confirms destruction before deleting the workspace row and clearing its task references. A failed operation retains ownership for retry. The reservation remains as audit history. Project-lane cleanup refuses while its Node is enrolled; fleet removal remains a rollout prerequisite.
+
+The sweep retries reservations with no Instance when their group has ended or been deleted. It does not adopt unrecorded host resources or remove an active group's reservation. Failed retries use the workspace sweep's time budget and backoff.

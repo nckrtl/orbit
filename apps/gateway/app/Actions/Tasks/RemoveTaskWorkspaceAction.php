@@ -4,14 +4,18 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Domain\Compute\SandboxState;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Models\Instance;
 use App\Models\Task;
+use App\Models\TaskSandbox;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
 use Throwable;
@@ -23,7 +27,7 @@ use Throwable;
  * workspace keeps that deterministic name and branch, so every path that ends a group finds it by name
  * when the group holds no Instance.
  *
- * Removal is the generic forced Instance remover. It runs the Project's teardown steps, then deletes the
+ * Shared workspace removal uses the generic forced Instance remover. Sandbox removal uses its recorded compute ownership. It runs the Project's teardown steps, then deletes the
  * checkout and only then the Instance row. A refused teardown or source check leaves both in place. The
  * caller records assistance and returns the error, so the checkout stays named by a record.
  */
@@ -78,7 +82,11 @@ final readonly class RemoveTaskWorkspaceAction
         $instance = $this->find($group);
 
         if ($instance instanceof Instance) {
-            $this->remove($instance);
+            $this->remove($instance, $group);
+        } elseif ($group->task_compute === TaskCompute::Vm) {
+            foreach (TaskSandbox::query()->where('group_id', $group->id)->where('state', '!=', SandboxState::Destroyed)->get() as $sandbox) {
+                app(RemoveTaskSandboxAction::class)->unattached($sandbox);
+            }
         }
 
         return $instance;
@@ -86,8 +94,13 @@ final readonly class RemoveTaskWorkspaceAction
 
     /** Runs Project teardown through the generic Instance remover. The source and row stay when removal refuses. */
     /** Releases the group's topology first; a failed release keeps the workspace for a retry. */
-    public function remove(Instance $instance): void
+    public function remove(Instance $instance, ?Task $expectedGroup = null): void
     {
+        if (InstanceSandboxGuard::isSandbox($instance)) {
+            app(RemoveTaskSandboxAction::class)->workspace($instance, $expectedGroup);
+
+            return;
+        }
         $group = Task::topLevel()->where('taskable_type', $instance->getMorphClass())->where('taskable_id', $instance->id)->first();
         if ($group instanceof Task) {
             app(TaskWorkspaceTopology::class)->release($instance, $group->id);

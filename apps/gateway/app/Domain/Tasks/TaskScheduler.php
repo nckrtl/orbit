@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Tasks\CompleteTaskGroupAction;
+use App\Actions\Tasks\RemoveTaskSandboxAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
+use App\Domain\Compute\SandboxState;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Shared\StoredInteger;
@@ -23,6 +25,8 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use App\Models\TaskSandbox;
+use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -2319,7 +2323,9 @@ final readonly class TaskScheduler
         try {
             $leftover = $instance instanceof Instance ? Instance::query()->find($instance->id) : $this->workspaces->find($group);
             if ($leftover instanceof Instance) {
-                $this->workspaces->remove($leftover);
+                $this->workspaces->remove($leftover, $group);
+            } else {
+                $this->workspaces->execute($group);
             }
         } catch (Throwable $exception) {
             // The workspace stays findable by name, so a repeated cancel removes it.
@@ -2424,7 +2430,7 @@ final readonly class TaskScheduler
 
             try {
                 $this->pushCancelledApproval($group, $instance);
-                $this->workspaces->remove($instance);
+                $this->workspaces->remove($instance, $group);
                 $this->rememberBackoff($backoffKey, null, 'workspace removal');
                 $this->releaseRemovedWorkspace($group, $instance->id);
                 Log::warning('Removed the workspace of an ended task group.', ['task_group_id' => $group->id, 'instance_id' => $instance->id]);
@@ -2436,6 +2442,45 @@ final readonly class TaskScheduler
                     : RemoveTaskWorkspaceAction::RemovalFailedPrefix;
                 $this->workspaces->recordFailure($group, $exception, $prefix);
                 $this->extendBackoff($backoffKey, $backoff, 'workspace removal');
+            }
+        }
+
+        return $removed + $this->removeAbandonedSandboxes($started);
+    }
+
+    /** Recover recorded reservations whose claim ended before it attached a workspace. */
+    private function removeAbandonedSandboxes(CarbonInterface $started): int
+    {
+        $removed = 0;
+        $candidates = TaskSandbox::query()->where('state', '!=', SandboxState::Destroyed)
+            ->whereNotIn('id', Instance::query()->whereNotNull('task_sandbox_id')->select('task_sandbox_id'))
+            ->where(fn ($query) => $query->whereNull('group_id')->orWhereHas('group', fn ($groups) => $groups
+                ->where('execution_mode', TaskExecutionMode::Managed)->where('task_compute', TaskCompute::Vm)
+                ->where(fn ($claim) => $claim->whereNull('reserved_at')->orWhere('reserved_at', '<=', RemoveTaskWorkspaceAction::reservationCutoff()))
+                ->whereIn('status', [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled])))
+            ->orderBy('created_at')->get();
+        foreach ($candidates as $sandbox) {
+            if ($started->diffInSeconds(now(), true) >= self::AbandonedWorkspaceBudgetSeconds) {
+                break;
+            }
+            $key = 'tasks.sandbox-removal.'.$sandbox->id;
+            $backoff = $this->readBackoff($key, 'sandbox removal');
+            if ($backoff !== null && $backoff['due'] > now()->getTimestamp()) {
+                continue;
+            }
+            try {
+                app(RemoveTaskSandboxAction::class)->unattached($sandbox, endedOnly: true);
+                $this->rememberBackoff($key, null, 'sandbox removal');
+                if ($sandbox->group instanceof Task) {
+                    $this->workspaces->clearFailure($sandbox->group);
+                }
+                $removed++;
+            } catch (Throwable $exception) {
+                report($exception);
+                if ($sandbox->group instanceof Task) {
+                    $this->workspaces->recordFailure($sandbox->group, $exception);
+                }
+                $this->extendBackoff($key, $backoff, 'sandbox removal');
             }
         }
 
