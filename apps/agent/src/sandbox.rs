@@ -8,7 +8,7 @@ use std::{
 };
 
 const MAX_REQUEST: u64 = 1024 * 1024;
-const CONTROLLER: &str = include_str!("../../gateway/resources/compute/incus-sandbox.py");
+const CONTROLLER: &str = include_str!("../resources/incus-sandbox.py");
 
 #[derive(Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
