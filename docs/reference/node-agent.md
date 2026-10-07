@@ -222,7 +222,9 @@ A new member makes every agent on the channel send a complete snapshot. So when 
 
 Every 5 seconds, the subscriber checks the Reverb connection, and every 30 seconds the Node list. It joins new Nodes, leaves removed ones, and reconnects when the Reverb key changes. During a `websocket` move, it keeps one link to each Reverb server that holds clients and uses the link with the newest agent event. Without an active `websocket` role, it checks again every 60 seconds.
 
-When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node. Every 60 seconds, it compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code.
+When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node.
+
+Every 60 seconds, the subscriber compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code. The unit and that check use the stable `ORBIT_GATEWAY_CHECKOUT` path, so in the [release layout](/reference/gateway-recovery#release-layout) they follow a release switch. A release's runtime handoff also restarts the subscriber at once.
 
 ### Stored state
 

@@ -584,6 +584,11 @@ final class OpenReleaseDatabase implements GatewayReleaseDatabase
 
     public function migrate(string $releasePath): void {}
 
+    public function snapshotBytes(): int
+    {
+        return 0;
+    }
+
     public function migrations(string $releasePath): array
     {
         return $this->files[$releasePath] ?? [];

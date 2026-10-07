@@ -26,6 +26,9 @@ interface GatewayReleaseDatabase
 
     public function migrate(string $releasePath): void;
 
+    /** The bytes a snapshot of the database needs now, so prepare can keep room for it. */
+    public function snapshotBytes(): int;
+
     /**
      * Migration filenames shipped in the release, so a rollback can see whether it would cross one.
      *

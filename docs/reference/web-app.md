@@ -48,7 +48,7 @@ The Gateway's Caddy site sends each request to one of three places.
 
 A path without a file returns the release's `index.html`, and the app's router shows the page. Files under `/assets/` carry content hashes, so browsers cache them as immutable. Every other web response has `Cache-Control: no-cache`, so a new release shows on the next load.
 
-`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
+`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. For PHP requests and that check, Caddy resolves the checkout link for each request (`resolve_root_symlink`), so a Gateway [release](/reference/gateway-recovery#runtime-handoff) switch reaches every request at once. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
 
 The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 

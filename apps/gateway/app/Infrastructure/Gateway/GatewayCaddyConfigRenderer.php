@@ -12,6 +12,8 @@ namespace App\Infrastructure\Gateway;
  * The checkout path is a link to the current Gateway release. `resolve_root_symlink` resolves it for each
  * request, so PHP-FPM receives the release's real script path: a request that started before a release switch
  * finishes on the old release, and the next request runs the new one ([ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main)).
+ * The `/grafana` authorization resolves the link the same way. A fixed `SCRIPT_FILENAME` through the link would let
+ * each PHP-FPM worker keep the old release from its realpath cache for up to `realpath_cache_ttl` after a switch.
  */
 final readonly class GatewayCaddyConfigRenderer
 {
@@ -41,10 +43,11 @@ final readonly class GatewayCaddyConfigRenderer
 
                 handle_path /grafana/* {
                     forward_auth unix//run/php/orbit-gateway.sock {
-                        uri /api/v1/metrics/grafana/authorize
+                        uri /index.php
                         transport fastcgi {
-                            env SCRIPT_FILENAME {$checkoutPath}/public/index.php
-                            env SCRIPT_NAME /index.php
+                            root {$checkoutPath}/public
+                            resolve_root_symlink
+                            split .php
                             env REQUEST_URI /api/v1/metrics/grafana/authorize
                             env REMOTE_ADDR {remote_host}
                         }

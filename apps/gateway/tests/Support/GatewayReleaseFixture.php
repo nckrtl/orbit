@@ -94,7 +94,7 @@ final class GatewayReleaseFixture implements ProcessRunner
         file_put_contents($this->layout->environmentPath(), "APP_ENV=production\n");
     }
 
-    public function builder(?GatewayReleaseWebBuild $web = null, float $freeBytes = 1e12, int $minimumFreeBytes = GatewayReleaseBuilder::MinimumFreeBytes): GatewayReleaseBuilder
+    public function builder(?GatewayReleaseWebBuild $web = null, float $freeBytes = 1e12, int $minimumFreeBytes = GatewayReleaseBuilder::MinimumFreeBytes, int $reservedBytes = 0): GatewayReleaseBuilder
     {
         return new GatewayReleaseBuilder(
             layout: $this->layout,
@@ -108,6 +108,7 @@ final class GatewayReleaseFixture implements ProcessRunner
                 $this->privileged[] = ['grant-access', $application];
             },
             minimumFreeBytes: $minimumFreeBytes,
+            reservedBytes: static fn (): int => $reservedBytes,
         );
     }
 

@@ -26,7 +26,7 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `APP_VERSION` in the Gateway's own `.env` sets the version that `gateway:status` reports. When it is unset or empty, the Gateway reports the commit in its release's `REVISION` file, or `dev` outside a release. Leave it unset in the [release layout](/reference/gateway-recovery#release-layout), so every release reports its own commit. It is not an Instance key.
 
-`ORBIT_GATEWAY_RELEASE_MIN_FREE_MB` is the free space, in MiB, that [prepare](/reference/gateway-recovery#prepare-a-release) keeps in the releases directory. It defaults to `1024`. It is not an Instance key. `ORBIT_GATEWAY_RELEASES_KEEP` is how many releases [deploy](/reference/gateway-recovery#deploy-a-release) keeps besides the current and previous one. It defaults to `5`.
+`ORBIT_GATEWAY_RELEASE_MIN_FREE_MB` is the free space, in MiB, that [prepare](/reference/gateway-recovery#prepare-a-release) keeps in the releases directory. It defaults to `1024`. It is not an Instance key. `ORBIT_GATEWAY_RELEASES_KEEP` is how many releases [deploy](/reference/gateway-recovery#deploy-a-release) keeps besides the current and previous one. It defaults to `5`. `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` is how many pre-migration [database snapshots](/reference/gateway-recovery#migrations-and-the-snapshot) the Gateway keeps, also `5` by default.
 
 `ORBIT_GATEWAY_VERIFY_ORIGIN` is the origin deploy uses for `/up` and Gateway status. It defaults to `https://gateway.orbit`. It is not an Instance key.
 

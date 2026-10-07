@@ -21,7 +21,7 @@ use App\Models\Node;
 final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
 {
     public function __construct(
-        private MetricsPublicationRenderer $renderer = new MetricsPublicationRenderer,
+        private ?MetricsPublicationRenderer $renderer = null,
         private CaddySiteCertificates $certificates = new CaddySiteCertificates,
     ) {}
 
@@ -35,6 +35,7 @@ final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
         }
 
         $sites = [];
+        $renderer = $this->renderer ?? MetricsPublicationRenderer::forGateway();
 
         foreach (CaddySiteRoles::serving(RoleName::Metrics) as $assignment) {
             $gateway = $node->wireguard_ip;
@@ -54,7 +55,7 @@ final readonly class MetricsCaddySiteSource implements NodeCaddySiteSource
                 listener: CaddyListenerRule::WireGuard,
                 hosts: ['metrics.orbit'],
                 port: 443,
-                body: $this->renderer->caddy($metrics, $gateway),
+                body: $renderer->caddy($metrics, $gateway),
             );
         }
 

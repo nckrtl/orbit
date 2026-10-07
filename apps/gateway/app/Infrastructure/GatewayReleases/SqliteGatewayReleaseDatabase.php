@@ -9,6 +9,7 @@ use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use Closure;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -21,16 +22,51 @@ use Throwable;
  */
 final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatabase
 {
-    /** Pre-release snapshots kept in `$ORBIT_HOME/backups`, newest first. */
+    /** The default number of pre-release snapshots kept in `$ORBIT_HOME/backups`, newest first. */
     public const int KeptSnapshots = 5;
 
+    /** @var Closure(string): (float|false) */
+    private Closure $freeSpace;
+
+    /**
+     * @param  int  $keptSnapshots  `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP`
+     * @param  int  $minimumFreeBytes  The free space a snapshot leaves on the backup file system.
+     * @param  (Closure(string): (float|false))|null  $freeSpace
+     */
     public function __construct(
         private ProcessRunner $processes,
         private string $orbitHome,
         private string $php = '/usr/bin/php8.5',
         private float $migrateTimeout = 900.0,
         private ?string $connection = null,
-    ) {}
+        private int $keptSnapshots = self::KeptSnapshots,
+        private int $minimumFreeBytes = GatewayReleaseBuilder::MinimumFreeBytes,
+        ?Closure $freeSpace = null,
+    ) {
+        $this->freeSpace = $freeSpace ?? static fn (string $path): float|false => @disk_free_space($path);
+    }
+
+    /**
+     * The live database file and its WAL. `VACUUM INTO` writes at most the pages in use, so this
+     * bounds the snapshot from above.
+     */
+    public function snapshotBytes(): int
+    {
+        $database = DB::connection($this->connection)->getConfig('database');
+
+        if (! is_string($database) || $database === '' || $database === ':memory:') {
+            return 0;
+        }
+
+        $bytes = 0;
+
+        foreach ([$database, $database.'-wal'] as $file) {
+            $size = is_file($file) ? @filesize($file) : false;
+            $bytes += $size === false ? 0 : $size;
+        }
+
+        return $bytes;
+    }
 
     public function pending(string $releasePath): array
     {
@@ -83,6 +119,7 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
         $target = $directory.'/pre-'.$id.'.sqlite';
         $partial = $target.'.partial';
         @unlink($partial);
+        $this->assertRoom($directory);
 
         try {
             $connection->statement('VACUUM INTO ?', [$partial]);
@@ -138,12 +175,27 @@ final readonly class SqliteGatewayReleaseDatabase implements GatewayReleaseDatab
         return $files;
     }
 
+    /** Refuses before writing when the snapshot would leave less than the floor free. */
+    private function assertRoom(string $directory): void
+    {
+        $free = ($this->freeSpace)($directory);
+        $needed = $this->snapshotBytes() + $this->minimumFreeBytes;
+
+        if ($free !== false && $free < $needed) {
+            throw new GatewayReleaseException(
+                step: 'snapshot',
+                errorCode: 'gateway.release_disk_low',
+                message: sprintf('The backup directory has %d MiB free; a snapshot needs %d MiB plus the %d MiB floor.', (int) ($free / 1_048_576), intdiv($needed - $this->minimumFreeBytes, 1_048_576), intdiv($this->minimumFreeBytes, 1_048_576)),
+            );
+        }
+    }
+
     private function prune(string $directory): void
     {
         $snapshots = glob($directory.'/pre-*.sqlite') ?: [];
         usort($snapshots, static fn (string $left, string $right): int => [(int) @filemtime($right), $right] <=> [(int) @filemtime($left), $left]);
 
-        foreach (array_slice($snapshots, self::KeptSnapshots) as $old) {
+        foreach (array_slice($snapshots, max(1, $this->keptSnapshots)) as $old) {
             @unlink($old);
         }
     }

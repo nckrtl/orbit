@@ -155,6 +155,16 @@ describe('gateway:release:prepare', function (): void {
             ->and(file_exists($this->fixture->layout->releasePath(substr($sha, 0, 12))))->toBeFalse();
     });
 
+    it('keeps room for a database snapshot on top of the floor', function (): void {
+        $sha = $this->fixture->commit('Second commit');
+        $builder = $this->fixture->builder(freeBytes: 1.5 * 1_073_741_824, reservedBytes: 700 * 1_048_576);
+
+        $exception = release_failure(fn () => $builder->prepare($sha));
+
+        expect($exception->errorCode)->toBe('gateway.release_disk_low')
+            ->and($exception->getMessage())->toContain('1724 MiB: the 1024 MiB floor plus 700 MiB for a database snapshot');
+    });
+
     it('refuses without the shared repository that adoption creates', function (): void {
         exec('rm -rf '.escapeshellarg($this->fixture->layout->repositoryPath()));
 

@@ -149,17 +149,36 @@ After a verified release, deploy removes old releases. It keeps the newest `ORBI
 
 #### Migrations and the snapshot
 
-Before the switch, deploy compares the migration files the release ships with the `migrations` table. When none are pending, it neither snapshots nor migrates. When some are pending, it first writes a consistent copy of the Gateway database with SQLite `VACUUM INTO` to `ORBIT_HOME/backups/pre-<id>.sqlite`, with mode `0600`. The copy needs no `sqlite3` binary, and the Gateway keeps the newest five. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves. A failed snapshot changes nothing and the commit is tried again later. A failed migration may have applied part of its changes, so deploy pauses with `gateway.release_migrate_failed` and names the snapshot. To go back to it, follow [Recover a failed update](#recover-a-failed-update) with the snapshot as the database file.
+Before the switch, deploy compares the migration files the release ships with the `migrations` table. When none are pending, it neither snapshots nor migrates.
+
+When some are pending, deploy first writes a consistent copy of the Gateway database to `ORBIT_HOME/backups/pre-<id>.sqlite`, with mode `0600`. It uses SQLite `VACUUM INTO`, so it needs no `sqlite3` binary. Then the release migrates with its own code, `php releases/<id>/apps/gateway/artisan migrate --force`, while the previous release still serves.
+
+- The Gateway keeps the newest `ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP` snapshots (default 5).
+- A snapshot needs room for the database and its WAL plus the free-space floor. Prepare keeps that room too, so a release refuses with `gateway.release_disk_low` before it builds anything.
+- A failed snapshot changes nothing, and the commit is tried again later.
+- A failed migration may have applied part of its changes. Deploy then pauses with `gateway.release_migrate_failed` and names the snapshot. To go back to it, follow [Recover a failed update](#recover-a-failed-update) with the snapshot as the database file.
 
 #### Runtime handoff
 
-The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff` with the code of the release that just became current, so a release that changes what the Gateway renders applies that change at once. The deployer itself runs from the previous release. In order, the handoff:
+The handoff runs `php releases/<id>/apps/gateway/artisan gateway:release:handoff` with the code of the release that just became current. A release that changes what the Gateway renders applies that change at once, although the deployer itself runs from the previous release. In order, the handoff:
 
-1. publishes the Gateway Node's Caddyfile when the render changed. Caddy reloads gracefully. The Gateway site resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`), so a request that started before the switch finishes on its release and the next one runs the new release. PHP-FPM is not restarted;
-2. reloads PHP-FPM only when the rendered pool differs from `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf`. A reload ends requests in flight, so an unchanged pool is left alone;
+1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
+2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
 3. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path;
-4. restarts the scheduler: the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. It runs `schedule:interrupt`, takes the `tasks:tick` lock so no tick is cut off, stops the unit, clears the schedule's overlap locks with `schedule:clear-cache`, starts the unit, waits until it is active, and releases the tick lock. A Gateway without such a Process reports `not_found`;
-5. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate). The new scheduler pauses cleanup when it starts, so the handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. A report with differences, or a resume that is refused, leaves cleanup paused: the release record has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release still continues.
+4. restarts the scheduler without cutting off a tasks tick;
+5. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate).
+
+PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
+
+The scheduler is the Gateway Node's systemd Process that runs `schedule:work` in the Gateway application directory. A Gateway without one reports `not_found`. The handoff restarts it in these steps:
+
+1. It runs `schedule:interrupt`, so no new scheduled command starts.
+2. It takes the `tasks:tick` lock and waits up to 330 seconds for a running tick to finish.
+3. It stops the unit. A scheduled command other than the tick that is still running stops with it.
+4. It clears the schedule's overlap locks with `schedule:clear-cache`, starts the unit, and waits until it is active.
+5. It releases the tick lock.
+
+The new scheduler pauses document cleanup when it starts. The handoff waits for the new cleanup generation, runs `project-documents:cleanup:reconcile`, and resumes with that report. Without configured document storage it reports `skipped`. When the report has differences or resume is refused, cleanup stays paused. The release record then has `cleanup_paused: true` and the handoff's `cleanup_error_code`, and the release continues.
 
 The handoff prints one JSON object with `caddy`, `fpm`, `scheduler`, `scheduler_unit`, `cleanup`, `cleanup_error_code`, `agent_view`, and `cleanup_paused`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
 

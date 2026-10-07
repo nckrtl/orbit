@@ -38,10 +38,14 @@ final readonly class GatewayReleaseBuilder
     /** @var Closure(string): void */
     private Closure $checkoutAccess;
 
+    /** @var Closure(): int */
+    private Closure $reservedBytes;
+
     /**
      * @param  (Closure(string): (float|false))|null  $freeSpace
      * @param  (Closure(string): void)|null  $checkoutAccess  Grants Caddy access to one release's Gateway application.
      * @param  int  $minimumFreeBytes  The free space prepare keeps in the releases directory.
+     * @param  (Closure(): int)|null  $reservedBytes  Room prepare keeps on top of the floor, for the database snapshot a release with migrations takes.
      */
     public function __construct(
         private GatewayReleaseLayout $layout,
@@ -54,7 +58,9 @@ final readonly class GatewayReleaseBuilder
         ?Closure $freeSpace = null,
         ?Closure $checkoutAccess = null,
         private int $minimumFreeBytes = self::MinimumFreeBytes,
+        ?Closure $reservedBytes = null,
     ) {
+        $this->reservedBytes = $reservedBytes ?? static fn (): int => 0;
         $this->freeSpace = $freeSpace ?? static fn (string $path): float|false => @disk_free_space($path);
         $this->checkoutAccess = $checkoutAccess ?? static function (string $application) use ($processes): void {
             new GatewayCheckoutAccessConverger($processes, $application)->converge();
@@ -239,12 +245,14 @@ final readonly class GatewayReleaseBuilder
     private function assertFreeSpace(): void
     {
         $free = ($this->freeSpace)($this->layout->releasesPath());
+        $reserved = max(0, ($this->reservedBytes)());
+        $needed = $this->minimumFreeBytes + $reserved;
 
-        if ($free !== false && $free < $this->minimumFreeBytes) {
+        if ($free !== false && $free < $needed) {
             throw new GatewayReleaseException(
                 step: 'worktree',
                 errorCode: 'gateway.release_disk_low',
-                message: sprintf('The releases directory has %d MiB free; prepare needs at least %d MiB.', (int) ($free / 1_048_576), intdiv($this->minimumFreeBytes, 1_048_576)),
+                message: sprintf('The releases directory has %d MiB free; prepare needs at least %d MiB: the %d MiB floor plus %d MiB for a database snapshot.', (int) ($free / 1_048_576), intdiv($needed, 1_048_576), intdiv($this->minimumFreeBytes, 1_048_576), intdiv($reserved, 1_048_576)),
             );
         }
     }

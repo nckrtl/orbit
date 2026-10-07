@@ -51,6 +51,8 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): SqliteGatewayReleaseDatabase => new SqliteGatewayReleaseDatabase(
                 processes: $app->make(ProcessRunner::class),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
+                keptSnapshots: max(1, Config::integer('orbit.gateway_releases.snapshots_keep')),
+                minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
             ),
         );
         $this->app->bind(
@@ -91,6 +93,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 readAccess: $app->make(RepositoryReadAccess::class),
                 web: $app->make(GatewayReleaseWebBuild::class),
                 minimumFreeBytes: max(0, Config::integer('orbit.gateway_releases.min_free_mb')) * 1_048_576,
+                reservedBytes: static fn (): int => $app->make(GatewayReleaseDatabase::class)->snapshotBytes(),
             ),
         );
         $this->app->bind(

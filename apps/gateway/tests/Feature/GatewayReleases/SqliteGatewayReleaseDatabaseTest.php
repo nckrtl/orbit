@@ -91,6 +91,32 @@ describe(SqliteGatewayReleaseDatabase::class, function (): void {
             ->and($exception->errorCode)->toBe('gateway.release_migrate_failed');
     });
 
+    it('refuses a snapshot that would leave less than the floor free and keeps the configured count', function (): void {
+        $live = $this->scratch.'/live.sqlite';
+        touch($live);
+        config(['database.connections.release_snapshot' => ['driver' => 'sqlite', 'database' => $live, 'prefix' => '', 'foreign_key_constraints' => true]]);
+        DB::connection('release_snapshot')->statement('CREATE TABLE notes (body TEXT)');
+        DB::connection('release_snapshot')->table('notes')->insert(['body' => str_repeat('x', 200_000)]);
+        $size = filesize($live) + (is_file($live.'-wal') ? filesize($live.'-wal') : 0);
+        $short = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_snapshot', minimumFreeBytes: 1_000, freeSpace: static fn (): float => (float) $size);
+        $roomy = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_snapshot', keptSnapshots: 2, minimumFreeBytes: 1_000, freeSpace: static fn (): float => 1e12);
+
+        $refused = release_failure(fn () => $short->snapshot('0123456789ab'));
+
+        foreach (['aaaaaaaaaaa1', 'aaaaaaaaaaa2', 'aaaaaaaaaaa3'] as $id) {
+            $roomy->snapshot($id);
+            touch($this->scratch.'/home/backups/pre-'.$id.'.sqlite', time() - 100 + (int) substr($id, -1));
+        }
+
+        expect($short->snapshotBytes())->toBe($size)
+            ->and($refused->errorCode)->toBe('gateway.release_disk_low')
+            ->and($refused->step)->toBe('snapshot')
+            ->and(file_exists($this->scratch.'/home/backups/pre-0123456789ab.sqlite'))->toBeFalse()
+            ->and(array_map(basename(...), glob($this->scratch.'/home/backups/pre-*.sqlite')))->toBe(['pre-aaaaaaaaaaa2.sqlite', 'pre-aaaaaaaaaaa3.sqlite']);
+
+        DB::purge('release_snapshot');
+    });
+
     it('refuses to snapshot a database that is not SQLite', function (): void {
         config(['database.connections.release_mysql' => ['driver' => 'mysql', 'host' => '127.0.0.1', 'database' => 'x']]);
         $database = new SqliteGatewayReleaseDatabase(new RecordingProcessRunner, $this->scratch.'/home', connection: 'release_mysql');
