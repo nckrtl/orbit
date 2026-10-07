@@ -192,6 +192,10 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         assert($enabled instanceof TasksStatusResponse && $clear instanceof TasksStatusResponse && $assisted instanceof TasksStatusResponse);
 
         expect($enabled->enabled)->toBeTrue()
+            ->and($enabled->lastTickAt)->toBe('2026-09-23T10:00:00.000000Z')
+            ->and($enabled->toArray()['last_tick_at'] ?? null)->toBe('2026-09-23T10:00:00.000000Z')
+            ->and($assisted->lastTickAt)->toBeNull()
+            ->and($assisted->toArray())->toHaveKey('last_tick_at', null)
             ->and($clear->assistance)->toBe([])
             ->and($clear->toArray()['assistance'])->toBe([])
             ->and(array_map(static fn (TaskAssistanceResponse $group): string => $group->reference(), $assisted->assistance ?? []))->toBe(['ORB-1', 'ORB-2'])
@@ -213,6 +217,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
                 'assistance_reason' => 'Which database should this use?',
             ])
             ->and($assisted->toArray()['assistance'])->toHaveCount(2);
+    });
+
+    it('refuses a tasks status whose last tick is not a string', function (): void {
+        expect(static fn (): TasksStatusResponse => TasksStatusResponse::fromGatewayData(['enabled' => true, 'assistance' => [], 'last_tick_at' => 1_791_352_800], 'request-id'))
+            ->toThrow(GatewayApiException::class, 'Gateway response contains an invalid tasks extension status.');
     });
 
     it('keeps an assistance request on the group and each subtask', function (): void {

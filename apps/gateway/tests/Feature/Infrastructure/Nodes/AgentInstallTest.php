@@ -535,6 +535,19 @@ describe('the agent secret', function (): void {
         expect($node->fresh()?->agent_secret_hash)->toBe(str_repeat('c', 64));
     });
 
+    it('swaps the binary under the lock orbit self-update holds on the Node', function (): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        nodeAgentExecutor($ssh)->converge($node);
+        $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
+
+        nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node);
+
+        expect(nodeAgentArguments($ssh))
+            ->toContain(['sudo', 'flock', '--timeout', '120', '/run/lock/orbit-self-update.lock', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath])
+            ->not->toContain(['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]);
+    });
+
     it('keeps the secret hash while the replacement binary is installed', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
@@ -542,7 +555,7 @@ describe('the agent secret', function (): void {
         $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
         $atSwap = null;
         $ssh->before = static function (array $arguments) use (&$atSwap, $node): void {
-            if ($arguments === ['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]) {
+            if ($arguments === ['sudo', 'flock', '--timeout', '120', NodeAgentFootprint::UpdateLockPath, 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]) {
                 $atSwap = Node::query()->whereKey($node->getKey())->first(['agent_secret_hash'])?->only(['agent_secret_hash']);
             }
         };
@@ -828,7 +841,7 @@ final class AgentInstallStatefulSsh implements SshExecutor
             return new CommandResult(0, '', '', 1, false);
         }
 
-        if (($arguments[1] ?? null) === 'mv') {
+        if (($arguments[1] ?? null) === 'mv' || (($arguments[1] ?? null) === 'flock' && in_array('mv', $arguments, true))) {
             $source = $arguments[count($arguments) - 2];
             $destination = $arguments[count($arguments) - 1];
             if (isset($this->files[$source])) {

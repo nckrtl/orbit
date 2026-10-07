@@ -16,6 +16,7 @@ use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\FleetFirewallRulesController;
+use App\Http\Controllers\Api\GatewayDesiredFleetStatesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
@@ -57,6 +58,7 @@ use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
+use App\Http\Controllers\Api\SandboxGitHubTokensController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\TaskDefinitionsController;
@@ -73,6 +75,11 @@ use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
+    Route::post('compute/github-token', [SandboxGitHubTokensController::class, 'store'])
+        ->middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('compute:github-token');
+
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->prefix('instances/{instance}/annotations')->group(function (): void {
             Route::get('', [AnnotationsController::class, 'index'])->name('annotation:list');
@@ -92,6 +99,10 @@ Route::prefix('v1')->group(function (): void {
         ->name('gateway:status');
     Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
         ->name('gateway:trust');
+    // Any active WireGuard peer, a managed Node or an operator machine, may read what the fleet should run (ADR 0202).
+    Route::middleware([RequireActiveWireGuardPeer::class])
+        ->get('gateway/desired-fleet-state', [GatewayDesiredFleetStatesController::class, 'show'])
+        ->name('gateway:desired-fleet-state');
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,

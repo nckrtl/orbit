@@ -56,6 +56,7 @@ describe(GatewayStatusCommand::class, function (): void {
             'version' => '0.1.0',
             'php_version' => '8.5.8',
             'laravel_version' => '13.26.1',
+            'desired_fleet_state' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -101,6 +102,7 @@ describe(GatewayStatusCommand::class, function (): void {
             'version' => '',
             'php_version' => '',
             'laravel_version' => '',
+            'desired_fleet_state' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 

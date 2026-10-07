@@ -17,7 +17,6 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskReviewRequestLogins;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -44,8 +43,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
     public function __construct(
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
-        private DevelopmentSshExecutor $ssh,
-        private SandboxGitBundles $bundles,
+        private TaskWorkspaceExecutor $workspaces,
     ) {}
 
     public function publish(Task $group, string $body, string $commit): string
@@ -58,7 +56,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
         try {
             $token = $this->access->token($repository);
-            $this->pushBranch($instance, $repository, $group->id, $branch, $token, $commit);
+            $this->pushBranch($instance, $branch, $token, $commit);
             $opened = $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
             $this->requestReviewers($token, $repository, $opened);
 
@@ -107,7 +105,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         [$repository, $instance, $branch] = $this->target($group);
 
         try {
-            $this->pushBranch($instance, $repository, $group->id, $branch, $this->access->token($repository), $commit);
+            $this->pushBranch($instance, $branch, $this->access->token($repository), $commit);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The task branch could not be pushed: '.$exception->getMessage(), previous: $exception);
         }
@@ -127,6 +125,8 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         }
         $instance = $group->taskable;
         if (! $instance instanceof Instance || $instance->checkout_path === ''
+            || $instance->project_id !== $group->project_id
+            || ($instance->task_sandbox_id !== null && $instance->taskSandbox?->group_id !== $group->id)
             || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)) {
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
@@ -134,25 +134,20 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         return [$repository, $instance, 'task-'.$group->id];
     }
 
-    private function pushBranch(Instance $instance, GitHubRepository $repository, int $groupId, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function pushBranch(Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
-        }
-        if ($instance->task_sandbox_id !== null) {
-            $this->bundles->publish($instance, $repository, $groupId, $commit, $token);
-
-            return;
         }
         $instance->loadMissing('node');
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'
             checkout=$1
             branch=$2
             commit=$3
-            git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"
+            git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" push --quiet origin "$commit:refs/heads/$branch"
             BASH);
         try {
-            $this->ssh->execute($instance->node, new RemoteCommand(
+            $this->workspaces->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, $branch, $commit],
                 input: $script->input,
                 protectedInput: $script->protectedInput,

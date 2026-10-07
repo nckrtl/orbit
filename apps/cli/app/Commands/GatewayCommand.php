@@ -9,6 +9,7 @@ use App\Exceptions\GatewayConfigException;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\Extensions\ExtensionDiscoveryResult;
 use App\Services\GatewayConnectorFactory;
+use App\Services\SelfUpdate\CliReleaseNotice;
 use App\Support\Console\CommandPrompts;
 use App\Support\Console\ConsoleInterrupted;
 use App\Support\Console\ConsoleMode;
@@ -39,6 +40,7 @@ use Saloon\Exceptions\Request\FatalRequestException;
 use Saloon\Http\Response;
 use Symfony\Component\Console\Exception\ExceptionInterface;
 use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Throwable;
 
@@ -89,8 +91,36 @@ abstract class GatewayCommand extends Command
                 throw $exception;
             }
 
-            return InterruptIntent::exitStatus() ?? $status;
+            $cancelled = InterruptIntent::exitStatus();
+
+            if ($cancelled === null) {
+                $this->announceNewerRelease($input, $output);
+            }
+
+            return $cancelled ?? $status;
         });
+    }
+
+    /**
+     * Prints the throttled notice that the Gateway's fleet runs a newer CLI release, on standard error and never
+     * in JSON mode (ADR 0202).
+     */
+    protected function announceNewerRelease(InputInterface $input, OutputInterface $output): void
+    {
+        if ($input->hasParameterOption('--json', true) || ! $output instanceof ConsoleOutputInterface || ! app()->bound(CliReleaseNotice::class)) {
+            return;
+        }
+
+        try {
+            $notice = app(CliReleaseNotice::class)->due(ConsoleMode::outputStream($output->getErrorOutput()));
+        } catch (Throwable) {
+            return;
+        }
+
+        if ($notice !== null) {
+            $errors = $output->getErrorOutput();
+            ConsoleWriter::write($errors, new HumanRenderer(ConsoleMode::detect($input, $errors))->warning($notice));
+        }
     }
 
     /** Resolve after framework setup and input binding, using the selected stream. */

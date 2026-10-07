@@ -121,6 +121,7 @@
               "reference/compute-drivers",
               "reference/pi-server",
               "reference/cli-binaries",
+              "reference/self-update",
               "reference/events",
               "reference/mcp"
             ]
@@ -195,6 +196,7 @@
             "pages": [
               "cli/doctor",
               "cli/profile",
+              "cli/self-update",
               "cli/activity",
               "cli/realtime",
               "cli/extension",
@@ -219,6 +221,7 @@
             "openapi": "/openapi.json",
             "pages": [
               "GET /api/v1/ca/root",
+              "GET /api/v1/gateway/desired-fleet-state",
               "GET /api/v1/gateway/status"
             ]
           },
@@ -574,6 +577,7 @@
               "GET /api/v1/agent/log-streams",
               "GET /api/v1/agent/realtime",
               "GET /api/v1/agent/workspaces",
+              "POST /api/v1/compute/github-token",
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",

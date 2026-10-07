@@ -110,6 +110,13 @@ function compute_keys(): void
 }
 
 describe('UpCloud provisioning', function (): void {
+    it('creates the managed checkout directory before source preparation', function (): void {
+        $bootstrap = app(UpCloudCloudInit::class)->render(compute_spec());
+        $config = json_decode(substr($bootstrap, strlen("#cloud-config\n")), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($config['runcmd'])->toContain(['install', '-d', '-o', 'orbit', '-g', 'orbit', '-m', '0700', '/home/orbit/orbit']);
+    });
+
     it('records creation before sending it and creates one smallest VM without secrets in cloud-init', function (): void {
         compute_config();
         $sandbox = compute_sandbox();
@@ -120,6 +127,8 @@ describe('UpCloud provisioning', function (): void {
                     ->toMatchArray(['plan' => 'STARTER-1xCPU-1GB', 'zone' => 'nl-ams1', 'firewall' => 'on']);
                 expect($request->data()['server']['storage_devices']['storage_device'][0])
                     ->toMatchArray(['storage' => SandboxSpec::Image, 'size' => 20]);
+                $cloudInit = json_decode(substr($request->data()['server']['user_data'], strlen("#cloud-config\n")), true);
+                expect($cloudInit['packages'])->toContain('gh', 'git');
                 expect($request->data()['server']['user_data'])->toContain('ssh-ed25519', '/swapfile')->not->toContain('ucat_test_only', 'apiKey', 'orbit-token', 'orbit-worker');
 
                 return Http::response(compute_server($sandbox), 201);

@@ -58,12 +58,16 @@ use App\Domain\Firewall\FirewallInspector;
 use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Firewall\RouterLanIngressReconciler;
+use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
 use App\Domain\GitHub\GitHubApi;
+use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
+use App\Domain\GitHub\GreenCommitResolver;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
 use App\Domain\Hibernation\HibernationMarkerStore;
 use App\Domain\Hibernation\HibernationWakeFailureStore;
@@ -151,6 +155,9 @@ use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
 use App\Domain\ProxyCli\ProxyCliSnapshotStore;
 use App\Domain\ProxyCli\ProxyCliState;
+use App\Domain\Releases\GatewayReleaseAlertNotifier;
+use App\Domain\Releases\ReleaseAlertNotifier;
+use App\Domain\Releases\ReleaseAlertWebhook;
 use App\Domain\Routes\ClusterRouterReplacementProjector;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -234,6 +241,8 @@ use App\Infrastructure\Firewall\NativeRouterLanIngressReconciler;
 use App\Infrastructure\Firewall\NativeUfwFirewallInspector;
 use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
+use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
+use App\Infrastructure\Fleet\GitReleaseHistory;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
@@ -242,6 +251,7 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
 use App\Infrastructure\GitHub\ProcessGitHubCliToken;
@@ -331,6 +341,7 @@ use App\Infrastructure\ProxyCli\NativeProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\RecordingProxyCliPublicationManager;
 use App\Infrastructure\ProxyCli\RecordingProxyCliRuntimeLifecycle;
 use App\Infrastructure\ProxyCli\ValkeyProxyCliCache;
+use App\Infrastructure\Releases\HttpReleaseAlertWebhook;
 use App\Infrastructure\Routes\NativeClusterRouterReplacementProjector;
 use App\Infrastructure\Routes\NativeCustomProxyRouteProjector;
 use App\Infrastructure\Routes\NativePublicRouteEdgeProjector;
@@ -383,6 +394,8 @@ final class ApplicationServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        ReleaseAlertNotifier::class => GatewayReleaseAlertNotifier::class,
+        ReleaseAlertWebhook::class => HttpReleaseAlertWebhook::class,
         InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,
         InstanceCloneCandidateInspector::class => RemoteInstanceCloneCandidateInspector::class,
         InstanceEnvironmentReader::class => RemoteInstanceEnvironmentAccess::class,
@@ -490,6 +503,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         TiaBaselineSource::class => HttpGitHubTiaBaseline::class,
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
+        GreenCommitResolver::class => GitHubGreenCommitResolver::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
@@ -608,6 +622,21 @@ final class ApplicationServiceProvider extends ServiceProvider
                     clock: CacheAgentStateView::now(...),
                     workingDirectory: base_path(),
                 ),
+            ),
+        );
+        $this->app->bind(
+            ReleaseHistory::class,
+            static fn ($app): GitReleaseHistory => new GitReleaseHistory(
+                processes: $app->make(ProcessRunner::class),
+                directory: Config::string('orbit.cli_releases.git_directory'),
+            ),
+        );
+        $this->app->bind(
+            CliReleaseCatalog::class,
+            static fn ($app): GitHubCliReleaseCatalog => new GitHubCliReleaseCatalog(
+                apps: $app->make(GitHubAppStore::class),
+                github: $app->make(GitHubApi::class),
+                repositoryOrigin: Config::string('orbit.cli_releases.repository'),
             ),
         );
         $this->app->bind(

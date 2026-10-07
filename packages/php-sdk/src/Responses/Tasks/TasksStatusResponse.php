@@ -8,11 +8,13 @@ final readonly class TasksStatusResponse
 {
     /**
      * @param  list<TaskAssistanceResponse>|null  $assistance  Null when this route does not report assistance.
+     * @param  string|null  $lastTickAt  When the latest `tasks:tick` started its work. Null when no tick is remembered or this route does not report it.
      */
     public function __construct(
         public bool $enabled,
         public string $requestId,
         public ?array $assistance = null,
+        public ?string $lastTickAt = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -24,7 +26,13 @@ final readonly class TasksStatusResponse
             throw TaskFields::invalid('tasks extension status', $requestId);
         }
 
-        return new self($enabled, $requestId, array_key_exists('assistance', $data) ? self::assistance($data['assistance'], $requestId) : null);
+        $lastTickAt = $data['last_tick_at'] ?? null;
+
+        if ($lastTickAt !== null && ! is_string($lastTickAt)) {
+            throw TaskFields::invalid('tasks extension status', $requestId);
+        }
+
+        return new self($enabled, $requestId, array_key_exists('assistance', $data) ? self::assistance($data['assistance'], $requestId) : null, $lastTickAt);
     }
 
     /**
@@ -41,6 +49,7 @@ final readonly class TasksStatusResponse
      *         assistance_question: string|null,
      *         assistance_reason: string|null
      *     }>,
+     *     last_tick_at: string|null,
      *     request_id: string
      * }
      */
@@ -56,6 +65,7 @@ final readonly class TasksStatusResponse
         return [
             'enabled' => $this->enabled,
             'assistance' => array_map(static fn (TaskAssistanceResponse $group): array => $group->toArray(), $this->assistance),
+            'last_tick_at' => $this->lastTickAt,
             'request_id' => $this->requestId,
         ];
     }

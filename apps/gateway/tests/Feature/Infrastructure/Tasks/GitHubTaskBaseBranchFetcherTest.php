@@ -178,7 +178,7 @@ it('passes the base ref as one argument and the token only on standard input', f
     expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main'])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_fetch'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"');
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"');
 });
 
 it('reports one failure when the base name is invalid or the fetch fails', function (string $base, bool $ssh): void {

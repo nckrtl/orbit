@@ -562,6 +562,42 @@ it('does not file problems while tasks are disabled', function (): void {
         ->and($fingerprint->refresh()->occurrences)->toBe(10);
 });
 
+it('files a release alert on its first occurrence and ahead of higher counts', function (): void {
+    problem_filer_project();
+    $this->travelTo(Carbon::parse('2026-09-30 12:00:00', 'UTC'));
+
+    foreach (['a', 'b', 'c'] as $suffix) {
+        problem_filer_fingerprint("activity|instance:clone|instance.clone_{$suffix}_failed", 10, [
+            'error_message' => 'Clone failed',
+            ...problem_filer_windows(10),
+        ]);
+    }
+
+    $release = problem_filer_fingerprint('release|rollout_halted|fleet|'.str_repeat('a', 40), 1, [
+        'summary' => 'Node beast failed self-update.',
+        'release_repository' => 'nckrtl/orbit',
+        ...problem_filer_windows(1),
+    ]);
+
+    expect(Artisan::call('problems:file'))->toBe(0)
+        ->and(Task::topLevel()->count())->toBe(3)
+        ->and($release->refresh()->task_group_id)->not->toBeNull();
+
+    $task = Task::topLevel()->findOrFail($release->task_group_id);
+
+    expect($task->title)->toBe('Rollout halted for fleet at aaaaaaaaaaaa')
+        ->and($task->brief)->toContain("Symptom\nNode beast failed self-update.")
+        ->and($task->brief)->toContain("Suspected entry point\nnckrtl/orbit@".str_repeat('a', 40));
+});
+
+it('does not file a release fingerprint without an occurrence', function (): void {
+    problem_filer_project();
+    problem_filer_fingerprint('release|release_failed|gateway|'.str_repeat('b', 40), 0, ['summary' => 'Smoke failed.']);
+
+    expect(Artisan::call('problems:file'))->toBe(0)
+        ->and(Task::topLevel()->count())->toBe(0);
+});
+
 function problem_filer_brief(): string
 {
     $history = implode("\n", [
@@ -643,6 +679,7 @@ function problem_filer_fingerprint(
         str_starts_with($fingerprint, 'doctor|') => ProblemSource::Doctor,
         str_starts_with($fingerprint, 'log|') || str_starts_with($fingerprint, 'log#') => ProblemSource::Log,
         str_starts_with($fingerprint, 'assist|') => ProblemSource::Assist,
+        str_starts_with($fingerprint, 'release|') => ProblemSource::Release,
         default => ProblemSource::Activity,
     };
 

@@ -37,11 +37,11 @@ The Gateway releases itself from green `main` through the steps below. The opera
 
 A **releasable commit** is the newest commit on `main` where all of these hold:
 
-1. GitHub reports the check run `Required checks` as completed with conclusion `success` for that exact `head_sha`.
-2. It is a descendant of the deployed commit, so a release never downgrades.
+1. GitHub Actions reports the check run `Required checks` as completed with conclusion `success` for that exact `head_sha`. A run with that name from another GitHub App never makes a commit releasable, and it blocks the commit.
+2. It strictly descends from the deployed commit, so a release never downgrades. Without a deployed commit nothing ships automatically.
 3. It has not already failed a release.
 
-`ci.yml` cancels in-progress runs only for pull requests, so every main push gets a full run. When several commits are green, the newest ships, and bursts coalesce into one release.
+`ci.yml` cancels in-progress runs only for pull requests, and each main commit has its own concurrency group, so every main push gets a full run. A shared main group would still let GitHub cancel a pending main run when a newer one queues. When several commits are green, the newest ships, and bursts coalesce into one release.
 
 ### Who triggers it
 
@@ -75,9 +75,9 @@ One release runs at a time, under a single-flight lock:
    - Restart `orbit-agent-view`.
 6. **Verify:** `/up` is up, Gateway status is `ok`, and its version equals the commit. These are the `bin/deploy-verify` checks.
 7. **Switch the web** `current` link to `web/releases/<sha12>`.
-8. **Smoke test** with the repository command `bin/gateway-smoke` (JSON, about 60 s), run against the new release:
+8. **Smoke test** with the repository command [`bin/gateway-smoke`](/reference/delivery-line#bingateway-smoke) (JSON, about 60 s), run against the new release with `--since` set to the handoff time:
    - authenticated CLI reads on the Gateway;
-   - the web app's `index.html` and one hashed asset served through Caddy;
+   - the web app's `index.html` and one hashed asset of `web/releases/<sha12>`, served through Caddy;
    - the scheduler running and `tasks:tick` firing after the handoff;
    - agent-view running.
 
@@ -122,7 +122,7 @@ An **alert** is a failed Activity entry plus an outbound HMAC webhook. The [oute
 - Every green main commit reaches the Gateway within about a minute after CI, with no maintenance window and no dropped requests in the normal path.
 - Releases, rollbacks, and their evidence are visible in one record and in Activity.
 - A deployer change takes effect one release after it ships, because the oneshot runs the previous release's code. The first release with the deployer is deployed manually after adoption.
-- Un-cancelled main runs add load on Sabre's runners.
+- Un-cancelled main runs add load on Sabre's runners. About 28% of main runs were cancelled before this change. Running them too adds about 8 runner-minutes each, the Gateway and Gateway privileged jobs. In the week measured, that raised Sabre's three runners from about 5.5% to 7% busy, and queue time stayed under 5 minutes. Watch queue time during merge bursts.
 - Disk use grows to about five copies of `vendor/`.
 - A bad migration can still pause releases until an operator acts. Off-host snapshot copies and an expand/contract migration policy are follow-ups.
 - Agents that deploy by hand must switch to `gateway:release:deploy` at adoption.
@@ -136,6 +136,7 @@ An **alert** is a failed Activity entry plus an outbound HMAC webhook. The [oute
   - [Web app](/reference/web-app): the web app comes from the CI artifact; `bin/web-deploy` remains for manual use.
   - [Feature delivery: CI](/reference/implementation-loop#ci): `.github/workflows/ci.yml` cancels only pull-request runs and uploads `web-dist-<sha>` on `main`.
   - [Delivery-line proofs: bin/deploy-verify](/reference/delivery-line#bindeploy-verify): the same checks run as each release's verify step.
+  - [Delivery-line proofs: bin/gateway-smoke](/reference/delivery-line#bingateway-smoke): the smoke checks, their limits, and the JSON the release record stores.
 - Verify: tests and a disposable Gateway clone prove these outcomes.
   - A failed or interrupted prepare leaves the live release untouched.
   - A continuous HTTP probe and a long request across the switch see no errors, on a disposable Gateway clone.

@@ -523,6 +523,21 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/self-update.mdx",
+            "title": "self-update",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/tasks.mdx",
             "title": "tasks",
             "kind": "product",
@@ -756,7 +771,6 @@
                 "Gateway",
                 "Instance",
                 "Node",
-                "Process",
                 "Project",
                 "Route",
                 "Subtask",
@@ -1278,16 +1292,20 @@
             "title": "Delivery-line proofs",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
                 "Deliverable",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
+                "Schedule",
                 "Subtask",
                 "Task",
                 "Task check"
@@ -1410,9 +1428,12 @@
             "concepts": [
                 "Activity",
                 "Doctor",
+                "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
                 "Process",
+                "Project",
                 "Schedule",
                 "Task",
                 "Task definition"
@@ -1485,7 +1506,9 @@
                 "Task",
                 "Task workspace"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0201"
+            ]
         },
         {
             "path": "docs/reference/implementation-loop.md",
@@ -1511,7 +1534,9 @@
                 "Task workspace",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0201"
+            ]
         },
         {
             "path": "docs/reference/incus-topologies.md",
@@ -1755,6 +1780,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Cluster",
                 "Deliverable",
@@ -2084,6 +2110,26 @@
                 "Schedule"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/self-update.md",
+            "title": "Orbit self-update",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0202"
+            ]
         },
         {
             "path": "docs/reference/service-metrics.md",

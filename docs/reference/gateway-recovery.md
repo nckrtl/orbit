@@ -1,7 +1,8 @@
 ---
 title: "Update and recover a Gateway"
-description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, and find the request logs."
+description: "Preserve source, state, and keys through a Gateway update, recover from a failed update, find the request logs, and receive release alerts."
 covers:
+  - apps/gateway/app/{Domain,Infrastructure}/Releases/**
   - apps/gateway/config/app.php
   - apps/gateway/config/logging.php
   - apps/gateway/app/Infrastructure/Logging/**
@@ -115,3 +116,82 @@ If a command failed before any state or machine change, restore the previous sou
 For an archive-based restore, stop all Gateway writers and use a root console. Move the failed `ORBIT_HOME` aside rather than extracting over it, restore the archive's original ownership and permissions, restore the matching source commit, and reinstall its locked CLI and Gateway dependencies. Restore any external database and service configuration from the same recovery point. Clear stale Laravel configuration, then start services and repeat status, Node, Doctor, DNS, and HTTPS checks before reopening access.
 
 Do not migrate the restored database forward while attempting to run the older code. If the effective encryption key, CA private key, database, or required machine state is missing, stop: an apparently healthy process cannot prove recovery. This procedure does not roll back changes already made to other Nodes or restore application data; recover those from their own backups and review their consistency with the Gateway.
+
+## Release alerts
+
+A release command raises an alert when a release fails, when it pauses automatic releases, or when a fleet rollout halts. The alert leaves an Activity entry and a problem for the [outer loop](/reference/tasks#outer-loop), and it posts a signed webhook when one is configured. Each part is recorded on its own. A failed part never stops the others, and the alert never fails the release command that raised it. A release command raises the alert outside a database transaction, so a rollback cannot discard the records after the webhook went out.
+
+| Kind | When |
+| --- | --- |
+| `release_failed` | A release failed. Nothing went live, or the previous release serves again |
+| `release_paused` | A release failed after its migrations ran, and automatic releases are paused |
+| `rollout_halted` | A fleet rollout stopped at a Node that failed |
+
+Every alert names its subject, a summary, and an optional evidence link. The summary passes through the Gateway log redactor and is cut at 1,000 characters. A field outside these limits is a bug in the calling command, which refuses it before it records anything.
+
+| Field | Content |
+| --- | --- |
+| `target` | What was released: `gateway`, `fleet`, or another lowercase name of at most 64 characters, such as `instance:12` |
+| `repository` | The GitHub repository as `owner/name` |
+| `sha` | The full commit SHA: 40 or 64 lowercase hexadecimal characters |
+| `release_id` | The release record's id, or null. At most 64 characters |
+| `evidence_url` | An `http` or `https` link to the evidence, such as a CI run, or null. At most 2,048 characters |
+
+### Activity entry
+
+Each alert writes one Activity entry with the command `release:alert`. `orbit activity:list --command=release:alert` lists them. The entry starts as `running` and keeps a request ID that the webhook body repeats. Its `properties` hold the kind, the subject, the summary, the evidence link, and the outcome of the problem and the webhook parts. An outcome is `done`, `skipped`, or `failed`, with a reason.
+
+| Status | When | Error code |
+| --- | --- | --- |
+| `succeeded` | No part failed. A skipped part does not fail the entry | none |
+| `failed` | Recording the problem failed | `release.alert_problem_failed` |
+| `failed` | The problem part did not fail, but the webhook failed | `release.alert_webhook_failed` |
+
+A failed entry is a server-class Activity row. When the webhook keeps failing, the outer loop counts those rows and files that as its own problem.
+
+### Problem
+
+The alert records the fingerprint `release|{kind}|{target}|{sha}`, with the source `release`. Unlike a recurring signal, it is ready on its first occurrence. The next hourly `problems:file` run files it as a Backlog task in the `orbit` Project, ahead of every other ready fingerprint. [Outer loop](/reference/tasks#outer-loop) describes the sample, the brief, the daily cap, and the mute.
+
+| Outcome | Reason | When |
+| --- | --- | --- |
+| `done` | none | The fingerprint was recorded |
+| `skipped` | `tasks_disabled` | The Tasks extension is disabled, so the outer loop does not run |
+| `skipped` | `suppressed` | The fingerprint is on the [suppression list](/reference/tasks#suppression) |
+| `failed` | `error` | The database write failed. The Gateway log has the exception |
+
+### Webhook
+
+Set both values in the Gateway's own `.env` to receive alerts:
+
+| Variable | Content |
+| --- | --- |
+| `ORBIT_RELEASE_ALERT_WEBHOOK_URL` | The receiver's URL |
+| `ORBIT_RELEASE_ALERT_WEBHOOK_SECRET` | The HMAC secret |
+
+When either value is unset or empty, the webhook part is `skipped` with the reason `not_configured`, and the Activity entry and the problem are still recorded. The Gateway never returns the secret. It never stores the URL, the secret, or the response body, because a chat webhook URL is itself a credential. Unset both values on a disposable Gateway clone, so its alerts do not reach the operator.
+
+The Gateway posts one JSON object. It signs `{unix timestamp}.{raw body}` with HMAC-SHA256 and sends `X-Orbit-Timestamp`, `X-Orbit-Signature: sha256={hex}`, and `Content-Type: application/json`. This is the same signature as the [Coder webhook](/reference/tasks#coder-settle-webhook). The connection timeout is 3 seconds and the whole request has 10 seconds. The Gateway follows no redirect and does not retry.
+
+| Body field | Content |
+| --- | --- |
+| `event` | `release.alert` |
+| `kind` | The kind above |
+| `subject` | `target`, `repository`, `sha`, and `release_id` |
+| `summary` | The redacted summary |
+| `evidence_url` | The evidence link, or null |
+| `text` | One line for a chat channel, such as `Release failed for gateway nckrtl/orbit@0123456789ab: Smoke check web.index failed.`, followed by the evidence link. It escapes `&`, `<`, and `>` as Slack expects |
+| `occurred_at` | When the alert was raised, in ISO 8601 UTC |
+| `request_id` | The Activity entry's request ID |
+| `activity_id` | The Activity entry's id, or null when it could not be written |
+| `problem_fingerprint` | The recorded fingerprint, or null |
+
+| Outcome | Reason | When |
+| --- | --- | --- |
+| `done` | none | The receiver answered with a 2xx status |
+| `skipped` | `not_configured` | The URL or the secret is unset |
+| `failed` | `rejected` | The receiver answered with another status. The outcome keeps `http_status` |
+| `failed` | `unreachable` | The connection failed or timed out |
+| `failed` | `error` | Any other failure |
+
+The body serves two kinds of receivers. A receiver that verifies the signature reads the typed fields, such as an agent's intake webhook. A Slack incoming webhook shows `text` and ignores the signature, because its URL is the credential. The Gateway still needs a secret to send, so set any random value for such a receiver.

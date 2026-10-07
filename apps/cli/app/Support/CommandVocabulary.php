@@ -51,6 +51,7 @@ final readonly class CommandVocabulary
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
+        'self-update' => ['self-update'],
         'tasks' => ['cancel', 'complete', 'status'],
         'tool' => ['adopt', 'scan'],
     ];

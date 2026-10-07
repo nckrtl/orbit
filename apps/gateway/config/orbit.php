@@ -32,6 +32,12 @@ return [
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
         characters: '/',
     ),
+    // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
+    // `cli-v0.N.0`, and the Git checkout whose history counts N. The checkout is the running Gateway's own.
+    'cli_releases' => [
+        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
+        'git_directory' => base_path(),
+    ],
     'app_dev_domain' => trim(
         string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
         characters: '.',
@@ -88,6 +94,11 @@ return [
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
         'opsbot_webhook_url' => env('ORBIT_OPSBOT_WEBHOOK_URL'),
         'opsbot_webhook_secret' => env('ORBIT_OPSBOT_WEBHOOK_SECRET'),
+    ],
+    // Release alerts always write Activity and a problem. The signed webhook is skipped unless both values are set.
+    'releases' => [
+        'alert_webhook_url' => env('ORBIT_RELEASE_ALERT_WEBHOOK_URL'),
+        'alert_webhook_secret' => env('ORBIT_RELEASE_ALERT_WEBHOOK_SECRET'),
     ],
     // The outer loop neither counts nor files a listed fingerprint or a source path under a prefix.
     'problems' => [

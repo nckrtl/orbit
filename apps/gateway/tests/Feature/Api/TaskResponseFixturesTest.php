@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTickClock;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -81,6 +82,7 @@ describe('task response fixtures', function (): void {
     });
 
     it('records tasks status', function (): void {
+        app(TaskTickClock::class)->record();
         record_fixture($this->getJson('/api/v1/tasks/status')->assertOk(), 'tasks/tasks-status/enabled', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 

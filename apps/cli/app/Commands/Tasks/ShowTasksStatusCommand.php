@@ -53,6 +53,7 @@ final class ShowTasksStatusCommand extends TaskCommand
 
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail('Extension: tasks', [
             'Status' => $status->enabled ? 'enabled' : 'disabled',
+            'Last tick' => $status->lastTickAt ?? 'not recorded',
         ]));
         $this->renderAssistance($status->assistance ?? []);
         $this->writeHumanMessage("Request ID: {$status->requestId}");

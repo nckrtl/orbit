@@ -45,6 +45,8 @@ final class GatewayConnector extends Connector
         private readonly string $clientName = 'cli',
         #[SensitiveParameter]
         ?Closure $requestIdResolver = null,
+        /** Sent as `X-Orbit-Client-Version`, so the Gateway can tell the client which CLI release the fleet runs. */
+        private readonly ?string $clientVersion = null,
     ) {
         $safeOrigin = GatewayOrigin::fromTransport($baseUrl);
 
@@ -168,10 +170,16 @@ final class GatewayConnector extends Connector
     /** @return array<string, string> */
     protected function defaultHeaders(): array
     {
-        return [
+        $headers = [
             'Accept' => 'application/json',
             'X-Orbit-Client' => $this->clientName,
         ];
+
+        if ($this->clientVersion !== null && preg_match('/\A[\x21-\x7E]{1,64}\z/D', $this->clientVersion) === 1) {
+            $headers['X-Orbit-Client-Version'] = $this->clientVersion;
+        }
+
+        return $headers;
     }
 
     /** @return array<string, mixed> */

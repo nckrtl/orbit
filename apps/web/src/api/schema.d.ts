@@ -328,6 +328,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/compute/github-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew sandbox repository access
+         * @description Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.
+         */
+        post: operations["compute-github-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/database-connections": {
         parameters: {
             query?: never;
@@ -652,6 +672,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gateway/desired-fleet-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the desired fleet state
+         * @description Returns what every machine in the fleet should run for the Gateway's commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.
+         */
+        get: operations["gateway-desired-fleet-state"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -661,7 +701,7 @@ export interface paths {
         };
         /**
          * Show Gateway status
-         * @description Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.
+         * @description Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.
          */
         get: operations["gateway-status"];
         put?: never;
@@ -3608,12 +3648,38 @@ export interface components {
             failed_step?: string | null;
             error_code?: string | null;
         };
+        DesiredFleetState: {
+            commit?: string | null;
+            cli?: components["schemas"]["DesiredCliRelease"];
+            agent?: components["schemas"]["DesiredAgent"];
+        };
+        DesiredCliRelease: {
+            /** @enum {string} */
+            status?: "available" | "pending" | "unavailable";
+            /** @enum {string|null} */
+            reason?: "gateway_commit_unknown" | "history_unavailable" | "release_missing" | "release_mismatch" | "release_incomplete" | "github_unavailable" | null;
+            version?: string | null;
+            tag?: string | null;
+            checksums_url?: string | null;
+            assets?: components["schemas"]["FleetReleaseAsset"][];
+        };
+        FleetReleaseAsset: {
+            platform?: string;
+            name?: string;
+            url?: string;
+            sha256?: string;
+        };
+        DesiredAgent: {
+            version?: string;
+            assets?: components["schemas"]["FleetReleaseAsset"][];
+        };
         GatewayStatus: {
             name?: string;
             status?: string;
             version?: string;
             php_version?: string;
             laravel_version?: string;
+            desired_fleet_state?: components["schemas"]["DesiredFleetState"] | null;
         };
         Instance: {
             id?: number;
@@ -4225,6 +4291,7 @@ export interface components {
         TasksStatus: {
             enabled?: boolean;
             assistance?: components["schemas"]["TaskAssistance"][];
+            last_tick_at?: string | null;
         };
         TaskAssistance: {
             id?: number;
@@ -5416,6 +5483,48 @@ export interface operations {
             };
         };
     };
+    "compute-github-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fresh access scoped to the Project repository. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store, private";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Temporary installation token. Never persist or log it. */
+                        token: string;
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporary repository access could not be issued (`compute.github_unavailable`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "database-list": {
         parameters: {
             query?: never;
@@ -6551,6 +6660,38 @@ export interface operations {
                 content: {
                     "application/json": {
                         data: components["schemas"]["FirewallRule"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-desired-fleet-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DesiredFleetState"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
