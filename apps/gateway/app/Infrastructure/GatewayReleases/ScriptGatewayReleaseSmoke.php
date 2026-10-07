@@ -18,8 +18,9 @@ use Symfony\Component\Process\Exception\ProcessTimedOutException;
 /**
  * Runs `bin/gateway-smoke` of the release under test against the live Gateway: its own CLI, the
  * web app Caddy serves, and the scheduler and agent view units of the stable checkout path. The
- * smoke command bounds itself with `--timeout`; the Gateway kills its process group when it runs
- * past that bound by more than a grace period.
+ * smoke command bounds itself with `--timeout`. When it runs past that bound by more than a grace
+ * period, the Gateway sends it SIGTERM, on which it kills every check command it started, and then
+ * kills its process group.
  *
  * @phpstan-import-type SmokeResult from GatewayReleaseSmoke
  */
@@ -73,7 +74,7 @@ final readonly class ScriptGatewayReleaseSmoke implements GatewayReleaseSmoke
                 arguments: $arguments,
                 timeout: (float) ($this->timeoutSeconds + $this->graceSeconds),
                 maxOutputBytes: self::MaxOutputBytes,
-                terminateGraceSeconds: 2.0,
+                terminateGraceSeconds: 5.0,
                 environment: $this->environment(),
             ));
         } catch (ProcessTimedOutException) {
