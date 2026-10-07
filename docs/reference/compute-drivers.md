@@ -201,6 +201,8 @@ Provisioning grants the enrolled VM access to its own Node only. It grants no ac
 
 Cloud-init installs GitHub CLI. An owned `gh` wrapper runs it with the temporary token in its process environment, including access to Actions artifacts. The wrapper also supports `orbit-github gh …`. Neither helper stores the installation token. The Gateway CA and endpoint are provisioned through the pinned SSH channel. VMs require the App installation even when the Project uses `gh_cli` on shared machines. The App must be installed on the Project repository; no personal access token is needed. GitHub installation tokens expire after one hour. Cleanup blocks renewal; tokens already issued retain their GitHub expiry.
 
+The helper accepts opaque bearer tokens, including signed token formats with dots and hyphens. It refuses missing tokens, whitespace, and header-control characters.
+
 ### Pi sessions stay bound to their sandbox
 
 A sandbox reserves a random Pi token before guest configuration. The Gateway encrypts it at rest and excludes it from model serialization. Retries reuse the same token. Sandbox Pi connections never use the Gateway-wide token or the host Node’s Pi settings.
