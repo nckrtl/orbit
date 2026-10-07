@@ -41,7 +41,7 @@ A **releasable commit** is the newest commit on `main` where all of these hold:
 2. It strictly descends from the deployed commit, so a release never downgrades. Without a deployed commit nothing ships automatically.
 3. It has not already failed a release.
 
-`ci.yml` cancels in-progress runs only for pull requests, so every main push gets a full run. When several commits are green, the newest ships, and bursts coalesce into one release.
+`ci.yml` cancels in-progress runs only for pull requests, and each main commit has its own concurrency group, so every main push gets a full run. A shared main group would still let GitHub cancel a pending main run when a newer one queues. When several commits are green, the newest ships, and bursts coalesce into one release.
 
 ### Who triggers it
 
@@ -122,7 +122,7 @@ An **alert** is a failed Activity entry plus an outbound HMAC webhook. The [oute
 - Every green main commit reaches the Gateway within about a minute after CI, with no maintenance window and no dropped requests in the normal path.
 - Releases, rollbacks, and their evidence are visible in one record and in Activity.
 - A deployer change takes effect one release after it ships, because the oneshot runs the previous release's code. The first release with the deployer is deployed manually after adoption.
-- Un-cancelled main runs add load on Sabre's runners.
+- Un-cancelled main runs add load on Sabre's runners. About 28% of main runs were cancelled before this change. Running them too adds about 8 runner-minutes each, the Gateway and Gateway privileged jobs. In the week measured, that raised Sabre's three runners from about 5.5% to 7% busy, and queue time stayed under 5 minutes. Watch queue time during merge bursts.
 - Disk use grows to about five copies of `vendor/`.
 - A bad migration can still pause releases until an operator acts. Off-host snapshot copies and an expand/contract migration policy are follow-ups.
 - Agents that deploy by hand must switch to `gateway:release:deploy` at adoption.

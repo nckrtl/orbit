@@ -399,6 +399,53 @@ it('keeps privileged tests required in CI on trusted and fork branches', functio
     expect($workflow['jobs']['required']['steps'][0]['run'])->toContain('test "$PRIVILEGED_RESULT" = success');
 });
 
+it('lets every main push finish CI while a pull request keeps only its newest run', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+
+    // A shared main group would still replace a pending main run, so each main commit needs its own group.
+    expect($workflow['concurrency'])->toBe([
+        'group' => "ci-\${{ github.workflow }}-\${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
+        'cancel-in-progress' => "\${{ github.event_name == 'pull_request' }}",
+    ]);
+});
+
+it('tests exactly the run commit on main even when the branch moved before the job started', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $steps = $workflow['jobs']['project']['steps'];
+    $names = array_column($steps, 'name');
+    $checkout = array_search('Check out repository', $names, true);
+
+    // The checkout names the branch, so a later push would otherwise be tested under this run's commit.
+    expect($steps[$checkout]['with']['ref'])->toBe('${{ github.head_ref || github.ref_name }}')
+        ->and($steps[$checkout + 1])->toBe([
+            'name' => "Pin the run's commit",
+            'if' => "github.event_name != 'pull_request'",
+            'working-directory' => '.',
+            'run' => 'git reset --hard "$GITHUB_SHA"',
+        ]);
+});
+
+it('publishes the web build of each main push for the Gateway to install', function (): void {
+    $workflow = Yaml::parseFile(base_path('../../.github/workflows/ci.yml'));
+    $steps = array_column($workflow['jobs']['web']['steps'], null, 'name');
+    $names = array_keys($steps);
+
+    expect($steps['Publish web build'])->toBe([
+        'name' => 'Publish web build',
+        'if' => "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+        'uses' => 'actions/upload-artifact@v7',
+        'with' => [
+            'name' => 'web-dist-${{ github.sha }}',
+            'path' => 'apps/web/dist',
+            'include-hidden-files' => true,
+            'if-no-files-found' => 'error',
+            'retention-days' => 14,
+        ],
+    ]);
+    expect(array_search('Publish web build', $names, true))
+        ->toBe(array_search('Build', $names, true) + 1);
+});
+
 it('excludes privileged feedback through configuration while retaining TIA and ignores feedback in CI', function (bool $ci): void {
     $directory = temporaryPath('orbit-feedback-', 6);
     mkdir($directory);
