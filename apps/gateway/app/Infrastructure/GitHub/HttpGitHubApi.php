@@ -9,6 +9,9 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubBranchPullRequest;
 use App\Domain\GitHub\GitHubCheckRun;
+use App\Domain\GitHub\GitHubCommit;
+use App\Domain\GitHub\GitHubCommitComparison;
+use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubInstallation;
 use App\Domain\GitHub\GitHubOpenedPullRequest;
 use App\Domain\GitHub\GitHubPullRequest;
@@ -28,6 +31,10 @@ final readonly class HttpGitHubApi implements GitHubApi
     private const string BASE_URL = 'https://api.github.com';
 
     private const float TIMEOUT = 10.0;
+
+    private const int PAGE_SIZE = 100;
+
+    private const int CHECK_RUN_PAGES = 10;
 
     public function __construct(private HttpGitHubReviewReader $reviewReader) {}
 
@@ -316,32 +323,123 @@ final readonly class HttpGitHubApi implements GitHubApi
         );
     }
 
-    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array
+    /**
+     * Pages follow `total_count` from the first page. A count that changes between pages, or a page
+     * that ends before the count is reached, means the list moved during the read, so it fails.
+     */
+    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha, ?string $checkName = null): array
+    {
+        $query = ['per_page' => self::PAGE_SIZE] + ($checkName !== null ? ['check_name' => $checkName] : []);
+        $path = $this->repositoryPath($repository).'/commits/'.rawurlencode($sha).'/check-runs';
+        $runs = [];
+        $read = 0;
+        $total = null;
+        for ($page = 1; $page <= self::CHECK_RUN_PAGES; $page++) {
+            $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($path, $query + ['page' => $page]));
+            $rows = $response->json('check_runs');
+            $count = $response->json('total_count');
+            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || ! is_int($count) || $count < 0
+                || ($total !== null && $count !== $total)) {
+                throw GitHubApiException::unavailable();
+            }
+            $total = $count;
+            $read += count($rows);
+            foreach ($rows as $row) {
+                $run = is_array($row) ? $this->checkRun($row) : null;
+                if ($run instanceof GitHubCheckRun && ($checkName === null || $run->name === $checkName)) {
+                    $runs[] = $run;
+                }
+            }
+            if ($read > $total) {
+                throw GitHubApiException::unavailable();
+            }
+            if ($read === $total) {
+                return $runs;
+            }
+            if ($rows === []) {
+                throw GitHubApiException::unavailable();
+            }
+        }
+
+        throw GitHubApiException::unavailable();
+    }
+
+    /**
+     * Lists from `refs/heads/<branch>`, so a tag or a SHA-like name cannot stand in for the branch.
+     * Any malformed commit fails the whole list.
+     */
+    public function branchCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): array
     {
         $response = $this->send(fn (): Response => $this->request()->withToken($token)
-            ->get($this->repositoryPath($repository).'/commits/'.rawurlencode($sha).'/check-runs', ['per_page' => 100]));
-        $rows = $response->json('check_runs');
-        if (! $response->successful() || ! is_array($rows)) {
+            ->get($this->repositoryPath($repository).'/commits', ['sha' => 'refs/heads/'.$branch, 'per_page' => self::PAGE_SIZE]));
+        $rows = $response->json();
+        if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || count($rows) > self::PAGE_SIZE) {
             throw GitHubApiException::unavailable();
         }
 
-        $runs = [];
+        $commits = [];
         foreach ($rows as $row) {
-            $name = is_array($row) ? $this->text($row['name'] ?? null) : null;
-            if ($name === null) {
-                continue;
+            $sha = is_array($row) ? $this->sha($row['sha'] ?? null) : null;
+            $parents = is_array($row) ? ($row['parents'] ?? null) : null;
+            if ($sha === null || ! is_array($parents) || ! array_is_list($parents)) {
+                throw GitHubApiException::unavailable();
             }
-            $id = $row['id'] ?? null;
-            $runs[] = new GitHubCheckRun(
-                name: $name,
-                conclusion: $this->text($row['conclusion'] ?? null),
-                url: $this->text($row['html_url'] ?? null) ?? $this->text($row['details_url'] ?? null),
-                id: is_int($id) ? $id : null,
-                startedAt: $this->text($row['started_at'] ?? null),
-            );
+            $parentShas = [];
+            foreach ($parents as $parent) {
+                $parentSha = is_array($parent) ? $this->sha($parent['sha'] ?? null) : null;
+                if ($parentSha === null) {
+                    throw GitHubApiException::unavailable();
+                }
+                $parentShas[] = $parentSha;
+            }
+            $commits[] = new GitHubCommit($sha, $parentShas);
         }
 
-        return $runs;
+        return $commits;
+    }
+
+    /** One commit per page keeps the response small; the relation fields do not depend on paging. */
+    public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->get(
+            $this->repositoryPath($repository).'/compare/'.rawurlencode($baseSha).'...'.rawurlencode($headSha),
+            ['per_page' => 1],
+        ));
+        $status = $response->json('status');
+        $status = is_string($status) ? GitHubComparisonStatus::tryFrom($status) : null;
+        $base = $this->sha($response->json('base_commit.sha'));
+        $mergeBase = $this->sha($response->json('merge_base_commit.sha'));
+        if (! $response->successful() || ! $status instanceof GitHubComparisonStatus || $base !== $baseSha || $mergeBase === null) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return new GitHubCommitComparison($status, $base, $mergeBase);
+    }
+
+    /** @param array<array-key, mixed> $row */
+    private function checkRun(array $row): ?GitHubCheckRun
+    {
+        $name = $this->text($row['name'] ?? null);
+        if ($name === null) {
+            return null;
+        }
+        $id = $row['id'] ?? null;
+
+        return new GitHubCheckRun(
+            name: $name,
+            conclusion: $this->text($row['conclusion'] ?? null),
+            url: $this->text($row['html_url'] ?? null) ?? $this->text($row['details_url'] ?? null),
+            id: is_int($id) ? $id : null,
+            startedAt: $this->text($row['started_at'] ?? null),
+            status: $this->text($row['status'] ?? null),
+            headSha: $this->text($row['head_sha'] ?? null),
+            appSlug: is_array($row['app'] ?? null) ? $this->text($row['app']['slug'] ?? null) : null,
+        );
+    }
+
+    private function sha(mixed $value): ?string
+    {
+        return is_string($value) && preg_match('/\A[0-9a-f]{40}\z/D', $value) === 1 ? $value : null;
     }
 
     /** @param array<string, string> $permissions */

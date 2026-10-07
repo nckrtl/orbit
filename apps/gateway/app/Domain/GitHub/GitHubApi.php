@@ -143,11 +143,30 @@ interface GitHubApi
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest;
 
     /**
-     * The latest check run of each check on the commit, up to 100 runs.
+     * The latest check run of each check on the commit, every page up to 1,000 runs. With a check
+     * name, only runs of that exact name. A longer list, or one that changes or ends before its
+     * `total_count`, fails.
      *
      * @return list<GitHubCheckRun>
      *
      * @throws GitHubApiException
      */
-    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array;
+    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha, ?string $checkName = null): array;
+
+    /**
+     * The first 100 commits reachable from the branch head, newest first, in GitHub's history order.
+     * Needs a token with `contents: read`.
+     *
+     * @return list<GitHubCommit>
+     *
+     * @throws GitHubApiException
+     */
+    public function branchCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): array;
+
+    /**
+     * How the head commit relates to the base commit. Needs a token with `contents: read`.
+     *
+     * @throws GitHubApiException
+     */
+    public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison;
 }

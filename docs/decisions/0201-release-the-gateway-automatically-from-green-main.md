@@ -37,8 +37,8 @@ The Gateway releases itself from green `main` through the steps below. The opera
 
 A **releasable commit** is the newest commit on `main` where all of these hold:
 
-1. GitHub reports the check run `Required checks` as completed with conclusion `success` for that exact `head_sha`.
-2. It is a descendant of the deployed commit, so a release never downgrades.
+1. GitHub Actions reports the check run `Required checks` as completed with conclusion `success` for that exact `head_sha`. A run with that name from another GitHub App never makes a commit releasable, and it blocks the commit.
+2. It strictly descends from the deployed commit, so a release never downgrades. Without a deployed commit nothing ships automatically.
 3. It has not already failed a release.
 
 `ci.yml` cancels in-progress runs only for pull requests, so every main push gets a full run. When several commits are green, the newest ships, and bursts coalesce into one release.

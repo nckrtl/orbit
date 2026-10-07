@@ -716,7 +716,7 @@ function tick_watch_pulls(array $pulls, array $checks = [], int $updateStatus = 
         'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response(['message' => $updateMessage], $updateStatus),
     ];
     foreach ($checks as $sha => $runs) {
-        $fake['https://api.github.com/repos/acme/orbit/commits/'.$sha.'/check-runs*'] = Http::response(['check_runs' => $runs]);
+        $fake['https://api.github.com/repos/acme/orbit/commits/'.$sha.'/check-runs*'] = Http::response(['total_count' => count($runs), 'check_runs' => $runs]);
     }
     Http::preventStrayRequests();
     Http::fake($fake);
@@ -976,10 +976,10 @@ it('asks for assistance once per set of pull request problems and withdraws it w
             ->push($conflict)->push($conflict)
             ->push([...$clean, 'mergeable_state' => 'unstable'])
             ->push($clean),
-        'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['check_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
-            ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
-            ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/2']]]),
+            ->push(['total_count' => 1, 'check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
+            ->push(['total_count' => 1, 'check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/2']]]),
     ]);
     $conflictReason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push. Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).';
     $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1. Orbit reached the cap of 2 fixups for check:Rust agent in the current window (2 counted).';
@@ -2080,8 +2080,8 @@ it('waits for the checks on a new head to complete before the next fixup', funct
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_open_pull(['head' => ['sha' => 'def456']])),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
-            ->push(['check_runs' => [$failed, ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11']]])
-            ->push(['check_runs' => [$failed, ['name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/11']]]),
+            ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11']]])
+            ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/11']]]),
     ]);
 
     $notifier = tick_assistance_notifier();
