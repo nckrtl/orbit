@@ -148,13 +148,13 @@ php /home/orbit/orbit/apps/gateway/artisan gateway:release:deploy <SHA> --force
 
 After the switch, deploy:
 
-1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, OPcache, and the units;
+1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
 2. verifies the release, as described below;
-3. runs the scheduler phase of the handoff: the scheduler drain and restart, and document cleanup;
+3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, and the OPcache reset;
 4. switches the web app to the release's build;
 5. runs smoke against that web app.
 
-Verify runs before the scheduler phase, so a broken release is found and switched back without waiting for a long scheduled command.
+Verify runs before the scheduler phase, so a broken release is found and switched back without waiting for a long scheduled command or an idle pool.
 
 Verify checks `GET /up` and Gateway status at `ORBIT_GATEWAY_VERIFY_ORIGIN` (default `https://gateway.orbit`). Status must be `ok`, and the version must be the full commit or its 12-digit id. A busy pool can queue `/up` behind long requests, so a failed check runs again after 2, 4, 8, 16, and 30 seconds.
 
@@ -187,18 +187,18 @@ The serving phase:
 
 1. publishes the Gateway Node's Caddyfile when the render changed, with a graceful Caddy reload;
 2. compares the rendered pool with `/etc/php/8.5/fpm/pool.d/orbit-gateway.conf` and reloads PHP-FPM only for a difference, as a reload ends requests in flight;
-3. resets the pool's OPcache, described below;
-4. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path.
+3. installs the hibernator and agent-view units again and restarts agent-view. Both units name the stable `/home/orbit/orbit/apps/gateway` path.
 
 The scheduler phase:
 
 1. moves the scheduler to the new release without cutting off a scheduled command;
 2. restarts every other Gateway Node Process whose directory is in the Gateway application;
-3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate).
+3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
+4. resets OPcache, described below.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
-Release files never change in place, so OPcache never marks the scripts of an old release as wasted, and the cache fills up. The serving phase therefore resets OPcache through the pool's socket, with a script outside `public/`.
+Release files never change in place, so OPcache never marks the scripts of an old release as wasted, and the cache fills up. The scheduler phase therefore ends with an OPcache reset through the pool's socket, with a script outside `public/`.
 
 All pools of the PHP-FPM master share one OPcache. OPcache restarts once no request uses the cache. A restart that stays pending for `opcache.force_restart_timeout` (180 seconds) kills the workers that still serve a request, and a Gateway request may run 600 seconds. So the handoff resets only while no enabled pool has a connection on its `listen` socket, and the restart happens with the next request. It waits up to 60 seconds for that moment. Then it asks the pool again until the restart has happened.
 

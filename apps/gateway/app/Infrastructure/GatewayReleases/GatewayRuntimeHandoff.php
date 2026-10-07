@@ -93,7 +93,7 @@ final readonly class GatewayRuntimeHandoff
     }
 
     /**
-     * What serves requests: Caddy, PHP-FPM, OPcache, and the units. It runs before verify, so a broken release is
+     * What serves requests: Caddy, PHP-FPM, and the units. It runs before verify, so a broken release is
      * found, and switched back, without waiting for the scheduler.
      *
      * @return HandoffResult
@@ -113,14 +113,13 @@ final readonly class GatewayRuntimeHandoff
         return [
             'caddy' => $caddy,
             'fpm' => $fpm,
-            'opcache' => $this->opcache(),
             'agent_view' => 'restarted',
         ];
     }
 
     /**
-     * What runs in the background: the scheduler drain and restart, then document cleanup. It runs after verify,
-     * because the drain can wait for a long scheduled command.
+     * What runs in the background, after verify, because each step can wait: the scheduler drain and restart, document
+     * cleanup, and the OPcache reset.
      *
      * @return HandoffResult
      *
@@ -141,6 +140,8 @@ final readonly class GatewayRuntimeHandoff
             'cleanup' => $cleanup['outcome'],
             'cleanup_error_code' => $cleanup['error_code'] ?? null,
             'cleanup_paused' => $cleanup['paused'],
+            // Last, after verify: the reset may wait up to a minute for the pools to go idle.
+            'opcache' => $this->opcache(),
         ];
     }
 

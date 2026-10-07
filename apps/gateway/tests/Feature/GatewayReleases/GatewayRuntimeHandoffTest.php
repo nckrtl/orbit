@@ -351,6 +351,19 @@ describe('gateway:release:handoff', function (): void {
             ->and($busyProbe->opcacheCalls)->toBe([]);
     });
 
+    it('leaves the OPcache reset, which may wait for idle pools, out of the serving phase that verify waits for', function (): void {
+        handoff_scheduler(handoff_gateway());
+        [$handoff, , , , , $probe] = runtime_handoff();
+
+        $serve = $handoff->serve();
+        $calledBeforeVerify = $probe->opcacheCalls;
+        $schedule = $handoff->schedule();
+
+        expect($serve)->not->toHaveKey('opcache')
+            ->and($calledBeforeVerify)->toBe([])
+            ->and($schedule['opcache']['outcome'])->toBe('reset');
+    });
+
     it('reports a reset whose restart stays pending', function (): void {
         handoff_scheduler(handoff_gateway());
         [$handoff, , , , , $probe] = runtime_handoff();
