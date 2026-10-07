@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskWorkspaceTopology;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
+use App\Models\Task;
 use RuntimeException;
 
 /**
@@ -96,6 +98,10 @@ final readonly class RemoteTaskWorkspaceTopology implements TaskWorkspaceTopolog
 
     private function run(Instance $workspace, int $groupId, string $operation): CommandResult
     {
+        if ($workspace->task_sandbox_id !== null
+            || Task::topLevel()->where('taskable_type', $workspace->getMorphClass())->where('taskable_id', $workspace->id)->where('task_compute', TaskCompute::Vm->value)->exists()) {
+            throw new RuntimeConvergenceException('task-topology-'.$operation, 'tasks.topology_failed', 'Sandbox workload nodes must be managed by the compute driver.');
+        }
         $workspace->loadMissing('node');
 
         return $this->ssh->execute(

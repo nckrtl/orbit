@@ -12,6 +12,8 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Infrastructure\Tasks\RemoteTaskWorkspaceMcp;
+use App\Infrastructure\Tasks\RemoteTaskWorkspaceTopology;
 use App\Infrastructure\Tasks\TaskWorkerUser;
 use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
@@ -48,6 +50,34 @@ beforeEach(function (): void {
 });
 
 describe('sandbox workspace commands', function (): void {
+    it('installs MCP metadata inside the guest without using the shared worker', function (): void {
+        $workspace = sandbox_workspace();
+        config(['app.url' => 'https://live-gateway.example']);
+        mock(SshExecutor::class)->shouldReceive('execute')->once()->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
+            expect($command->arguments)->toBe(['/usr/local/bin/orbit-agent', 'sandbox']);
+            $request = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+            expect($request['guest']['argv'])->toBe(['bash', '-seu', '--', '/home/orbit/orbit']);
+            expect(base64_decode($request['guest']['stdin']))->toContain('command git -c core.hooksPath=/dev/null')->not->toContain('orbit-worker');
+
+            return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
+                'stdout' => base64_encode('installed'), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false], JSON_THROW_ON_ERROR), '', 1, false);
+        });
+
+        expect(app(RemoteTaskWorkspaceMcp::class)->installWhenMissing($workspace))->toBeTrue();
+    });
+
+    it('never invokes the host topology harness for a VM group', function (string $operation, bool $missingOwnership): void {
+        $workspace = sandbox_workspace();
+        $groupId = $workspace->taskSandbox->group_id;
+        if ($missingOwnership) {
+            $workspace->update(['task_sandbox_id' => null]);
+        }
+        mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+        expect(fn () => app(RemoteTaskWorkspaceTopology::class)->{$operation}($workspace, $groupId))
+            ->toThrow(RuntimeConvergenceException::class, 'Sandbox workload nodes must be managed by the compute driver.');
+    })->with(['acquire', 'release'])->with([false, true]);
+
     it('executes only in the recorded guest and bypasses the shared worker account', function (): void {
         $workspace = sandbox_workspace();
         mock(SshExecutor::class)->shouldReceive('execute')->once()->andReturnUsing(function (SshConnection $connection, RemoteCommand $command): CommandResult {
