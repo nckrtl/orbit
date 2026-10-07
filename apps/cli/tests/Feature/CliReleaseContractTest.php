@@ -280,6 +280,6 @@ describe('CLI release workflow', function (): void {
             ->and($workflow)->toContain('--latest=false')
             ->and($workflow)->toContain('Published releases are never replaced.')
             ->and(substr_count($workflow, 'contents: write'))->toBe(1)
-            ->and($workflow)->toContain("cancel-in-progress: false");
+            ->and($workflow)->toContain('cancel-in-progress: false');
     });
 });
