@@ -13,6 +13,7 @@ use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
 use App\Domain\SourceControl\GitBranchName;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskReviewRequestLogins;
@@ -44,6 +45,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         private RepositoryPullRequestAccess $access,
         private GitHubApi $github,
         private DevelopmentSshExecutor $ssh,
+        private SandboxGitBundles $bundles,
     ) {}
 
     public function publish(Task $group, string $body, string $commit): string
@@ -56,7 +58,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
 
         try {
             $token = $this->access->token($repository);
-            $this->pushBranch($instance, $branch, $token, $commit);
+            $this->pushBranch($instance, $repository, $group->id, $branch, $token, $commit);
             $opened = $this->github->openPullRequest($token, $repository, new GitHubPullRequestDraft($branch, $base, $group->title, $body));
             $this->requestReviewers($token, $repository, $opened);
 
@@ -105,7 +107,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
         [$repository, $instance, $branch] = $this->target($group);
 
         try {
-            $this->pushBranch($instance, $branch, $this->access->token($repository), $commit);
+            $this->pushBranch($instance, $repository, $group->id, $branch, $this->access->token($repository), $commit);
         } catch (GitHubApiException $exception) {
             throw new TaskPullRequestException('The task branch could not be pushed: '.$exception->getMessage(), previous: $exception);
         }
@@ -124,17 +126,23 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             throw new TaskPullRequestException('The Project repository is not on github.com.');
         }
         $instance = $group->taskable;
-        if (! $instance instanceof Instance || $instance->checkout_path === '') {
+        if (! $instance instanceof Instance || $instance->checkout_path === ''
+            || ($group->task_compute === TaskCompute::Vm && $instance->task_sandbox_id === null)) {
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
 
         return [$repository, $instance, 'task-'.$group->id];
     }
 
-    private function pushBranch(Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void
+    private function pushBranch(Instance $instance, GitHubRepository $repository, int $groupId, string $branch, #[SensitiveParameter] string $token, string $commit): void
     {
         if (preg_match('/\A[0-9a-f]{40}(?:[0-9a-f]{24})?\z/D', $commit) !== 1) {
             throw new TaskPullRequestException('The approved commit is not a Git SHA.');
+        }
+        if ($instance->task_sandbox_id !== null) {
+            $this->bundles->publish($instance, $repository, $groupId, $commit, $token);
+
+            return;
         }
         $instance->loadMissing('node');
         $script = GitReadScript::for(GitReadEnvironment::forGitHubToken($token), <<<'BASH'

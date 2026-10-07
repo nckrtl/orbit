@@ -160,3 +160,18 @@ Sandbox checks use the guest's runtime and home. They do not borrow the host's
 Vite+ installation, dependency seed, or `orbit-worker` account. Workspace
 provisioning remains gated while bundle publication, agent credentials, and
 image preparation are integrated.
+
+### Git objects cross the boundary as bundles
+
+Sandbox publication exports the approved commit as a bundle. The Gateway receives
+bounded chunks in a private temporary directory, checks the transfer digest,
+and verifies the bundle in a fresh trusted bare repository before pushing that
+exact commit to `task-<id>`. It never force-pushes. Extra advertised refs,
+missing prerequisites, corrupt objects, and a different commit are refused.
+
+Fetching reverses that path. The Gateway fetches a named branch and exports a
+bundle. The guest imports it into the matching remote-tracking ref without
+changing its current branch or working tree. Repository tokens stay in the
+Gateway's protected process input and temporary credential file. No token or
+credential helper enters the sandbox. Transfer files are removed after the
+operation; destroying the sandbox also removes interrupted guest transfers.
