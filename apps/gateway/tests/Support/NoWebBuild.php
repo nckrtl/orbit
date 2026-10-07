@@ -19,4 +19,6 @@ final class NoWebBuild implements GatewayReleaseWebBuild
     public function restore(string $id): void {}
 
     public function remove(string $id): void {}
+
+    public function prune(array $retained): void {}
 }

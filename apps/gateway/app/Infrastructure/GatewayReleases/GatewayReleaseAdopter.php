@@ -143,7 +143,7 @@ final readonly class GatewayReleaseAdopter
             $phases['switch'] = $switch;
         } catch (Throwable $thrown) {
             $exception = GatewayReleaseException::fromThrowable($thrown, $step, $head);
-            $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+            $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
             $phases['environment'] = $this->restoreEnvironment($current);
 
             if ($head === null || ! isset($id) || $step === 'guard') {
@@ -214,7 +214,7 @@ final readonly class GatewayReleaseAdopter
             $phases['scheduler'] = $this->runtime->schedule($id);
         } catch (Throwable $thrown) {
             $exception = GatewayReleaseException::fromThrowable($thrown, $step, $sha);
-            $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+            $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
             $this->record($this->outcome($id, $sha, 'failed', $phases, $startedAt, $exception));
 
             throw $exception;
@@ -620,7 +620,7 @@ final readonly class GatewayReleaseAdopter
      */
     private function switchBack(GatewayReleaseException $exception, string $current, string $kept, string $id, string $sha, array $phases, int $startedAt, bool $scheduled): GatewayReleaseException
     {
-        $phases[$exception->step] = ['outcome' => 'failed', 'error_code' => $exception->errorCode];
+        $phases[$exception->step] = [...$exception->phase, 'outcome' => 'failed', 'error_code' => $exception->errorCode];
         $outcome = 'switched_back';
 
         try {

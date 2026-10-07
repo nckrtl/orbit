@@ -18,9 +18,10 @@ interface GatewayReleaseSmoke
     /**
      * @param  DateTimeImmutable|null  $since  When the runtime handoff started. The scheduler, agent view,
      *                                         and a tasks tick must have started after it.
+     * @param  list<string>  $skip  Checks to skip, such as `web` when a rollback kept the web app as it was.
      * @return SmokeResult
      *
      * @throws GatewayReleaseException
      */
-    public function run(string $id, string $sha, ?DateTimeImmutable $since = null): array;
+    public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array;
 }

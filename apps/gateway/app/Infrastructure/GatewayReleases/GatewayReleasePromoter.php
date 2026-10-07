@@ -84,10 +84,9 @@ final readonly class GatewayReleasePromoter
             $scheduled = $this->runtime->schedule($id);
             $phases['scheduler'] = $scheduled;
             $step = 'web';
-            $this->web->publish($id);
-            $phases['web'] = ['outcome' => 'published'];
+            $phases['web'] = $this->publishWeb($id, $sha, $trigger);
             $step = 'smoke';
-            $phases['smoke'] = $this->smoke->run($id, $sha, $handoffAt);
+            $phases['smoke'] = $this->smoke->run($id, $sha, $handoffAt, $phases['web']['outcome'] === 'kept' ? ['web'] : []);
         } catch (Throwable $exception) {
             $this->fail(
                 exception: GatewayReleaseException::fromThrowable($exception, $step, $sha),
@@ -265,6 +264,39 @@ final readonly class GatewayReleasePromoter
     }
 
     /** Keeps the newest releases plus the current and the previous one, whatever their age. */
+    /**
+     * Switches the web app to the release's build. A deploy fails without that build. A rollback is often an
+     * emergency, so it installs a missing build from CI first, and when CI no longer has it, keeps the web app as it
+     * is and continues with a warning instead of blocking the code rollback on assets.
+     *
+     * @return array{outcome: string, installed?: bool, warning?: string, error_code?: string}
+     */
+    private function publishWeb(string $id, string $sha, string $trigger): array
+    {
+        try {
+            $this->web->publish($id);
+
+            return ['outcome' => 'published'];
+        } catch (GatewayReleaseException $exception) {
+            if ($trigger !== 'rollback' || $exception->errorCode !== 'gateway.release_web_build_missing') {
+                throw $exception;
+            }
+        }
+
+        try {
+            $this->web->install($id, $sha);
+            $this->web->publish($id);
+
+            return ['outcome' => 'published', 'installed' => true];
+        } catch (GatewayReleaseException $exception) {
+            return [
+                'outcome' => 'kept',
+                'warning' => 'The web build of the rollback target is not available, so the web app stays as it was: '.$exception->getMessage(),
+                'error_code' => $exception->errorCode,
+            ];
+        }
+    }
+
     private function prune(string $current, ?string $previous): void
     {
         $ids = $this->layout->retainedReleaseIds();
@@ -285,6 +317,12 @@ final readonly class GatewayReleasePromoter
             } catch (Throwable) {
                 // Pruning is not the release. A release that cannot be removed stays until the next one.
             }
+        }
+
+        try {
+            $this->web->prune($this->layout->retainedReleaseIds());
+        } catch (Throwable) {
+            // A web build that cannot be removed now is removed by a later release.
         }
     }
 }

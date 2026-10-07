@@ -52,6 +52,8 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
         private readonly GitHubActionsReader $actions,
         private readonly string $webRoot,
         private readonly string $group = 'caddy',
+        private readonly string $branch = 'main',
+        private readonly string $workflow = '.github/workflows/ci.yml',
     ) {}
 
     public static function artifactName(string $sha): string
@@ -148,6 +150,21 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
         $this->removePath($this->releasePath($id));
     }
 
+    public function prune(array $retained): void
+    {
+        $entries = @scandir($this->releasesPath());
+
+        if ($entries === false) {
+            return;
+        }
+
+        foreach ($entries as $entry) {
+            if (GatewayReleaseCommit::isId($entry) && ! in_array($entry, $retained, true)) {
+                $this->remove($entry);
+            }
+        }
+    }
+
     private function releasesPath(): string
     {
         return $this->webRoot.'/releases';
@@ -212,8 +229,8 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
     }
 
     /**
-     * Finds the newest unexpired `web-dist-<sha>` artifact from a push run of this repository for
-     * exactly this commit, downloads it, and checks its digest.
+     * Finds the newest unexpired `web-dist-<sha>` artifact from a CI run on the release branch for exactly this
+     * commit, downloads it, and checks it against its required digest.
      */
     private function downloadArtifact(GitHubRepository $repository, string $sha, string $archive): void
     {
@@ -249,8 +266,13 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
                 if (! is_int($id) || $id < 1 || ! is_int($size) || ! is_array($run)
                     || ($run['head_sha'] ?? null) !== $sha || ! is_int($run['id'] ?? null)
                     || ! is_int($run['repository_id'] ?? null) || ($run['head_repository_id'] ?? null) !== $run['repository_id']
-                    || ! $this->pushRun($path, $run['id'], $sha, $run['repository_id'], $token)) {
+                    || ($run['head_branch'] ?? null) !== $this->branch
+                    || ! $this->ciRun($path, $run['id'], $sha, $run['repository_id'], $token)) {
                     continue;
+                }
+
+                if (! is_string($artifact['digest'] ?? null) || preg_match('/\Asha256:[0-9a-f]{64}\z/D', strtolower($artifact['digest'])) !== 1) {
+                    throw $this->invalid("The web build artifact [{$name}] has no SHA-256 digest, so its download cannot be checked.");
                 }
 
                 if ($size < 1 || $size > self::MaxArchiveBytes) {
@@ -260,7 +282,7 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
                 $digest = $this->actions->download($this->actions->archiveLocation($repository, $id, $token), $archive, self::MaxArchiveBytes);
                 $expected = $artifact['digest'] ?? null;
 
-                if (is_string($expected) && ! hash_equals(strtolower($expected), 'sha256:'.$digest)) {
+                if (! is_string($expected) || ! hash_equals(strtolower($expected), 'sha256:'.$digest)) {
                     throw $this->invalid("The downloaded web build [{$name}] does not match its artifact digest.");
                 }
 
@@ -281,7 +303,7 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
             errorCode: 'gateway.release_web_build_missing',
             message: $expired
                 ? "The CI artifact [{$name}] has expired. Release a newer commit."
-                : "CI published no artifact [{$name}] for a push of this commit. Release a commit whose CI run uploaded its web build.",
+                : "CI published no artifact [{$name}] from a run of {$this->workflow} on {$this->branch} for this commit. Release a commit whose CI run uploaded its web build.",
             status: 422,
             sha: $sha,
         );
@@ -300,17 +322,20 @@ final class GitHubArtifactWebBuild implements GatewayReleaseWebBuild
     }
 
     /**
-     * Only a push run of this repository for this commit counts. A pull request from a fork runs in
-     * this repository too, but its run has another head repository or another event.
+     * Only a run of the CI workflow on the release branch of this repository counts: a push, or a manual dispatch, for
+     * exactly this commit. A pull request from a fork runs in this repository too, but its run has another event, branch,
+     * or head repository.
      */
-    private function pushRun(string $path, int $runId, string $sha, int $repositoryId, string $token): bool
+    private function ciRun(string $path, int $runId, string $sha, int $repositoryId, string $token): bool
     {
         $run = $this->actions->json($path.'/actions/runs/'.$runId, $token);
         $repository = $run['repository'] ?? null;
         $head = $run['head_repository'] ?? null;
 
         return ($run['id'] ?? null) === $runId
-            && ($run['event'] ?? null) === 'push'
+            && in_array($run['event'] ?? null, ['push', 'workflow_dispatch'], true)
+            && ($run['head_branch'] ?? null) === $this->branch
+            && ($run['path'] ?? null) === $this->workflow
             && ($run['head_sha'] ?? null) === $sha
             && is_array($repository) && ($repository['id'] ?? null) === $repositoryId
             && is_array($head) && ($head['id'] ?? null) === $repositoryId;

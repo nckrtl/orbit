@@ -8,7 +8,7 @@ namespace App\Domain\GatewayReleases;
  * The web app build that ships with a Gateway release. Prepare installs it before anything goes
  * live, so a missing build fails the prepare. Activation publishes it only after the Gateway
  * release verified, and restores the build that was current before when the release switches back.
- * Pruning a Gateway release removes its web build too.
+ * Pruning a Gateway release removes its web build too, and a build that belongs to no retained release.
  */
 interface GatewayReleaseWebBuild
 {
@@ -34,4 +34,12 @@ interface GatewayReleaseWebBuild
 
     /** Removes the web build of a pruned release unless the web app still serves it. */
     public function remove(string $id): void;
+
+    /**
+     * Removes every web build that belongs to no retained release, such as the build of a commit whose prepare failed
+     * after the web install, unless the web app still serves it.
+     *
+     * @param  list<string>  $retained  The ids of the retained releases.
+     */
+    public function prune(array $retained): void;
 }

@@ -295,6 +295,8 @@ describe('gateway:release:deploy', function (): void {
             public function restore(string $id): void {}
 
             public function remove(string $id): void {}
+
+            public function prune(array $retained): void {}
         };
 
         $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, recording_smoke($order))->execute($sha));
@@ -360,6 +362,67 @@ describe('gateway:release:deploy', function (): void {
         expect($forced->outcome)->toBe('verified')
             ->and($forced->trigger)->toBe('rollback')
             ->and($this->fixture->layout->currentReleaseId())->toBe($first);
+    });
+
+    it('prunes web builds that belong to no retained release after a verified deploy', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Release that prunes');
+        $order = new ReleaseSteps;
+
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+
+        expect($order->pruned)->toEqualCanonicalizing([$first, substr($sha, 0, 12)]);
+    });
+
+    it('installs a missing web build from CI when it rolls back', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Release to roll back from');
+        $order = new ReleaseSteps;
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        $web = new RollbackWebBuild($order);
+        $smoke = recording_smoke($order);
+
+        $rolled = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, $smoke)->execute($first);
+
+        expect($rolled->outcome)->toBe('verified')
+            ->and($rolled->phases['web'])->toBe(['outcome' => 'published', 'installed' => true])
+            ->and($web->installed)->toBe([$first])
+            ->and($smoke->skip)->toBe([]);
+    });
+
+    it('keeps the web app and rolls the code back when CI no longer has the web build', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Release to roll back from');
+        $order = new ReleaseSteps;
+        release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($sha);
+        $web = new RollbackWebBuild($order);
+        $web->installFails = true;
+        $smoke = recording_smoke($order);
+
+        $rolled = release_rollback($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, $smoke)->execute($first);
+
+        expect($rolled->outcome)->toBe('verified')
+            ->and($rolled->phases['web']['outcome'])->toBe('kept')
+            ->and($rolled->phases['web']['error_code'])->toBe('gateway.release_web_build_missing')
+            ->and($rolled->phases['web']['warning'])->toContain('stays as it was')
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and($smoke->skip)->toBe(['web'])
+            ->and($order->steps)->not->toContain('web:restore');
+    });
+
+    it('still switches a deploy back when its web build is missing', function (): void {
+        $first = adopt_release($this->fixture);
+        $sha = $this->fixture->commit('Deploy without a web build');
+        $order = new ReleaseSteps;
+        $web = new RollbackWebBuild($order);
+        $web->vanishes = true;
+
+        $exception = release_failure(fn () => release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, $web, recording_smoke($order))->execute($sha));
+
+        expect($exception->errorCode)->toBe('gateway.release_web_build_missing')
+            ->and($web->installs)->toBe(1)
+            ->and($this->fixture->layout->currentReleaseId())->toBe($first)
+            ->and(GatewayRelease::query()->latest('id')->first()->outcome)->toBe('switched_back');
     });
 
     it('switches back and records the release when an unexpected error ends the handoff', function (): void {
@@ -1017,6 +1080,11 @@ function recording_web(ReleaseSteps $order): GatewayReleaseWebBuild
         {
             $this->order->steps[] = 'web:remove:'.$id;
         }
+
+        public function prune(array $retained): void
+        {
+            $this->order->pruned = $retained;
+        }
     };
 }
 
@@ -1030,10 +1098,14 @@ function recording_smoke(ReleaseSteps $order): GatewayReleaseSmoke
 
         public ?DateTimeImmutable $since = null;
 
-        public function run(string $id, string $sha, ?DateTimeImmutable $since = null): array
+        /** @var list<string> */
+        public array $skip = [];
+
+        public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
         {
             $this->order->steps[] = 'smoke';
             $this->since = $since;
+            $this->skip = $skip;
 
             if ($this->fail) {
                 throw new GatewayReleaseException('smoke', 'gateway.release_smoke_failed', 'Smoke failed.', phase: ['report' => ['passed' => false, 'failed_checks' => ['web']]]);
@@ -1048,6 +1120,9 @@ final class ReleaseSteps
 {
     /** @var list<string> */
     public array $steps = [];
+
+    /** @var list<string>|null */
+    public ?array $pruned = null;
 }
 
 final class OpenReleaseDatabase implements GatewayReleaseDatabase
@@ -1121,4 +1196,53 @@ final class OpenReleaseDatabase implements GatewayReleaseDatabase
     {
         return $this->files[$releasePath] ?? [];
     }
+}
+
+/** A web build with no build installed yet: publish fails until install ran, and install can fail as CI would. */
+final class RollbackWebBuild implements GatewayReleaseWebBuild
+{
+    public bool $installFails = false;
+
+    /** The installed build disappears before publish, as if something removed it after prepare. */
+    public bool $vanishes = false;
+
+    /** @var list<string> */
+    public array $installed = [];
+
+    public int $installs = 0;
+
+    public function __construct(private readonly ReleaseSteps $order) {}
+
+    public function install(string $id, string $sha): bool
+    {
+        if ($this->installFails) {
+            throw new GatewayReleaseException('web', 'gateway.release_web_build_missing', 'The CI artifact has expired.', 422);
+        }
+
+        $this->installs++;
+
+        if (! $this->vanishes) {
+            $this->installed[] = $id;
+        }
+
+        return false;
+    }
+
+    public function publish(string $id): void
+    {
+        if (! in_array($id, $this->installed, true)) {
+            throw new GatewayReleaseException('web', 'gateway.release_web_build_missing', "The web build [{$id}] is not installed.", 422);
+        }
+
+        $this->order->steps[] = 'web:publish';
+    }
+
+    public function restore(string $id): void
+    {
+        $this->order->steps[] = 'web:restore';
+    }
+
+    public function remove(string $id): void {}
+
+    public function prune(array $retained): void {}
 }

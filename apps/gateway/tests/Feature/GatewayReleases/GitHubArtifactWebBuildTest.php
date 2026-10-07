@@ -63,8 +63,25 @@ describe('web build install', function (): void {
         'expired' => [['artifact' => ['expired' => true]], 'has expired'],
         'pull request run' => [['run' => ['event' => 'pull_request']], 'published no artifact'],
         'fork run' => [['run' => ['head_repository' => ['id' => 99, 'full_name' => 'fork/orbit']]], 'published no artifact'],
+        'other branch' => [['run' => ['head_branch' => 'feature']], 'published no artifact'],
+        'other workflow' => [['run' => ['path' => '.github/workflows/tia-baseline.yml']], 'published no artifact'],
         'other commit' => [['artifact' => ['workflow_run' => ['id' => 37647307459, 'repository_id' => 1348221080, 'head_repository_id' => 1348221080, 'head_branch' => 'main', 'head_sha' => str_repeat('b', 40)]]], 'published no artifact'],
     ]);
+
+    it('accepts the artifact of a manual CI dispatch on main', function (): void {
+        $this->web->github(run: ['event' => 'workflow_dispatch']);
+
+        expect($this->web->build()->install($this->id, WebArtifactFixture::Sha))->toBeFalse()
+            ->and(is_file($this->web->web.'/releases/'.$this->id.'/index.html'))->toBeTrue();
+    });
+
+    it('refuses an artifact without a digest before it downloads it', function (): void {
+        $this->web->github(artifact: ['digest' => null]);
+
+        expect(release_failure(fn () => $this->web->build()->install($this->id, WebArtifactFixture::Sha))->errorCode)->toBe('gateway.release_web_build_invalid')
+            ->and($this->web->releases())->toBe([]);
+        Http::assertNotSent(fn (Request $request): bool => $request->url() === WebArtifactFixture::Storage);
+    });
 
     it('retries later when GitHub cannot be read and never shows the token', function (): void {
         $this->web->github(denied: true);
@@ -159,6 +176,19 @@ describe('web build publish and restore', function (): void {
         expect(readlink($this->web->web.'/current'))->toBe('releases/aaaaaaaaaaaa');
     });
 
+    it('restores the exact build current served, also when it was not the previous release\'s', function (): void {
+        mkdir($this->web->web.'/releases/cccccccccccc', 0750);
+        file_put_contents($this->web->web.'/releases/cccccccccccc/index.html', 'cccccccccccc');
+        symlink('releases/cccccccccccc', $this->web->web.'/current.tmp');
+        rename($this->web->web.'/current.tmp', $this->web->web.'/current');
+        $build = $this->web->build();
+        $build->publish('bbbbbbbbbbbb');
+
+        $build->restore('aaaaaaaaaaaa');
+
+        expect(readlink($this->web->web.'/current'))->toBe('releases/cccccccccccc');
+    });
+
     it('leaves current alone on restore when this attempt published nothing', function (): void {
         $this->web->build()->restore('bbbbbbbbbbbb');
 
@@ -173,6 +203,18 @@ describe('web build publish and restore', function (): void {
         $build->remove('bbbbbbbbbbbb');
 
         expect($this->web->releases())->toBe(['aaaaaaaaaaaa']);
+    });
+
+    it('prunes web builds of no retained release, but never the current one', function (): void {
+        foreach (['cccccccccccc', 'dddddddddddd'] as $id) {
+            mkdir($this->web->web.'/releases/'.$id, 0750);
+            file_put_contents($this->web->web.'/releases/'.$id.'/index.html', $id);
+        }
+
+        mkdir($this->web->web.'/releases/.eeeeeeeeeeee.partial', 0750);
+        $this->web->build()->prune(['bbbbbbbbbbbb']);
+
+        expect($this->web->releases())->toEqualCanonicalizing(['.eeeeeeeeeeee.partial', 'aaaaaaaaaaaa', 'bbbbbbbbbbbb']);
     });
 });
 

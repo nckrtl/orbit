@@ -219,7 +219,7 @@ It changes no role, VPN setting, or Node, and it never changes the releases or `
 
 Each Gateway release ships the web app of its commit. CI builds `apps/web` on every push to `main` and uploads it as the artifact `web-dist-<sha>`. While it prepares the release, the Gateway downloads that artifact through its GitHub App and installs it as `releases/<commit>`. It switches `current` after the release verified, and switches it back when the release switches back. The Gateway needs no Node or Bun for this. [Web build](/reference/gateway-recovery#web-build) describes the checks, and [Deploy a release](/reference/gateway-recovery#deploy-a-release) the order.
 
-When the Gateway prunes a release, it removes that release's web build too. It never removes the build `current` names.
+When the Gateway prunes a release, it removes that release's web build too. After each verified release it also removes every build that belongs to no retained release, a `bin/web-deploy` build of another commit included. It never removes the build `current` names.
 
 `bin/web-deploy` stays for manual use: a build of a commit CI did not publish, or a Gateway that does not release itself. Run it from a clean checkout of the commit to release.
 
