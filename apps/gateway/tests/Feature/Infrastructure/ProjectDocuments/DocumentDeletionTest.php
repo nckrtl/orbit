@@ -27,6 +27,8 @@ use Psr\Http\Message\RequestInterface;
 use Symfony\Component\Process\Exception\ProcessSignaledException;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     DB::rollBack();
     $this->deletionHome = sys_get_temp_dir().'/orbit-document-deletion-'.Str::uuid();

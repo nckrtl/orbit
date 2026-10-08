@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Illuminate\Process\Factory as ProcessFactory;
 
+pest()->group('subprocess');
+
 /** @return array{root: string, worktree: string, run: ProcessFactory} */
 function worktreeCacheFixture(): array
 {
