@@ -20,9 +20,10 @@ SHA = re.compile(r'[0-9a-f]{40}')
 NO_AFFECTED_TESTS = 'No affected tests found.'
 # The runs on main that always test every project in full.
 FULL_RUN_EVENTS = ('schedule', 'workflow_dispatch')
-# Autoloaded source directories. Pest links a PHP file added there through the files beside it, and a removed one
-# through the tests that covered it.
-SOURCE_DIRECTORIES = ('app/', 'bootstrap/', 'config/', 'database/', 'routes/', 'src/')
+# Class directories where a new PHP file runs only when changed code that Pest links calls it. Laravel Zero discovers
+# the CLI's commands in app/Commands, and Laravel loads new config, migration, and route files on its own.
+CLASS_DIRECTORIES = ('app/', 'src/')
+FRAMEWORK_DISCOVERED = ('app/Commands/',)
 # Paths outside each project that its tests do not read. Pest only sees files inside the project, so a change
 # anywhere else outside it runs the project's full suite. Docs and E2E tests read files across the repository.
 UNRELATED = {
@@ -74,9 +75,7 @@ def project_path():
 
 def pest_graph(advance_to=None):
     command = ['php', '-r', PHP_GRAPH, '--', str(GRAPH)] + ([advance_to] if advance_to else [])
-    # Project code loads here, so it never sees the Actions token.
-    environment = {name: value for name, value in os.environ.items() if name != 'GITHUB_TOKEN'}
-    result = subprocess.run(command, capture_output=True, text=True, env=environment)
+    result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode:
         raise Full(result.stderr.strip() or 'Pest cannot read the graph.')
     return json.loads(result.stdout)
@@ -101,7 +100,12 @@ def read_graph():
     untested = sorted(set(edges) - tested)
     if untested:
         raise Full(f'the graph has no result for {len(untested)} test files, such as {untested[0]}')
-    return sha, graph.get('fingerprint'), set(graph.get('files') or ())
+    # A file id can outlive the last edge to it, so only files that a test still covers count as linked.
+    files = graph.get('files')
+    files = files if isinstance(files, list) else []
+    linked = {files[index] for ids in edges.values() if isinstance(ids, list)
+              for index in ids if isinstance(index, int) and 0 <= index < len(files)}
+    return sha, graph.get('fingerprint'), linked
 
 
 def watched_paths():
@@ -117,35 +121,45 @@ def watched_paths():
             for pattern in patterns]
 
 
-def blind(project, status, path, known_files, watched):
+def blind(project, status, path, linked_files, watched):
     """Whether Pest cannot select the tests that a repository path with this Git status affects."""
     if not path.startswith(project + '/'):
-        return not path.startswith(UNRELATED[project]) or path.startswith(READ_ANYWAY.get(project, ()))
+        return not path.startswith(UNRELATED.get(project, ())) or path.startswith(READ_ANYWAY.get(project, ()))
     path = path[len(project) + 1:]
-    if path in known_files or any(pattern.fullmatch(path) for pattern in watched):
+    if path in linked_files:
+        return False
+    # Pest ignores a removed file that no test covered, even when a watch pattern names it.
+    if status == 'D':
+        return True
+    # Pest skips a dotfile unless the pattern names one, so a dotfile never counts as watched.
+    if not any(part.startswith('.') for part in path.split('/')) and any(pattern.fullmatch(path) for pattern in watched):
         return False
     if path.startswith('tests/'):
         return not path.endswith('Test.php')
-    # A changed PHP file that no test covered runs only in another process, such as a command or a script.
-    return not (path.endswith('.php') and path.startswith(SOURCE_DIRECTORIES) and status in ('A', 'D'))
+    # A modified PHP file that no test covered runs only in another process, such as a command or a script. A new class
+    # runs only when changed code that Pest links calls it.
+    return not (status == 'A' and path.endswith('.php') and path.startswith(CLASS_DIRECTORIES)
+                and not path.startswith(FRAMEWORK_DISCOVERED))
 
 
 def failed_full_run(repository):
-    """Return the newest completed full CI run on main when it did not pass.
+    """Return the newest finished full CI run on main when it did not pass.
 
-    Such a failure can be a test that an affected-only run missed, so later pushes must not pass without it.
+    Such a failure can be a test that an affected-only run missed, so later pushes must not pass without it. A cancelled
+    or skipped run proves nothing, so it never hides an earlier failure.
     """
     runs = []
     for event in FULL_RUN_EVENTS:
         request = urllib.request.Request(
             f'{os.environ.get("GITHUB_API_URL", "https://api.github.com")}/repos/{repository}/actions/workflows/ci.yml/'
-            f'runs?branch=main&event={event}&status=completed&per_page=1',
+            f'runs?branch=main&event={event}&status=completed&per_page=20',
             headers={'Accept': 'application/vnd.github+json', 'Authorization': f'Bearer {os.environ["GITHUB_TOKEN"]}'},
         )
         with urllib.request.urlopen(request, timeout=30) as response:
-            runs += json.load(response)['workflow_runs']
+            runs += [run for run in json.load(response)['workflow_runs']
+                     if run['conclusion'] not in ('cancelled', 'skipped')]
     newest = max(runs, key=lambda run: run['created_at'], default=None)
-    return newest if newest and newest['conclusion'] not in ('success', 'cancelled', 'skipped') else None
+    return newest if newest and newest['conclusion'] != 'success' else None
 
 
 def plan(arguments):
@@ -162,7 +176,7 @@ def plan(arguments):
                        'run CI on main by hand after the fix')
     if not arguments.restored_key.startswith(arguments.prefix + '-main-'):
         raise Full(f'no main graph with these test inputs was restored ({arguments.restored_key or "none"})')
-    base, fingerprint, known_files = read_graph()
+    base, fingerprint, linked_files = read_graph()
     if pest_graph()['fingerprint'] != fingerprint:
         raise Full('the graph was recorded with other dependencies or another PHP version')
     if subprocess.run(('git', 'merge-base', '--is-ancestor', base, 'HEAD')).returncode:
@@ -170,7 +184,7 @@ def plan(arguments):
     changes = git('diff', '--name-status', '--no-renames', '-z', base, 'HEAD').split('\0')[:-1]
     watched = watched_paths()
     unseen = [path for status, path in zip(changes[::2], changes[1::2])
-              if blind(project, status, path, known_files, watched)]
+              if blind(project, status, path, linked_files, watched)]
     if unseen:
         more = f' and {len(unseen) - 3} more' if len(unseen) > 3 else ''
         raise Full(f'test-impact analysis cannot see {", ".join(unseen[:3])}{more}')

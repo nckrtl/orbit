@@ -221,7 +221,8 @@ describe('Composer configuration', function (): void {
         // Every run on main chooses its selection from the restored main graph: a push tests what changed since that
         // graph's commit, and a nightly or manual run, or a change Pest cannot see, runs everything.
         expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
-            ->and($workflow['permissions'])->toBe(['actions' => 'read', 'contents' => 'read']);
+            ->and($workflow['permissions'])->toBe(['contents' => 'read'])
+            ->and($project['permissions'])->toBe(['actions' => 'read', 'contents' => 'read']);
         expect($steps['Choose the main test selection'])
             ->toMatchArray([
                 'id' => 'orbit-tia-plan',
@@ -254,11 +255,14 @@ describe('Composer configuration', function (): void {
                 // A manual run on another branch records that branch's baseline, not main's.
                 'if' => "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
                 'run' => '../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"',
+                'env' => ['MODE' => '${{ steps.orbit-tia-plan.outputs.mode }}', 'BASE' => '${{ steps.orbit-tia-plan.outputs.base }}'],
             ]);
         $order = array_flip(array_keys($steps));
         expect($order['Restore Pest TIA graph'])->toBeLessThan($order['Choose the main test selection'])
             ->and($order['Choose the main test selection'])->toBeLessThan($order['Run tests affected since the main graph'])
-            ->and($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
+            ->and($order['Run tests affected since the main graph'])->toBeLessThan($order['Run full test suite and refresh Pest TIA graph'])
+            ->and($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Run architecture tests'])
+            ->and($order['Run architecture tests'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
             ->and($order['Require the Pest TIA graph to describe this commit'])->toBeLessThan($order['Save Pest TIA graph'])
             ->and($order['Save Pest TIA graph'])->toBeLessThan($order['Export sandbox TIA baseline']);
         expect($steps)->not->toHaveKey('Run full test suite')->not->toHaveKey('Refresh Pest TIA graph');
@@ -269,9 +273,10 @@ describe('Composer configuration', function (): void {
             ->toContain("github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository")
             ->toContain("fromJSON('[\"self-hosted\", \"sabre\"]')")
             ->toContain("'ubuntu-26.04'");
+        // TIA does not link these contracts to the files they read, so pull requests and affected runs on main run them.
         expect($steps['Run architecture tests'])
             ->toMatchArray([
-                'if' => "always() && github.event_name == 'pull_request'",
+                'if' => "always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
             ])
             ->and($steps['Run architecture tests']['run'])
             ->toContain('tests/Feature/CommandSurfaceTest.php')

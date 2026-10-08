@@ -10,7 +10,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
   contents: read
 
 # A pull request keeps only its newest run. Each main commit gets its own group, so a newer push neither
@@ -22,6 +21,10 @@ concurrency:
 jobs:
   project:
     name: ${{ matrix.name }}
+    # The main test selection reads the newest full runs on main.
+    permissions:
+      actions: read
+      contents: read
     # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true.
     # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre.
     runs-on: ${{ matrix.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
@@ -216,15 +219,9 @@ jobs:
         if: steps.orbit-tia-plan.outputs.mode == 'full'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
-      - name: Require the Pest TIA graph to describe this commit
-        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
-        env:
-          MODE: ${{ steps.orbit-tia-plan.outputs.mode }}
-          BASE: ${{ steps.orbit-tia-plan.outputs.base }}
-        run: ../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"
-
+      # TIA does not link these contracts to the files they read, so every affected run also runs them.
       - name: Run architecture tests
-        if: always() && github.event_name == 'pull_request'
+        if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
         env:
           PROJECT: ${{ matrix.directory }}
         run: |
@@ -238,6 +235,13 @@ jobs:
           for architecture_test in $architecture_tests; do
             vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --compact "$architecture_test"
           done
+
+      - name: Require the Pest TIA graph to describe this commit
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          MODE: ${{ steps.orbit-tia-plan.outputs.mode }}
+          BASE: ${{ steps.orbit-tia-plan.outputs.base }}
+        run: ../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"
 
       - name: Save Pest TIA graph
         if: success()

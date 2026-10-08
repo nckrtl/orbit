@@ -95,14 +95,18 @@ On `main`, `bin/ci-tia plan` chooses each project's tests from the restored `mai
 
 A failed nightly or manual run can be a test that an affected-only run missed. So pushes run the full suite until such a run passes again. After the fix, dispatch CI on `main` to return to affected runs before the next night.
 
-TIA only sees files inside the project. It links a non-PHP file only through a `pest()->tia()->watch()` pattern in `tests/Pest.php`. It links a PHP file only when a test covered it in the same process. So these changes run the full suite:
+TIA only sees files inside the project. It links a non-PHP file only through a `pest()->tia()->watch()` pattern in `tests/Pest.php` or one of its own defaults. It links a PHP file only when a test covered it in the same process. So these changes run the full suite:
 
-- a non-PHP file without such a pattern;
-- a PHP file that no test covered;
+- a non-PHP file without a `watch()` pattern;
+- a removed file that no test covered;
+- a changed PHP file that no test covered;
+- a new PHP file outside `app/` and `src/`, such as a config file, a migration, or a file under `routes/`, or a new CLI command in `app/Commands`;
 - a test file whose name does not end in `Test.php`;
 - a change outside the project that `bin/ci-tia` does not list as unrelated to it.
 
 Fixture changes run the full suite under TIA anyway. Docs and E2E tests read files across the repository, so these projects run their full suite whenever a file outside them changes. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the selection from a contributor's view.
+
+An affected run on `main` also runs the architecture tests, as a pull request does.
 
 After a passing run, `bin/ci-tia finish` requires the graph to record the tested commit and to hold a result for every test file it links. Pest records the commit itself after it runs tests. When no test is affected, Pest stops before it records the commit, so `finish` records it. The job then saves the graph to the cache.
 
@@ -404,7 +408,9 @@ Most merges change a small part of a project, and the full Gateway suite took mo
 
 Comparing with the parent commit is a rejected alternative: when runs overlap, the restored graph can be older than the parent, and the merges between them would go untested. Reusing the results of the pull request run is also rejected, because `main` can differ from the tested pull request head, and GitHub does not let `main` read caches that pull request runs saved.
 
-TIA cannot link every file to its tests. `bin/ci-tia` treats a change as visible only when it can show that TIA links it, and runs the full suite otherwise. Listing only the paths known to be invisible is a rejected alternative, because a new kind of input would then skip its tests silently. A wrong entry in the list of unrelated paths can still skip a test. The nightly full run finds such a test within a day, and its failure switches pushes back to full runs until a full run passes again.
+TIA cannot link every file to its tests. `bin/ci-tia` treats a change as visible only when it can show that TIA links it, and runs the full suite otherwise. Listing only the paths known to be invisible is a rejected alternative, because a new kind of input would then skip its tests silently.
+
+Two kinds of miss remain. A wrong entry in the list of unrelated paths can skip a test. A test that runs Gateway code in a PHP subprocess is not linked to that code, so a change that another test covers in-process does not select it. The nightly full run finds such a miss within a day, and its failure switches pushes back to full runs until a full run passes again.
 
 ### CI caches stay separate
 

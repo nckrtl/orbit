@@ -35,11 +35,11 @@ class ActionsApi(BaseHTTPRequestHandler):
         url = urlparse(self.path)
         query = parse_qs(url.query)
         type(self).requests.append((url.path, query, self.headers.get('Authorization')))
-        run = type(self).runs.get(query['event'][0])
-        if run == 'error':
+        runs = type(self).runs.get(query['event'][0])
+        if runs == 'error':
             self.send_error(500)
             return
-        body = json.dumps({'workflow_runs': [run] if run else []}).encode()
+        body = json.dumps({'workflow_runs': runs if isinstance(runs, list) else [runs] if runs else []}).encode()
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
@@ -62,12 +62,14 @@ class CiTiaTest(unittest.TestCase):
         git(self.root, 'init', '-q', '-b', 'main')
         git(self.root, 'config', 'user.name', 'Orbit')
         git(self.root, 'config', 'user.email', 'orbit@example.test')
-        self.write('.gitignore', '/apps/gateway/vendor\n/apps/gateway/.orbit-tia/\n')
+        self.write('.gitignore', '/apps/gateway/vendor\n/apps/gateway/.orbit-tia/\n/github-output\n/pest.log\n')
         self.write(f'{PROJECT}/composer.lock', '{}')
         self.write(f'{PROJECT}/tests/Pest.php', PEST)
         self.write(f'{PROJECT}/tests/ExampleTest.php', '<?php')
         self.write(f'{PROJECT}/app/Covered.php', '<?php')
         self.write(f'{PROJECT}/app/Uncovered.php', '<?php')
+        self.write(f'{PROJECT}/app/Stale.php', '<?php')
+        self.write(f'{PROJECT}/resources/tasks/check', 'watched')
         self.write(f'{PROJECT}/resources/compute/script.py', 'print(1)')
         # The helper loads Pest from the project, as CI does after composer install.
         (self.project / 'vendor').symlink_to(REPOSITORY / 'apps/e2e/vendor')
@@ -93,7 +95,8 @@ class CiTiaTest(unittest.TestCase):
         graph = {
             'schema': 1,
             'fingerprint': fingerprint or self.fingerprint(),
-            'files': ['tests/ExampleTest.php', 'app/Covered.php'],
+            # app/Stale.php keeps a file id although no test links it any more.
+            'files': ['tests/ExampleTest.php', 'app/Covered.php', 'app/Stale.php'],
             'edges': {'tests/ExampleTest.php': [0, 1]},
             'baselines': {'main': {'sha': sha, 'tree': [], 'results': results if results is not None else {
                 'Tests\\ExampleTest::it_works': {'status': 0, 'message': '', 'time': 0.1, 'assertions': 1,
@@ -124,8 +127,9 @@ class CiTiaTest(unittest.TestCase):
     def test_selects_affected_tests_since_the_graph_commit(self):
         self.change(f'{PROJECT}/app/Covered.php', '<?php // first')
         self.change(f'{PROJECT}/app/New.php', '<?php')
+        self.change(f'{PROJECT}/src/New.php', '<?php')
         self.change(f'{PROJECT}/tests/OtherTest.php', '<?php')
-        self.change(f'{PROJECT}/resources/tasks/check', 'watched')
+        self.change(f'{PROJECT}/resources/tasks/check', 'changed')
         self.change(f'{PROJECT}/resources/scripts/probe.py', 'watched')
         self.change('docs/reference/page.md')
         self.change('apps/cli/app/Command.php', '<?php')
@@ -136,7 +140,10 @@ class CiTiaTest(unittest.TestCase):
         self.assertIn(f'testing the changes since {self.base}', stdout)
 
     def test_runs_the_full_suite_for_changes_pest_cannot_see(self):
-        for path in (f'{PROJECT}/resources/compute/script.py', f'{PROJECT}/app/Uncovered.php',
+        for path in (f'{PROJECT}/resources/compute/script.py', f'{PROJECT}/app/Uncovered.php', f'{PROJECT}/app/Stale.php',
+                     f'{PROJECT}/app/Commands/NewCommand.php', f'{PROJECT}/config/new.php',
+                     f'{PROJECT}/database/migrations/2026_01_01_000000_create_things.php', f'{PROJECT}/routes/new.php',
+                     f'{PROJECT}/resources/scripts/.hidden.py',
                      f'{PROJECT}/tests/Support/Helper.php', f'{PROJECT}/tests/Fixtures/data.json',
                      f'{PROJECT}/resources/scripts/nested/probe.py', 'docs/openapi.json',
                      'packages/php-sdk/fixtures/response.json', 'bin/tool', '.github/workflows/ci.yml',
@@ -149,6 +156,23 @@ class CiTiaTest(unittest.TestCase):
 
                 self.assertEqual(('full', ''), (mode, base))
                 self.assertIn(f'test-impact analysis cannot see {path}', stdout)
+
+    def test_runs_the_full_suite_when_a_file_pest_cannot_link_is_removed(self):
+        for path in (f'{PROJECT}/resources/tasks/check', f'{PROJECT}/app/Uncovered.php', f'{PROJECT}/app/Stale.php'):
+            with self.subTest(path=path):
+                git(self.root, 'reset', '-q', '--hard', self.base)
+                git(self.root, 'rm', '-q', path)
+                self.commit(f'remove {path}')
+
+                mode, _, stdout = self.plan()
+
+                self.assertEqual('full', mode)
+                self.assertIn(f'test-impact analysis cannot see {path}', stdout)
+
+        git(self.root, 'reset', '-q', '--hard', self.base)
+        git(self.root, 'rm', '-q', f'{PROJECT}/app/Covered.php')
+        self.commit('remove a covered file')
+        self.assertEqual('affected', self.plan()[0])
 
     def test_runs_the_full_suite_without_a_usable_main_graph(self):
         self.change(f'{PROJECT}/app/Covered.php', '<?php // first')
@@ -192,6 +216,12 @@ class CiTiaTest(unittest.TestCase):
             return {'conclusion': conclusion, 'created_at': created, 'html_url': f'https://example.test/{created}'}
 
         failed = plan(run('failure', '2026-10-08T03:17:00Z'), run('success', '2026-10-07T12:00:00Z'))
+        # A cancelled newer run proves nothing about the failure before it.
+        ActionsApi.runs = {}
+        self.assertEqual('full', plan([run('cancelled', '2026-10-08T09:00:00Z'), run('failure', '2026-10-08T03:17:00Z')],
+                                      [run('skipped', '2026-10-08T10:00:00Z')])[0])
+        self.assertEqual('affected', plan([run('cancelled', '2026-10-08T09:00:00Z'), run('success', '2026-10-08T03:17:00Z')],
+                                          None)[0])
         self.assertEqual('full', failed[0])
         self.assertIn('the newest full run on main did not pass (https://example.test/2026-10-08T03:17:00Z)', failed[2])
         self.assertEqual('full', plan(None, run('timed_out', '2026-10-08T03:17:00Z'))[0])
@@ -201,7 +231,7 @@ class CiTiaTest(unittest.TestCase):
         self.assertEqual('affected', plan(None, None)[0])
         self.assertEqual(('/repos/acme/orbit/actions/workflows/ci.yml/runs', 'Bearer token'),
                          (ActionsApi.requests[0][0], ActionsApi.requests[0][2]))
-        self.assertEqual({'branch': ['main'], 'event': ['schedule'], 'status': ['completed'], 'per_page': ['1']},
+        self.assertEqual({'branch': ['main'], 'event': ['schedule'], 'status': ['completed'], 'per_page': ['20']},
                          ActionsApi.requests[0][1])
 
     def test_records_the_tested_commit_when_no_test_was_affected(self):
