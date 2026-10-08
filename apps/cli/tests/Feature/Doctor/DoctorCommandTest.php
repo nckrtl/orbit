@@ -17,6 +17,8 @@ use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     $this->originalColumns = getenv('COLUMNS');
     putenv('COLUMNS=200');

@@ -16,5 +16,7 @@ final class TaskInputData extends Data
         public string $brief,
         /** @var list<array<string, string|bool|list<string>>> */
         public array $deliverables = [],
+        /** @var list<string> */
+        public array $topology = [],
     ) {}
 }

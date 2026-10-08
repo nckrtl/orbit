@@ -191,6 +191,8 @@ Streams and prompt flows have no recorded canonical rendering yet. The `design:n
 
 The Tasks JSON rendering preserves the distinction between a watched branch pull request and the reviewed pull request Orbit opened. The canonical [watched task result](https://github.com/nckrtl/orbit/blob/main/apps/cli/tests/Expected/tasks/tasks-show/watched.json) includes `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` with a null `pr_url`. Unwatched task results keep all three watched fields null. Do not substitute the watched URL for `pr_url`. The [Tasks command contract](/cli/tasks#orbit-tasksshow) owns these fields; the human rendering still uses the reviewed pull request.
 
+Subtask detail output adds a `Topology` property when the subtask declares workload nodes, with the roles separated by commas. An empty declaration omits that human property. JSON always retains the `topology` array, including `[]`. The [subtask commands](/cli/tasks) own the input contract; recorded task responses and CLI expectations cover both empty and declared topology.
+
 ## Verification and adoption
 
 Each supported public command has an adoption record with its source identity, supported modes, applicable rules, contract-backed exceptions, checks, terminal artifacts, and verdict. Include extension-provided commands with the extension enabled. Extension command discovery reads the enabled set from the active Gateway; do not assume an extension command appears in the default command list when that Gateway has it disabled or its state is unknown. Account separately for internal commands that share input or output infrastructure.
@@ -203,6 +205,6 @@ Automated text assertions establish content. Terminal evidence establishes inter
 
 Use disposable fixtures for mutations. Exercise the real candidate in the assigned runtime and keep evidence tied to that candidate. A recording is stale after a fix changes the behavior it records. Do not declare a command compliant until every applicable check is supported by inspected evidence.
 
-Run `bin/cli-contract --changed` to find and run the contract tests that a changed Gateway response reaches, and rewrite expected output only with `ORBIT_EXPECTED=update` after the diff is reviewed.
+Run `bin/cli-contract --changed` to find and run the contract tests that a changed Gateway response reaches, and rewrite expected output only with `ORBIT_EXPECTED=update` after the diff is reviewed. For an Agent pin change, replay Gateway status, Fleet rollout, and self-update contracts so JSON and human output name the same released version.
 
 A regression check for a recovered UX requirement demonstrates both an accepted and a rejected case. Check observable behavior rather than similarity of wording or implementation style. For example, a state analyzer accepts a running row that reaches a terminal state and rejects the same row returning to waiting. Apply each check only to the surface it covers.

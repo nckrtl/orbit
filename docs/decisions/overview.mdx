@@ -29,6 +29,7 @@ Permanent ADRs made the current rule hard to find: amendments spread it across h
 | [0191](/decisions/0191-clone-the-default-instance-database-for-each-new-instance) | Clone the default Instance's database for each new Instance | In progress |
 | [0196](/decisions/0196-derive-application-directory-from-web-root) | Derive the application directory from the web root; target named apps per Project | In progress |
 | [0198](/decisions/0198-keep-delivery-line-proofs-as-repo-commands) | Keep delivery-line proofs as repository commands | In progress |
+| [0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm) | Run each task group in its own sandbox VM | In progress |
 
 ## Retired decisions
 
@@ -154,7 +155,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0117 | Judge the blocked question on the role's own evidence | [Tasks: Rubric and reminders (Jev question removed)](/reference/tasks#rubric-and-reminders) |
 | 0118 | Skip selected Nodes for a Project | [Development node exclusions](/reference/development-node-exclusions) |
 | 0119 | Share caches after bootstrap | [Feature delivery: Publish from bootstrap](/reference/implementation-loop#publish-from-bootstrap) |
-| 0120 | Extract the agent annotation package | [Agent annotation package](/reference/agent-annotation) |
+| 0120 | Extract the agent annotation package | [Agent annotation](/reference/agent-annotation) |
 | 0121 | End agent turns with a turn receipt | [Tasks: Turn receipt](/reference/tasks#turn-receipt) |
 | 0122 | Hold tasks in Backlog until they are ready | [Tasks: Prepare a task in Backlog](/reference/tasks#prepare-a-task-in-backlog) |
 | 0123 | Serve the web app from the Gateway origin | [Web app: Why it works this way](/reference/web-app#why-it-works-this-way) |
@@ -229,3 +230,7 @@ These decisions are built, superseded, or withdrawn, and the documentation holds
 | 0194 | Respond to GitHub review feedback | [Tasks: Trusted reviews are input, not merge authority](/reference/tasks#trusted-reviews-are-input-not-merge-authority) |
 | 0195 | Request topologies for review with an operator container | [Incus topologies: The reviewer requests discovery](/reference/incus-topologies#the-reviewer-requests-discovery); [Incus topologies: An isolated operator for web work](/reference/incus-topologies#an-isolated-operator-for-web-work) |
 | 0197 | Native Project Documents with private UpCloud S3 storage | [Project Documents: Why it works this way](/reference/project-documents#why-it-works-this-way) |
+| 0199 | Post direction requests to OpsBot immediately | [Tasks: Direction wakes OpsBot immediately](/reference/tasks#direction-wakes-opsbot-immediately) |
+| 0201 | Release the Gateway automatically from green main | [Update and recover a Gateway: Automatic releases](/reference/gateway-recovery#automatic-releases); [Update and recover a Gateway: Why it works this way](/reference/gateway-recovery#why-it-works-this-way) |
+| 0202 | The fleet follows the Gateway through orbit self-update | [Update and recover a Gateway: Fleet rollout](/reference/gateway-recovery#fleet-rollout); [Orbit self-update](/reference/self-update); [Node agent: The agent only observes](/reference/node-agent#the-agent-only-observes) |
+| 0203 | Review and merge pull requests inside Orbit | [Tasks: Review and merge](/reference/tasks#review-and-merge); [Tasks: Orbit reviews before it pushes](/reference/tasks#orbit-reviews-before-it-pushes); [GitHub App: How Orbit reviews and merges a pull request](/reference/github-app#how-orbit-reviews-and-merges-a-pull-request) |

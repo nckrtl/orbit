@@ -275,6 +275,20 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/fleet.mdx",
+            "title": "fleet",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/gateway.mdx",
             "title": "gateway",
             "kind": "product",
@@ -523,6 +537,21 @@
             "governing_adrs": []
         },
         {
+            "path": "docs/cli/self-update.mdx",
+            "title": "self-update",
+            "kind": "product",
+            "components": [
+                "apps/cli",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent"
+            ],
+            "governing_adrs": []
+        },
+        {
             "path": "docs/cli/tasks.mdx",
             "title": "tasks",
             "kind": "product",
@@ -740,6 +769,33 @@
             ]
         },
         {
+            "path": "docs/decisions/0200-run-each-task-group-in-its-own-sandbox-vm.md",
+            "title": "ADR 0200: Run each task group in its own sandbox VM",
+            "kind": "decision",
+            "components": [
+                "apps/cli",
+                "apps/docs",
+                "apps/e2e",
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Project",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task check"
+            ],
+            "governing_adrs": [
+                "0200"
+            ]
+        },
+        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -786,7 +842,8 @@
                 "0190",
                 "0191",
                 "0196",
-                "0198"
+                "0198",
+                "0200"
             ]
         },
         {
@@ -870,7 +927,7 @@
         },
         {
             "path": "docs/reference/agent-annotation.md",
-            "title": "Agent annotation package",
+            "title": "Agent annotation",
             "kind": "reference",
             "components": [
                 "apps/gateway",
@@ -882,7 +939,6 @@
                 "Instance",
                 "Node",
                 "Process",
-                "Project",
                 "Route",
                 "Subtask",
                 "Task"
@@ -894,7 +950,8 @@
             "title": "Agentation",
             "kind": "reference",
             "components": [
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Doctor",
@@ -985,7 +1042,8 @@
                 "Process",
                 "Project",
                 "Role",
-                "Task"
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1102,9 +1160,39 @@
                 "Process",
                 "Project",
                 "Role",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/compute-drivers.md",
+            "title": "Compute drivers",
+            "kind": "reference",
+            "components": [
+                "apps/gateway"
+            ],
+            "concepts": [
+                "Cluster",
+                "Deployment",
+                "Doctor",
+                "Extension",
+                "Gateway",
+                "Instance",
+                "Node",
+                "Node agent",
+                "Process",
+                "Project",
+                "Role",
+                "Route",
+                "Subtask",
+                "Task",
+                "Task workspace",
+                "Tool"
+            ],
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/database-connections.md",
@@ -1168,16 +1256,20 @@
             "title": "Delivery-line proofs",
             "kind": "reference",
             "components": [
+                "apps/cli",
                 "apps/e2e",
                 "apps/gateway"
             ],
             "concepts": [
                 "Deliverable",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
+                "Process",
                 "Project",
+                "Schedule",
                 "Subtask",
                 "Task",
                 "Task check"
@@ -1243,6 +1335,7 @@
             "concepts": [
                 "Access grant",
                 "Activity",
+                "Cluster",
                 "Deployment",
                 "Doctor",
                 "Gateway",
@@ -1292,19 +1385,28 @@
             "kind": "reference",
             "components": [
                 "apps/cli",
-                "apps/gateway"
+                "apps/gateway",
+                "apps/web"
             ],
             "concepts": [
                 "Activity",
                 "Doctor",
+                "Extension",
                 "Gateway",
+                "Instance",
                 "Node",
+                "Node agent",
                 "Process",
+                "Project",
+                "Role",
                 "Schedule",
                 "Task",
-                "Task definition"
+                "Task definition",
+                "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/gateway-response-fixtures.md",
@@ -1546,11 +1648,13 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -1574,6 +1678,7 @@
                 "Access grant",
                 "Activity",
                 "Deployment",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",
@@ -1583,7 +1688,8 @@
                 "Route",
                 "Task",
                 "Task check",
-                "Task workspace"
+                "Task workspace",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -1638,6 +1744,7 @@
                 "apps/gateway"
             ],
             "concepts": [
+                "Access grant",
                 "Activity",
                 "Cluster",
                 "Deliverable",
@@ -1778,7 +1885,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },
@@ -1937,7 +2045,9 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },
@@ -1961,6 +2071,24 @@
                 "Project",
                 "Project Documents",
                 "Schedule"
+            ],
+            "governing_adrs": []
+        },
+        {
+            "path": "docs/reference/self-update.md",
+            "title": "Orbit self-update",
+            "kind": "reference",
+            "components": [
+                "apps/cli",
+                "apps/gateway",
+                "packages/php-sdk"
+            ],
+            "concepts": [
+                "Gateway",
+                "Node",
+                "Node agent",
+                "Process",
+                "Tool"
             ],
             "governing_adrs": []
         },
@@ -2035,6 +2163,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Task",
                 "Tool"
             ],
             "governing_adrs": []

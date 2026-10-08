@@ -142,11 +142,17 @@ describe('delivery-line proof commands', function (): void {
             expect($result['stdout'])->toContain('--slurp')
                 ->and($result['stdout'])->toContain('COMMENTED');
         }
+        if ($script === 'gateway-smoke') {
+            expect($result['stdout'])->toContain('--write-check')
+                ->and($result['stdout'])->toContain('SSL_CERT_FILE')
+                ->and($result['stdout'])->toContain('Exit 0 when no check failed or timed out');
+        }
     })->with([
         'bug-repro' => ['bug-repro'],
         'task-group-check' => ['task-group-check'],
         'pr-head-check' => ['pr-head-check'],
         'deploy-verify' => ['deploy-verify'],
+        'gateway-smoke' => ['gateway-smoke'],
     ]);
 
     it('refuses to name a cached origin/main that does not match git ls-remote', function (): void {

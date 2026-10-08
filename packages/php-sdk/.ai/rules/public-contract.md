@@ -1,6 +1,6 @@
 # Public contract
 
-The SDK models exactly 201 concrete public Gateway API operations:
+The SDK models exactly 209 concrete public Gateway API operations:
 
 - Gateway: status and root trust.
 - Activity: list and show.
@@ -22,6 +22,7 @@ The SDK models exactly 201 concrete public Gateway API operations:
 - Metrics: enable, disable, status, credentials, credential reset, exporter enable, and exporter disable.
 - Analytics: pin the Plausible version, and show, set, and unset the Stats API key. The key is never returned.
 - GitHub App: install, show, and destroy.
+- Gateway releases: list, show, deploy, rollback, and automatic release status, enable, disable, and resume.
 - proxycli: enable, disable, status, provider list, provider show, account update, and model list.
 - Tasks: enable, disable, status, group list, show, create, update, cancel, and complete, subtask create, update, destroy, and cancel, comment create and list, question list, agent thread list, and task definition list, show, create, update, and destroy.
 
@@ -118,6 +119,12 @@ operations. Keep the public API typed and small.
   keep `assistance_kind`, `assistance_question`, `questions`, and `escalations`.
   The Gateway owns the lifecycle, scheduling, and every status rule.
   Task definition requests use a numeric Project ID, an optional project_id list filter, a definition name for show, update, and destroy, and the caller's exact JSON document for create and full update. List, show, and destroy are bodyless. The Gateway owns definition validation. The agent conversation stream stays outside the SDK.
+- Keep Gateway release transport limited to a record id or a hex SHA of 7 to
+  40 characters for show, a hex SHA of 7 to 40 characters for deploy, and a
+  12-digit release id with an explicit force flag for rollback. List and the
+  automatic release status, enable, disable, and resume requests are bodyless.
+  Deploy and rollback return the queued record. The Gateway owns release
+  execution, locking, the unit that runs it, and every release policy.
 - Accept only the current Doctor family tokens: node, role, app, instance,
   schedule, tool, process, firewall, database_connection, and route.
   Keep Doctor verify-only and policy-free.

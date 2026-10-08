@@ -17,12 +17,16 @@ use App\Domain\Tasks\TaskTurnOutcome;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -50,7 +54,7 @@ function turn_receipt_instance(string $checkout): Instance
 
 function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
 {
-    return new RemoteTaskTurnReceipts(new DevelopmentSshExecutor(
+    return new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -73,7 +77,7 @@ function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
 }
 
 /** @param list<string> $arguments */

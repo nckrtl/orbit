@@ -2,10 +2,7 @@
 
 declare(strict_types=1);
 
-use App\Services\Database\DynamicPdoConnection;
 use App\Services\Database\InternalDatabaseLane;
-use App\Services\Database\LocalDatabaseQueryAction;
-use App\Services\Database\LocalDatabaseQueryRequest;
 use App\Support\Console\StandardInputReader;
 use Illuminate\Contracts\Console\Kernel;
 use Symfony\Component\Console\Tester\CommandTester;
@@ -99,51 +96,6 @@ it('refuses a missing or mismatched lane token and never shells out to sqlite3',
         ->and($missingOutput.$mismatchOutput)
         ->not->toContain('sqlite3')
         ->not->toContain($token);
-
-    unlink($path);
-});
-
-it('builds mysql and pgsql DSNs without embedding the password', function (): void {
-    $connections = new DynamicPdoConnection;
-
-    expect($connections->dsn([
-        'driver' => 'mysql',
-        'host' => 'db.example.test',
-        'port' => 3306,
-        'database' => 'app',
-        'username' => 'app',
-        'password' => 'db-cli-pdo-secret-21e4',
-    ]))->toBe('mysql:host=db.example.test;port=3306;dbname=app;charset=utf8mb4')
-        ->and($connections->dsn([
-            'driver' => 'pgsql',
-            'host' => 'pg.example.test',
-            'port' => 5432,
-            'database' => 'app',
-        ]))->toBe('pgsql:host=pg.example.test;port=5432;dbname=app')
-        ->and($connections->dsn([
-            'driver' => 'mysql',
-            'host' => 'db.example.test',
-            'port' => 3306,
-            'database' => 'app',
-            'password' => 'db-cli-pdo-secret-21e4',
-        ]))->not->toContain('db-cli-pdo-secret-21e4');
-});
-
-it('executes sqlite through the local PDO action without argv SQL', function (): void {
-    $path = internal_database_sqlite_path();
-    $result = app(LocalDatabaseQueryAction::class)->execute(new LocalDatabaseQueryRequest(
-        internal_database_lane_token(),
-        $path,
-        'SELECT email FROM users',
-        false,
-    ));
-
-    expect($result->toArray())->toBe([
-        'columns' => ['email'],
-        'rows' => [['email' => 'owner@example.test']],
-        'row_count' => 1,
-        'truncated' => false,
-    ]);
 
     unlink($path);
 });

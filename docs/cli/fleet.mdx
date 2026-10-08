@@ -1,0 +1,58 @@
+---
+title: "fleet"
+description: "Show the fleet rollout that follows each Gateway release, and resume it after a halt."
+covers:
+  - apps/cli/app/Commands/Fleet/**
+  - packages/php-sdk/src/Requests/Fleet/**
+  - packages/php-sdk/src/Responses/Fleet/**
+---
+
+After each verified Gateway release, the Gateway brings the managed workload Nodes to the same release, one Node at a time. The `fleet` family shows that rollout and resumes it after a halt. [Fleet rollout](/reference/gateway-recovery#fleet-rollout) explains the rollout set, the order, the steps on each Node, and the catch-up.
+
+## Commands
+
+| Command | Result |
+| --- | --- |
+| [`fleet:rollout:status`](#orbit-fleetrolloutstatus) | Show the newest rollout, each Node's result, and the Nodes it leaves out. |
+| [`fleet:rollout:resume`](#orbit-fleetrolloutresume) | Resume a halted rollout, optionally past one Node. |
+
+Both commands accept `--json`. JSON output contains only the response.
+
+## orbit fleet:rollout:status
+
+Show the newest fleet rollout.
+
+```bash
+orbit fleet:rollout:status [--json]
+```
+
+The detail shows whether the rollout is on, its status, the commit the Gateway wants the fleet on, and, for a halted rollout, the Node, error code, and message. A table lists each Node in rollout order with its outcome, the step that stopped it, and the CLI and agent versions it runs. The last line names each Node the rollout leaves out, with its reason.
+
+| Status | Meaning |
+| --- | --- |
+| `none` | No rollout ran yet |
+| `waiting` | The CLI release of the commit is not published yet. The catch-up starts the rollout once it is |
+| `running` | The rollout visits its Nodes |
+| `completed` | Every Node was visited. Unreachable or busy Nodes wait for the catch-up |
+| `halted` | A Node failed. Nothing runs until you resume |
+| `superseded` | A newer desired state replaced the rollout |
+
+`--json` returns `enabled`, `status`, `desired_commit`, `rollout` with `desired_state` and one entry per Node, including its `evidence`, and `excluded`.
+
+## orbit fleet:rollout:resume
+
+Resume the halted rollout. The Gateway runs it in `orbit-fleet-converge.service`; the command returns at once.
+
+```bash
+orbit fleet:rollout:resume [--skip=<node>] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--skip=<node>` | A Node ID or name to leave out of this rollout, usually the Node it halted on. The next desired state visits it again |
+
+Without `--skip`, the rollout visits the failed Node again first. The command fails with `fleet.rollout_not_halted` when no rollout is halted, and with `fleet.node_not_in_rollout` when `--skip` names a Node outside it.
+
+```bash
+orbit fleet:rollout:resume --skip=shark
+```

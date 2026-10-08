@@ -1,0 +1,34 @@
+Queuing release...
+Preparing release...
+Switching release...
+Handing off runtime...
+Verifying release...
+
+┌  Deploy Gateway release fedcba987654
+│
+├  ● Queued release
+│    Record 1.
+│
+├  ● Prepared release
+│
+├  ● Migrate database
+│    No migrations pending.
+│
+├  ● Switched release
+│
+├  ● Handed off runtime
+│
+├  ● Verifying release
+│    gateway.release_verify_failed. Switched back to 0123456789ab.
+│
+├  ○ Move scheduler
+│
+├  ○ Publish web app
+│
+├  ○ Run smoke tests
+│
+└  Release fedcba987654 failed and was switched back.
+
+Release record: 1
+The Gateway reported version [0123456789ab0123456789ab0123456789ab0123], not [fedcba9876543210fedcba9876543210fedcba98].
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

@@ -16,6 +16,7 @@ use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -23,10 +24,12 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
 use App\Domain\Tasks\TaskCeilings;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskConcurrencyGuard;
 use App\Domain\Tasks\TaskWorkspaceName;
 use App\Models\Instance;
@@ -34,6 +37,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 {
@@ -48,16 +52,20 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         private DevelopmentInstanceProvisioner $development,
         private TaskConcurrencyGuard $ceilings,
         private AgentDriverRegistry $drivers,
+        private SandboxWorkspaceProvisioner $sandboxes,
     ) {}
 
-    public function provision(InstanceProvisionIntent $intent): ?Instance
+    public function provision(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
         return $this->provisionWorkspace($intent);
     }
 
-    private function provisionWorkspace(InstanceProvisionIntent $intent): ?Instance
+    private function provisionWorkspace(InstanceProvisionIntent $intent): Instance|InstanceProvisionFailure
     {
         $group = $intent->group->loadMissing(['project', 'taskable']);
+        if (($group->task_compute ?? $group->project->task_compute) === TaskCompute::Vm) {
+            return $this->sandboxes->provision($group);
+        }
         $existing = $group->taskable;
 
         if ($existing instanceof Instance) {
@@ -65,22 +73,32 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         }
 
         $workspace = $this->existingWorkspace($group);
+        if ($workspace instanceof Instance && $workspace->status === InstanceState::Reserved && ! $this->hasCapacity($workspace->node)) {
+            $failure = $this->releaseEmptyReservation($group, $workspace);
+            if ($failure instanceof InstanceProvisionFailure) {
+                return $failure;
+            }
+            $workspace = null;
+        }
         $visitable = $this->routingForClaim($workspace, $intent->visitable);
 
-        if (! $this->hasSourceDefaults($group->project, $visitable)) {
-            return null;
+        $sourceFailure = $this->sourceDefaultsFailure($group->project, $visitable);
+        if ($sourceFailure instanceof InstanceProvisionFailure) {
+            return $sourceFailure;
         }
 
         $node = $this->selectNode($group->project, [$intent->group->implementer_agent_driver, $intent->group->reviewer_agent_driver], $this->existingWorkspaceNodeId($workspace));
 
-        if (! $node instanceof Node) {
-            return null;
+        if ($node instanceof InstanceProvisionFailure) {
+            return $node;
         }
 
         try {
             return $this->createWorkspace($group, $node, $visitable);
-        } catch (ResourceOperationException|RuntimeConvergenceException) {
-            return null;
+        } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+            report($exception);
+
+            return InstanceProvisionFailure::fromException($exception);
         }
     }
 
@@ -127,6 +145,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                 'node_id' => $node->id,
                 'name' => $name,
                 'source_layout' => InstanceSourceLayout::Checkout,
+                'source_prepare_id' => (string) Str::uuid(),
                 'checkout_path' => $checkout->value,
                 'root' => $visitable ? $group->project->root : null,
                 'branch_override' => $name,
@@ -137,8 +156,8 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
 
         return $this->sourceLock->synchronized(
             $instance->node_id,
-            function () use ($instance, $visitable): Instance {
-                $resolved = $this->prepareSource($instance);
+            function () use ($instance, $visitable, $existing): Instance {
+                $resolved = $this->prepareSource($instance, $existing instanceof Instance);
                 $this->source->inspectPrepared($resolved);
 
                 if (! $visitable) {
@@ -187,13 +206,15 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return $selected;
     }
 
-    private function prepareSource(Instance $instance): Instance
+    private function prepareSource(Instance $instance, bool $allowExisting): Instance
     {
         while (true) {
             $instance->refresh()->loadMissing(['project', 'node']);
 
             if ($instance->status === InstanceState::Reserved) {
-                $this->source->prepare($instance, false);
+                // Reclaim may follow a completed prepare whose state transition never persisted.
+                // The source lifecycle still verifies identity before accepting an existing checkout.
+                $this->source->prepare($instance, $allowExisting);
                 $this->transition($instance, InstanceState::Reserved, [
                     'status' => InstanceState::CheckoutPrepared,
                 ]);
@@ -292,21 +313,49 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
         return $instance->name;
     }
 
-    private function hasSourceDefaults(Project $project, bool $visitable): bool
+    private function sourceDefaultsFailure(Project $project, bool $visitable): ?InstanceProvisionFailure
     {
         if (! is_string($project->default_branch) || ! GitBranchName::isValid($project->default_branch)) {
-            return false;
+            return new InstanceProvisionFailure('Project default branch is missing or invalid.');
         }
 
         if (! GitRepositoryOrigin::isValid($project->repository_url)) {
-            return false;
+            return new InstanceProvisionFailure('Project repository is missing or invalid.');
         }
 
-        if (! $visitable) {
-            return true;
+        if ($visitable && (! is_string($project->root) || ! ProjectRoot::isValid($project->root, $project->type))) {
+            return new InstanceProvisionFailure('Routed workspace Project root is missing or invalid.');
         }
 
-        return is_string($project->root) && ProjectRoot::isValid($project->root, $project->type);
+        return null;
+    }
+
+    /** Release database-only reservations; never remove a checkout or infer absence from missing source metadata. */
+    private function releaseEmptyReservation(Task $group, Instance $workspace): ?InstanceProvisionFailure
+    {
+        try {
+            return $this->sourceLock->synchronized($workspace->node_id, fn (): ?InstanceProvisionFailure => DB::transaction(function () use ($group, $workspace): ?InstanceProvisionFailure {
+                $locked = Instance::query()->lockForUpdate()->findOrFail($workspace->id);
+                if ($locked->status !== InstanceState::Reserved
+                    || $locked->project_id !== $group->project_id
+                    || $locked->branch_override !== TaskWorkspaceName::for($group)
+                    || $locked->starting_commit !== null || $locked->seed_commit !== null
+                    || $locked->routes()->exists()
+                    || Task::query()->whereMorphedTo('taskable', $locked)->exists()) {
+                    return new InstanceProvisionFailure('Reserved workspace ['.$locked->id.'] has source or attachment evidence and stays on Node ['.$locked->node_id.'].');
+                }
+                $path = StoragePath::tryParse((string) $locked->checkout_path);
+                if ($path === null) {
+                    return new InstanceProvisionFailure('Reserved workspace ['.$locked->id.'] has no valid checkout path to verify.');
+                }
+                $this->destinationGuard->assertUnoccupied($locked->node, $path);
+                $locked->delete();
+
+                return null;
+            }));
+        } catch (ResourceOperationException|RuntimeConvergenceException $exception) {
+            return new InstanceProvisionFailure('Reserved workspace ['.$workspace->id.'] stays on Node ['.$workspace->node_id.']: its checkout could not be proved absent. '.$exception->getMessage());
+        }
     }
 
     /**
@@ -335,7 +384,7 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
      * @param  list<string>  $drivers  Every driver the group uses must allow the Node.
      * @param  int|null  $pinnedNodeId  The Node of the group's existing workspace. Only that Node can then fit.
      */
-    private function selectNode(Project $project, array $drivers, ?int $pinnedNodeId = null): ?Node
+    private function selectNode(Project $project, array $drivers, ?int $pinnedNodeId = null): Node|InstanceProvisionFailure
     {
         $nodes = Node::query()
             ->where('status', LifecycleStatus::Active)
@@ -346,16 +395,13 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
                     ->where('role', RoleName::AppDev)
                     ->where('status', LifecycleStatus::Active),
             )
-            ->whereDoesntHave(
-                'projectNodeExclusions',
-                static fn ($query) => $query->where('project_id', $project->id),
-            )
+            ->with('projectNodeExclusions')
             ->orderBy('id')
             ->get();
 
-        $fitting = $nodes
-            ->filter(static fn (Node $node): bool => $pinnedNodeId === null || $node->id === $pinnedNodeId)
-            ->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)));
+        $eligible = $nodes->filter(fn (Node $node): bool => ! $node->projectNodeExclusions->contains('project_id', $project->id));
+        $pinned = $eligible->filter(static fn (Node $node): bool => $pinnedNodeId === null || $node->id === $pinnedNodeId);
+        $fitting = $pinned->filter(fn (Node $node): bool => array_all($drivers, fn (string $driver): bool => $this->drivers->get($driver)->allows($node)));
 
         $selected = $fitting
             ->filter(fn (Node $node): bool => $this->hasCapacity($node))
@@ -370,7 +416,17 @@ final readonly class TaskWorkspaceProvisioner implements InstanceProvisioning
             throw new TaskCapacityException(fleetFull: ! $this->anyAppDevNodeHasCapacity());
         }
 
-        return null;
+        if ($nodes->isEmpty()) {
+            return new InstanceProvisionFailure('No active Linux app-dev Node is available.');
+        }
+        if ($eligible->isEmpty()) {
+            return new InstanceProvisionFailure('Project node exclusion leaves no available Node.');
+        }
+        if ($pinned->isEmpty()) {
+            return new InstanceProvisionFailure('Pinned workspace Node ['.$pinnedNodeId.'] is not an available active Linux app-dev Node or is excluded by the Project.');
+        }
+
+        return new InstanceProvisionFailure('No Node fits: driver(s) ['.implode(', ', array_unique($drivers)).'] not allowed on the available'.($pinnedNodeId === null ? '' : ' pinned workspace').' Node(s).');
     }
 
     private function hasCapacity(Node $node): bool

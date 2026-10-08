@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""Choose and verify the Pest test selection of a CI run on main.
+
+`plan` runs in a project directory after its main graph is restored. It selects the tests affected since the
+commit the graph describes, or the full suite when the graph is unusable, the changes include files that
+test-impact analysis cannot see, or the newest full run on main failed. `finish` runs after a passing test run and requires the graph to describe the
+tested commit, with a result for every test file it links. `subprocess` decides whether a run that is not full also runs
+the project's `subprocess` group, which TIA cannot select.
+"""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import urllib.request
+
+GRAPH = Path('.orbit-tia/graph.json')
+SHA = re.compile(r'[0-9a-f]{40}')
+NO_AFFECTED_TESTS = 'No affected tests found.'
+# The runs on main that always test every project in full.
+FULL_RUN_EVENTS = ('schedule', 'workflow_dispatch')
+# Class directories where a new PHP file runs only when changed code that Pest links calls it. Laravel discovers
+# commands and listeners, Laravel Zero discovers the CLI's commands in app/Commands, and Laravel loads new config,
+# migration, and route files on its own.
+CLASS_DIRECTORIES = ('app/', 'src/')
+FRAMEWORK_DISCOVERED = ('app/Commands/', 'app/Console/Commands/', 'app/Listeners/')
+# Paths outside each project that its tests do not read. Pest only sees files inside the project, so a change
+# anywhere else outside it runs the project's full suite. Docs and E2E tests read files across the repository.
+UNRELATED = {
+    'apps/cli': ('apps/agent/', 'apps/docs/', 'apps/e2e/', 'apps/gateway/', 'apps/pi-server/', 'apps/web/', 'docs/'),
+    'apps/docs': (),
+    'apps/e2e': (),
+    'apps/gateway': ('.agents/', 'apps/agent/', 'apps/cli/', 'apps/docs/', 'apps/e2e/', 'apps/pi-server/', 'apps/web/',
+                     'docs/', 'packages/php-sdk/'),
+    'packages/php-sdk': ('.agents/', 'apps/', 'docs/'),
+}
+# Files under an unrelated path that a project's tests read anyway.
+READ_ANYWAY = {
+    'apps/cli': ('apps/gateway/routes/', 'docs/reference/cli-command-vocabulary.md'),
+    'apps/gateway': ('apps/agent/resources/', 'apps/agent/tests/', 'docs/openapi.json', 'packages/php-sdk/fixtures/',
+                     'packages/php-sdk/src/Responses/Tasks/'),
+}
+PHP_GRAPH = r'''
+require 'vendor/autoload.php';
+$current = Pest\Plugins\Tia\Fingerprint::compute(getcwd());
+$graph = Pest\Plugins\Tia\Graph::decode((string) file_get_contents($argv[1]), getcwd());
+if ($graph === null) {
+    fwrite(STDERR, "Pest cannot read the graph.\n");
+    exit(1);
+}
+if (($argv[2] ?? null) !== null) {
+    $graph->setRecordedAtSha('main', $argv[2]);
+    $json = $graph->encode();
+    if ($json === null || file_put_contents($argv[1].'.tmp', $json) === false || ! rename($argv[1].'.tmp', $argv[1])) {
+        fwrite(STDERR, "Pest cannot write the graph.\n");
+        exit(1);
+    }
+}
+echo json_encode(['fingerprint' => $current, 'sha' => $graph->recordedAtSha('main')], JSON_THROW_ON_ERROR);
+'''
+
+
+class Full(Exception):
+    pass
+
+
+def git(*args):
+    return subprocess.run(('git', *args), check=True, capture_output=True, text=True).stdout.strip()
+
+
+def project_path():
+    return git('rev-parse', '--show-prefix').rstrip('/')
+
+
+def pest_graph(advance_to=None):
+    command = ['php', '-r', PHP_GRAPH, '--', str(GRAPH)] + ([advance_to] if advance_to else [])
+    result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode:
+        raise Full(result.stderr.strip() or 'Pest cannot read the graph.')
+    return json.loads(result.stdout)
+
+
+def read_graph():
+    """Return the graph's main baseline and fingerprint, after checking that it has a result for every test file."""
+    try:
+        graph = json.loads(GRAPH.read_text())
+    except (OSError, ValueError):
+        raise Full('the graph is missing or unreadable')
+    baselines = graph.get('baselines') if isinstance(graph, dict) else None
+    main = baselines.get('main') if isinstance(baselines, dict) else None
+    if not isinstance(main, dict) or graph.get('schema') != 1:
+        raise Full('the graph has no main baseline')
+    sha, results, edges = main.get('sha'), main.get('results'), graph.get('edges')
+    if not isinstance(sha, str) or not SHA.fullmatch(sha):
+        raise Full('the graph records no main commit')
+    if not isinstance(results, dict) or not results or not isinstance(edges, dict) or not edges:
+        raise Full('the graph has no results')
+    tested = {result.get('file') for result in results.values() if isinstance(result, dict)}
+    untested = sorted(set(edges) - tested)
+    if untested:
+        raise Full(f'the graph has no result for {len(untested)} test files, such as {untested[0]}')
+    # A file id can outlive the last edge to it, so only files that a test still covers count as linked.
+    files = graph.get('files')
+    files = files if isinstance(files, list) else []
+    linked = {files[index] for ids in edges.values() if isinstance(ids, list)
+              for index in ids if isinstance(index, int) and 0 <= index < len(files)}
+    return sha, graph.get('fingerprint'), linked
+
+
+def watched_paths():
+    """Return the patterns that tests/Pest.php links to specific tests with pest()->tia()->watch().
+
+    They match as Pest's WatchPatterns globs do. A pattern with an exclusion is left out, so its files run the full
+    suite.
+    """
+    match = re.search(r'->tia\(\)->watch\(\[(.*?)\]\);', Path('tests/Pest.php').read_text(), re.S)
+    patterns = re.findall(r"'([^'\s]+)'\s*=>", match.group(1)) if match else []
+    tokens = {'**/': '.*', '**': '.*', '*': '[^/]*', '?': '[^/]'}
+    return [re.compile(''.join(tokens.get(part, re.escape(part)) for part in re.split(r'(\*\*/?|\*|\?)', pattern)))
+            for pattern in patterns]
+
+
+def reads(project, path):
+    """Whether the project's tests can read a repository path."""
+    return (path.startswith(project + '/') or not path.startswith(UNRELATED.get(project, ()))
+            or path.startswith(READ_ANYWAY.get(project, ())))
+
+
+def blind(project, status, path, linked_files, watched):
+    """Whether Pest cannot select the tests that a repository path with this Git status affects."""
+    if not path.startswith(project + '/'):
+        return reads(project, path)
+    path = path[len(project) + 1:]
+    if path in linked_files:
+        return False
+    # Pest ignores a removed file that no test covered, even when a watch pattern names it.
+    if status == 'D':
+        return True
+    # Pest skips a dotfile unless the pattern names one, so a dotfile never counts as watched.
+    if not any(part.startswith('.') for part in path.split('/')) and any(pattern.fullmatch(path) for pattern in watched):
+        return False
+    if path.startswith('tests/'):
+        return not path.endswith('Test.php')
+    # A modified PHP file that no test covered runs only in another process, such as a command or a script. A new class
+    # runs only when changed code that Pest links calls it.
+    return not (status == 'A' and path.endswith('.php') and path.startswith(CLASS_DIRECTORIES)
+                and not path.startswith(FRAMEWORK_DISCOVERED))
+
+
+def failed_full_run(repository):
+    """Return the newest finished full CI run on main when it did not pass.
+
+    Such a failure can be a test that an affected-only run missed, so later pushes must not pass without it. A cancelled
+    or skipped run proves nothing, so it never hides an earlier failure.
+    """
+    runs = []
+    for event in FULL_RUN_EVENTS:
+        request = urllib.request.Request(
+            f'{os.environ.get("GITHUB_API_URL", "https://api.github.com")}/repos/{repository}/actions/workflows/ci.yml/'
+            f'runs?branch=main&event={event}&status=completed&per_page=20',
+            headers={'Accept': 'application/vnd.github+json', 'Authorization': f'Bearer {os.environ["GITHUB_TOKEN"]}'},
+        )
+        with urllib.request.urlopen(request, timeout=30) as response:
+            runs += [run for run in json.load(response)['workflow_runs']
+                     if run['conclusion'] not in ('cancelled', 'skipped')]
+    newest = max(runs, key=lambda run: run['created_at'], default=None)
+    return newest if newest and newest['conclusion'] != 'success' else None
+
+
+def plan(arguments):
+    project = project_path()
+    if arguments.event != 'push':
+        raise Full(f'a {arguments.event} run refreshes the graph with the full suite')
+    if arguments.repository:
+        try:
+            failed = failed_full_run(arguments.repository)
+        except (OSError, KeyError, TypeError, ValueError) as error:
+            raise Full(f'the newest full run on main cannot be read: {error}')
+        if failed:
+            raise Full(f'the newest full run on main did not pass ({failed["html_url"]}); '
+                       'run CI on main by hand after the fix')
+    if not arguments.restored_key.startswith(arguments.prefix + '-main-'):
+        raise Full(f'no main graph with these test inputs was restored ({arguments.restored_key or "none"})')
+    base, fingerprint, linked_files = read_graph()
+    if pest_graph()['fingerprint'] != fingerprint:
+        raise Full('the graph was recorded with other dependencies or another PHP version')
+    if subprocess.run(('git', 'merge-base', '--is-ancestor', base, 'HEAD')).returncode:
+        raise Full(f'the graph commit {base} is not an ancestor of this commit')
+    changes = git('diff', '--name-status', '--no-renames', '-z', base, 'HEAD').split('\0')[:-1]
+    watched = watched_paths()
+    unseen = [path for status, path in zip(changes[::2], changes[1::2])
+              if blind(project, status, path, linked_files, watched)]
+    if unseen:
+        more = f' and {len(unseen) - 3} more' if len(unseen) > 3 else ''
+        raise Full(f'test-impact analysis cannot see {", ".join(unseen[:3])}{more}')
+    return base, f'testing the changes since {base}'
+
+
+def finish(arguments):
+    head = git('rev-parse', 'HEAD')
+    sha = read_graph()[0]
+    if sha != head and arguments.mode == 'affected' and sha == arguments.base \
+            and NO_AFFECTED_TESTS in Path(arguments.log).read_text(errors='replace'):
+        # Pest stops before it records the commit when no test is affected. The graph is still complete for it.
+        sha = pest_graph(advance_to=head)['sha']
+        print(f'No test was affected since {arguments.base}; the graph now records {head}.')
+    if sha != head:
+        raise SystemExit(f'The graph records {sha}, not the tested commit {head}.')
+    read_graph()
+    print(f'The graph describes {head}.')
+
+
+def subprocess_tests(arguments):
+    """Return whether a change since the base reaches the project, and why.
+
+    TIA does not link a test to the code it runs in a PHP subprocess, so any change the project's tests can read may
+    break such a test. When the changes cannot be read, the tests run.
+    """
+    project = project_path()
+    if not SHA.fullmatch(arguments.base):
+        return True, f'the base commit is unknown ({arguments.base or "none"})'
+    try:
+        changes = git('diff', '--name-only', '--no-renames', '-z', f'{arguments.base}...HEAD').split('\0')[:-1]
+    except subprocess.CalledProcessError:
+        return True, f'the changes since {arguments.base} cannot be read'
+    read = [path for path in changes if reads(project, path)]
+    if read:
+        more = f' and {len(read) - 1} more' if len(read) > 1 else ''
+        return True, f'{read[0]}{more} changed since {arguments.base}'
+    return False, f'no change since {arguments.base} reaches {project}'
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    commands = parser.add_subparsers(dest='command', required=True)
+    plan_command = commands.add_parser('plan', help='choose the full suite or the affected tests')
+    plan_command.add_argument('--event', required=True)
+    plan_command.add_argument('--prefix', required=True, help='the Pest TIA cache key prefix of this run')
+    plan_command.add_argument('--restored-key', default='', help='the cache key the graph was restored from')
+    plan_command.add_argument('--repository', help='the owner/name whose full CI runs on main to check, with GITHUB_TOKEN')
+    finish_command = commands.add_parser('finish', help='require the graph to describe the tested commit')
+    finish_command.add_argument('--mode', choices=('full', 'affected'), required=True)
+    finish_command.add_argument('--base', default='', help='the commit the restored graph described')
+    finish_command.add_argument('--log', default=os.devnull, help='the output of the affected test run')
+    subprocess_command = commands.add_parser('subprocess', help='choose whether to run the subprocess test group')
+    subprocess_command.add_argument('--base', default='', help='the commit to compare with: the pull request base, '
+                                    'or the commit the restored main graph described')
+    arguments = parser.parse_args()
+
+    if arguments.command == 'subprocess':
+        run, reason = subprocess_tests(arguments)
+        print(f'{"Subprocess tests" if run else "No subprocess tests"}: {reason}.')
+        output = os.environ.get('GITHUB_OUTPUT')
+        if output:
+            with open(output, 'a') as file:
+                file.write(f'run={"true" if run else "false"}\n')
+        return
+
+    if arguments.command == 'finish':
+        try:
+            finish(arguments)
+        except Full as full:
+            sys.exit(f'The graph is not complete: {full}.')
+        return
+    try:
+        base, reason = plan(arguments)
+        mode = 'affected'
+    except (Full, OSError, ValueError, subprocess.CalledProcessError) as full:
+        # A selection that cannot be proven safe runs the full suite.
+        base, reason, mode = '', str(full), 'full'
+    print(f'{"Affected tests" if mode == "affected" else "Full suite"}: {reason}.')
+    output = os.environ.get('GITHUB_OUTPUT')
+    if output:
+        with open(output, 'a') as file:
+            file.write(f'mode={mode}\nbase={base}\n')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except subprocess.CalledProcessError as error:
+        sys.exit(f'{" ".join(error.cmd[:3])} failed: {error.stderr.strip()}')

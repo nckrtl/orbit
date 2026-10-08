@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskGroupData;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -17,6 +21,7 @@ final readonly class UpdateTaskGroupAction
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
         private TaskScheduler $scheduler,
+        private TaskExecutionLock $execution,
     ) {}
 
     public function execute(Task $group, UpdateTaskGroupData $data): Task
@@ -27,7 +32,7 @@ final readonly class UpdateTaskGroupAction
             self::requireDeliverables($group->tasks()->get());
         }
         // The row lock makes a status move and a scheduler claim exclusive: whichever commits second sees the other's status.
-        $updated = DB::transaction(static function () use ($group, $data): Task {
+        $updated = $this->execution->synchronized($group->id, fn (): Task => DB::transaction(static function () use ($group, $data): Task {
             $locked = Task::topLevel()->with('tasks')->lockForUpdate()->findOrFail($group->id);
 
             if (($data->title !== null || $data->brief !== null) && $locked->status !== TaskGroupStatus::Backlog) {
@@ -48,17 +53,23 @@ final readonly class UpdateTaskGroupAction
                 }
 
                 $locked->status = $data->status;
-                if (TaskScheduler::isClaimFailureReason($locked->assistance_reason)) {
-                    $locked->assistance_reason = null;
+                if ($locked->assistance_kind !== AssistanceKind::Direction && TaskScheduler::isClaimFailureReason($locked->assistance_reason)) {
+                    $locked->fill(TaskAssistance::cleared());
                 }
             }
 
+            if ($data->preview !== null) {
+                if (in_array($locked->status, [TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed], true)) {
+                    throw new ResourceOperationException('tasks.preview_closed', 'Preview cannot change after a task group has ended.', 409);
+                }
+                $locked->preview = $data->preview;
+            }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;
             $locked->save();
 
             return $locked;
-        });
+        }));
 
         if ($data->status === TaskGroupStatus::Todo) {
             $this->scheduler->claimNext();

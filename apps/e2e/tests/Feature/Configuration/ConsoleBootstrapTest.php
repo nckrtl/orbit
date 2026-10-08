@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+pest()->group('subprocess');
+
 describe('console bootstrap', function () {
     it('boots the artisan entry point and lists E2E commands', function () {
         $artisan = dirname(__DIR__, levels: 3).'/artisan';

@@ -28,31 +28,31 @@ final readonly class PiClient
     public function __construct(private PiConnection $connection) {}
 
     /** @param array{id: string, cwd: string, model: string, thinkingLevel: string, appendSystemPrompt: string|null} $session */
-    public function create(Node $node, array $session): void
+    public function create(Node|PiEndpoint $node, array $session): void
     {
-        $this->ensure($this->call(fn (): Response => $this->request($node)->post($this->url($node, 'sessions'), $session)));
+        $this->ensure($this->call(fn (): Response => $this->request($node)->post($this->url($node, 'sessions'), $session)), $node);
     }
 
     /** Starts a turn. Returns true when the server had already accepted this key. */
-    public function send(Node $node, string $sessionId, string $key, string $text): bool
+    public function send(Node|PiEndpoint $node, string $sessionId, string $key, string $text): bool
     {
         $response = $this->ensure($this->call(fn (): Response => $this->request($node)->post(
             $this->url($node, 'sessions', $sessionId, 'messages'),
             ['key' => $key, 'text' => $text],
-        )));
+        )), $node);
 
         return $response->json('duplicate') === true;
     }
 
-    public function interrupt(Node $node, string $sessionId): void
+    public function interrupt(Node|PiEndpoint $node, string $sessionId): void
     {
-        $this->ensure($this->call(fn (): Response => $this->request($node)->post($this->url($node, 'sessions', $sessionId, 'interrupt'))));
+        $this->ensure($this->call(fn (): Response => $this->request($node)->post($this->url($node, 'sessions', $sessionId, 'interrupt'))), $node);
     }
 
     /** @return array<string, mixed> */
-    public function snapshot(Node $node, string $sessionId): array
+    public function snapshot(Node|PiEndpoint $node, string $sessionId): array
     {
-        $payload = $this->ensure($this->call(fn (): Response => $this->request($node)->get($this->url($node, 'sessions', $sessionId))))->json();
+        $payload = $this->ensure($this->call(fn (): Response => $this->request($node)->get($this->url($node, 'sessions', $sessionId))), $node)->json();
         if (! is_array($payload) || ($payload['kind'] ?? null) !== 'snapshot') {
             throw new AgentDriverException('The Pi server returned an invalid snapshot.');
         }
@@ -69,7 +69,7 @@ final readonly class PiClient
      * @param  array{run: string, sequence: int}|null  $after
      * @return iterable<array<string, mixed>>
      */
-    public function stream(Node $node, string $sessionId, ?array $after = null): iterable
+    public function stream(Node|PiEndpoint $node, string $sessionId, ?array $after = null): iterable
     {
         // HTTP/1.0 keeps the response unchunked. PHP's dechunk filter holds small NDJSON lines
         // until 8 KiB arrive, which would stall every event behind the next heartbeats.
@@ -77,7 +77,7 @@ final readonly class PiClient
             ->timeout(0)
             ->withOptions(['stream' => true, 'read_timeout' => self::STREAM_READ_TIMEOUT, 'version' => '1.0'])
             ->accept('application/x-ndjson')
-            ->get($this->url($node, 'sessions', $sessionId, 'stream'), $after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])));
+            ->get($this->url($node, 'sessions', $sessionId, 'stream'), $after === null ? [] : ['run' => $after['run'], 'after' => $after['sequence']])), $node);
         $body = $response->toPsrResponse()->getBody();
 
         try {
@@ -97,10 +97,13 @@ final readonly class PiClient
         }
     }
 
-    private function ensure(Response $response): Response
+    private function ensure(Response $response, Node|PiEndpoint $node): Response
     {
         if ($response->successful()) {
             return $response;
+        }
+        if ($node instanceof PiEndpoint) {
+            throw new AgentDriverException('The sandbox Pi server failed with HTTP '.$response->status().'.');
         }
         $code = $response->json('error.code');
         $message = $response->json('error.message');
@@ -110,16 +113,17 @@ final readonly class PiClient
             : 'The Pi server failed with HTTP '.$response->status().'.');
     }
 
-    private function request(Node $node): PendingRequest
+    private function request(Node|PiEndpoint $node): PendingRequest
     {
         return Http::connectTimeout(self::CONNECT_TIMEOUT)
             ->timeout(self::TIMEOUT)
+            ->withoutRedirecting()
             ->acceptJson()
             ->asJson()
             ->withToken($this->connection->token($node));
     }
 
-    private function url(Node $node, string ...$segments): string
+    private function url(Node|PiEndpoint $node, string ...$segments): string
     {
         return $this->connection->baseUrl($node).'/'.implode('/', array_map(rawurlencode(...), $segments));
     }

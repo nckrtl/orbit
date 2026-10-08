@@ -705,5 +705,7 @@ final class DatabaseCloneRemovalFakes implements DevelopmentInstanceSourceFinali
         return 'deleted';
     }
 
+    public function withdrawPhpPool(InstanceRemovalMember $member): void {}
+
     public function cleanupRuntime(InstanceRemovalMember $member): void {}
 }

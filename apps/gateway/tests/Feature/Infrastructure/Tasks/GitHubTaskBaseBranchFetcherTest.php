@@ -25,6 +25,8 @@ use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TaskWorkerSshExecutor;
 use Tests\Support\TestOrbitHome;
 
+pest()->group('privileged');
+
 /** @param  list<string>  $arguments */
 function fetcher_git(string $directory, array $arguments): string
 {
@@ -176,7 +178,7 @@ it('passes the base ref as one argument and the token only on standard input', f
     expect($command->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'feature/main'])
         ->and($command->input)->toBeNull()
         ->and(stream_get_contents($command->protectedInput?->stream()))->toContain(base64_encode('x-access-token:ghs_fetch'))
-        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"');
+        ->and(stream_get_contents($command->protectedInput?->stream()))->toContain('git_read git -c credential.helper= -c http.followRedirects=false -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" fetch --quiet origin "$base"');
 });
 
 it('reports one failure when the base name is invalid or the fetch fails', function (string $base, bool $ssh): void {
@@ -459,4 +461,60 @@ it('leaves the workspace alone when the task branch is missing and that absence 
     expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($before);
     expect(fn () => fetcher(new LocalShellSshExecutor)->fastForward($group))
         ->toThrow(TaskPullRequestException::class, 'The task branch could not be fetched.');
+});
+
+it('fetches and fast-forwards an incoming pull request branch instead of task-{id}', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+    $group = fetcher_group('/srv/orbit/apps/shop/task-7');
+    $group->update(['pr_branch' => 'cursor/login-throttle']);
+    $fetcher = fetcher($transport);
+
+    $fetcher->fetchForTurn($group);
+    $fetcher->fastForward($group);
+
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'main', 'cursor/login-throttle', ''])
+        ->and($transport->commands[1]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle']);
+});
+
+it('reads the merge base with the fetched default branch and moves a clean workspace to a pull request head', function (): void {
+    $root = TestOrbitHome::scratch('orbit-pull-request-head');
+    $checkout = $root.'/checkout';
+    (new Process(['git', 'init', '--quiet', '--bare', $root.'/origin.git']))->mustRun();
+    (new Process(['git', 'init', '--quiet', '-b', 'task-7', $checkout]))->mustRun();
+    $group = fetcher_group($checkout);
+    $group->update(['pr_branch' => 'feature/login']);
+    fetcher_git($checkout, ['remote', 'add', 'origin', $root.'/origin.git']);
+    file_put_contents($checkout.'/tracked.txt', 'base');
+    fetcher_git($checkout, ['add', 'tracked.txt']);
+    fetcher_git($checkout, ['commit', '--quiet', '-m', 'Base']);
+    $base = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/main']);
+    file_put_contents($checkout.'/tracked.txt', 'feature');
+    fetcher_git($checkout, ['commit', '--quiet', '-am', 'Feature']);
+    $head = fetcher_git($checkout, ['rev-parse', 'HEAD']);
+    fetcher_git($checkout, ['push', '--quiet', 'origin', 'HEAD:refs/heads/feature/login']);
+    fetcher_git($checkout, ['reset', '--quiet', '--hard', $base]);
+    fetcher_git($checkout, ['update-ref', '-d', 'refs/remotes/origin/feature/login']);
+    $bases = fetcher(new LocalShellSshExecutor);
+    $bases->fetchForTurn($group->fresh() ?? $group);
+
+    $bases->moveTo($group, $head);
+
+    expect(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($head)
+        ->and(fetcher_git($checkout, ['rev-parse', '--abbrev-ref', 'HEAD']))->toBe('task-7')
+        ->and($bases->mergeBase($group))->toBe($base);
+
+    file_put_contents($checkout.'/tracked.txt', 'unsaved');
+
+    expect(fn () => $bases->moveTo($group, $base))->toThrow(TaskPullRequestException::class, 'The workspace could not move to the pull request head.')
+        ->and(fetcher_git($checkout, ['rev-parse', 'HEAD']))->toBe($head)
+        ->and(file_get_contents($checkout.'/tracked.txt'))->toBe('unsaved');
+});
+
+it('refuses to move a workspace to a value that is not a commit SHA', function (): void {
+    $transport = new AppDevFakeSshExecutor;
+
+    expect(fn () => fetcher($transport)->moveTo(fetcher_group('/srv/orbit/apps/shop/task-7'), 'main'))
+        ->toThrow(TaskPullRequestException::class, 'The pull request head is not a Git SHA.')
+        ->and($transport->commands)->toBe([]);
 });

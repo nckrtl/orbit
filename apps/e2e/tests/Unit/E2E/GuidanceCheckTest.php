@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 it('renders real guidance with unusable inherited cache paths', function (string $app): void {
     $repository = dirname(__DIR__, 5);
     $fixture = sys_get_temp_dir().'/orbit-guidance-test-'.bin2hex(random_bytes(8));

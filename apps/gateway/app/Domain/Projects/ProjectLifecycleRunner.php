@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\Domain\Projects;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
@@ -20,10 +22,13 @@ final readonly class ProjectLifecycleRunner
         private ProjectLifecycleStepStore $steps,
         private DevelopmentSshExecutor $ssh,
         private CommandDeadline $deadline,
+        private VpToolManager $vp,
+        private TiaBaselineSetup $tia,
     ) {}
 
     public function run(Instance $instance, LifecyclePhase $phase): bool
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         if ($instance->placedOnAppProd()) {
             return false;
         }
@@ -51,11 +56,14 @@ final readonly class ProjectLifecycleRunner
             throw new ResourceOperationException('instance.setup_unavailable', 'The lifecycle runner is unavailable.', 503);
         }
 
+        $vpHome = null;
+
         foreach ($steps as $step) {
             $input = null;
             $budget = 0.0;
 
             try {
+                $vpHome ??= dirname($this->vp->existingBinary($instance->node), 2);
                 $timeout = $this->deadline->cap($step->timeoutSeconds + 5.0);
                 $budget = $timeout - 5.0;
 
@@ -63,10 +71,25 @@ final readonly class ProjectLifecycleRunner
                     throw $this->deadlineCut($phase, $step, 0.0);
                 }
 
+                $command = $step->command;
+                if ($command === LifecycleStep::RestoreTiaBaseline) {
+                    if ($phase !== LifecyclePhase::Setup) {
+                        throw new ResourceOperationException('instance.teardown_step_failed', 'TIA baseline restore is a setup-only operation.', 422, details: ['step' => $step->name]);
+                    }
+                    $started = microtime(true);
+                    $command = $this->tia->command($instance->project, $budget);
+                    $timeout = $this->deadline->cap(max(0.0, $timeout - (microtime(true) - $started)));
+                    $budget = $timeout - 5.0;
+                    if ($budget <= 0.0) {
+                        throw $this->deadlineCut($phase, $step, 0.0);
+                    }
+                }
+
                 $input = ProtectedInput::fromString(json_encode([
                     'checkout' => $checkout,
-                    'command' => $step->command,
+                    'command' => $command,
                     'environment' => [
+                        'VP_HOME' => $vpHome,
                         'ORBIT_SEED_PATH' => $phase === LifecyclePhase::Setup ? ($instance->seed_path ?? '') : '',
                         'ORBIT_SEED_COMMIT' => $phase === LifecyclePhase::Setup ? ($instance->seed_commit ?? '') : '',
                     ],
@@ -90,6 +113,9 @@ final readonly class ProjectLifecycleRunner
                 }
 
                 if ($exception instanceof ResourceOperationException) {
+                    if (str_starts_with($exception->errorCode, 'instance.tia_baseline_')) {
+                        throw new ResourceOperationException($exception->errorCode, $exception->getMessage(), $exception->status, details: ['step' => $step->name]);
+                    }
                     throw $exception;
                 }
 
@@ -102,6 +128,18 @@ final readonly class ProjectLifecycleRunner
                         status: 409,
                         previous: $exception,
                         details: ['step' => $step->name, 'outcome' => 'busy'],
+                    );
+                }
+
+                if ($result !== null && in_array($result->exitCode, [126, 127], true)) {
+                    $label = $phase === LifecyclePhase::Setup ? 'Setup' : 'Teardown';
+
+                    throw new ResourceOperationException(
+                        errorCode: $phase === LifecyclePhase::Setup ? 'instance.setup_step_unavailable' : 'instance.teardown_step_unavailable',
+                        message: "{$label} step [{$step->name}] is unavailable on node [{$instance->node->name}]: the command was not found or is not executable (exit {$result->exitCode}).",
+                        status: 422,
+                        previous: $exception,
+                        details: ['step' => $step->name, 'outcome' => 'missing'],
                     );
                 }
 

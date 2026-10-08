@@ -17,10 +17,12 @@ final class UpdateTaskGroupCommand extends TaskCommand
         {--title= : New title}
         {--brief= : New brief}
         {--status= : backlog or todo}
+        {--preview : Keep the sandbox running during review}
+        {--no-preview : Allow the sandbox to park during review}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Change a task group\'s title, brief, or status.';
+    protected $description = 'Change a task group\'s title, brief, status, or preview intent.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -44,10 +46,14 @@ final class UpdateTaskGroupCommand extends TaskCommand
         }
 
         $status = is_string($status) ? $status : null;
-        $changed = $title !== null || $brief !== null || $status !== null;
+        if ($this->option('preview') === true && $this->option('no-preview') === true) {
+            return $this->renderGatewayFailure('tasks.preview_conflict', 'Use either --preview or --no-preview.');
+        }
+        $preview = $this->option('preview') === true ? true : ($this->option('no-preview') === true ? false : null);
+        $changed = $title !== null || $brief !== null || $status !== null || $preview !== null;
 
         if (! $changed && ! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one task group update: --title, --brief, or --status.');
+            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one task group update: --title, --brief, --status, --preview, or --no-preview.');
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -56,7 +62,9 @@ final class UpdateTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $groupId ??= $this->selectGroup($connector, self::PLANNING_STATUSES);
+        $eligible = $preview !== null && $title === null && $brief === null && $status === null
+            ? array_values(array_diff(self::GROUP_STATUSES, ['completed', 'failed', 'cancelled'])) : self::PLANNING_STATUSES;
+        $groupId ??= $this->selectGroup($connector, $eligible);
 
         if ($groupId === null) {
             return self::FAILURE;
@@ -84,7 +92,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
 
         $group = $this->sendWithProgress(
             $connector,
-            new UpdateTaskGroupRequest($groupId, $title, $brief, $status),
+            new UpdateTaskGroupRequest($groupId, $title, $brief, $status, preview: $preview),
             TaskGroupResponse::class,
             ['Update task group', 'Updating task group', 'Updated task group'],
         );

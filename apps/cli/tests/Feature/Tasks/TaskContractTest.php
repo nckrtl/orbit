@@ -53,9 +53,20 @@ function run_task_contract(string $fixture, string $command, array $arguments, i
 }
 
 describe('tasks contract', function (): void {
+    it('renders a declared workload node', function (): void {
+        run_task_contract('tasks/tasks-subtask-create/topology', 'tasks:subtask:create', [
+            'group' => '1', 'title' => 'Use a workload node', '--brief' => 'Verify the private app-dev node.', '--topology' => '["app-dev"]',
+        ], 0);
+    });
+
     it('renders tasks status', function (): void {
-        run_task_contract('tasks-status/enabled', 'tasks:status', [], 0);
-        run_task_contract('tasks-status/assistance', 'tasks:status', [], 0);
+        run_task_contract('tasks/tasks-status/enabled', 'tasks:status', [], 0);
+        run_task_contract('tasks/tasks-status/assistance', 'tasks:status', [], 0);
+        run_task_contract('tasks/tasks-status/merges', 'tasks:status', [], 0);
+    });
+
+    it('renders the review-and-merge state of an incoming pull request', function (): void {
+        run_task_contract('tasks-show/review-and-merge', 'tasks:show', ['group' => '1'], 0);
     });
 
     it('renders the group list and an empty list', function (): void {

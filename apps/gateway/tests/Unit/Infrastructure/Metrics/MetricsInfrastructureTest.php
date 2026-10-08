@@ -97,9 +97,11 @@ it('renders publication bound to the gateway address and private certificate pai
         ->and($config)
         ->toContain('forward_auth unix//run/php/orbit-gateway.sock')
         ->and($config)
-        ->toContain('uri /api/v1/metrics/grafana/authorize')
+        ->toContain('uri /index.php')
         ->and($config)
-        ->toContain('env SCRIPT_FILENAME /home/orbit/gateway/public/index.php')
+        ->toContain("root /home/orbit/gateway/public\n      resolve_root_symlink\n      split .php\n")
+        ->and($config)
+        ->not->toContain('SCRIPT_FILENAME')
         ->and($config)
         ->toContain('env REQUEST_URI /api/v1/metrics/grafana/authorize')
         ->and($config)
@@ -113,9 +115,7 @@ it('renders publication bound to the gateway address and private certificate pai
 it('defaults authorization to the checkout that contains the renderer', function (): void {
     $configuration = new MetricsPublicationRenderer()->caddy('10.44.0.2', '10.44.0.1');
 
-    expect($configuration)->toContain(
-        'env SCRIPT_FILENAME '.dirname(__DIR__, 4).'/public/index.php',
-    );
+    expect($configuration)->toContain('root '.dirname(__DIR__, 4).'/public');
 });
 
 it('renders one valid authorization-first route for every Grafana request shape', function (): void {

@@ -12,10 +12,12 @@ use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Nodes\Storage\StorageRootResolver;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\Fleet\NodeShell;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Nodes\NodeAgentRoleConverger;
 use App\Infrastructure\Nodes\NodeAgentSshExecutor;
 use App\Infrastructure\Nodes\NodeLocks;
+use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -45,14 +47,14 @@ it('refuses macOS agent installation before SSH and skips removal', function ():
     expect($ssh->commands)->toBeEmpty();
 });
 
-it('pins agent v0.3.0', function (): void {
-    expect(NodeAgentFootprint::Version)->toBe('0.3.0')
-        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a')
-        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('84306df202904277c6f6cd78d4050fae97e54c3e515a2ad09585dd5a5e568811')
+it('pins agent v0.4.1', function (): void {
+    expect(NodeAgentFootprint::Version)->toBe('0.4.1')
+        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('3ee2488f9dc5eb132bcd63236613536e9cf06bbe6e07a421c3c7547fe222689b')
+        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('1aed0809800b68d97a2f8dc373cb045f8ed918c006a6cdb9567e3105608b4b27')
         ->and(NodeAgentFootprint::downloadUrl('x86_64'))
-        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64')
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64')
         ->and(NodeAgentFootprint::downloadUrl('aarch64'))
-        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-aarch64');
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.4.1/orbit-agent-0.4.1-linux-aarch64');
 });
 
 it('keeps the role converge going when the agent install fails', function (): void {
@@ -535,6 +537,36 @@ describe('the agent secret', function (): void {
         expect($node->fresh()?->agent_secret_hash)->toBe(str_repeat('c', 64));
     });
 
+    it('holds the lock orbit self-update holds from the secret through the restart', function (): void {
+        $ssh = new AgentInstallStatefulSsh;
+        $node = nodeAgentStoredNode();
+        nodeAgentExecutor($ssh)->converge($node);
+        $ssh->putChecksum(NodeAgentFootprint::BinaryPath, str_repeat('d', 64));
+        $start = count(nodeAgentArguments($ssh));
+
+        nodeAgentExecutor($ssh)->converge($node->fresh() ?? $node);
+
+        $arguments = array_slice(nodeAgentArguments($ssh), $start);
+        $position = static function (Closure $match) use ($arguments): int {
+            foreach ($arguments as $index => $argument) {
+                if ($match($argument)) {
+                    return $index;
+                }
+            }
+
+            return -1;
+        };
+        $acquire = $position(static fn (array $argument): bool => in_array(NodeAgentFootprint::UpdateLockPath, $argument, true) && str_starts_with((string) ($argument[4] ?? ''), 'orbit-update-lock-'));
+        $swap = $position(static fn (array $argument): bool => $argument === ['sudo', 'mv', '-fT', '--', NodeAgentFootprint::BinaryPath.'.orbit-candidate', NodeAgentFootprint::BinaryPath]);
+        $restart = $position(static fn (array $argument): bool => $argument === ['sudo', 'systemctl', 'restart', NodeAgentFootprint::Service]);
+        $release = $position(static fn (array $argument): bool => ($argument[1] ?? null) === 'sh' && str_contains((string) ($argument[3] ?? ''), 'systemctl stop'));
+
+        expect($acquire)->toBeGreaterThanOrEqual(0)
+            ->and($swap)->toBeGreaterThan($acquire)
+            ->and($restart)->toBeGreaterThan($swap)
+            ->and($release)->toBeGreaterThan($restart);
+    });
+
     it('keeps the secret hash while the replacement binary is installed', function (): void {
         $ssh = new AgentInstallStatefulSsh;
         $node = nodeAgentStoredNode();
@@ -650,6 +682,7 @@ function nodeAgentExecutor(SshExecutor $ssh, ?ManagedUserAccount $account = new 
         },
         app(StorageRootResolver::class),
         app(NodeSettingsNormalizer::class),
+        new NodeUpdateLock(new NodeShell($ssh, new AgentInstallKeys, new AgentInstallKnownHosts)),
         app(NodeLocks::class),
         $lockWaitSeconds,
     );
@@ -828,7 +861,7 @@ final class AgentInstallStatefulSsh implements SshExecutor
             return new CommandResult(0, '', '', 1, false);
         }
 
-        if (($arguments[1] ?? null) === 'mv') {
+        if (($arguments[1] ?? null) === 'mv' || (($arguments[1] ?? null) === 'flock' && in_array('mv', $arguments, true))) {
             $source = $arguments[count($arguments) - 2];
             $destination = $arguments[count($arguments) - 1];
             if (isset($this->files[$source])) {

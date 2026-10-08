@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+"""Internal constructor for isolated cold sandbox candidates."""
+from pathlib import Path
+import runpy
+
+runpy.run_path(str(Path(__file__).resolve().parent.parent / 'apps/gateway/resources/compute/prepare-template.py'), run_name='__main__')

@@ -13,6 +13,8 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskWorkspaceMcp;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
 use App\Infrastructure\Processes\ProcessInvocation;
@@ -22,7 +24,9 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskReviewDiff;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -46,16 +50,21 @@ it('reads tracked and untracked review diff without updating the index', functio
     (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
     (new Process(['git', '-C', $checkout, 'config', 'user.email', 'test@example.com']))->mustRun();
     (new Process(['git', '-C', $checkout, 'config', 'user.name', 'Test']))->mustRun();
+    (new Process(['git', '-C', $checkout, 'config', 'core.trustctime', 'false']))->mustRun();
+    (new Process(['git', '-C', $checkout, 'config', 'core.checkStat', 'minimal']))->mustRun();
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 1;\n");
+    touch($checkout.'/tracked.php', 1_700_000_000);
     (new Process(['git', '-C', $checkout, 'add', 'tracked.php']))->mustRun();
     (new Process(['git', '-C', $checkout, 'commit', '--quiet', '-m', 'start']))->mustRun();
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+    touch($checkout.'/.git/index', 1_700_000_000);
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
+    touch($checkout.'/tracked.php', 1_700_000_000);
     file_put_contents($checkout.'/untracked.php', "<?php\nreturn 'new';\n");
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-14', 'checkout_path' => $checkout, 'branch' => 'task-14', 'status' => 'source_resolved']);
-    $reader = new RemoteTaskReviewDiff(new DevelopmentSshExecutor(
+    $reader = new RemoteTaskReviewDiff(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         new LocalShellSshExecutor,
         new class implements SshKeyProvider
         {
@@ -78,7 +87,7 @@ it('reads tracked and untracked review diff without updating the index', functio
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
 
     $diff = $reader->read($instance, $start);
     $cached = new Process(['git', '-C', $checkout, 'diff', '--cached', '--name-only']);
@@ -94,6 +103,25 @@ it('reads tracked and untracked review diff without updating the index', functio
         ->and($diff['diff'])->toContain('return 2;')
         ->and($diff['diff'])->toContain("return 'new';");
 });
+
+it('reads untracked symlinks without following their targets or changing the index', function (string $target): void {
+    $checkout = review_diff_checkout();
+    $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+    mkdir($checkout.'/skills');
+    file_put_contents($checkout.'/skills/private.txt', "Do not include target contents.\n");
+    file_put_contents($checkout.'/.gitignore', "skills/\n");
+    (new Process(['git', '-C', $checkout, 'add', '.gitignore']))->mustRun();
+    symlink($target, $checkout.'/skill-link');
+    $index = file_get_contents($checkout.'/.git/index');
+
+    $diff = review_diff_reader(new LocalShellSshExecutor)->read(review_diff_instance($checkout), $start);
+
+    expect(file_get_contents($checkout.'/.git/index'))->toBe($index)
+        ->and(array_column($diff['files'], 'path'))->toContain('skill-link')
+        ->and($diff['diff'])->toContain('new file mode 120000', '+'.$target)
+        ->and($diff['diff'])->not->toContain('Do not include target contents.')
+        ->and($diff['summary'])->toBe(['files' => 2, 'insertions' => 2, 'deletions' => 0]);
+})->with(['directory' => 'skills', 'file' => 'skills/private.txt', 'dangling' => 'missing']);
 
 it('refuses a missing checkout, a missing base, and output that is not a diff', function (string $case): void {
     $checkout = review_diff_checkout();
@@ -150,28 +178,35 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     $checkout = review_diff_checkout();
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
-    $restore = [];
-    $path = getenv('PATH') ?: '';
-    if ($failure === 'stat') {
-        \chmod($checkout.'/tracked.php', 0000);
-        $restore[] = $checkout.'/tracked.php';
-    } elseif ($failure === 'body') {
-        $helper = TestOrbitHome::scratch('fail-helper.sh');
-        file_put_contents($helper, "#!/bin/sh\nexit 3\n");
-        \chmod($helper, 0755);
-        (new Process(['git', '-C', $checkout, 'config', 'diff.external', $helper]))->mustRun();
-    } elseif ($failure === 'untracked') {
+    if ($failure === 'untracked') {
         file_put_contents($checkout.'/secret.php', "hidden\n");
-        \chmod($checkout.'/secret.php', 0000);
-        $restore[] = $checkout.'/secret.php';
-    } else {
-        $bin = TestOrbitHome::scratch('git-bin');
-        mkdir($bin);
-        $git = trim((string) shell_exec('command -v git'));
-        file_put_contents($bin.'/git', "#!/bin/sh\nfor argument in \"\$@\"; do if [ \"\$argument\" = ls-files ]; then echo ls-files-failed >&2; exit 1; fi; done\nexec ".escapeshellarg($git)." \"\$@\"\n");
-        \chmod($bin.'/git', 0755);
-        putenv('PATH='.$bin.':'.$path);
     }
+    $bin = TestOrbitHome::scratch('git-bin');
+    mkdir($bin);
+    $git = trim((new Process(['sh', '-c', 'command -v git']))->mustRun()->getOutput());
+    $record = TestOrbitHome::scratch('git-failure');
+    $condition = match ($failure) {
+        'stat' => '[ "$argument" = --numstat ]',
+        'body' => '[ "$argument" = diff ] && [ "$stat" = no ]',
+        'untracked' => '[ "$argument" = --intent-to-add ]',
+        'ls-files' => '[ "$argument" = ls-files ]',
+    };
+    file_put_contents($bin.'/git', "#!/bin/sh\nstat=no\nfor argument in \"\$@\"; do [ \"\$argument\" != --numstat ] || stat=yes; done\n".
+        'for argument in "$@"; do if '.$condition.'; then printf %s '.escapeshellarg($failure).' > '.escapeshellarg($record).'; exit 3; fi; done'."\n".
+        'exec '.escapeshellarg($git).' "$@"'."\n");
+    \chmod($bin.'/git', 0755);
+    $ssh = new class($bin.':'.(getenv('PATH') ?: '')) implements SshExecutor
+    {
+        public function __construct(private string $path) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $process = new Process($command->arguments, null, ['PATH' => $this->path], $command->input);
+            $process->run();
+
+            return new CommandResult((int) $process->getExitCode(), $process->getOutput(), $process->getErrorOutput(), 1, false);
+        }
+    };
     $instance = review_diff_instance($checkout);
     $group = Task::topLevel()->create([
         'project_id' => $instance->project_id,
@@ -190,20 +225,14 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         'subtask_start_commit' => $start,
     ]);
     $driver = new FakeAgentDriver('pi');
-    app()->instance(TaskReviewDiff::class, review_diff_reader(new LocalShellSshExecutor));
+    app()->instance(TaskReviewDiff::class, review_diff_reader($ssh));
     app()->instance(AgentDriverRegistry::class, new AgentDriverRegistry([$driver]));
     app()->forgetInstance(AgentSpawner::class);
     app()->forgetInstance(TaskReviewPacketBuilder::class);
 
-    try {
-        app(TaskScheduler::class)->settleImplementer($task);
-    } finally {
-        foreach ($restore as $pathToRestore) {
-            \chmod($pathToRestore, 0644);
-        }
-        putenv('PATH='.$path);
-    }
+    app(TaskScheduler::class)->settleImplementer($task);
 
+    expect(file_get_contents($record))->toBe($failure);
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
         ->and($task->fresh()?->review_notified_attempt)->toBeNull()
         ->and($task->fresh()?->communication_failures)->toBe(1)
@@ -233,7 +262,7 @@ function review_diff_instance(string $checkout): Instance
 
 function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff
 {
-    return new RemoteTaskReviewDiff(new DevelopmentSshExecutor(
+    return new RemoteTaskReviewDiff(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $ssh,
         new class implements SshKeyProvider
         {
@@ -256,7 +285,7 @@ function review_diff_reader(SshExecutor $ssh): RemoteTaskReviewDiff
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
 }
 
 function review_diff_result(CommandResult $result): SshExecutor

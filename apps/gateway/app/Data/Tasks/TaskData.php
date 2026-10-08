@@ -7,6 +7,7 @@ namespace App\Data\Tasks;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -25,6 +26,8 @@ final class TaskData extends Data
         public string $brief,
         /** @var list<array<string, string|bool|list<string>>> */
         public array $deliverables,
+        /** @var list<string> */
+        public array $topology,
         public TaskStatus $status,
         public ?int $implementerAgentThreadId,
         public ?int $tokens,
@@ -78,6 +81,7 @@ final class TaskData extends Data
             title: $task->title,
             brief: $task->brief,
             deliverables: array_map(static fn (TaskDeliverable $deliverable): array => $deliverable->toArray(), $task->deliverableList()),
+            topology: TaskTopology::from($task->topology ?? []),
             status: $task->subtaskStatus(),
             implementerAgentThreadId: $task->implementer_agent_thread_id,
             tokens: $task->tokens,

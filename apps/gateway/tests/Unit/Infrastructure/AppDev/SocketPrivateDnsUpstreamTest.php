@@ -6,6 +6,8 @@ use App\Domain\AppDev\PrivateDnsAnswer;
 use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use App\Infrastructure\AppDev\SocketPrivateDnsUpstream;
 
+pest()->group('subprocess');
+
 it('returns a UDP upstream answer without waiting for the socket to close', function (): void {
     $codec = new PrivateDnsMessageCodec;
     $query = $codec->encodeQuery('example.com');

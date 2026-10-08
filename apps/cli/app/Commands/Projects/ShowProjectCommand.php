@@ -65,8 +65,10 @@ final class ShowProjectCommand extends GatewayCommand
             'Source access' => $project->sourceAccess,
             'Default branch' => $project->defaultBranch,
             'Web root' => $project->root,
+            ...($project->taskCompute === null ? [] : ['Task compute' => $project->taskCompute]),
             'Task check' => $project->taskCheck,
             'Task workspace routed' => $project->taskWorkspaceRouted,
+            ...($project->reviewAndMerge === null ? [] : ['Review and merge' => $project->reviewAndMerge, 'Merge check' => $project->mergeCheck]),
             ...($project->excludedNodes === null ? [] : [
                 'Excluded nodes' => array_map(static fn (array $exclusion): string => $exclusion['node_name'], $project->excludedNodes) ?: null,
             ]),

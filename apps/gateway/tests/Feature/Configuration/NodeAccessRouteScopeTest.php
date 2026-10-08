@@ -11,7 +11,9 @@ use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
 it('declares node access scope on every active-peer API route', function (): void {
-    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'];
+    // The agent routes need the agent secret instead. Any active peer reads the desired fleet state (ADR 0202),
+    // because every managed Node updates itself from it, with or without access to the Gateway.
+    $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'gateway:desired-fleet-state'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->filter(
@@ -79,6 +81,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'cluster:router:unset' => ServingNode::ClusterOwning,
         'cluster:show' => ServingNode::ClusterOwning,
         'cluster:update' => ServingNode::ClusterOwning,
+        'compute:github-token' => ServingNode::Caller,
         'database:create' => ServingNode::Gateway,
         'database:describe' => ServingNode::Gateway,
         'database:destroy' => ServingNode::Gateway,
@@ -108,6 +111,17 @@ it('declares node access scope on every active-peer API route', function (): voi
         'firewall:live:list' => ServingNode::Target,
         'firewall:managed:list' => ServingNode::Target,
         'firewall:remove' => ServingNode::Target,
+        'fleet:rollout:resume' => ServingNode::Gateway,
+        'fleet:rollout:status' => ServingNode::Gateway,
+        'gateway:release:auto:disable' => ServingNode::Gateway,
+        'gateway:release:auto:enable' => ServingNode::Gateway,
+        'gateway:release:auto:resume' => ServingNode::Gateway,
+        'gateway:release:auto:status' => ServingNode::Gateway,
+        'gateway:release:deploy' => ServingNode::Gateway,
+        'gateway:release:list' => ServingNode::Gateway,
+        'gateway:release:rollback' => ServingNode::Gateway,
+        'gateway:release:show' => ServingNode::Gateway,
+        'gateway:release:smoke' => ServingNode::Gateway,
         'github:app:callback' => ServingNode::Gateway,
         'github:app:destroy' => ServingNode::Gateway,
         'github:app:install' => ServingNode::Gateway,
@@ -167,6 +181,7 @@ it('declares node access scope on every active-peer API route', function (): voi
         'node:access:add' => ServingNode::Gateway,
         'node:access:remove' => ServingNode::Gateway,
         'node:add' => ServingNode::Gateway,
+        'node:converge' => ServingNode::Target,
         'node:excluded-project:add' => ServingNode::Target,
         'node:excluded-project:list' => ServingNode::Target,
         'node:excluded-project:remove' => ServingNode::Target,
@@ -371,6 +386,14 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             expect($middleware)
                 ->toContain(RequireActiveWireGuardPeer::class)
                 ->toContain(RequireNodeAgentSecret::class)
+                ->not->toContain(RequireNodeAccess::class);
+
+            continue;
+        }
+
+        if ($route->getName() === 'gateway:desired-fleet-state') {
+            expect($middleware)
+                ->toContain(RequireActiveWireGuardPeer::class)
                 ->not->toContain(RequireNodeAccess::class);
 
             continue;

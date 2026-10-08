@@ -19,6 +19,7 @@ final class UpdateTaskGroupRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'preview' => ['sometimes', 'boolean:strict'],
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
@@ -29,7 +30,7 @@ final class UpdateTaskGroupRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'status']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'status', 'preview']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -43,6 +44,7 @@ final class UpdateTaskGroupRequest extends FormRequest
             title: is_string($this->validated('title')) ? $this->validated('title') : null,
             brief: is_string($this->validated('brief')) ? $this->validated('brief') : null,
             status: is_string($status) ? TaskGroupStatus::from($status) : null,
+            preview: is_bool($this->validated('preview')) ? $this->validated('preview') : null,
         );
     }
 }

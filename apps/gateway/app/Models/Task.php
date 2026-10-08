@@ -8,11 +8,14 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskBroadcastObserver;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskExecutionMode;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
+use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use BackedEnum;
@@ -74,14 +77,21 @@ use LogicException;
  * @property string|null $taskable_type
  * @property int|null $taskable_id
  * @property string|null $pr_url
+ * @property string|null $pr_branch
+ * @property TaskMergeStatus|null $merge_status
+ * @property string|null $merge_reason
+ * @property string|null $merged_sha
  * @property string|null $watched_pr_url
  * @property int|null $watched_pr_number
  * @property string|null $watched_pr_state
  * @property string|null $watched_pr_completion
+ * @property bool|null $preview
  * @property bool $notify_coder
  * @property string $implementer_model
  * @property string $reviewer_model
  * @property int|null $reviewer_agent_thread_id
+ * @property string|null $capacity_wait_reason
+ * @property TaskCompute|null $task_compute
  * @property TaskExecutionMode $execution_mode
  * @property string $implementer_agent_driver
  * @property string $reviewer_agent_driver
@@ -104,6 +114,7 @@ use LogicException;
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
  * @property string|null $fixup_head_sha
+ * @property list<string>|null $topology
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property-read Task $parent
@@ -126,6 +137,7 @@ final class Task extends Model
         'taskable_type',
         'taskable_id',
         'pr_url',
+        'preview',
         'notify_coder',
         'implementer_model',
         'reviewer_model',
@@ -136,6 +148,12 @@ final class Task extends Model
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
         'reserved_at',
+        'task_compute',
+        'capacity_wait_reason',
+        'pr_branch',
+        'merge_status',
+        'merge_reason',
+        'merged_sha',
     ];
 
     /** @var list<string> */
@@ -164,6 +182,7 @@ final class Task extends Model
         'review_workspace_head',
         'review_workspace_tree',
         'deliverables',
+        'topology',
         'fixup_problem',
         'fixup_head_sha',
         'communication_failures',
@@ -208,6 +227,7 @@ final class Task extends Model
         'fixup_problem',
         'fixup_head_sha',
         'deliverables',
+        'topology',
         'settled_at',
         'completion_attempt',
         'completion_handoff_comment_id',
@@ -230,6 +250,11 @@ final class Task extends Model
         'taskable_type',
         'taskable_id',
         'pr_url',
+        'pr_branch',
+        'merge_status',
+        'merge_reason',
+        'merged_sha',
+        'preview',
         'notify_coder',
         'implementer_model',
         'reviewer_model',
@@ -240,6 +265,8 @@ final class Task extends Model
         'agent_unavailable_since',
         'agent_unavailable_notified_at',
         'reserved_at',
+        'task_compute',
+        'capacity_wait_reason',
     ];
 
     #[\Override]
@@ -250,6 +277,9 @@ final class Task extends Model
         });
 
         self::saving(static function (Task $task): void {
+            if ($task->exists && $task->getRawOriginal('task_compute') !== null && $task->isDirty('task_compute')) {
+                throw new LogicException('A claimed task group cannot change compute mode.');
+            }
             $task->ensureParentId();
             $task->applyLevelDefaults();
             $task->guardHierarchy();
@@ -298,6 +328,16 @@ final class Task extends Model
         }
 
         return $groupId;
+    }
+
+    /**
+     * ADR 0203: subtasks that are not final reviews. A legacy row may have no type.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeWithoutFinalReviews(Builder $query): void
+    {
+        $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::FinalReview->value));
     }
 
     /** @param  Builder<Task>  $query */
@@ -353,6 +393,43 @@ final class Task extends Model
         }
     }
 
+    /** ADR 0203: whether this top-level task holds every push until a final review approves it, and merges reviewed heads. */
+    public function reviewsBeforePush(): bool
+    {
+        // An incoming pull request keeps these rules until it ends, so its branch never gets an unreviewed push.
+        return $this->parent_id === null && $this->execution_mode === TaskExecutionMode::Managed
+            && ($this->project->reviewsAndMerges() || $this->reviewsIncomingPullRequest());
+    }
+
+    /** ADR 0203: an incoming pull request that Orbit reviews, not a pull request Orbit opened. */
+    public function reviewsIncomingPullRequest(): bool
+    {
+        return $this->parent_id === null && is_string($this->pr_branch) && $this->pr_branch !== '';
+    }
+
+    public function isFinalReview(): bool
+    {
+        return $this->type === TaskType::FinalReview;
+    }
+
+    /** A subtask an operator added: not a Gateway fixup and not a final review. Its completion opens a new fixup window. */
+    public function isOperatorWork(): bool
+    {
+        return $this->fixup_problem === null && ! $this->isFinalReview();
+    }
+
+    /** A fixup the settling watcher appended for a conflict, a failed check, or trusted feedback. */
+    public function isSettlingFixup(): bool
+    {
+        return is_string($this->fixup_problem) && $this->fixup_problem !== '' && $this->fixup_problem !== TaskFinalReview::FixupProblem;
+    }
+
+    /** @return HasMany<TaskReviewedCommit, $this> */
+    public function reviewedCommits(): HasMany
+    {
+        return $this->hasMany(TaskReviewedCommit::class, 'task_id')->orderBy('id');
+    }
+
     /** @return BelongsTo<AgentThread, $this> */
     public function implementerThread(): BelongsTo
     {
@@ -389,6 +466,15 @@ final class Task extends Model
      */
     public function opensPullRequest(): bool
     {
+        // ADR 0203: in a review-and-merge task only the final review opens the pull request.
+        if ($this->type === TaskType::FinalReview) {
+            $url = $this->parent()->value('pr_url');
+
+            return ! is_string($url) || $url === '';
+        }
+        if ($this->parent->reviewsBeforePush()) {
+            return false;
+        }
         if (! $this->isLastSubtask()) {
             return false;
         }
@@ -416,6 +502,9 @@ final class Task extends Model
             'position' => 'integer',
             'status' => TaskLevelStatusCast::class,
             'execution_mode' => TaskExecutionMode::class,
+            'task_compute' => TaskCompute::class,
+            'merge_status' => TaskMergeStatus::class,
+            'preview' => 'boolean',
             'notify_coder' => 'boolean',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
@@ -433,6 +522,7 @@ final class Task extends Model
             'started_at' => 'immutable_datetime',
             'settled_at' => 'immutable_datetime',
             'deliverables' => 'array',
+            'topology' => 'array',
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',
@@ -546,6 +636,7 @@ final class Task extends Model
                 'execution_mode' => TaskExecutionMode::Managed->value,
                 'implementer_agent_driver' => 'pi',
                 'reviewer_agent_driver' => 'pi',
+                'preview' => false,
                 'notify_coder' => false,
                 'assistance_requested' => false,
                 'implementer_model' => TaskAgentDefaults::ImplementerModel,

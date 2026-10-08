@@ -3,8 +3,9 @@ title: "Contributing to Orbit"
 sidebarTitle: "Contributor guide"
 description: "Prepare architecture and documentation, build a feature, and submit a complete pull request."
 covers:
+  - .agents/skills/reviewing-pull-requests/references/test-*.md
   - composer.json
-  - bin/{bootstrap,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify}
+  - bin/{bootstrap,test,pest-plain,review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,docs-merge-check}
   - "{apps/*,packages/php-sdk}/composer.json"
   - "{apps/*,packages/php-sdk}/phpstan.neon"
   - apps/gateway/tests/Support/{LinuxHost,TestToolchain}.php
@@ -69,7 +70,11 @@ Build the feature and its tests against the documented behavior. Keep the in-pro
 
 `composer test:affected` selects tests with Pest test-impact analysis (TIA), which needs PCOV or Xdebug. Without a coverage driver, TIA is skipped and every test runs. On macOS, install PCOV with `brew install shivammathur/extensions/pcov@8.5`. Every project sets Composer's `process-timeout` to `0`, so Composer never stops a long test or check run.
 
-CI uses different test selection for pull requests and pushes to `main`. Pull requests run the TIA-selected tests plus every architecture test, so TIA cannot omit architecture checks when a new file has no coverage links yet. A push to `main` runs the full test suite once with `--tia --fresh`. That run discards the old graph, runs every test, and records the TIA graph for later pull-request selections. Orbit's task gate, `bin/review-check`, also runs the architecture tests of each project that the candidate changes. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists its steps.
+CI uses different test selection for pull requests and pushes to `main`. Pull requests run the TIA-selected tests plus every architecture test, so TIA cannot omit architecture checks when a new file has no coverage links yet. They also run the `subprocess` group of each project that the change reaches. TIA does not link a test to the code that it runs in a PHP subprocess, so a test that starts PHP, such as `artisan` with `PHP_BINARY`, declares `pest()->group('subprocess')` at the top of its file. A contract test fails when such a test lacks the group.
+
+A push to `main` runs the tests affected since the commit of the newest `main` graph and records that graph for the pushed commit. It runs the full suite with `--tia --fresh` when that graph is unusable, or when a change is one that TIA cannot link to tests, such as a script, a data file, or a file outside the project. An affected run also runs the architecture tests, and the `subprocess` group when the change reaches the project. A nightly run and a manual dispatch always run the full suite.
+
+The [CI reference](/reference/implementation-loop#ci) lists the rules. Orbit's task gate, `bin/review-check`, also runs the architecture tests of each project that the candidate changes. The [feature delivery reference](/reference/implementation-loop#the-candidate-gate) lists its steps.
 
 The `test` and `test:affected` scripts in each PHP project, and root `bin/test`, pass `--colors=never` to Pest. `bin/pest-plain` strips any ANSI control sequences that remain. The output has no ANSI escape codes and still ends with the `Tests:` summary. The scripts do not pass `--no-progress`, because parallel Pest then omits that summary. Keep the flag on the scripts. `phpunit.xml` is a TIA input, and a change to it rebuilds the test impact graph.
 
@@ -91,6 +96,10 @@ Add regression tests for behavior changes and their important failure modes. Con
 Use the [delivery-line commands](/reference/delivery-line) to prove a bug on current main, to validate a task-group payload, to check the current pull-request head, and to verify post-merge live state. They print one JSON object, exit nonzero on failure, and do not file, merge, deploy, or roll back.
 
 GitHub CI runs quality checks and affected tests for all five projects, including documentation lint. Root `composer check` runs `bin/review-check`. It runs `composer validate --strict`, `composer check`, and `composer test:affected` in each of the five projects. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also runs the web and Pi server CI profiles, every changed Pest file that the affected selection missed, and a PHP finding pack. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
+
+## Audit tests and unused code
+
+Routine test review uses each project's testing guidance and the existing reviewer skill. For a requested suite cleanup or unused-code sweep, use the reviewer's [optional audit procedure](https://github.com/nckrtl/orbit/blob/main/.agents/skills/reviewing-pull-requests/references/test-audit.md). It requires evidence for removals, named retained coverage, and checks that repaired assertions catch the intended defect. It does not add a mandatory PR gate. A script that checks test quality remains a proposed follow-up.
 
 ## Static analysis
 
@@ -178,6 +187,23 @@ Coverage declarations are optional, but docs-lint checks that their globs are sa
 `composer docs-lint` checks structure, links, ADR format, blocked wording, and the freshness of the committed context index. It also enforces the ADR lifecycle. A number in the retirement table on the [decisions overview](/decisions/overview) must have no matching file in `docs/decisions`. Matching uses the full slug recorded in `apps/docs/config/adr-retired-slugs.php`, so the Tasks 0114 slug clash is allowed. Every row in that table must have a redirect from that exact ADR path.
 
 Every ADR numbered 0180 or higher must say `In progress.` in its Status section and include a `Principle:` line. A lower number follows the same two rules only when the retirement table does not list its number. The open gaps are 0007 and 0020. Older ADRs still in Records with other statuses are listed in a committed allowlist that can only shrink.
+
+Check a proposed head and its merge result with the current Docs tooling:
+
+```bash
+bin/docs-merge-check --base origin/main --head HEAD --head-only
+bin/docs-merge-check --base origin/main --head HEAD
+```
+
+`--head` defaults to `HEAD`. `--head-only` checks that committed tree alone; otherwise `--base` is required and Git builds the merge result in a temporary local clone. Both modes run strict docs lint, including the ADR lifecycle rules, without changing the working tree. The merge preview retains both parents for history checks and binds the coverage ratchet baseline to the resolved `--base` commit, not the checkout's local `main`. Head-only mode preserves the source checkout's `origin/main` baseline when present; without it, lint uses the head's committed ratchet. Neither mode substitutes local `main` for that baseline.
+
+The command isolates Laravel's configuration-cache path in its private scratch directory so a workspace or inherited cache cannot select a different documentation tree; existing caches are left untouched.
+
+An ADR number closed on the base can pass at an older branch's head but fail in the merge result: the merge result is what lands on main.
+
+On pull requests, CI's `Docs (merge ref)` job checks out the base repository's `refs/pull/N/merge` and runs `composer check` in `apps/docs`. It logs the merge commit and fails with `Docs merge ref unavailable` if checkout fails; it never falls back to the PR head. `Required checks` requires this job to succeed on pull requests. Pushes to `main` and manual runs skip it and keep their existing checks.
+
+The command never fetches. Make both refs available locally before running it. `--help` lists the flags and exit codes: 0 means lint passed, 1 means lint failed, and 2 means the preview could not be checked. Missing refs report `base_unavailable` or `head_unavailable`; conflicts report `merge_conflict` and never fall back to checking the head.
 
 The lint command reads the repository only, with no network, external service, or Incus topology. Live behavior is proved on Incus, separately. A lint rule earns its place only when it protects a current invariant and has tests for a valid and an invalid case.
 

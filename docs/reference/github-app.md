@@ -1,6 +1,6 @@
 ---
 title: "GitHub App"
-description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, and publishes task pull requests."
+description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, publishes task pull requests, reviews and merges pull requests, and finds the newest green commit of a branch."
 covers:
   - apps/gateway/app/Domain/GitHub/**
   - apps/gateway/app/Infrastructure/GitHub/**
@@ -10,17 +10,21 @@ covers:
 
 # GitHub App
 
-A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it. Orbit reads public repositories without the App. A Project whose owner does not install the App can [read through the Gateway's GitHub CLI](#read-through-the-github-cli) instead.
+A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it, and, for a [review-and-merge](/reference/tasks#review-and-merge) Project, reviews and merges pull requests through it. Orbit reads public repositories without the App. A Project whose owner does not install the App can [read through the Gateway's GitHub CLI](#read-through-the-github-cli) instead.
 
 ## What the App is
 
-Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has five permissions: `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks and cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
+Each Gateway owns at most one GitHub App. The App is a registration on GitHub with a private key that only this Gateway holds. It has six permissions: `Actions: read`, `Checks: read`, `Contents: write`, `Metadata: read`, `Pull requests: write`, and `Workflows: write`. It receives no webhooks and cannot change repository settings. Each operation asks GitHub for a token with only the permissions it needs, so a read never carries write access.
 
 A task push token carries `Workflows: write`, so a task can change `.github/workflows/`. An installation that has not accepted that permission refuses such a push, and the task reason names `Workflows` as the permission to grant. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes that failure.
 
 The App is public on GitHub, so any GitHub account can install it. An installation gives your Gateway access to that account's repositories. It gives the installing account nothing.
 
 The Gateway stores the App ID, slug, name, owner, and URL as one plain Gateway setting, and the private key as an encrypted one. No API response, Activity, or Doctor result contains the key or a token.
+
+## Read CI artifacts
+
+The opt-in [TIA setup step](/reference/instance-setup#restore-a-ci-tia-baseline) and the [web build of a Gateway release](/reference/gateway-recovery#web-build) read CI artifacts. Each uses a separate token for one repository with only `Actions: read`. The token and signed download URL stay on the Gateway. Artifact storage receives no GitHub Authorization header. Existing Apps must add the Actions read permission in GitHub App settings, and each installation must accept the update before artifact downloads work. Changing Orbit’s manifest affects new registrations only.
 
 ## Register and install
 
@@ -100,7 +104,7 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 ## How Orbit publishes a task pull request
 
-After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token reaches the Node in the same way as a read token. `git` pushes the stored commit as `<commit_sha>:refs/heads/task-{id}` and never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token.
+After the Gateway commits an approved subtask, it asks GitHub for a token with `contents: write` and `pull_requests: write` for the Project repository. The token reaches the Node in the same way as a read token. `git` pushes the stored commit as `<commit_sha>:refs/heads/task-{id}` and never uses `HEAD`. After the last approval, the Gateway opens the pull request with the same kind of token. When `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` is set, it then requests those GitHub logins as reviewers with that write token, skipping the pull request author. A failed reviewer request does not block publication. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the request.
 
 Publishing has no path without the App. Without an installation that covers the repository, the task counts a communication failure and then asks for assistance. [Tasks](/reference/tasks#pull-request-and-settle-metrics) describes the retry.
 
@@ -110,7 +114,7 @@ GitHub refuses a token that asks for a permission the installation has not accep
 
 Each scheduler tick reads a settling group's pull request. While it is open, the Gateway also asks for a token with only `checks: read` and lists the check runs of the head commit, at most once a minute. With a non-empty repository entry in `orbit.tasks.github_reviewers`, it reads submitted GitHub reviews through a separate token with only `pull_requests: read`. This permission is already covered by the App's `Pull requests: write` grant; the registration, installation permissions, and webhook policy do not change. The watcher never uses the maintainer's CLI identity. [Fix a settling pull request](/reference/tasks#fix-a-settling-pull-request) describes conflicts, failed checks, and trusted requested changes.
 
-The checks token is separate, because GitHub refuses a whole token request when one permission is not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts.
+The checks token is separate, because GitHub refuses a whole token request when one permission is not accepted. When GitHub refuses the checks token, the Gateway skips the check runs and still reports conflicts. The check run list follows every page, up to 1,000 runs. A longer list, or one that changes between pages, leaves the health unread for that tick.
 
 ### Read review records
 
@@ -118,13 +122,68 @@ Review reads use the App on the Gateway only. The review list is `GET /repos/{ow
 
 A cached snapshot lives at most 60 seconds and is scoped to repository, PR, head, and trust configuration. Before consuming a request, the watcher performs uncached reads of the PR, the complete review list, and selected findings. The [Tasks contract](/reference/tasks#retrieve-the-findings) bounds the complete packet at 64 KiB and defines edit/head races, durable deduplication, retries, and assistance. Review failure does not turn CI green, change consumption, or disable existing CI/conflict repair. A token is never cached with review data, put in a brief, or passed to an agent.
 
-The App reads review decisions; it never submits, edits, dismisses, or requests one as part of this feature. Reading `APPROVED` supplies [durable approval evidence](/reference/tasks#inspect-approval-observations), not merge enforcement. Only complete uncached scans confirm that evidence; cached, failed, or incomplete reads do not confirm current approval. The local inspection report reads stored provenance and freshness, without a GitHub call or token. Orbit still does not merge. The [final-review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) keeps the maintainer identity's admin bypass and requires its own exact-head checks.
+Review consumption reads review decisions; it never submits, edits, dismisses, or requests one. Reading `APPROVED` supplies [durable approval evidence](/reference/tasks#inspect-approval-observations), not merge enforcement. Only complete uncached scans confirm that evidence; cached, failed, or incomplete reads do not confirm current approval. The local inspection report reads stored provenance and freshness, without a GitHub call or token. Outside a review-and-merge Project, Orbit does not merge. [How Orbit reviews and merges a pull request](#how-orbit-reviews-and-merges-a-pull-request) covers that Project. The [final-review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) keeps the maintainer identity's admin bypass and requires its own exact-head checks.
 
 ### Watch open subtasks' branch pull requests
 
-While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway also lists pull requests for head `{owner}:task-{id}`, at most once a minute per task. The list is `GET /repos/{owner}/{repo}/pulls` with query `head={owner}:task-{id}` and `state=all`. The token asks only for `pull_requests: read`. The Gateway accepts GitHub's canonical owner and repository casing in a listed pull request URL, because that identity is case-insensitive. It still requires the exact `https://github.com/` host and scheme, the `/pull/{number}` path, and a number matching the row. A URL for another repository leaves the list unreadable.
+While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway also lists pull requests for head `{owner}:task-{id}`, or `{owner}:{pr_branch}` for an [incoming pull request](/reference/tasks#incoming-pull-requests), at most once a minute per task. The list is `GET /repos/{owner}/{repo}/pulls` with query `head={owner}:task-{id}` and `state=all`. The token asks only for `pull_requests: read`. The Gateway accepts GitHub's canonical owner and repository casing in a listed pull request URL, because that identity is case-insensitive. It still requires the exact `https://github.com/` host and scheme, the `/pull/{number}` path, and a number matching the row. A URL for another repository leaves the list unreadable.
 
 The Gateway resolves the repository's installation id, caches it, and reuses that id for later lists of the same repository. The cached id is not a column on the task. When GitHub refuses the token for that id, the Gateway drops the cached id, resolves the installation again, and retries the list once. A second failure leaves the list unreadable. [Watch the branch while subtasks are open](/reference/tasks#watch-the-branch-while-subtasks-are-open) describes which pull request is stored and what a merged or closed result does.
+
+## How Orbit reviews and merges a pull request
+
+A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for four more calls. Each call asks GitHub for its own token, as the table shows.
+
+| Call | Endpoint | Token |
+| --- | --- | --- |
+| List open pull requests | `GET /repos/{owner}/{repo}/pulls?state=open`, oldest first, at most three pages of 100 | The cached `pull_requests: read` token of the [branch watch](#watch-open-subtasks-branch-pull-requests) |
+| Submit a review | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event` `APPROVE` or `REQUEST_CHANGES` and `commit_id` | The publishing token |
+| Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?check_name={name}`, every page | `checks: read` |
+| Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
+
+The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. So the flow needs no new App permission, no maintainer credential, and no webhook.
+
+A malformed pull request in the list fails the whole list for that minute. A refused review fails the step, and Orbit retries it on the publication backoff. A refused merge is recorded as the task's merge result with GitHub's status and message. A server error or an unreachable GitHub leaves the merge result `waiting`.
+
+GitHub forbids an account to review its own pull request, and that includes the App. So Orbit submits reviews only on pull requests that a person opened. It never reviews a pull request it opened. The merge needs no review: the `sha` parameter makes GitHub refuse the merge when the head moved.
+
+An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
+
+## Find the newest green commit
+
+The Gateway can find the newest commit of a branch that may ship. This is the first step of an automatic release. The [automatic release runner](/reference/gateway-recovery#automatic-releases) asks once a minute while automatic releases are enabled. While it is up to date, it also reads the branch head at most every 15 minutes, with the installation, one `contents: read` token, and one commits page. The question names a repository, a branch, and a required check. For the Gateway itself these are `nckrtl/orbit`, `main`, and `Required checks`. The release history adds two inputs: the commit that is deployed now, and the commits that already failed a release.
+
+A commit qualifies when all of these hold. They are the same rules that [`bin/pr-head-check`](https://github.com/nckrtl/orbit/blob/main/bin/pr-head-check) applies to a pull request head.
+
+- At least one check run has exactly the required name.
+- Every such run has `head_sha` equal to the commit.
+- Every such run has completed with conclusion `success`. Any other state or conclusion fails this rule, including a queued or running run.
+- Every such run was created by GitHub Actions (`app.slug` is `github-actions`). Another App with `checks: write` could create a run with the same name. Its run never makes a commit green, and it disqualifies the commit.
+- The commit strictly descends from the deployed commit. The compare API must report `ahead`, with the deployed commit as the merge base.
+- The commit has not failed a release.
+
+A `behind`, `identical`, or `diverged` comparison never qualifies. So the Gateway never downgrades, and it never releases history that left the branch.
+
+The Gateway walks the branch from its head along first parents, newest first. It stops at the deployed commit. A commit of a merged side branch is never a candidate, even when its pull request checks passed. The first qualifying commit wins, so a newer commit whose checks still run does not hold back an older green one.
+
+A deployed commit is required. Without one, descent cannot be proven, so there is no answer. The first release of a target is deployed by hand.
+
+The deployed commit does not need to be among the listed commits. When it is older than the commits page or the 20 candidates, the walk still examines the newest candidates, and the compare proves descent for the first green one. When no candidate descends from the deployed commit, for example after a force push removed it from the branch, there is no answer. That lasts until an operator releases a commit of the branch, or the branch merges the deployed commit.
+
+GitHub runs CI only for the head of a push. A commit that was pushed together with a newer one has no `Required checks` run, so it never qualifies; the newer commit covers it. A `Required checks` run can also succeed while GitHub reports its workflow run as cancelled, when the cancellation came after the job finished. The check run decides.
+
+One answer costs these reads:
+
+| Read | Token | Bound |
+| --- | --- | --- |
+| `GET /repos/{owner}/{repo}/installation` | App JWT | Once |
+| `GET /repos/{owner}/{repo}/commits?sha=refs/heads/{branch}` | `contents: read` | One page of 100 commits |
+| `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?check_name={name}` | `checks: read`, minted only when a candidate needs it | Every page, at most 1,000 runs, for at most 20 candidates |
+| `GET /repos/{owner}/{repo}/compare/{deployed}...{sha}` | `contents: read` | Once, for the first green candidate |
+
+Each answer also mints one `contents: read` token, and one `checks: read` token when a candidate needs it. No new App permission is needed. When the deployed commit is the branch head, the answer needs only the installation, one token, and the commit list.
+
+The Gateway reads the branch through its full ref, so a tag with the same name is never read instead. When none of the 20 newest candidates qualifies, there is no answer until a newer commit turns green. Every failure fails closed: an App that is not registered or not installed, a refused token, an unknown commit, a check run list that changes or ends before its `total_count`, or a malformed record means no answer for that attempt.
 
 ## What the App does not cover
 
@@ -194,6 +253,10 @@ A login on each Node was rejected. Every Node needs its own login, and moving an
 ### Review reads do not need review authority
 
 The existing App grant can mint a token narrowed to `pull_requests: read`. Feedback needs no new App permission, maintainer credential, or public webhook. Numeric account trust and once-only repair belong to the [Tasks contract](/reference/tasks#trusted-reviews-are-input-not-merge-authority); the App merely supplies complete bounded source records. A write-scoped publishing token is not needed for review retrieval.
+
+### One App reviews and merges
+
+The App already publishes Orbit's task pull requests, so it reviews and merges with the grants it holds. The maintainer's GitHub CLI profile was rejected for this: it is a personal identity with admin bypass, so a merge through it skips the ruleset. The App is bound to the ruleset like any other actor. A second App with only review rights was rejected: it would add a registration, a private key, and an installation for each account, and it still could not approve Orbit's own pull requests.
 
 ### No webhooks
 

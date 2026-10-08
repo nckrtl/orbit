@@ -30,6 +30,8 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskQuestion;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Tests\Support\FakeTaskCheckRunner;
@@ -192,6 +194,41 @@ it('enables and disables the extension through empty JSON objects', function ():
         ->assertJsonPath('data.enabled', false);
 
     expect(app(TaskExtensionState::class)->enabled())->toBeFalse();
+});
+
+it('reports when the last tasks tick started its work on tasks status', function (): void {
+    tasks_gateway();
+    $this->travelTo(Carbon::parse('2026-10-07T06:00:00Z'));
+
+    $this->artisan('tasks:tick')->assertSuccessful();
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', null);
+
+    enable_tasks();
+    $this->artisan('tasks:tick')->assertSuccessful();
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
+
+    $this->travelTo(Carbon::parse('2026-10-07T06:00:10Z'));
+    $held = Cache::lock('orbit:tasks:tick', 300);
+    expect($held->get())->toBeTrue();
+    $this->artisan('tasks:tick')
+        ->expectsOutput('Another tasks tick is already running.')
+        ->assertSuccessful();
+    $held->release();
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
+
+    $this->artisan('tasks:tick')->assertSuccessful();
+    $this->postJson('/api/v1/extensions/tasks/disable')
+        ->assertOk()
+        ->assertJsonMissingPath('data.last_tick_at');
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:10.000000Z');
 });
 
 it('accepts notify_on_settle as the Commander alias for notify_coder', function (): void {
@@ -615,6 +652,7 @@ function tasks_cli_record(array $group): array
         $src = dirname(__DIR__, 5).'/packages/php-sdk/src/Responses/Tasks';
         require_once $src.'/TaskFields.php';
         require_once $src.'/SubtaskResponse.php';
+        require_once $src.'/TaskReviewAndMergeResponse.php';
         require_once $src.'/TaskGroupResponse.php';
         $loaded = true;
     }

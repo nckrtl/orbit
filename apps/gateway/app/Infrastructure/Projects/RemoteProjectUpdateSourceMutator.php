@@ -7,6 +7,7 @@ namespace App\Infrastructure\Projects;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\GitHub\GitReadEnvironment;
 use App\Domain\GitHub\RepositoryReadAccess;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Projects\ProjectUpdateSourceMutator;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -182,6 +183,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         $unique = [];
 
         foreach ($checkouts as $checkout) {
+            InstanceSandboxGuard::assertHostOperation($checkout);
             $unique[rtrim($checkout->checkout_path, '/')] = $checkout;
         }
 
@@ -197,6 +199,7 @@ final readonly class RemoteProjectUpdateSourceMutator implements ProjectUpdateSo
         string $errorCode,
         ?GitReadEnvironment $read = null,
     ): void {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name()).$script;
         $readScript = $read instanceof GitReadEnvironment
             ? GitReadScript::for($read, $script)

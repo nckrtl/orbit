@@ -18,7 +18,7 @@ use HardImpact\Librarian\Linting\Rules\SentenceCaseHeadingRule;
 use HardImpact\Librarian\Linting\Rules\TableProseComplexityRule;
 
 return [
-    'path' => base_path('../../docs'),
+    'path' => env('ORBIT_DOCS_ROOT', base_path('../../docs')),
 
     'generated_docs' => [
         'enforce' => false,

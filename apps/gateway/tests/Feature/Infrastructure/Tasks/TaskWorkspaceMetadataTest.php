@@ -6,6 +6,8 @@ use App\Infrastructure\Tasks\TaskWorkspaceMetadata;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 
+pest()->group('privileged');
+
 describe('TaskGitHardening', function (): void {
     it('loads trusted metadata IO without importing workspace Python programs', function (): void {
         $checkout = sys_get_temp_dir().'/orbit-metadata-import-'.bin2hex(random_bytes(6));

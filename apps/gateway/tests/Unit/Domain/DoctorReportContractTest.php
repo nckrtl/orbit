@@ -237,6 +237,9 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'node.agent_inactive',
             'node.agent_view_stale',
             'node.agent_secret_mismatch',
+            'node.release_lag',
+            'node.route_residue_retained',
+            'node.cli_foreign',
             'node.inspection_failed',
         ],
         'role' => [
@@ -249,6 +252,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.packages_missing',
             'role.caddy_version_unsupported',
             'role.caddy_build_drift',
+            'role.php_pool_directory_missing',
             'role.services_inactive',
             'role.firewall_projection_mismatch',
             'role.vpn_inactive',

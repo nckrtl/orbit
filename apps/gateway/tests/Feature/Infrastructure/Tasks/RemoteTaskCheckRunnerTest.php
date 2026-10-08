@@ -2,14 +2,24 @@
 
 declare(strict_types=1);
 
+use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Projects\TiaBaselineSource;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
+use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableEvidence;
 use App\Domain\Tasks\TaskDeliverableVerifier;
+use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tools\SemverVersionNormalizer;
+use App\Domain\Tools\ToolManagerException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -17,14 +27,24 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
+use App\Infrastructure\Tools\RemoteToolCommandRunner;
+use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Task;
+use App\Models\TaskCheck;
 use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 use Tests\Support\AppDevFakeSshExecutor;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\TiaBaselineTestSource;
+
+pest()->group('privileged');
 
 function check_runner_checkout(string $check): string
 {
@@ -46,9 +66,26 @@ function check_runner_instance(string $checkout): Instance
     return Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-8', 'checkout_path' => $checkout, 'branch' => 'task-8', 'status' => 'source_resolved']);
 }
 
-function check_runner(SshExecutor $transport): RemoteTaskCheckRunner
+function check_runner(SshExecutor $transport, string $vpHome = '/opt/orbit/vite-plus', ?SshExecutor $probe = null): RemoteTaskCheckRunner
 {
-    return new RemoteTaskCheckRunner(new DevelopmentSshExecutor(
+    $vp = new VpToolManager(
+        new RemoteToolCommandRunner(
+            $probe ?? new class($vpHome) implements SshExecutor
+            {
+                public function __construct(private string $home) {}
+
+                public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+                {
+                    return new CommandResult(0, $this->home."/bin/vp\n", '', 1, false);
+                }
+            },
+            app(SshKeyProvider::class),
+            app(KnownHostsStore::class),
+        ),
+        new SemverVersionNormalizer,
+    );
+
+    return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -71,7 +108,7 @@ function check_runner(SshExecutor $transport): RemoteTaskCheckRunner
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)), $vp, app(TiaBaselineSetup::class));
 }
 
 function check_runner_wait(RemoteTaskCheckRunner $runner, Instance $instance, TaskCheckProcess $process): TaskCheckReading
@@ -119,6 +156,145 @@ function check_runner_as_worker(string $directory, string $command): int
     return (new Process(['sudo', '-n', '-u', 'nobody', '--', 'bash', '-c', $command], $directory))->run();
 }
 
+it('normalizes VP_HOME probe failures without launching a check', function (int $exit, bool $truncated, string $stdout): void {
+    $instance = check_runner_instance('/fast/apps/shop/task-8');
+    $probe = new AppDevFakeSshExecutor([new CommandResult($exit, $stdout, '', 1, $truncated)]);
+    $transport = new AppDevFakeSshExecutor;
+    $runner = check_runner($transport, probe: $probe);
+
+    expect(fn () => $runner->start($instance, 'true'))->toThrow(function (TaskCheckException $exception): void {
+        expect($exception->getPrevious())->toBeInstanceOf(ToolManagerException::class);
+        expect($exception->getMessage())->toBe('The task workspace could not be reached for the check.');
+    });
+    expect($transport->commands)->toBeEmpty();
+    expect($probe->commands)->toHaveCount(1);
+})->with([
+    'absent' => [42, false, ''],
+    'conflict' => [43, false, ''],
+    'failed' => [1, false, ''],
+    'truncated' => [0, true, "/opt/orbit/vite-plus/bin/vp\n"],
+    'malformed' => [0, false, '/tmp/untrusted/vp'],
+]);
+
+it('releases the unstarted baseline reservation and retries after a VP_HOME probe timeout', function (): void {
+    test_bind_snapshot_driver();
+    $instance = check_runner_instance('/fast/apps/shop/task-8');
+    $group = Task::topLevel()->create([
+        'project_id' => $instance->project_id, 'title' => 'Probe timeout', 'brief' => 'Retry baseline',
+        'status' => TaskGroupStatus::Running, 'implementer_agent_driver' => 'pi', 'reviewer_agent_driver' => 'pi',
+    ]);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $task = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'First', 'brief' => 'First subtask', 'status' => TaskStatus::Running,
+    ]);
+    $timeout = new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL);
+    $probe = new class($timeout) implements SshExecutor
+    {
+        public int $calls = 0;
+
+        public function __construct(private ProcessTimedOutException $timeout) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            expect(TaskCheck::query()->sole()->pid)->toBe(0);
+            if (++$this->calls === 1) {
+                throw $this->timeout;
+            }
+
+            return new CommandResult(0, "/opt/orbit/vite-plus/bin/vp\n", '', 1, false);
+        }
+    };
+    $transport = new AppDevFakeSshExecutor([
+        new CommandResult(0, '{"pid":4100,"started":"started","head":"abc","tree":"def"}', '', 1, false),
+    ]);
+    app()->instance(TaskCheckRunner::class, check_runner($transport, probe: $probe));
+
+    test_pass_baseline();
+
+    expect(TaskCheck::query()->count())->toBe(0);
+    expect($transport->commands)->toBeEmpty();
+    expect($task->fresh()->communication_failures)->toBe(1);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+
+    test_pass_baseline();
+
+    expect(TaskCheck::query()->sole()->pid)->toBe(4100);
+    expect($probe->calls)->toBe(2);
+    expect($transport->commands)->toHaveCount(1);
+    expect($task->fresh()->communication_failures)->toBe(0);
+    expect($group->fresh()->assistance_requested)->toBeFalse();
+});
+
+it('normalizes thrown failures only during the known unstarted VP_HOME probe', function (string $failure): void {
+    $instance = check_runner_instance('/fast/apps/shop/task-8');
+    $exception = $failure === 'timeout'
+        ? new ProcessTimedOutException(new Process(['ssh', 'probe']), ProcessTimedOutException::TYPE_GENERAL)
+        : new RuntimeException('SSH transport failed');
+    $failing = new class($exception) implements SshExecutor
+    {
+        public function __construct(private Throwable $exception) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            throw $this->exception;
+        }
+    };
+    $transport = new AppDevFakeSshExecutor;
+
+    expect(fn () => check_runner($transport, probe: $failing)->start($instance, 'true'))
+        ->toThrow(function (TaskCheckException $normalized) use ($exception): void {
+            expect($normalized->getPrevious())->toBe($exception);
+        });
+    expect($transport->commands)->toBeEmpty();
+
+    $runner = check_runner($failing);
+    $process = new TaskCheckProcess(4100, 'started', 'abc', 'def');
+    foreach ([fn () => $runner->start($instance, 'true'), fn () => $runner->read($instance, $process), fn () => $runner->cancel($instance, $process), fn () => $runner->snapshot($instance)] as $operation) {
+        try {
+            $operation();
+            $this->fail('The remote transport failure must escape unchanged.');
+        } catch (Throwable $unchanged) {
+            expect($unchanged)->toBe($exception);
+        }
+    }
+})->with(['timeout', 'transport failure']);
+
+it('polls and cancels independently of VP_HOME probe availability', function (): void {
+    $instance = check_runner_instance('/fast/apps/shop/task-8');
+    $probe = new AppDevFakeSshExecutor([new CommandResult(42, '', '', 1, false)]);
+    $transport = new AppDevFakeSshExecutor([
+        new CommandResult(0, '{"state":"running"}', '', 1, false),
+        new CommandResult(0, '{}', '', 1, false),
+        new CommandResult(0, '{"head":"abc","tree":"def"}', '', 1, false),
+    ]);
+    $runner = check_runner($transport, probe: $probe);
+    $process = new TaskCheckProcess(4100, 'started', 'abc', 'def');
+
+    expect($runner->read($instance, $process)->state)->toBe('running');
+    $runner->cancel($instance, $process);
+    expect($runner->snapshot($instance)->head)->toBe('abc');
+    expect($probe->commands)->toBeEmpty();
+    expect($transport->commands)->toHaveCount(3);
+});
+
+it('exports resolved VP_HOME to non-login task setup and check processes', function (string $home): void {
+    $checkout = check_runner_checkout('true');
+    File::ensureDirectoryExists($checkout.'/node_modules/.bin');
+    file_put_contents($checkout.'/node_modules/.bin/vp', "#!/bin/sh\nprintf '%s' \"\$VP_HOME\" > \"\$1\"\n");
+    chmod($checkout.'/node_modules/.bin/vp', 0755);
+    $runner = check_runner(new LocalShellSshExecutor, $home);
+    $instance = check_runner_instance($checkout);
+    $process = $runner->start($instance, 'bash -eu -c \'./node_modules/.bin/vp check-home\'', [
+        ['name' => 'VP_HOME setup', 'command' => 'bash -eu -c \'./node_modules/.bin/vp setup-home\'', 'timeout_seconds' => 10],
+    ]);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->exitCode)->toBe(0);
+    expect(file_get_contents($checkout.'/setup-home'))->toBe($home);
+    expect(file_get_contents($checkout.'/check-home'))->toBe($home);
+})->with(['/opt/orbit/vite-plus', '/home/orbit/.local/share/vite-plus', '/home/orbit/.vite-plus']);
+
 describe('TaskCheckWorkerUser', function (): void {
     it('isolates workspace TMPDIR when another Unix user owns a restrictive prior shared cache', function (): void {
         config()->set('orbit.tasks.worker_user', 'nobody');
@@ -129,8 +305,8 @@ describe('TaskCheckWorkerUser', function (): void {
         (new Process(['setfacl', '-m', 'u:nobody:rwx', $shared]))->mustRun();
         // mkdir -m alone preserves named-user ACLs inherited from the shared parent.
         expect(check_runner_as_worker($shared, 'mkdir phpstan && setfacl -b -k phpstan && chmod 0700 phpstan'))->toBe(0);
-        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result"';
-        expect((new Process(['bash', '-c', $analyse], null, ['TMPDIR' => $shared]))->run())->not->toBe(0);
+        $analyse = 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result" && cp "$TMPDIR/phpstan/result" phpstan-result && getfacl -cp "$TMPDIR" > tmp-acl && printf %s "$TMPDIR" > tmpdir-path';
+        expect((new Process(['bash', '-c', 'mkdir -p "$TMPDIR/phpstan" && printf analysed > "$TMPDIR/phpstan/result"'], null, ['TMPDIR' => $shared]))->run())->not->toBe(0);
         $prior = getenv('TMPDIR');
         $priorServer = $_SERVER['TMPDIR'] ?? null;
         $priorEnvironment = $_ENV['TMPDIR'] ?? null;
@@ -145,10 +321,11 @@ describe('TaskCheckWorkerUser', function (): void {
             ]));
 
             expect($reading->exitCode)->toBe(0);
-            $temporary = $checkout.'/.git/orbit/tmp/check-'.posix_geteuid();
-            expect(file_get_contents($temporary.'/phpstan/result'))->toBe('analysed');
-            $permissions = (new Process(['getfacl', '-cp', $temporary]))->mustRun()->getOutput();
-            expect($permissions)->not->toContain('default:')->not->toContain('user:nobody:');
+            $temporary = file_get_contents($checkout.'/tmpdir-path');
+            expect($temporary)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-');
+            expect(file_get_contents($checkout.'/phpstan-result'))->toBe('analysed');
+            expect(file_get_contents($checkout.'/tmp-acl'))->not->toContain('default:')->not->toContain('user:nobody:');
+            expect(is_dir($temporary))->toBeFalse();
             expect(fileowner($shared.'/phpstan'))->toBe(posix_getpwnam('nobody')['uid']);
         } finally {
             putenv($prior === false ? 'TMPDIR' : 'TMPDIR='.$prior);
@@ -603,6 +780,40 @@ it('runs setup steps in order before composer check, and records the tree after 
         ->and($reading->changedPaths)->toBe([]);
 });
 
+it('runs setup payloads larger than the operating system argument limit', function (): void {
+    $checkout = check_runner_checkout('test -f ignored/baseline && echo checked');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $payload = str_repeat('x', 512 * 1024);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+        ['name' => 'Restore baseline', 'command' => "mkdir -p ignored; cat > ignored/baseline <<'BASELINE'\n".$payload."\nBASELINE\nprintf '%s' \"\$0\" > ignored/setup-script\n", 'timeout_seconds' => 10],
+    ]));
+
+    expect($reading->exitCode)->toBe(0)
+        ->and($reading->failedStep)->toBeNull()
+        ->and(file_get_contents($checkout.'/ignored/baseline'))->toBe($payload."\n")
+        ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
+        ->and($reading->output)->toContain('checked');
+});
+
+it('removes setup scripts after failure or timeout and skips later work', function (string $command, int $exit): void {
+    $checkout = check_runner_checkout('touch check-ran');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+
+    $reading = check_runner_wait($runner, $instance, $runner->start($instance, 'composer check', [
+        ['name' => 'Stop', 'command' => 'mkdir -p ignored; printf "%s" "$0" > ignored/setup-script; '.$command, 'timeout_seconds' => 1],
+        ['name' => 'Never', 'command' => 'touch never-ran', 'timeout_seconds' => 10],
+    ]));
+
+    expect($reading->exitCode)->toBe($exit)
+        ->and($reading->failedStep)->toBe('Stop')
+        ->and(file_exists(file_get_contents($checkout.'/ignored/setup-script')))->toBeFalse()
+        ->and(file_exists($checkout.'/never-ran'))->toBeFalse()
+        ->and(file_exists($checkout.'/check-ran'))->toBeFalse();
+})->with(['failure' => ['exit 5', 5], 'timeout' => ['sleep 10', 124]]);
+
 it('stops at the first failing setup step without running composer check', function (): void {
     $checkout = check_runner_checkout('echo checked');
     $instance = check_runner_instance($checkout);
@@ -973,3 +1184,46 @@ it('runs no project command when start and run omit the command file, and still 
         ->and(is_file($checkout.'/composer-check-ran'))->toBeFalse()
         ->and(is_file($checkout.'/deliverable-ran'))->toBeTrue();
 });
+
+it('restores the builtin TIA baseline after dependency setup before a task check', function (): void {
+    app()->instance(TiaBaselineSource::class, new TiaBaselineTestSource);
+    $checkout = check_runner_checkout('true');
+    $target = $checkout.'/.pest/tia';
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $setup = [
+        ['name' => 'dependencies', 'command' => 'mkdir -p vendor/bin; printf %s '.escapeshellarg('<?php echo '.var_export($target."\n", true).';').' > vendor/bin/pest', 'timeout_seconds' => 10],
+        ['name' => 'baseline', 'command' => LifecycleStep::RestoreTiaBaseline, 'timeout_seconds' => 30],
+    ];
+    $process = $runner->start($instance, 'test -f .pest/tia/graph.json', $setup);
+    $reading = check_runner_wait($runner, $instance, $process);
+    expect($reading->state)->toBe('finished')->and($reading->exitCode)->toBe(0);
+    expect(file_get_contents($target.'/graph.json'))->toContain(str_repeat('a', 40));
+});
+
+it('passes the handoff test base only to a scoped project check', function (bool $scoped): void {
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $base = trim((new Process(['git', 'rev-parse', 'HEAD'], $checkout))->mustRun()->getOutput());
+    $command = $scoped ? 'test "$ORBIT_TASK_CHECK_BASE" = '.escapeshellarg($base) : 'test -z "${ORBIT_TASK_CHECK_BASE+set}"';
+    $deliverables = $scoped ? ['start' => $base, 'commands' => [], 'test_base' => $base] : null;
+
+    $process = $runner->start($instance, $command, deliverables: $deliverables);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->exitCode)->toBe(0);
+})->with([true, false]);
+
+it('selects shared feedback only when the check has a worker account', function (bool $shared): void {
+    config(['orbit.tasks.worker_user' => $shared ? 'nobody' : null]);
+    $checkout = check_runner_checkout('true');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $command = $shared ? 'test "$ORBIT_TASK_FEEDBACK" = shared' : 'test -z "${ORBIT_TASK_FEEDBACK+set}"';
+
+    $process = $runner->start($instance, $command);
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($reading->exitCode)->toBe(0);
+})->with([true, false]);

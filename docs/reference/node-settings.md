@@ -53,6 +53,7 @@ The Gateway checks the path before it stores it. A path must:
 - be absolute and normalized: not `/`, with no trailing or repeated `/`, no `.` or `..` part, and no control character;
 - not be the managed user's home or an ancestor of it;
 - not overlap `/boot`, `/dev`, `/etc`, `/proc`, `/run`, `/sys`, `/usr`, `/opt/orbit`, `/var/lib/orbit`, `/var/www`, or the Gateway checkout;
+- not overlap the Gateway [release layout](/reference/gateway-recovery#release-layout): its current link, `releases`, and `shared` directories;
 - not be inside a hidden directory of the managed user's home; and
 - not equal, or lie inside, an existing Instance checkout on the Node.
 

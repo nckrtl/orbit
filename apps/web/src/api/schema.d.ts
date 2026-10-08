@@ -328,6 +328,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/compute/github-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Renew sandbox repository access
+         * @description Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.
+         */
+        post: operations["compute-github-token"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/database-connections": {
         parameters: {
             query?: never;
@@ -652,6 +672,230 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fleet/rollout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * fleet:rollout:status
+         * @description Show the newest fleet rollout, each Node's result, and the Nodes it leaves out.
+         */
+        get: operations["fleet-rollout-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fleet/rollout/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * fleet:rollout:resume
+         * @description Resume the halted fleet rollout. The Gateway runs it in orbit-fleet-converge.service.
+         */
+        post: operations["fleet-rollout-resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/desired-fleet-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show the desired fleet state
+         * @description Returns what every machine in the fleet should run for the Gateway's commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.
+         */
+        get: operations["gateway-desired-fleet-state"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-automation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * gateway:release:auto:status
+         * @description Shows whether automatic Gateway releases are enabled or paused, the current release, the last runner tick, and how long releases have made no progress. See /reference/gateway-recovery#automatic-releases.
+         */
+        get: operations["gateway-release-auto-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-automation/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:auto:disable
+         * @description Turns automatic Gateway releases off. A release that already runs finishes.
+         */
+        post: operations["gateway-release-auto-disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-automation/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:auto:enable
+         * @description Turns automatic Gateway releases on. A pause still holds them until `gateway:release:auto:resume`.
+         */
+        post: operations["gateway-release-auto-enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-automation/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:auto:resume
+         * @description Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.
+         */
+        post: operations["gateway-release-auto-resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-smoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:smoke
+         * @description Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request's command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.
+         */
+        post: operations["gateway-release-smoke"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * gateway:release:list
+         * @description Lists the 50 newest Gateway release records, newest first, including queued and running ones.
+         */
+        get: operations["gateway-release-list"];
+        put?: never;
+        /**
+         * gateway:release:deploy
+         * @description Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.
+         */
+        post: operations["gateway-release-deploy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/releases/{release}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * gateway:release:show
+         * @description Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.
+         */
+        get: operations["gateway-release-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/releases/{release}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:rollback
+         * @description Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.
+         */
+        post: operations["gateway-release-rollback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -661,7 +905,7 @@ export interface paths {
         };
         /**
          * Show Gateway status
-         * @description Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.
+         * @description Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.
          */
         get: operations["gateway-status"];
         put?: never;
@@ -1583,6 +1827,26 @@ export interface paths {
          * @description Remove a node registered with the active gateway.
          */
         delete: operations["node-remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node}/converge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * node:converge
+         * @description Re-apply the Gateway-rendered Orbit footprint of a Node. It never changes an Instance or a role.
+         */
+        post: operations["node-converge"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3148,7 +3412,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a Task group
-         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.
+         * @description Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.
          */
         post: operations["tasks-cancel"];
         delete?: never;
@@ -3168,7 +3432,7 @@ export interface paths {
         put?: never;
         /**
          * Complete a Task group
-         * @description Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.
+         * @description Completes a settling Task group or a VM group waiting for review without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.
          */
         post: operations["tasks-complete"];
         delete?: never;
@@ -3216,7 +3480,7 @@ export interface paths {
         head?: never;
         /**
          * Update a subtask
-         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
+         * @description Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.
          */
         patch: operations["tasks-subtask-update"];
         trace?: never;
@@ -3232,7 +3496,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel a todo or running subtask
-         * @description Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.
+         * @description Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.
          */
         post: operations["tasks-subtask-cancel"];
         delete?: never;
@@ -3608,12 +3872,114 @@ export interface components {
             failed_step?: string | null;
             error_code?: string | null;
         };
+        DesiredFleetState: {
+            commit?: string | null;
+            cli?: components["schemas"]["DesiredCliRelease"];
+            agent?: components["schemas"]["DesiredAgent"];
+        };
+        DesiredCliRelease: {
+            /** @enum {string} */
+            status?: "available" | "pending" | "unavailable";
+            /** @enum {string|null} */
+            reason?: "gateway_commit_unknown" | "history_unavailable" | "release_missing" | "release_mismatch" | "release_incomplete" | "github_unavailable" | null;
+            version?: string | null;
+            tag?: string | null;
+            checksums_url?: string | null;
+            assets?: components["schemas"]["FleetReleaseAsset"][];
+        };
+        FleetReleaseAsset: {
+            platform?: string;
+            name?: string;
+            url?: string;
+            sha256?: string;
+        };
+        DesiredAgent: {
+            version?: string;
+            assets?: components["schemas"]["FleetReleaseAsset"][];
+        };
+        GatewayReleaseAutomation: {
+            enabled?: boolean;
+            paused?: boolean;
+            pause?: components["schemas"]["GatewayReleasePause"] | null;
+            current_release?: string | null;
+            current_sha?: string | null;
+            last_tick?: components["schemas"]["GatewayReleaseTick"] | null;
+            stalled_since?: string | null;
+            branch_head?: string | null;
+            behind_since?: string | null;
+            branch?: string;
+            check?: string;
+            tick_confirmation?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        GatewayReleasePause: {
+            reason?: string;
+            since?: string | null;
+            record?: number | null;
+            release?: string | null;
+            sha?: string | null;
+            error_code?: string | null;
+            snapshot?: string | null;
+        };
+        GatewayReleaseTick: {
+            checked_at?: string;
+            result?: string;
+            sha?: string | null;
+            record?: number | null;
+            error_code?: string | null;
+            message?: string | null;
+        };
+        GatewayReleaseSmoke: {
+            release?: string | null;
+            sha?: string;
+            outcome?: string;
+            report?: {
+                [key: string]: unknown;
+            } | null;
+        };
+        GatewayRelease: {
+            id?: number;
+            release?: string | null;
+            sha?: string | null;
+            requested?: string | null;
+            trigger?: string;
+            force?: boolean;
+            outcome?: string;
+            finished?: boolean;
+            migrations_ran?: boolean;
+            retryable?: boolean;
+            cleanup_paused?: boolean;
+            snapshot?: string | null;
+            previous?: string | null;
+            phases?: {
+                [key: string]: unknown;
+            };
+            error_code?: string | null;
+            message?: string | null;
+            duration_ms?: number;
+            alert?: {
+                [key: string]: unknown;
+            } | null;
+            created_at?: string | null;
+            updated_at?: string | null;
+        };
         GatewayStatus: {
             name?: string;
             status?: string;
             version?: string;
             php_version?: string;
             laravel_version?: string;
+            desired_fleet_state?: components["schemas"]["DesiredFleetState"] | null;
+            release?: string | null;
+            release_sha?: string | null;
+            auto_release?: components["schemas"]["GatewayAutoReleaseStatus"] | null;
+        };
+        GatewayAutoReleaseStatus: {
+            enabled?: boolean;
+            paused?: boolean;
+            last_checked_at?: string | null;
+            last_result?: string | null;
         };
         Instance: {
             id?: number;
@@ -3650,7 +4016,7 @@ export interface components {
             name?: string;
             slug?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+            type?: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
         };
         NodeIdentity: {
             id?: number;
@@ -3736,7 +4102,7 @@ export interface components {
             slug?: string;
             code?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+            type?: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
             repository_url?: string;
             /** @enum {string} */
             source_access?: "github_app" | "gh_cli";
@@ -3744,6 +4110,10 @@ export interface components {
             root?: string | null;
             task_check?: string | null;
             task_workspace_routed?: boolean;
+            /** @enum {string} */
+            task_compute?: "shared" | "vm";
+            review_and_merge?: boolean;
+            merge_check?: string | null;
         };
         Annotation: {
             id?: string;
@@ -3859,12 +4229,20 @@ export interface components {
             error_code?: string | null;
             roles?: string[];
             settings?: components["schemas"]["NodeSettings"] | null;
+            updating?: components["schemas"]["NodeUpdating"] | null;
         };
         NodeSettings: {
             apps?: components["schemas"]["NodeStorageApps"] | null;
         };
         NodeStorageApps: {
             path?: string | null;
+        };
+        NodeUpdating: {
+            /** @enum {string} */
+            kind?: "fleet_rollout" | "gateway_release";
+            since?: string;
+            rollout?: number | null;
+            release?: number | null;
         };
         NodeAccess: {
             can_access?: components["schemas"]["NodeAccessNode"][];
@@ -4057,6 +4435,35 @@ export interface components {
             id?: string;
             provider?: string;
         };
+        RemovedRoute: {
+            id?: number;
+            kind?: string;
+            project_id?: number | null;
+            node_id?: number | null;
+            cluster_id?: number | null;
+            generation_basis_node_id?: number | null;
+            domain?: string;
+            provenance?: string;
+            publication?: string;
+            status?: string;
+            failed_step?: string | null;
+            error_code?: string | null;
+            replaces_route_id?: number | null;
+            replaced_by_route_id?: number | null;
+            replacement_step?: string | null;
+            target_set_step?: string | null;
+            target?: components["schemas"]["RouteTarget"] | null;
+            targets?: components["schemas"]["RouteTarget"][];
+            process_id?: number | null;
+            upstream?: string | null;
+            analytics_instance_id?: number | null;
+            retained_on_nodes?: components["schemas"]["RouteRemovalResidue"][];
+        };
+        RouteRemovalResidue: {
+            node_id?: number;
+            node?: string;
+            steps?: string[];
+        };
         Schedule: {
             id?: string;
             target_type?: string;
@@ -4086,7 +4493,7 @@ export interface components {
             title?: string;
             brief?: string;
             /** @enum {string} */
-            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
             reviewer_agent_thread_id?: number | null;
             pr_url?: string | null;
             watched_pr_url?: string | null;
@@ -4110,6 +4517,13 @@ export interface components {
             tasks?: components["schemas"]["Task"][];
             /** @enum {string} */
             execution_mode?: "managed" | "existing_thread";
+            /** @enum {string|null} */
+            task_compute?: "shared" | "vm" | null;
+            capacity_wait_reason?: string | null;
+            /** @enum {string|null} */
+            sandbox_power?: "running" | "stopped" | "destroyed" | null;
+            preview?: boolean;
+            review_and_merge?: components["schemas"]["TaskReviewAndMerge"] | null;
         };
         Task: {
             id?: number;
@@ -4118,6 +4532,7 @@ export interface components {
             title?: string;
             brief?: string;
             deliverables?: Record<string, never>[];
+            topology?: string[];
             /** @enum {string} */
             status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
             implementer_agent_thread_id?: number | null;
@@ -4129,7 +4544,7 @@ export interface components {
             questions?: number;
             escalations?: number;
             /** @enum {string} */
-            type?: "implementation" | "annotation";
+            type?: "implementation" | "annotation" | "final_review";
             target_thread_id?: string | null;
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
@@ -4152,6 +4567,24 @@ export interface components {
             changed_paths?: string[];
             failed_step?: string | null;
             output?: string | null;
+        };
+        TaskReviewAndMerge: {
+            enabled?: boolean;
+            pr_branch?: string | null;
+            /** @enum {string|null} */
+            merge_status?: "waiting" | "refused" | "merged" | null;
+            merge_reason?: string | null;
+            merged_sha?: string | null;
+            reviewed_commits?: components["schemas"]["TaskReviewedCommit"][];
+        };
+        TaskReviewedCommit: {
+            sha?: string;
+            /** @enum {string} */
+            source?: "orbit_push" | "pull_request_review";
+            review_task_id?: number | null;
+            pushed_at?: string | null;
+            github_review_id?: number | null;
+            recorded_at?: string;
         };
         AgentThread: {
             id?: number;
@@ -4217,6 +4650,8 @@ export interface components {
         TasksStatus: {
             enabled?: boolean;
             assistance?: components["schemas"]["TaskAssistance"][];
+            last_tick_at?: string | null;
+            merges?: components["schemas"]["TaskMerge"][];
         };
         TaskAssistance: {
             id?: number;
@@ -4225,11 +4660,25 @@ export interface components {
             project_code?: string;
             title?: string;
             /** @enum {string} */
-            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
             /** @enum {string|null} */
             assistance_kind?: "direction" | "failure" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
+        };
+        TaskMerge: {
+            id?: number;
+            project_id?: number;
+            project?: string;
+            project_code?: string;
+            title?: string;
+            /** @enum {string} */
+            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
+            pr_url?: string | null;
+            pr_branch?: string | null;
+            /** @enum {string|null} */
+            merge_status?: "waiting" | "refused" | "merged" | null;
+            merge_reason?: string | null;
         };
         ToolInventory: {
             node_id?: number;
@@ -5408,6 +5857,48 @@ export interface operations {
             };
         };
     };
+    "compute-github-token": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Fresh access scoped to the Project repository. */
+            200: {
+                headers: {
+                    "Cache-Control"?: "no-store, private";
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        /** @description Temporary installation token. Never persist or log it. */
+                        token: string;
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Temporary repository access could not be issued (`compute.github_unavailable`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "database-list": {
         parameters: {
             query?: never;
@@ -6549,6 +7040,568 @@ export interface operations {
             };
             /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "fleet-rollout-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "fleet-rollout-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Node ID or name to leave out of this rollout, usually the Node it halted on */
+                    skip?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-desired-fleet-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["DesiredFleetState"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-smoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release */
+                    commit?: string | null;
+                    /** @description Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it */
+                    since?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseSmoke"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`). */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Hex SHA of the commit to release, 7 to 40 characters */
+                    commit: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The release record is queued and its unit started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Switch the code across a migration the target release does not have */
+                    force?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The release record is queued and its unit started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10231,6 +11284,75 @@ export interface operations {
             };
         };
     };
+    "node-converge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Node ID. */
+                node: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Re-apply every artifact, not only the ones whose digest changed */
+                    force?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "node-excluded-project-list": {
         parameters: {
             query?: never;
@@ -12205,10 +13327,10 @@ export interface operations {
                     /** @description Unique project slug */
                     slug: string;
                     /**
-                     * @description Project type (monorepo, laravel-app, laravel-package, or node-package)
+                     * @description Project type (monorepo, laravel-app, symfony-app, laravel-package, or node-package)
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    type: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     /**
                      * @description How Orbit reads a private github.com repository: github_app (default) or gh_cli
@@ -12223,6 +13345,11 @@ export interface operations {
                     task_check?: string | null;
                     /** @description Whether new task workspaces get a Route (true or false) */
                     task_workspace_routed?: boolean;
+                    /**
+                     * @description Compute for future task groups (shared or vm)
+                     * @enum {string}
+                     */
+                    task_compute?: "shared" | "vm";
                 };
             };
         };
@@ -12397,7 +13524,7 @@ export interface operations {
                      * @description New Project type
                      * @enum {string}
                      */
-                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    type?: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
                     /** @description New Project slug */
                     slug?: string;
                     repository_url?: string;
@@ -12414,6 +13541,15 @@ export interface operations {
                     task_check?: string | null;
                     /** @description Change routing for future task workspaces (true or false) */
                     task_workspace_routed?: boolean;
+                    /**
+                     * @description Compute for future task groups (shared or vm)
+                     * @enum {string}
+                     */
+                    task_compute?: "shared" | "vm";
+                    /** @description Review every push, review incoming pull requests, and merge reviewed green heads (true or false) */
+                    review_and_merge?: boolean;
+                    /** @description The check that must pass on a head before Orbit merges it, such as "Required checks" */
+                    merge_check?: string | null;
                 };
             };
         };
@@ -16034,7 +17170,10 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Remove the Route without changing a Node the Gateway cannot reach */
+                    offline?: boolean;
+                };
             };
         };
         responses: {
@@ -16045,7 +17184,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Route"];
+                        data: components["schemas"]["RemovedRoute"];
                         meta: components["schemas"]["Meta"];
                     };
                 };
@@ -16844,7 +17983,7 @@ export interface operations {
             query?: {
                 compact?: boolean;
                 project_id?: number;
-                status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
+                status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
             };
             header?: never;
             path?: never;
@@ -16904,12 +18043,15 @@ export interface operations {
                      * @enum {string}
                      */
                     status?: "backlog" | "todo";
+                    /** @description Keep the sandbox running during review */
+                    preview?: boolean;
                     /** @description Post the Coder settle webhook when the group settles */
                     notify_coder?: boolean;
                     notify_on_settle?: boolean;
                     tasks?: {
                         title: string;
                         brief: string;
+                        topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
                         deliverables?: {
                             id: string;
                             /** @enum {string} */
@@ -17054,6 +18196,8 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": {
+                    /** @description Keep the sandbox running during review */
+                    preview?: boolean;
                     /** @description New title */
                     title?: string;
                     /** @description New brief */
@@ -17252,7 +18396,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description The tasks extension is disabled (`extension.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`). A disabled extension returns HTTP 409 (`extension.disabled`). */
+            /** @description The tasks extension is disabled (`extension.disabled`), or the Task group is completed or in settling or waiting_for_review with a pull request (`tasks.not_cancellable`). A disabled extension returns HTTP 409 (`extension.disabled`). */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -17373,6 +18517,8 @@ export interface operations {
                     title: string;
                     /** @description Goal and acceptance of the step */
                     brief: string;
+                    /** @description JSON array of required workload nodes; [] removes declarations */
+                    topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
                     /** @description JSON file with an array of typed deliverables for the step */
                     deliverables?: {
                         id: string;
@@ -17545,6 +18691,8 @@ export interface operations {
                     brief?: string;
                     /** @description New position, starting at 1 */
                     position?: number;
+                    /** @description JSON array of required workload nodes; [] removes declarations */
+                    topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
                     /** @description JSON file with an array of typed deliverables that replaces the list */
                     deliverables?: {
                         id: string;

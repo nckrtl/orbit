@@ -16,7 +16,10 @@
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null,
-                "task_workspace_routed": true
+                "task_workspace_routed": true,
+                "task_compute": "shared",
+                "review_and_merge": false,
+                "merge_check": null
             },
             {
                 "id": 2,
@@ -29,7 +32,10 @@
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null,
-                "task_workspace_routed": true
+                "task_workspace_routed": true,
+                "task_compute": "shared",
+                "review_and_merge": false,
+                "merge_check": null
             },
             {
                 "id": 3,
@@ -42,7 +48,10 @@
                 "default_branch": "release",
                 "root": "web/public",
                 "task_check": null,
-                "task_workspace_routed": true
+                "task_workspace_routed": true,
+                "task_compute": "shared",
+                "review_and_merge": false,
+                "merge_check": null
             },
             {
                 "id": 4,
@@ -55,7 +64,10 @@
                 "default_branch": "main",
                 "root": "public",
                 "task_check": null,
-                "task_workspace_routed": true
+                "task_workspace_routed": true,
+                "task_compute": "shared",
+                "review_and_merge": false,
+                "merge_check": null
             }
         ],
         "meta": {

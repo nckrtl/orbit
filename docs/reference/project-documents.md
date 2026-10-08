@@ -82,6 +82,8 @@ The Gateway database owns entry hierarchy, names, revisions, version records, ar
 
 Configure an existing dedicated private bucket, for example `project-documents-example` at `https://s3.example.test`. These are placeholders, not a live destination. There is one configuration per Gateway, not a bucket or credential per Project. Orbit does not provision buckets, change ACLs, or create credentials.
 
+Privacy comes from the private bucket and IAM policy, not per-object ACLs. Document body writes, writes through the dedicated documents disk, and the storage probe send no object `ACL` parameter or `x-amz-acl` header. The documents disk removes Flysystem's default upload ACL before the SDK serializes and signs the request. These uploads do not require PutObjectAcl permission.
+
 The Gateway uses HTTPS, Signature Version 4, and path-style bucket addressing. The configuration field `region` is the S3 signing-region input to the client. Use the signing region from the provider's S3 connection details, not its service region or zone.
 
 The credential must allow GetObject, PutObject, DeleteObject, and listing only this dedicated bucket. Object keys include generated Project/entry IDs and a fresh random token per upload intent, never user names or input paths. Restoring an older database must not reuse an existing object's key even if numeric IDs repeat. Bodies are immutable objects; renaming an entry does not move them. Provider bucket versioning is not the Orbit version history.

@@ -16,6 +16,10 @@ use App\Http\Controllers\Api\DoctorRunsController;
 use App\Http\Controllers\Api\ExtensionsController;
 use App\Http\Controllers\Api\FirewallRulesController;
 use App\Http\Controllers\Api\FleetFirewallRulesController;
+use App\Http\Controllers\Api\FleetRolloutsController;
+use App\Http\Controllers\Api\GatewayDesiredFleetStatesController;
+use App\Http\Controllers\Api\GatewayReleaseAutomationController;
+use App\Http\Controllers\Api\GatewayReleasesController;
 use App\Http\Controllers\Api\GatewayStatusesController;
 use App\Http\Controllers\Api\GitHubAppController;
 use App\Http\Controllers\Api\GrafanaAccessAuthorizationController;
@@ -37,6 +41,7 @@ use App\Http\Controllers\Api\InstanceTransfersController;
 use App\Http\Controllers\Api\MetricsController;
 use App\Http\Controllers\Api\NodeAccessController;
 use App\Http\Controllers\Api\NodeExcludedProjectsController;
+use App\Http\Controllers\Api\NodeFootprintsController;
 use App\Http\Controllers\Api\NodeMetricsController;
 use App\Http\Controllers\Api\NodeRolesController;
 use App\Http\Controllers\Api\NodesController;
@@ -57,6 +62,7 @@ use App\Http\Controllers\Api\ResolveDirectoryInstanceController;
 use App\Http\Controllers\Api\RootCaCertificatesController;
 use App\Http\Controllers\Api\RoutesController;
 use App\Http\Controllers\Api\RuntimeActivationsController;
+use App\Http\Controllers\Api\SandboxGitHubTokensController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
 use App\Http\Controllers\Api\TaskDefinitionsController;
@@ -73,6 +79,11 @@ use App\Http\Middleware\RequireNodeAgentSecret;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
+    Route::post('compute/github-token', [SandboxGitHubTokensController::class, 'store'])
+        ->middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
+        ->withoutMiddleware(RecordCommandActivity::class)
+        ->name('compute:github-token');
+
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->prefix('instances/{instance}/annotations')->group(function (): void {
             Route::get('', [AnnotationsController::class, 'index'])->name('annotation:list');
@@ -92,6 +103,29 @@ Route::prefix('v1')->group(function (): void {
         ->name('gateway:status');
     Route::get('ca/root', [RootCaCertificatesController::class, 'show'])
         ->name('gateway:trust');
+    // Any active WireGuard peer, a managed Node or an operator machine, may read what the fleet should run (ADR 0202).
+    Route::middleware([RequireActiveWireGuardPeer::class])
+        ->get('gateway/desired-fleet-state', [GatewayDesiredFleetStatesController::class, 'show'])
+        ->name('gateway:desired-fleet-state');
+
+    // Gateway releases run in their own systemd unit; deploy and rollback answer 202 with the queued record.
+    // Smoke restarts nothing and writes no record, so it runs in the request, bounded below PHP-FPM's limit.
+    Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
+        ->prefix('gateway')->group(function (): void {
+            Route::get('releases', [GatewayReleasesController::class, 'index'])->name('gateway:release:list');
+            Route::post('releases', [GatewayReleasesController::class, 'store'])->name('gateway:release:deploy');
+            Route::get('releases/{release}', [GatewayReleasesController::class, 'show'])
+                ->where('release', '[0-9a-f]{1,40}')
+                ->name('gateway:release:show');
+            Route::post('releases/{release}/rollback', [GatewayReleasesController::class, 'rollback'])
+                ->where('release', '[0-9a-f]{12}')
+                ->name('gateway:release:rollback');
+            Route::post('release-smoke', [GatewayReleasesController::class, 'smoke'])->name('gateway:release:smoke');
+            Route::get('release-automation', [GatewayReleaseAutomationController::class, 'show'])->name('gateway:release:auto:status');
+            Route::post('release-automation/enable', [GatewayReleaseAutomationController::class, 'enable'])->name('gateway:release:auto:enable');
+            Route::post('release-automation/disable', [GatewayReleaseAutomationController::class, 'disable'])->name('gateway:release:auto:disable');
+            Route::post('release-automation/resume', [GatewayReleaseAutomationController::class, 'resume'])->name('gateway:release:auto:resume');
+        });
 
     Route::middleware([
         RequireActiveWireGuardPeer::class,
@@ -195,6 +229,13 @@ Route::prefix('v1')->group(function (): void {
             ->name('doctor');
         Route::get('nodes/{node}', [NodesController::class, 'show'])
             ->name('node:show');
+        Route::post('nodes/{node}/converge', [NodeFootprintsController::class, 'converge'])
+            ->whereNumber('node')
+            ->name('node:converge');
+        Route::get('fleet/rollout', [FleetRolloutsController::class, 'show'])
+            ->name('fleet:rollout:status');
+        Route::post('fleet/rollout/resume', [FleetRolloutsController::class, 'resume'])
+            ->name('fleet:rollout:resume');
         Route::get('nodes/{node}/roles', [NodeRolesController::class, 'index'])
             ->whereNumber('node')
             ->name('node:role:list');

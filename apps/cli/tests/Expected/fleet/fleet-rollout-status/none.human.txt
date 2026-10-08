@@ -1,0 +1,19 @@
+Loading fleet rollout...
+
+┌  Show fleet rollout
+│
+├  ● Loaded fleet rollout
+│
+└  Loaded fleet rollout.
+
+
+┌  Fleet rollout
+│
+├  Rollout          on
+│
+├  Status           none
+│
+└  Desired commit   0123456789ab
+
+Not in the rollout: gateway (gateway).
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

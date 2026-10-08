@@ -83,20 +83,22 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `doctor` | `doctor` | [Doctor](/cli/doctor) compares the state the Gateway expects with each Node's state. |
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
-| `gateway` | `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. |
+| `fleet` | `resume`, `status` | The CLI shows the [fleet rollout](/reference/gateway-recovery#fleet-rollout) with `fleet:rollout:status`, or resumes a halted one with `fleet:rollout:resume`. |
+| `gateway` | `deploy`, `resume`, `rollback`, `smoke`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy, roll back, and smoke-test the Gateway itself, and resume paused automatic releases. |
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `rollback`, `scan`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs, scans dependencies, and runs setup. Rename records the checked-out branch and can move its Route. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `models`, `setup`, `teardown`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |
-| `node` | `relocate`, `rename` | The CLI moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
+| `node` | `converge`, `relocate`, `rename` | The CLI re-applies a Node's [Gateway-rendered footprint](/reference/node-provisioning#converge-the-orbit-footprint), moves a relocatable singleton role (`gateway`, `websocket`, or `metrics`) to another Node, or changes a Node's unique name. |
 | `process` | `logs`, `restart`, `start`, `stop` | The CLI reads Process logs or changes Process runtime state. |
 | `profile` | `profile` | The CLI profiles one HTTP request from the operator machine. |
 | `project` | `archive`, `download`, `read`, `restore`, `restore-version`, `search`, `upload`, `versions`, `write` | The CLI manages [Project Documents](/reference/project-documents) and their file content. |
 | `realtime` | `tail` | The CLI streams decoded realtime Gateway events as they arrive. |
 | `schedule` | `logs`, `run` | The CLI reads Schedule logs or runs a Schedule once. |
+| `self-update` | `self-update` | [`self-update`](/cli/self-update) updates this machine to the Gateway's CLI release, and `orbit-agent` on a managed Node. |
 | `tasks` | `cancel`, `complete`, `status` | The CLI cancels or completes a task, cancels a running subtask with `tasks:subtask:cancel`, or reports task assistance and state. |
 | `tool` | `adopt`, `scan` | The CLI reads installed Homebrew and Vite+ packages without taking ownership, or adopts one installed package without changing it. |
 
-`doctor` and `profile` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
+`doctor`, `profile`, and `self-update` are one-segment commands. Each family name is the command. Project source defaults and task settings use `project:update`; create and destroy remain the lifecycle commands.
 
 `tool:scan` reads supported package-manager inventory without creating Tool intent. Its Gateway route is `GET /api/v1/tool-inventory`. `tool:adopt` establishes intent for one existing package without installing it. Both use the [Tool contract](/reference/tools).
 

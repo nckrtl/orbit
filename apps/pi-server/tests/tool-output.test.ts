@@ -540,10 +540,20 @@ describe("read and bash tools", () => {
         writeFileSync(path, PNG);
         const { read } = tools(cwd);
 
-        const result = await run(read, { path });
+        const tool: Parameters<typeof run>[0] = read;
+        const result = await tool.execute("image-read", { path }, undefined, undefined, undefined);
 
-        expect(result.isError).toBe(false);
-        expect(result.text).toContain("Read image file");
+        expect(result.content).toContainEqual({
+            type: "image",
+            mimeType: "image/png",
+            data: PNG.toString("base64"),
+        });
+        expect(result.content).toContainEqual(
+            expect.objectContaining({
+                type: "text",
+                text: expect.stringContaining("Read image file"),
+            }),
+        );
         expect(exists(join(cwd, ".git", "orbit"))).toBe(false);
     });
 

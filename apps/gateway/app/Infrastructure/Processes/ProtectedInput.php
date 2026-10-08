@@ -71,6 +71,33 @@ final class ProtectedInput
         return $input;
     }
 
+    /** Copy bounded file input into the same private spool used for secrets. */
+    public static function fromFile(string $path, string $prefix, int $maxBytes): self
+    {
+        $source = fopen($path, 'rb');
+        if ($source === false) {
+            throw new RuntimeException('Unable to read protected process input.');
+        }
+        $input = self::fromString($prefix);
+        try {
+            $destination = $input->stream();
+            if (fseek($destination, 0, SEEK_END) !== 0) {
+                throw new RuntimeException('Unable to append protected process input.');
+            }
+            $copied = stream_copy_to_stream($source, $destination, $maxBytes + 1);
+            if ($copied === false || $copied > $maxBytes || ! feof($source)) {
+                throw new RuntimeException('Protected process input exceeds its limit.');
+            }
+        } catch (Throwable $exception) {
+            $input->close();
+            throw $exception;
+        } finally {
+            fclose($source);
+        }
+
+        return $input;
+    }
+
     public static function holdOpen(): self
     {
         $pair = stream_socket_pair(STREAM_PF_UNIX, STREAM_SOCK_STREAM, 0);

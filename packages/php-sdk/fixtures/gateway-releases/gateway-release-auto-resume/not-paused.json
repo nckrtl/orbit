@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\ResumeGatewayReleaseAutomationRequest",
+    "route": "POST /api/v1/gateway/release-automation/resume",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "gateway.release_not_paused",
+            "message": "Automatic releases are not paused.",
+            "details": {}
+        }
+    }
+}

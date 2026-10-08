@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\GitHub;
 
+use App\Domain\Tasks\TaskBranchUpdate;
 use SensitiveParameter;
 
 interface GitHubApi
@@ -45,6 +46,8 @@ interface GitHubApi
      *
      * @throws GitHubApiException
      */
+    public function repositorySandboxToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string;
+
     public function repositoryPullRequestToken(
         GitHubAppCredentials $credentials,
         int $installationId,
@@ -117,21 +120,78 @@ interface GitHubApi
     /**
      * Opens the pull request, or returns the open one that already has this head.
      *
-     * @return string the pull request's web URL
+     * @throws GitHubApiException
+     */
+    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): GitHubOpenedPullRequest;
+
+    /**
+     * Requests reviewers on an open pull request. Re-requesting the same logins is safe.
+     *
+     * @param  list<string>  $reviewers
      *
      * @throws GitHubApiException
      */
-    public function openPullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, GitHubPullRequestDraft $draft): string;
+    public function requestPullRequestReviewers(
+        #[SensitiveParameter] string $token,
+        GitHubRepository $repository,
+        int $number,
+        array $reviewers,
+    ): void;
+
+    /** Merge the base into exactly the observed head, without rebasing or force-pushing. */
+    public function updatePullRequestBranch(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $headSha): TaskBranchUpdate;
 
     /** @throws GitHubApiException */
     public function pullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number): GitHubPullRequest;
 
     /**
-     * The latest check run of each check on the commit, up to 100 runs.
+     * The latest check run of each check on the commit, every page up to 1,000 runs. With a check
+     * name, only runs of that exact name. A longer list, or one that changes or ends before its
+     * `total_count`, fails.
      *
      * @return list<GitHubCheckRun>
      *
      * @throws GitHubApiException
      */
-    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha): array;
+    public function checkRuns(#[SensitiveParameter] string $token, GitHubRepository $repository, string $sha, ?string $checkName = null): array;
+
+    /**
+     * The first 100 commits reachable from the branch head, newest first, in GitHub's history order.
+     * Needs a token with `contents: read`.
+     *
+     * @return list<GitHubCommit>
+     *
+     * @throws GitHubApiException
+     */
+    public function branchCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $branch): array;
+
+    /**
+     * How the head commit relates to the base commit. Needs a token with `contents: read`.
+     *
+     * @throws GitHubApiException
+     */
+    public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison;
+
+    /**
+     * Open pull requests of the repository, oldest first, at most three pages of 100. A malformed row fails the list.
+     *
+     * @return list<GitHubListedPullRequest>
+     *
+     * @throws GitHubApiException
+     */
+    public function openPullRequests(#[SensitiveParameter] string $token, GitHubRepository $repository): array;
+
+    /**
+     * Submits a review decision for exactly `$commitId` and returns the review id. Needs `pull_requests: write`.
+     *
+     * @throws GitHubApiException
+     */
+    public function submitReview(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $commitId, GitHubReviewEvent $event, string $body): int;
+
+    /**
+     * Merges the pull request with a merge commit, only while its head is `$sha`. A refusal is a result, not an exception.
+     *
+     * @throws GitHubApiException when GitHub cannot be reached
+     */
+    public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult;
 }

@@ -6,6 +6,7 @@ namespace App\Infrastructure\Instances;
 
 use App\Domain\AppDev\AnnotatorEndpoint;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\Transfer\InstanceTransferSource;
 use App\Domain\Instances\Transfer\TransferCheckout;
@@ -40,6 +41,7 @@ final readonly class RemoteInstanceTransferSource implements InstanceTransferSou
 
     public function capture(Instance $instance, ?string $sqliteSourcePath = null): TransferSourceCapture
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $layout = InstanceSourceLayout::from($instance->source_layout);
         $result = $this->ssh->execute(

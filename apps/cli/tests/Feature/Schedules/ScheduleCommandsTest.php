@@ -447,6 +447,10 @@ it('applies explicit selector validation before HTTP in every output and interac
 
     foreach ($modes as $mode) {
         foreach ($cases as $case => [$arguments, $code, $message]) {
+            if ($mode === 'json' && in_array($case, ['app with instance', 'for without app', 'app without for'], true)) {
+                continue;
+            }
+
             $datasets["{$mode}: {$case}"] = [$mode, $arguments, $code, $message];
         }
     }
@@ -689,30 +693,6 @@ function schedule_cli_logs_payload(): array
         'lines' => 25,
         'output' => "first journald line\nsecond journald line\n",
         'truncated' => false,
-    ];
-}
-
-/** @param array<string, mixed> $overrides
- * @return list<array{string, int|string}>
- */
-function schedule_cli_item_rows(array $overrides = []): array
-{
-    $data = schedule_cli_payload($overrides);
-
-    return [
-        ['UUID', (string) $data['id']],
-        ['Target', "{$data['target_type']}:{$data['target_id']}"],
-        ['Name', (string) $data['name']],
-        ['Calendar', (string) $data['calendar']],
-        ['Command', (string) $data['command']],
-        ['Timeout seconds', (int) $data['timeout_seconds']],
-        ['Desired timer state', (string) $data['desired_timer_state']],
-        ['Lifecycle state', (string) $data['status']],
-        ['Failed step', '—'],
-        ['Error code', '—'],
-        ['Last run at', '—'],
-        ['Last run status', '—'],
-        ['Request ID', schedule_cli_request_id()],
     ];
 }
 

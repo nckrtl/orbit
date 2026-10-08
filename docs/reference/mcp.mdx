@@ -25,11 +25,14 @@ Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Thei
 
 `search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. A nested empty object in a tool argument, such as `{"options":{}}`, stays an object through a direct `tools/call` and through `execute_tools`, and an empty list stays a list. The tool result text keeps that shape. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
 
+One MCP request has one 570-second command deadline, the same deadline as one API request. PHP-FPM ends a Gateway request after 600 seconds. All tool calls in one `execute_tools` batch share that deadline. A tool call cannot extend or reset it. Forward work stops 20 seconds before the deadline, which leaves that time for cleanup. A call that starts after the batch has used up its forward time returns the tool error `command.deadline_exceeded` (status 504) and does not run. The batch then stops at that call. Send long tools, such as `gateway-release-smoke` or `instance-deploy`, as separate requests.
+
 ## Identity and access
 
 The caller is the Node whose WireGuard address the connection comes from. There is no token and no login.
 
 - A connection from an address that is not an active Node receives HTTP `403` with `peer.identity_unknown`, before it can list tools.
+- `gateway-desired-fleet-state` needs no access grant. Any active Node may read the [desired fleet state](/reference/self-update#where-it-is-served).
 - Each tool call runs as an internal API request with the caller's address. The API checks the caller and its [access grants](/cli/node#orbit-nodeaccessadd) again. A missing grant returns the API's `403` with `node_access.required` as the tool error.
 - The Gateway certificate chains to the Orbit root certificate authority (CA). Orbit installs that root in the system trust store only on a Node where it converges an Instance, Route, router, ingress, or custom proxy certificate. On any other machine, run `orbit gateway:trust` first, or point the client at the root CA file.
 

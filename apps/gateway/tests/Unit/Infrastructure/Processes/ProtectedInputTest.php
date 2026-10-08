@@ -43,3 +43,16 @@ it('keeps a non-seekable input stream open until it is closed', function (): voi
 
     expect(is_resource($stream))->toBeFalse();
 });
+
+it('spools a bounded file after its header and refuses oversized input', function (): void {
+    $file = tmpfile();
+    fwrite($file, "\0binary\xff");
+    $path = stream_get_meta_data($file)['uri'];
+    try {
+        $input = ProtectedInput::fromFile($path, "header\n", 8);
+        expect(stream_get_contents($input->stream()))->toBe("header\n\0binary\xff");
+        expect(fn () => ProtectedInput::fromFile($path, '', 7))->toThrow(RuntimeException::class, 'limit');
+    } finally {
+        fclose($file);
+    }
+});

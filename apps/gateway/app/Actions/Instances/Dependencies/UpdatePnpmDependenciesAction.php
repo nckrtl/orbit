@@ -7,6 +7,7 @@ namespace App\Actions\Instances\Dependencies;
 use App\Domain\Instances\Dependencies\DependencyEcosystem;
 use App\Domain\Instances\Dependencies\DependencyUpdateInspection;
 use App\Domain\Instances\Dependencies\DependencyUpdateStepResult;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Infrastructure\Instances\NpmDependencyUpdateProgram;
 use App\Infrastructure\Instances\PnpmDependencyUpdatePresenceProgram;
@@ -57,6 +58,7 @@ final readonly class UpdatePnpmDependenciesAction
     /** @param  (Closure(): bool)|null  $cancelled */
     public function inspect(Instance $instance, ?Closure $cancelled = null): DependencyUpdateInspection
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         if ($instance->placedOnAppProd()) {
             return DependencyUpdateInspection::failed('dependencies.production_update_forbidden');
         }
@@ -111,6 +113,7 @@ final readonly class UpdatePnpmDependenciesAction
     /** @param  (Closure(): bool)|null  $cancelled */
     public function execute(Instance $instance, ?Closure $cancelled = null): DependencyUpdateStepResult
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $inspection = $this->inspect($instance, $cancelled);
         if ($inspection->errorCode !== null) {
             return $this->failed($inspection->errorCode, false);
@@ -128,6 +131,7 @@ final readonly class UpdatePnpmDependenciesAction
     /** @param  (Closure(): bool)|null  $cancelled */
     public function apply(Instance $instance, string $vpPath, ?Closure $cancelled = null): DependencyUpdateStepResult
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $connection = $this->connection($instance);
         if ($connection === null) {
             return $this->failed('dependencies.unsafe_source', false);

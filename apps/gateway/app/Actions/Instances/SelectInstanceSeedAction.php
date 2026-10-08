@@ -6,6 +6,7 @@ namespace App\Actions\Instances;
 
 use App\Domain\AppDev\AppDevSourceOperationLock;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Models\Instance;
 
@@ -19,6 +20,8 @@ final readonly class SelectInstanceSeedAction
 
     public function execute(Instance $instance): Instance
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
+
         return $this->sourceLock->synchronized($instance->node_id, fn (): Instance => $this->select($instance->refresh()));
     }
 

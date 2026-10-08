@@ -37,7 +37,7 @@ describe('ProofFixtures', function (): void {
         'role digest differs' => fn () => new ProofFixtures(
             ['check.sh' => ['mode' => '755', 'sha256' => str_repeat('1', 64)]],
             ProofFixtures::digestOf(['check.sh' => ['mode' => '755', 'sha256' => str_repeat('1', 64)]]),
-            ['gateway' => str_repeat('0', 64), 'app-dev' => str_repeat('0', 64), 'app-prod' => str_repeat('0', 64)],
+            array_fill_keys(TopologyProfile::ROLES, str_repeat('0', 64)),
         ),
         'missing role' => fn () => new ProofFixtures([], hash('sha256', ''), ['gateway' => hash('sha256', '')]),
         'unsorted' => fn () => new ProofFixtures(

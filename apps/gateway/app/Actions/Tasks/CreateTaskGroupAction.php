@@ -15,6 +15,7 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTopology;
 use App\Models\Project;
 use App\Models\Task;
 
@@ -54,6 +55,10 @@ final readonly class CreateTaskGroupAction
             throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
         }
 
+        foreach ($data->tasks as $task) {
+            TaskTopology::from($task->topology);
+        }
+
         $group = Task::topLevel()->create([
             'project_id' => $data->projectId,
             'implementer_agent_driver' => $implementerDriver,
@@ -62,6 +67,7 @@ final readonly class CreateTaskGroupAction
             'brief' => $data->brief,
             'status' => $data->status,
             'notify_coder' => $data->notifyCoder,
+            'preview' => $data->preview,
             'implementer_model' => $this->model('implementer_model', TaskAgentDefaults::ImplementerModel),
             'reviewer_model' => $this->model('reviewer_model', TaskAgentDefaults::ReviewerModel),
         ]);
@@ -73,6 +79,7 @@ final readonly class CreateTaskGroupAction
                 'title' => $task->title,
                 'brief' => $task->brief,
                 'deliverables' => $task->deliverables,
+                'topology' => TaskTopology::from($task->topology),
                 'status' => TaskStatus::Todo,
             ]);
         }

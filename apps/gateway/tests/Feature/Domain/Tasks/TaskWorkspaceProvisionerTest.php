@@ -10,6 +10,7 @@ use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
 use App\Domain\Instances\InstanceDestinationGuard;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
@@ -20,6 +21,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCapacityException;
@@ -36,6 +38,9 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\ProjectNodeExclusion;
 use App\Models\Task;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Str;
+use Symfony\Component\Process\Process;
 
 function provisioner_app(
     string $slug,
@@ -121,9 +126,14 @@ function bind_task_workspace_fakes(): object
         /** @var list<string> */
         public array $calls = [];
 
+        public ?Closure $onPrepare = null;
+
         public function prepare(Instance $instance, bool $allowExisting): void
         {
             $this->calls[] = 'prepare';
+            if ($this->onPrepare !== null) {
+                ($this->onPrepare)($instance, $allowExisting);
+            }
         }
 
         public function inspectPrepared(Instance $instance): void
@@ -175,6 +185,25 @@ function bind_task_workspace_fakes(): object
     return (object) ['source' => $source, 'development' => $development];
 }
 
+it('task workspace stamps source_prepare_id before preparing source', function (): void {
+    $project = provisioner_app('prepare-id');
+    provisioner_node('prepare-id-dev', '10.44.0.138');
+    $group = provisioner_group($project);
+    $fakes = bind_task_workspace_fakes();
+    $reservation = null;
+    $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting) use (&$reservation): void {
+        $reservation = $instance->fresh();
+    };
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($reservation?->status)->toBe(InstanceState::Reserved);
+    expect($reservation?->source_prepare_id)->not->toBeNull()->toBeString();
+    expect(Str::isUuid($reservation->source_prepare_id, version: 4))->toBeTrue();
+    expect($instance?->fresh()?->source_prepare_id)->toBe($reservation->source_prepare_id);
+    expect($instance?->status)->toBe(InstanceState::SourceResolved);
+});
+
 it('provisions a workspace without an automatic root dependency copy', function (): void {
     $project = provisioner_app('acme');
     $node = provisioner_node('acme-dev', '10.44.0.111');
@@ -219,7 +248,7 @@ it('leaves a group reserved when no app-dev Node can take the workspace', functi
     bind_task_workspace_fakes();
 
     expect(app(InstanceProvisioning::class)->provision(new InstanceProvisionIntent($group, true)))
-        ->toBeNull();
+        ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
 it('creates a non-visitable Orbit checkout without activating a Route', function (): void {
@@ -298,17 +327,17 @@ it('reuses an already assigned Task workspace', function (): void {
         ->toBe($instance->id);
 });
 
-it('returns null when a visitable App lacks a web root', function (): void {
+it('returns a failure when a visitable App lacks a web root', function (): void {
     $project = provisioner_app('bare', null);
     provisioner_node('bare-dev', '10.44.0.104');
     $group = provisioner_group($project);
     bind_task_workspace_fakes();
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, true)))
-        ->toBeNull();
+        ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
-it('returns null when destination occupation refuses the checkout', function (): void {
+it('returns a failure when destination occupation refuses the checkout', function (): void {
     $project = provisioner_app('blocked');
     provisioner_node('blocked-dev', '10.44.0.105');
     $group = provisioner_group($project);
@@ -326,7 +355,7 @@ it('returns null when destination occupation refuses the checkout', function ():
     });
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
-        ->toBeNull();
+        ->toBeInstanceOf(InstanceProvisionFailure::class);
 });
 
 it('skips an excluded app-dev Node before choosing the least loaded node', function (): void {
@@ -401,17 +430,17 @@ it('places Pi roles on a Node with Pi rather than one with only T3', function ()
     $this->assertDatabaseMissing('instances', ['node_id' => $t3Only->id]);
 });
 
-it('returns null when no Node allows the implementer driver', function (): void {
+it('returns a failure when no Node allows the implementer driver', function (): void {
     $project = provisioner_app('no-pi');
     provisioner_node('t3-only', '10.44.0.115')->processes()->update(['name' => 't3-code']);
     $group = provisioner_group($project);
     $fakes = bind_task_workspace_fakes();
 
-    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false)))->toBeNull()
+    expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group->fresh() ?? $group, false)))->toBeInstanceOf(InstanceProvisionFailure::class)
         ->and($fakes->source->calls)->toBe([]);
 });
 
-it('returns null when the app-dev Node has no usable Pi process', function (string $reason): void {
+it('returns a failure when the app-dev Node has no usable Pi process', function (string $reason): void {
     $project = provisioner_app('unavailable');
     $node = provisioner_node('unavailable', '10.44.0.112');
     match ($reason) {
@@ -427,10 +456,111 @@ it('returns null when the app-dev Node has no usable Pi process', function (stri
 
     $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
 
-    expect($instance)->toBeNull()
+    expect($instance)->toBeInstanceOf(InstanceProvisionFailure::class)
         ->and($fakes->source->calls)->toBe([]);
     $this->assertDatabaseCount('instances', 0);
 })->with(['missing', 'unrelated', 'failed', 'stopped', 'no-address', 'empty-address']);
+
+it('resumes a reserved worktree reclaim with no starting commit', function (): void {
+    $project = provisioner_app('reclaim');
+    $node = provisioner_node('reclaim-dev', '10.44.0.135');
+    $group = provisioner_group($project);
+    $sandbox = sys_get_temp_dir().'/orbit-reserved-reclaim-'.Str::uuid();
+    $seed = $sandbox.'/default';
+    $checkout = $sandbox.'/'.TaskWorkspaceName::for($group);
+    $files = new Filesystem;
+    $files->makeDirectory($seed, 0o755, true);
+
+    try {
+        foreach ([
+            ['git', 'init', '--initial-branch=main', $seed],
+            ['git', '-C', $seed, '-c', 'user.name=Test', '-c', 'user.email=test@example.test', 'commit', '--allow-empty', '-m', 'Seed'],
+            ['git', '-C', $seed, 'worktree', 'add', '--detach', $checkout, 'HEAD'],
+        ] as $command) {
+            (new Process($command))->mustRun();
+        }
+        $commit = trim((new Process(['git', '-C', $seed, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+        $left = Instance::query()->create([
+            'project_id' => $project->id,
+            'node_id' => $node->id,
+            'name' => TaskWorkspaceName::for($group),
+            'checkout_path' => $checkout,
+            'branch_override' => TaskWorkspaceName::for($group),
+            'source_layout' => InstanceSourceLayout::Worktree,
+            'seed_repository' => $seed,
+            'seed_commit' => $commit,
+            'starting_commit' => null,
+            'source_prepare_id' => null,
+            'task_workspace_routed' => false,
+            'status' => InstanceState::Reserved,
+        ]);
+        $fakes = bind_task_workspace_fakes();
+        // Model the remote prepare contract: an existing checkout refuses unless explicitly allowed.
+        $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting): void {
+            if (is_file($instance->checkout_path.'/.git') && ! $allowExisting) {
+                throw new ResourceOperationException('instance.clone_failed', 'Checkout already exists.', 409);
+            }
+        };
+
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance?->id)->toBe($left->id)
+            ->and($instance?->status)->toBe(InstanceState::SourceResolved)
+            ->and($instance?->starting_commit)->toBe(str_repeat('a', 40))
+            ->and($instance?->source_prepare_id)->toBeNull();
+        expect($fakes->source->calls)->toBe(['prepare', 'inspect-prepared', 'resolve', 'inspect-prepared', 'inspect-resolved', 'inspect-prepared']);
+        expect(is_file($checkout.'/.git'))->toBeTrue();
+        $this->assertDatabaseCount('instances', 1);
+    } finally {
+        $files->deleteDirectory($sandbox);
+    }
+});
+
+it('refuses a reserved worktree reclaim when source identity does not match', function (): void {
+    $project = provisioner_app('foreign-reclaim');
+    $node = provisioner_node('foreign-dev', '10.44.0.137');
+    $group = provisioner_group($project);
+    $left = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => TaskWorkspaceName::for($group),
+        'checkout_path' => '/srv/orbit/apps/foreign-reclaim/'.TaskWorkspaceName::for($group),
+        'branch_override' => TaskWorkspaceName::for($group),
+        'source_layout' => InstanceSourceLayout::Worktree,
+        'seed_repository' => '/srv/orbit/apps/foreign-reclaim/default',
+        'seed_commit' => str_repeat('b', 40),
+        'status' => InstanceState::Reserved,
+    ]);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting): void {
+        throw new ResourceOperationException('instance.clone_failed', 'Source identity does not match.', 409);
+    };
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance)->toBeInstanceOf(InstanceProvisionFailure::class)
+        ->and($instance->cause)->toBe(ResourceOperationException::class.' [instance.clone_failed]: Source identity does not match.');
+    expect($left->refresh()->status)->toBe(InstanceState::Reserved)
+        ->and($left->starting_commit)->toBeNull();
+    expect($fakes->source->calls)->toBe(['prepare']);
+    $this->assertModelExists($left);
+});
+
+it('does not allow_existing task provision for a newly reserved Instance', function (): void {
+    $project = provisioner_app('fresh-reclaim');
+    provisioner_node('fresh-dev', '10.44.0.136');
+    $group = provisioner_group($project);
+    $fakes = bind_task_workspace_fakes();
+    $fakes->source->onPrepare = static function (Instance $instance, bool $allowExisting): void {
+        if ($allowExisting) {
+            throw new ResourceOperationException('instance.clone_failed', 'Cannot adopt an existing checkout on first prepare.', 409);
+        }
+    };
+
+    $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($instance?->status)->toBe(InstanceState::SourceResolved);
+});
 
 describe('a workspace an interrupted claim left unattached', function (): void {
     it('resumes it on its own Node instead of the least loaded one', function (): void {
@@ -455,9 +585,9 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         $this->assertDatabaseCount('instances', 1);
     });
 
-    it('waits for capacity on its own Node', function (): void {
+    it('releases an empty reserved pin when another Node has capacity', function (): void {
         $project = provisioner_app('orbit');
-        provisioner_node('roomy', '10.44.0.132');
+        $roomy = provisioner_node('roomy', '10.44.0.132');
         $full = provisioner_node('full', '10.44.0.133');
         $occupied = Instance::query()->create([
             'project_id' => $project->id,
@@ -482,8 +612,12 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         ]);
         bind_task_workspace_fakes();
 
-        expect(fn () => app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))
-            ->toThrow(fn (TaskCapacityException $exception) => expect($exception->fleetFull)->toBeFalse());
+        $instance = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+        expect($instance)->toBeInstanceOf(Instance::class)
+            ->and($instance->node_id)->toBe($roomy->id)
+            ->and($instance->status)->toBe(InstanceState::SourceResolved);
+        $this->assertDatabaseMissing('instances', ['node_id' => $full->id, 'name' => TaskWorkspaceName::for($group)]);
     });
 
     it('never adopts an Instance that only shares the workspace name', function (): void {
@@ -500,7 +634,7 @@ describe('a workspace an interrupted claim left unattached', function (): void {
         ]);
         bind_task_workspace_fakes();
 
-        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeNull()
+        expect(app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false)))->toBeInstanceOf(InstanceProvisionFailure::class)
             ->and($lookalike->fresh()?->branch_override)->toBe('feature-x')
             ->and($lookalike->fresh()?->status)->toBe(InstanceState::SourceResolved);
         $this->assertDatabaseCount('instances', 1);
@@ -661,3 +795,41 @@ it('keeps the source-resolved orbit clone and asks for assistance when removal i
         forget_checkout($checkout);
     }
 })->with(['cancel', 'complete', 'unattached']);
+
+it('keeps a full-node reserved workspace when it cannot prove the reservation is empty', function (bool $sourceEvidence): void {
+    $project = provisioner_app('kept-reservation');
+    provisioner_node('roomy', '10.44.0.140');
+    $full = provisioner_node('full', '10.44.0.141');
+    $occupied = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $full->id, 'name' => 'occupied',
+        'checkout_path' => '/srv/orbit/apps/kept-reservation/occupied', 'status' => InstanceState::SourceResolved,
+    ]);
+    for ($i = 0; $i < TaskCeilings::PerNode; $i++) {
+        $active = provisioner_group($project, "Active {$i}");
+        $active->taskable()->associate($occupied);
+        $active->save();
+    }
+    $group = provisioner_group($project);
+    $left = Instance::query()->create([
+        'project_id' => $project->id, 'node_id' => $full->id, 'name' => TaskWorkspaceName::for($group),
+        'checkout_path' => '/srv/orbit/apps/kept-reservation/'.TaskWorkspaceName::for($group),
+        'branch_override' => TaskWorkspaceName::for($group), 'status' => InstanceState::Reserved,
+        'seed_commit' => $sourceEvidence ? str_repeat('a', 40) : null,
+    ]);
+    $fakes = bind_task_workspace_fakes();
+    app()->instance(InstanceDestinationGuard::class, new class implements InstanceDestinationGuard
+    {
+        public function assertUnoccupied(Node $node, StoragePath $destination): void
+        {
+            throw new ResourceOperationException('instance.migration_conflict', 'Checkout exists.', 409);
+        }
+    });
+
+    $result = app(TaskWorkspaceProvisioner::class)->provision(new InstanceProvisionIntent($group, false));
+
+    expect($result)->toBeInstanceOf(InstanceProvisionFailure::class)
+        ->and($result->cause)->toContain('Reserved workspace')
+        ->and($left->fresh()->node_id)->toBe($full->id)
+        ->and($fakes->source->calls)->toBe([]);
+    $this->assertModelExists($left);
+})->with(['source evidence' => true, 'checkout exists' => false]);

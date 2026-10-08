@@ -4,8 +4,7 @@ import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-react";
 import { setTransport, type Transport } from "../../src/api/client";
 import { queryClient } from "../../src/api/queryClient";
-import { mountAnnotation } from "@nckrtl/annotator";
-import { teardownAnnotationRuntime } from "@nckrtl/annotator/runtime";
+import { mountAnnotation, teardownAnnotationRuntime } from "@nckrtl/annotator";
 import { installDemo } from "../../src/demo/install";
 import { resetActivityScroll } from "../../src/pages/Activity";
 import { createAppRouter } from "../../src/router";
@@ -33,12 +32,7 @@ export async function openApp(
     // Annotation runtime is owned by app entry (main.tsx). Tests bypass main, so mount here
     // once per openApp — never from AnnotationChrome (StrictMode teardown races).
     teardownAnnotationRuntime();
-    mountAnnotation({
-        commander: {
-            enabled: import.meta.env.VITE_COMMANDER_ENABLED !== "0",
-            project: import.meta.env.VITE_COMMANDER_PROJECT || "commander",
-        },
-    });
+    mountAnnotation();
 
     const gateway = installDemo();
 

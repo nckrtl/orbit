@@ -13,6 +13,7 @@ use App\Actions\Nodes\UpdateNodeSettingsAction;
 use App\Data\Nodes\NodeAccessData;
 use App\Data\Nodes\NodeData;
 use App\Data\Projects\DevelopmentNodeExclusionData;
+use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Projects\DevelopmentNodeExclusion;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -29,16 +30,17 @@ use Illuminate\Http\Request;
 final class NodesController extends Controller
 {
     #[RequiresNodeAccess(ServingNode::Collection)]
-    public function index(Request $request, ListNodesAction $action): JsonResponse
+    public function index(Request $request, ListNodesAction $action, NodeUpdates $updates): JsonResponse
     {
         $consumer = $request->user();
         assert($consumer instanceof Node, description: 'Authenticated peer must be a Node.');
 
         $nodes = $action->handle($consumer);
+        $updating = $updates->forNodes($nodes);
 
         return response()->json([
             'data' => $nodes
-                ->map(static fn (Node $node): array => NodeData::fromModel($node)->toArray())
+                ->map(static fn (Node $node): array => NodeData::fromModel($node, $updating)->toArray())
                 ->values()
                 ->all(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],

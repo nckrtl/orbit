@@ -6,6 +6,7 @@ use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
@@ -38,7 +39,10 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+
+pest()->group('subprocess');
 
 it('installs and executes the FPM pre-start gate before accepting traffic and refuses startup on gate failure', function (string $ambientEnvironment): void {
     $previousEnvironment = $_ENV['APP_ENV'] ?? null;
@@ -189,7 +193,7 @@ it('repairs restrictive public permissions without exposing private files or sym
 });
 
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger();
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger();
 
     try {
         $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
@@ -258,6 +262,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'root * /home/orbit/orbit-gateway/public',
                 'tls /etc/caddy/orbit-cert-current/gateway.pem /etc/caddy/orbit-cert-current/gateway.key',
                 'php_fastcgi unix//run/php/orbit-gateway.sock',
+                'resolve_root_symlink',
                 'dial_timeout 10s',
                 'read_timeout 600s',
                 'write_timeout 600s',
@@ -332,6 +337,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->and($hibernator->calls)
             ->toBe(1)
             ->and($agentView->calls)
+            ->toBe(1)
+            ->and($releaseUnits->calls)
             ->toBe(1);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -412,7 +419,11 @@ it('publishes one complete gateway file from distinct candidates under contentio
         }
 
         foreach (array_keys($characters) as $index) {
-            protected_file_writer_wait_until(static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"));
+            protected_file_writer_wait_until(
+                static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"),
+                $processes,
+                static fn (): string => "ready marker {$index}",
+            );
         }
 
         file_put_contents($startPath, 'start');
@@ -423,6 +434,8 @@ it('publishes one complete gateway file from distinct candidates under contentio
             ]));
 
             return count($observedCandidates) >= 2;
+        }, $processes, static function () use (&$observedCandidates): string {
+            return 'observed candidates: '.count($observedCandidates).' (expected at least 2)';
         });
 
         foreach ($processes as $process) {
@@ -620,7 +633,7 @@ it('repeats the same idempotent install step on every web convergence', function
         expect($second)
             ->toEqual($first)
             ->and($first[0]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway'])
+            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway', '/home/orbit/orbit-gateway'])
             ->and($first[1]->arguments)
             ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
             ->and($first[2]->arguments)
@@ -631,7 +644,7 @@ it('repeats the same idempotent install step on every web convergence', function
 });
 
 it('stops before any Caddy or certificate step when Caddy cannot be installed', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger(failure: 'caddy-install');
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger(failure: 'caddy-install');
 
     try {
         expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
@@ -664,6 +677,8 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
             ->and($hibernator->calls)
             ->toBe(0)
             ->and($agentView->calls)
+            ->toBe(0)
+            ->and($releaseUnits->calls)
             ->toBe(0);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -828,13 +843,41 @@ function protected_file_writer_wait_for_success(Process $process): void
     }
 }
 
-function protected_file_writer_wait_until(Closure $condition, float $timeoutSeconds = 5.0): void
+/** @param list<Process> $processes */
+function protected_file_writer_wait_until(Closure $condition, array $processes, Closure $state): void
 {
-    $deadline = microtime(true) + $timeoutSeconds;
-
     while (! $condition()) {
-        if (microtime(true) >= $deadline) {
-            throw new RuntimeException('Timed out waiting for protected-file writer state.');
+        $running = false;
+        $failure = null;
+        $writerStates = [];
+
+        foreach ($processes as $index => $process) {
+            try {
+                $process->checkTimeout();
+            } catch (ProcessTimedOutException $exception) {
+                $failure = "Writer {$index} exceeded its {$exception->getExceededTimeout()} second lifetime.";
+            }
+
+            if ($process->isRunning()) {
+                $running = true;
+            } elseif (! $process->isSuccessful()) {
+                $failure ??= 'A protected-file writer failed before the required state was observed.';
+            }
+
+            $writerStates[] = sprintf(
+                'writer %d: status=%s, exit=%s, stderr=%s',
+                $index,
+                $process->getStatus(),
+                $process->getExitCode() ?? 'none',
+                $process->getErrorOutput(),
+            );
+        }
+
+        if ($failure !== null || ! $running) {
+            throw new RuntimeException(
+                $state().'. '.($failure ?? 'All protected-file writers exited before the required state was observed.')
+                .' '.implode('; ', $writerStates),
+            );
         }
 
         usleep(1_000);
@@ -974,12 +1017,14 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             checkoutPath: $checkoutPath,
             hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,
             agentView: $agentView = new RecordingAgentViewConverger,
+            releaseUnits: $releaseUnits = new RecordingGatewayReleaseUnitConverger,
         ),
         $processes,
         $issuer,
         $orbitHome,
         $hibernator,
         $agentView,
+        $releaseUnits,
     ];
 }
 
@@ -1008,6 +1053,16 @@ function gateway_web_pushed(ProcessInvocation $invocation): string
     preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $invocation->input, $match);
 
     return (string) base64_decode($match[1] ?? '', true);
+}
+
+final class RecordingGatewayReleaseUnitConverger implements GatewayReleaseUnitConverger
+{
+    public int $calls = 0;
+
+    public function converge(): void
+    {
+        $this->calls++;
+    }
 }
 
 final class RecordingRuntimeHibernatorConverger implements RuntimeHibernatorConverger

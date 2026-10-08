@@ -4,18 +4,27 @@ on:
   pull_request:
   push:
     branches: [main]
+  # A nightly run on main tests every project in full and refreshes each Pest TIA graph, as a manual dispatch does.
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
   contents: read
 
+# A pull request keeps only its newest run. Each main commit gets its own group, so a newer push neither
+# cancels a running main run nor replaces a pending one, and every main commit gets a complete result.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   project:
     name: ${{ matrix.name }}
+    # The main test selection reads the newest full runs on main.
+    permissions:
+      actions: read
+      contents: read
     # The Gateway suite runs on the self-hosted runner on Sabre when ORBIT_SABRE_RUNNER is true.
     # Pull requests from forks always use a GitHub-hosted runner, so outside code never runs on Sabre.
     runs-on: ${{ matrix.directory == 'apps/gateway' && vars.ORBIT_SABRE_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
@@ -49,6 +58,13 @@ jobs:
           persist-credentials: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
           ref: ${{ github.head_ref || github.ref_name }}
           repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+
+      # The checkout above names the branch, and a later push can move it before this job starts. Main runs are not
+      # cancelled, so each one must test exactly its own commit: its Required checks result releases that commit.
+      - name: Pin the run's commit
+        if: github.event_name != 'pull_request'
+        working-directory: .
+        run: git reset --hard "$GITHUB_SHA"
 
       # Sabre already has PHP 8.5 with PCOV and Composer. On a self-hosted runner, setup-php makes
       # /usr/local/bin world-writable, which Orbit's service-metrics program refuses on every Node.
@@ -164,11 +180,14 @@ jobs:
         run: |
           printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/tests/Pest.php', matrix.directory), format('{0}/phpunit.xml', matrix.directory), format('{0}/phpunit.xml.dist', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
 
+      # Each run saves its graph under its own key, so a full run on an already tested commit still refreshes the cache.
+      # A restore takes the newest graph for the branch, then for main.
       - name: Restore Pest TIA graph
+        id: orbit-tia-restore
         uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.directory }}/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
             ${{ steps.orbit-tia-key.outputs.prefix }}-main-
@@ -178,19 +197,38 @@ jobs:
         if: github.event_name == 'pull_request'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
+      # A push to main tests the changes since the commit its restored main graph describes. It runs the full suite when
+      # that graph is unusable, the changes include files that Pest cannot link to tests, or the newest nightly or manual
+      # run failed. Those runs are always full.
+      - name: Choose the main test selection
+        id: orbit-tia-plan
+        if: github.event_name != 'pull_request'
+        env:
+          EVENT: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREFIX: ${{ steps.orbit-tia-key.outputs.prefix }}
+          RESTORED_KEY: ${{ steps.orbit-tia-restore.outputs.cache-matched-key }}
+        run: ../../bin/ci-tia plan --event "$EVENT" --prefix "$PREFIX" --restored-key "$RESTORED_KEY" --repository "$GITHUB_REPOSITORY"
+
+      - name: Run tests affected since the main graph
+        if: steps.orbit-tia-plan.outputs.mode == 'affected'
+        shell: bash
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"
+
       - name: Run full test suite and refresh Pest TIA graph
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: steps.orbit-tia-plan.outputs.mode == 'full'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
 
+      # TIA does not link these contracts to the files they read, so every affected run also runs them.
       - name: Run architecture tests
-        if: always() && github.event_name == 'pull_request'
+        if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
         env:
           PROJECT: ${{ matrix.directory }}
         run: |
           case "$PROJECT" in
             apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php tests/Feature/CliBinaryBuildContractTest.php' ;;
             apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
-            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php' ;;
+            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php tests/Feature/Configuration/DocsMergeRefWorkflowTest.php' ;;
             packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
             *) exit 0 ;;
           esac
@@ -198,12 +236,163 @@ jobs:
             vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --compact "$architecture_test"
           done
 
+      # TIA does not link code that a test runs in a PHP subprocess to that test, so a run that is not full also runs
+      # them when a change since the pull request base, or since the commit of the main graph, reaches the project.
+      - name: Choose whether to run subprocess tests
+        id: orbit-subprocess
+        if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
+        run: ../../bin/ci-tia subprocess --base "$BASE"
+
+      # The PHP SDK has no subprocess tests. Every other project's group must find tests.
+      - name: Run subprocess tests
+        if: always() && steps.orbit-subprocess.outputs.run == 'true'
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --group=subprocess --compact${{ matrix.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}
+
+      - name: Require the Pest TIA graph to describe this commit
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          MODE: ${{ steps.orbit-tia-plan.outputs.mode }}
+          BASE: ${{ steps.orbit-tia-plan.outputs.base }}
+        run: ../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"
+
       - name: Save Pest TIA graph
         if: success()
         uses: actions/cache/save@v6
         with:
           path: ${{ matrix.directory }}/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      # A full run records this commit in the graph, and the step that requires it records it after an affected run.
+      - name: Export sandbox TIA baseline
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          PROJECT: ${{ matrix.directory }}
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          graph = Path('.orbit-tia/graph.json')
+          data = json.loads(graph.read_text())
+          baseline = data['baselines']['main']
+          if data.get('schema') != 1 or baseline.get('sha') != os.environ['GITHUB_SHA'] or not baseline.get('results'):
+              raise SystemExit('The sandbox baseline must describe this tested main commit.')
+          files = ['composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist']
+          manifest = {
+              'schema': 1,
+              'project': os.environ['PROJECT'],
+              'commit': os.environ['GITHUB_SHA'],
+              'run_id': os.environ['GITHUB_RUN_ID'],
+              'graph_sha256': hashlib.sha256(graph.read_bytes()).hexdigest(),
+              'inputs': {name: hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in files if Path(name).is_file()},
+          }
+          Path('.orbit-tia/manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
+          PY
+
+      - name: Publish sandbox TIA baseline
+        if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: sandbox-tia-${{ strategy.job-index }}-${{ github.sha }}
+          path: |
+            ${{ matrix.directory }}/.orbit-tia/graph.json
+            ${{ matrix.directory }}/.orbit-tia/manifest.json
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  privileged:
+    name: Gateway privileged
+    # Trusted branches use Sabre. Forks run the same gate on an isolated hosted runner.
+    runs-on: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "sabre"]') || 'ubuntu-26.04' }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/gateway
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: shivammathur/setup-php@v2
+        if: runner.environment == 'github-hosted'
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+      - uses: actions/setup-node@v7
+        if: runner.environment == 'self-hosted'
+        with:
+          node-version: '24'
+      - uses: Homebrew/actions/setup-homebrew@e99025eb970cfa124b8284a35463d87426917478
+        if: runner.environment == 'github-hosted'
+      - name: Install hosted runner prerequisites
+        if: runner.environment == 'github-hosted'
+        run: |
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 install --no-install-recommends --yes acl attr wireguard-tools
+          brew install caddy openssl@3
+          id -u caddy >/dev/null 2>&1 || sudo useradd --system --user-group --no-create-home --shell /usr/sbin/nologin caddy
+          echo "$(brew --prefix)/bin" >> "$GITHUB_PATH"
+      - name: Install Gateway dependencies
+        run: |
+          cp .env.example .env
+          composer install --no-interaction --prefer-dist
+      - name: Run every privileged test
+        run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
+      # A privileged test that writes into the checkout as root leaves files the runner user cannot delete, and
+      # every later checkout on that Sabre runner then fails. Remove anything root owns in the workspace.
+      - name: Remove root-owned files from the workspace
+        if: always() && runner.environment == 'self-hosted'
+        working-directory: ${{ github.workspace }}
+        run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
+
+  docs-merge-ref:
+    name: Docs (merge ref)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+
+    defaults:
+      run:
+        working-directory: apps/docs
+
+    steps:
+      - name: Check out PR merge ref
+        id: merge-checkout
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require PR merge ref
+        if: steps.merge-checkout.outcome != 'success'
+        working-directory: .
+        run: |
+          echo '::error title=Docs merge ref unavailable::Cannot check the PR merge result (the PR may conflict with main); not checking the PR head.'
+          exit 1
+
+      - name: Log merge commit
+        working-directory: .
+        run: git show --no-patch --format=fuller HEAD
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+
+      - name: Prepare application environment
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run Docs quality checks
+        run: composer check
 
   api-reference:
     name: API reference
@@ -258,10 +447,6 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Install annotation package dependencies
-        working-directory: packages/agent-annotation
-        run: bun install --frozen-lockfile
-
       - name: Check that the API types match the API reference
         run: bun run types && git diff --exit-code src/api/schema.d.ts
 
@@ -274,8 +459,21 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      # Open pages compare their build with version.json, so the published build must hold it beside index.html.
       - name: Build
-        run: bun run build
+        run: bun run build && test -s dist/index.html && test -s dist/version.json
+
+      # Automatic Gateway releases (ADR 0201) install this build for the same commit, so the Gateway needs no Node or Bun.
+      # Every run on main publishes it, a manual dispatch too, so each successful Required checks result on main has one.
+      - name: Publish web build
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: web-dist-${{ github.sha }}
+          path: apps/web/dist
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
 
   pi-server:
     name: Pi server
@@ -305,38 +503,6 @@ jobs:
 
       - name: Build
         run: bun run build
-
-  agent-annotation:
-    name: Agent annotation
-    runs-on: ubuntu-26.04
-
-    defaults:
-      run:
-        working-directory: packages/agent-annotation
-
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@v7
-
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Check formatting and lint
-        run: bun run check
-
-      - name: Build
-        run: bun run build
-
-      - name: Install the test browser
-        run: bunx playwright install --with-deps chromium
-
-      - name: Run tests
-        run: bun run test
 
   agent:
     name: Rust agent
@@ -396,15 +562,24 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, api-reference, web, agent-annotation, pi-server, agent]
+    needs: [project, privileged, docs-merge-ref, api-reference, web, pi-server, agent]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
         env:
+          EVENT: ${{ github.event_name }}
+          DOCS_MERGE_REF_RESULT: ${{ needs.docs-merge-ref.result }}
           PROJECT_RESULT: ${{ needs.project.result }}
+          PRIVILEGED_RESULT: ${{ needs.privileged.result }}
           API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
           WEB_RESULT: ${{ needs.web.result }}
-          ANNOTATION_RESULT: ${{ needs.agent-annotation.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
           AGENT_RESULT: ${{ needs.agent.result }}
-        run: test "$PROJECT_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success
+        run: |
+          test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && {
+            if [ "$EVENT" = pull_request ]; then
+              test "$DOCS_MERGE_REF_RESULT" = success
+            else
+              test "$DOCS_MERGE_REF_RESULT" = skipped
+            fi
+          }

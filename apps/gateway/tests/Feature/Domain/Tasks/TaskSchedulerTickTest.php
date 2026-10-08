@@ -28,6 +28,7 @@ use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckReading;
@@ -44,6 +45,7 @@ use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
+use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewFindingsPacket;
@@ -700,7 +702,7 @@ function tick_open_pull(array $overrides = []): array
  * @param  list<array<string, mixed>>  $pulls
  * @param  array<string, list<array<string, mixed>>>  $checks  check runs keyed by head sha
  */
-function tick_watch_pulls(array $pulls, array $checks = []): void
+function tick_watch_pulls(array $pulls, array $checks = [], int $updateStatus = 422, string $updateMessage = 'merge conflict between base and head'): void
 {
     $sequence = Http::sequence();
     foreach ($pulls as $body) {
@@ -711,9 +713,10 @@ function tick_watch_pulls(array $pulls, array $checks = []): void
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => $sequence,
+        'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response(['message' => $updateMessage], $updateStatus),
     ];
     foreach ($checks as $sha => $runs) {
-        $fake['https://api.github.com/repos/acme/orbit/commits/'.$sha.'/check-runs*'] = Http::response(['check_runs' => $runs]);
+        $fake['https://api.github.com/repos/acme/orbit/commits/'.$sha.'/check-runs*'] = Http::response(['total_count' => count($runs), 'check_runs' => $runs]);
     }
     Http::preventStrayRequests();
     Http::fake($fake);
@@ -780,6 +783,13 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             return str_repeat('c', 40);
         }
 
+        public function mergeBase(Task $group): string
+        {
+            return str_repeat('c', 40);
+        }
+
+        public function moveTo(Task $group, string $sha): void {}
+
         public function fetchForTurn(Task $group): void
         {
             $this->turnFetches++;
@@ -818,6 +828,7 @@ function tick_assistance_notifier(): CoderSettleNotifier
 }
 
 it('preserves unresolved review assistance while CI and conflict fixes activate and continue', function (bool $conflict): void {
+    mock(TaskPullRequestUpdater::class)->shouldReceive('updateBranch')->andReturn(TaskBranchUpdate::Conflict);
     $group = tick_settling_group();
     config(['orbit.tasks.github_reviewers' => ['acme/orbit' => [42, 7]]]);
     $source = new FakeTaskPullRequestReviewWatcher(FeedbackFixtures::observation([FeedbackFixtures::review(state: GitHubReviewState::ChangesRequested)]), DB::transactionLevel());
@@ -967,14 +978,15 @@ it('asks for assistance once per set of pull request problems and withdraws it w
     Http::fake([
         'https://api.github.com/repos/acme/orbit/installation' => Http::response(['id' => 9]),
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
+        'https://api.github.com/repos/acme/orbit/pulls/42/update-branch' => Http::response(['message' => 'merge conflict between base and head'], 422),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::sequence()
             ->push($conflict)->push($conflict)
             ->push([...$clean, 'mergeable_state' => 'unstable'])
             ->push($clean),
-        'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['check_runs' => []]),
+        'https://api.github.com/repos/acme/orbit/commits/abc123/check-runs*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
-            ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
-            ->push(['check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/2']]]),
+            ->push(['total_count' => 1, 'check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'failure', 'html_url' => 'https://github.com/acme/orbit/runs/1']]])
+            ->push(['total_count' => 1, 'check_runs' => [['name' => 'Rust agent', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/2']]]),
     ]);
     $conflictReason = 'The pull request needs attention: It conflicts with main; merge main into the task branch and push. Orbit reached the cap of 2 fixups for conflict:main in the current window (2 counted).';
     $checkReason = 'The pull request needs attention: Check Rust agent failed: https://github.com/acme/orbit/runs/1. Orbit reached the cap of 2 fixups for check:Rust agent in the current window (2 counted).';
@@ -1407,8 +1419,9 @@ it('appends one conflict fixup and reuses its turn fetch before fast-forwarding 
         ->and($agents->spawned)->toBe([$fixup->id]);
 });
 
-it('appends one check fixup naming the failed check and its url', function (): void {
+it('appends one check fixup naming the failed check and its url', function (TaskGroupStatus $status): void {
     $group = tick_settling_group();
+    $group->update(['status' => $status]);
     $agents = tick_running_agents();
     tick_watch_pulls([tick_open_pull()], ['abc123' => [[
         'name' => 'Custom', 'status' => 'completed', 'conclusion' => 'timed_out', 'html_url' => 'https://github.com/acme/orbit/runs/9',
@@ -1428,7 +1441,7 @@ it('appends one check fixup naming the failed check and its url', function (): v
         ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running)
         ->and($agents->fetched)->toBe([])
         ->and($agents->spawned)->toBe([$fixup->id]);
-});
+})->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
 
 it('runs make check for a fixup on a non-Orbit Project and on orbit', function (string $slug): void {
     $group = tick_settling_group();
@@ -2074,8 +2087,8 @@ it('waits for the checks on a new head to complete before the next fixup', funct
         'https://api.github.com/app/installations/9/access_tokens' => Http::response(['token' => 'ghs_watch'], 201),
         'https://api.github.com/repos/acme/orbit/pulls/42' => Http::response(tick_open_pull(['head' => ['sha' => 'def456']])),
         'https://api.github.com/repos/acme/orbit/commits/def456/check-runs*' => Http::sequence()
-            ->push(['check_runs' => [$failed, ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11']]])
-            ->push(['check_runs' => [$failed, ['name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/11']]]),
+            ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'in_progress', 'conclusion' => null, 'html_url' => 'https://github.com/acme/orbit/runs/11']]])
+            ->push(['total_count' => 2, 'check_runs' => [$failed, ['name' => 'Web', 'status' => 'completed', 'conclusion' => 'success', 'html_url' => 'https://github.com/acme/orbit/runs/11']]]),
     ]);
 
     $notifier = tick_assistance_notifier();
@@ -6599,3 +6612,51 @@ function tick_baseline_group(string $slug, ?string $taskCheck, array $steps, str
 
     return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
 }
+
+it('updates a behind pull request without creating an agent fixup and waits for the new head', function (TaskGroupStatus $status): void {
+    $group = tick_settling_group();
+    $group->update(['status' => $status]);
+    $agents = tick_running_agents();
+    // Captured from the disposable GitHub proof PR #973 (2026-10-07).
+    tick_watch_pulls([tick_open_pull(['mergeable_state' => 'behind']), tick_open_pull(['mergeable_state' => 'behind'])], ['abc123' => []], 202, 'Updating pull request branch.');
+
+    app(TaskScheduler::class)->tick();
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->status)->toBe($status)
+        ->and($group->tasks()->whereNotNull('fixup_problem')->count())->toBe(0)
+        ->and($agents->spawned)->toBe([]);
+    $updates = Http::recorded(static fn (Request $request): bool => str_ends_with($request->url(), '/update-branch'));
+    expect($updates)->toHaveCount(1);
+    expect($updates->first()[0]->method())->toBe('PUT')
+        ->and($updates->first()[0]->data())->toBe(['expected_head_sha' => 'abc123']);
+})->with([TaskGroupStatus::Settling, TaskGroupStatus::WaitingForReview]);
+
+it('waits visibly without a fixup when a branch update is refused without a merge conflict', function (int $status, string $message): void {
+    $group = tick_settling_group();
+    tick_watch_pulls([tick_open_pull(['mergeable' => false, 'mergeable_state' => 'dirty'])], ['abc123' => []], $status, $message);
+
+    app(TaskScheduler::class)->tick();
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Settling)
+        ->and($group->tasks()->whereNotNull('fixup_problem')->count())->toBe(0)
+        ->and($group->fresh()->assistance_reason)->toContain('GitHub could not update');
+})->with([
+    'stale head' => [422, 'Expected head sha did not match'],
+    'permission' => [403, 'Resource not accessible by integration'],
+    'outage' => [503, 'Service Unavailable'],
+]);
+
+it('scopes only nonfinal Orbit handoff tests to the subtask start', function (bool $later, bool $orbit): void {
+    [$group, $task, $checks] = tick_checking([TaskCheckReading::running()]);
+    $group->project->update(['slug' => $orbit ? 'orbit' : 'other']);
+    $task->update(['subtask_start_commit' => str_repeat('a', 40)]);
+    if ($later) {
+        Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Later', 'brief' => 'Next.', 'status' => TaskStatus::Todo]);
+    }
+
+    app(TaskScheduler::class)->tick();
+
+    expect($checks->starts)->toBe(1)
+        ->and($checks->deliverables[0]['test_base'] ?? null)->toBe($later && $orbit ? str_repeat('a', 40) : null);
+})->with([[true, true], [false, true], [true, false]]);

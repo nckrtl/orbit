@@ -75,6 +75,7 @@ it('sends node provisioning to the active gateway', function (): void {
         'error_code' => null,
         'roles' => ['app-dev'],
         'settings' => null,
+        'updating' => null,
         'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -279,40 +280,6 @@ it('rejects duplicate and malformed provision settings before making a request',
     'duplicate key' => [['apps.path:/srv/a', 'apps.path:/srv/b'], 'supplied more than once'],
     'missing colon' => [['apps.path'], 'setting-path'],
     'empty key' => [[':/srv/a'], 'setting-path'],
-]);
-
-it('accepts the deprecated WireGuard alias alone and equal dual values', function (array $options): void {
-    app(GatewayConfigRepository::class)->add(new GatewayProfile(
-        name: 'test',
-        url: 'https://10.44.0.1',
-    ));
-    $mockClient = MockClient::global([
-        '*/api/v1/nodes' => MockResponse::make([
-            'data' => [
-                'id' => 1,
-                'name' => 'app-dev',
-                'status' => 'active',
-                'public_ssh_host' => '94.237.40.75',
-                'public_ssh_port' => 22,
-                'user' => 'orbit',
-                'wireguard_ip' => '10.44.0.2',
-                'roles' => [],
-            ],
-            'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
-        ], 201),
-    ]);
-
-    $this->artisan('node:add', [
-        'name' => 'app-dev',
-        'host' => '94.237.40.75',
-        ...$options,
-    ])->assertExitCode(0);
-
-    expect($mockClient->getLastRequest()?->body()->all())
-        ->toHaveKey('wireguard_ip', '10.44.0.2')
-        ->not->toHaveKey('wireguard_address');
-})->with([
-    'canonical option' => [['--wireguard-ip' => '10.44.0.2']],
 ]);
 
 it('rejects malformed Cluster and network input before making a request', function (

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes\Storage;
 
+use App\Domain\GatewayReleases\GatewayReleaseException;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Nodes\ManagedUserAccount;
 use Illuminate\Support\Facades\Config;
 
@@ -35,13 +37,34 @@ final readonly class ProtectedPathCatalog
             }
         }
 
-        $gatewayCheckout = StoragePath::tryParse(rtrim(Config::string('orbit.gateway_checkout'), '/'));
+        foreach ($this->gatewayPaths() as $gatewayPath) {
+            $protected = StoragePath::tryParse($gatewayPath);
 
-        if ($gatewayCheckout instanceof StoragePath && $path->overlaps($gatewayCheckout)) {
-            return true;
+            if ($protected instanceof StoragePath && $path->overlaps($protected)) {
+                return true;
+            }
         }
 
         return $this->isHiddenControlPath($path, $home);
+    }
+
+    /**
+     * The Gateway checkout and, for a checkout in the release layout, the current link, the
+     * releases, and the shared state every release links to.
+     *
+     * @return list<string>
+     */
+    private function gatewayPaths(): array
+    {
+        $checkout = rtrim(Config::string('orbit.gateway_checkout'), '/');
+
+        try {
+            $layout = new GatewayReleaseLayout($checkout);
+        } catch (GatewayReleaseException) {
+            return [$checkout];
+        }
+
+        return [$checkout, $layout->currentPath(), $layout->releasesPath(), $layout->sharedPath()];
     }
 
     public function instanceDefault(ManagedUserAccount $account): ?StoragePath

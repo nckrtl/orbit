@@ -1,0 +1,89 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseRequest",
+    "route": "GET /api/v1/gateway/releases/{release}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "release": "fedcba987654",
+            "sha": "fedcba9876543210fedcba9876543210fedcba98",
+            "requested": "fedcba9876543210fedcba9876543210fedcba98",
+            "trigger": "deploy",
+            "force": false,
+            "outcome": "paused",
+            "finished": true,
+            "migrations_ran": true,
+            "retryable": false,
+            "cleanup_paused": false,
+            "snapshot": "/home/orbit/.orbit/backups/pre-fedcba987654.sqlite",
+            "previous": "0123456789ab",
+            "phases": {
+                "prepare": {
+                    "outcome": "prepared",
+                    "duration_ms": 41000
+                },
+                "guard": {
+                    "outcome": "passed",
+                    "force": false
+                },
+                "configuration": {
+                    "outcome": "cached"
+                },
+                "snapshot": {
+                    "outcome": "snapshotted",
+                    "path": "/home/orbit/.orbit/backups/pre-fedcba987654.sqlite",
+                    "pending": [
+                        "2026_10_14_000000_track_gateway_release_requests"
+                    ]
+                },
+                "migrate": {
+                    "outcome": "migrated",
+                    "pending": [
+                        "2026_10_14_000000_track_gateway_release_requests"
+                    ]
+                },
+                "switch": {
+                    "outcome": "switched",
+                    "from": "0123456789ab",
+                    "to": "fedcba987654"
+                },
+                "handoff": {
+                    "caddy": "unchanged",
+                    "fpm": "unchanged",
+                    "opcache": "reset",
+                    "agent_view": "restarted"
+                },
+                "verify": {
+                    "outcome": "failed",
+                    "error_code": "gateway.release_verify_failed"
+                },
+                "pause": {
+                    "outcome": "paused",
+                    "snapshot": "/home/orbit/.orbit/backups/pre-fedcba987654.sqlite"
+                }
+            },
+            "error_code": "gateway.release_verify_failed",
+            "message": "The Gateway reported version [0123456789ab0123456789ab0123456789ab0123], not [fedcba9876543210fedcba9876543210fedcba98].",
+            "duration_ms": 61000,
+            "alert": {
+                "kind": "release_paused",
+                "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844",
+                "activity_id": 9,
+                "problem": {
+                    "outcome": "done",
+                    "fingerprint": "release|release_paused|gateway|fedcba9876543210fedcba9876543210fedcba98"
+                },
+                "webhook": {
+                    "outcome": "skipped",
+                    "reason": "not_configured"
+                }
+            },
+            "created_at": "2026-10-07T12:00:00+00:00",
+            "updated_at": "2026-10-07T12:00:00+00:00"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

@@ -269,6 +269,25 @@ describe('project requests', function (): void {
             ->and($update(true)->body()->all())->toBe(['task_workspace_routed' => true]);
     });
 
+    it('serializes the review-and-merge switch and the merge check only when given', function (): void {
+        expect(new UpdateProjectRequest(projectId: 3, reviewAndMerge: true, mergeCheck: 'Required checks', mergeCheckProvided: true)->body()->all())
+            ->toBe(['review_and_merge' => true, 'merge_check' => 'Required checks'])
+            ->and(new UpdateProjectRequest(projectId: 3, reviewAndMerge: false)->body()->all())->toBe(['review_and_merge' => false])
+            ->and(new UpdateProjectRequest(projectId: 3, mergeCheckProvided: true)->body()->all())->toBe(['merge_check' => null])
+            ->and(new UpdateProjectRequest(projectId: 3, mergeCheck: 'Ignored')->body()->all())->toBe([]);
+    });
+
+    it('parses the review-and-merge settings', function (): void {
+        $on = ProjectResponse::fromGatewayData(['id' => 3, 'review_and_merge' => true, 'merge_check' => 'Required checks'], 'request-id');
+        $omitted = ProjectResponse::fromGatewayData(['id' => 4], 'request-id');
+
+        expect($on->reviewAndMerge)->toBeTrue()
+            ->and($on->mergeCheck)->toBe('Required checks')
+            ->and($on->toArray())->toMatchArray(['review_and_merge' => true, 'merge_check' => 'Required checks'])
+            ->and($omitted->reviewAndMerge)->toBeNull()
+            ->and($omitted->toArray())->not->toHaveKey('review_and_merge');
+    });
+
     it('parses true, false, and omitted task workspace routing without coercing other types', function (): void {
         $response = static fn (mixed $routed): ProjectResponse => ProjectResponse::fromGatewayData([
             'id' => 3,
@@ -328,3 +347,16 @@ function orbit_request_id(): string
 {
     return '0198e15c-bf97-7c23-8f1f-61b8fe67a844';
 }
+
+it('preserves explicit compute modes and omits an unspecified mode', function (?string $mode): void {
+    $create = new CreateProjectRequest(slug: 'orbit', repositoryUrl: 'https://github.com/nckrtl/orbit.git', root: '.', taskCompute: $mode);
+    $update = new UpdateProjectRequest(projectId: 3, taskCompute: $mode);
+    foreach ([$create, $update] as $request) {
+        $body = $request->body()->all();
+        if ($mode === null) {
+            expect($body)->not->toHaveKey('task_compute');
+        } else {
+            expect($body['task_compute'])->toBe($mode);
+        }
+    }
+})->with([null, 'shared', 'vm']);

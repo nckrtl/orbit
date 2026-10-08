@@ -13,6 +13,8 @@ use Orbit\Sdk\Requests\Nodes\RemoveNodeRoleRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 function node_firewall_reply(string $class, array $data): array
 {
     return ['class' => $class, 'body' => ['data' => $data,
