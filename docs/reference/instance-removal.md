@@ -120,7 +120,7 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Delete the development checkout, or keep the production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
+| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, then delete its checkout. Keep production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
 | `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
 
@@ -132,7 +132,9 @@ A pending Route can publish a pool before activation, and `route:destroy` can de
 
 Removal ignores `app-dev.php_pool_directory_missing` from that convergence. The error names another site's pool, and the convergence has already removed the removed Instance's pool. Doctor keeps reporting the skipped pool.
 
-`source_finalization` deletes the checkout before `runtime_cleanup`, so for a moment the live pool names a missing directory. [PHP-FPM convergence](/reference/php-runtime#development-runtime) never renders a pool for a missing directory and does not need PHP-FPM to start first, so a later convergence still repairs the Node if `runtime_cleanup` fails. A failed step keeps the removal open for retry, and Doctor reports the leftover pool as `role.php_pool_directory_missing`.
+PHP-FPM refuses to start while any pool names a missing `chdir`, and all development Instances of one PHP version share one pool file. So `source_finalization` first converges PHP-FPM on the Node, which withdraws the Instance's pool and reloads PHP-FPM, and only then deletes the checkout. The live pool file never names the deleted directory. If that convergence fails, the checkout stays and the step stays open for retry. It ignores `app-dev.php_pool_directory_missing` for the same reason as `runtime_cleanup`.
+
+[PHP-FPM convergence](/reference/php-runtime#development-runtime) also never renders a pool for a missing directory and does not need PHP-FPM to start first, so it still repairs a Node whose source was deleted another way. Doctor reports such a pool as `role.php_pool_directory_missing`.
 
 ### Route cleanup
 
