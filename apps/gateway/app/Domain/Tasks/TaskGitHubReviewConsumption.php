@@ -77,7 +77,7 @@ final readonly class TaskGitHubReviewConsumption
     /** @param Collection<int, Task> $tasks */
     private static function window(Collection $tasks): ?int
     {
-        return $tasks->filter(static fn (Task $task): bool => $task->fixup_problem === null && $task->status === TaskStatus::Completed)
+        return $tasks->filter(static fn (Task $task): bool => $task->isOperatorWork() && $task->status === TaskStatus::Completed)
             ->sortBy(static fn (Task $task): array => [$task->position, $task->id])->last()?->id;
     }
 }

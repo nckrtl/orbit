@@ -9,6 +9,7 @@ use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
 use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
+use Orbit\Sdk\Responses\Tasks\TaskMergeResponse;
 use Orbit\Sdk\Responses\Tasks\TasksStatusResponse;
 
 final class ShowTasksStatusCommand extends TaskCommand
@@ -29,7 +30,7 @@ final class ShowTasksStatusCommand extends TaskCommand
     }
 
     #[\Override]
-    protected $description = 'Show whether the Gateway tasks extension is on and which groups are asking for assistance.';
+    protected $description = 'Show whether the Gateway tasks extension is on, which groups are asking for assistance, and which review-and-merge groups are open.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -56,6 +57,7 @@ final class ShowTasksStatusCommand extends TaskCommand
             'Last tick' => $status->lastTickAt ?? 'not recorded',
         ]));
         $this->renderAssistance($status->assistance ?? []);
+        $this->renderMerges($status->merges);
         $this->writeHumanMessage("Request ID: {$status->requestId}");
 
         return self::SUCCESS;
@@ -106,6 +108,26 @@ final class ShowTasksStatusCommand extends TaskCommand
                 ], $failures),
             ));
         }
+    }
+
+    /** @param list<TaskMergeResponse> $groups */
+    private function renderMerges(array $groups): void
+    {
+        if ($groups === []) {
+            return;
+        }
+
+        $this->writeSection('Review and merge');
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Group', 'Title', 'Status', 'Merge', 'Reason'],
+            array_map(static fn (TaskMergeResponse $group): array => [
+                $group->reference(),
+                $group->title,
+                $group->status,
+                $group->mergeStatus,
+                $group->mergeReason,
+            ], $groups),
+        ));
     }
 
     private function writeSection(string $heading): void

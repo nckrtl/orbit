@@ -783,6 +783,13 @@ function tick_running_agents(bool $fetchFails = false, bool $fastForwardFails = 
             return str_repeat('c', 40);
         }
 
+        public function mergeBase(Task $group): string
+        {
+            return str_repeat('c', 40);
+        }
+
+        public function moveTo(Task $group, string $sha): void {}
+
         public function fetchForTurn(Task $group): void
         {
             $this->turnFetches++;

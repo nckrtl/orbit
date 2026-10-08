@@ -14,7 +14,10 @@ final readonly class ComposerSourceClassifier
         private InstancePhpVersionCatalog $php,
     ) {}
 
-    public function classify(string $json, ProjectType $projectType, string $artisanKind): DevelopmentSourceProfile
+    /**
+     * @param  string  $entryPointKind  The kind of the type's framework entry point (`artisan`, or `bin/console` for a Symfony app): regular, absent, or unsafe.
+     */
+    public function classify(string $json, ProjectType $projectType, string $entryPointKind): DevelopmentSourceProfile
     {
         try {
             $composer = json_decode($json, true, flags: JSON_THROW_ON_ERROR);
@@ -40,6 +43,20 @@ final readonly class ComposerSourceClassifier
             throw $this->invalid('app-dev.php_version_unsupported', $exception);
         }
 
+        if ($projectType === ProjectType::SymfonyApp) {
+            $symfony = array_key_exists('symfony/framework-bundle', $require);
+
+            if ($entryPointKind === 'unsafe' || ($entryPointKind === 'regular') !== $symfony) {
+                throw $this->invalid('app-dev.symfony_source_invalid');
+            }
+
+            if ($symfony && ! is_string($require['symfony/framework-bundle'])) {
+                throw $this->invalid('app-dev.symfony_source_invalid');
+            }
+
+            return new DevelopmentSourceProfile($version, false);
+        }
+
         $laravelDeclarations = array_values(array_filter(
             [
                 array_key_exists('laravel/framework', $require) ? $require['laravel/framework'] : null,
@@ -49,7 +66,7 @@ final readonly class ComposerSourceClassifier
         ));
 
         if ($projectType !== ProjectType::LaravelPackage) {
-            if ($artisanKind === 'unsafe' || ($artisanKind === 'regular') !== (count($laravelDeclarations) === 1)) {
+            if ($entryPointKind === 'unsafe' || ($entryPointKind === 'regular') !== (count($laravelDeclarations) === 1)) {
                 throw $this->invalid('app-dev.laravel_source_invalid');
             }
         }
@@ -60,7 +77,7 @@ final readonly class ComposerSourceClassifier
 
         return new DevelopmentSourceProfile(
             $version,
-            $projectType !== ProjectType::LaravelPackage && $artisanKind === 'regular',
+            $projectType !== ProjectType::LaravelPackage && $entryPointKind === 'regular',
         );
     }
 

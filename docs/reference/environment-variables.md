@@ -48,6 +48,8 @@ Set `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` in the Gateway's `.env` to choo
 
 Reviewer trust is not an Instance environment setting. The Gateway operator sets `ORBIT_TASKS_GITHUB_REVIEWERS` in the Gateway's `.env`. A task workspace's `.env`, task definition, or branch cannot grant [GitHub feedback authority](/reference/tasks#trusted-github-feedback).
 
+The authors whose pull requests Orbit reviews and merges are Gateway configuration too. The operator sets `ORBIT_TASKS_PULL_REQUEST_AUTHORS` in the Gateway's `.env`, in the same format. A pull request cannot name its own author as trusted. See [Incoming pull requests](/reference/tasks#incoming-pull-requests).
+
 The logins requested as reviewers on a published task pull request are also Gateway configuration. The operator sets `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` in the Gateway's `.env`. Unset or empty requests no one. See [Tasks configuration](/reference/tasks#configuration).
 
 The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overrides the memory limit for every VM it creates or clones, for example `2GiB`. When unset, the harness uses the [per-Node defaults](/reference/incus-topologies#capacity). It does not read this setting from an Instance's `.env`.
@@ -135,7 +137,7 @@ Import, update, synchronize, deploy, removal, and Route changes on one Instance 
 
 `APP_ENV` and `APP_DEBUG` are ordinary stored keys. The Node role, not these keys, decides the release layout, the Unix user, and the PHP-FPM pool. So a change to `APP_ENV` never moves an Instance between layouts. When `APP_ENV` is absent or is the environment placeholder, Orbit reads it as `development` on `app-dev` and `production` on `app-prod`.
 
-A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration and then sets `APP_ENV=production` and `APP_DEBUG=false`. You can change both afterwards. A transfer keeps every stored key.
+A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
 
 ## Other writers
 

@@ -17,7 +17,9 @@
                 "root": null,
                 "task_check": null,
                 "task_workspace_routed": true,
-                "task_compute": "shared"
+                "task_compute": "shared",
+                "review_and_merge": false,
+                "merge_check": null
             }
         ],
         "meta": {

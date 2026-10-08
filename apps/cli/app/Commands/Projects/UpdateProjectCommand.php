@@ -28,6 +28,9 @@ final class UpdateProjectCommand extends GatewayCommand
         {--clear-task-check : Remove the task check command so tasks run no check command}
         {--task-workspace-routed= : Change routing for future task workspaces (true or false)}
         {--task-compute= : Compute for future task groups (shared or vm)}
+        {--review-and-merge= : Review every push, review incoming pull requests, and merge reviewed green heads (true or false)}
+        {--merge-check= : The check that must pass on a head before Orbit merges it, such as "Required checks"}
+        {--clear-merge-check : Remove the merge check}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -66,10 +69,10 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
-        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
+        if ($type !== null && ! in_array($type, ['monorepo', 'laravel-app', 'symfony-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
+                'Project type must be monorepo, laravel-app, symfony-app, laravel-package, or node-package.',
             );
         }
 
@@ -95,6 +98,22 @@ final class UpdateProjectCommand extends GatewayCommand
         }
 
         $taskWorkspaceRouted = $this->taskWorkspaceRouted();
+        $reviewAndMerge = $this->option('review-and-merge');
+        $reviewAndMergeProvided = $this->input->hasParameterOption('--review-and-merge');
+        $mergeCheck = $this->stringOption('merge-check');
+        $clearMergeCheck = $this->option('clear-merge-check') === true;
+
+        if ($reviewAndMergeProvided && $reviewAndMerge !== 'true' && $reviewAndMerge !== 'false') {
+            return $this->renderGatewayFailure('project.review_and_merge_invalid', 'Review and merge must be true or false.');
+        }
+
+        if ($mergeCheck !== null && $clearMergeCheck) {
+            return $this->renderGatewayFailure('project.merge_check_conflict', 'Choose either --merge-check or --clear-merge-check.');
+        }
+
+        if ($mergeCheck !== null && (trim($mergeCheck) === '' || strlen($mergeCheck) > 255)) {
+            return $this->renderGatewayFailure('project.merge_check_invalid', 'Merge check name is invalid.');
+        }
 
         if (! $taskWorkspaceRouted['valid']) {
             return $this->renderGatewayFailure(
@@ -103,7 +122,8 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
-        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null && $taskCompute === null) {
+        if ($type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null && $taskCompute === null
+            && ! $reviewAndMergeProvided && $mergeCheck === null && ! $clearMergeCheck) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -130,6 +150,9 @@ final class UpdateProjectCommand extends GatewayCommand
                 sourceAccess: $sourceAccess,
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
                 taskCompute: is_string($taskCompute) ? $taskCompute : null,
+                reviewAndMerge: $reviewAndMergeProvided ? $reviewAndMerge === 'true' : null,
+                mergeCheck: $clearMergeCheck ? null : $mergeCheck,
+                mergeCheckProvided: $clearMergeCheck || $mergeCheck !== null,
             ),
             ProjectResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

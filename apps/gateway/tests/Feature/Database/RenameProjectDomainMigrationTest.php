@@ -55,6 +55,7 @@ function rename_migration_rows(): object
     // These Project settings were added after the rename migration.
     $project->offsetUnset('source_access');
     $project->offsetUnset('task_compute');
+    $project->offsetUnset('review_and_merge');
     $project->save();
     $instance = Instance::query()->create([
         'project_id' => $project->id,

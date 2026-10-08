@@ -27,6 +27,20 @@ it('keeps non-Laravel dependency trees at repository scope and uses the effectiv
     'Laravel monorepo' => [ProjectType::Monorepo, true, null, '/srv/repository/apps/site'],
     'unclassified monorepo' => [ProjectType::Monorepo, null, null, '/srv/repository'],
     'package' => [ProjectType::LaravelPackage, false, null, '/srv/repository'],
+    'Symfony inherited' => [ProjectType::SymfonyApp, false, null, '/srv/repository/apps/site'],
+]);
+
+it('requires a Route and serves PHP for web-serving project types only', function (ProjectType $type, bool $serving): void {
+    $instance = new Instance(['checkout_path' => '/srv/repository', 'source_is_laravel' => false]);
+    $instance->setRelation('project', new Project(['type' => $type, 'root' => 'public']));
+
+    expect($instance->requiresRoute())->toBe($serving)
+        ->and($instance->servesPhp())->toBe($serving);
+})->with([
+    'Laravel app' => [ProjectType::LaravelApp, true],
+    'Symfony app' => [ProjectType::SymfonyApp, true],
+    'Laravel package' => [ProjectType::LaravelPackage, false],
+    'Node package' => [ProjectType::NodePackage, false],
 ]);
 
 it('resolves the application directory from the inherited web root', function (?string $root, string $suffix): void {

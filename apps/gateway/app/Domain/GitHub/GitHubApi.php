@@ -171,4 +171,27 @@ interface GitHubApi
      * @throws GitHubApiException
      */
     public function compareCommits(#[SensitiveParameter] string $token, GitHubRepository $repository, string $baseSha, string $headSha): GitHubCommitComparison;
+
+    /**
+     * Open pull requests of the repository, oldest first, at most three pages of 100. A malformed row fails the list.
+     *
+     * @return list<GitHubListedPullRequest>
+     *
+     * @throws GitHubApiException
+     */
+    public function openPullRequests(#[SensitiveParameter] string $token, GitHubRepository $repository): array;
+
+    /**
+     * Submits a review decision for exactly `$commitId` and returns the review id. Needs `pull_requests: write`.
+     *
+     * @throws GitHubApiException
+     */
+    public function submitReview(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $commitId, GitHubReviewEvent $event, string $body): int;
+
+    /**
+     * Merges the pull request with a merge commit, only while its head is `$sha`. A refusal is a result, not an exception.
+     *
+     * @throws GitHubApiException when GitHub cannot be reached
+     */
+    public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult;
 }

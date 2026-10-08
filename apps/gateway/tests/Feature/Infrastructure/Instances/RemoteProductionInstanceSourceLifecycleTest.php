@@ -342,12 +342,13 @@ it('inspects the recorded production checkout when classifying the source', func
     $profile = $source->inspectProfile($instance);
 
     expect($ssh->commands[0]->arguments)
-        ->toBe(['bash', '-seu', '--', 'orbit-app-1', 'public', $checkoutPath, $checkoutPath])
+        ->toBe(['bash', '-seu', '--', 'orbit-app-1', 'public', $checkoutPath, $checkoutPath, 'artisan'])
         ->and($ssh->commands[0]->input)
         ->toContain(
             'checkout=$3',
             'composer="$application/composer.json"',
-            'artisan="$application/artisan"',
+            'entry_point=$5',
+            'artisan="$application/$entry_point"',
             'candidate="$checkout/$relative_root"',
             'case "$resolved" in',
             '"$checkout"/*) ;;',
@@ -376,7 +377,7 @@ it('classifies production source when its runtime user cannot enter the SSH work
     try {
         expect(new Process(['sudo', '-n', '-u', 'caddy', 'test', '-x', "$root/ssh-home"])->run())->toBe(1);
 
-        $process = new Process(['bash', '-seu', '--', 'caddy', $webRoot, "$root/source", "$root/source$suffix"], "$root/ssh-home", input: $program);
+        $process = new Process(['bash', '-seu', '--', 'caddy', $webRoot, "$root/source", "$root/source$suffix", 'artisan'], "$root/ssh-home", input: $program);
         $process->mustRun();
 
         expect($process->getOutput())->toBe("COMPOSER\tregular\teyJyZXF1aXJlIjp7InBocCI6Il44LjUiLCJsYXJhdmVsL2ZyYW1ld29yayI6Il4xMy4wIn19\n");
@@ -396,7 +397,7 @@ it('rejects foreign source ownership from a private SSH working directory', func
     try {
         new Process(['sudo', 'chown', '--', $owner, "$root/source/artisan"])->mustRun();
 
-        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source", "$root/source"], "$root/ssh-home", input: $program);
+        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source", "$root/source", 'artisan'], "$root/ssh-home", input: $program);
         $process->mustRun();
 
         expect($process->getOutput())->toBe("UNSAFE\n");
@@ -418,7 +419,7 @@ it('propagates an unreadable source directory instead of classifying it as clean
     try {
         new Process(['sudo', '-u', 'caddy', 'mkdir', '-m', '000', '--', "$root/source/unreadable"])->mustRun();
 
-        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source", "$root/source"], "$root/ssh-home", input: $program);
+        $process = new Process(['bash', '-seu', '--', 'caddy', 'public', "$root/source", "$root/source", 'artisan'], "$root/ssh-home", input: $program);
         $process->run();
 
         expect($process->getExitCode())->not->toBe(0);

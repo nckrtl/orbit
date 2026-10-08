@@ -542,7 +542,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         'project:update' => [
             ['project'],
             ['type' => null, 'slug' => null, 'repository' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'clear-task-check' => false, 'task-workspace-routed' => null,
-                'task-compute' => null, 'json' => false],
+                'task-compute' => null, 'review-and-merge' => null, 'merge-check' => null, 'clear-merge-check' => false, 'json' => false],
         ],
         'cluster:list' => [[], ['json' => false]],
         'cluster:create' => [['name'], ['tld' => null, 'json' => false]],

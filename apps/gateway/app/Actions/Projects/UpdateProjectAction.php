@@ -93,7 +93,7 @@ final readonly class UpdateProjectAction
             ->all());
 
         if (! $data->hasReconcilableChanges()) {
-            if ($data->taskCheckProvided || $data->taskWorkspaceRoutedProvided || $data->taskCompute !== null) {
+            if ($data->hasTaskSettings()) {
                 $project = $this->operations->run(
                     $instanceIds,
                     fn (): Project => $this->applyProjectCommands($project->fresh() ?? $project, $data),
@@ -157,6 +157,12 @@ final readonly class UpdateProjectAction
         }
         if ($data->taskWorkspaceRoutedProvided) {
             $changes['task_workspace_routed'] = $data->taskWorkspaceRouted;
+        }
+        if ($data->reviewAndMergeProvided) {
+            $changes['review_and_merge'] = $data->reviewAndMerge;
+        }
+        if ($data->mergeCheckProvided) {
+            $changes['merge_check'] = $data->mergeCheck;
         }
         if ($changes === []) {
             return $project;
@@ -803,7 +809,7 @@ final readonly class UpdateProjectAction
 
     private function assertTypeChange(Project $project, ProjectType $type): void
     {
-        if ($type !== ProjectType::LaravelApp) {
+        if (! $type->isWebServing()) {
             return;
         }
 
@@ -819,7 +825,7 @@ final readonly class UpdateProjectAction
 
         throw new ResourceOperationException(
             errorCode: 'project.type_requires_route',
-            message: 'A laravel-app Project cannot be assigned while an active Instance has no Route.',
+            message: "A {$type->value} Project cannot be assigned while an active Instance has no Route.",
             status: 409,
             details: ['instance_ids' => $unrouted->implode(',')],
         );

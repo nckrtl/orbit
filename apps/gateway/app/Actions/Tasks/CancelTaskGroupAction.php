@@ -9,14 +9,13 @@ use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
 use App\Models\Task;
-use App\Models\TaskComment;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -142,13 +141,8 @@ final readonly class CancelTaskGroupAction
         if (! $group->tasks->contains(static fn (Task $task): bool => $task->status === TaskStatus::Completed)) {
             return;
         }
-        $commit = TaskComment::query()
-            ->where('task_group_id', $group->id)
-            ->where('type', TaskCommentType::Approved)
-            ->whereNotNull('commit_sha')
-            ->latest('id')
-            ->value('commit_sha');
-        if (! is_string($commit) || $commit === '') {
+        $commit = TaskFinalReview::cancelPushCommit($group);
+        if ($commit === null) {
             return;
         }
 
