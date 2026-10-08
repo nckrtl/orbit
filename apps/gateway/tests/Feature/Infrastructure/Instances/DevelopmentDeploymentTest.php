@@ -5,10 +5,15 @@ declare(strict_types=1);
 use App\Actions\Instances\DeployDefaultInstanceAction;
 use App\Actions\Instances\SelectInstanceSeedAction;
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentEvent;
+use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
 use App\Domain\Projects\TiaBaselineSetup;
@@ -16,7 +21,12 @@ use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Compute\SandboxFleetIdentity;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Instances\DevelopmentReleaseProgram;
+use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
@@ -178,6 +188,42 @@ describe('broken development releases', function (): void {
             expect(fn () => $deployment->releases($instance))->toThrow(RuntimeConvergenceException::class);
         }
     })->with(['current', 'previous', 'pinned seed']);
+});
+
+it('grants Web access on activation only to the deployed release', function (): void {
+    $instance = $this->fixture->instance;
+    $other = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'other', 'checkout_path' => $this->fixture->sandbox.'/apps/dev935/other', 'source_layout' => 'checkout', 'branch' => 'other', 'status' => 'active']);
+    foreach ([$instance, $other] as $served) {
+        $route = Route::query()->create(['project_id' => $served->project_id, 'node_id' => $served->node_id, 'domain' => "{$served->name}.dev935.test", 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $served->id, 'position' => 0]);
+        $route->publishSites();
+        $route->update(['status' => 'active']);
+    }
+    $release = new DeploymentRelease('release-9', $instance->checkout_path.'/releases/release-9', $this->fixture->initialCommit);
+    $transport = new class($release) implements SshExecutor
+    {
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        public function __construct(private readonly DeploymentRelease $release) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+
+            return new CommandResult(0, "{$this->release->name}\t{$this->release->commit}\n", '', 1, false);
+        }
+    };
+    $deployment = new RemoteDevelopmentDeployment(
+        new DevelopmentSshExecutor($transport, Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock(), Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock()),
+        Mockery::mock(ManagedUserAccountResolver::class)->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'))->getMock(),
+        app(CheckoutRemovalBoundary::class),
+        app(RepositoryReadAccess::class),
+    );
+
+    expect($deployment->activate($instance->refresh(), $release))->toEqual($release);
+    $access = collect($transport->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'u:caddy:r-X'));
+    expect(array_slice($access->arguments, 3))->toBe([$release->path, 'public', $release->path]);
 });
 
 describe('real development release programs', function (): void {
