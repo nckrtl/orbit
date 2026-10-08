@@ -687,6 +687,15 @@ describe('gateway:release:deploy', function (): void {
         expect((require $this->fixture->layout->releaseApplicationPath($first).'/bootstrap/cache/config.php')['env'])->toContain('ORBIT_CHANGED=2');
     });
 
+    it('lists a release whose id contains only digits as a string', function (): void {
+        $id = '983536432205';
+        $path = $this->fixture->layout->releasePath($id);
+        mkdir($path, 0755, true);
+        file_put_contents($path.'/REVISION', $id.str_repeat('a', 28)."\n");
+
+        expect($this->fixture->layout->retainedReleaseIds())->toBe([$id]);
+    });
+
     it('keeps the configured number of releases plus the current and previous one', function (): void {
         $order = new ReleaseSteps;
         $first = adopt_release($this->fixture);
