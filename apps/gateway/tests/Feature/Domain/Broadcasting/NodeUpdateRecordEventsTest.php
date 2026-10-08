@@ -74,6 +74,21 @@ describe('Node update broadcasts', function (): void {
             ->and(app(NodeUpdates::class)->forNode($dev))->toBeNull();
     });
 
+    it('ends the visits a dead run left open before it visits any Node', function (): void {
+        FleetFixtures::bind();
+        $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
+        app(FleetRolloutRunner::class)->run();
+        // A run that died while it visited dev left the visit open.
+        $row = FleetRolloutNode::query()->where('node_id', $dev->id)->sole();
+        $row->forceFill(['started_at' => now(), 'finished_at' => null])->save();
+        Event::fake([RecordBroadcast::class]);
+
+        app(FleetRolloutRunner::class)->run();
+
+        expect($row->refresh()->finished_at)->not->toBeNull()
+            ->and(nodeUpdatingBroadcasts($dev))->toBe([null]);
+    });
+
     it('ends a visit that throws, so the Node does not stay updating', function (): void {
         ['visitor' => $visitor] = FleetFixtures::bind();
         $dev = FleetFixtures::node('dev', [RoleName::AppDev]);

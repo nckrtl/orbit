@@ -826,9 +826,9 @@ Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating
 
 The other id field is null. A visit clears its `finished_at` when it starts, so a catch-up visit of a converged Node counts too. The rollout visits one Node at a time, so at most one Node is `fleet_rollout`. The Gateway Node is never in the [rollout set](#rollout-set-and-order), so one Node is never both. A `queued` release record does not count, because nothing changed yet.
 
-The Gateway ignores a visit that started more than 20 minutes ago, because the run's fleet lock has expired and its process is gone. The next run visits the Node again. A dead `running` release record ends as `interrupted`, as [Release records](#release-records) describes.
+A visit counts only while a run holds the fleet lock, so a long visit stays `updating` for as long as it runs. A run that dies leaves its visit open. Nothing renews the lock then, so it runs out within 20 minutes and the Node stops reading as updating. The next run ends every open visit before it visits a Node, and broadcasts each of those Nodes. A dead `running` release record ends as `interrupted`, as [Release records](#release-records) describes.
 
-The list reads every Node's state with two queries: one for the visits in progress and one for a running release.
+The list reads every Node's state with two queries, one for the visits in progress and one for a running release. It reads the fleet lock only when a visit is open.
 
 The Gateway broadcasts [`node.updated`](/reference/events#node) with the new value when a visit starts and ends, and when a release record starts running and ends. The [web app](/reference/web-app#live-node-and-process-state) shows the Node as `updating`.
 

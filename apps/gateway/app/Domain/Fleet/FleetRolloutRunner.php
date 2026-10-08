@@ -75,6 +75,7 @@ final readonly class FleetRolloutRunner
     /** @return array{status: string, rollout: ?int, visited: list<array{node: string, outcome: string}>} */
     private function runLocked(): array
     {
+        $this->endDeadVisits();
         $halted = FleetRollout::query()->where('status', FleetRolloutStatus::Halted->value)->latest('id')->first();
 
         if ($halted instanceof FleetRollout) {
@@ -162,10 +163,28 @@ final readonly class FleetRolloutRunner
         try {
             return $this->converger->converge($node, $state, $allowDowngrade, $firstVisit);
         } catch (Throwable $exception) {
-            $row->forceFill(['finished_at' => now()])->save();
-            $this->nodeUpdates->node($node->id);
+            try {
+                $row->forceFill(['finished_at' => now()])->save();
+                $this->nodeUpdates->node($node->id);
+            } catch (Throwable $cleanup) {
+                report($cleanup);
+            }
 
             throw $exception;
+        }
+    }
+
+    /**
+     * Ends the visits a run that died left open. This run holds the fleet lock, so no visit runs: each open visit
+     * belongs to a dead process, and its Node is not updating any more.
+     */
+    private function endDeadVisits(): void
+    {
+        $open = FleetRolloutNode::query()->whereNotNull('started_at')->whereNull('finished_at')->get();
+
+        foreach ($open as $row) {
+            $row->forceFill(['finished_at' => now()])->save();
+            $this->nodeUpdates->node($row->node_id);
         }
     }
 

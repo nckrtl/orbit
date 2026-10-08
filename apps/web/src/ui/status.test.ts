@@ -39,6 +39,8 @@ describe("node status", () => {
         expect(statusColour({ value: "provisioning" })).toBe("text-yellow");
         expect(statusColour({ value: "active", reach: null })).toBe("text-yellow");
         expect(statusColour({ value: "active", reach: null }, true)).toBe("");
+        // A record whose own status is the word "updating" keeps the in-between colour.
+        expect(statusColour({ value: "updating" })).toBe("text-yellow");
     });
 
     it("names what updates the node in its label", () => {

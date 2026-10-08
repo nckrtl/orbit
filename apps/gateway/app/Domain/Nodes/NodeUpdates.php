@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Nodes;
 
 use App\Data\Nodes\NodeUpdatingData;
+use App\Domain\Fleet\FleetRolloutRunner;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\Nodes\NodeLocks;
@@ -17,18 +18,17 @@ use Illuminate\Support\Carbon;
 /**
  * Which Nodes the Gateway is updating now ([Nodes being updated](/reference/gateway-recovery#nodes-being-updated)):
  *
- * - a Node whose fleet rollout visit started and has not finished;
+ * - a Node whose fleet rollout visit started and has not finished, while a rollout run holds the fleet lock;
  * - the Gateway Node while a release record is `running`.
  *
- * It reads every Node's state with two queries, one for the visits in progress and one for a running release.
+ * It reads every Node's state with two queries, one for the visits in progress and one for a running release, and
+ * reads the fleet lock only when a visit is in progress.
  */
 final readonly class NodeUpdates
 {
-    /**
-     * A visit that started longer ago than the fleet lock lives belongs to a run that died: the lock expired, so
-     * no run holds the visit open any more.
-     */
-    public const int VisitSeconds = NodeLocks::ConsoleSeconds;
+    public function __construct(
+        private NodeLocks $locks,
+    ) {}
 
     public function forNode(Node $node): ?NodeUpdatingData
     {
@@ -85,16 +85,17 @@ final readonly class NodeUpdates
 
     /**
      * The visits in progress, oldest first. A catch-up visits Nodes of a completed rollout, so a completed rollout
-     * counts as well as a running one.
+     * counts as well as a running one. A visit counts only while a run holds the fleet lock: a run that died left
+     * its visit open, and the lock runs out within {@see NodeLocks::ConsoleSeconds} once nothing renews it. The next
+     * run ends such a visit before it visits any Node.
      *
      * @return iterable<FleetRolloutNode>
      */
     private function visits(): iterable
     {
-        return FleetRolloutNode::query()
+        $visits = FleetRolloutNode::query()
             ->whereNotNull('started_at')
             ->whereNull('finished_at')
-            ->where('started_at', '>=', Carbon::now()->subSeconds(self::VisitSeconds))
             ->whereHas('rollout', static fn ($query) => $query->whereIn('status', [
                 FleetRolloutStatus::Running->value,
                 FleetRolloutStatus::Completed->value,
@@ -102,6 +103,12 @@ final readonly class NodeUpdates
             ->orderBy('started_at')
             ->orderBy('id')
             ->get(['id', 'fleet_rollout_id', 'node_id', 'started_at']);
+
+        if ($visits->isEmpty() || ! $this->locks->lock(FleetRolloutRunner::LockName, 1)->isLocked()) {
+            return [];
+        }
+
+        return $visits;
     }
 
     private function runningRelease(): ?GatewayRelease

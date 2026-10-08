@@ -67,9 +67,11 @@ it("shows updating in blue where the status is text", async () => {
         },
     });
 
-    const status = row("Client nodes", "studio").getByText("updating", { exact: true });
+    const status = row("Client nodes", "studio").getByTitle(rolloutLabel);
     await expect.element(status).toBeVisible();
-    await expect.element(status).toHaveAttribute("title", rolloutLabel);
+    // The cause is read out to a screen reader and hidden from the eye.
+    await expect.element(status).toHaveTextContent(rolloutLabel);
+    expect(status.element().firstChild?.textContent).toBe("updating");
     expect(getComputedStyle(status.element()).color).toBe("rgb(97, 175, 239)");
 });
 

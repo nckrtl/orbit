@@ -3,10 +3,11 @@
 declare(strict_types=1);
 
 use App\Domain\Fleet\FleetNodeOutcome;
+use App\Domain\Fleet\FleetRolloutRunner;
 use App\Domain\Fleet\FleetRolloutStatus;
-use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Nodes\NodeLocks;
 use App\Models\FleetRollout;
 use App\Models\FleetRolloutNode;
 use App\Models\GatewayRelease;
@@ -67,9 +68,13 @@ describe('Node updating state', function (): void {
         ]);
         NodeRole::query()->create(['node_id' => $this->worker->id, 'role' => RoleName::AppDev, 'status' => LifecycleStatus::Active]);
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+        // A rollout run holds the fleet lock while it visits a Node.
+        $this->fleetLock = app(NodeLocks::class)->lock(FleetRolloutRunner::LockName, 60);
+        expect($this->fleetLock->get())->toBeTrue();
     });
 
     afterEach(function (): void {
+        $this->fleetLock->release();
         Carbon::setTestNow();
     });
 
@@ -100,18 +105,30 @@ describe('Node updating state', function (): void {
             ->assertJsonPath('data.updating.kind', 'fleet_rollout');
     });
 
-    it('reads a Node as not updating once the visit finished, before it started, or when it is stale', function (string $case): void {
+    it('reads a long visit as updating while the run holds the fleet lock', function (): void {
+        nodeUpdatingVisit($this->worker, FleetRolloutStatus::Running, now()->subHours(2));
+
+        $this->getJson("/api/v1/nodes/{$this->worker->id}")
+            ->assertOk()
+            ->assertJsonPath('data.updating.kind', 'fleet_rollout');
+    });
+
+    it('reads a Node as not updating once the visit finished, before it started, or without a live run', function (string $case): void {
         match ($case) {
             'finished' => nodeUpdatingVisit($this->worker, FleetRolloutStatus::Running, now()->subMinutes(2), now()->subMinute()),
             'pending' => nodeUpdatingVisit($this->worker, FleetRolloutStatus::Running, null),
-            'stale' => nodeUpdatingVisit($this->worker, FleetRolloutStatus::Running, now()->subSeconds(NodeUpdates::VisitSeconds + 1)),
+            'dead run' => nodeUpdatingVisit($this->worker, FleetRolloutStatus::Running, now()->subMinute()),
             'superseded' => nodeUpdatingVisit($this->worker, FleetRolloutStatus::Superseded, now()->subMinute()),
         };
+
+        if ($case === 'dead run') {
+            $this->fleetLock->release();
+        }
 
         $this->getJson("/api/v1/nodes/{$this->worker->id}")
             ->assertOk()
             ->assertJsonPath('data.updating', null);
-    })->with(['finished', 'pending', 'stale', 'superseded']);
+    })->with(['finished', 'pending', 'dead run', 'superseded']);
 
     it('reads the Gateway Node as updating while a release record runs', function (): void {
         nodeUpdatingRelease('verified');
@@ -146,7 +163,7 @@ describe('Node updating state', function (): void {
                 'public_ssh_host' => "192.0.2.1{$index}",
                 'wireguard_ip' => "10.44.0.1{$index}",
             ]);
-            nodeUpdatingVisit($node, FleetRolloutStatus::Running, now()->subMinutes(30));
+            nodeUpdatingVisit($node, FleetRolloutStatus::Running, now()->subMinutes(30), now()->subMinutes(20));
         }
         nodeUpdatingVisit($this->worker, FleetRolloutStatus::Running, now()->subMinute());
         nodeUpdatingRelease(GatewayRelease::Running);

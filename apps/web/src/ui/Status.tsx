@@ -46,20 +46,22 @@ export function statusLabel(props: StatusProps): string {
 export function statusColour(props: StatusProps, plainActive = false): string {
     const text = statusText(props);
 
-    if (text === "updating") return "text-blue";
+    if (props.updating) return "text-blue";
     if (text === "online" || (text === "active" && props.reach === undefined)) return "text-green";
     if (text === "offline" || text === "failed") return "text-red";
 
     return text === "active" && plainActive ? "" : "text-yellow";
 }
 
-/** A status in its colour. */
+/** A status in its colour. An updating node names the cause on hover and to a screen reader. */
 export function Status(props: StatusProps) {
+    const text = statusText(props);
     const label = props.updating ? statusLabel(props) : undefined;
 
     return (
-        <span className={statusColour(props, true)} title={label} aria-label={label}>
-            {statusText(props)}
+        <span className={statusColour(props, true)} title={label}>
+            {text}
+            {label !== undefined && <span className="sr-only">{label.slice(text.length)}</span>}
         </span>
     );
 }
@@ -67,10 +69,11 @@ export function Status(props: StatusProps) {
 /** A compact status dot to place before a name. It pulses slowly while the node is updating. */
 export function StatusDot(props: StatusProps) {
     const label = statusLabel(props);
-    const pulse = statusText(props) === "updating" ? " status-pulse" : "";
+    const pulse = props.updating ? " status-pulse" : "";
 
     return (
         <span
+            role="img"
             className={`${statusColour(props)}${pulse} inline-block select-none mr-[1ch]`}
             title={label}
             aria-label={label}

@@ -13889,7 +13889,7 @@ export interface operations {
                 } | ({
                     /** @constant */
                     kind?: "file";
-                } & (unknown  )));
+                } & (unknown | unknown)));
             };
         };
         responses: {
@@ -14181,7 +14181,7 @@ export interface operations {
                     /** @description New name */
                     name?: string;
                     parent_id?: number | null;
-                } | unknown  ;
+                } | unknown | unknown;
             };
         };
         responses: {
@@ -14427,7 +14427,7 @@ export interface operations {
                     content_base64?: string;
                     /** @description Media type */
                     media_type?: string;
-                } & (unknown  );
+                } & (unknown | unknown);
             };
         };
         responses: {
@@ -16985,7 +16985,7 @@ export interface operations {
                     node_id: number;
                     upstream?: string;
                     process_id?: number;
-                } & (unknown  ));
+                } & (unknown | unknown));
             };
         };
         responses: {
