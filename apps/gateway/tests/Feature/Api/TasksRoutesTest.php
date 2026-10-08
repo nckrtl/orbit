@@ -41,12 +41,14 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use App\Rules\CommandPaths;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Routing\Route;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
+use Symfony\Component\Process\Process;
 use Tests\Support\DeliverablePathWorkspace;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\TestOrbitHome;
@@ -1293,13 +1295,53 @@ it('accepts a subtask appended after a review-and-merge approval that exists onl
     TestOrbitHome::clearScratch();
 });
 
-it('normalises command paths like file paths before the base check', function (string $path): void {
+it('refuses non-canonical command paths that the handoff check would reject', function (?string $path): void {
     tasks_gateway();
     enable_tasks();
     deliverable_path_repository();
     $project = tasks_app('command-paths');
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Paths.', 'status' => TaskGroupStatus::Backlog]);
-    $command = ['id' => 'repro', 'type' => 'command', 'description' => 'Reproduce.', 'command' => 'vendor/bin/pest', 'fails_on_base' => true, 'paths' => [$path]];
+    $command = ['id' => 'repro', 'type' => 'command', 'description' => 'Reproduce.', 'command' => 'vendor/bin/pest', 'fails_on_base' => true, 'paths' => [$path ?? 'tests/ExistingTest.php']];
 
-    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", ['title' => 'Repro', 'brief' => 'Repro.', 'deliverables' => [$command]])->assertCreated();
-})->with(['./tests/ExistingTest.php', 'tests//ExistingTest.php', './/tests/ExistingTest.php']);
+    $response = $this->postJson("/api/v1/task-groups/{$group->id}/tasks", ['title' => 'Repro', 'brief' => 'Repro.', 'deliverables' => [$command]]);
+
+    if ($path === null) {
+        $response->assertCreated();
+
+        return;
+    }
+    $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($response->json('error.details')['deliverables.0.paths'][0])
+        ->toBe("The path {$path} for deliverable repro is not canonical; use the canonical repository-relative path tests/ExistingTest.php.");
+    expect(Task::query()->where('parent_id', $group->id)->count())->toBe(0);
+})->with([
+    'leading dot segment' => './tests/ExistingTest.php',
+    'empty segment' => 'tests//ExistingTest.php',
+    'dot and empty segments' => './/tests/ExistingTest.php',
+    'inner dot segment' => 'tests/./ExistingTest.php',
+    'canonical' => null,
+]);
+
+it('accepts at plan time exactly the command paths that the handoff check accepts', function (): void {
+    $paths = ['tests/ExistingTest.php', 'apps/gateway/tests/Feature/HomeScreenTest.php', './tests/ExistingTest.php', 'tests//ExistingTest.php',
+        './/tests/ExistingTest.php', 'tests/./ExistingTest.php', 'tests/', '.', '/tests/ExistingTest.php', '../ExistingTest.php', 'tests/../ExistingTest.php'];
+    $checkout = TestOrbitHome::scratch('command-path-parity');
+    mkdir($checkout, 0700, true);
+    $program = <<<'PY'
+        import importlib.machinery, importlib.util, json, sys
+        loader = importlib.machinery.SourceFileLoader('task_check', sys.argv[1])
+        spec = importlib.util.spec_from_loader('task_check', loader)
+        module = importlib.util.module_from_spec(spec)
+        loader.exec_module(module)
+        print(json.dumps([module.deliverable_path(sys.argv[2], path) is not None for path in json.loads(sys.argv[3])]))
+        PY;
+    $process = new Process(['python3', '-I', '-c', $program, resource_path('tasks/check'), $checkout, json_encode($paths, JSON_THROW_ON_ERROR)]);
+    $process->mustRun();
+    $handoff = json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR);
+
+    $plan = array_map(static fn (string $path): bool => preg_match('#(?:\A/|(?:\A|/)\.\.(?:/|\z))#', $path) !== 1
+        && CommandPaths::canonicalViolation($path) === null, $paths);
+
+    expect(array_combine($paths, $plan))->toBe(array_combine($paths, $handoff));
+    TestOrbitHome::clearScratch();
+});
