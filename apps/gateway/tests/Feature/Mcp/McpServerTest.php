@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
+use App\Http\Streaming\DeploymentStreamConnection;
+use App\Http\Streaming\NativeDeploymentStreamConnection;
 use App\Infrastructure\Processes\CommandDeadline;
 use App\Models\Activity;
 use App\Models\Node;
@@ -14,6 +16,7 @@ use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\FakeRouteRemovalProjector;
+use Tests\Support\Orb220DeploymentApiFixture;
 
 /** @param array<string, mixed> $params */
 function mcp_call(mixed $test, string $method, array $params = [], string $endpoint = '/mcp'): TestResponse
@@ -151,6 +154,29 @@ describe('POST /mcp', function (): void {
         expect($response->json('result.isError'))->toBeTrue()
             ->and($error['status'])->toBe(422)
             ->and($error['error']['code'])->toBeString();
+    });
+
+    it('returns a streamed deploy as JSON-RPC instead of flushing it onto the MCP reply', function (): void {
+        $fixture = Orb220DeploymentApiFixture::create();
+        // The production connection echoes and flushes each event line, as it does for the CLI.
+        $this->app->instance(DeploymentStreamConnection::class, new NativeDeploymentStreamConnection);
+        $this->withServerVariables(['REMOTE_ADDR' => $fixture->caller->wireguard_ip]);
+
+        ob_start();
+
+        try {
+            $response = mcp_call($this, 'tools/call', ['name' => 'instance-deploy', 'arguments' => ['instance' => $fixture->instance->id]]);
+        } finally {
+            $leaked = (string) ob_get_clean();
+        }
+
+        $events = json_decode($response->json('result.content.0.text'), true)['events'] ?? [];
+
+        expect($leaked)->toBe('', 'Output sent before the MCP reply makes PHP send text/html headers.')
+            ->and($response->headers->get('Content-Type'))->toBe('application/json')
+            ->and($response->json('result.isError'))->toBeFalse()
+            ->and(array_column($events, 'type'))->toContain('phase', 'output')
+            ->and(end($events))->toMatchArray(['type' => 'result', 'status' => 'succeeded']);
     });
 
     it('refuses a caller that is not an active WireGuard peer', function (): void {
