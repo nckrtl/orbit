@@ -12,14 +12,24 @@ use Illuminate\Support\Collection;
 
 final readonly class DevelopmentCaddyAccessCommand
 {
+    /**
+     * The development sites whose checkout and Web root the command walks.
+     *
+     * @param  Collection<int, DevelopmentSite>  $sites
+     * @return Collection<int, DevelopmentSite>
+     */
+    public function walkedSites(Collection $sites): Collection
+    {
+        return $sites
+            ->reject(static fn (DevelopmentSite $site): bool => $site->isProxy() || $site->unavailable || $site->environment !== 'development' || $site->checkoutPath === '')
+            ->values();
+    }
+
     /** @param Collection<int, DevelopmentSite> $sites */
     public function command(Collection $sites): RemoteCommand
     {
         $arguments = ['bash', '-seu', '--'];
-        foreach ($sites as $site) {
-            if ($site->isProxy() || $site->unavailable || $site->environment !== 'development' || $site->checkoutPath === '') {
-                continue;
-            }
+        foreach ($this->walkedSites($sites) as $site) {
             $arguments[] = StoragePath::parse($site->checkoutPath)->value;
             $arguments[] = RelativeWebRoot::validate($site->documentRoot);
             $arguments[] = $site->applicationDirectory();

@@ -123,6 +123,8 @@ A Route target must have a supported relative web root. An Instance rooted at `.
 
 Setting a target on a generated Route moves its generation basis, scope, and domain with the target. When the domain changes, a replacement Route takes the target.
 
+Setting a development target on a Route whose sites are published gives Caddy access to the target's web root, as in [Node scope](#node-scope). The walk covers only the target's checkout and checkouts nested in it. A Route whose sites are not published gets the access when it converges.
+
 ### Change a production target set
 
 An operator sends the complete ordered Instance set for one explicit, Cluster-scoped production Route. Every target must be an active production Instance of the Route's Project, on a distinct active `app-prod` Node in the same Cluster. The Cluster needs no TLD. The request can take an Instance from another Route in that Cluster.
@@ -202,6 +204,8 @@ The Gateway prepares the runtime, certificates, Caddy sites, and firewall rules 
 Private DNS points the domain at the workload Node. Its Caddy terminates HTTPS with an Orbit certificate authority (CA) certificate and serves the Instance's web root.
 
 Before the Gateway publishes a development Route, it gives Caddy read access to the web root and traversal access to its parent directories. Caddy cannot read the other source files. The web root must be inside the checkout. Symlinks in the web root are refused, except Laravel's `public/storage` link to the checkout's `storage/app/public`. When this preparation fails, the Gateway restores the previous permissions and reports `app-dev.source_access_failed` at step `source-access`.
+
+This preparation walks only the Instance's checkout and served checkouts nested in it. Other checkouts on the Node keep the access their own Route granted.
 
 ### Cluster scope
 

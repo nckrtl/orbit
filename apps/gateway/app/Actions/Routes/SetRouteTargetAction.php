@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
+use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Metrics\MetricsFleetReconciler;
@@ -30,6 +32,8 @@ final readonly class SetRouteTargetAction
         private InstanceEnvironmentOperationLock $environmentOperations,
         private RouteStateResolver $state,
         private RouteAssociationGuard $associations,
+        private DevelopmentSourceAccess $sourceAccess,
+        private DevelopmentProjectionOperationLock $projections,
         private ?RecordEventBroadcaster $broadcaster = null,
         private ?MetricsFleetReconciler $metrics = null,
     ) {}
@@ -171,8 +175,6 @@ final readonly class SetRouteTargetAction
 
                 return $locked->refresh()->load('targets');
             });
-
-            return $updated;
         } catch (QueryException $exception) {
             throw new ResourceOperationException(
                 errorCode: 'route.target_conflict',
@@ -181,5 +183,31 @@ final readonly class SetRouteTargetAction
                 previous: $exception,
             );
         }
+
+        $this->grantSourceAccess($updated, $instanceId);
+
+        return $updated;
+    }
+
+    /**
+     * Setting a target does not build Caddy, but the next build on the target's Node serves the
+     * Route's published sites with it. Route convergence on that Node walks only its own checkout,
+     * so the new target's Web root is made readable here. A retry of the same target on a Route
+     * that is not active grants again. An active Route only accepts its current target, as a no-op,
+     * and its convergence already granted that access.
+     */
+    private function grantSourceAccess(Route $route, int $instanceId): void
+    {
+        if ($route->status === RouteStatus::Active) {
+            return;
+        }
+
+        $target = Instance::query()->with('node')->findOrFail($instanceId);
+
+        if (! $target->placedOnAppDev()) {
+            return;
+        }
+
+        $this->projections->run(fn () => $this->sourceAccess->grant($target));
     }
 }
