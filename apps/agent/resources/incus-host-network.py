@@ -1,0 +1,405 @@
+#!/usr/bin/python3 -I
+"""Fixed privileged firewall boundary for opted-in task-owned Incus bridges."""
+import fcntl
+import hashlib
+import ipaddress
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+CONFIG = Path('/etc/orbit/sandbox-network.json')
+ROOT = Path('/var/lib/orbit-sandbox-network')
+OWNER = 'orbit-task-sandbox'
+UNIT = Path('/etc/systemd/system/orbit-sandbox-host-network.service')
+DEPENDENCY = Path('/etc/systemd/system/incus.service.d/orbit-sandbox-network.conf')
+UNIT_TEXT = ('[Unit]\nDescription=Restore Orbit sandbox host network boundaries\n'
+             'After=local-fs.target nftables.service ufw.service firewalld.service\nBefore=incus.service\n\n'
+             '[Service]\nType=oneshot\nExecStart=/usr/local/libexec/orbit-sandbox-network restore\n'
+             'TimeoutStartSec=120\nRemainAfterExit=yes\nUMask=0077\n\n[Install]\nWantedBy=multi-user.target\n')
+DEPENDENCY_TEXT = '[Unit]\nRequires=orbit-sandbox-host-network.service\nAfter=orbit-sandbox-host-network.service\n'
+PRIVATE = ('0.0.0.0/8', '10.0.0.0/8', '100.64.0.0/10', '127.0.0.0/8',
+           '169.254.0.0/16', '172.16.0.0/12', '192.0.0.0/24', '192.0.2.0/24',
+           '192.168.0.0/16', '198.18.0.0/15', '198.51.100.0/24', '203.0.113.0/24',
+           '224.0.0.0/4', '240.0.0.0/4')
+
+
+def require(condition):
+    if not condition:
+        raise ValueError('Sandbox host network operation refused')
+
+
+def run(arguments, data=None):
+    result = subprocess.run(arguments, input=data, capture_output=True, text=True,
+                            timeout=30, env={'PATH': '/usr/sbin:/usr/bin:/sbin:/bin', 'LANG': 'C'})
+    require(result.returncode == 0 and len(result.stdout) <= 8 * 1024 * 1024)
+    return result.stdout
+
+
+def directory(path, create=False):
+    if create and not path.exists():
+        path.mkdir(mode=0o700)
+    for parent in [path, *path.parents]:
+        info = parent.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022)
+
+
+def read(path, mode=0o600):
+    directory(path.parent)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and stat.S_IMODE(info.st_mode) == mode
+                and info.st_nlink == 1 and info.st_size <= 131072)
+        with os.fdopen(fd, 'rb', closefd=False) as source:
+            return source.read()
+    finally:
+        os.close(fd)
+
+
+def installation():
+    require(read(UNIT, 0o644) == UNIT_TEXT.encode() and read(DEPENDENCY, 0o644) == DEPENDENCY_TEXT.encode())
+    for root in ('/etc/systemd/system', '/run/systemd/system', '/etc/systemd/system.control', '/run/systemd/system.control'):
+        require(not (Path(root) / (UNIT.name + '.d')).exists())
+    require(not (Path('/run/systemd/system') / UNIT.name).exists())
+    run(['/usr/bin/systemctl', 'is-enabled', '--quiet', UNIT.name])
+    ordering = run(['/usr/bin/systemctl', 'show', 'incus.service', '--property=Requires,After', '--value']).splitlines()
+    require(len(ordering) == 2 and all(UNIT.name in line.split() for line in ordering))
+
+
+def put(path, data):
+    if path.exists() or path.is_symlink():
+        require(read(path) == data)
+        return
+    # The root-only directory and the global lock prevent a concurrent replacement.
+    with tempfile.NamedTemporaryFile(dir=path.parent, prefix='.policy-', delete=False) as target:
+        temporary = Path(target.name)
+        try:
+            target.write(data)
+            target.flush()
+            os.fsync(target.fileno())
+            os.replace(temporary, path)
+            sync_directory(path.parent)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def validate(request):
+    require(isinstance(request, dict) and set(request) == {'operation', 'project', 'sandbox_id'})
+    require(request['operation'] in ('enabled', 'ensure', 'remove'))
+    require(isinstance(request['project'], str)
+            and re.fullmatch(r'orbit-(?:task-sandboxes|sandbox-proof-[a-z0-9]+)', request['project']))
+    require(isinstance(request['sandbox_id'], str) and str(uuid.UUID(request['sandbox_id'])) == request['sandbox_id'])
+    return request
+
+
+def configuration():
+    value = json.loads(read(CONFIG, 0o644))
+    require(isinstance(value, dict) and set(value) == {'version', 'projects', 'pi_host', 'gateway_address', 'blocked_networks'})
+    require(type(value['version']) is int and value['version'] == 1)
+    require(isinstance(value['projects'], list) and 1 <= len(value['projects']) <= 32
+            and len(set(value['projects'])) == len(value['projects']))
+    for project in value['projects']:
+        validate({'operation': 'enabled', 'project': project, 'sandbox_id': '00000000-0000-4000-8000-000000000000'})
+    fleet = ipaddress.ip_network('10.44.0.0/16')
+    for key in ('pi_host', 'gateway_address'):
+        address = ipaddress.ip_address(value[key])
+        require(address in fleet and str(address) == value[key])
+    require(value['pi_host'] != value['gateway_address'])
+    require(isinstance(value['blocked_networks'], list) and 1 <= len(value['blocked_networks']) <= 128)
+    for cidr in value['blocked_networks']:
+        require(isinstance(cidr, str) and ipaddress.ip_network(cidr, strict=True).version == 4)
+    return value
+
+
+def name(identity):
+    return 'ot-' + hashlib.sha256(identity.encode()).hexdigest()[:10]
+
+
+def incus(path):
+    return json.loads(run(['/usr/bin/incus', '--force-local', 'query', path]))
+
+
+def derive(request, config):
+    project, identity = request['project'], request['sandbox_id']
+    require(project in config['projects'])
+    info = incus('/1.0/projects/' + project).get('config', {})
+    require(info.get('user.orbit.compute.owner') == OWNER and info.get('features.networks') == 'false')
+    bridge = name(identity)
+    network = incus('/1.0/networks/' + bridge)
+    settings = network.get('config', {})
+    metadata = {'user.orbit.compute.owner': OWNER, 'user.orbit.compute.id': identity}
+    subnet = ipaddress.ip_network(settings.get('ipv4.address', ''), strict=False)
+    require(subnet.version == 4 and subnet.prefixlen == 24 and subnet.subnet_of(ipaddress.ip_network('10.233.0.0/16')))
+    expected = {**metadata, 'user.orbit.compute.host_network': '1',
+                'ipv4.address': str(subnet.network_address + 1) + '/24', 'ipv4.nat': 'true',
+                'ipv6.address': 'none', 'dns.mode': 'none', 'security.acls': bridge,
+                'security.acls.default.egress.action': 'reject', 'security.acls.default.ingress.action': 'reject'}
+    require(network.get('type') == 'bridge' and network.get('managed') is True
+            and all(settings.get(key) == value for key, value in expected.items()))
+    acl = incus('/1.0/network-acls/' + bridge).get('config', {})
+    require(all(acl.get(key) == value for key, value in metadata.items()))
+    interfaces = json.loads(run(['/usr/sbin/ip', '-json', '-4', 'address', 'show']))
+    addresses = [address for interface in interfaces for address in interface.get('addr_info', [])]
+    require(any(address.get('local') == config['pi_host'] for address in addresses))
+    # Exclude all host-connected networks, including public addresses on the host.
+    blocked = sorted(set(config['blocked_networks'] + [str(ipaddress.ip_network(
+        address['local'] + '/' + str(address['prefixlen']), strict=False)) for address in addresses]))
+    return {'version': 1, 'project': project, 'sandbox_id': identity, 'subnet': str(subnet),
+            'gateway_address': config['gateway_address'], 'blocked_networks': blocked, 'config': config}
+
+
+def chains(spec, ipv6=False):
+    suffix = name(spec['sandbox_id'])[3:]
+    names = {hook: 'OT' + hook[0] + '-' + suffix for hook in ('INPUT', 'OUTPUT', 'FORWARD')}
+    bridge = name(spec['sandbox_id'])
+    rules = {chain: [] for chain in names.values()}
+    if not ipv6:
+        subnet = ipaddress.ip_network(spec['subnet'], strict=True)
+        host, operator = str(subnet.network_address + 1), str(subnet.network_address + 10)
+        peers = [str(subnet.network_address + offset) for offset in range(10, 15)]
+        gateway = spec['gateway_address']
+        forward = rules[names['FORWARD']]
+        # Same-group peers stay within their bridge. NIC filters bind each guest address.
+        forward += [f'-i {bridge} -o {bridge} -m iprange --src-range {peers[0]}-{peers[-1]} '
+                    f'--dst-range {peers[0]}-{peers[-1]} -j ACCEPT']
+        forward += [f'-o {bridge} -s {gateway}/32 -d {operator}/32 -p tcp -m tcp --dport 3774 '
+                    '-m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT',
+                    f'-i {bridge} -s {operator}/32 -d {gateway}/32 -p tcp -m tcp --sport 3774 '
+                    '-m conntrack --ctstate ESTABLISHED --ctdir REPLY -j ACCEPT']
+        for cidr in sorted(set((*PRIVATE, *spec['blocked_networks']))):
+            forward += [f'-i {bridge} -d {cidr} -j DROP', f'-o {bridge} -s {cidr} -j DROP']
+        # Original-direction egress remains restricted even for established connections.
+        for peer in peers:
+            for dns in ('1.1.1.1', '9.9.9.9'):
+                for protocol in ('udp', 'tcp'):
+                    forward += [f'-i {bridge} -s {peer}/32 -d {dns}/32 -p {protocol} -m {protocol} --dport 53 -j ACCEPT']
+            forward += [f'-i {bridge} -s {peer}/32 -p tcp -m tcp -m multiport --dports 80,443 -j ACCEPT']
+            for port in (80, 443):
+                forward += [f'-o {bridge} -d {peer}/32 -m conntrack --ctstate ESTABLISHED --ctdir REPLY '
+                            f'--ctproto tcp --ctorigdstport {port} -j ACCEPT']
+            for dns in ('1.1.1.1', '9.9.9.9'):
+                for protocol in ('udp', 'tcp'):
+                    forward += [f'-o {bridge} -d {peer}/32 -m conntrack --ctstate ESTABLISHED --ctdir REPLY '
+                                f'--ctproto {protocol} --ctorigdst {dns}/32 --ctorigdstport 53 -j ACCEPT']
+        rules[names['INPUT']] += [f'-i {bridge} -s {operator}/32 -d {host}/32 -p tcp -m tcp --dport 8317 -j ACCEPT',
+                                 f'-i {bridge} -p udp -m udp --sport 68 --dport 67 -j ACCEPT']
+        rules[names['OUTPUT']] += [f'-o {bridge} -s {host}/32 -d {operator}/32 -p tcp -m tcp --sport 8317 '
+                                  '-m conntrack --ctstate ESTABLISHED --ctdir REPLY -j ACCEPT',
+                                  f'-o {bridge} -p udp -m udp --sport 67 --dport 68 -j ACCEPT']
+    for chain in rules:
+        rules[chain].append('-j DROP')
+    jumps = {hook: [f'-i {bridge} -j {chain}'] if hook == 'INPUT' else [f'-o {bridge} -j {chain}']
+             if hook == 'OUTPUT' else [f'-i {bridge} -j {chain}', f'-o {bridge} -j {chain}']
+             for hook, chain in names.items()}
+    return rules, jumps
+
+
+def render(spec, ipv6=False, remove=False):
+    rules, jumps = chains(spec, ipv6)
+    rows = ['*filter']
+    if remove:
+        rows += [f'-D {hook} {rule}' for hook, values in jumps.items() for rule in values]
+        rows += [f'-F {chain}' for chain in rules]
+        rows += [f'-X {chain}' for chain in rules]
+    else:
+        rows += [f':{chain} - [0:0]' for chain in rules]
+        rows += [f'-A {chain} {rule}' for chain, values in rules.items() for rule in values]
+        # Each hook insertion is one atomic restore transaction, ahead of existing rules.
+        rows += [f'-I {hook} 1 {rule}' for hook, values in jumps.items() for rule in reversed(values)]
+    return '\n'.join(rows + ['COMMIT', ''])
+
+
+def snapshot(ipv6=False):
+    program = '/usr/sbin/ip6tables-save' if ipv6 else '/usr/sbin/iptables-save'
+    rows = run([program, '-t', 'filter'])
+    result = {}
+    for row in rows.splitlines():
+        if row.startswith(':'):
+            result[row.split()[0][1:]] = []
+        elif row.startswith('-A '):
+            tokens = shlex.split(row)
+            result[tokens[1]].append(tokens[2:])
+    return result
+
+
+def desired(spec, ipv6=False):
+    # Ask the installed netfilter tools to normalize syntax in a fresh namespace.
+    script = """import subprocess,sys
+v=sys.argv[1]; text=sys.stdin.read()
+r=subprocess.run(['/usr/sbin/'+v+'-restore','--noflush'], input=text,text=True,capture_output=True)
+if r.returncode: sys.exit(1)
+r=subprocess.run(['/usr/sbin/'+v+'-save','-t','filter'],text=True,capture_output=True)
+if r.returncode: sys.exit(1)
+print(r.stdout)
+"""
+    program = 'ip6tables' if ipv6 else 'iptables'
+    output = run(['/usr/bin/unshare', '--net', '/usr/bin/python3', '-I', '-c', script, program], render(spec, ipv6))
+    result = {}
+    for row in output.splitlines():
+        if row.startswith(':'):
+            result[row.split()[0][1:]] = []
+        elif row.startswith('-A '):
+            tokens = shlex.split(row)
+            result[tokens[1]].append(tokens[2:])
+    return result
+
+
+def state(spec, expected, current):
+    owned, jumps = chains(spec)
+    marker = set(owned)
+    present = marker.intersection(current)
+    references = {hook: [rule for rule in rows if any(token in marker for token in rule)]
+                  for hook, rows in current.items() if hook not in marker}
+    if not present and not any(references.values()):
+        return 'absent'
+    require(present == marker)
+    for chain in marker:
+        require(current[chain] == expected[chain])
+    for hook in references:
+        require(references[hook] == expected.get(hook, []) if hook in jumps else not references[hook])
+    for hook, values in jumps.items():
+        # Other sandboxes may precede this one. Foreign rules must never precede it.
+        prefix = []
+        for rule in current.get(hook, []):
+            target = rule[-1] if len(rule) >= 2 and rule[-2] == '-j' else ''
+            if not re.fullmatch(r'OT[IFO]-[a-f0-9]{10}', target):
+                break
+            prefix.append(rule)
+        for rule in prefix:
+            suffix = rule[-1].split('-', 1)[1]
+            require(rule in [flag + ['ot-' + suffix, '-j', 'OT' + hook[0] + '-' + suffix]
+                             for flag in ([['-i']] if hook == 'INPUT' else [['-o']] if hook == 'OUTPUT' else [['-i'], ['-o']])])
+        require(all(rule in prefix for rule in expected[hook]))
+    return 'present'
+
+
+def change(spec, remove=False):
+    # Validate both families before changing either. A partially completed install is retryable.
+    families = [True, False] if not remove else [False, True]
+    plans = []
+    for ipv6 in families:
+        plans.append((ipv6, state(spec, desired(spec, ipv6), snapshot(ipv6))))
+    for ipv6, status in plans:
+        if (remove and status == 'present') or (not remove and status == 'absent'):
+            program = '/usr/sbin/ip6tables-restore' if ipv6 else '/usr/sbin/iptables-restore'
+            run([program, '--wait', '10', '--noflush'], render(spec, ipv6, remove))
+    for ipv6 in families:
+        require(state(spec, desired(spec, ipv6), snapshot(ipv6)) == ('absent' if remove else 'present'))
+
+
+def manifest_path(identity):
+    require(str(uuid.UUID(identity)) == identity)
+    return ROOT / (identity + '.json')
+
+
+def apply(request, config):
+    if request['operation'] == 'enabled':
+        return {'enabled': request['project'] in config['projects']}
+    require(request['project'] in config['projects'])
+    path = manifest_path(request['sandbox_id'])
+    exists = path.exists() or path.is_symlink()
+    if request['operation'] == 'remove':
+        if not exists:
+            # No recorded policy is safe only when neither family owns this identity.
+            spec = {'sandbox_id': request['sandbox_id']}
+            for ipv6 in (False, True):
+                current = snapshot(ipv6)
+                owned = {'OT' + hook + '-' + name(spec['sandbox_id'])[3:] for hook in 'IFO'}
+                require(not owned.intersection(current) and not any(
+                    token in owned for rules in current.values() for rule in rules for token in rule))
+            return {'removed': True}
+        spec = json.loads(read(path))
+        require(spec['project'] == request['project'] and spec['sandbox_id'] == request['sandbox_id'] and spec['config'] == config)
+        # Compute calls removal only after deleting owned guests. Independently refuse live attachments.
+        network = incus('/1.0/networks/' + name(request['sandbox_id']))
+        settings = network.get('config', {})
+        require(settings.get('user.orbit.compute.owner') == OWNER
+                and settings.get('user.orbit.compute.id') == request['sandbox_id']
+                and settings.get('user.orbit.compute.host_network') == '1'
+                and network.get('type') == 'bridge' and network.get('managed') is True
+                and str(ipaddress.ip_network(settings.get('ipv4.address', ''), strict=False)) == spec['subnet']
+                and not network.get('used_by'))
+        change(spec, remove=True)
+        path.unlink()
+        sync_directory(ROOT)
+        return {'removed': True}
+    spec = derive(request, config)
+    if exists:
+        # Other sandbox bridges can be added since this policy was saved. Only newly
+        # connected public networks matter; private ranges are already excluded.
+        old = json.loads(read(path))
+        require(old['project'] == spec['project'] and old['sandbox_id'] == spec['sandbox_id']
+                and old['subnet'] == spec['subnet'] and old['config'] == spec['config'])
+        for value in spec['blocked_networks']:
+            network = ipaddress.ip_network(value)
+            require(any(network.subnet_of(ipaddress.ip_network(cidr)) for cidr in (*PRIVATE, *old['blocked_networks'])))
+        spec = old
+    else:
+        # Refuse adoption even when an unrecorded chain happens to match our policy.
+        for ipv6 in (False, True):
+            require(state(spec, desired(spec, ipv6), snapshot(ipv6)) == 'absent')
+        put(path, json.dumps(spec, sort_keys=True).encode())
+    change(spec)
+    return {'ready': True}
+
+
+def restore(config):
+    for path in sorted(ROOT.glob('*.json')):
+        spec = json.loads(read(path))
+        require(manifest_path(spec['sandbox_id']) == path and spec['config'] == config
+                and spec['project'] in config['projects'] and spec['version'] == 1)
+        change(spec)
+
+
+def acquire(fd):
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            require(time.monotonic() < deadline)
+            time.sleep(0.1)
+
+
+def main():
+    require(os.geteuid() == 0)
+    config = configuration()
+    installation()
+    directory(ROOT, create=True)
+    fd = os.open(ROOT / 'lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
+    with os.fdopen(fd, 'r+') as lock:
+        info = os.fstat(lock.fileno())
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o600)
+        acquire(lock.fileno())
+        if sys.argv[1:] == ['restore']:
+            restore(config)
+            return
+        require(len(sys.argv) == 1)
+        incoming = sys.stdin.buffer.read(4097)
+        require(len(incoming) <= 4096)
+        print(json.dumps(apply(validate(json.loads(incoming)), config)))
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except (ValueError, TypeError, KeyError, OSError, subprocess.SubprocessError):
+        print(json.dumps({'error': 'sandbox_host_network_refused'}))
+        sys.exit(1)
