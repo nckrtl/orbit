@@ -15,6 +15,22 @@ SECRET_ENV = {b'GH_TOKEN', b'GITHUB_TOKEN', b'GH_ENTERPRISE_TOKEN', b'GITHUB_ENT
 WORKLOAD_ROLES = ('app-dev', 'app-prod', 'app-prod-2')
 
 
+def tool_runtime_prerequisites(home=Path('/home/orbit'), system=Path('/')):
+    vp = home / '.local/share/vite-plus'
+    for binary in ('vp', 'node', 'pnpm', 'npm', 'npx'):
+        path = system / 'usr/local/bin' / binary
+        details = path.lstat()
+        expected = '#!/bin/sh\nexport VP_HOME="' + str(vp) + '"\nexec "' + str(vp / 'bin' / binary) + '" "$@"\n'
+        if (not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o777 != 0o755
+                or path.read_text() != expected or not os.access(vp / 'bin' / binary, os.X_OK)):
+            raise ValueError('The image runtime is incompatible with native role convergence')
+    bun = system / 'usr/local/bin/bun'
+    if not bun.is_symlink() or os.readlink(bun) != str(system / 'opt/orbit/bun/bin/bun') or not os.access(bun, os.X_OK):
+        raise ValueError('The image Bun entry point is incompatible with native role convergence')
+    for binary in ('vp', 'node', 'pnpm', 'npm', 'npx', 'bun'):
+        subprocess.run(['sudo', '-n', '-u', 'orbit', '-H', str(system / 'usr/local/bin' / binary), '--version'], capture_output=True, check=True, timeout=30, cwd=home)
+
+
 def workload_prerequisites(home=Path('/home/orbit'), system=Path('/')):
     if home.resolve() != home or not home.is_dir():
         raise ValueError('Workload home is not local')
@@ -48,6 +64,7 @@ def audit(roots=None, processes=Path('/proc'), prerequisites=True, role=None):
         if os.geteuid() != 0:
             raise ValueError('Guest audit requires root')
         pwd.getpwnam('orbit')
+        tool_runtime_prerequisites()
         try:
             pwd.getpwnam('orbit-worker')
         except KeyError:

@@ -39,6 +39,8 @@ class FakeBuilder(Builder):
         self.fail_install = False
         self.fail_health = False
         self.fail_sources = False
+        self.fail_agent = False
+        self.fail_dns = False
 
     def query(self, path, method='GET', data=None):
         self.calls.append(('read', path))
@@ -74,6 +76,10 @@ class FakeBuilder(Builder):
 
     def run(self, *args, data=None, timeout=1200):
         self.calls.append(args)
+        if self.fail_agent and any(isinstance(arg, str) and 'NodeAgentRuntime' in arg for arg in args):
+            raise Refusal('Native Gateway agent convergence failed')
+        if self.fail_dns and args[-4:] == ('systemctl', 'enable', '--now', 'dnsmasq'):
+            raise Refusal('Native VPN DNS enable failed')
         if args[0] == 'query':
             return json.dumps({'config': {'user.orbit.compute.owner': 'orbit-task-sandbox', 'features.networks': 'false'}} if '/projects/' in args[1] else [])
         if args[:2] == ('config', 'set'):
@@ -221,6 +227,26 @@ class BuilderTest(unittest.TestCase):
                 secure_sources(root)
             self.assertEqual(original, legacy.read_text())
 
+    def test_gateway_agent_failure_does_not_mark_the_candidate_ready(self):
+        builder = FakeBuilder()
+        builder.apply()
+        builder.fail_agent = True
+        with self.assertRaises(Refusal):
+            builder.converge()
+        self.assertTrue(all('user.orbit.template.ready' not in value['config'] for value in builder.instances))
+
+    def test_cold_pair_enables_native_vpn_dns_and_failure_refuses_publication_readiness(self):
+        builder = FakeBuilder()
+        builder.apply()
+        builder.converge()
+        self.assertTrue(any(call[-4:] == ('systemctl', 'enable', '--now', 'dnsmasq') for call in builder.calls))
+        builder = FakeBuilder()
+        builder.apply()
+        builder.fail_dns = True
+        with self.assertRaises(Refusal):
+            builder.converge()
+        self.assertTrue(all('user.orbit.template.ready' not in value['config'] for value in builder.instances))
+
     def test_native_failure_does_not_mark_the_candidate_ready(self):
         builder = FakeBuilder()
         builder.apply()
@@ -279,6 +305,100 @@ class BuilderTest(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 guest['packages'](request(), policy)
             self.assertEqual('foreign policy', policy.read_text())
+
+    def runtime_fixture(self, root):
+        home, system = root / 'home', root / 'system'
+        home.mkdir()
+        for relative, text in {
+            'opt/orbit-image/node/bin/node': '#!/bin/sh\nprintf "node:%s\\n" "$*"\n',
+            'opt/orbit-image/vp/bin/vp': '#!/bin/sh\nprintf "vp:%s\\n" "$*"\n',
+            'opt/orbit-image/pnpm/package.json': '{"name":"pnpm","version":"10.33.0"}',
+            'opt/orbit-image/pnpm/bin/pnpm.cjs': 'pinned pnpm',
+            'usr/local/bin/bun': '#!/bin/sh\nprintf "bun:%s\\n" "$*"\n',
+            'usr/local/bin/orbit-agent': 'agent',
+            'usr/local/bin/orbit-pi-server': 'pi',
+        }.items():
+            path = system / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text)
+            path.chmod(0o755)
+        def bootstrap(*args, **kwargs):
+            if args[0] == 'chown':
+                return
+            if 'env' in args and 'setup' in args:
+                vp = home / '.local/share/vite-plus'
+                for binary in ('node', 'npm', 'npx'):
+                    path = vp / 'bin' / binary
+                    path.write_text('#!/bin/sh\nprintf "' + binary + ':%s\\n" "$*"\n')
+                    path.chmod(0o755)
+            elif 'env' not in args:
+                subprocess.run([args[-2], args[-1]], check=True, capture_output=True)
+        return home, system, bootstrap
+
+    def test_offline_runtime_has_the_native_entry_points_and_pinned_pnpm_without_downloads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home, system, bootstrap = self.runtime_fixture(Path(directory))
+            with patch.dict(guest['install_tool_runtime'].__globals__, command=bootstrap):
+                guest['install_tool_runtime'](home, system, __import__('os').getuid(), __import__('os').getgid())
+            for binary in ('vp', 'node', 'npm', 'npx', 'bun'):
+                result = subprocess.run([str(system / 'usr/local/bin' / binary), '--version'], capture_output=True, text=True, check=True)
+                self.assertEqual(binary + ':--version\n', result.stdout)
+            result = subprocess.run([str(system / 'usr/local/bin/pnpm'), '--version'], capture_output=True, text=True, check=True)
+            self.assertEqual('node:' + str(home / '.local/share/vite-plus/package_manager/pnpm/10.33.0/pnpm/bin/pnpm.cjs') + ' --version\n', result.stdout)
+            with patch.dict(guest['install_tool_runtime'].__globals__, command=bootstrap), self.assertRaises(ValueError):
+                guest['install_tool_runtime'](home, system, __import__('os').getuid(), __import__('os').getgid())
+
+    def test_runtime_audit_uses_managed_home_when_invoked_from_a_root_directory(self):
+        checker = runpy.run_path(str(Path(module['__file__']).with_name('guest-template-audit.py')))['tool_runtime_prerequisites']
+        with tempfile.TemporaryDirectory() as directory:
+            home, system, bootstrap = self.runtime_fixture(Path(directory))
+            with patch.dict(guest['install_tool_runtime'].__globals__, command=bootstrap):
+                guest['install_tool_runtime'](home, system, __import__('os').getuid(), __import__('os').getgid())
+            actual_lstat, actual_run = Path.lstat, subprocess.run
+            def owned_launchers(path, *args, **kwargs):
+                details = actual_lstat(path, *args, **kwargs)
+                if path.parent == system / 'usr/local/bin':
+                    fields = list(details)
+                    fields[4] = 0
+                    return __import__('os').stat_result(fields)
+                return details
+            def managed_run(args, **kwargs):
+                if kwargs.get('cwd') != home:
+                    raise PermissionError('The managed user cannot resolve a root-only working directory')
+                return actual_run(args[-2:], **kwargs)
+
+            with patch.object(Path, 'lstat', owned_launchers), patch('subprocess.run', side_effect=managed_run) as run:
+                checker(home, system)
+
+            self.assertEqual(6, run.call_count)
+
+    def test_missing_wrong_or_linked_pnpm_is_refused_before_runtime_publication(self):
+        for condition in ('missing', 'wrong-version', 'symlink'):
+            with self.subTest(condition=condition), tempfile.TemporaryDirectory() as directory:
+                home, system, bootstrap = self.runtime_fixture(Path(directory))
+                manifest = system / 'opt/orbit-image/pnpm/package.json'
+                manifest.unlink()
+                if condition == 'wrong-version':
+                    manifest.write_text('{"name":"pnpm","version":"other"}')
+                elif condition == 'symlink':
+                    manifest.symlink_to(system / 'usr/local/bin/bun')
+                with patch.dict(guest['install_tool_runtime'].__globals__, command=bootstrap), self.assertRaises((ValueError, FileNotFoundError)):
+                    guest['install_tool_runtime'](home, system, __import__('os').getuid(), __import__('os').getgid())
+                self.assertFalse((home / '.local').exists())
+                self.assertFalse((system / 'usr/local/bin/node').exists())
+
+    def test_foreign_runtime_destinations_are_preserved_before_any_copy(self):
+        for relative in ('home/.local', 'system/usr/local/bin/node'):
+            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                home, system, bootstrap = self.runtime_fixture(root)
+                foreign = root / 'foreign'
+                foreign.mkdir()
+                (root / relative).symlink_to(foreign)
+                with patch.dict(guest['install_tool_runtime'].__globals__, command=bootstrap), self.assertRaises(ValueError):
+                    guest['install_tool_runtime'](home, system, __import__('os').getuid(), __import__('os').getgid())
+                self.assertEqual([], list(foreign.iterdir()))
+
 
     def test_pair_and_template_locks_exclude_concurrent_operations(self):
         with tempfile.TemporaryDirectory() as directory:

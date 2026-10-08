@@ -196,6 +196,22 @@ print('{}')
         subnet = ipaddress.ip_network(self.build['subnet'])
         helpers = '/home/orbit/orbit/apps/e2e/resources/guest/'
         self.run('exec', self.name + '-gateway', '--', 'bash', helpers + 'converge-gateway.sh', 'bootstrap', str(subnet.network_address + 11), timeout=1800)
+        agent = (
+            "chdir('/home/orbit/orbit');"
+            "require 'apps/gateway/vendor/autoload.php';"
+            "$app = require 'apps/gateway/bootstrap/app.php';"
+            "$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();"
+            "$nodes = App\\Models\\Node::query()->whereHas('roles', static fn ($query) => $query"
+            "->where('role', 'gateway')->where('status', 'active'))->get();"
+            "if ($nodes->count() !== 1 || $nodes[0]->name !== 'gateway' || $nodes[0]->wireguard_ip !== '10.44.0.1'"
+            " || $nodes[0]->platform !== 'linux' || $nodes[0]->user !== 'orbit') { throw new RuntimeException('Invalid isolated Gateway'); }"
+            "$app->make(App\\Domain\\Nodes\\NodeAgentRuntime::class)->converge($nodes[0]);"
+        )
+        self.run('exec', self.name + '-gateway', '--', 'sudo', '-n', '-u', 'orbit', '-H', 'env',
+                 'ORBIT_HOME=/home/orbit/.orbit', 'ORBIT_GATEWAY_CHECKOUT=/home/orbit/orbit/apps/gateway',
+                 'DB_CONNECTION=sqlite', 'DB_DATABASE=/home/orbit/.orbit/gateway.sqlite',
+                 'php', '-r', agent, timeout=240)
+        self.run('exec', self.name + '-gateway', '--', 'systemctl', 'enable', '--now', 'dnsmasq')
         public = self.run('exec', self.name + '-gateway', '--', 'cat', '/home/orbit/.orbit/ssh/id_ed25519.pub').strip().split()
         if len(public) < 2 or public[0] != 'ssh-ed25519' or not re.fullmatch(r'[A-Za-z0-9+/]+={0,2}', public[1]):
             raise Refusal('Invalid isolated Gateway SSH key.')

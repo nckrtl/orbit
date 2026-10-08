@@ -42,8 +42,10 @@ class PairRuntime(unittest.TestCase):
         self.calls = []
         self.nodes = [{'name': 'gateway', 'status': 'active'}, {'name': 'operator', 'status': 'active', 'roles': []}]
         self.doctor_fault = None
-        self.fail = False
+        self.fail_composer = False
         self.fail_access = False
+        self.fail_agent = False
+        self.fail_dns = False
 
     def tearDown(self):
         self.scratch.cleanup()
@@ -55,10 +57,14 @@ class PairRuntime(unittest.TestCase):
         if arguments[0] == 'git':
             return original_run(arguments, root, home, timeout)
         self.calls.append(arguments)
-        if self.fail and arguments[0] == 'composer':
+        if self.fail_composer and arguments[0] == 'composer':
             raise subprocess.CalledProcessError(1, ['composer'])
         if self.fail_access and arguments[:2] == ['php', '-r']:
             raise subprocess.CalledProcessError(1, ['php'])
+        if self.fail_agent and arguments[:2] == ['php', '-r'] and 'NodeAgentRuntime' in arguments[-1]:
+            raise subprocess.CalledProcessError(1, ['php'])
+        if self.fail_dns and arguments == ['sudo', '-n', 'systemctl', 'enable', '--now', 'dnsmasq']:
+            raise subprocess.CalledProcessError(1, arguments)
         if 'doctor' in arguments:
             node_id = int(next(arg[7:] for arg in arguments if arg.startswith('--node=')))
             node = next(node for node in self.nodes if node['id'] == node_id)
@@ -85,10 +91,45 @@ class PairRuntime(unittest.TestCase):
         self.assertEqual(len(module['PROJECTS']), len(composers))
         self.assertTrue(all('dump-autoload' in call and '--no-scripts' in call for call in composers))
         self.assertIn(['php', str(self.root / 'apps/gateway/artisan'), 'migrate', '--no-interaction', '--force'], self.calls)
-        self.assertIn('GatewayCheckoutAccessConverger', self.calls[-2][-1])
+        self.assertTrue(any('GatewayCheckoutAccessConverger' in call[-1] for call in self.calls))
         self.assertEqual(['sudo', '-n', 'systemctl', 'restart', 'php8.5-fpm'], self.calls[-1])
         self.assertTrue(self.call('operator')['ready'])
         self.assertEqual('cached dependencies', (self.root / 'apps/gateway/vendor/autoload.php').read_text())
+
+    def test_operator_exposes_the_branch_cli_on_path_and_preserves_argv(self):
+        cli = self.root / 'apps/cli/orbit'
+        cli.write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+        cli.chmod(0o755)
+        self.call('operator')
+        launcher = self.home / '.local/bin/orbit'
+        self.assertTrue(launcher.is_file())
+        result = subprocess.run([str(launcher), 'node:list', '--json', 'literal $(false)'], capture_output=True, text=True, check=True)
+        self.assertEqual('node:list\n--json\nliteral $(false)\n', result.stdout)
+        before = launcher.stat().st_mtime_ns
+        self.call('operator')
+        self.assertEqual(before, launcher.stat().st_mtime_ns)
+
+    def test_foreign_or_linked_operator_cli_is_never_replaced(self):
+        launchers = self.home / '.local/bin'
+        launchers.mkdir(parents=True)
+        launcher = launchers / 'orbit'
+        launcher.write_text('foreign')
+        with self.assertRaises(ValueError):
+            self.call('operator')
+        self.assertEqual('foreign', launcher.read_text())
+        launcher.unlink()
+        target = self.home / 'foreign'
+        target.write_text('unchanged')
+        launcher.symlink_to(target)
+        with self.assertRaises(ValueError):
+            self.call('operator')
+        self.assertEqual('unchanged', target.read_text())
+        launcher.unlink()
+        launchers.rmdir()
+        launchers.symlink_to(self.home)
+        with self.assertRaises(ValueError):
+            self.call('operator')
+        self.assertFalse((self.home / 'orbit').is_file())
 
     def test_reports_branch_version_and_preserves_the_private_gateway_environment(self):
         self.call('gateway')
@@ -129,7 +170,7 @@ class PairRuntime(unittest.TestCase):
         self.assertEqual(1, len(install))
         self.assertEqual('--working-dir=' + str(self.root / 'apps/gateway'), install[0][1])
         self.calls = []
-        self.fail = True
+        self.fail_composer = True
         with self.assertRaises(subprocess.CalledProcessError):
             self.call('gateway')
         self.assertFalse(any('migrate' in call for call in self.calls))
@@ -149,6 +190,24 @@ class PairRuntime(unittest.TestCase):
         with self.assertRaises(subprocess.CalledProcessError):
             self.call('gateway')
         self.assertFalse(any('systemctl' in call for call in self.calls))
+
+    def test_gateway_agent_is_converged_before_serving_and_failure_refuses_readiness(self):
+        self.call('gateway')
+        self.assertTrue(any(call[:2] == ['php', '-r'] and 'NodeAgentRuntime' in call[-1] for call in self.calls))
+        self.calls = []
+        self.fail_agent = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.call('gateway')
+        self.assertFalse(any('systemctl' in call for call in self.calls))
+
+    def test_gateway_vpn_dns_survives_boot_and_enable_failure_refuses_runtime_readiness(self):
+        self.call('gateway')
+        self.assertIn(['sudo', '-n', 'systemctl', 'enable', '--now', 'dnsmasq'], self.calls)
+        self.calls = []
+        self.fail_dns = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.call('gateway')
+        self.assertNotIn(['sudo', '-n', 'systemctl', 'restart', 'php8.5-fpm'], self.calls)
 
     def test_missing_vendor_installs_even_when_manifests_are_unchanged(self):
         (self.root / 'apps/cli/vendor/autoload.php').unlink()

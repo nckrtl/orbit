@@ -3,6 +3,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -43,6 +45,36 @@ def private_gateway_version(root, home):
             or not re.fullmatch(r'[a-f0-9]{40}(?:[a-f0-9]{24})?', status['version'])):
         raise ValueError('The isolated Gateway is not serving the branch version')
     return status['version']
+
+
+def prepare_cli(root, home):
+    directory = home / '.local/bin'
+    for path in (home / '.local', directory):
+        if path.is_symlink():
+            raise ValueError('The operator CLI directory is not local')
+        path.mkdir(mode=0o755, exist_ok=True)
+        details = path.stat()
+        if not path.is_dir() or details.st_uid != os.geteuid() or details.st_mode & 0o022:
+            raise ValueError('The operator CLI directory is not owned')
+    launcher = directory / 'orbit'
+    contents = '#!/bin/sh\n# Managed by Orbit: isolated pair CLI\nexec ' + shlex.quote(str(root / 'apps/cli/orbit')) + ' "$@"\n'
+    if launcher.exists() or launcher.is_symlink():
+        details = launcher.lstat()
+        if (not stat.S_ISREG(details.st_mode) or details.st_uid != os.geteuid()
+                or stat.S_IMODE(details.st_mode) != 0o755 or details.st_size > 4096
+                or launcher.read_text() != contents):
+            raise ValueError('The operator CLI launcher is not owned')
+        return
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', prefix='.orbit-cli-', dir=directory, delete=False) as output:
+            temporary = Path(output.name)
+            output.write(contents)
+        temporary.chmod(0o755)
+        os.replace(temporary, launcher)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
@@ -115,6 +147,18 @@ def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
             "getcwd().'/apps/gateway'))->converge();"
         )
         run(['php', '-r', access], root, home)
+        agent = (
+            "require 'apps/gateway/vendor/autoload.php';"
+            "$app = require 'apps/gateway/bootstrap/app.php';"
+            "$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();"
+            "$nodes = App\\Models\\Node::query()->whereHas('roles', static fn ($query) => $query"
+            "->where('role', 'gateway')->where('status', 'active'))->get();"
+            "if ($nodes->count() !== 1 || $nodes[0]->name !== 'gateway' || $nodes[0]->wireguard_ip !== '10.44.0.1'"
+            " || $nodes[0]->platform !== 'linux' || $nodes[0]->user !== 'orbit') { throw new RuntimeException('Invalid isolated Gateway'); }"
+            "$app->make(App\\Domain\\Nodes\\NodeAgentRuntime::class)->converge($nodes[0]);"
+        )
+        run(['php', '-r', agent], root, home, timeout=240)
+        run(['sudo', '-n', 'systemctl', 'enable', '--now', 'dnsmasq'], root, home)
         run(['sudo', '-n', 'systemctl', 'restart', 'php8.5-fpm'], root, home)
     elif request['phase'] == 'version':
         version = private_gateway_version(root, home)
@@ -135,6 +179,7 @@ def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
                 raise ValueError('A workload role is not active')
         if version != head:
             raise ValueError('The isolated Gateway is not serving the branch version')
+        prepare_cli(root, home)
         if request.get('doctor'):
             for node in nodes:
                 node_id = node.get('id')
