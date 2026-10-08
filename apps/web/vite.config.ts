@@ -10,6 +10,7 @@ import { playwright } from "vite-plus/test/browser-playwright";
 import { gatewayProfile, grafanaTarget, realtimeTarget } from "./dev/gateway-profile.ts";
 import { commanderOneShot } from "./dev/commander-oneshot.ts";
 import { orbitProfile } from "./dev/profile.ts";
+import { orbitBuild } from "./dev/build-id.ts";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -122,6 +123,7 @@ export default defineConfig({
         annotationSpeech(),
         annotationThread(),
         annotationServerProxy(),
+        orbitBuild(rootDir),
     ],
     resolve: {
         alias: [
