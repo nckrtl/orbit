@@ -18,6 +18,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
+use App\Models\RouteTarget;
 
 final readonly class NativeClusterRouterReplacementProjector implements ClusterRouterReplacementProjector
 {
@@ -165,8 +166,7 @@ final readonly class NativeClusterRouterReplacementProjector implements ClusterR
 
         return array_values($route
             ->targets
-            ->map(static fn ($target) => $target->instance)
-            ->filter(static fn ($target): bool => $target instanceof Instance)
+            ->map(static fn (RouteTarget $target): Instance => $target->instance)
             ->all());
     }
 

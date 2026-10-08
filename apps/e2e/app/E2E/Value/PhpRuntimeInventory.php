@@ -179,7 +179,8 @@ final readonly class PhpRuntimeInventory
                 'role' => self::ROLES[$index],
                 'php_version' => $phpVersion,
                 'fpm_version' => $fpmVersion,
-                'pcov_version' => $pcovVersion,
+                // The check above leaves pcov_version a string when PCOV is required and null otherwise.
+                'pcov_version' => is_string($pcovVersion) ? $pcovVersion : null,
                 'package_versions' => $normalizedVersions,
             ];
         }
