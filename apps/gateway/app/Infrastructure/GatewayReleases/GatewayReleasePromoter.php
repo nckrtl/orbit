@@ -375,7 +375,7 @@ final readonly class GatewayReleasePromoter
             }
         }
 
-        $this->pruneIncomplete();
+        $this->pruneIncomplete([$current, $previous, $this->layout->currentReleaseId()]);
         $retained = $this->layout->retainedReleaseIds();
 
         // A verified release is retained, so an empty list means the releases directory could not be read. Pruning
@@ -395,23 +395,29 @@ final readonly class GatewayReleasePromoter
 
     /**
      * Removes each release directory without `REVISION` that is older than IncompleteReleaseSeconds, and its web
-     * build. The current release stays, also when it is incomplete, because it needs a repair, not a removal.
+     * build. The current and the previous release stay, also when they are incomplete, because they need a repair,
+     * not a removal.
+     *
+     * @param  list<string|null>  $kept
      */
-    private function pruneIncomplete(): void
+    private function pruneIncomplete(array $kept): void
     {
-        $current = $this->layout->currentReleaseId();
-
         foreach ($this->layout->incompleteReleaseIds() as $id) {
             $modified = @filemtime($this->layout->releasePath($id));
 
-            if ($id === $current || $modified === false || $modified > time() - self::IncompleteReleaseSeconds) {
+            if (in_array($id, $kept, true) || $modified === false || $modified > time() - self::IncompleteReleaseSeconds) {
                 continue;
             }
 
             try {
                 $this->builder->remove($id);
-            } catch (Throwable) {
+            } catch (Throwable $exception) {
                 // Pruning is not the release. A directory that cannot be removed stays until the next one.
+                Log::warning('Gateway release could not prune an incomplete release directory.', [
+                    'release' => $id,
+                    'error_code' => $exception instanceof GatewayReleaseException ? $exception->errorCode : null,
+                    'message' => $exception->getMessage(),
+                ]);
             }
         }
     }

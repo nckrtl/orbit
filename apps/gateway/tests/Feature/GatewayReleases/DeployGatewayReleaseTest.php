@@ -446,7 +446,7 @@ describe('gateway:release:deploy', function (): void {
             ->and($this->fixture->layout->incompleteReleaseIds())->toBe(['bbbbbbbbbbbb']);
     });
 
-    it('keeps an incomplete release directory that is current', function (): void {
+    it('keeps an incomplete release directory that is current or previous', function (): void {
         adopt_release($this->fixture);
         $sha = $this->fixture->commit('Release over an incomplete current one');
         $order = new ReleaseSteps;
@@ -471,6 +471,14 @@ describe('gateway:release:deploy', function (): void {
             ->and($this->fixture->layout->currentReleaseId())->toBe(substr($sha, 0, 12))
             ->and(is_dir($this->fixture->layout->releasePath(substr($sha, 0, 12))))->toBeTrue()
             ->and($this->fixture->layout->incompleteReleaseIds())->toBe([substr($sha, 0, 12)])
+            ->and($order->steps)->not->toContain('web:remove:'.substr($sha, 0, 12));
+
+        $next = $this->fixture->commit('Release over an incomplete previous one');
+        $deployed = release_deployer($this->fixture, passing_verifier(), recording_runtime($order), new OpenReleaseDatabase, recording_web($order), recording_smoke($order))->execute($next);
+
+        expect($deployed->outcome)->toBe('verified')
+            ->and($deployed->previousId)->toBe(substr($sha, 0, 12))
+            ->and(is_dir($this->fixture->layout->releasePath(substr($sha, 0, 12))))->toBeTrue()
             ->and($order->steps)->not->toContain('web:remove:'.substr($sha, 0, 12));
     });
 
