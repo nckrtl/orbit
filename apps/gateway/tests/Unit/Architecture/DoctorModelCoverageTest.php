@@ -55,6 +55,10 @@ use App\Models\RouteTarget;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
 use App\Models\Setting;
+use App\Models\T3Environment;
+use App\Models\T3Pairing;
+use App\Models\T3Peer;
+use App\Models\T3Profile;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
@@ -133,6 +137,10 @@ it('partitions every persisted model across doctor dispositions', function (): v
         TaskCheck::class,
         TaskQuestion::class,
         TaskReviewedCommit::class,
+        T3Peer::class,
+        T3Profile::class,
+        T3Environment::class,
+        T3Pairing::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

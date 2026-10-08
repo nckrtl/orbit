@@ -7,6 +7,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\RequireNodeAgentSecret;
+use App\Http\Middleware\RequireT3Peer;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
@@ -390,6 +391,19 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
 
             continue;
         }
+
+        // The T3 Code layer admits any WireGuard peer, also one that is not a Node, and has no grants yet.
+        if (str_starts_with((string) $route->getName(), 't3:')) {
+            expect($route->uri())->toStartWith('api/v1/t3/');
+            expect($middleware)
+                ->toContain(RequireT3Peer::class)
+                ->not->toContain(RequireActiveWireGuardPeer::class)
+                ->not->toContain(RequireNodeAccess::class);
+
+            continue;
+        }
+
+        expect(str_starts_with($route->uri(), 'api/v1/t3/'))->toBeFalse();
 
         if ($route->getName() === 'gateway:desired-fleet-state') {
             expect($middleware)

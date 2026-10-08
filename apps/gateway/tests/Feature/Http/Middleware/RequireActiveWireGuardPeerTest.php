@@ -7,6 +7,7 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Domain\Shared\LifecycleStatus;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
+use App\Http\Middleware\RequireT3Peer;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -19,6 +20,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 
 it('leaves only bootstrap discovery and trust commands outside active peer authentication', function (): void {
+    // T3 Code routes admit any WireGuard peer, also one that is not a Node, through RequireT3Peer.
     $unprotectedCommands = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (Illuminate\Routing\Route $route): bool => str_starts_with($route->uri(), 'api/v1/'))
         ->reject(
@@ -26,7 +28,7 @@ it('leaves only bootstrap discovery and trust commands outside active peer authe
                 RequireActiveWireGuardPeer::class,
                 $route->gatherMiddleware(),
                 strict: true,
-            ),
+            ) || in_array(RequireT3Peer::class, $route->gatherMiddleware(), strict: true),
         )
         ->map(static fn (Illuminate\Routing\Route $route): ?string => $route->getName())
         ->sort()
