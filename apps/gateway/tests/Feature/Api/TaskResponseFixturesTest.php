@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentDriverRegistry;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
@@ -279,6 +280,18 @@ describe('task response fixtures', function (): void {
     });
 
     it('records subtask create, update, and destroy', function (): void {
+        app()->instance(DeliverablePathRepository::class, new class implements DeliverablePathRepository
+        {
+            public function defaultBranchCommit(Project $project): string
+            {
+                return str_repeat('a', 40);
+            }
+
+            public function files(Project $project, string $commit, ?Instance $workspace = null): array
+            {
+                return ['docs/cli/tasks.mdx'];
+            }
+        });
         $group = task_fixture_group($this->project);
         $first = $group->tasks()->orderBy('position')->firstOrFail();
 

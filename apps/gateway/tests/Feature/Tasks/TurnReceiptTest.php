@@ -93,6 +93,26 @@ afterEach(function (): void {
     TestOrbitHome::clearScratch();
 });
 
+it('preserves an accepted deliverable correction receipt when keyed preparation is replayed', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $mode = new TaskTurnMode(deliveryKey: 'correction-delivery-identity');
+    $deliverable = TaskDeliverable::fromArray(['id' => 'corrected', 'type' => 'review', 'description' => 'Corrected.']);
+    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: $mode);
+    turn_receipt_script($checkout, ['--thread=123', '--outcome=ready_for_review', '--summary=Done.', '--deliverable=corrected=Reviewed'])->getExitCode();
+    $receipt = $receipts->read($instance, 123);
+    expect($receipt)->not->toBeNull();
+    $turn = file_get_contents($checkout.'/.git/orbit/turn.json');
+
+    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: $mode);
+
+    expect($receipts->read($instance, 123)?->hash)->toBe($receipt?->hash)
+        ->and(file_get_contents($checkout.'/.git/orbit/turn.json'))->toBe($turn);
+    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: new TaskTurnMode(deliveryKey: 'another-delivery'));
+    expect($receipts->read($instance, 123))->toBeNull();
+});
+
 describe('TaskGitHardening', function (): void {
     it('publishes turn metadata without writing through planted final or temporary links', function (string $name): void {
         $checkout = turn_receipt_checkout();

@@ -14,5 +14,7 @@ final readonly class TaskTurnMode
         public bool $consult = false,
         public bool $relay = false,
         public bool $causeRequired = false,
+        /** A durable correction resume: preparing the same key again preserves the accepted turn and receipt. */
+        public ?string $deliveryKey = null,
     ) {}
 }
