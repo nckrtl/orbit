@@ -129,11 +129,15 @@ The Gateway renders every stored key in sorted order, as a quoted value. It writ
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
-For an Instance that owns its `DB` database, synchronization also updates `.env.testing` with the same checks and mode. It sets only the `DB_*` keys of that connection, with `DB_DATABASE` set to the [test database](/reference/database-connections#test-databases), and removes the other `DB_*` keys of the connection. Every other line in the file stays.
+For an Instance that owns its `DB` database, synchronization also writes `.env.testing` with the same checks and mode. The `DB_*` keys of that connection point to the [test database](/reference/database-connections#test-databases):
 
-A new file holds only those keys, so add any other keys your tests need, such as `APP_KEY`: Laravel loads `.env.testing` instead of `.env`.
+- A missing file is created from the same values as `.env`, with `APP_ENV=testing` and those `DB_*` keys.
+- In an existing untracked file, Orbit sets only those `DB_*` keys and removes the other `DB_*` keys of the connection. Every other line stays.
+- A file that Git tracks in the checkout stays unchanged. Orbit records the test database name in the `testing` property of the `env:sync` activity.
 
-Orbit never writes a `.env.testing` that Git tracks in the checkout. It leaves that file unchanged and records the test database name in the `testing` property of the `env:sync` activity. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
+Laravel loads `.env.testing` instead of `.env` when `APP_ENV` is `testing`. So a new file holds every key of `.env`, such as `APP_KEY`.
+
+When Git cannot report whether it tracks the file, for example because of a dubious-ownership error or a damaged repository, synchronization returns `env.testing_tracking_unknown` and leaves `.env.testing` unchanged. A checkout outside a Git repository counts as untracked. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
 Synchronization changes only `.env` and `.env.testing`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
 
@@ -196,6 +200,7 @@ Environment operations return these codes in the Orbit error envelope. None of t
 | `env.reference_unavailable` | 409 | A placeholder is left over after rendering. |
 | `env.operation_busy` | 409 | Another operation holds the Instance's lock. |
 | `env.sync_unconfirmed` | 409 | The Gateway cannot confirm the write. Retry the request. |
+| `env.testing_tracking_unknown` | 409 | Git cannot report whether the checkout tracks `.env.testing`. `.env` is written; `.env.testing` stays unchanged. |
 
 ## Why it works this way
 
