@@ -213,7 +213,11 @@ Sandbox MCP files are installed through the guest transport. For Orbit they name
 
 ### Prepare source inside the guest
 
-`SandboxWorkspaceSource` initializes a blank checkout with a sandbox ownership marker, fetches remote refs directly from GitHub with temporary App access, and creates the task branch from its published branch or the Project default. The guest initializes its checkout and fetches the selected refs. Retrying a prepared checkout preserves local commits and uncommitted files. A foreign directory, changed origin, or changed checkout branch fails without replacing its contents. This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
+`SandboxWorkspaceSource` initializes a blank checkout with a sandbox ownership marker, fetches remote refs directly from GitHub with temporary App access, and creates the task branch from its published branch or the Project default. The guest initializes its checkout and fetches the selected refs. Retrying a prepared checkout preserves local commits and uncommitted files. A foreign directory, changed origin, or changed checkout branch fails without replacing its contents.
+
+Before the first fetch in an Incus Orbit sandbox, Orbit configures guest DNS for GitHub domains through `1.1.1.1` and `9.9.9.9`. This bootstrap works before the cloned private Gateway is retargeted. Its persistent resolver drop-in routes only `github.com`, `githubusercontent.com`, and `githubassets.com`; private topology DNS keeps its existing policy. Preparation refuses foreign source ownership or a changed resolver drop-in.
+
+This prepares source only; the claim gate still requires the runtime, model proxy, and topology bootstrap.
 
 ### Keep guest paths off the host
 

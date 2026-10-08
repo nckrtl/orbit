@@ -93,7 +93,7 @@ it('attaches the owned workspace before guest preparation and returns only after
     expect($workspace)->toBeInstanceOf(Instance::class);
     expect($workspace->status)->toBe(InstanceState::SourceResolved)->and($workspace->task_workspace_routed)->toBeFalse();
     expect($group->fresh()->taskable_id)->toBe($workspace->id);
-    expect($state->calls)->toBe(['capacity', 'provision', 'initialize', 'fetch', 'checkout', 'pair-inspect', 'identity', 'vpn', 'pair-gateway', 'pair-operator', 'pi']);
+    expect($state->calls)->toBe(['capacity', 'provision', 'initialize', 'github_dns', 'fetch', 'checkout', 'pair-inspect', 'identity', 'vpn', 'pair-gateway', 'pair-operator', 'pi']);
     expect($workspace->taskSandbox->model_key_registered_at)->not->toBeNull();
 });
 
@@ -111,7 +111,7 @@ it('keeps failed preparation attached and retries the same source without a seco
     $retried = $provisioner->provision(InstanceProvisionIntent::for($group->fresh()));
 
     expect($retried->id)->toBe($workspace->id)->and(Instance::query()->count())->toBe(1)->and(TaskSandbox::query()->count())->toBe(1);
-    expect($state->calls)->not->toContain('initialize', 'fetch', 'checkout')->toContain('inspect', 'pi');
+    expect($state->calls)->not->toContain('initialize', 'github_dns', 'fetch', 'checkout')->toContain('inspect', 'pi');
 });
 
 it('never returns a claim after any failed guest step and redacts guest output', function (string $phase): void {
