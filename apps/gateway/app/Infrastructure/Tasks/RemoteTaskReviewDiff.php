@@ -45,7 +45,7 @@ final readonly class RemoteTaskReviewDiff implements TaskReviewDiff
                     trap 'rm -rf "$work"' EXIT
                     index=$(git rev-parse --git-path index)
                     if [ -f "$index" ]; then
-                        cp -- "$index" "$work/index"
+                        cp --preserve=timestamps -- "$index" "$work/index"
                     else
                         GIT_INDEX_FILE="$work/index" git read-tree --empty
                     fi
