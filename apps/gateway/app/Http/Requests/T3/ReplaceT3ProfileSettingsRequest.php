@@ -9,7 +9,9 @@ use Illuminate\Foundation\Http\FormRequest;
 
 /**
  * The whole settings document of a profile. Its keys follow T3 Code's workspace store, so they stay
- * camelCase. `version` is the version the client last read; a stale one is refused.
+ * camelCase. A workspace covers its `projectRefs` and every project whose logical key is in
+ * `projectKeys`, as T3 Code reads them; both are optional. `version` is the version the client last
+ * read; a stale one is refused.
  */
 final class ReplaceT3ProfileSettingsRequest extends FormRequest
 {
@@ -29,7 +31,7 @@ final class ReplaceT3ProfileSettingsRequest extends FormRequest
             'settings.workspaces.*.color' => ['required', 'string', 'max:32'],
             'settings.workspaces.*.icon' => ['present', 'nullable', 'string', 'max:64'],
             'settings.workspaces.*.image' => ['sometimes', 'nullable', 'string', 'max:'.self::IMAGE_MAX_CHARS, 'regex:/\Adata:image\/(png|jpeg|webp);base64,[A-Za-z0-9+\/]+=*\z/'],
-            'settings.workspaces.*.projectRefs' => ['present', 'list', 'max:500'],
+            'settings.workspaces.*.projectRefs' => ['sometimes', 'list', 'max:500'],
             'settings.workspaces.*.projectRefs.*' => ['string', 'max:512', 'regex:/\A[^:\s]+:\S+\z/'],
             'settings.workspaces.*.projectKeys' => ['sometimes', 'list', 'max:500'],
             'settings.workspaces.*.projectKeys.*' => ['string', 'max:512'],

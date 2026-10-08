@@ -175,12 +175,13 @@ describe('profile settings', function (): void {
 
         $this->putJson("/api/v1/t3/profiles/{$profile->id}/settings", [
             'version' => 1,
-            'settings' => ['workspaces' => [$workspace, ['id' => 'ws-2', 'name' => 'Home', 'color' => 'red', 'icon' => null, 'image' => 'data:image/png;base64,iVBORw0KGgo=', 'projectRefs' => []]]],
+            'settings' => ['workspaces' => [$workspace, ['id' => 'ws-2', 'name' => 'Home', 'color' => 'red', 'icon' => null, 'image' => 'data:image/png;base64,iVBORw0KGgo=', 'projectKeys' => ['home']]]],
         ])
             ->assertOk()
             ->assertJsonPath('data.version', 2)
             ->assertJsonPath('data.settings.workspaces.0', $workspace)
-            ->assertJsonPath('data.settings.workspaces.1.image', 'data:image/png;base64,iVBORw0KGgo=');
+            ->assertJsonPath('data.settings.workspaces.1.image', 'data:image/png;base64,iVBORw0KGgo=')
+            ->assertJsonMissingPath('data.settings.workspaces.1.projectRefs');
         expect(Activity::query()->where('command', 't3:profile:settings:update')->sole()->properties?->toArray()['input'])
             ->toBe(['version' => 1]);
 

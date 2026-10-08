@@ -53,8 +53,10 @@ A profile holds one settings document. Its keys follow T3 Code's workspace store
 | `color` | Required string, at most 32 characters. |
 | `icon` | Required key; a string of at most 64 characters, or `null`. |
 | `image` | Optional; `null`, or a PNG, JPEG, or WebP base64 data URL of at most 200,000 characters. |
-| `projectRefs` | Required list of `<environmentId>:<projectId>` strings, at most 500. |
-| `projectKeys` | Optional list of strings, at most 500. |
+| `projectRefs` | Optional list of `<environmentId>:<projectId>` strings, at most 500: one project on one server. |
+| `projectKeys` | Optional list of T3 logical project keys, at most 500: a project on every server where it exists. |
+
+A workspace covers its `projectRefs` and every project whose logical key is in `projectKeys`, as T3 Code combines them. T3 derives a logical key from the git remote by default, so devices that keep T3's default repository grouping agree on it.
 
 The document has a version. A new profile starts at version 1 with no workspaces, and every replace adds 1. A replace must send the version the client last read. A stale version is refused with `t3.settings_version_conflict` (409), so two devices cannot overwrite each other. The client then reads again, merges, and retries.
 

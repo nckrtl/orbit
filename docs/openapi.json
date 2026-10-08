@@ -25751,8 +25751,7 @@
                             "id",
                             "name",
                             "color",
-                            "icon",
-                            "projectRefs"
+                            "icon"
                           ]
                         }
                       }
