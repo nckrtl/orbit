@@ -12,13 +12,19 @@
 /** The file each build writes at its top: `{"build": "<id>"}`. */
 export const VERSION_URL = "/version.json";
 
-/** The sessionStorage key that holds the newer build this tab is loading. The build clears it when it starts. */
+/**
+ * The sessionStorage key that marks the newer build this tab is loading, as `<build> <time>`. The build clears
+ * the mark when it starts. A mark older than ten minutes is ignored.
+ */
 export const RELOAD_KEY = "orbit.build-reload";
 
 /** The sessionStorage key that remembers the last build whose failed chunk reloaded this tab. */
 export const CHUNK_RELOAD_KEY = "orbit.chunk-reload";
 
 const DEFAULT_INTERVAL_MS = 60_000;
+
+/** A mark older than this belongs to a load that never arrived, such as one the user stopped. */
+const MARK_TTL_MS = 10 * 60_000;
 
 /** Only what the loop guard needs, so a blocked or missing sessionStorage still works. */
 export type ReloadMemory = {
@@ -116,7 +122,12 @@ export function createBuildCheck(options: BuildCheckOptions): BuildCheck {
 
     // This build arrived, so a later newer build may load again. A page that still runs an older build
     // keeps the mark, so it never loads the same newer build twice: that would be a loop.
-    if (memory.getItem(RELOAD_KEY) === options.build) memory.removeItem(RELOAD_KEY);
+    /** The build a mark names while it is fresh. A mark is `<build> <time>`. */
+    const marked = (key: string): string | null => {
+        const [build, at] = (memory.getItem(key) ?? "").split(" ");
+        return build && now() - Number(at) < MARK_TTL_MS ? build : null;
+    };
+    if (marked(RELOAD_KEY) === options.build) memory.removeItem(RELOAD_KEY);
 
     // The page has just loaded index.html, which is never cached, so the first read waits a full interval.
     let lastRead = now();
@@ -127,8 +138,8 @@ export function createBuildCheck(options: BuildCheckOptions): BuildCheck {
 
     /** Loads the page once per remembered build. A second attempt for the same id would be a loop. */
     const once = (key: string, build: string, go: () => void): boolean => {
-        if (memory.getItem(key) === build) return false;
-        memory.setItem(key, build);
+        if (marked(key) === build) return false;
+        memory.setItem(key, `${build} ${now()}`);
         go();
 
         return true;

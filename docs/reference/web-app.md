@@ -220,7 +220,9 @@ The page does not load a new build over a draft that the app protects or over a 
 
 Typed text in a form without a blocker is not protected once its field loses focus, so a page that shows again can reload over it.
 
-The page loads each newer build only once. Before the full load, it marks that build in `sessionStorage`, or in memory when the browser refuses storage. The new build clears the mark when it starts. A page that still runs an older build keeps the mark and does not load that build again, so a Gateway that serves an old `index.html` cannot cause a reload loop. It still loads a later build. When a script or style of the running build fails to load (`vite:preloadError` or a failed `import()`), the page reloads once for that build, unless it holds such input.
+The page loads each newer build only once. Before the full load, it marks that build in `sessionStorage`, or in memory when the browser refuses storage. The new build clears the mark when it starts, and a mark older than ten minutes counts as a load that never arrived. A page that still runs an older build keeps the mark and does not load that build again, so a Gateway that serves an old `index.html` cannot cause a reload loop; the page tries again at most every ten minutes. It still loads a later build.
+
+When a script or style of the running build fails to load (`vite:preloadError` or a failed `import()`), the page reloads once for that build, unless it holds a protected draft or a focused text field.
 
 Added to the home screen of an iPhone or iPad, the app stays in memory and navigates only client-side. These checks move it to a new release. The id is the commit, so every Gateway release moves open pages once, also a release that does not change the web app. `vp dev` and `bun run demo` do not check, because Vite reloads the modules there.
 

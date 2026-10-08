@@ -47,6 +47,7 @@ function setup(overrides: Partial<BuildCheckOptions> = {}) {
         assign,
         reload,
         memory,
+        mark: (build: string) => `${build} ${clock}`,
         advance: (ms: number) => {
             clock += ms;
         },
@@ -63,7 +64,7 @@ describe("navigation", () => {
 
         expect(assign).toHaveBeenCalledExactlyOnceWith("/nodes/1?tab=tools");
         expect(reload).not.toHaveBeenCalled();
-        expect(memory.values.get(RELOAD_KEY)).toBe("new");
+        expect(memory.values.get(RELOAD_KEY)).toMatch(/^new \d+$/);
     });
 
     it("stays client-side while the served build is the page's own", async () => {
@@ -221,8 +222,8 @@ describe("resume", () => {
     });
 
     it("does not reload twice for the same build", async () => {
-        const { check, reload, memory, advance } = setup();
-        memory.setItem(RELOAD_KEY, "new");
+        const { check, reload, memory, mark, advance } = setup();
+        memory.setItem(RELOAD_KEY, mark("new"));
         advance(60_000);
 
         check.resumed();
@@ -231,10 +232,21 @@ describe("resume", () => {
         expect(reload).not.toHaveBeenCalled();
     });
 
+    it("ignores the mark of a load that never arrived after ten minutes", async () => {
+        const { check, reload, memory, mark, advance } = setup();
+        memory.setItem(RELOAD_KEY, mark("new"));
+        advance(10 * 60_000);
+
+        check.resumed();
+        await settle();
+
+        expect(reload).toHaveBeenCalledOnce();
+    });
+
     it("looks for a later build after the guard refused one", async () => {
         let build = "new";
-        const { check, assign, memory, advance } = setup({ served: async () => build });
-        memory.setItem(RELOAD_KEY, "new");
+        const { check, assign, memory, mark, advance } = setup({ served: async () => build });
+        memory.setItem(RELOAD_KEY, mark("new"));
         advance(60_000);
         check.navigated("/nodes");
         await settle();
@@ -249,26 +261,26 @@ describe("resume", () => {
 
     it("clears the mark when the loaded build arrived, and keeps it on an older page", () => {
         const arrived = memoryStore();
-        arrived.setItem(RELOAD_KEY, "new");
+        arrived.setItem(RELOAD_KEY, `new ${Date.now()}`);
         createBuildCheck({ build: "new", assign: vi.fn(), reload: vi.fn(), memory: arrived });
         expect(arrived.values.has(RELOAD_KEY)).toBe(false);
 
         const stale = memoryStore();
-        stale.setItem(RELOAD_KEY, "new");
+        stale.setItem(RELOAD_KEY, `new ${Date.now()}`);
         createBuildCheck({ build: "old", assign: vi.fn(), reload: vi.fn(), memory: stale });
-        expect(stale.values.get(RELOAD_KEY)).toBe("new");
+        expect(stale.values.get(RELOAD_KEY)).toMatch(/^new /);
     });
 
     it("reloads again for a later build", async () => {
-        const { check, reload, memory, advance } = setup({ served: async () => "newer" });
-        memory.setItem(RELOAD_KEY, "new");
+        const { check, reload, memory, mark, advance } = setup({ served: async () => "newer" });
+        memory.setItem(RELOAD_KEY, mark("new"));
         advance(60_000);
 
         check.resumed();
         await settle();
 
         expect(reload).toHaveBeenCalledOnce();
-        expect(memory.values.get(RELOAD_KEY)).toBe("newer");
+        expect(memory.values.get(RELOAD_KEY)).toMatch(/^newer /);
     });
 
     it("keeps the guard in memory when sessionStorage throws", async () => {
@@ -302,7 +314,7 @@ describe("failed chunks", () => {
         expect(check.chunkFailed()).toBe(true);
         expect(check.chunkFailed()).toBe(false);
         expect(reload).toHaveBeenCalledOnce();
-        expect(memory.values.get(CHUNK_RELOAD_KEY)).toBe("old");
+        expect(memory.values.get(CHUNK_RELOAD_KEY)).toMatch(/^old /);
     });
 
     it("do not reload over unsaved input", () => {
@@ -461,6 +473,14 @@ describe("installBuildCheck", () => {
 
         win.dispatchEvent(Object.assign(new Event("pageshow"), { persisted: true }));
         await vi.waitFor(() => expect(location.reload).toHaveBeenCalledOnce());
+    });
+
+    it("reads only after the router wrote the navigation's URL", async () => {
+        const { router, fetcher } = await installed();
+
+        router.navigate("/activity");
+        expect(fetcher).not.toHaveBeenCalled();
+        await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
     });
 
     it("loads the navigation target after the left page's draft is gone", async () => {
