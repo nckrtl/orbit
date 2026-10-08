@@ -242,7 +242,6 @@ it('recovers a reservation whose owner crashed before or after starting the unit
 it('pins the guest launcher to its own Gateway and CA despite inherited live overrides', function () {
     $root = temporaryPath('orbit-web-launcher-', 6);
     mkdir($root.'/apps/web', 0700, true);
-    mkdir($root.'/packages/agent-annotation', 0700, true);
     mkdir($root.'/home', 0700, true);
     mkdir($root.'/bin', 0700, true);
     file_put_contents($root.'/home/e2e-gateway-root-ca.pem', 'topology-ca');

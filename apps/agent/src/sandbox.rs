@@ -48,6 +48,8 @@ struct Spec {
     images: BTreeMap<Role, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_template: Option<SourceTemplate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_slug: Option<String>,
     pool: String,
     subnet: String,
     blocked_networks: Vec<String>,
@@ -268,6 +270,24 @@ mod tests {
         assert!(request(value.to_string().as_bytes()).is_ok());
         value["spec"]["pi_port"] = "23001".into();
         assert!(request(value.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn forwards_the_project_identity_without_accepting_untyped_values() {
+        let mut value = base();
+        value["operation"] = "provision".into();
+        value["spec"] = json!({"images":{"operator":"a".repeat(64)}, "pool":"proof",
+            "subnet":"10.233.1.0/24", "blocked_networks":["192.168.0.0/16"],
+            "project_slug":"dlf"});
+        let forwarded: serde_json::Value = serde_json::from_slice(
+            &request(value.to_string().as_bytes()).expect("Project identity must reach the host"),
+        )
+        .unwrap();
+        assert_eq!(forwarded["spec"]["project_slug"], "dlf");
+        for invalid in [json!(true), json!(7), json!({"slug":"dlf"}), json!(["dlf"])] {
+            value["spec"]["project_slug"] = invalid;
+            assert!(request(value.to_string().as_bytes()).is_err());
+        }
     }
 
     #[test]

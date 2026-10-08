@@ -121,6 +121,22 @@ final readonly class NativeInstanceRemovalProjector implements InstanceRemovalPr
         return 'deleted';
     }
 
+    /**
+     * Runs after `route_target_clear`, which leaves the Instance with no Route target, so stored state
+     * renders no pool for it. This convergence drops the pool and reloads PHP-FPM while the working
+     * directory still exists.
+     */
+    public function withdrawPhpPool(InstanceRemovalMember $member): void
+    {
+        $instance = Instance::query()->with('node')->findOrFail($member->instance_id);
+
+        if ($member->environment !== 'development' || $instance->placedOnAppProd()) {
+            return;
+        }
+
+        $this->convergeDevelopmentPhp($instance);
+    }
+
     public function cleanupRuntime(InstanceRemovalMember $member): void
     {
         $instance = Instance::query()->with('node')->findOrFail($member->instance_id);

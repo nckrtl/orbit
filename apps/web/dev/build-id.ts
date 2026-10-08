@@ -17,7 +17,6 @@ const SOURCES = [
     "dev",
     "src",
     "public",
-    "../../packages/agent-annotation/src",
 ];
 
 type BuildIdInputs = {

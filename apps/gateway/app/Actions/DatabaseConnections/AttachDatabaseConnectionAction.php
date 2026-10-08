@@ -39,7 +39,7 @@ final readonly class AttachDatabaseConnectionAction
             $normalizedPrefix,
         ): DatabaseConnectionAttachmentData {
             $context = $this->contexts->resolve($instance->refresh(), requireActiveNode: false);
-            $projected = $this->projection->project($connection, $instance, $normalizedPrefix);
+            $projected = $this->projection->project($connection, $normalizedPrefix);
 
             return DB::transaction(function () use (
                 $instance,

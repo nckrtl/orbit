@@ -56,6 +56,8 @@ The Incus harness also reads its own environment. `ORBIT_E2E_INCUS_MEMORY` overr
 
 `ORBIT_GATEWAY_URL` and `ORBIT_CA_PATH` are web development proxy inputs, not Instance settings. A [topology web session](/reference/web-app#run-against-a-topology) pins the URL and trusted CA to its selected topology. Inherited endpoint overrides, including settings in the caller's environment or web development files, must not redirect Gateway, realtime, or metrics traffic to the live fleet. Missing required topology configuration fails startup instead of reading a live profile or another user's credentials.
 
+`ORBIT_DOCS_ROOT` overrides the Docs tooling's documentation directory, normally repository-root `docs/`. `bin/docs-merge-check` sets it to the temporary checkout's `docs/` directory so all lint rules inspect the selected tree. This local tooling setting is not an Instance environment value. See [the contributor checks](/contributor-guide#checks-that-need-no-network).
+
 ## Operations
 
 The import and update endpoints accept either a positive numeric Instance ID or an exact Route domain in `{instance}`. A selector that matches no Instance returns HTTP 404. A Route domain that has multiple Instance targets returns HTTP 409 with `env.target_ambiguous`. The Instance's recorded placement owns its environment: the owning Node is the Instance's `node_id`, not a Route. An Instance without a Route can still have its environment synchronized. Changing the Project's [task workspace routing setting](/reference/projects#task-workspace-routing) does not change an existing Instance's environment target.
@@ -125,7 +127,11 @@ The Gateway renders every stored key in sorted order, as a quoted value. It writ
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
-For an Instance that owns its `DB` database, synchronization also writes `.env.testing` the same way: the same values, with `APP_ENV=testing` and `DB_DATABASE` set to the [test database](/reference/database-connections#test-databases). The other `DB_*` keys stay the same. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
+For an Instance that owns its `DB` database, synchronization also updates `.env.testing` with the same checks and mode. It sets only the `DB_*` keys of that connection, with `DB_DATABASE` set to the [test database](/reference/database-connections#test-databases), and removes the other `DB_*` keys of the connection. Every other line in the file stays.
+
+A new file holds only those keys, so add any other keys your tests need, such as `APP_KEY`: Laravel loads `.env.testing` instead of `.env`.
+
+Orbit never writes a `.env.testing` that Git tracks in the checkout. It leaves that file unchanged and records the test database name in the `testing` property of the `env:sync` activity. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
 Synchronization changes only `.env` and `.env.testing`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
 

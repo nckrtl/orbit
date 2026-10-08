@@ -1,11 +1,12 @@
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import { ANNOTATION_HOST_ID } from "@nckrtl/annotator/host";
 import indexHtml from "../../index.html?raw";
 import { displayMode } from "../../src/ui/viewportReadout";
 import { setLiveness } from "../../src/realtime/liveness";
 import { ui } from "../../src/ui/store";
 import { openApp } from "./app";
+
+const ANNOTATION_HOST_ID = "laravel-toolbar-annotation-host";
 
 const EDGES = ["top", "right", "bottom", "left"] as const;
 
@@ -121,7 +122,7 @@ function expectInside(
 function floatingControl(): HTMLElement {
     const fab = document
         .getElementById(ANNOTATION_HOST_ID)
-        ?.shadowRoot?.querySelector("[data-orbit-annotation-fab]");
+        ?.shadowRoot?.querySelector("[data-annotation-fab]");
     if (!(fab instanceof HTMLElement)) {
         throw new Error("floating action missing");
     }
