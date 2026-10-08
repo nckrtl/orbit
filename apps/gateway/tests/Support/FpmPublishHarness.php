@@ -55,12 +55,34 @@ final class FpmPublishHarness
         return $managed;
     }
 
+    /** The next service activation succeeds instead of failing once. */
+    public function allowActivation(): void
+    {
+        $this->files->put($this->root.'/activation-failed', '');
+    }
+
+    /** PHP-FPM is failed or stopped until a restart or reload-or-restart starts it. */
+    public function stopService(): void
+    {
+        $this->files->put($this->root.'/service-inactive', '');
+    }
+
+    public function serviceActive(): bool
+    {
+        return ! is_file($this->root.'/service-inactive');
+    }
+
+    /** Runs a command as the Node runs it; a leading sudo runs through the shim. */
     public function run(RemoteCommand $command): CommandResult
     {
-        $process = new Process(array_slice(array: $command->arguments, offset: 1), $this->root, [
+        $arguments = $command->arguments[0] === 'sudo'
+            ? array_slice(array: $command->arguments, offset: 1)
+            : $command->arguments;
+        $process = new Process($arguments, $this->root, [
             'PATH' => $this->root.'/bin:'.getenv('PATH'),
             'HARNESS_SERVICE_LOG' => $this->root.'/systemctl.log',
             'HARNESS_ACTIVATION_MARKER' => $this->root.'/activation-failed',
+            'HARNESS_INACTIVE_MARKER' => $this->root.'/service-inactive',
         ]);
         $process->setInput($command->input);
         $process->run();
@@ -144,9 +166,18 @@ final class FpmPublishHarness
                 set -euo pipefail
                 printf '%s\n' "$*" >> "${HARNESS_SERVICE_LOG}"
 
-                if [ "$1" = reload-or-restart ] && [ ! -e "${HARNESS_ACTIVATION_MARKER}" ]; then
+                if [ "$1" = is-active ]; then
+                    test ! -e "${HARNESS_INACTIVE_MARKER}"
+                    exit
+                fi
+
+                if { [ "$1" = reload-or-restart ] || [ "$1" = restart ]; } && [ ! -e "${HARNESS_ACTIVATION_MARKER}" ]; then
                     touch "${HARNESS_ACTIVATION_MARKER}"
                     exit 1
+                fi
+
+                if [ "$1" = reload-or-restart ] || [ "$1" = restart ]; then
+                    rm -f -- "${HARNESS_INACTIVE_MARKER}"
                 fi
 
                 exit 0

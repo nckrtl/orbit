@@ -94,7 +94,7 @@ describe('Gateway release requests', function (): void {
             ->and(json_encode($queued->toArray()['phases']))->toBe('{}')
             ->and($queued->requestId)->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844')
             ->and($verified->succeeded())->toBeTrue()
-            ->and(array_keys($verified->phases))->toBe(['prepare', 'guard', 'configuration', 'snapshot', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke']);
+            ->and(array_keys($verified->phases))->toBe(['prepare', 'guard', 'configuration', 'snapshot', 'migrate', 'switch', 'handoff', 'verify', 'scheduler', 'web', 'smoke', 'tick']);
     });
 
     it('lists records newest first', function (): void {
@@ -115,7 +115,9 @@ describe('Gateway release requests', function (): void {
             ->and($paused->paused)->toBeTrue()
             ->and($paused->pause['reason'] ?? null)->toBe('migration_failure')
             ->and($paused->lastTick['result'] ?? null)->toBe('paused')
-            ->and($paused->currentRelease)->toBe('0123456789ab');
+            ->and($paused->currentRelease)->toBe('0123456789ab')
+            ->and($paused->tickConfirmation['outcome'] ?? null)->toBe('pending')
+            ->and($paused->toArray()['tick_confirmation']['deadline'] ?? null)->toBe('2026-10-07T11:04:10Z');
     });
 
     it('raises the Gateway error code of a refused request', function (): void {

@@ -1648,11 +1648,13 @@
             "concepts": [
                 "Activity",
                 "Cluster",
+                "Doctor",
                 "Gateway",
                 "Instance",
                 "Node",
                 "Process",
                 "Project",
+                "Role",
                 "Route",
                 "Schedule",
                 "Task",
@@ -1883,7 +1885,8 @@
                 "Project",
                 "Role",
                 "Route",
-                "Schedule"
+                "Schedule",
+                "Task"
             ],
             "governing_adrs": []
         },

@@ -3909,6 +3909,9 @@ export interface components {
             behind_since?: string | null;
             branch?: string;
             check?: string;
+            tick_confirmation?: {
+                [key: string]: unknown;
+            } | null;
         };
         GatewayReleasePause: {
             reason?: string;
@@ -7269,7 +7272,7 @@ export interface operations {
                 "application/json": {
                     /** @description Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release */
                     commit?: string | null;
-                    /** @description Runtime handoff time, ISO 8601 with a zone. The scheduler, agent view, and a tick must have started after it */
+                    /** @description Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it */
                     since?: string | null;
                 };
             };

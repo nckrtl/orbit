@@ -2096,7 +2096,7 @@
               "null"
             ],
             "maxLength": 64,
-            "description": "Runtime handoff time, ISO 8601 with a zone. The scheduler, agent view, and a tick must have started after it"
+            "description": "Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it"
           }
         },
         "additionalProperties": false

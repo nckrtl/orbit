@@ -272,8 +272,8 @@ Smoke runs `bin/gateway-smoke` of the new release, `releases/<id>/bin/gateway-sm
 | Option | Value |
 | --- | --- |
 | `--sha` | The release's commit. |
-| `--since` | The time the runtime handoff started, in whole seconds. The scheduler and agent view must have restarted after it, and a tasks tick must have started after it. |
-| `--timeout` | `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, default `90` seconds. A restarted scheduler starts its first tick on the next minute. |
+| `--since` | The time the runtime handoff started, in whole seconds. The scheduler and agent view must have restarted after it. |
+| `--timeout` | `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, default `90` seconds. |
 | `--checkout`, `--web-dir` | `/home/orbit/orbit` and the web directory, so the checks read the live paths. |
 | `--web-url`, `--up-url`, `--status-url` | Built from `ORBIT_GATEWAY_VERIFY_ORIGIN`. |
 | `--write-check --smoke-project` | Only when `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` names a Project. |
@@ -281,6 +281,23 @@ Smoke runs `bin/gateway-smoke` of the new release, `releases/<id>/bin/gateway-sm
 The Python checks trust Orbit's root CA through `SSL_CERT_FILE`, set to Caddy's `root-ca.pem` unless the environment already sets it. The document write check is off by default, because it writes a Project Document on every release. To turn it on, create a dedicated Project and set `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` to its ID or slug in the shared env file, then [apply the env change](#apply-an-env-change).
 
 The release record stores the smoke JSON as `phases.smoke.report`, also when smoke fails. Smoke fails when it exits nonzero, reports `passed: false`, prints no JSON, or the release has no `bin/gateway-smoke`. When it runs 15 seconds past its own limit, the step fails with `gateway.release_smoke_timeout`. `timeout` then sends `SIGTERM` to smoke, which kills every check command it started, each in a session of its own, and prints a `terminated` result that the record keeps as the report. After 5 more seconds, `timeout` kills what is left. No check outlives the step. A smoke failure is handled like a failed verification: switch back without migrations, pause after them.
+
+Smoke does not wait for the first `tasks:tick`, because a restarted scheduler starts it only at the next full minute. It checks that the scheduler's process runs from the new release and that the release's `artisan schedule:list` lists `tasks:tick`. The first tick is [confirmed after the release](#post-release-tick-confirmation). Pass `--wait-for-tick` to `bin/gateway-smoke` by hand to wait for it instead.
+
+#### Post-release tick confirmation
+
+A verified release starts with the step `tick` set to `pending`. The step records `since`, the time the runtime handoff started. It also records `deadline`, which comes `ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS` after the release was verified. The default is 180 seconds, and the minimum is 60. Every [tick of the release runner](#what-a-tick-does) decides the pending confirmations it can, also while automatic releases are disabled or paused, so a manual deploy and a rollback are confirmed too.
+
+`tasks:tick` records when it started and the version of the code that ran it, the commit in the release's `REVISION`. The step ends as one of these:
+
+| Outcome | When |
+| --- | --- |
+| `confirmed` | A tick started at or after `since` and ran the release's own commit. It records `last_tick_at`, `last_tick_version`, and `decided_at`. A tick that ran during smoke confirms the release at once |
+| `missed` | The first runner tick after `deadline` saw no such tick. It records the last tick it saw and raises at most one [`release_scheduler_silent` alert](#release-alerts), stored as `tick.alert` |
+| `skipped` | The tasks extension is disabled, so the scheduler runs no `tasks:tick` |
+| `superseded` | A newer verified release went live. That release has a confirmation of its own. While another release is only being tried, the step stays `pending`, because a failed attempt switches back |
+
+A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler unit with `systemctl status` and its journal. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
 
 Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke` of the current release for its commit, or for the commit you name. It changes nothing and writes no release record.
 
@@ -427,13 +444,14 @@ Each unit runs as `orbit` from `/home/orbit/orbit/apps/gateway`, so a run starts
 
 Each tick of `gateway:release:auto` takes these steps and stops at the first that ends it:
 
-1. It stops when automatic releases are disabled or paused. A stall ends then.
-2. A requested release that waits for its unit goes first. The tick stops.
-3. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
-4. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
-5. It asks GitHub for the newest [green commit](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
-6. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
-7. It deploys that commit with the trigger `auto`, under the release lock.
+1. It decides the pending [tick confirmations](#post-release-tick-confirmation).
+2. It stops when automatic releases are disabled or paused. A stall ends then.
+3. A requested release that waits for its unit goes first. The tick stops.
+4. It takes the release lock and ends the records of dead releases. A busy lock stops the tick.
+5. It stops without a deployed commit: the Gateway runs from no release, or `REVISION` is unreadable.
+6. It asks GitHub for the newest [green commit](/reference/github-app#find-the-newest-green-commit) of the branch that descends from the deployed commit. Commits with a release that failed for the commit itself are left out.
+7. A manual deploy that pinned an older commit after the last resume is never undone. The tick pauses with the reason `manual_deploy`.
+8. It deploys that commit with the trigger `auto`, under the release lock.
 
 The repository is the `origin` of the shared release repository. `ORBIT_GATEWAY_RELEASE_BRANCH` and `ORBIT_GATEWAY_RELEASE_CHECK` name the branch and the check, by default `main` and `Required checks`. A commit whose release failed or switched back with a retry left is tried again after 10 minutes, up to three attempts.
 
@@ -486,7 +504,7 @@ While it is up to date, the runner reads the branch head at most every 15 minute
 
 ### Read the state
 
-`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, and the stalls. `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes means the timer does not run. Check it with `systemctl status orbit-gateway-release.timer` on the Gateway.
+`orbit gateway:release:auto:status` shows the switch, a pause with its release, error code, and snapshot, the current release, the last tick, the stalls, and the current release's [tick confirmation](#post-release-tick-confirmation). `orbit gateway:status` shows the current release and a short summary. A last check older than two minutes means the timer does not run. Check it with `systemctl status orbit-gateway-release.timer` on the Gateway.
 
 ## Adopt the release layout
 
@@ -605,6 +623,7 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
+| `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` by the [confirmation deadline](#post-release-tick-confirmation). At most once per release; nothing switches back or pauses |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for its CLI release. The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 

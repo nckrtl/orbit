@@ -204,6 +204,7 @@ function gateway_release_phases(string $id, string $from): array
         'scheduler' => ['scheduler' => 'restarted', 'scheduler_unit' => 'orbit-process-108-schedule-work.service', 'cleanup' => 'resumed', 'cleanup_error_code' => null, 'cleanup_paused' => false],
         'web' => ['outcome' => 'published'],
         'smoke' => ['outcome' => 'passed'],
+        'tick' => ['outcome' => 'confirmed', 'since' => '2026-10-07T12:00:05Z', 'deadline' => '2026-10-07T12:04:10Z', 'last_tick_at' => '2026-10-07T12:02:00.120000Z', 'last_tick_version' => RELEASE_TARGET, 'decided_at' => '2026-10-07T12:02:01Z'],
     ];
 }
 
@@ -431,7 +432,15 @@ describe('gateway release API', function (): void {
     })->with(['running', 'verified', 'switched-back', 'paused', 'rolled-back']);
 
     it('enables, disables, and resumes automatic releases', function (): void {
+        // The record that put the current release live waits for the first tick of its own scheduler.
+        gateway_release_record([
+            'release_id' => substr(RELEASE_CURRENT, 0, 12),
+            'sha' => RELEASE_CURRENT,
+            'requested' => RELEASE_CURRENT,
+            'phases' => ['tick' => ['outcome' => 'pending', 'since' => '2026-10-07T11:00:05Z', 'deadline' => '2026-10-07T11:04:10Z']],
+        ]);
         $status = $this->getJson('/api/v1/gateway/release-automation')->assertOk()
+            ->assertJsonPath('data.tick_confirmation.outcome', 'pending')
             ->assertJsonPath('data.enabled', false)
             ->assertJsonPath('data.current_release', substr(RELEASE_CURRENT, 0, 12))
             ->assertJsonPath('data.current_sha', RELEASE_CURRENT);
@@ -453,11 +462,11 @@ describe('gateway release API', function (): void {
             'error_code' => 'gateway.release_smoke_failed',
         ]);
         file_put_contents($this->base.'/home/gateway-release.paused', '{}');
-        $automation->pauseFor('migration_failure', GatewayRelease::query()->findOrFail(1));
+        $automation->pauseFor('migration_failure', GatewayRelease::query()->findOrFail(2));
         $paused = $this->getJson('/api/v1/gateway/release-automation')->assertOk()
             ->assertJsonPath('data.paused', true)
             ->assertJsonPath('data.pause.reason', 'migration_failure')
-            ->assertJsonPath('data.pause.record', 1)
+            ->assertJsonPath('data.pause.record', 2)
             ->assertJsonPath('data.last_tick.result', 'paused');
         record_fixture($paused, 'gateway-releases/gateway-release-auto-status/paused', 'Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseAutomationRequest', 'GET /api/v1/gateway/release-automation');
 

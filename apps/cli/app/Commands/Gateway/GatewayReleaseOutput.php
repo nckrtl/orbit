@@ -79,7 +79,26 @@ final class GatewayReleaseOutput
             'Stalled since' => $state->stalledSince,
             'Branch head' => $state->branchHead,
             'Behind since' => $state->behindSince,
+            'Scheduler tick' => self::tickConfirmation($state->tickConfirmation),
         ];
+    }
+
+    /**
+     * Whether the current release's own scheduler has run `tasks:tick`, with the time that decides it.
+     *
+     * @param  array<string, mixed>|null  $phase
+     */
+    private static function tickConfirmation(?array $phase): ?string
+    {
+        $outcome = is_array($phase) && is_string($phase['outcome'] ?? null) ? $phase['outcome'] : null;
+
+        return match ($outcome) {
+            null => null,
+            'pending' => 'pending, due by '.(is_string($phase['deadline'] ?? null) ? $phase['deadline'] : '—'),
+            'confirmed' => 'confirmed, tick at '.(is_string($phase['last_tick_at'] ?? null) ? $phase['last_tick_at'] : '—'),
+            'missed' => 'missed, no tick by '.(is_string($phase['deadline'] ?? null) ? $phase['deadline'] : '—'),
+            default => $outcome,
+        };
     }
 
     /** @return array<string, string|null> */

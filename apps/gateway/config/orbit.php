@@ -34,6 +34,8 @@ return [
         'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 5),
         'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
         'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
+        // A verified release whose own scheduler runs no tasks:tick within this many seconds raises one alert.
+        'tick_confirmation_seconds' => max(60, (int) env('ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS', 180)),
         // Automatic releases ship the newest commit of this branch whose check run of this name passed.
         // The repository is the origin of the shared release repository.
         'branch' => env(key: 'ORBIT_GATEWAY_RELEASE_BRANCH', default: 'main'),

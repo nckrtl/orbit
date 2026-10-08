@@ -931,9 +931,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $this->processes->execute($member->instance_id);
         ($this->databases ?? app(DropOwnedDatabasesAction::class))->execute($member->instance_id);
 
-        // A routed create can publish part of its runtime before activation.
-        // An unrouted task workspace has no pool, site, or certificate to withdraw.
-        if ($member->runtime_published || $member->route_id !== null) {
+        // A routed create can publish part of its runtime before activation, and its Route can be
+        // destroyed before the Instance, so a development member never trusts route_id alone: every
+        // development removal converges its Node from stored state, which drops any pool left behind.
+        if ($member->runtime_published || $member->route_id !== null || $member->environment === 'development') {
             $this->routes->cleanupRuntime($member);
         }
         $member->update(['runtime_cleaned_at' => now()]);
