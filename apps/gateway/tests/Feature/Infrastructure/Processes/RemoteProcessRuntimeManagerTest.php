@@ -97,7 +97,7 @@ it('installs the Gateway annotator files and deletes only a removed Process stor
     $installed = $this->ssh->commands[0];
     expect($installed->arguments[0])->toBe('sudo')->and($installed->arguments[1])->toBe('python3');
     $files = json_decode($installed->input, true, flags: JSON_THROW_ON_ERROR);
-    expect($files['bin/serve.mjs'])->toBe(file_get_contents(base_path('../../packages/agent-annotation/bin/serve.mjs')))
+    expect($files['bin/serve.mjs'])->toBe(file_get_contents(resource_path('annotator/bin/serve.mjs')))
         ->and($files)->toHaveKeys(['bin/store.mjs', 'bin/lifecycle.mjs', 'bin/SKILL.md', 'bin/QUEUE-SKILL.md']);
     expect(collect($this->ssh->commands)->contains(fn (RemoteCommand $command): bool => $command->arguments === ['sudo', 'install', '-d', '-m', '0700', '-o', 'nckrtl', AnnotatorEndpoint::store($this->instance->id)]))->toBeTrue();
     $this->ssh->commands = [];

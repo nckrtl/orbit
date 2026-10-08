@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+TOOL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+fail() { printf 'docs-merge-check: %s\n' "$*" >&2; exit 2; }
+help() {
+    printf '%s\n' \
+        'Usage: bin/docs-merge-check --base <ref> [--head <ref>] [--head-only]' \
+        '' \
+        'Run strict Docs lint on a committed head or its merge result with a base.' \
+        'Uses the Git repository in the current directory and the current Docs tooling.' \
+        '--base <ref>   Locally available base commit (required for merge mode).' \
+        '--head <ref>   Locally available head commit (default: HEAD).' \
+        '--head-only    Check only the head; --base is not needed or read.' \
+        '--help         Show this help.' \
+        '' \
+        'Exit codes: 0 lint passed; 1 lint failed; 2 preview/setup failed.' \
+        'Reasons include base_unavailable, head_unavailable, and merge_conflict.' \
+        'Never fetches, changes the source checkout, or falls back to head on conflict.'
+}
+base=''
+head=HEAD
+head_only=false
+while (($#)); do
+    case "$1" in
+        --help|-h) help; exit 0 ;;
+        --base|--head)
+            (($# >= 2)) && [[ -n "$2" && "$2" != --* ]] || fail "invalid_arguments: $1 needs a ref"
+            if [[ "$1" == --base ]]; then base="$2"; else head="$2"; fi
+            shift 2 ;;
+        --head-only) head_only=true; shift ;;
+        *) fail "invalid_arguments: unknown argument $1" ;;
+    esac
+done
+repo="$(git rev-parse --show-toplevel 2>/dev/null)" || fail 'repository_unavailable: run inside a Git checkout'
+head_commit="$(git -C "$repo" rev-parse --verify --end-of-options "$head^{commit}" 2>/dev/null)" || fail "head_unavailable: $head is not a local commit"
+if ! "$head_only"; then
+    [[ -n "$base" ]] || fail 'base_unavailable: --base is required; no fetch is performed'
+    base_commit="$(git -C "$repo" rev-parse --verify --end-of-options "$base^{commit}" 2>/dev/null)" || fail "base_unavailable: $base is not a local commit; no fetch is performed"
+    baseline_commit="$base_commit"
+else
+    baseline_commit="$(git -C "$repo" rev-parse --verify refs/remotes/origin/main^{commit} 2>/dev/null)" || baseline_commit=''
+fi
+scratch="$(mktemp -d "${TMPDIR:-/tmp}/orbit-docs-merge-check.XXXXXXXX")" || fail 'temporary_checkout_failed: cannot create directory'
+trap 'rm -rf -- "$scratch"' EXIT
+trap 'exit 2' HUP INT TERM
+# A shared local clone reads source objects but writes preview objects only here.
+git clone --quiet --shared --no-checkout "$repo" "$scratch/tree" || fail 'temporary_checkout_failed: local clone failed'
+git -C "$scratch/tree" config gc.auto 0
+git -C "$scratch/tree" config maintenance.auto false
+# Local clones derive remote refs from local branches, not source remote refs.
+# Bind lint's ratchet history to the resolved base (merge mode) or the actual
+# source origin/main (head-only), never to a missing or stale local main.
+if [[ -n "$baseline_commit" ]]; then
+    git -C "$scratch/tree" update-ref refs/remotes/origin/main "$baseline_commit" || fail 'temporary_checkout_failed: cannot bind ratchet baseline'
+else
+    git -C "$scratch/tree" update-ref -d refs/remotes/origin/main || fail 'temporary_checkout_failed: cannot clear synthetic ratchet baseline'
+fi
+preview="$head_commit"
+if ! "$head_only"; then
+    set +e
+    merge_output="$(git -C "$scratch/tree" merge-tree --write-tree "$base_commit" "$head_commit" 2>&1)"
+    merge_status=$?
+    set -e
+    if ((merge_status == 1)); then
+        fail "merge_conflict: merge refused; head-only lint was not run
+$merge_output"
+    elif ((merge_status != 0)); then
+        fail "merge_failed: Git could not build the preview
+$merge_output"
+    fi
+    tree="${merge_output%%$'\n'*}"
+    preview="$(printf 'Docs merge preview\n' | git -C "$scratch/tree" -c user.name=Docs -c user.email=docs@example.test -c commit.gpgsign=false commit-tree "$tree" -p "$base_commit" -p "$head_commit")" || fail 'merge_failed: cannot record preview parents'
+fi
+git -C "$scratch/tree" -c core.hooksPath=/dev/null checkout --quiet --detach "$preview" || fail 'temporary_checkout_failed: checkout failed'
+set +e
+# Cached Laravel configuration skips ORBIT_DOCS_ROOT evaluation. Use a fresh,
+# private cache path so neither workspace nor inherited caches select the tree.
+APP_CONFIG_CACHE="$scratch/config.php" ORBIT_DOCS_ROOT="$scratch/tree/docs" php "$TOOL_ROOT/apps/docs/artisan" orbit:docs-lint --format=text --strict --no-ansi
+lint_status=$?
+set -e
+if ((lint_status > 1)); then fail "lint_execution_failed: Docs lint exited $lint_status"; fi
+exit "$lint_status"

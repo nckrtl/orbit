@@ -7,7 +7,7 @@
       "dependencies": {
         "@fontsource-variable/jetbrains-mono": "^5.3.0",
         "@heroicons/react": "2",
-        "@nckrtl/annotator": "file:../../packages/agent-annotation",
+        "@nckrtl/annotator": "^0.2.0",
         "@tanstack/react-query": "^5.103.1",
         "@tanstack/react-router": "^1.170.38",
         "@tanstack/react-table": "^9.2.4",
@@ -61,7 +61,7 @@
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.31", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw=="],
 
-    "@nckrtl/annotator": ["@nckrtl/annotator@file:../../packages/agent-annotation", { "dependencies": { "@heroicons/react": "2", "html-to-image": "^1.11.13", "pusher-js": "^8.6.0", "react": "^19.3.0", "react-dom": "^19.3.0" }, "devDependencies": { "@tailwindcss/vite": "^4.3.3", "@types/node": "^26.6.2", "@types/react": "^19.3.0", "@types/react-dom": "^19.3.0", "playwright": "1.62.1", "tailwindcss": "^4.3.3", "typescript": "~6.0.2", "vite": "npm:@voidzero-dev/vite-plus-core@0.2.6", "vite-plus": "0.2.6", "ws": "^8.21.3" }, "bin": { "annotate": "bin/serve.mjs" } }],
+    "@nckrtl/annotator": ["@nckrtl/annotator@0.2.0", "", { "dependencies": { "@heroicons/react": "2", "html-to-image": "^1.11.13", "react": "^19.3.0", "react-dom": "^19.3.0" }, "bin": { "annotator": "bin/serve.mjs" } }, "sha512-Djej7Y2SekPEhko9bPVOoa47wEbLy8JhH5qB+vuMbO7VxiNEv1HoQ1qVoBxctfD/0bM+kU1Ym8os+71/8RBDMQ=="],
 
     "@oxc-project/runtime": ["@oxc-project/runtime@0.141.0", "", {}, "sha512-Z/6jQ0dyvE2fVjMUO7GoD4h+3q0G4lI4BWQNjaPhC4RPxaS4hF1b7/QYKB/Tl+KAQwqqKgMF54ukR/VvV5FILg=="],
 

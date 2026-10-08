@@ -1,4 +1,4 @@
-import { annotationServerProxy } from "../../packages/agent-annotation/bin/vite.mjs";
+import { annotationServerProxy } from "@nckrtl/annotator/vite";
 import { annotationThread } from "./dev/annotation-thread.ts";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,7 +8,6 @@ import react from "@vitejs/plugin-react";
 import { defineConfig, loadEnv, type Plugin, type ProxyOptions } from "vite-plus";
 import { playwright } from "vite-plus/test/browser-playwright";
 import { gatewayProfile, grafanaTarget, realtimeTarget } from "./dev/gateway-profile.ts";
-import { commanderOneShot } from "./dev/commander-oneshot.ts";
 import { orbitProfile } from "./dev/profile.ts";
 import { orbitBuild } from "./dev/build-id.ts";
 
@@ -113,36 +112,53 @@ function annotationSpeech(): Plugin {
     };
 }
 
+/** Demo mode, including bin/web-verify, must not connect to a local annotation server. */
+function annotationServer(): Plugin {
+    if (!process.env.VITE_ORBIT_DEMO) return annotationServerProxy();
+    return {
+        name: "annotation-server-demo",
+        apply: "serve",
+        // Routes a loopback server URL to the stub below, as the package proxy does.
+        transformIndexHtml: () => [
+            {
+                tag: "meta",
+                attrs: { name: "annotate-local-server-proxy", content: "/__annotate/local" },
+                injectTo: "head",
+            },
+        ],
+        configureServer(server) {
+            server.middlewares.use("/__annotate/local", (_request, response) => {
+                response.writeHead(200, {
+                    "Content-Type": "application/json",
+                    "Cache-Control": "no-store",
+                });
+                response.end(
+                    JSON.stringify({ error: "Demo mode does not call the annotation server." }),
+                );
+            });
+        },
+    };
+}
+
 export default defineConfig({
     plugins: [
         react(),
         tailwindcss(),
         orbitGateway(),
-        commanderOneShot(),
         orbitProfile(),
         annotationSpeech(),
         annotationThread(),
-        annotationServerProxy(),
+        annotationServer(),
         orbitBuild(rootDir),
     ],
     resolve: {
-        alias: [
-            {
-                find: /^@nckrtl\/annotate$/,
-                replacement: path.resolve(rootDir, "../../packages/agent-annotation/src/index.ts"),
-            },
-            {
-                find: "@nckrtl/annotator",
-                replacement: path.resolve(rootDir, "../../packages/agent-annotation/src"),
-            },
-            { find: "@", replacement: path.join(rootDir, "src") },
-        ],
+        alias: [{ find: "@", replacement: path.join(rootDir, "src") }],
         dedupe: ["react", "react-dom"],
     },
     define: { __ORBIT_GATEWAY__: "null" },
     // The demo Gateway imports recorded fixtures from the SDK package, outside this app.
     server: {
-        fs: { allow: [".", "../../packages/php-sdk/fixtures", "../../packages/agent-annotation"] },
+        fs: { allow: [".", "../../packages/php-sdk/fixtures"] },
     },
     test: {
         projects: [
