@@ -93,6 +93,8 @@ return [
         // from `owner/repo:id,id;owner/repo:id`. Empty disables review feedback. No logins, wildcards, roles, or
         // branch-provided settings.
         'github_reviewers' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_GITHUB_REVIEWERS')),
+        // ADR 0203: numeric GitHub account IDs whose pull requests Orbit reviews and merges, per repository.
+        'pull_request_authors' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_PULL_REQUEST_AUTHORS')),
         // Comma-separated GitHub logins requested as reviewers after a task pull request is opened or reused.
         // Unset or empty requests no one. The pull request author is omitted at request time.
         'review_request_logins' => TaskReviewRequestLogins::parseEnv(env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS')),

@@ -93,7 +93,7 @@ final readonly class UpdateProjectAction
             ->all());
 
         if (! $data->hasReconcilableChanges()) {
-            if ($data->taskCheckProvided || $data->taskWorkspaceRoutedProvided || $data->taskCompute !== null) {
+            if ($data->hasTaskSettings()) {
                 $project = $this->operations->run(
                     $instanceIds,
                     fn (): Project => $this->applyProjectCommands($project->fresh() ?? $project, $data),
@@ -157,6 +157,12 @@ final readonly class UpdateProjectAction
         }
         if ($data->taskWorkspaceRoutedProvided) {
             $changes['task_workspace_routed'] = $data->taskWorkspaceRouted;
+        }
+        if ($data->reviewAndMergeProvided) {
+            $changes['review_and_merge'] = $data->reviewAndMerge;
+        }
+        if ($data->mergeCheckProvided) {
+            $changes['merge_check'] = $data->mergeCheck;
         }
         if ($changes === []) {
             return $project;

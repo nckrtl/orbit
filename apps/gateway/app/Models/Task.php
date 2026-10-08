@@ -11,9 +11,11 @@ use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskExecutionMode;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
+use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use BackedEnum;
@@ -75,6 +77,10 @@ use LogicException;
  * @property string|null $taskable_type
  * @property int|null $taskable_id
  * @property string|null $pr_url
+ * @property string|null $pr_branch
+ * @property TaskMergeStatus|null $merge_status
+ * @property string|null $merge_reason
+ * @property string|null $merged_sha
  * @property string|null $watched_pr_url
  * @property int|null $watched_pr_number
  * @property string|null $watched_pr_state
@@ -144,6 +150,10 @@ final class Task extends Model
         'reserved_at',
         'task_compute',
         'capacity_wait_reason',
+        'pr_branch',
+        'merge_status',
+        'merge_reason',
+        'merged_sha',
     ];
 
     /** @var list<string> */
@@ -240,6 +250,10 @@ final class Task extends Model
         'taskable_type',
         'taskable_id',
         'pr_url',
+        'pr_branch',
+        'merge_status',
+        'merge_reason',
+        'merged_sha',
         'preview',
         'notify_coder',
         'implementer_model',
@@ -316,6 +330,16 @@ final class Task extends Model
         return $groupId;
     }
 
+    /**
+     * ADR 0203: subtasks that are not final reviews. A legacy row may have no type.
+     *
+     * @param  Builder<Task>  $query
+     */
+    public function scopeWithoutFinalReviews(Builder $query): void
+    {
+        $query->where(static fn (Builder $type) => $type->whereNull('type')->orWhere('type', '!=', TaskType::FinalReview->value));
+    }
+
     /** @param  Builder<Task>  $query */
     public function scopeTopLevel(Builder $query): void
     {
@@ -369,6 +393,42 @@ final class Task extends Model
         }
     }
 
+    /** ADR 0203: whether this top-level task holds every push until a final review approves it. */
+    public function reviewsBeforePush(): bool
+    {
+        return $this->parent_id === null && $this->execution_mode === TaskExecutionMode::Managed
+            && $this->project->reviewsAndMerges();
+    }
+
+    /** ADR 0203: an incoming pull request that Orbit reviews, not a pull request Orbit opened. */
+    public function reviewsIncomingPullRequest(): bool
+    {
+        return $this->parent_id === null && is_string($this->pr_branch) && $this->pr_branch !== '';
+    }
+
+    public function isFinalReview(): bool
+    {
+        return $this->type === TaskType::FinalReview;
+    }
+
+    /** A subtask an operator added: not a Gateway fixup and not a final review. Its completion opens a new fixup window. */
+    public function isOperatorWork(): bool
+    {
+        return $this->fixup_problem === null && ! $this->isFinalReview();
+    }
+
+    /** A fixup the settling watcher appended for a conflict, a failed check, or trusted feedback. */
+    public function isSettlingFixup(): bool
+    {
+        return is_string($this->fixup_problem) && $this->fixup_problem !== '' && $this->fixup_problem !== TaskFinalReview::FixupProblem;
+    }
+
+    /** @return HasMany<TaskReviewedCommit, $this> */
+    public function reviewedCommits(): HasMany
+    {
+        return $this->hasMany(TaskReviewedCommit::class, 'task_id')->orderBy('id');
+    }
+
     /** @return BelongsTo<AgentThread, $this> */
     public function implementerThread(): BelongsTo
     {
@@ -405,6 +465,15 @@ final class Task extends Model
      */
     public function opensPullRequest(): bool
     {
+        // ADR 0203: in a review-and-merge task only the final review opens the pull request.
+        if ($this->type === TaskType::FinalReview) {
+            $url = $this->parent()->value('pr_url');
+
+            return ! is_string($url) || $url === '';
+        }
+        if ($this->parent->reviewsBeforePush()) {
+            return false;
+        }
         if (! $this->isLastSubtask()) {
             return false;
         }
@@ -433,6 +502,7 @@ final class Task extends Model
             'status' => TaskLevelStatusCast::class,
             'execution_mode' => TaskExecutionMode::class,
             'task_compute' => TaskCompute::class,
+            'merge_status' => TaskMergeStatus::class,
             'preview' => 'boolean',
             'notify_coder' => 'boolean',
             'watched_pr_number' => 'integer',

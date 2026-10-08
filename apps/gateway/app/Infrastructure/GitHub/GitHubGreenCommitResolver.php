@@ -13,6 +13,7 @@ use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GreenCommit;
 use App\Domain\GitHub\GreenCommitResolver;
+use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\SourceControl\GitBranchName;
 use InvalidArgumentException;
 
@@ -29,9 +30,6 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
 {
     /** Bounds the check-run reads of one resolution. Older candidates wait for a newer green commit. */
     private const int CANDIDATES = 20;
-
-    /** The only App whose check runs count. A run of the required name from any other App disqualifies the commit. */
-    private const string CHECK_APP = 'github-actions';
 
     public function __construct(private GitHubAppStore $store, private GitHubApi $github) {}
 
@@ -83,18 +81,17 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
 
     /**
      * Every latest run of the required name must come from GitHub Actions and have passed on this exact
-     * commit, and at least one must exist.
+     * commit, and at least one must exist. The review-and-merge gate applies the same rule.
      *
      * @param  list<GitHubCheckRun>  $runs
      */
     private function passingRun(array $runs, string $sha, string $checkName): ?GitHubCheckRun
     {
-        $required = array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $checkName));
-        if ($required === [] || ! array_all($required, static fn (GitHubCheckRun $run): bool => $run->appSlug === self::CHECK_APP && $run->passedOn($sha))) {
+        if (RequiredCheckState::of($runs, $sha, $checkName) !== RequiredCheckState::Passed) {
             return null;
         }
 
-        return $required[0];
+        return array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $checkName))[0];
     }
 
     /**

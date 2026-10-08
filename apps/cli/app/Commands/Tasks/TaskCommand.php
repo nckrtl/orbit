@@ -313,6 +313,12 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Reason' => self::askingText($group->assistanceRequested, $group->assistanceReason),
             'Instance' => $group->taskableId,
             'Pull request' => $group->prUrl,
+            ...($group->reviewAndMerge === null ? [] : [
+                'Review and merge' => $group->reviewAndMerge->enabled,
+                ...($group->reviewAndMerge->prBranch === null ? [] : ['Pull request branch' => $group->reviewAndMerge->prBranch]),
+                'Merge' => $group->reviewAndMerge->mergeStatus === null ? null : $group->reviewAndMerge->mergeStatus.($group->reviewAndMerge->mergeReason === null ? '' : ': '.$group->reviewAndMerge->mergeReason),
+                ...($group->reviewAndMerge->mergedSha === null ? [] : ['Merged commit' => $group->reviewAndMerge->mergedSha]),
+            ]),
             'Notify Coder' => $group->notifyCoder,
             'Implementer model' => $group->implementerModel,
             'Reviewer model' => $group->reviewerModel,
@@ -352,6 +358,19 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
 
         if ($repros !== []) {
             $this->writeText('Fails on the start commit', implode(', ', $repros));
+        }
+
+        if ($group->reviewAndMerge !== null && $group->reviewAndMerge->reviewedCommits !== []) {
+            ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+                ['Reviewed commit', 'Source', 'Final review', 'Pushed', 'GitHub review'],
+                array_map(static fn (array $commit): array => [
+                    $commit['sha'],
+                    $commit['source'],
+                    $commit['review_task_id'],
+                    $commit['pushed_at'],
+                    $commit['github_review_id'],
+                ], $group->reviewAndMerge->reviewedCommits),
+            ));
         }
 
         $this->writeHumanMessage("Request ID: {$group->requestId}");

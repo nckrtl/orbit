@@ -58,6 +58,7 @@ final class TaskGroupData extends Data
         public ?string $capacityWaitReason = null,
         public ?SandboxPower $sandboxPower = null,
         public bool $preview = false,
+        public ?TaskReviewAndMergeData $reviewAndMerge = null,
     ) {}
 
     public static function fromModel(Task $group): self
@@ -72,6 +73,7 @@ final class TaskGroupData extends Data
             capacityWaitReason: $group->capacity_wait_reason,
             sandboxPower: self::sandboxPower($group),
             preview: $group->preview ?? false,
+            reviewAndMerge: $group->execution_mode === TaskExecutionMode::Managed ? TaskReviewAndMergeData::fromModel($group) : null,
 
             id: $group->id,
             projectId: $group->project_id,
