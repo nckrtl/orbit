@@ -95,6 +95,15 @@ final readonly class SandboxTopologyAdmission implements TaskTopologyAdmission
                 }
             }
             $this->workloads->prepare($workspace, $head['head'], $inventory);
+            if ($version['gateway_head'] !== $head['head']) {
+                $result = $this->guest->execute($workspace, new RemoteCommand(['python3', '-I', '-c', $script],
+                    input: json_encode([...$request, 'phase' => 'prerequisites'], JSON_THROW_ON_ERROR), timeout: 900, maxOutputBytes: 8192), 'sandbox-topology', 'tasks.topology_failed', role: 'gateway');
+                $prerequisites = json_decode($result->stdout, true, flags: JSON_THROW_ON_ERROR);
+                if ($result->truncated || ! is_array($prerequisites) || ($prerequisites['sandbox_id'] ?? null) !== $sandbox->id
+                    || ($prerequisites['head'] ?? null) !== $head['head'] || ($prerequisites['ready'] ?? null) !== true) {
+                    throw new ComputeException('compute.topology_unavailable', 'The private Gateway could not refresh native pair prerequisites.');
+                }
+            }
             $request = [...$request, 'phase' => 'operator', 'doctor' => true];
             $result = $this->guest->execute($workspace, new RemoteCommand(['python3', '-I', '-c', $script],
                 input: json_encode($request, JSON_THROW_ON_ERROR), timeout: 900, maxOutputBytes: 8192), 'sandbox-topology', 'tasks.topology_failed');

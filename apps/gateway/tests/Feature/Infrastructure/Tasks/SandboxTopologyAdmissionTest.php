@@ -66,6 +66,12 @@ function topology_admission_fixture(): array
                 $report['ready'] = false;
             }
         }
+        if ($request['phase'] === 'prerequisites') {
+            expect($envelope['guest']['role'])->toBe('gateway');
+            if ($state->fault === 'prerequisites failed') {
+                $report['ready'] = false;
+            }
+        }
         if ($request['phase'] === 'gateway-identity') {
             expect($envelope['guest']['role'])->toBe('gateway');
             $report['gateway_public_key'] = 'ssh-ed25519 '.base64_encode('public-fixture');
@@ -136,7 +142,7 @@ it('refreshes a stale private Gateway before admitting a later turn', function (
 
     app(TaskTopologyAdmission::class)->prepare($group, $task);
 
-    expect($state->calls)->toBe(['inspect', 'version', 'gateway', 'operator']);
+    expect($state->calls)->toBe(['inspect', 'version', 'gateway', 'prerequisites', 'operator']);
 });
 
 it('keeps a failed runtime refresh retryable without confirming readiness', function (): void {
@@ -197,4 +203,14 @@ it('retries a missing reserved workload before guest preparation without changin
 
     expect($state->calls)->toBe(['observe', 'provision', 'inspect', 'version', 'gateway-identity', 'workload-identity', 'enroll', 'operator']);
     expect($sandbox->fresh()->spec)->toBe($spec);
+});
+
+it('keeps failed native prerequisites retryable before doctor or dispatch', function (): void {
+    [$group, $task, $state] = topology_admission_fixture();
+    $state->stale = true;
+    $state->fault = 'prerequisites failed';
+
+    expect(fn () => app(TaskTopologyAdmission::class)->prepare($group, $task))->toThrow(TaskCapacityException::class);
+    expect($state->calls)->toBe(['inspect', 'version', 'gateway', 'prerequisites']);
+    expect($group->fresh()->task_compute)->toBe(TaskCompute::Vm);
 });

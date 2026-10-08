@@ -201,7 +201,7 @@ describe('workspace TMPDIR', function (): void {
             PHP_BINARY, 'vendor/bin/pest',
             'tests/Feature/Infrastructure/Tasks/RemoteTaskCheckRunnerTest.php',
             '--filter=isolates workspace TMPDIR when another Unix user',
-        ], base_path(), ['TMPDIR' => $temporary]);
+        ], base_path(), ['TMPDIR' => $temporary, 'PARATEST' => false]);
         $process->setTimeout(60);
         $process->run();
 
@@ -310,18 +310,21 @@ describe('workspace TMPDIR', function (): void {
         $instance = tmpdir_instance($checkout, 'pass');
         $runner = tmpdir_runner();
 
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 1 && test -d "$TMPDIR"');
-        for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
-            usleep(50_000);
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && while [ ! -f release-check ]; do sleep 0.05; done && test -d "$TMPDIR"');
+        try {
+            for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
+                usleep(50_000);
+            }
+            $path = (string) file_get_contents($checkout.'/tmpdir-path');
+            $first = $runner->read($instance, $process);
+
+            expect($first->state)->toBe('running')
+                ->and($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
+                ->and(is_dir($path))->toBeTrue();
+        } finally {
+            file_put_contents($checkout.'/release-check', 'ready');
+            $reading = tmpdir_wait($runner, $instance, $process);
         }
-        $path = (string) file_get_contents($checkout.'/tmpdir-path');
-        $first = $runner->read($instance, $process);
-
-        expect($first->state)->toBe('running')
-            ->and($path)->toStartWith(realpath('/tmp').'/orbit-check-'.posix_geteuid().'-')
-            ->and(is_dir($path))->toBeTrue();
-
-        $reading = tmpdir_wait($runner, $instance, $process);
 
         expect($reading->exitCode)->toBe(0)
             ->and(is_dir($path))->toBeFalse();
@@ -332,7 +335,7 @@ describe('workspace TMPDIR', function (): void {
         $instance = tmpdir_instance($checkout, 'fail');
         $runner = tmpdir_runner();
 
-        $reading = tmpdir_wait($runner, $instance, $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && exit 2'));
+        $reading = tmpdir_wait($runner, $instance, $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && exit 2'));
         $path = (string) file_get_contents($checkout.'/tmpdir-path');
 
         expect($reading->exitCode)->toBe(2)
@@ -344,7 +347,7 @@ describe('workspace TMPDIR', function (): void {
         $checkout = tmpdir_checkout($this->directory, 'cancel');
         $instance = tmpdir_instance($checkout, 'cancel');
         $runner = tmpdir_runner();
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 30');
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && sleep 30');
         for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
             usleep(50_000);
         }
@@ -363,7 +366,7 @@ describe('workspace TMPDIR', function (): void {
         $checkout = tmpdir_checkout($this->directory, 'killed');
         $instance = tmpdir_instance($checkout, 'killed');
         $runner = tmpdir_runner();
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 30');
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && sleep 30');
         for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
             usleep(50_000);
         }
@@ -422,7 +425,7 @@ describe('workspace TMPDIR', function (): void {
         $instance = tmpdir_instance($checkout, 'polls');
         $runner = tmpdir_runner(tmpdir_records_scripts($scripts));
 
-        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path && sleep 30');
+        $process = $runner->start($instance, 'printf %s "$TMPDIR" > tmpdir-path.pending && mv -- tmpdir-path.pending tmpdir-path && sleep 30');
         for ($attempt = 0; $attempt < 100 && ! is_file($checkout.'/tmpdir-path'); $attempt++) {
             usleep(50_000);
         }

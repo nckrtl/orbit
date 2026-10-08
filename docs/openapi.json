@@ -4905,6 +4905,121 @@
         ]
       }
     },
+    "/api/v1/gateway/release-smoke": {
+      "post": {
+        "operationId": "gateway-release-smoke",
+        "summary": "gateway:release:smoke",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request's command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-f]{7,40}$(?![\\s\\S])",
+                    "description": "Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release"
+                  },
+                  "since": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 64,
+                    "description": "Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayReleaseSmoke"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/release-smoke\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"commit\": \"example\", \"since\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SmokeGatewayReleaseRequest())->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/gateway/releases": {
       "get": {
         "operationId": "gateway-release-list",
@@ -28599,6 +28714,30 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "GatewayReleaseSmoke": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "report": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
           }
         }
       },

@@ -16,8 +16,8 @@ use DateTimeImmutable;
 interface GatewayReleaseSmoke
 {
     /**
-     * @param  DateTimeImmutable|null  $since  When the runtime handoff started. The scheduler, agent view,
-     *                                         and a tasks tick must have started after it.
+     * @param  DateTimeImmutable|null  $since  When the runtime handoff started. The scheduler and agent view must
+     *                                         have started after it.
      * @param  list<string>  $skip  Checks to skip, such as `web` when a rollback kept the web app as it was.
      * @return SmokeResult
      *

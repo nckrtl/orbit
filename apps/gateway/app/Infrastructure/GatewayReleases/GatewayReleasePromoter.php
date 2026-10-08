@@ -34,6 +34,12 @@ final readonly class GatewayReleasePromoter
     /** The default number of prepared releases kept, newest first, besides the current and previous one. */
     public const int KeptReleases = 5;
 
+    /**
+     * Pruning removes a release directory without `REVISION` once it is this many seconds old. Every prepare runs
+     * under the release lock that pruning holds too, so no prepare writes to it; the age is a margin on top.
+     */
+    public const int IncompleteReleaseSeconds = 3600;
+
     /** The command `orbit-fleet-converge.service` runs, relative to a release's Gateway application. */
     public const string FleetCommand = 'app/Console/Commands/FleetConvergeCommand.php';
 
@@ -348,7 +354,10 @@ final readonly class GatewayReleasePromoter
         }
     }
 
-    /** Keeps the newest releases plus the current and the previous one, whatever their age. */
+    /**
+     * Keeps the newest releases plus the current and the previous one, whatever their age, and removes the release
+     * directories that a stopped prepare left without `REVISION`.
+     */
     private function prune(string $current, ?string $previous): void
     {
         $ids = $this->layout->retainedReleaseIds();
@@ -371,6 +380,7 @@ final readonly class GatewayReleasePromoter
             }
         }
 
+        $this->pruneIncomplete([$current, $previous, $this->layout->currentReleaseId()]);
         $retained = $this->layout->retainedReleaseIds();
 
         // A verified release is retained, so an empty list means the releases directory could not be read. Pruning
@@ -385,6 +395,35 @@ final readonly class GatewayReleasePromoter
             $this->web->prune($retained);
         } catch (Throwable) {
             // A web build that cannot be removed now is removed by a later release.
+        }
+    }
+
+    /**
+     * Removes each release directory without `REVISION` that is older than IncompleteReleaseSeconds, and its web
+     * build. The current and the previous release stay, also when they are incomplete, because they need a repair,
+     * not a removal.
+     *
+     * @param  list<string|null>  $kept
+     */
+    private function pruneIncomplete(array $kept): void
+    {
+        foreach ($this->layout->incompleteReleaseIds() as $id) {
+            $modified = @filemtime($this->layout->releasePath($id));
+
+            if (in_array($id, $kept, true) || $modified === false || $modified > time() - self::IncompleteReleaseSeconds) {
+                continue;
+            }
+
+            try {
+                $this->builder->remove($id);
+            } catch (Throwable $exception) {
+                // Pruning is not the release. A directory that cannot be removed stays until the next one.
+                Log::warning('Gateway release could not prune an incomplete release directory.', [
+                    'release' => $id,
+                    'error_code' => $exception instanceof GatewayReleaseException ? $exception->errorCode : null,
+                    'message' => $exception->getMessage(),
+                ]);
+            }
         }
     }
 }

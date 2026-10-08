@@ -13,8 +13,10 @@ use Orbit\Sdk\Requests\GatewayReleases\ResumeGatewayReleaseAutomationRequest;
 use Orbit\Sdk\Requests\GatewayReleases\RollbackGatewayReleaseRequest;
 use Orbit\Sdk\Requests\GatewayReleases\ShowGatewayReleaseAutomationRequest;
 use Orbit\Sdk\Requests\GatewayReleases\ShowGatewayReleaseRequest;
+use Orbit\Sdk\Requests\GatewayReleases\SmokeGatewayReleaseRequest;
 use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseAutomationResponse;
 use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseResponse;
+use Orbit\Sdk\Responses\GatewayReleases\GatewayReleaseSmokeResponse;
 use Orbit\Sdk\Responses\GatewayReleases\GatewayReleasesResponse;
 use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
@@ -53,6 +55,8 @@ describe('Gateway release requests', function (): void {
         'enable' => [new EnableGatewayReleaseAutomationRequest, Method::POST, '/api/v1/gateway/release-automation/enable', null],
         'disable' => [new DisableGatewayReleaseAutomationRequest, Method::POST, '/api/v1/gateway/release-automation/disable', null],
         'resume' => [new ResumeGatewayReleaseAutomationRequest, Method::POST, '/api/v1/gateway/release-automation/resume', null],
+        'smoke' => [new SmokeGatewayReleaseRequest, Method::POST, '/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null]],
+        'smoke commit' => [new SmokeGatewayReleaseRequest('fedcba9', '2026-10-07T06:00:00Z'), Method::POST, '/api/v1/gateway/release-smoke', ['commit' => 'fedcba9', 'since' => '2026-10-07T06:00:00Z']],
     ]);
 
     it('refuses selectors the Gateway would refuse', function (Closure $request): void {
@@ -62,7 +66,22 @@ describe('Gateway release requests', function (): void {
         'short deploy' => [static fn () => new DeployGatewayReleaseRequest('abc12')],
         'path show' => [static fn () => new ShowGatewayReleaseRequest('../status')],
         'short rollback' => [static fn () => new RollbackGatewayReleaseRequest('fedcba9')],
+        'branch smoke' => [static fn () => new SmokeGatewayReleaseRequest('main')],
     ]);
+
+    it('reads a passed and a failed smoke run from recorded responses', function (): void {
+        $passed = gateway_release_send(new SmokeGatewayReleaseRequest, 'gateway-release-smoke/passed');
+        $failed = gateway_release_send(new SmokeGatewayReleaseRequest, 'gateway-release-smoke/failed');
+
+        expect($passed)->toBeInstanceOf(GatewayReleaseSmokeResponse::class)
+            ->and($passed->passed())->toBeTrue()
+            ->and($passed->release)->toBe('0123456789ab')
+            ->and(array_keys($passed->checks()))->toBe(['deploy_verify', 'node_list', 'tasks_list', 'web', 'scheduler', 'tasks_tick', 'agent_view', 'documents'])
+            ->and($failed->passed())->toBeFalse()
+            ->and($failed->checks()['web'])->toMatchArray(['status' => 'failed', 'error' => 'web_release_mismatch'])
+            ->and($failed->report['failed_checks'] ?? null)->toBe(['web', 'scheduler'])
+            ->and($failed->toArray()['request_id'])->toBe('0198e15c-bf97-7c23-8f1f-61b8fe67a844');
+    });
 
     it('reads a queued deploy and a finished record from recorded responses', function (): void {
         $queued = gateway_release_send(new DeployGatewayReleaseRequest(str_repeat('fedcba9876543210', 2).'fedcba98'), 'gateway-release-deploy/queued');

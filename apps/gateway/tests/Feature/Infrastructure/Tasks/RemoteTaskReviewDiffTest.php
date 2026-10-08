@@ -99,6 +99,25 @@ it('reads tracked and untracked review diff without updating the index', functio
         ->and($diff['diff'])->toContain("return 'new';");
 });
 
+it('reads untracked symlinks without following their targets or changing the index', function (string $target): void {
+    $checkout = review_diff_checkout();
+    $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+    mkdir($checkout.'/skills');
+    file_put_contents($checkout.'/skills/private.txt', "Do not include target contents.\n");
+    file_put_contents($checkout.'/.gitignore', "skills/\n");
+    (new Process(['git', '-C', $checkout, 'add', '.gitignore']))->mustRun();
+    symlink($target, $checkout.'/skill-link');
+    $index = file_get_contents($checkout.'/.git/index');
+
+    $diff = review_diff_reader(new LocalShellSshExecutor)->read(review_diff_instance($checkout), $start);
+
+    expect(file_get_contents($checkout.'/.git/index'))->toBe($index)
+        ->and(array_column($diff['files'], 'path'))->toContain('skill-link')
+        ->and($diff['diff'])->toContain('new file mode 120000', '+'.$target)
+        ->and($diff['diff'])->not->toContain('Do not include target contents.')
+        ->and($diff['summary'])->toBe(['files' => 2, 'insertions' => 2, 'deletions' => 0]);
+})->with(['directory' => 'skills', 'file' => 'skills/private.txt', 'dangling' => 'missing']);
+
 it('refuses a missing checkout, a missing base, and output that is not a diff', function (string $case): void {
     $checkout = review_diff_checkout();
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
@@ -156,6 +175,8 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
     $restore = [];
     $path = getenv('PATH') ?: '';
+    $environmentPath = $_ENV['PATH'] ?? null;
+    $_ENV['PATH'] = $path;
     if ($failure === 'stat') {
         \chmod($checkout.'/tracked.php', 0000);
         $restore[] = $checkout.'/tracked.php';
@@ -174,7 +195,9 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         $git = trim((string) shell_exec('command -v git'));
         file_put_contents($bin.'/git', "#!/bin/sh\nfor argument in \"\$@\"; do if [ \"\$argument\" = ls-files ]; then echo ls-files-failed >&2; exit 1; fi; done\nexec ".escapeshellarg($git)." \"\$@\"\n");
         \chmod($bin.'/git', 0755);
+        // Symfony Process prefers $_ENV when PHP exposes environment variables.
         putenv('PATH='.$bin.':'.$path);
+        $_ENV['PATH'] = $bin.':'.$path;
     }
     $instance = review_diff_instance($checkout);
     $group = Task::topLevel()->create([
@@ -206,6 +229,11 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
             \chmod($pathToRestore, 0644);
         }
         putenv('PATH='.$path);
+        if ($environmentPath === null) {
+            unset($_ENV['PATH']);
+        } else {
+            $_ENV['PATH'] = $environmentPath;
+        }
     }
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)

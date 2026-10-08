@@ -716,7 +716,9 @@ Orbit task workspaces have no Incus topology by default. Provisioning does not a
 "$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why this group needs a topology"
 ```
 
-Orbit VM groups start with an operator and a private test Gateway. Their initial source fetch uses [guest GitHub DNS bootstrap](/reference/compute-drivers#prepare-source-inside-the-guest) while the cloned private network waits for retargeting. A failed bootstrap leaves source unresolved and prevents agent admission. Their reviewer fallback adds `app-dev` and `app-prod` through the owned compute driver. It preserves declared workload nodes and waits for capacity, enrollment, and fresh doctor readiness before resuming the reviewer. See [Declared workload nodes](/reference/compute-drivers#declared-workload-nodes). Shared workspaces use the discovery topology below.
+Orbit VM groups start with an operator and a private test Gateway. Their initial source fetch uses [guest GitHub DNS bootstrap](/reference/compute-drivers#prepare-source-inside-the-guest) while the cloned private network waits for retargeting. A failed bootstrap leaves source unresolved and prevents agent admission. After retargeting, pair preparation refreshes both Agents and the private Gateway’s Caddy and DNS projections through native convergence. Failed preparation remains retryable, and fresh doctor health still gates dispatch.
+
+Their reviewer fallback adds `app-dev` and `app-prod` through the owned compute driver. It preserves declared workload nodes and waits for capacity, enrollment, and fresh doctor readiness before resuming the reviewer. See [Declared workload nodes](/reference/compute-drivers#declared-workload-nodes). Shared workspaces use the discovery topology below.
 
 Before starting Pi, preparation configures the operator's [private Pi ingress and return route](/reference/compute-drivers#pi-proxy-on-an-incus-host) for the live Gateway. The policy returns at boot after parking and keeps the private topology's WireGuard routes. Failed network preparation prevents agent admission.
 
@@ -957,6 +959,8 @@ The opening turn is a review packet of at most 16,000 characters, about 4,000 to
 Before each review turn, opening or continued, Orbit writes `$(git rev-parse --git-path orbit)/context.md` with the full task brief, subtask brief, deliverables, earlier approval bodies, held resolution, and answered consults. Every cut note names that file. The file replaces the `tasks-show` and `tasks-comment-list` references, and it works on every driver.
 
 Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, the held resolution, and the answered consults. `$(git rev-parse --git-path orbit)/context.md` still holds those parts.
+
+The review packet includes untracked symlinks as link targets, without reading the files or directories they point to. Its diff reader uses a temporary copy of the Git index and leaves the workspace index unchanged.
 
 The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
 

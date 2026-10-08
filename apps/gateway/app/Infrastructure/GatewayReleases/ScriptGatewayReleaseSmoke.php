@@ -32,6 +32,9 @@ final readonly class ScriptGatewayReleaseSmoke implements GatewayReleaseSmoke
     /** Seconds `timeout` waits after SIGTERM before it kills what is left. */
     public const int KillAfterSeconds = 5;
 
+    /** Seconds the process guard waits beyond `timeout` and its kill delay before it stops the command itself. */
+    private const int GuardSeconds = 10;
+
     /** `timeout` exits 124 when it stopped the command with SIGTERM, and 137 when it had to kill it. */
     private const int TimedOut = 124;
 
@@ -50,6 +53,26 @@ final readonly class ScriptGatewayReleaseSmoke implements GatewayReleaseSmoke
         private string $caFile = '/etc/caddy/orbit-cert-current/root-ca.pem',
         private int $graceSeconds = self::GraceSeconds,
     ) {}
+
+    /**
+     * The same runner, with its smoke limit lowered so the whole run ends within `$seconds`: the limit, the grace
+     * period, the kill delay of `timeout`, and the process guard on top.
+     */
+    public function within(int $seconds): self
+    {
+        $limit = max(1, min($this->timeoutSeconds, $seconds - $this->graceSeconds - self::KillAfterSeconds - self::GuardSeconds));
+
+        return new self(
+            layout: $this->layout,
+            processes: $this->processes,
+            origin: $this->origin,
+            webRoot: $this->webRoot,
+            timeoutSeconds: $limit,
+            writeCheckProject: $this->writeCheckProject,
+            caFile: $this->caFile,
+            graceSeconds: $this->graceSeconds,
+        );
+    }
 
     public function run(string $id, string $sha, ?DateTimeImmutable $since = null, array $skip = []): array
     {
@@ -83,7 +106,7 @@ final readonly class ScriptGatewayReleaseSmoke implements GatewayReleaseSmoke
         try {
             $result = $this->processes->run(new ProcessInvocation(
                 arguments: ['timeout', '--signal=TERM', '--kill-after='.self::KillAfterSeconds, (string) $limit, ...$arguments],
-                timeout: (float) ($limit + self::KillAfterSeconds + 10),
+                timeout: (float) ($limit + self::KillAfterSeconds + self::GuardSeconds),
                 maxOutputBytes: self::MaxOutputBytes,
                 terminateGraceSeconds: 5.0,
                 environment: $this->environment(),
