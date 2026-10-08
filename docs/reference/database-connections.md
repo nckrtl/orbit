@@ -104,7 +104,7 @@ An owned database has a test database of the same kind, named in `test_database`
 | `mysql` | `<name>_test` on the same server. The user also gets every database whose name starts with `<name>_test`, so Laravel's parallel testing can create `<name>_test_test_1` and the rest. |
 | `sqlite` | `:memory:` |
 
-For an Instance that owns its `DB` database, [synchronization](/reference/environment-variables#synchronize) also writes `.env.testing`. It holds the same values as `.env`, with `APP_ENV=testing` and the `DB_*` keys pointing to the test database. Laravel loads `.env.testing` when `APP_ENV` is `testing`, which a Laravel `phpunit.xml` sets. A `phpunit.xml` entry with `force="true"` for a `DB_*` key still overrides it, so remove such entries to use the test database.
+For an Instance that owns its `DB` database, [synchronization](/reference/environment-variables#synchronize) also sets the `DB_*` keys in `.env.testing` to the test database, with the connection's host and port. A missing file is created from the same values as `.env`, with `APP_ENV=testing`. In an existing untracked file, other lines stay. Orbit never writes a `.env.testing` that Git tracks; it records the test database name in the activity instead. Laravel loads `.env.testing` when `APP_ENV` is `testing`, which a Laravel `phpunit.xml` sets. A `phpunit.xml` entry with `force="true"` for a `DB_*` key still overrides it, so remove such entries to use the test database.
 
 ## Add a connection on an Instance
 
@@ -118,7 +118,7 @@ For an Instance that owns its `DB` database, [synchronization](/reference/enviro
 
 The Gateway removes the other keys of the prefix, for example `DB_HOST` when a sqlite connection replaces a mysql one. A second add with the same prefix replaces the earlier mapping.
 
-When the record has a `node_id` and a port, the Gateway looks for a Docker Node Process on that Node that publishes the port, as host port or container port. When it finds one and the Instance runs on the same Node, it writes host `127.0.0.1`, or the explicit bind address of that port, and the published host port. Otherwise it writes the stored host and port.
+The Gateway writes the stored host and port, also when the Instance runs on the record's Node. It never derives them from the Node's Processes. A database on a [Database server](/reference/database-servers) stores the Node's WireGuard address and the published port, so every Instance in the fleet reaches it at that address.
 
 The result names the Instance, slug, prefix, written keys, host, port, whether stored configuration changed, and the key count. It never holds a value.
 

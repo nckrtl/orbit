@@ -52,6 +52,7 @@ function turn_fetch_group(string $slug, string $status = TaskGroupStatus::Todo->
         'node_id' => $node->id,
         'name' => $slug,
         'checkout_path' => '/tmp/tasks-'.$slug,
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
     ]);
     $group = Task::topLevel()->create([

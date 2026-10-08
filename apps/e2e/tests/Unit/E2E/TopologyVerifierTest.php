@@ -310,6 +310,108 @@ describe('TopologyVerifier mounted source', function () {
     });
 });
 
+describe('TopologyVerifier probe failures', function (): void {
+    it('reports laravel.prod guest command exit and stderr tail even after timed_out', function (bool $laterTimeout): void {
+        setUpTopologyVerifierProcessFacade();
+        $sha = str_repeat('a', 40);
+        $attempts = 0;
+        Process::fake(function (PendingProcess $process) use ($sha, &$attempts): ProcessResult {
+            $inventory = topologyVerifierInventory($process);
+            if ($inventory instanceof ProcessResult) {
+                return $inventory;
+            }
+            $payload = json_decode((string) $process->input, true, 512, JSON_THROW_ON_ERROR);
+            $results = [];
+            foreach ($payload['requests'] as $request) {
+                $failed = $request['label'] === 'laravel.prod';
+                $timeout = $failed && ++$attempts > 1;
+                if ($timeout) {
+                    usleep(1_000_000);
+                }
+                $results[] = [
+                    'label' => $request['label'],
+                    'stdout' => isGlobalIpv4TopologyVerifierProbe($request['argv'] ?? [])
+                        ? '2: enp5s0    inet 192.0.2.1/24 scope global'
+                        : ($failed ? '' : topologyVerifierEvidence($request, $sha)),
+                    'stderr' => $failed ? ($timeout ? '' : 'curl: (22) The requested URL returned error: 500') : '',
+                    'exit_code' => $failed ? ($timeout ? 124 : 22) : 0,
+                    'timed_out' => $timeout,
+                ];
+            }
+
+            return Process::result(json_encode($results, JSON_THROW_ON_ERROR));
+        });
+
+        $report = new TopologyVerifier(
+            new IncusHost(pool: 'orbit-e2e'),
+            readinessTimeoutSeconds: 1,
+            readinessPollIntervalMicroseconds: 0,
+        )->verify(
+            TopologyTarget::topologySnapshot(),
+            $laterTimeout ? VerificationMode::Readiness : VerificationMode::Proof,
+            new SourceState($sha, $sha),
+        );
+
+        expect($report->passed)->toBeFalse();
+        expect($report->probes['laravel.prod']['observed'])->toBe($laterTimeout
+            ? "guest exit 124; last non-timeout failure: guest exit 22\ncurl: (22) The requested URL returned error: 500"
+            : "guest exit 22\ncurl: (22) The requested URL returned error: 500");
+        expect($attempts)->toBe($laterTimeout ? 2 : 1);
+    })->with(['non-timeout failure' => false, 'final timeout' => true]);
+
+    it('fails laravel.prod within its wall-clock bound when HTTP 500 requests Retry-After beyond the deadline', function (int $path): void {
+        $script = file_get_contents(__DIR__.'/../../../resources/guest/verify-topology.sh');
+        preg_match_all('/(?:timeout [^\n]*? )?curl --fail[^\n]+/', substr($script, strpos($script, "  laravel.prod)\n")), $matches);
+        $invocation = $matches[0][$path];
+        $server = stream_socket_server('tcp://127.0.0.1:0');
+        expect($server)->not->toBeFalse();
+        $address = stream_socket_get_name($server, false);
+        $invocation = preg_replace('/--cacert \S+ |--resolve \S+ /', '', $invocation);
+        $invocation = preg_replace('/"?https:\/\/[^\s"]+"?/', 'http://'.$address.'/', $invocation);
+        $process = Symfony\Component\Process\Process::fromShellCommandline($invocation);
+        $process->setTimeout(25);
+        $started = microtime(true);
+
+        try {
+            $process->start();
+            $connection = stream_socket_accept($server, 5);
+            expect($connection)->not->toBeFalse();
+            stream_set_timeout($connection, 5);
+            while (($line = fgets($connection)) !== false && trim($line) !== '') {
+                // Read the request before sending the retryable failure.
+            }
+            fwrite($connection, "HTTP/1.1 500 Internal Server Error\r\nRetry-After: 60\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            fclose($connection);
+            $exit = $process->wait();
+
+            expect($exit)->not->toBe(0);
+            expect(microtime(true) - $started)->toBeLessThan(22);
+            expect($process->getErrorOutput())->toContain('500');
+        } finally {
+            $process->stop(0);
+            fclose($server);
+        }
+    })->with(['native placement' => 0, 'legacy placement' => 1]);
+
+    it('keeps both laravel.prod curl retry budgets below the 30 second guest command timeout', function (): void {
+        $script = file_get_contents(__DIR__.'/../../../resources/guest/verify-topology.sh');
+        preg_match_all('/timeout --kill-after=(\d+)s (\d+)s curl[^\n]+/', substr($script, strpos($script, "  laravel.prod)\n")), $matches);
+        expect($matches[1])->toBe(['1', '1']);
+        expect($matches[2])->toBe(['18', '18']);
+        expect($matches[0])->toHaveCount(2);
+        foreach ($matches[0] as $curl) {
+            preg_match('/--retry (\d+) /', $curl, $retries);
+            preg_match('/--retry-delay (\d+) /', $curl, $delay);
+            preg_match('/--max-time (\d+) /', $curl, $maximum);
+            preg_match('/--connect-timeout (\d+) /', $curl, $connect);
+            $budget = ((int) $retries[1] + 1) * (int) $maximum[1] + (int) $retries[1] * (int) $delay[1];
+
+            expect($budget)->toBeLessThan(30);
+            expect((int) $connect[1])->toBeLessThanOrEqual((int) $maximum[1]);
+        }
+    });
+});
+
 describe('TopologyVerifier', function () {
     it('runs all named probes through one concurrent host helper and preserves evidence', function () {
         setUpTopologyVerifierProcessFacade();

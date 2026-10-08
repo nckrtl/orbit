@@ -323,11 +323,12 @@ case "$probe" in
     if [[ -n "$production_placement" ]]; then
       assert_production_caddy
       sudo -u "$production_user" -- env HOME="$production_home" php "$production_checkout/artisan" migrate:status --no-interaction >/dev/null
-      curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt "https://$production_domain/" >/dev/null
+      # Retry-After can extend curl's waits; TERM at 18s and KILL at 19s enforce failure.
+      timeout --kill-after=1s 18s curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --max-time 5 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt "https://$production_domain/" >/dev/null
       expected="app-prod-laravel:$production_layout:https-operational"
       observed=$expected
     else
-      [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && curl --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
+      [[ -f /var/www/laravel/e2e-prod/artisan ]] && php /var/www/laravel/e2e-prod/artisan --version >/dev/null && timeout --kill-after=1s 18s curl --fail --silent --show-error --retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --max-time 5 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt --resolve laravel.internal:443:127.0.0.1 https://laravel.internal/ >/dev/null
       expected='app-prod-laravel:https-operational'; observed=$expected
     fi
     ;;

@@ -17984,6 +17984,7 @@ export interface operations {
     "tasks-list": {
         parameters: {
             query?: {
+                compact?: boolean;
                 project_id?: number;
                 status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
             };
@@ -18132,7 +18133,9 @@ export interface operations {
     };
     "tasks-show": {
         parameters: {
-            query?: never;
+            query?: {
+                compact?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Numeric Task group ID. */
@@ -18911,7 +18914,10 @@ export interface operations {
     };
     "tasks-comment-list": {
         parameters: {
-            query?: never;
+            query?: {
+                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution";
+                limit?: number;
+            };
             header?: never;
             path: {
                 /** @description Numeric Task group ID. */

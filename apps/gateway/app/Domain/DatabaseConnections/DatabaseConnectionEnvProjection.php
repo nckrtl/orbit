@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Domain\DatabaseConnections;
 
-use App\Domain\Processes\ProcessRuntime;
 use App\Models\DatabaseConnection;
-use App\Models\Instance;
-use App\Models\Node;
-use App\Models\Process;
 
+/**
+ * The prefixed env keys of a connection. Host and port are always the record's own values, also
+ * for an Instance on the connection's Node: Orbit publishes databases on the WireGuard address.
+ */
 final readonly class DatabaseConnectionEnvProjection
 {
     /** @var list<string> */
@@ -31,11 +31,8 @@ final readonly class DatabaseConnectionEnvProjection
      *     port: int|null
      * }
      */
-    public function project(
-        DatabaseConnection $connection,
-        Instance $instance,
-        string $prefix,
-    ): array {
+    public function project(DatabaseConnection $connection, string $prefix): array
+    {
         $managed = $this->managedKeys($prefix);
         $values = [$this->key($prefix, 'CONNECTION') => $connection->driver->value];
 
@@ -53,7 +50,8 @@ final readonly class DatabaseConnectionEnvProjection
             return $this->result($values, $managed, host: null, port: null);
         }
 
-        [$host, $port] = $this->resolveEndpoint($connection, $instance);
+        $host = (string) $connection->host;
+        $port = (int) $connection->port;
         $values[$this->key($prefix, 'HOST')] = $host;
         $values[$this->key($prefix, 'PORT')] = (string) $port;
 
@@ -149,64 +147,5 @@ final readonly class DatabaseConnectionEnvProjection
             'host' => $host,
             'port' => $port,
         ];
-    }
-
-    /** @return array{string, int} */
-    private function resolveEndpoint(DatabaseConnection $connection, Instance $instance): array
-    {
-        $host = (string) $connection->host;
-        $port = (int) $connection->port;
-        $published = $this->alignedPublishedPort($connection);
-
-        if (
-            $published instanceof DockerPublishedPort
-            && $connection->node_id !== null
-            && $instance->node_id === $connection->node_id
-        ) {
-            return [
-                in_array($published->bindAddress, [null, '0.0.0.0', '::', '[::]'], true)
-                    ? '127.0.0.1'
-                    : $published->bindAddress,
-                $published->publishedPort,
-            ];
-        }
-
-        return [$host, $port];
-    }
-
-    private function alignedPublishedPort(DatabaseConnection $connection): ?DockerPublishedPort
-    {
-        if ($connection->node_id === null || $connection->port === null) {
-            return null;
-        }
-
-        $processes = Process::query()
-            ->where('owner_type', Node::class)
-            ->where('owner_id', $connection->node_id)
-            ->where('runtime', ProcessRuntime::Docker)
-            ->orderBy('id')
-            ->get();
-
-        foreach ($processes as $process) {
-            $ports = $process->runtime_config['ports'] ?? [];
-
-            if (! is_array($ports)) {
-                continue;
-            }
-
-            foreach ($ports as $spec) {
-                if (! is_string($spec)) {
-                    continue;
-                }
-
-                $mapping = DockerPublishedPort::parse($spec);
-
-                if ($mapping instanceof DockerPublishedPort && $mapping->matches($connection->port)) {
-                    return $mapping;
-                }
-            }
-        }
-
-        return null;
     }
 }

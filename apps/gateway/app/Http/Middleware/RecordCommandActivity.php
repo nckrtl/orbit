@@ -281,6 +281,15 @@ final readonly class RecordCommandActivity
             ];
         }
 
+        $environmentTesting = $request->attributes->get('orbit.environment_testing');
+
+        if (is_array($environmentTesting)) {
+            $updates['properties'] = [
+                ...($activity->properties?->toArray() ?? []),
+                'testing' => $this->inputSanitizer->sanitizeProperties($environmentTesting),
+            ];
+        }
+
         if ($toolException instanceof ToolOperationException) {
             $updates['properties'] = [
                 ...($activity->properties?->toArray() ?? []),

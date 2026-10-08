@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Rules;
 
 use App\Domain\Tasks\TaskDeliverableType;
+use App\Domain\Tasks\TaskDeliverableVerifier;
 use Closure;
 use Illuminate\Contracts\Validation\DataAwareRule;
 use Illuminate\Contracts\Validation\ValidationRule;
 
-/** Require nonempty overlay paths for base runs and restrict paths to command deliverables. */
+/** Require nonempty canonical overlay paths for base runs and restrict paths to command deliverables. */
 final class CommandPaths implements DataAwareRule, ValidationRule
 {
     public bool $implicit = true;
@@ -36,6 +37,51 @@ final class CommandPaths implements DataAwareRule, ValidationRule
         if (($parent['fails_on_base'] ?? false) === true && (! is_array($value) || $value === [])) {
             $fail("The paths value for {$who} must contain at least one path when fails_on_base is true.");
         }
+        foreach (is_array($value) ? $value : [] as $path) {
+            $reason = is_string($path) ? self::canonicalViolation($path) : null;
+            if ($reason !== null) {
+                $fail("The path {$path} for {$who} {$reason}.");
+            }
+        }
+    }
+
+    /**
+     * The handoff check rejects an empty or `.` segment, so plan time refuses one too instead of normalising it.
+     * Absolute paths and `..` segments are refused by the paths.* rule.
+     */
+    public static function canonicalViolation(string $path): ?string
+    {
+        $segments = explode('/', $path);
+        if (str_starts_with($path, '/') || in_array('..', $segments, true)
+            || array_all($segments, static fn (string $segment): bool => $segment !== '' && $segment !== '.')) {
+            return null;
+        }
+        $canonical = implode('/', array_filter($segments, static fn (string $segment): bool => $segment !== '' && $segment !== '.'));
+
+        return $canonical === ''
+            ? 'must name a repository-relative file'
+            : "is not canonical; use the canonical repository-relative path {$canonical}";
+    }
+
+    /**
+     * @param  list<string>  $baseFiles
+     * @param  list<string>  $createdPatterns
+     */
+    public static function pathViolation(string $path, array $baseFiles, array $createdPatterns, bool $failsOnBase): ?string
+    {
+        // The handoff check reads the stored path as submitted, so the base check compares it unchanged.
+        $reason = self::canonicalViolation($path);
+        if ($reason !== null) {
+            return $reason;
+        }
+        if ($failsOnBase && preg_match('#(?:\A|/)tests/|Test\.php\z|\.test\.ts\z|\.spec\.ts\z|_test\.go\z#', $path) !== 1) {
+            return 'must be a test file for fails_on_base';
+        }
+        if (! in_array($path, $baseFiles, true) && ! array_any($createdPatterns, static fn (string $pattern): bool => TaskDeliverableVerifier::matches($pattern, $path))) {
+            return 'is missing';
+        }
+
+        return null;
     }
 
     /** @param array<string, mixed> $data */

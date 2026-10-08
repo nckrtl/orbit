@@ -12,6 +12,7 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AgentSpawner;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
 use App\Domain\Tasks\OpenApiTaskActions;
@@ -49,6 +50,7 @@ use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
 use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
+use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
 use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
@@ -92,6 +94,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskWorkspaceStateReader::class => RemoteTaskWorkspaceStateReader::class,
         TaskTurnReceipts::class => RemoteTaskTurnReceipts::class,
         TaskCheckRunner::class => RemoteTaskCheckRunner::class,
+        DeliverablePathRepository::class => NativeDeliverablePathRepository::class,
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
