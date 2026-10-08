@@ -411,6 +411,35 @@ it('reports the paths a check changed in the working tree, but not ignored files
         ->and($reading->changedPaths)->toBe(['written.txt']);
 });
 
+it('keeps an untracked directory symlink in snapshots and reports one created during the handoff check', function (): void {
+    $checkout = check_runner_checkout('true');
+    $target = $this->directory.'/target';
+    File::ensureDirectoryExists($target);
+    file_put_contents($target.'/not-in-checkout.txt', "outside\n");
+    symlink($target, $checkout.'/existing-link');
+    $instance = check_runner_instance($checkout);
+    $runner = check_runner(new LocalShellSshExecutor);
+    $index = file_get_contents($checkout.'/.git/index');
+    $snapshot = $runner->snapshot($instance);
+
+    $process = $runner->start($instance, 'ln -s '.escapeshellarg($target).' created-link');
+    $reading = check_runner_wait($runner, $instance, $process);
+
+    expect($process->tree)->toBe($snapshot->tree);
+    expect($reading->state)->toBe('finished')
+        ->and($reading->exitCode)->toBe(0)
+        ->and($reading->failedStep)->toBeNull()
+        ->and($reading->changedPaths)->toBe(['created-link'])
+        ->and($reading->treeAfter)->not->toBe($snapshot->tree);
+    expect((new Process(['git', 'ls-tree', $snapshot->tree, '--', 'existing-link'], $checkout))->mustRun()->getOutput())
+        ->toStartWith('120000 blob ')->toContain("\texisting-link\n");
+    expect((new Process(['git', 'ls-tree', $reading->treeAfter, '--', 'created-link'], $checkout))->mustRun()->getOutput())
+        ->toStartWith('120000 blob ')->toContain("\tcreated-link\n");
+    expect((new Process(['git', 'ls-files', '--others', '--exclude-standard', '-z'], $checkout))->mustRun()->getOutput())
+        ->toContain("existing-link\0", "created-link\0")->not->toContain('not-in-checkout.txt');
+    expect(file_get_contents($checkout.'/.git/index'))->toBe($index);
+});
+
 it('stops the check process group on cancel, which leaves the check without a result', function (): void {
     $checkout = check_runner_checkout('sleep 30');
     $instance = check_runner_instance($checkout);
