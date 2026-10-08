@@ -3,7 +3,7 @@ title: "Feature delivery"
 description: "How a change reaches main: review evidence, merge, CI, local checks, worktrees, and the shared main caches."
 covers:
   - apps/docs/app/Documentation/AdrLifecycle.php
-  - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,worktree-cache,worktree-create,worktree-remove,check-classification-fakes}
+  - bin/{review-check,bug-repro,task-group-check,pr-head-check,deploy-verify,test,tia-cache,ci-tia,worktree-cache,worktree-create,worktree-remove,check-classification-fakes}
   - tools/phpstan/**
   - .github/workflows/ci.yml
   - apps/gateway/tests/Support/TestDatabase{Environment,Guard}.php
@@ -70,7 +70,7 @@ After the merge, keep the review evidence and release the resources allocated to
 
 ## CI
 
-GitHub CI runs on every pull request, on every push to `main`, and on manual dispatch. It has these jobs.
+GitHub CI runs on every pull request, on every push to `main`, every night on `main`, and on manual dispatch. It has these jobs.
 
 | Job | Checks |
 | --- | --- |
@@ -82,13 +82,37 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 | Rust agent | `cargo fmt`, `cargo clippy`, tests, and static builds for x86_64 and aarch64, with Cargo caches. A pull request that changes neither `apps/agent` nor `ci.yml` skips these steps |
 | Required checks | Passes only when every other job passes |
 
-On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest` and `ComposerConfigurationTest`, because TIA does not link a workflow file to the tests that read it. On a push to `main` or a manual dispatch, it runs the full suite once with `--tia --fresh`, which also records a new TIA graph, and saves that graph to the cache.
+On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest` and `ComposerConfigurationTest`, because TIA does not link a workflow file to the tests that read it.
+
+On `main`, `bin/ci-tia plan` chooses each project's tests from the restored `main` graph. A push runs the tests affected since the commit that the graph records, with `--tia`. That commit can be older than the parent when runs overlap, so the selection covers every merge since it. The project runs its full suite with `--tia --fresh` instead when any of these hold:
+
+- The run is the nightly run or a manual dispatch.
+- The newest completed nightly or manual run on `main` failed.
+- No `main` graph with the project's current cache prefix was restored.
+- Pest cannot read the graph, or it was recorded with other dependencies or another PHP version.
+- The graph's commit is not an ancestor of the tested commit, or a test file in the graph has no result.
+- A change since that commit is one that TIA cannot link to tests.
+
+A failed nightly or manual run can be a test that an affected-only run missed. So pushes run the full suite until such a run passes again. After the fix, dispatch CI on `main` to return to affected runs before the next night.
+
+TIA only sees files inside the project. It links a non-PHP file only through a `pest()->tia()->watch()` pattern in `tests/Pest.php`. It links a PHP file only when a test covered it in the same process. So these changes run the full suite:
+
+- a non-PHP file without such a pattern;
+- a PHP file that no test covered;
+- a test file whose name does not end in `Test.php`;
+- a change outside the project that `bin/ci-tia` does not list as unrelated to it.
+
+Fixture changes run the full suite under TIA anyway. Docs and E2E tests read files across the repository, so these projects run their full suite whenever a file outside them changes. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the selection from a contributor's view.
+
+After a passing run, `bin/ci-tia finish` requires the graph to record the tested commit and to hold a result for every test file it links. Pest records the commit itself after it runs tests. When no test is affected, Pest stops before it records the commit, so `finish` records it. The job then saves the graph to the cache.
 
 A new push to a pull request cancels that pull request's older run. A push to `main` never cancels or replaces another run. Each `main` commit has its own concurrency group, so every `main` commit gets a complete `Required checks` result, even when several merges land close together. A shared `main` group would not be enough: GitHub keeps one pending run per group and cancels the older pending run when a newer one queues. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful result, so a run must not disappear because a later merge followed it.
 
 The project jobs check out the branch by name. On `main` they then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for.
 
-On `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dist-<commit>`, named with the full 40-character commit SHA, and keeps it for 14 days. A manual dispatch on `main` uploads it too, so every successful `Required checks` run on `main` comes with the web build of its commit. The artifact holds the contents of `dist` at its root, so `index.html` is at the top level.
+On `main`, the Web job uploads `apps/web/dist` as the workflow artifact `web-dist-<commit>`, named with the full 40-character commit SHA, and keeps it for 14 days. A manual dispatch and the nightly run on `main` upload it too, so every successful `Required checks` run on `main` comes with the web build of its commit. Automatic releases install only the build of a push or a manual run. The artifact holds the contents of `dist` at its root, so `index.html` is at the top level.
+
+The nightly run tests the newest `main` commit again, with every project's full suite. It adds a `Required checks` run to that commit. An automatic release needs every such run to pass, so a failed nightly run keeps that commit from shipping. Later pushes then run their full suites, so they ship only when the failure is fixed.
 
 The upload includes hidden files and fails when the build produced nothing. The build runs from a clean checkout with no `VITE_*` variables, as [`bin/web-deploy`](/reference/web-app#release-a-build) builds a release. Pull requests and runs on other branches publish no web build. Successful project jobs on `main` also publish the [sandbox test baselines](/reference/compute-drivers#image-test-baselines).
 
@@ -124,7 +148,7 @@ Each Composer project job caches three sets of files in GitHub Actions cache.
 | Pint and Rector caches, `vendor/pint.cache` and `vendor/rector/cache` | `composer.lock`, `pint.json`, `rector.php` |
 | Test-impact graph, `.orbit-tia` | `composer.lock`, `tests/Pest.php`, `phpunit.xml`, `phpunit.xml.dist` |
 
-A job restores the newest cache for its branch, then for `main`, then any cache for the project. It saves each cache only after its checks succeed. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
+A job restores the newest cache for its branch, then for `main`, then any cache for the project. It saves each cache only after its checks succeed. Each run saves its test-impact graph under its own key, so a full run on a commit that already has a graph still replaces the newest one. On `main`, a graph restored from another cache prefix runs the full suite. These caches are separate from the [main caches](#main-caches), and CI never calls `bin/tia-cache`.
 
 The separate `Orbit CLI Binary` workflow builds the toolbox binaries on pull requests. It is not part of `Required checks`. After a `CI` run on `main` passes, the `Orbit CLI Release` workflow publishes that commit's binaries as a GitHub release. See [CLI binaries](/reference/cli-binaries).
 
@@ -373,6 +397,14 @@ A clean bootstrap on main already ran every check, so its results can warm later
 ### Clones find the store through a registration
 
 The Gateway provisions a task workspace as an independent clone, and it runs checks for every Project without knowing one repository's cache layout. So the repository's own scripts find the store through a link in the user's state directory. Setting `ORBIT_MAIN_CACHE_STORE` in the Gateway or in Project setup steps is a rejected alternative, because a fixed path breaks when the primary checkout moves. A global Git setting is also rejected, because it needs a manual step on every machine and goes stale without notice.
+
+### Main runs test what changed since the newest main graph
+
+Most merges change a small part of a project, and the full Gateway suite took most of each `main` run. The newest `main` graph already holds a result for every test, so a push needs to run only the tests that the changes since the graph's commit affect.
+
+Comparing with the parent commit is a rejected alternative: when runs overlap, the restored graph can be older than the parent, and the merges between them would go untested. Reusing the results of the pull request run is also rejected, because `main` can differ from the tested pull request head, and GitHub does not let `main` read caches that pull request runs saved.
+
+TIA cannot link every file to its tests. `bin/ci-tia` treats a change as visible only when it can show that TIA links it, and runs the full suite otherwise. Listing only the paths known to be invisible is a rejected alternative, because a new kind of input would then skip its tests silently. A wrong entry in the list of unrelated paths can still skip a test. The nightly full run finds such a test within a day, and its failure switches pushes back to full runs until a full run passes again.
 
 ### CI caches stay separate
 

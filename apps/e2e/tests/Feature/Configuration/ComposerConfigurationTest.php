@@ -218,12 +218,49 @@ describe('Composer configuration', function (): void {
                 'if' => "github.event_name == 'pull_request'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact',
             ]);
-        // The fresh TIA run executes every test, so one run on main is both the full-suite gate and the graph refresh.
+        // Every run on main chooses its selection from the restored main graph: a push tests what changed since that
+        // graph's commit, and a nightly or manual run, or a change Pest cannot see, runs everything.
+        expect($workflow['on']['schedule'])->toBe([['cron' => '17 3 * * *']])
+            ->and($workflow['permissions'])->toBe(['actions' => 'read', 'contents' => 'read']);
+        expect($steps['Choose the main test selection'])
+            ->toMatchArray([
+                'id' => 'orbit-tia-plan',
+                'if' => "github.event_name != 'pull_request'",
+                'run' => '../../bin/ci-tia plan --event "$EVENT" --prefix "$PREFIX" --restored-key "$RESTORED_KEY" --repository "$GITHUB_REPOSITORY"',
+            ])
+            ->and($steps['Choose the main test selection']['env'])->toBe([
+                'EVENT' => '${{ github.event_name }}',
+                // A failed nightly or manual run keeps pushes on the full suite, so the selection reads the Actions API.
+                'GITHUB_TOKEN' => '${{ github.token }}',
+                'PREFIX' => '${{ steps.orbit-tia-key.outputs.prefix }}',
+                'RESTORED_KEY' => '${{ steps.orbit-tia-restore.outputs.cache-matched-key }}',
+            ]);
+        expect($steps['Run tests affected since the main graph'])
+            ->toMatchArray([
+                'if' => "steps.orbit-tia-plan.outputs.mode == 'affected'",
+                // The bash shell sets pipefail, so a failing Pest run still fails the step.
+                'shell' => 'bash',
+                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"',
+            ]);
+        // The fresh TIA run executes every test, so one run is both the full-suite gate and the graph refresh.
         expect($steps['Run full test suite and refresh Pest TIA graph'])
             ->toMatchArray([
-                'if' => "github.event_name == 'push' || github.event_name == 'workflow_dispatch'",
+                'if' => "steps.orbit-tia-plan.outputs.mode == 'full'",
                 'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact',
             ]);
+        // The cache and the sandbox baseline get the graph only when it describes the tested commit.
+        expect($steps['Require the Pest TIA graph to describe this commit'])
+            ->toMatchArray([
+                // A manual run on another branch records that branch's baseline, not main's.
+                'if' => "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'",
+                'run' => '../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"',
+            ]);
+        $order = array_flip(array_keys($steps));
+        expect($order['Restore Pest TIA graph'])->toBeLessThan($order['Choose the main test selection'])
+            ->and($order['Choose the main test selection'])->toBeLessThan($order['Run tests affected since the main graph'])
+            ->and($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
+            ->and($order['Require the Pest TIA graph to describe this commit'])->toBeLessThan($order['Save Pest TIA graph'])
+            ->and($order['Save Pest TIA graph'])->toBeLessThan($order['Export sandbox TIA baseline']);
         expect($steps)->not->toHaveKey('Run full test suite')->not->toHaveKey('Refresh Pest TIA graph');
         // Only pushes and pull requests from this repository may reach the self-hosted Sabre runner.
         expect($project['runs-on'])
@@ -271,17 +308,17 @@ describe('Composer configuration', function (): void {
             ->toContain("format('{0}/phpunit.xml', matrix.directory)")
             ->toContain("format('{0}/phpunit.xml.dist', matrix.directory)")
             ->toContain('orbit-tia-php8.5-${{ matrix.directory }}-')
-            ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}')
+            // Each run saves its own graph, so a full run on an already tested commit still refreshes the cache.
+            ->toContain('${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}')
             ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-')
             ->toContain('${{ steps.orbit-tia-key.outputs.prefix }}-main-')
             ->toContain('if: success()')
             ->toContain('coverage: pcov')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --compact')
-            ->toContain("github.event_name == 'push' || github.event_name == 'workflow_dispatch'")
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --tia --fresh --compact')
             ->toContain('tests/Unit/Architecture')
             ->toContain("github.event_name == 'pull_request'")
-            ->toContain("github.event_name == 'workflow_dispatch'")
+            ->toContain('bin/ci-tia plan')
             ->not->toContain('bin/tia-cache')
             ->not->toContain('tia-baseline.yml')
             ->not->toContain('vendor/.orbit-guidance-tia');

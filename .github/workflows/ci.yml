@@ -4,9 +4,13 @@ on:
   pull_request:
   push:
     branches: [main]
+  # A nightly run on main tests every project in full and refreshes each Pest TIA graph, as a manual dispatch does.
+  schedule:
+    - cron: '17 3 * * *'
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 # A pull request keeps only its newest run. Each main commit gets its own group, so a newer push neither
@@ -173,11 +177,14 @@ jobs:
         run: |
           printf 'prefix=%s\n' "orbit-tia-php8.5-${{ matrix.directory }}-${{ hashFiles(format('{0}/composer.lock', matrix.directory), format('{0}/tests/Pest.php', matrix.directory), format('{0}/phpunit.xml', matrix.directory), format('{0}/phpunit.xml.dist', matrix.directory)) }}" >> "$GITHUB_OUTPUT"
 
+      # Each run saves its graph under its own key, so a full run on an already tested commit still refreshes the cache.
+      # A restore takes the newest graph for the branch, then for main.
       - name: Restore Pest TIA graph
+        id: orbit-tia-restore
         uses: actions/cache/restore@v6
         with:
           path: ${{ matrix.directory }}/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: |
             ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-
             ${{ steps.orbit-tia-key.outputs.prefix }}-main-
@@ -187,9 +194,34 @@ jobs:
         if: github.event_name == 'pull_request'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact
 
+      # A push to main tests the changes since the commit its restored main graph describes. It runs the full suite when
+      # that graph is unusable, the changes include files that Pest cannot link to tests, or the newest nightly or manual
+      # run failed. Those runs are always full.
+      - name: Choose the main test selection
+        id: orbit-tia-plan
+        if: github.event_name != 'pull_request'
+        env:
+          EVENT: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+          PREFIX: ${{ steps.orbit-tia-key.outputs.prefix }}
+          RESTORED_KEY: ${{ steps.orbit-tia-restore.outputs.cache-matched-key }}
+        run: ../../bin/ci-tia plan --event "$EVENT" --prefix "$PREFIX" --restored-key "$RESTORED_KEY" --repository "$GITHUB_REPOSITORY"
+
+      - name: Run tests affected since the main graph
+        if: steps.orbit-tia-plan.outputs.mode == 'affected'
+        shell: bash
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --compact | tee "$RUNNER_TEMP/orbit-tia-pest.log"
+
       - name: Run full test suite and refresh Pest TIA graph
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: steps.orbit-tia-plan.outputs.mode == 'full'
         run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --tia --fresh --compact
+
+      - name: Require the Pest TIA graph to describe this commit
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        env:
+          MODE: ${{ steps.orbit-tia-plan.outputs.mode }}
+          BASE: ${{ steps.orbit-tia-plan.outputs.base }}
+        run: ../../bin/ci-tia finish --mode "$MODE" --base "$BASE" --log "$RUNNER_TEMP/orbit-tia-pest.log"
 
       - name: Run architecture tests
         if: always() && github.event_name == 'pull_request'
@@ -212,8 +244,9 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: ${{ matrix.directory }}/.orbit-tia
-          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}
+          key: ${{ steps.orbit-tia-key.outputs.prefix }}-${{ github.head_ref || github.ref_name }}-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
+      # A full run records this commit in the graph, and the step that requires it records it after an affected run.
       - name: Export sandbox TIA baseline
         if: success() && github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
