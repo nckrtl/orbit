@@ -26,6 +26,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
 use App\Http\Requests\Tasks\CreateTaskRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
+use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
@@ -122,12 +123,20 @@ final class TaskGroupsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function comments(Request $request, Task $group, Task $task): JsonResponse
+    public function comments(ListTaskCommentsRequest $request, Task $group, Task $task): JsonResponse
     {
         abort_unless($task->parent_id === $group->id, 404);
+        $comments = $task->comments()->latest('posted_at');
+
+        if ($request->type() !== null) {
+            $comments->where('type', $request->type());
+        }
+        if ($request->limit() !== null) {
+            $comments->limit($request->limit());
+        }
 
         return response()->json([
-            'data' => $task->comments()->latest('posted_at')->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),
+            'data' => $comments->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),
             'meta' => $this->meta($request),
         ]);
     }

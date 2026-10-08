@@ -7249,7 +7249,10 @@
         "group",
         "task"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "type",
+        "limit"
+      ],
       "streams": false,
       "input_schema": {
         "type": "object",
@@ -7261,6 +7264,24 @@
           },
           "task": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ready_for_review",
+              "changes_requested",
+              "approved",
+              "blocked",
+              "answered",
+              "topology_requested",
+              "assistance_requested",
+              "resolution"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
           }
         },
         "additionalProperties": false,

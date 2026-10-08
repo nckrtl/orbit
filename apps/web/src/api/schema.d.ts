@@ -17760,7 +17760,10 @@ export interface operations {
     };
     "tasks-comment-list": {
         parameters: {
-            query?: never;
+            query?: {
+                type?: "ready_for_review" | "changes_requested" | "approved" | "blocked" | "answered" | "topology_requested" | "assistance_requested" | "resolution";
+                limit?: number;
+            };
             header?: never;
             path: {
                 /** @description Numeric Task group ID. */

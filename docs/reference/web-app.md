@@ -92,6 +92,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
+The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies.
+
 The generated task schema keeps `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` apart from `pr_url`. The watched fields describe the pull request found on the task branch while subtasks are open; `pr_url` still identifies the reviewed pull request Orbit opened. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns that distinction. Regenerate the web schema after these response fields change, and keep typed test fixtures current. A task with no watched pull request has null watched fields; do not copy `pr_url` into them.
 
 When the Gateway reports Tasks enabled, the app keeps the task board, each task, its agent threads, its comments, and the extension status current from [task events](/reference/events#tasks). When disabled, it hides task navigation and task routes; enabling the extension makes those views available again without removing stored task records.
