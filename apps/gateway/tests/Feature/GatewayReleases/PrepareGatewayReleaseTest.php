@@ -51,6 +51,25 @@ describe('gateway:release:prepare', function (): void {
             ->and(is_link($this->live))->toBeFalse();
     });
 
+    it('installs only the runtime dependencies of the CLI and the Gateway', function (): void {
+        $sha = $this->fixture->commit('Second commit');
+
+        $release = $this->fixture->builder()->prepare($sha);
+
+        $composer = collect($this->fixture->commands)
+            ->filter(fn (array $command): bool => in_array($this->fixture->composer, $command, true))
+            ->map(fn (array $command): array => array_slice($command, (int) array_search($this->fixture->composer, $command, true) + 1))
+            ->values()
+            ->all();
+
+        expect($composer)->toBe([
+            ['--working-dir='.$release->path.'/apps/cli', 'install', '--no-dev', '--prefer-dist', '--no-interaction', '--no-progress'],
+            ['--working-dir='.$release->path.'/apps/cli', 'check-platform-reqs', '--no-dev', '--no-interaction'],
+            ['--working-dir='.$release->path.'/apps/gateway', 'install', '--no-dev', '--prefer-dist', '--no-interaction', '--no-progress'],
+            ['--working-dir='.$release->path.'/apps/gateway', 'check-platform-reqs', '--no-dev', '--no-interaction'],
+        ]);
+    });
+
     it('reuses a complete release without running a build step again', function (): void {
         $sha = $this->fixture->commit('Second commit');
         $this->fixture->builder()->prepare($sha);

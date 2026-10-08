@@ -103,7 +103,7 @@ Name the commit by its hex SHA, 7 to 40 characters. Branch names, tags, and othe
 
 1. creates the worktree `releases/<id>` for the exact commit;
 2. links the shared env file and the shared storage directory into it;
-3. runs `composer install` and `composer check-platform-reqs` for `apps/cli` and `apps/gateway`, with the committed locks;
+3. runs `composer install --no-dev` and `composer check-platform-reqs --no-dev` for `apps/cli` and `apps/gateway`, with the committed locks. A release holds only the packages it runs, not Pest, PHPStan, Pint, Rector, or Boost;
 4. installs the commit's [web build](#web-build) from CI into the web directory, without serving it yet;
 5. gives Caddy the same access to the release's `public` directory that [Gateway web setup](#gateway-request-logs) gives a checkout, and makes the source directories and files read-only;
 6. writes `REVISION`, then runs `php artisan config:cache` in the release, so the cached configuration holds the release's version. The cache holds `APP_KEY`, so it is mode `0600`.
@@ -112,7 +112,7 @@ Every artisan command of a release runs with a clean environment that has only `
 
 Only a release with a `REVISION` file is prepared. When the configuration cannot be cached, prepare removes `REVISION` again. The Gateway runs with a cached configuration, so a change to the shared env file takes effect only after [`gateway:release:configure`](#apply-an-env-change). A release that already has it is reused without another build step. Only its web build is installed again when it is missing. A partial release from a failed or interrupted prepare is removed and built again on the next run. It never touches the current release link, the database, or a running service.
 
-Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories.
+Prepare refuses before it fetches or writes when the releases directory has less free space than `ORBIT_GATEWAY_RELEASE_MIN_FREE_MB`, 1024 MiB by default. Each release has its own `vendor/` directories. Releases share the Git objects in `shared/orbit.git`, so a release costs about the size of its source and its two `vendor/` directories, about 115 MB without development packages.
 
 The command prints one JSON object. Success exits 0 with `release`, `sha`, `path`, `reused`, and `duration_ms`. A refused commit exits 2. Every other failure exits 1 with `error_code`, `step`, and `message`.
 
@@ -844,6 +844,12 @@ Whether a commit passed its checks, and whether a release serves, are determinis
 ### Immutable releases behind one link
 
 An update in place serves a half-changed tree while `git checkout` and `composer install` run, because the Gateway's PHP-FPM pool checks every script for changes on each request. It also needs a maintenance window. A release that is built beside the live one and switched with one rename never serves a mix of two commits. The in-place procedure is gone, not kept beside the release commands, so there is one way to update a Gateway.
+
+### Releases install no development packages
+
+A release runs the Gateway, its artisan commands, and the CLI for the smoke test. None of them needs a development package. The Gateway and the CLI register Boost only when its classes exist, and the CLI binary already ships from a no-dev install. Leaving those packages out cut the two `vendor/` directories from about 277 MB to 115 MB and the install from about 8 s to 5 s on a warm Composer cache, measured on a build host on 8 Oct 2026. A release cannot run `composer test` or `artisan boost:*`; use a checkout for those.
+
+Copying the current release's `vendor/` into the next one when `composer.lock` is unchanged was measured and rejected. The copy, the write bit it needs back, and the `composer install` that still runs to rebuild the autoloader took 6.6 to 7.2 s against 4.6 to 5.1 s for a fresh no-dev install. Hard links are not an option, because Composer rewrites autoload files in place.
 
 ### No PHP-FPM restart
 
