@@ -955,7 +955,7 @@ final readonly class TaskScheduler
         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         $count = TaskFinalReview::fixupsInWindow($group->tasks);
         if ($count >= TaskFinalReview::FixupLimit) {
-            $this->requestAssistance($task, $group, TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask or cancel the task.', handled: ['review_handled_comment_id' => $receipt->id]);
+            $this->stopAtFinalReviewCap($group, $task, $receipt, $count);
 
             return;
         }
@@ -1013,6 +1013,32 @@ final readonly class TaskScheduler
     }
 
     /**
+     * ADR 0203: the final review is complete and its findings wait for a person. The task settles and asks for
+     * assistance. An operator subtask appended to it resumes the task and, when it completes, opens a new window.
+     */
+    private function stopAtFinalReviewCap(Task $group, Task $task, TaskComment $receipt, int $count): void
+    {
+        $reason = TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask with tasks:subtask:create, or cancel the task.';
+        $stopped = DB::transaction(function () use ($group, $task, $receipt, $reason): bool {
+            $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
+            $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
+            if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Reviewing || $locked->review_handled_comment_id === $receipt->id) {
+                return false;
+            }
+            TaskQuestions::answerPending($locked, $receipt);
+            $locked->update(['status' => TaskStatus::Completed, 'settled_at' => $locked->settled_at ?? now(), 'review_handled_comment_id' => $receipt->id, 'communication_failures' => 0]);
+            $lockedGroup->status = TaskGroupStatus::Settling;
+            $lockedGroup->save();
+
+            return TaskAssistance::apply($lockedGroup, AssistanceKind::Failure, null, $reason);
+        });
+        TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => null, 'reason' => $reason]);
+        if ($stopped) {
+            $this->coder->assistance($group, $reason);
+        }
+    }
+
+    /**
      * ADR 0203: appends a final review when none is open and starts it. On an incoming pull request,
      * `$head` is the pull request head that the final review moves the workspace to.
      */
@@ -1020,7 +1046,8 @@ final readonly class TaskScheduler
     {
         $appended = DB::transaction(function () use ($group, $head): bool {
             $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
-            if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked)) {
+            if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked)
+                || ($locked->assistance_requested && TaskFinalReview::isCapReason($locked->assistance_reason))) {
                 return false;
             }
             $tasks = $this->lockedTasks($locked);
@@ -3658,7 +3685,8 @@ final readonly class TaskScheduler
             return;
         }
 
-        if (TaskFinalReview::due($group, $group->tasks)) {
+        // ADR 0203: unreviewed work gets its final review first. No settling fixup builds on it meanwhile.
+        if ($group->reviewsBeforePush() && TaskFinalReview::hasUnreviewedWork($group)) {
             $this->beginFinalReview($group);
 
             return;
@@ -3949,7 +3977,7 @@ final readonly class TaskScheduler
     private function otherAssistance(Task $group): bool
     {
         return $group->assistance_requested && ! TaskPullRequestHealth::isReason($group->assistance_reason)
-            && ! self::isReviewFeedbackReason($group->assistance_reason);
+            && ! self::isReviewFeedbackReason($group->assistance_reason) && ! TaskFinalReview::isCapReason($group->assistance_reason);
     }
 
     /** Review-source problems are observations, not a hold on otherwise authorized ongoing work. */
@@ -4275,13 +4303,15 @@ final readonly class TaskScheduler
         return $group->assistance_requested
             && ! TaskPullRequestHealth::isReason($group->assistance_reason)
             && ! self::isMissingPullRequestReason($group->assistance_reason)
-            && ! self::isReviewFeedbackReason($group->assistance_reason);
+            && ! self::isReviewFeedbackReason($group->assistance_reason)
+            && ! TaskFinalReview::isCapReason($group->assistance_reason);
     }
 
     /** Clears the pull-request and missing-pull-request reasons when a resumed subtask starts. */
     private function clearResumeAssistance(Task $group): void
     {
-        if (! TaskPullRequestHealth::isReason($group->assistance_reason) && ! self::isMissingPullRequestReason($group->assistance_reason)) {
+        if (! TaskPullRequestHealth::isReason($group->assistance_reason) && ! self::isMissingPullRequestReason($group->assistance_reason)
+            && ! TaskFinalReview::isCapReason($group->assistance_reason)) {
             return;
         }
         $group->fill(TaskAssistance::cleared());

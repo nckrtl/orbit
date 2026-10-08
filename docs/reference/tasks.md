@@ -1285,7 +1285,9 @@ Its start commit is the merge base of the workspace `HEAD` and `origin/{default 
 
 A final review commits nothing. Orbit checks that the workspace still holds the reviewed `HEAD` and tree, as for any [reviewer outcome](#reviewer-outcomes). The approval stores that `HEAD` as its `commit_sha`. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
 
-The fixup has the `project-check` command deliverable when the Project has a task check, and the `review` deliverable `final-review-findings`. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows. At most three final-review fixups run in one window. The window ends at the latest completed operator subtask, as for [settling fixups](#fix-a-settling-pull-request). The fourth set of findings asks for assistance with a reason that starts with `The final review keeps requesting changes: `. Final reviews and their fixups do not count toward the settling fixup caps, and a final review does not open a new window.
+The fixup has the `project-check` command deliverable when the Project has a task check, and the `review` deliverable `final-review-findings`. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows.
+
+At most three final-review fixups run in one window. The window ends at the latest completed operator subtask, as for [settling fixups](#fix-a-settling-pull-request). At the fourth set of findings, Orbit completes the final review, settles the task, and asks for assistance with a reason that starts with `The final review keeps requesting changes: `. Append an operator subtask to continue. It resumes the task and clears that request, and its completion opens a new window. Final reviews and their fixups do not count toward the settling fixup caps, and a final review does not open a new window.
 
 ### Every push is reviewed
 

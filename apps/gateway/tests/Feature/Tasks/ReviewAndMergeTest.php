@@ -491,8 +491,33 @@ describe('final review before every push', function (): void {
         app(TaskScheduler::class)->tick();
 
         expect(Task::query()->where('parent_id', $group->id)->where('fixup_problem', TaskFinalReview::FixupProblem)->count())->toBe(3)
+            ->and($final->fresh()?->status)->toBe(TaskStatus::Completed)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Settling)
             ->and($group->fresh()?->assistance_requested)->toBeTrue()
             ->and($group->fresh()?->assistance_reason)->toStartWith(TaskFinalReview::FixupCapPrefix);
+
+        app(TaskScheduler::class)->tick();
+
+        expect(Task::query()->where('parent_id', $group->id)->where('type', TaskType::FinalReview->value)->count())->toBe(1);
+    });
+
+    it('resumes an operator subtask appended after the final-review cap and clears that request', function (): void {
+        $group = rm_group([['Models', TaskStatus::Completed], [TaskFinalReview::Title, TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling);
+        $models = $group->tasks->firstWhere('title', 'Models');
+        $models->update(['implementer_agent_thread_id' => test_agent_thread($group, 'implementer-'.$models->id, $models)->id]);
+        TaskComment::query()->create(['task_id' => $models->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Fine.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
+        $group->update(['assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure, 'assistance_reason' => TaskFinalReview::FixupCapPrefix.'Read the findings.']);
+        $operator = Task::query()->create([
+            'parent_id' => $group->id, 'position' => 3, 'title' => 'Rework the scope', 'brief' => 'Do it the other way.', 'status' => TaskStatus::Todo,
+            'deliverables' => [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']],
+        ]);
+        $runtime = rm_runtime();
+
+        app(TaskScheduler::class)->tick();
+
+        expect($operator->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($runtime->implementers)->toBe([$operator->id])
+            ->and($group->fresh()?->assistance_requested)->toBeFalse();
     });
 
     it('appends a final review to a settling task whose fixup approval is not yet reviewed', function (): void {

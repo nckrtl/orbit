@@ -39,6 +39,12 @@ final readonly class TaskFinalReview
     /** The brief of a final review fixup holds at most this many characters of findings. */
     private const int FindingsLimit = 7000;
 
+    /** Whether the reason is the final-review cap. An appended operator subtask resumes past it. */
+    public static function isCapReason(?string $reason): bool
+    {
+        return is_string($reason) && str_starts_with($reason, self::FixupCapPrefix);
+    }
+
     public static function brief(Task $group): string
     {
         $default = $group->project->default_branch ?? 'the default branch';

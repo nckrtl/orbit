@@ -91,7 +91,7 @@ final readonly class GitHubGreenCommitResolver implements GreenCommitResolver
             return null;
         }
 
-        return array_values(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $checkName))[0];
+        return array_first(array_filter($runs, static fn (GitHubCheckRun $run): bool => $run->name === $checkName));
     }
 
     /**
