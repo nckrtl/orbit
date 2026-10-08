@@ -29,6 +29,8 @@ use SensitiveParameter;
  * @property string|null $task_check
  * @property TaskCompute $task_compute
  * @property bool $task_workspace_routed
+ * @property bool $review_and_merge
+ * @property string|null $merge_check
  * @property-read Collection<int, Task> $tasks
  */
 final class Project extends Model
@@ -39,11 +41,12 @@ final class Project extends Model
         'type' => 'laravel-app',
         'source_access' => 'github_app',
         'task_compute' => 'shared',
+        'review_and_merge' => false,
     ];
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute', 'review_and_merge', 'merge_check'];
 
     /** @var list<string> */
     #[\Override]
@@ -119,6 +122,23 @@ final class Project extends Model
         return $this->type->isWebServing();
     }
 
+    /**
+     * ADR 0203: whether Orbit reviews every push of this Project's tasks, reviews incoming pull requests,
+     * and merges reviewed green heads. The switch needs a merge check, the GitHub App, and shared compute.
+     */
+    public function reviewsAndMerges(): bool
+    {
+        return $this->review_and_merge && $this->mergeCheckName() !== null
+            && $this->source_access === ProjectSourceAccess::GitHubApp && $this->task_compute === TaskCompute::Shared;
+    }
+
+    public function mergeCheckName(): ?string
+    {
+        $name = $this->merge_check;
+
+        return is_string($name) && trim($name) !== '' ? trim($name) : null;
+    }
+
     public function taskCheckCommand(): ?string
     {
         $command = $this->task_check;
@@ -133,6 +153,7 @@ final class Project extends Model
             'type' => ProjectType::class,
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',
+            'review_and_merge' => 'boolean',
             'task_compute' => TaskCompute::class,
         ];
     }

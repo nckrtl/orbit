@@ -28,6 +28,8 @@ final class ProjectData extends Data
         public ?string $taskCheck,
         public bool $taskWorkspaceRouted,
         public TaskCompute $taskCompute = TaskCompute::Shared,
+        public bool $reviewAndMerge = false,
+        public ?string $mergeCheck = null,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -45,6 +47,8 @@ final class ProjectData extends Data
             taskCheck: $project->taskCheckCommand(),
             taskWorkspaceRouted: $project->task_workspace_routed,
             taskCompute: $project->task_compute,
+            reviewAndMerge: $project->review_and_merge,
+            mergeCheck: $project->mergeCheckName(),
         );
     }
 }

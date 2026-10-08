@@ -652,6 +652,7 @@ function tasks_cli_record(array $group): array
         $src = dirname(__DIR__, 5).'/packages/php-sdk/src/Responses/Tasks';
         require_once $src.'/TaskFields.php';
         require_once $src.'/SubtaskResponse.php';
+        require_once $src.'/TaskReviewAndMergeResponse.php';
         require_once $src.'/TaskGroupResponse.php';
         $loaded = true;
     }

@@ -16,6 +16,7 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
+use App\Domain\Tasks\TaskRemoteBranch;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -90,7 +91,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
                 workspace_git -C "$checkout" merge --ff-only --quiet "$remote"
             fi
             BASH;
-        $arguments = ['bash', '-seu', '--', $instance->checkout_path, 'task-'.$group->id];
+        $arguments = ['bash', '-seu', '--', $instance->checkout_path, TaskRemoteBranch::for($group)];
         if ($missingRefOk) {
             $arguments[] = 'missing-ok';
         }
@@ -137,6 +138,78 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
         return $head;
     }
 
+    public function mergeBase(Task $group): string
+    {
+        $instance = $this->workspace($group);
+        $default = $group->project->default_branch;
+        if (! is_string($default) || ! GitBranchName::isValid($default)) {
+            throw new TaskPullRequestException('The merge base could not be read.');
+        }
+        $script = WorkspaceGit::bashPreamble().<<<'BASH'
+            checkout=$1
+            branch=$2
+            git -C "$checkout" merge-base HEAD "refs/remotes/origin/$branch"
+            BASH;
+
+        return $this->commitFrom($instance, $script, [$default], 'task-merge-base', 'The merge base could not be read.');
+    }
+
+    public function moveTo(Task $group, string $sha): void
+    {
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $sha) !== 1) {
+            throw new TaskPullRequestException('The pull request head is not a Git SHA.');
+        }
+        $instance = $this->workspace($group);
+        // Only a workspace without tracked changes moves. Untracked Orbit files such as .mcp.json stay.
+        $script = WorkspaceGit::bashPreamble().WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).<<<'BASH'
+            checkout=$1
+            sha=$2
+            git -C "$checkout" cat-file -e "$sha^{commit}"
+            git -C "$checkout" diff --quiet HEAD --
+            workspace_git -C "$checkout" reset --hard --quiet "$sha"
+            git -C "$checkout" rev-parse HEAD
+            BASH;
+        if ($this->commitFrom($instance, $script, [$sha], 'task-pull-request-head', 'The workspace could not move to the pull request head.') !== $sha) {
+            throw new TaskPullRequestException('The workspace could not move to the pull request head.');
+        }
+    }
+
+    /**
+     * @param  list<string>  $arguments
+     *
+     * @throws TaskPullRequestException
+     */
+    private function commitFrom(Instance $instance, string $script, array $arguments, string $step, string $failure): string
+    {
+        try {
+            $result = $this->workspaces->execute($instance, new RemoteCommand(
+                arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
+                input: $script,
+            ), $step, 'tasks.fetch_failed');
+        } catch (RuntimeConvergenceException $exception) {
+            throw new TaskPullRequestException($failure, previous: $exception);
+        }
+        $commit = trim($result->stdout);
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1) {
+            throw new TaskPullRequestException($failure);
+        }
+
+        return $commit;
+    }
+
+    /** @throws TaskPullRequestException */
+    private function workspace(Task $group): Instance
+    {
+        $group->loadMissing(['project', 'taskable']);
+        $instance = $group->taskable;
+        if (! $instance instanceof Instance || $instance->checkout_path === '' || $instance->project_id !== $group->project_id) {
+            throw new TaskPullRequestException('The task workspace is unavailable.');
+        }
+        $instance->loadMissing('node');
+
+        return $instance;
+    }
+
     public function fetchForTurn(Task $group): void
     {
         try {
@@ -164,7 +237,7 @@ final readonly class GitHubTaskBaseBranchFetcher implements TaskBaseBranchFetche
             || ! is_string($default) || ! GitBranchName::isValid($default)) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.');
         }
-        $taskBranch = 'task-'.$group->id;
+        $taskBranch = TaskRemoteBranch::for($group);
         if (! GitBranchName::isValid($taskBranch)) {
             throw new TaskPullRequestException('The workspace refs could not be fetched.');
         }

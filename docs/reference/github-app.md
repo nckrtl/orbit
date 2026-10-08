@@ -1,6 +1,6 @@
 ---
 title: "GitHub App"
-description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, publishes task pull requests, and finds the newest green commit of a branch."
+description: "How a Gateway registers its own GitHub App and installs it on a GitHub account. How Orbit reads private repositories through the App or the Gateway's GitHub CLI, publishes task pull requests, reviews and merges pull requests, and finds the newest green commit of a branch."
 covers:
   - apps/gateway/app/Domain/GitHub/**
   - apps/gateway/app/Infrastructure/GitHub/**
@@ -10,7 +10,7 @@ covers:
 
 # GitHub App
 
-A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it. Orbit reads public repositories without the App. A Project whose owner does not install the App can [read through the Gateway's GitHub CLI](#read-through-the-github-cli) instead.
+A Gateway reads private `github.com` repositories through its own GitHub App. The [Tasks](/reference/tasks) extension also publishes its pull requests through it, and, for a [review-and-merge](/reference/tasks#review-and-merge) Project, reviews and merges pull requests through it. Orbit reads public repositories without the App. A Project whose owner does not install the App can [read through the Gateway's GitHub CLI](#read-through-the-github-cli) instead.
 
 ## What the App is
 
@@ -122,13 +122,32 @@ Review reads use the App on the Gateway only. The review list is `GET /repos/{ow
 
 A cached snapshot lives at most 60 seconds and is scoped to repository, PR, head, and trust configuration. Before consuming a request, the watcher performs uncached reads of the PR, the complete review list, and selected findings. The [Tasks contract](/reference/tasks#retrieve-the-findings) bounds the complete packet at 64 KiB and defines edit/head races, durable deduplication, retries, and assistance. Review failure does not turn CI green, change consumption, or disable existing CI/conflict repair. A token is never cached with review data, put in a brief, or passed to an agent.
 
-The App reads review decisions; it never submits, edits, dismisses, or requests one as part of this feature. Reading `APPROVED` supplies [durable approval evidence](/reference/tasks#inspect-approval-observations), not merge enforcement. Only complete uncached scans confirm that evidence; cached, failed, or incomplete reads do not confirm current approval. The local inspection report reads stored provenance and freshness, without a GitHub call or token. Orbit still does not merge. The [final-review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) keeps the maintainer identity's admin bypass and requires its own exact-head checks.
+Review consumption reads review decisions; it never submits, edits, dismisses, or requests one. Reading `APPROVED` supplies [durable approval evidence](/reference/tasks#inspect-approval-observations), not merge enforcement. Only complete uncached scans confirm that evidence; cached, failed, or incomplete reads do not confirm current approval. The local inspection report reads stored provenance and freshness, without a GitHub call or token. Outside a review-and-merge Project, Orbit does not merge. [How Orbit reviews and merges a pull request](#how-orbit-reviews-and-merges-a-pull-request) covers that Project. The [final-review workflow](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) keeps the maintainer identity's admin bypass and requires its own exact-head checks.
 
 ### Watch open subtasks' branch pull requests
 
-While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway also lists pull requests for head `{owner}:task-{id}`, at most once a minute per task. The list is `GET /repos/{owner}/{repo}/pulls` with query `head={owner}:task-{id}` and `state=all`. The token asks only for `pull_requests: read`. The Gateway accepts GitHub's canonical owner and repository casing in a listed pull request URL, because that identity is case-insensitive. It still requires the exact `https://github.com/` host and scheme, the `/pull/{number}` path, and a number matching the row. A URL for another repository leaves the list unreadable.
+While a task has a subtask in `todo`, `running`, or `reviewing`, the Gateway also lists pull requests for head `{owner}:task-{id}`, or `{owner}:{pr_branch}` for an [incoming pull request](/reference/tasks#incoming-pull-requests), at most once a minute per task. The list is `GET /repos/{owner}/{repo}/pulls` with query `head={owner}:task-{id}` and `state=all`. The token asks only for `pull_requests: read`. The Gateway accepts GitHub's canonical owner and repository casing in a listed pull request URL, because that identity is case-insensitive. It still requires the exact `https://github.com/` host and scheme, the `/pull/{number}` path, and a number matching the row. A URL for another repository leaves the list unreadable.
 
 The Gateway resolves the repository's installation id, caches it, and reuses that id for later lists of the same repository. The cached id is not a column on the task. When GitHub refuses the token for that id, the Gateway drops the cached id, resolves the installation again, and retries the list once. A second failure leaves the list unreadable. [Watch the branch while subtasks are open](/reference/tasks#watch-the-branch-while-subtasks-are-open) describes which pull request is stored and what a merged or closed result does.
+
+## How Orbit reviews and merges a pull request
+
+A Project with [review and merge](/reference/tasks#review-and-merge) on uses the App for four more calls. Each call asks GitHub for its own token, as the table shows.
+
+| Call | Endpoint | Token |
+| --- | --- | --- |
+| List open pull requests | `GET /repos/{owner}/{repo}/pulls?state=open`, oldest first, at most three pages of 100 | The cached `pull_requests: read` token of the [branch watch](#watch-open-subtasks-branch-pull-requests) |
+| Submit a review | `POST /repos/{owner}/{repo}/pulls/{number}/reviews` with `event` `APPROVE` or `REQUEST_CHANGES` and `commit_id` | The publishing token |
+| Read the merge check | `GET /repos/{owner}/{repo}/commits/{sha}/check-runs?check_name={name}`, every page | `checks: read` |
+| Merge | `PUT /repos/{owner}/{repo}/pulls/{number}/merge` with `merge_method` `merge` and `sha` | The publishing token |
+
+The publishing token asks for `contents: write`, `pull_requests: write`, and `workflows: write`. GitHub documents the review and merge endpoints under `Pull requests: write`, and the merge endpoint under `Contents: write` too. A merge of a change under `.github/workflows/` also needs `workflows`. So the flow needs no new App permission, no maintainer credential, and no webhook.
+
+A malformed pull request in the list fails the whole list for that minute. A refused review fails the step, and Orbit retries it on the publication backoff. A refused merge is recorded as the task's merge result with GitHub's status and message. A server error or an unreachable GitHub leaves the merge result `waiting`.
+
+GitHub forbids an account to review its own pull request, and that includes the App. So Orbit submits reviews only on pull requests that a person opened. It never reviews a pull request it opened. The merge needs no review: the `sha` parameter makes GitHub refuse the merge when the head moved.
+
+An App merge is a push by the App to the default branch, so GitHub starts the `push` workflows for the merge commit. A merge with the workflow `GITHUB_TOKEN` would start none. The Gateway's [automatic release](/reference/gateway-recovery#automatic-releases) needs that `Required checks` run on the merge commit.
 
 ## Find the newest green commit
 
@@ -234,6 +253,10 @@ A login on each Node was rejected. Every Node needs its own login, and moving an
 ### Review reads do not need review authority
 
 The existing App grant can mint a token narrowed to `pull_requests: read`. Feedback needs no new App permission, maintainer credential, or public webhook. Numeric account trust and once-only repair belong to the [Tasks contract](/reference/tasks#trusted-reviews-are-input-not-merge-authority); the App merely supplies complete bounded source records. A write-scoped publishing token is not needed for review retrieval.
+
+### One App reviews and merges
+
+The App already publishes Orbit's task pull requests, so it reviews and merges with the grants it holds. The maintainer's GitHub CLI profile was rejected for this: it is a personal identity with admin bypass, so a merge through it skips the ruleset. The App is bound to the ruleset like any other actor. A second App with only review rights was rejected: it would add a registration, a private key, and an installation for each account, and it still could not approve Orbit's own pull requests.
 
 ### No webhooks
 

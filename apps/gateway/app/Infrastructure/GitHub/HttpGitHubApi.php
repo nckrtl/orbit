@@ -13,12 +13,15 @@ use App\Domain\GitHub\GitHubCommit;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubInstallation;
+use App\Domain\GitHub\GitHubListedPullRequest;
+use App\Domain\GitHub\GitHubMergeResult;
 use App\Domain\GitHub\GitHubOpenedPullRequest;
 use App\Domain\GitHub\GitHubPullRequest;
 use App\Domain\GitHub\GitHubPullRequestDraft;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReview;
+use App\Domain\GitHub\GitHubReviewEvent;
 use App\Domain\Tasks\TaskBranchUpdate;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
@@ -35,6 +38,8 @@ final readonly class HttpGitHubApi implements GitHubApi
     private const int PAGE_SIZE = 100;
 
     private const int CHECK_RUN_PAGES = 10;
+
+    private const int OPEN_PULL_REQUEST_PAGES = 3;
 
     public function __construct(private HttpGitHubReviewReader $reviewReader) {}
 
@@ -419,6 +424,101 @@ final readonly class HttpGitHubApi implements GitHubApi
         }
 
         return new GitHubCommitComparison($status, $base, $mergeBase);
+    }
+
+    public function openPullRequests(#[SensitiveParameter] string $token, GitHubRepository $repository): array
+    {
+        $pullRequests = [];
+        for ($page = 1; $page <= self::OPEN_PULL_REQUEST_PAGES; $page++) {
+            $response = $this->send(fn (): Response => $this->request()->withToken($token)->get($this->repositoryPath($repository).'/pulls', [
+                'state' => 'open', 'sort' => 'created', 'direction' => 'asc', 'per_page' => self::PAGE_SIZE, 'page' => $page,
+            ]));
+            $rows = $response->json();
+            if (! $response->successful() || ! is_array($rows) || ! array_is_list($rows) || count($rows) > self::PAGE_SIZE) {
+                throw GitHubApiException::unavailable();
+            }
+            foreach ($rows as $row) {
+                $pullRequests[] = is_array($row) ? $this->listedPullRequest($repository, $row) : throw GitHubApiException::unavailable();
+            }
+            if (count($rows) < self::PAGE_SIZE) {
+                break;
+            }
+        }
+
+        return $pullRequests;
+    }
+
+    public function submitReview(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $commitId, GitHubReviewEvent $event, string $body): int
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->post(
+            $this->repositoryPath($repository).'/pulls/'.$number.'/reviews',
+            ['commit_id' => $commitId, 'event' => $event->value, 'body' => $body],
+        ));
+        $id = $response->json('id');
+        if (! $response->successful() || ! is_int($id) || $id < 1) {
+            $message = $response->json('message');
+
+            throw GitHubApiException::reviewRefused($response->status(), is_string($message) ? rtrim($message, '.') : '');
+        }
+
+        return $id;
+    }
+
+    public function mergePullRequest(#[SensitiveParameter] string $token, GitHubRepository $repository, int $number, string $sha): GitHubMergeResult
+    {
+        $response = $this->send(fn (): Response => $this->request()->withToken($token)->put(
+            $this->repositoryPath($repository).'/pulls/'.$number.'/merge',
+            ['sha' => $sha, 'merge_method' => 'merge'],
+        ));
+        $message = $response->json('message');
+        $message = is_string($message) ? rtrim($message, '.') : '';
+        if ($response->successful() && $response->json('merged') === true) {
+            return new GitHubMergeResult(true, $this->sha($response->json('sha')), $response->status(), $message);
+        }
+        if ($response->serverError()) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return new GitHubMergeResult(false, null, $response->status(), $message);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $row
+     *
+     * @throws GitHubApiException
+     */
+    private function listedPullRequest(GitHubRepository $repository, array $row): GitHubListedPullRequest
+    {
+        $number = $row['number'] ?? null;
+        $url = $this->text($row['html_url'] ?? null);
+        $user = is_array($row['user'] ?? null) ? $row['user'] : [];
+        $head = is_array($row['head'] ?? null) ? $row['head'] : [];
+        $base = is_array($row['base'] ?? null) ? $row['base'] : [];
+        $headRepository = is_array($head['repo'] ?? null) ? $this->text($head['repo']['full_name'] ?? null) : null;
+        $authorId = $user['id'] ?? null;
+        $authorLogin = $this->text($user['login'] ?? null);
+        $headRef = $this->text($head['ref'] ?? null);
+        $headSha = $this->sha($head['sha'] ?? null);
+        $baseRef = $this->text($base['ref'] ?? null);
+        $title = is_string($row['title'] ?? null) ? $row['title'] : null;
+        if (! is_int($number) || $url === null || $repository->pullRequestNumber($url) !== $number || ! is_int($authorId) || $authorId < 1
+            || $authorLogin === null || $headRef === null || $headSha === null || $baseRef === null || $title === null) {
+            throw GitHubApiException::unavailable();
+        }
+
+        return new GitHubListedPullRequest(
+            number: $number,
+            url: $url,
+            title: $title,
+            body: is_string($row['body'] ?? null) ? $row['body'] : null,
+            authorId: $authorId,
+            authorLogin: $authorLogin,
+            headRef: $headRef,
+            headSha: $headSha,
+            headRepository: $headRepository,
+            baseRef: $baseRef,
+            draft: ($row['draft'] ?? false) === true,
+        );
     }
 
     /** @param array<array-key, mixed> $row */

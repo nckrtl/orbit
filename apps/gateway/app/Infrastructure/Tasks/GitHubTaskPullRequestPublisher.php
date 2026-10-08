@@ -16,6 +16,7 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskPullRequestException;
 use App\Domain\Tasks\TaskPullRequestPublisher;
+use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewRequestLogins;
 use App\Infrastructure\GitHub\GitReadScript;
 use App\Infrastructure\Processes\CommandResult;
@@ -131,7 +132,7 @@ final readonly class GitHubTaskPullRequestPublisher implements TaskPullRequestPu
             throw new TaskPullRequestException('The task workspace is unavailable.');
         }
 
-        return [$repository, $instance, 'task-'.$group->id];
+        return [$repository, $instance, TaskRemoteBranch::for($group)];
     }
 
     private function pushBranch(Instance $instance, string $branch, #[SensitiveParameter] string $token, string $commit): void

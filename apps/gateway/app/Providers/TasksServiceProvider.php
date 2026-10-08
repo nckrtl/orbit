@@ -21,6 +21,7 @@ use App\Domain\Tasks\TaskBriefCoverage;
 use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExecutionLock;
+use App\Domain\Tasks\TaskPullRequestMerger;
 use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
@@ -42,6 +43,7 @@ use App\Infrastructure\Compute\UpCloudSandboxFleetRemoval;
 use App\Infrastructure\Compute\UpCloudSandboxNodeBootstrap;
 use App\Infrastructure\Tasks\AgentViewTaskWorkspaceDiffReader;
 use App\Infrastructure\Tasks\GitHubTaskBaseBranchFetcher;
+use App\Infrastructure\Tasks\GitHubTaskPullRequestMerger;
 use App\Infrastructure\Tasks\GitHubTaskPullRequestPublisher;
 use App\Infrastructure\Tasks\HttpCoderSettleNotifier;
 use App\Infrastructure\Tasks\HttpTaskPullRequestWatcher;
@@ -93,6 +95,7 @@ final class TasksServiceProvider extends ServiceProvider
         TaskBriefCoverage::class => LaravelAiTaskBriefCoverage::class,
         BriefCoverageLabeler::class => JevBriefCoverageLabeler::class,
         TaskPullRequestPublisher::class => GitHubTaskPullRequestPublisher::class,
+        TaskPullRequestMerger::class => GitHubTaskPullRequestMerger::class,
         TaskBaseBranchFetcher::class => GitHubTaskBaseBranchFetcher::class,
         TaskSettleMetricsCollector::class => LocalTaskSettleMetricsCollector::class,
         CoderSettleNotifier::class => HttpCoderSettleNotifier::class,

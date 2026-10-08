@@ -659,6 +659,10 @@
   },
   "redirects": [
     {
+      "source": "/decisions/0203-review-and-merge-pull-requests-inside-orbit",
+      "destination": "/reference/tasks#review-and-merge"
+    },
+    {
       "source": "/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update",
       "destination": "/reference/gateway-recovery#fleet-rollout"
     },

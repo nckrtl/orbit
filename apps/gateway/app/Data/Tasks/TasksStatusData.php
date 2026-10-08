@@ -14,10 +14,12 @@ final class TasksStatusData extends Data
     /**
      * @param  list<TaskAssistanceData>  $assistance
      * @param  string|null  $lastTickAt  When the latest `tasks:tick` started its work, or null when no tick is remembered.
+     * @param  list<TaskMergeData>  $merges  Open tasks of review-and-merge Projects, in ascending id order.
      */
     public function __construct(
         public bool $enabled,
         public array $assistance,
         public ?string $lastTickAt,
+        public array $merges = [],
     ) {}
 }

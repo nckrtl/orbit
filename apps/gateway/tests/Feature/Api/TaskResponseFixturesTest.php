@@ -8,17 +8,22 @@ use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
+use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskMergeStatus;
+use App\Domain\Tasks\TaskReviewedCommitSource;
 use App\Domain\Tasks\TaskReviewFindingsPacket;
 use App\Domain\Tasks\TaskSettlingFixup;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTickClock;
+use App\Domain\Tasks\TaskType;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
+use App\Models\TaskReviewedCommit;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Orbit\Sdk\Requests\Tasks\CancelSubtaskRequest;
@@ -209,6 +214,31 @@ describe('task response fixtures', function (): void {
             ->assertJsonPath('data.watched_pr_state', 'open'),
             'tasks/tasks-show/watched', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
         Http::assertSentCount(3);
+    });
+
+    it('records an incoming pull request under review and merge', function (): void {
+        $this->project->update(['repository_url' => 'https://github.com/nckrtl/orbit.git', 'review_and_merge' => true, 'merge_check' => 'Required checks']);
+        $group = Task::topLevel()->create([
+            'project_id' => $this->project->id, 'title' => 'Review #460: Throttle logins', 'brief' => 'Orbit reviews pull request https://github.com/nckrtl/orbit/pull/460.',
+            'status' => TaskGroupStatus::Settling, 'pr_url' => 'https://github.com/nckrtl/orbit/pull/460', 'pr_branch' => 'cursor/login-throttle',
+            'merge_status' => TaskMergeStatus::Waiting, 'merge_reason' => 'Check Required checks is still running on '.str_repeat('a', 40).'.',
+        ]);
+        $final = Task::query()->create([
+            'parent_id' => $group->id, 'position' => 1, 'type' => TaskType::FinalReview, 'title' => TaskFinalReview::Title,
+            'brief' => TaskFinalReview::brief($group), 'deliverables' => TaskFinalReview::deliverables(), 'status' => TaskStatus::Completed,
+            'fixup_head_sha' => str_repeat('a', 40),
+        ]);
+        TaskReviewedCommit::query()->create([
+            'task_id' => $group->id, 'sha' => str_repeat('a', 40), 'source' => TaskReviewedCommitSource::PullRequestReview,
+            'review_task_id' => $final->id, 'github_review_id' => 3311,
+        ]);
+
+        record_fixture($this->getJson("/api/v1/task-groups/{$group->id}")->assertOk()
+            ->assertJsonPath('data.review_and_merge.pr_branch', 'cursor/login-throttle'),
+            'tasks/tasks-show/review-and-merge', ShowTaskGroupRequest::class, 'GET /api/v1/task-groups/{group}');
+        record_fixture($this->getJson('/api/v1/tasks/status')->assertOk()
+            ->assertJsonPath('data.merges.0.id', $group->id),
+            'tasks/tasks-status/merges', ShowTasksStatusRequest::class, 'GET /api/v1/tasks/status');
     });
 
     it('records group updates, a refused update, cancel, and complete', function (): void {

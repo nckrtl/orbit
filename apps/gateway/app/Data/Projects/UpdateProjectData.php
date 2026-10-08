@@ -29,6 +29,10 @@ final readonly class UpdateProjectData
         public bool $taskWorkspaceRoutedProvided = false,
         public bool $taskWorkspaceRouted = true,
         public ?TaskCompute $taskCompute = null,
+        public bool $reviewAndMergeProvided = false,
+        public bool $reviewAndMerge = false,
+        public bool $mergeCheckProvided = false,
+        public ?string $mergeCheck = null,
     ) {}
 
     public function hasChanges(): bool
@@ -42,7 +46,16 @@ final readonly class UpdateProjectData
             || $this->taskCheckProvided
             || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided
-            || $this->taskCompute !== null;
+            || $this->taskCompute !== null
+            || $this->reviewAndMergeProvided
+            || $this->mergeCheckProvided;
+    }
+
+    /** Settings that change only the Project row, under the Instance operation lock. */
+    public function hasTaskSettings(): bool
+    {
+        return $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->taskCompute !== null
+            || $this->reviewAndMergeProvided || $this->mergeCheckProvided;
     }
 
     public function hasReconcilableChanges(): bool
@@ -66,6 +79,8 @@ final readonly class UpdateProjectData
             'source_access' => $this->sourceAccessProvided ? $this->sourceAccess?->value : null,
             'task_workspace_routed' => $this->taskWorkspaceRoutedProvided ? $this->taskWorkspaceRouted : null,
             'task_compute' => $this->taskCompute?->value,
+            'review_and_merge' => $this->reviewAndMergeProvided ? $this->reviewAndMerge : null,
+            'merge_check' => $this->mergeCheckProvided ? $this->mergeCheck : null,
             'provided' => [
                 $this->typeProvided,
                 $this->slugProvided,
@@ -75,6 +90,8 @@ final readonly class UpdateProjectData
                 $this->taskCheckProvided,
                 $this->sourceAccessProvided,
                 $this->taskWorkspaceRoutedProvided,
+                $this->reviewAndMergeProvided,
+                $this->mergeCheckProvided,
             ],
         ], JSON_THROW_ON_ERROR));
     }

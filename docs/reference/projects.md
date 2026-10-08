@@ -35,6 +35,8 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
+| `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
+| `merge_check` | The check run that must pass on a head before Orbit merges it, such as `Required checks`. Null by default. The flow needs it. |
 
 ## Application directory
 
@@ -100,7 +102,7 @@ The Gateway derives a repository identity from the host and path of the URL. Equ
 
 [`instance:register`](/domains/applications#register-an-existing-checkout) adopts a checkout only for an existing Project. It finds the Project by repository identity, or uses `--project`. When no Project owns the repository, it fails with `instance.project_missing` and changes nothing. Create the Project with `project:create` first. Registration inherits its root unless an explicit Instance override is sent; it does not search the checkout for nested apps.
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, source access, default branch, root, task check, and `task_workspace_routed`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, source access, default branch, root, task check, `task_workspace_routed`, `review_and_merge`, and `merge_check`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Retry creation safely
 
@@ -116,7 +118,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its type, slug, repository access URL, source access, default branch, relative web root, task check, or task workspace routing. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, or review and merge. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -135,6 +137,8 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
+| `review_and_merge` and `--review-and-merge=true\|false` | Switches the [review-and-merge flow](/reference/tasks#review-and-merge). It applies at the next tick, to open tasks too. |
+| `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges. Send null or `--clear-merge-check` to clear it. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 
@@ -149,6 +153,16 @@ The Gateway first resolves the remote default branch with the new `source_access
 The create and update commands accept `--task-workspace-routed=true` or `--task-workspace-routed=false`. An invalid CLI value returns `project.task_workspace_routed_invalid` before a request. The setting controls task provisioning only. It does not change ordinary Instances or bypass root, Route, and Project-type validation. A settings-only update does not reconcile existing sources or Routes.
 
 The migration seeds false for existing Projects with slug `orbit` and true for other existing Projects to preserve their previous creation behavior. This is a one-time migration of the legacy policy; the engine never consults the slug. It also records the mode of existing task workspaces from their actual provisioned state, so Doctor does not reinterpret them after a settings change. Renaming a Project does not change the setting.
+
+### Review and merge
+
+`PATCH /api/v1/projects/{project}` accepts `review_and_merge` as a JSON boolean and `merge_check` as a string of at most 255 characters, or null. The flow is on only while `review_and_merge` is true, `merge_check` is set, `source_access` is `github_app`, and `task_compute` is `shared`. A request that would leave the switch on without one of these fails with HTTP 422 `validation.failed` on `merge_check` or `review_and_merge`, and changes nothing. CLI human detail output labels the fields `Review and merge` and `Merge check`. An invalid CLI value returns `project.review_and_merge_invalid`, `project.merge_check_conflict`, or `project.merge_check_invalid` before a request.
+
+```bash
+orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
+```
+
+[Tasks: Review and merge](/reference/tasks#review-and-merge) describes what the switch changes.
 
 ### Update lifecycle
 

@@ -323,3 +323,27 @@ it('still reports an unreachable GitHub when the token request fails on the serv
     expect(fn () => publisher(new AppDevFakeSshExecutor)->publish(publisher_group('/srv/orbit/apps/shop/task-7'), 'Body', str_repeat('a', 40)))
         ->toThrow(TaskPullRequestException::class, 'The pull request could not be opened: GitHub could not be reached or refused the Project credential.');
 });
+
+it('pushes a reviewed commit to an incoming pull request branch, never to task-{id}', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    $transport = new AppDevFakeSshExecutor;
+    $group = publisher_group('/srv/orbit/apps/shop/task-7');
+    $group->update(['pr_branch' => 'cursor/login-throttle']);
+    $commit = str_repeat('a', 40);
+
+    publisher($transport)->push($group, $commit);
+
+    expect($transport->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/srv/orbit/apps/shop/task-7', 'cursor/login-throttle', $commit]);
+});
+
+it('refuses an incoming pull request branch that is not a valid branch name', function (): void {
+    GitHubTestSupport::storeApp();
+    publisher_github();
+    $transport = new AppDevFakeSshExecutor;
+    $group = publisher_group('/srv/orbit/apps/shop/task-7');
+    $group->update(['pr_branch' => 'bad..branch']);
+
+    expect(fn () => publisher($transport)->push($group, str_repeat('a', 40)))->toThrow(TaskPullRequestException::class)
+        ->and($transport->commands)->toBe([]);
+});

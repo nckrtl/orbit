@@ -6681,6 +6681,18 @@
               "vm"
             ],
             "description": "Compute for future task groups (shared or vm)"
+          },
+          "review_and_merge": {
+            "type": "boolean",
+            "description": "Review every push, review incoming pull requests, and merge reviewed green heads (true or false)"
+          },
+          "merge_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "The check that must pass on a head before Orbit merges it, such as \"Required checks\""
           }
         },
         "additionalProperties": false,

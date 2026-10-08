@@ -36,4 +36,10 @@ final class GitHubApiException extends RuntimeException
             $status,
         );
     }
+
+    /** GitHub refused a review Orbit submitted. The status is in the message, not the code, so it is never a token refusal. */
+    public static function reviewRefused(int $status, string $message): self
+    {
+        return new self('GitHub refused the review ('.$status.'): '.($message !== '' ? $message : 'no message').'.');
+    }
 }
