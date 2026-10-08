@@ -32,6 +32,7 @@ use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\GatewayReleases\ActionGatewayDocumentCleanup;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
 use App\Infrastructure\GatewayReleases\GatewayCleanupHandoff;
+use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAlerts;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
@@ -102,8 +103,9 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
             static fn (Application $app): ArtisanGatewayReleaseRuntime => new ArtisanGatewayReleaseRuntime(
                 layout: $app->make(GatewayReleaseLayout::class),
                 processes: $app->make(ProcessRunner::class),
-                // The scheduler drain, a forced stop's wait for the tick lock, and the rest of the handoff.
-                timeout: (float) (self::drainSeconds() + 330 + 600),
+                // The scheduler drain, a forced stop's wait for the tick lock, the rest of the handoff, and the Gateway
+                // Node's agent update.
+                timeout: (float) (self::drainSeconds() + 330 + 600 + GatewayNodeAgentUpdate::TimeoutSeconds),
                 stepLock: self::stepLock(),
                 fallback: new LocalGatewayReleaseRuntime($app->make(GatewayRuntimeHandoff::class)),
             ),
@@ -128,6 +130,7 @@ final class GatewayReleasesServiceProvider extends ServiceProvider
                 applicationPath: GatewayApplicationPath::resolve(),
                 orbitHome: rtrim(Config::string('orbit.home'), '/'),
                 fleet: $app->make(FleetConvergeUnits::class),
+                agent: new GatewayNodeAgentUpdate($app->make(ProcessRunner::class)),
             ),
         );
         $this->app->singleton(

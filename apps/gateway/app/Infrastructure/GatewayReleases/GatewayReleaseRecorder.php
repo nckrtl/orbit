@@ -246,6 +246,7 @@ final readonly class GatewayReleaseRecorder
             'error_code' => $release->errorCode,
         ]);
         $this->alerts?->raise($row);
+        $this->alerts?->gatewayAgent($row);
 
         return $row;
     }

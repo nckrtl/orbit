@@ -118,7 +118,13 @@ Every download runs `curl --disable` with HTTPS only, at most 5 redirects, and a
 
 ### One update at a time
 
-The command holds a lock while it runs: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds and then fails with `self_update.busy`. The Gateway's [agent converge](/reference/node-agent#install-and-upgrade) holds the same lock from its secret check through the agent restart, and the [fleet rollout](/reference/gateway-recovery#one-node) holds it for its CLI install and footprint steps. So a Gateway step never swaps or restarts the agent while a self-update replaces it or watches its health. Those Gateway steps wait up to 300 seconds for the lock.
+The command holds a lock while it runs: `/run/lock/orbit-self-update.lock` as root on Linux, `/var/run/orbit-self-update.lock` as root on macOS, and `$ORBIT_HOME/self-update.lock` for any other user. A second run waits up to 120 seconds and then fails with `self_update.busy`. Gateway steps hold the same lock:
+
+- the [agent converge](/reference/node-agent#install-and-upgrade), from its secret check through the agent restart;
+- the [fleet rollout](/reference/gateway-recovery#one-node), for its CLI install and footprint steps;
+- a release's [runtime handoff](/reference/gateway-recovery#gateway-node-agent), while it updates the Gateway Node's agent.
+
+So a Gateway step never swaps or restarts the agent while a self-update replaces it or watches its health. The converge and the rollout wait up to 300 seconds for the lock, and the handoff waits up to 120 seconds.
 
 Each candidate gets its own name, `.<file>.orbit-candidate-<random>`, created exclusively next to its target. A candidate with that pattern can only be left by an interrupted run, so the command deletes them before it downloads.
 

@@ -12,6 +12,7 @@ use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseRuntime;
 use App\Domain\GatewayReleases\GatewayReleaseVerifier;
 use App\Infrastructure\GatewayReleases\ArtisanGatewayReleaseRuntime;
+use App\Infrastructure\GatewayReleases\GatewayNodeAgentUpdate;
 use App\Infrastructure\GatewayReleases\GatewayReleaseAdopter;
 use App\Infrastructure\GatewayReleases\GatewayReleaseBuilder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseGuard;
@@ -71,7 +72,7 @@ describe('the Gateway release pipeline from the container', function (): void {
             ->and($runtime)->toBeInstanceOf(ArtisanGatewayReleaseRuntime::class)
             ->and(wired($runtime, 'fallback'))->toBeInstanceOf(LocalGatewayReleaseRuntime::class)
             ->and(wired($runtime, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
-            ->and(wired($runtime, 'timeout'))->toBe(450.0 + 330 + 600)
+            ->and(wired($runtime, 'timeout'))->toBe(450.0 + 330 + 600 + 480)
             ->and($database)->toBeInstanceOf(SqliteGatewayReleaseDatabase::class)
             ->and(wired($database, 'stepLock'))->toBe('/home/orbit/.orbit/gateway-release-step.lock')
             ->and(wired($database, 'keptSnapshots'))->toBe(3)
@@ -97,6 +98,7 @@ describe('the Gateway release pipeline from the container', function (): void {
 
         expect($scheduler)->toBeInstanceOf(GatewaySchedulerHandoff::class)
             ->and(wired($scheduler, 'drainSeconds'))->toBe(450)
+            ->and(wired(app(GatewayRuntimeHandoff::class), 'agent'))->toBeInstanceOf(GatewayNodeAgentUpdate::class)
             ->and(app(GatewayReleaseRuntime::class))->toBeInstanceOf(ArtisanGatewayReleaseRuntime::class)
             ->and(app(GatewayReleaseDatabase::class))->toBeInstanceOf(SqliteGatewayReleaseDatabase::class)
             ->and(app(GatewayReleaseVerifier::class))->toBeInstanceOf(HttpGatewayReleaseVerifier::class);

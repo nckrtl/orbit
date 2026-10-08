@@ -322,6 +322,8 @@ The Gateway converges the agent at these points.
 
 To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, and release the Gateway. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) then runs `sudo orbit self-update` on each Node of the rollout set, one at a time. It reads the pin from the Gateway's [desired fleet state](/reference/self-update#desired-fleet-state) and replaces the binary only when it differs from the pin, with the candidate, checksum, owner, mode, and rename steps above. It then restarts `orbit-agent.service` and restores the previous binary when the agent does not stay up.
 
+The rollout leaves out the Gateway's own Node. The [runtime handoff](/reference/gateway-recovery#gateway-node-agent) of each release updates that Node's agent with the same steps.
+
 The converge holds `/run/lock/orbit-self-update.lock`, the lock `orbit self-update` holds, from the secret check through the agent restart. So it never swaps or restarts the agent while a self-update replaces it or watches its health.
 
 The converge holds the lock across its SSH commands through a transient unit, `orbit-update-lock-<random>`, that waits up to 5 minutes for the lock and keeps it until the converge stops the unit. The unit ends after 30 minutes in any case, so a Gateway process that dies cannot keep the lock. A self-update that keeps the lock longer than 5 minutes fails the converge with `node.update_busy`.

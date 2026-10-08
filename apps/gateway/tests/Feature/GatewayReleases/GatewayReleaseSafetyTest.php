@@ -345,6 +345,38 @@ describe('release alerts and stalls', function (): void {
             ->and($this->pipeline->alerts[0]->summary)->toContain('project_documents.cleanup_reconcile_differs');
     });
 
+    it('keeps a release live when the Gateway Node agent update fails, records why, and alerts once', function (): void {
+        $first = $this->pipeline->adopt();
+        $this->pipeline->gatewayAgent = ['outcome' => 'failed', 'version' => '0.4.0', 'error_code' => 'agent.unhealthy', 'message' => 'The new orbit-agent did not stay running. The previous orbit-agent is restored.'];
+        $second = $this->pipeline->fixture->commit('Second');
+
+        $this->pipeline->deployer()->execute($second);
+        $record = GatewayRelease::query()->latest('id')->firstOrFail();
+        $alertedByDeploy = $this->pipeline->alerts;
+        new GatewayReleaseAlerts($this->pipeline, $this->pipeline->source())->gatewayAgent($record);
+
+        expect($alertedByDeploy)->toHaveCount(1)
+            ->and($record->outcome)->toBe('verified')
+            ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($second, 0, 12))
+            ->and($this->pipeline->steps)->not->toContain('handoff:'.substr($first, 0, 12))
+            ->and($record->phases['scheduler']['gateway_agent'])->toMatchArray(['outcome' => 'failed', 'error_code' => 'agent.unhealthy'])
+            ->and($record->phases['scheduler']['gateway_agent']['alert']['kind'])->toBe('release_gateway_agent_failed')
+            ->and($this->pipeline->alerts)->toHaveCount(1)
+            ->and($this->pipeline->alerts[0]->kind)->toBe(ReleaseAlertKind::ReleaseGatewayAgentFailed)
+            ->and($this->pipeline->alerts[0]->subject->sha)->toBe($second)
+            ->and($this->pipeline->alerts[0]->summary)->toContain('agent.unhealthy', '0.4.0');
+    });
+
+    it('raises no agent alert for a Gateway Node agent that already matched or was updated', function (string $outcome): void {
+        $this->pipeline->adopt();
+        $this->pipeline->gatewayAgent = ['outcome' => $outcome, 'version' => '0.4.0'];
+
+        $this->pipeline->deployer()->execute($this->pipeline->fixture->commit('Second'));
+
+        expect(GatewayRelease::query()->latest('id')->value('outcome'))->toBe('verified')
+            ->and($this->pipeline->alerts)->toBe([]);
+    })->with(['unchanged', 'updated']);
+
     it('counts a lock held for thirty minutes toward the stall alert', function (): void {
         $this->pipeline->adopt();
         $this->pipeline->automation()->enable();

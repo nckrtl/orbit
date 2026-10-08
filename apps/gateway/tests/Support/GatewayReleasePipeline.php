@@ -83,6 +83,9 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     /** @var list<ReleaseAlert> */
     public array $alerts = [];
 
+    /** @var array<string, mixed> what the schedule phase reports for the Gateway Node's own agent */
+    public array $gatewayAgent = ['outcome' => 'unchanged', 'version' => '0.4.0'];
+
     public function __construct()
     {
         $this->fixture = new GatewayReleaseFixture;
@@ -349,7 +352,7 @@ final class GatewayReleasePipeline implements BranchHeadReader, GatewayReleaseDa
     {
         $this->steps[] = 'schedule:'.$id;
 
-        return ['scheduler' => 'restarted', 'cleanup' => 'skipped', 'cleanup_error_code' => null, 'cleanup_paused' => false];
+        return ['scheduler' => 'restarted', 'cleanup' => 'skipped', 'cleanup_error_code' => null, 'cleanup_paused' => false, 'gateway_agent' => $this->gatewayAgent];
     }
 
     /** @var (\Closure(): void)|null runs when verify starts */

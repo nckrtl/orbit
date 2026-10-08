@@ -105,6 +105,40 @@ final readonly class GatewayReleaseAlerts
     }
 
     /**
+     * Raises the one alert of a verified release whose handoff could not bring the Gateway Node's own `orbit-agent` to
+     * the pin. The receipt is stored on the scheduler phase's `gateway_agent` result, so it does not take the record's
+     * own alert, and a record alerts for it once.
+     */
+    public function gatewayAgent(GatewayRelease $record): void
+    {
+        $phases = $record->phases;
+        $scheduler = is_array($phases['scheduler'] ?? null) ? $phases['scheduler'] : [];
+        $agent = is_array($scheduler['gateway_agent'] ?? null) ? $scheduler['gateway_agent'] : [];
+
+        if ($record->outcome !== 'verified' || ($agent['outcome'] ?? null) !== 'failed' || array_key_exists('alert', $agent)) {
+            return;
+        }
+
+        $summary = sprintf(
+            'Release %s is live, but the Gateway Node\'s orbit-agent did not move to %s (%s): %s',
+            $record->release_id ?? (string) $record->requested,
+            is_string($agent['version'] ?? null) ? $agent['version'] : 'the pin',
+            is_string($agent['error_code'] ?? null) ? $agent['error_code'] : 'no error code',
+            is_string($agent['message'] ?? null) ? $agent['message'] : 'no message',
+        );
+        $receipt = $record->commit() === null ? null : $this->send(ReleaseAlertKind::ReleaseGatewayAgentFailed, (string) $record->commit(), (string) $record->id, $summary);
+        $stored = $this->stored($record, ReleaseAlertKind::ReleaseGatewayAgentFailed, $receipt);
+
+        try {
+            // Only this key: the tick confirmation may write `phases.tick` meanwhile, outside the release lock.
+            GatewayRelease::query()->whereKey($record->getKey())->update(['phases->scheduler->gateway_agent->alert' => $stored]);
+            $record->refresh();
+        } catch (Throwable $exception) {
+            report($exception);
+        }
+    }
+
+    /**
      * Raises a stalled alert for the deployed commit when automatic releases cannot make progress.
      * The caller decides when a stall is long enough and that it alerts once.
      */

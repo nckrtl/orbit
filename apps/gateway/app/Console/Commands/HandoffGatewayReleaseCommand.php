@@ -14,7 +14,7 @@ final class HandoffGatewayReleaseCommand extends GatewayReleaseCommand
 {
     #[\Override]
     protected $signature = 'gateway:release:handoff
-        {--phase=all : serve (Caddy, PHP-FPM, units), schedule (scheduler, document cleanup, OPcache), or all}';
+        {--phase=all : serve (Caddy, PHP-FPM, units), schedule (scheduler, document cleanup, the Gateway Node agent, OPcache), or all}';
 
     #[\Override]
     protected $description = 'Hand Caddy, PHP-FPM, the scheduler, document cleanup, and agent-view over to the current Gateway release.';

@@ -178,7 +178,7 @@ After the switch, deploy:
 
 1. runs the serving phase of the runtime handoff: Caddy, PHP-FPM, and the units;
 2. verifies the release, as described below;
-3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, and the OPcache reset;
+3. runs the scheduler phase of the handoff: the scheduler drain and restart, document cleanup, the Gateway Node's agent update, and the OPcache reset;
 4. switches `web/current` to the release's [web build](#web-build) with one rename;
 5. runs [smoke](#smoke) against the switched release.
 
@@ -230,7 +230,8 @@ The scheduler phase:
 1. moves the scheduler to the new release without cutting off a scheduled command;
 2. restarts every other Gateway Node Process whose directory is in the Gateway application;
 3. resumes [document cleanup](/reference/project-documents#restore-time-cleanup-gate);
-4. resets OPcache, described below.
+4. updates the Gateway Node's own `orbit-agent` to the release's pin, described below;
+5. resets OPcache, described below.
 
 PHP-FPM is not restarted for a release. Caddy resolves the `/home/orbit/orbit` link for each request (`resolve_root_symlink`) and passes PHP-FPM the release's real script path. A request that started before the switch finishes on its release, and the next one runs the new release. The `/grafana` authorization resolves the link the same way. A fixed script path through the link would let each PHP-FPM worker keep the old release in its realpath cache for up to two minutes.
 
@@ -263,7 +264,26 @@ The new scheduler pauses document cleanup when it starts. The handoff waits for 
 
 The handoff also installs the [fleet rollout units](#units). A failure there only logs a warning.
 
-When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `cleanup`, `cleanup_error_code`, `agent_view`, and `cleanup_paused`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
+When any step fails, the handoff still starts the scheduler unit, so the scheduler never stays down. The handoff prints one JSON object with `caddy`, `fpm`, `opcache`, `scheduler`, `scheduler_unit`, `scheduler_drain`, `processes_restarted`, `cleanup`, `cleanup_error_code`, `agent_view`, `cleanup_paused`, and `gateway_agent`. Run it again by hand after fixing a handoff failure. It takes no release lock, so run it only when no release step is running.
+
+##### Gateway Node agent
+
+The [fleet rollout](#rollout-set-and-order) never visits the Gateway's own machine, so the scheduler phase updates that Node's `orbit-agent` itself. It runs with the release's own code, so it uses that release's [agent pin](/reference/node-agent#install-and-upgrade). It runs after verify, so an agent restart never delays verify. When smoke later fails and the release switches back, the scheduler phase runs again with the previous release's code, which moves the agent to that release's pin. It leaves the Gateway's CLI alone: the Gateway runs the release's own `apps/cli`.
+
+The update runs one script through local `sudo`, never over SSH to itself. The script holds `/run/lock/orbit-self-update.lock`, the lock that `orbit self-update` and the agent converge hold, and waits up to 120 seconds for it. It does nothing when the unit at `/etc/systemd/system/orbit-agent.service` lacks the `# Managed by Orbit: agent` marker, or when the binary already matches the pinned SHA-256.
+
+Otherwise it takes the converge's steps: it downloads a candidate, checks the SHA-256, sets `root:root` and mode `0755`, and renames the candidate into place. Only then does it restart `orbit-agent.service`. The agent must stay active without a restart for 5 seconds, the health window of `orbit self-update`. When the restart fails or the agent does not stay up, the script restores the previous binary from `/usr/local/bin/orbit-agent.orbit-previous` and restarts it. Each restart has a 60-second limit.
+
+The handoff result records the update as `gateway_agent`. It has an `outcome` and the pinned `version`:
+
+| Outcome | When |
+| --- | --- |
+| `unchanged` | The binary already matched the pin. The agent did not restart |
+| `updated` | The pinned binary replaced the old one and stayed up. `previous_sha256` names the old binary, or is null when there was none |
+| `skipped` | `reason` is `not_installed` when the Node has no Orbit agent unit, or `platform` when the Node does not run Linux |
+| `failed` | `error_code` and `message` say why: `agent.binary_download_failed`, `agent.checksum_mismatch`, `agent.install_failed`, `agent.restart_failed`, `agent.unhealthy`, `agent.architecture_unsupported`, or `node.update_busy` |
+
+A failed update never fails or switches back the release. The release stays `verified`, and the record raises one [`release_gateway_agent_failed` alert](#release-alerts), stored as `gateway_agent.alert`. Doctor keeps reporting `node.agent_binary_mismatch` for the Gateway Node until a later release updates the agent. To retry sooner, run the scheduler phase of the handoff again by hand, as described above. Do not run `orbit self-update` on the Gateway machine, because it also replaces the Gateway's CLI.
 
 #### Smoke
 
@@ -624,6 +644,7 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
 | `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` by the [confirmation deadline](#post-release-tick-confirmation). At most once per release; nothing switches back or pauses |
+| `release_gateway_agent_failed` | A release went live, but the handoff could not bring the [Gateway Node's agent](#gateway-node-agent) to the pin. At most once per release; nothing switches back or pauses |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for its CLI release. The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 
@@ -735,7 +756,7 @@ The rollout visits a Node when all of these hold:
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
 - its `/usr/local/bin/orbit` is not a CLI that Orbit did not install.
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. The Gateway's own Node stays out too. Each release's [runtime handoff](#gateway-node-agent) updates its agent, and its CLI is the release's own `apps/cli`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
 
 A task sandbox is an `app-dev` Node that an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns: its `compute_sandbox_id` names the reservation. The Gateway creates it for one task group and removes it when the group ends or its review window expires ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)). Provisioning gives it the agent and footprint of the Gateway's release at that time.
 
@@ -861,11 +882,11 @@ A release that fails after its migrations ran pauses automatic releases until an
 
 Pre-migration snapshots stay on the Gateway host, in `ORBIT_HOME/backups`. Orbit does not copy them off the host. Keep a [complete state set](#preserve-a-complete-state-set) elsewhere.
 
-The release steps up to the switch run the code of the release that was current. A change to those steps takes effect from the release after the one that ships it.
+The release steps up to the switch run the code of the release that was current. A change to those steps takes effect from the release after the one that ships it. The deploying code also writes the release record and raises its alerts. So when the release that adds the [Gateway Node's agent](#gateway-node-agent) update fails that update, its record shows the failure, but no alert is raised. Later releases alert.
 
 ### Rollout limits
 
-The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order). An operator updates an operator machine or a macOS Node with `orbit self-update`, and the CLI [tells the operator](/reference/self-update#the-newer-release-notice) about a newer release.
+The rollout updates only the Nodes of the [rollout set](#rollout-set-and-order). Each release's handoff updates the [Gateway Node's agent](#gateway-node-agent). An operator updates an operator machine or a macOS Node with `orbit self-update`, and the CLI [tells the operator](/reference/self-update#the-newer-release-notice) about a newer release.
 
 The rollout visits one Node at a time, so it takes longer as the fleet grows. A halted rollout blocks every later rollout until an operator resumes it.
 
