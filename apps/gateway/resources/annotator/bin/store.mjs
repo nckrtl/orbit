@@ -248,7 +248,6 @@ export class AnnotationStore {
             revision: Math.max(0, ...records.map((a) => a.revision)) + 1,
             syncError: null,
         };
-        delete annotation.threadId;
         delete annotation.delivery;
         this.write(annotation);
         return { annotation, created: true };
