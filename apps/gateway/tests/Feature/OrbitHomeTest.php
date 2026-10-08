@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Tests\Support\TestOrbitHome;
 
+pest()->group('subprocess');
+
 function orbit_home_probe(): Process
 {
     $script = 'require '.var_export(base_path('vendor/autoload.php'), true).';'

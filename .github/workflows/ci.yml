@@ -228,13 +228,18 @@ jobs:
           case "$PROJECT" in
             apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php tests/Feature/CliBinaryBuildContractTest.php' ;;
             apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
-            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php' ;;
+            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php' ;;
             packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
             *) exit 0 ;;
           esac
           for architecture_test in $architecture_tests; do
             vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --compact "$architecture_test"
           done
+
+      # TIA does not link code that a test runs in a PHP subprocess to that test, so every affected run also runs them.
+      - name: Run subprocess tests
+        if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --group=subprocess --do-not-fail-on-empty-test-suite --compact
 
       - name: Require the Pest TIA graph to describe this commit
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

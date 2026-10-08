@@ -262,7 +262,8 @@ describe('Composer configuration', function (): void {
             ->and($order['Choose the main test selection'])->toBeLessThan($order['Run tests affected since the main graph'])
             ->and($order['Run tests affected since the main graph'])->toBeLessThan($order['Run full test suite and refresh Pest TIA graph'])
             ->and($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Run architecture tests'])
-            ->and($order['Run architecture tests'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
+            ->and($order['Run architecture tests'])->toBeLessThan($order['Run subprocess tests'])
+            ->and($order['Run subprocess tests'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
             ->and($order['Require the Pest TIA graph to describe this commit'])->toBeLessThan($order['Save Pest TIA graph'])
             ->and($order['Save Pest TIA graph'])->toBeLessThan($order['Export sandbox TIA baseline']);
         expect($steps)->not->toHaveKey('Run full test suite')->not->toHaveKey('Refresh Pest TIA graph');
@@ -283,6 +284,7 @@ describe('Composer configuration', function (): void {
             // TIA does not link workflow files to the tests that read them, so these contracts always run on pull requests.
             ->toContain('tests/Feature/CliBinaryBuildContractTest.php')
             ->toContain('tests/Feature/Configuration/ComposerConfigurationTest.php')
+            ->toContain('tests/Feature/Configuration/SubprocessTestGroupTest.php')
             ->toContain('tests/Unit/Architecture')
             ->toContain('tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php')
             ->toContain('tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php')
@@ -294,6 +296,15 @@ describe('Composer configuration', function (): void {
             ->toContain('tests/Unit/Requests/Deployments/DeploymentRequestsTest.php')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --compact "$architecture_test"');
         expect($steps['Run architecture tests']['run'])->not->toContain('--tia');
+        // TIA does not link code that a test runs in a PHP subprocess to that test, so pull requests and affected runs
+        // on main run the whole group. Paratest takes one path per run, so one group run replaces a run per file. A
+        // project without such tests has an empty group, and that passes.
+        expect($steps['Run subprocess tests'])
+            ->toBe([
+                'name' => 'Run subprocess tests',
+                'if' => "always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
+                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --group=subprocess --do-not-fail-on-empty-test-suite --compact',
+            ]);
     });
 
     it('persists per-project Pest TIA graphs on a named checkout', function (): void {

@@ -32,6 +32,8 @@ use Tests\Support\Fleet\FakeFleetConvergeUnits;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\GatewayReleasePipeline;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     $this->fixture = new GatewayReleaseFixture;
     $this->live = $this->fixture->layout->currentPath();

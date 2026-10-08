@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Models\GatewayRelease;
 use Tests\Support\GatewayReleasePipeline;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     $this->pipeline = new GatewayReleasePipeline;
 });

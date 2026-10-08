@@ -6,6 +6,8 @@ use App\Infrastructure\AgentView\ProcessAgentViewPublisher;
 use Psr\Log\AbstractLogger;
 use Psr\Log\NullLogger;
 
+pest()->group('subprocess');
+
 function publisher_clock(): object
 {
     return new class
