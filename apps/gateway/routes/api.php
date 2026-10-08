@@ -109,6 +109,7 @@ Route::prefix('v1')->group(function (): void {
         ->name('gateway:desired-fleet-state');
 
     // Gateway releases run in their own systemd unit; deploy and rollback answer 202 with the queued record.
+    // Smoke restarts nothing and writes no record, so it runs in the request, bounded below PHP-FPM's limit.
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])
         ->prefix('gateway')->group(function (): void {
             Route::get('releases', [GatewayReleasesController::class, 'index'])->name('gateway:release:list');
@@ -119,6 +120,7 @@ Route::prefix('v1')->group(function (): void {
             Route::post('releases/{release}/rollback', [GatewayReleasesController::class, 'rollback'])
                 ->where('release', '[0-9a-f]{12}')
                 ->name('gateway:release:rollback');
+            Route::post('release-smoke', [GatewayReleasesController::class, 'smoke'])->name('gateway:release:smoke');
             Route::get('release-automation', [GatewayReleaseAutomationController::class, 'show'])->name('gateway:release:auto:status');
             Route::post('release-automation/enable', [GatewayReleaseAutomationController::class, 'enable'])->name('gateway:release:auto:enable');
             Route::post('release-automation/disable', [GatewayReleaseAutomationController::class, 'disable'])->name('gateway:release:auto:disable');

@@ -10,7 +10,9 @@ use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
+use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
 use App\Infrastructure\GatewayReleases\SystemdGatewayReleaseUnitStarter;
+use App\Infrastructure\Processes\CommandDeadline;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -75,6 +77,86 @@ final class GatewayReleaseMigrationFiles implements GatewayReleaseDatabase
     {
         return $this->files[basename($releasePath)] ?? [];
     }
+}
+
+/** Answers every smoke run with one recorded `bin/gateway-smoke` result and keeps the command it ran. */
+final class RecordedSmokeProcesses implements ProcessRunner
+{
+    /** @var list<string> */
+    public array $arguments = [];
+
+    public ?float $timeout = null;
+
+    public function __construct(private readonly CommandResult $result) {}
+
+    public function run(ProcessInvocation $invocation): CommandResult
+    {
+        $this->arguments = $invocation->arguments;
+        $this->timeout = $invocation->timeout;
+
+        return $this->result;
+    }
+}
+
+/**
+ * The report `bin/gateway-smoke` prints for the current release, with every check passed or with
+ * the web and scheduler checks failed.
+ *
+ * @return array<string, mixed>
+ */
+function gateway_smoke_report(bool $passed): array
+{
+    $check = static fn (string $status, string $message, ?string $error = null, int $ms = 400): array => ['status' => $status, 'error' => $error, 'message' => $message, 'duration_ms' => $ms, 'detail' => []];
+    $checks = [
+        'deploy_verify' => $check('passed', 'The Gateway serves '.RELEASE_CURRENT.'.', ms: 2_100),
+        'node_list' => $check('passed', 'node:list returned 3 Nodes.', ms: 900),
+        'tasks_list' => $check('passed', 'tasks:list answered.', ms: 800),
+        'web' => $passed
+            ? $check('passed', 'The web app serves build '.substr(RELEASE_CURRENT, 0, 12).'.', ms: 300)
+            : $check('failed', 'web/current serves build aaaaaaaaaaaa, not '.substr(RELEASE_CURRENT, 0, 12).'.', 'web_release_mismatch', 300),
+        'scheduler' => $passed
+            ? $check('passed', 'orbit-process-108-schedule-work.service is active.', ms: 100)
+            : $check('failed', 'orbit-process-108-schedule-work.service is not active.', 'scheduler_inactive', 100),
+        'tasks_tick' => $check('passed', 'A tasks tick started at 2026-10-07T12:00:00Z.', ms: 41_000),
+        'agent_view' => $check('passed', 'orbit-agent-view.service is active.', ms: 100),
+        'documents' => $check('skipped', 'No --smoke-project; the write check is off.', ms: 0),
+    ];
+    $report = [
+        'schema' => 1,
+        'passed' => $passed,
+        'source' => 'live',
+        'expected_sha' => RELEASE_CURRENT,
+        'since' => null,
+        'started_at' => '2026-10-07T12:00:00Z',
+        'finished_at' => '2026-10-07T12:00:42Z',
+        'duration_ms' => 42_000,
+        'timeout_seconds' => 90,
+        'summary' => $passed ? ['passed' => 7, 'failed' => 0, 'timeout' => 0, 'skipped' => 1] : ['passed' => 5, 'failed' => 2, 'timeout' => 0, 'skipped' => 1],
+        'checks' => $checks,
+    ];
+
+    return $passed ? $report : [
+        ...$report,
+        'error' => 'checks_failed',
+        'failed_checks' => ['web', 'scheduler'],
+        'message' => '2 of 7 checks did not pass: web, scheduler.',
+        'next' => 'Fix the failed checks, then run smoke again. Do not deploy.',
+    ];
+}
+
+/** Runs the API smoke against `bin/gateway-smoke` of the current release, answered by `$processes`. */
+function gateway_smoke_api(GatewayReleaseLayout $layout, RecordedSmokeProcesses $processes, int $timeout = 90): void
+{
+    mkdir($layout->currentPath().'/bin', 0755, true);
+    touch($layout->currentPath().'/bin/gateway-smoke');
+    // The action itself comes from the container, so it gets the request's CommandDeadline.
+    app()->instance(ScriptGatewayReleaseSmoke::class, new ScriptGatewayReleaseSmoke(
+        layout: $layout,
+        processes: $processes,
+        origin: 'https://gateway.orbit',
+        webRoot: '/home/orbit/web',
+        timeoutSeconds: $timeout,
+    ));
 }
 
 /** A release layout with a current release and a retained target, without Git. */
@@ -385,6 +467,96 @@ describe('gateway release API', function (): void {
 
         $disabled = $this->postJson('/api/v1/gateway/release-automation/disable')->assertOk()->assertJsonPath('data.enabled', false);
         record_fixture($disabled, 'gateway-releases/gateway-release-auto-disable/disabled', 'Orbit\\Sdk\\Requests\\GatewayReleases\\DisableGatewayReleaseAutomationRequest', 'POST /api/v1/gateway/release-automation/disable');
+    });
+
+    it('runs smoke against the current release inside the request and writes no record', function (): void {
+        $processes = new RecordedSmokeProcesses(new CommandResult(0, json_encode(gateway_smoke_report(true), JSON_THROW_ON_ERROR), '', 42_000, false));
+        gateway_smoke_api($this->layout, $processes);
+
+        $response = $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk()
+            ->assertJsonPath('data.release', substr(RELEASE_CURRENT, 0, 12))
+            ->assertJsonPath('data.sha', RELEASE_CURRENT)
+            ->assertJsonPath('data.outcome', 'passed')
+            ->assertJsonPath('data.report.summary.passed', 7);
+        record_fixture($response, 'gateway-releases/gateway-release-smoke/passed', 'Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest', 'POST /api/v1/gateway/release-smoke');
+
+        expect(array_slice($processes->arguments, 4, 5))->toBe([$this->layout->currentPath().'/bin/gateway-smoke', '--sha', RELEASE_CURRENT, '--timeout', '90'])
+            ->and(GatewayRelease::query()->count())->toBe(0)
+            ->and($this->processes->ran)->toBe([]);
+
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => 'fedcba9', 'since' => '2026-10-07T06:00:00Z'])->assertOk()
+            ->assertJsonPath('data.sha', 'fedcba9');
+        expect($processes->arguments)->toContain('--since', '2026-10-07T06:00:00Z');
+    });
+
+    it('answers failed checks with the failed outcome and their report', function (): void {
+        gateway_smoke_api($this->layout, new RecordedSmokeProcesses(new CommandResult(1, json_encode(gateway_smoke_report(false), JSON_THROW_ON_ERROR), '', 42_000, false)));
+
+        $response = $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk()
+            ->assertJsonPath('data.outcome', 'failed')
+            ->assertJsonPath('data.report.failed_checks', ['web', 'scheduler']);
+        record_fixture($response, 'gateway-releases/gateway-release-smoke/failed', 'Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest', 'POST /api/v1/gateway/release-smoke');
+    });
+
+    it('keeps a smoke that printed no report an error', function (): void {
+        gateway_smoke_api($this->layout, new RecordedSmokeProcesses(new CommandResult(1, '', 'Traceback (most recent call last)', 300, false)));
+
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertStatus(500)
+            ->assertJsonPath('error.code', 'gateway.release_smoke_failed');
+    });
+
+    it('lowers a long smoke limit so the run ends within the command deadline of the request', function (): void {
+        $processes = new RecordedSmokeProcesses(new CommandResult(0, json_encode(gateway_smoke_report(true), JSON_THROW_ON_ERROR), '', 42_000, false));
+        gateway_smoke_api($this->layout, $processes, timeout: 600);
+
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk();
+
+        // The request's deadline is 570 seconds with a 20-second cleanup reserve, inside PHP-FPM's 600.
+        expect($processes->arguments[7])->toBe('--timeout')
+            ->and((int) $processes->arguments[8])->toBeBetween(510, 520)
+            ->and((int) $processes->arguments[3])->toBe((int) $processes->arguments[8] + 15)
+            ->and($processes->timeout)->toBeLessThanOrEqual(550.0);
+
+        // A deadline that already runs, with less time left, bounds the run too.
+        app(CommandDeadline::class)->start(200.0, CommandDeadline::CleanupReserveSeconds);
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk();
+        app(CommandDeadline::class)->clear();
+
+        expect((int) $processes->arguments[8])->toBeBetween(140, 150)
+            ->and($processes->timeout)->toBeLessThanOrEqual(180.0);
+    });
+
+    it('keeps a smoke that was terminated an error, not a failed result', function (): void {
+        gateway_smoke_api($this->layout, new RecordedSmokeProcesses(new CommandResult(143, '{"schema":1,"passed":false,"error":"terminated"}', '', 300, false)));
+
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertStatus(500)
+            ->assertJsonPath('error.code', 'gateway.release_smoke_failed');
+    });
+
+    it('refuses a smoke while another one runs', function (): void {
+        $processes = new RecordedSmokeProcesses(new CommandResult(0, json_encode(gateway_smoke_report(true), JSON_THROW_ON_ERROR), '', 42_000, false));
+        gateway_smoke_api($this->layout, $processes);
+        $held = fopen($this->base.'/home/gateway-release-smoke.lock', 'c');
+        flock($held, LOCK_EX);
+
+        try {
+            $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertStatus(409)
+                ->assertJsonPath('error.code', 'gateway.release_smoke_in_progress');
+        } finally {
+            flock($held, LOCK_UN);
+            fclose($held);
+        }
+
+        expect($processes->arguments)->toBe([]);
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => null, 'since' => null])->assertOk();
+    });
+
+    it('refuses an invalid commit, a time without a zone, and an unknown body field', function (): void {
+        gateway_smoke_api($this->layout, new RecordedSmokeProcesses(new CommandResult(0, '', '', 1, false)));
+
+        $this->postJson('/api/v1/gateway/release-smoke', ['commit' => 'main'])->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+        $this->postJson('/api/v1/gateway/release-smoke', ['force' => true])->assertStatus(422);
+        $this->postJson('/api/v1/gateway/release-smoke', ['since' => '2026-10-07 06:00'])->assertStatus(422)->assertJsonPath('error.code', 'gateway.release_since_invalid');
     });
 
     it('reports the current release and the automatic release state in Gateway status', function (): void {

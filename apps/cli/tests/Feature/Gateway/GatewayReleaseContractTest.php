@@ -12,6 +12,7 @@ use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\GatewayReleases\DeployGatewayReleaseRequest;
 use Orbit\Sdk\Requests\GatewayReleases\RollbackGatewayReleaseRequest;
 use Orbit\Sdk\Requests\GatewayReleases\ShowGatewayReleaseRequest;
+use Orbit\Sdk\Requests\GatewayReleases\SmokeGatewayReleaseRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
@@ -169,6 +170,22 @@ describe('gateway release contract', function (): void {
     it('reports a rollback that would cross a migration', function (): void {
         run_contract('gateway-releases/gateway-release-rollback/migration-crossed', 'gateway:release:rollback', ['release' => 'fedcba987654'], 'gateway-releases/gateway-release-rollback/migration-crossed.human.txt', 1);
         run_contract('gateway-releases/gateway-release-rollback/migration-crossed', 'gateway:release:rollback', ['release' => 'fedcba987654', '--json' => true], 'gateway-releases/gateway-release-rollback/migration-crossed.json', 1);
+    });
+
+    it('runs smoke against the live Gateway and renders each check', function (): void {
+        run_contract('gateway-releases/gateway-release-smoke/passed', 'gateway:release:smoke', [], 'gateway-releases/gateway-release-smoke/passed.human.txt', 0);
+        run_contract('gateway-releases/gateway-release-smoke/passed', 'gateway:release:smoke', ['--json' => true], 'gateway-releases/gateway-release-smoke/passed.json', 0);
+        run_contract('gateway-releases/gateway-release-smoke/failed', 'gateway:release:smoke', ['commit' => 'fedcba9', '--since' => '2026-10-07T06:00:00Z'], 'gateway-releases/gateway-release-smoke/failed.human.txt', 1);
+        MockClient::getGlobal()?->assertSent(static fn ($request): bool => $request instanceof SmokeGatewayReleaseRequest && $request->body()->all() === ['commit' => 'fedcba9', 'since' => '2026-10-07T06:00:00Z']);
+        run_contract('gateway-releases/gateway-release-smoke/failed', 'gateway:release:smoke', ['--json' => true], 'gateway-releases/gateway-release-smoke/failed.json', 1);
+    });
+
+    it('refuses a branch name for smoke before it contacts the Gateway', function (): void {
+        $mock = MockClient::global([]);
+
+        expect(Artisan::call('gateway:release:smoke', ['commit' => 'main', '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true)['error']['code'])->toBe('gateway.release_commit_invalid');
+        $mock->assertNothingSent();
     });
 
     it('renders the automatic release state and its changes', function (): void {
