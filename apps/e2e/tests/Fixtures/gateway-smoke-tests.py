@@ -65,6 +65,28 @@ else:
 '''
 
 
+FAKE_PHP = r'''#!/usr/bin/env python3
+import json, os, sys, time
+from pathlib import Path
+# The smoke run gives artisan a clean environment, so the fake finds its state next to itself.
+php = Path(__file__).resolve().parent.parent / 'fake/php'
+with open(php / 'calls.log', 'a') as log:
+    log.write(json.dumps({'argv': sys.argv[1:], 'cwd': os.getcwd(), 'environment': sorted(os.environ)}) + '\n')
+sleep = php / 'sleep'
+if sleep.exists():
+    time.sleep(float(sleep.read_text()))
+response = json.loads((php / 'schedule.json').read_text())
+sys.stdout.write(response['stdout'])
+sys.stderr.write(response.get('stderr', ''))
+sys.exit(response.get('exit', 0))
+'''
+
+SCHEDULE = [
+    {'expression': '* * * * *', 'command': "'/usr/bin/php8.5' 'artisan' tasks:tick", 'repeat_seconds': 10},
+    {'expression': '*/10 * * * *', 'command': "'/usr/bin/php8.5' 'artisan' problems:collect", 'repeat_seconds': None},
+]
+
+
 def utc_iso(moment):
     return moment.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
 
@@ -108,12 +130,19 @@ class SmokeWorld:
         self.bin = self.root / 'bin'
         self.web = self.root / 'web'
         self.checkout = self.root / 'orbit'
-        for directory in (self.fake / 'orbit', self.fake / 'systemctl/units', self.bin, self.web / f'releases/{RELEASE}/assets'):
+        for directory in (self.fake / 'orbit', self.fake / 'systemctl/units', self.fake / 'php', self.bin, self.web / f'releases/{RELEASE}/assets'):
             directory.mkdir(parents=True)
-        (self.root / f'releases/{RELEASE}/apps/gateway').mkdir(parents=True)
+        self.application = self.root / f'releases/{RELEASE}/apps/gateway'
+        self.application.mkdir(parents=True)
+        (self.application / 'artisan').write_text('<?php\n')
         self.checkout.symlink_to(self.root / f'releases/{RELEASE}')
         self.write_executable(self.bin / 'orbit', FAKE_ORBIT)
         self.write_executable(self.bin / 'systemctl', FAKE_SYSTEMCTL)
+        self.write_executable(self.bin / 'php8.5', FAKE_PHP)
+        self.schedule(SCHEDULE)
+        # The scheduler's main process: its working directory is the release it runs from.
+        self.processes = []
+        self.scheduler_pid = self.process(self.checkout / 'apps/gateway')
         (self.web / f'releases/{RELEASE}/index.html').write_bytes(INDEX)
         (self.web / f'releases/{RELEASE}{ASSET}').write_bytes(ASSET_BODY)
         (self.web / 'current').symlink_to(f'releases/{RELEASE}')
@@ -149,6 +178,22 @@ class SmokeWorld:
     def close(self):
         self.server.shutdown()
         self.server.server_close()
+        for process in self.processes:
+            process.kill()
+            process.wait()
+
+    def process(self, directory):
+        process = subprocess.Popen(['sleep', '300'], cwd=directory)
+        self.processes.append(process)
+        return process.pid
+
+    def schedule(self, events, exit_code=0, stderr=''):
+        stdout = events if isinstance(events, str) else json.dumps(events)
+        (self.fake / 'php/schedule.json').write_text(json.dumps({'stdout': stdout, 'exit': exit_code, 'stderr': stderr}))
+
+    def php_calls(self):
+        log = self.fake / 'php/calls.log'
+        return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
 
     def tick(self, seconds_ago=None, enabled=True):
         last = None if seconds_ago is None else utc_iso(self.now - timedelta(seconds=seconds_ago))
@@ -164,10 +209,13 @@ class SmokeWorld:
     def units(self, names):
         (self.fake / 'systemctl/list-units.txt').write_text(''.join(f'{name} loaded active running Orbit\n' for name in names))
 
-    def unit(self, name, argv, directory, active='active', sub='running', started_seconds_ago=30):
+    def unit(self, name, argv, directory, active='active', sub='running', started_seconds_ago=30, pid=None):
         started = int((self.now - timedelta(seconds=started_seconds_ago)).timestamp())
+        if pid is None:
+            pid = getattr(self, 'scheduler_pid', 0)
         (self.fake / 'systemctl/units' / (name + '.env')).write_text('\n'.join([
             f'Id={name}',
+            f'MainPID={pid}',
             'LoadState=loaded',
             f'ActiveState={active}',
             f'SubState={sub}',
@@ -187,7 +235,7 @@ class SmokeWorld:
                 '--orbit', str(self.bin / 'orbit'), *arguments]
 
     def smoke_environment(self):
-        return {**os.environ, 'PATH': f'{self.bin}:{os.environ["PATH"]}', 'SMOKE_FAKE': str(self.fake), 'PYTHONDONTWRITEBYTECODE': '1'}
+        return {**os.environ, 'PATH': f'{self.bin}:{os.environ["PATH"]}', 'SMOKE_FAKE': str(self.fake), 'PYTHONDONTWRITEBYTECODE': '1', 'ORBIT_SMOKE_PHP': ''}
 
     def start_smoke(self, *arguments):
         return subprocess.Popen(self.smoke_argv(*arguments), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=self.smoke_environment())
@@ -251,8 +299,22 @@ class GatewaySmokeTest(unittest.TestCase):
         self.assertEqual(payload['checks']['web']['detail']['current_release'], RELEASE)
         self.assertEqual(payload['checks']['deploy_verify']['detail']['app_version'], SHA)
         self.assertNotIn('error', payload)
-        self.assertEqual(sorted({call[0] for call in self.world.orbit_calls()}), ['node:list', 'tasks:list', 'tasks:status'])
+        # A new scheduler first runs at the next full minute, so the release smoke does not wait for a tick.
+        self.assertEqual(sorted({call[0] for call in self.world.orbit_calls()}), ['node:list', 'tasks:list'])
         self.assertTrue(all(call[-1] == '--json' for call in self.world.orbit_calls()))
+        scheduler = payload['checks']['scheduler']['detail']
+        self.assertEqual(scheduler['main_pid'], self.world.scheduler_pid)
+        self.assertEqual(scheduler['process_path'], str(self.world.application.resolve()))
+        tick = payload['checks']['tasks_tick']['detail']
+        self.assertEqual(tick['scheduled'], 2)
+        self.assertEqual(tick['tick_command'], "'/usr/bin/php8.5' 'artisan' tasks:tick")
+        [call] = self.world.php_calls()
+        self.assertEqual(call['argv'], [str(self.world.application.resolve() / 'artisan'), 'schedule:list', '--json', '--no-interaction'])
+        self.assertEqual(call['cwd'], str(self.world.application.resolve()))
+        # Like the release's own artisan commands, it reads the release's configuration, not the caller's environment.
+        self.assertNotIn('SMOKE_FAKE', call['environment'])
+        # Python itself may add LC_CTYPE when it coerces a C locale.
+        self.assertLessEqual(set(call['environment']), {'HOME', 'PATH', 'LANG', 'NO_COLOR', 'LC_CTYPE'})
 
     def test_dry_run_calls_nothing(self):
         process = self.world.smoke('--dry-run', '--scheduler-unit', 'orbit-process-7-scheduler.service')
@@ -302,7 +364,7 @@ class GatewaySmokeTest(unittest.TestCase):
 
         self.world.orbit_failure('tasks:list', 'extension.disabled', 'The tasks extension is disabled.')
         self.world.orbit('tasks:status', self.world.tick(enabled=False))
-        process = self.world.smoke()
+        process = self.world.smoke('--wait-for-tick')
 
         self.assertEqual(process.returncode, 0, process.stdout)
         self.assertEqual(process.json['checks']['tasks_list']['status'], 'skipped')
@@ -382,7 +444,9 @@ class GatewaySmokeTest(unittest.TestCase):
 
         world.unit('orbit-agent-view.service', argv='/usr/bin/php artisan orbit:agent-view', directory=world.checkout / 'apps/gateway', started_seconds_ago=7)
         world.orbit('tasks:status', world.tick(seconds_ago=20))
-        checks = self.assert_only_failed(world.smoke('--since', since, '--timeout', '3'), ['tasks_tick'])
+        process = world.smoke('--since', since, '--timeout', '3')
+        self.assertEqual(process.returncode, 0, process.stdout)
+        checks = self.assert_only_failed(world.smoke('--since', since, '--timeout', '3', '--wait-for-tick'), ['tasks_tick'])
         self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
         self.assertEqual(checks['tasks_tick']['detail']['tick_after'], since[:19] + 'Z')
 
@@ -392,15 +456,16 @@ class GatewaySmokeTest(unittest.TestCase):
             {'stdout': self.world.tick(seconds_ago=0)},
         ])
 
-        process = self.world.smoke()
+        process = self.world.smoke('--wait-for-tick')
 
         self.assertEqual(process.returncode, 0, process.stdout)
         self.assertEqual(process.json['checks']['tasks_tick']['detail']['reads'], 2)
+        self.assertEqual(self.world.php_calls(), [])
 
     def test_tasks_tick_fails_when_no_tick_started_within_the_limit(self):
         self.world.orbit('tasks:status', self.world.tick(seconds_ago=None))
 
-        checks = self.assert_only_failed(self.world.smoke('--timeout', '4'), ['tasks_tick'])
+        checks = self.assert_only_failed(self.world.smoke('--timeout', '4', '--wait-for-tick'), ['tasks_tick'])
 
         self.assertEqual(checks['tasks_tick']['error'], 'tick_stale')
         self.assertIsNone(checks['tasks_tick']['detail']['last_tick_at'])
@@ -409,9 +474,86 @@ class GatewaySmokeTest(unittest.TestCase):
     def test_tasks_tick_fails_on_a_gateway_without_the_tick_record(self):
         self.world.orbit('tasks:status', {'enabled': True, 'assistance': [], 'request_id': 'r'})
 
-        checks = self.assert_only_failed(self.world.smoke(), ['tasks_tick'])
+        checks = self.assert_only_failed(self.world.smoke('--wait-for-tick'), ['tasks_tick'])
 
         self.assertEqual(checks['tasks_tick']['error'], 'tick_unreported')
+
+    def test_tasks_tick_fails_when_the_release_schedules_no_tick(self):
+        self.world.schedule([event for event in SCHEDULE if 'tasks:tick' not in event['command']])
+
+        checks = self.assert_only_failed(self.world.smoke(), ['tasks_tick'])
+
+        self.assertEqual(checks['tasks_tick']['error'], 'tick_unscheduled')
+        self.assertEqual(checks['tasks_tick']['detail']['scheduled'], 1)
+
+    def test_tasks_tick_matches_the_tick_command_and_no_similar_one(self):
+        self.world.schedule([{'expression': '* * * * *', 'command': 'php artisan tasks:tick', 'repeat_seconds': 10}])
+        process = self.world.smoke()
+        self.assertEqual(process.returncode, 0, process.stdout)
+        self.assertEqual(process.json['checks']['tasks_tick']['detail']['tick_command'], 'php artisan tasks:tick')
+
+        self.world.schedule([{'expression': '* * * * *', 'command': 'php artisan tasks:tickets', 'repeat_seconds': None},
+                             {'expression': '* * * * *', 'command': 'php artisan tasks:tick-report', 'repeat_seconds': None}])
+        checks = self.assert_only_failed(self.world.smoke(), ['tasks_tick'])
+        self.assertEqual(checks['tasks_tick']['error'], 'tick_unscheduled')
+
+    def test_a_checkout_that_names_the_gateway_application_finds_the_same_release(self):
+        # ORBIT_GATEWAY_CHECKOUT, the default of --checkout, names apps/gateway below the release link.
+        process = self.world.smoke('--checkout', str(self.world.checkout / 'apps/gateway'))
+
+        self.assertEqual(process.returncode, 0, process.stdout)
+        self.assertEqual(process.json['checks']['scheduler']['detail']['release_path'], str(self.world.application.resolve()))
+        self.assertEqual(process.json['checks']['tasks_tick']['detail']['application'], str(self.world.application.resolve()))
+
+    def test_tasks_tick_fails_when_the_release_cannot_load_its_schedule(self):
+        self.world.schedule('', exit_code=255, stderr='PHP Fatal error: Class "App\\Domain\\Tasks\\TaskSchedule" not found')
+
+        checks = self.assert_only_failed(self.world.smoke(), ['tasks_tick'])
+
+        self.assertEqual(checks['tasks_tick']['error'], 'schedule_unreadable')
+        self.assertEqual(checks['tasks_tick']['detail']['exit_code'], 255)
+        self.assertIn('TaskSchedule', checks['tasks_tick']['detail']['stderr'])
+
+        self.world.schedule('Nothing is scheduled.')
+        checks = self.assert_only_failed(self.world.smoke(), ['tasks_tick'])
+        self.assertEqual(checks['tasks_tick']['error'], 'schedule_unreadable')
+
+    def test_tasks_tick_fails_without_php(self):
+        (self.world.bin / 'php8.5').unlink()
+        # The host's own PHP must not be found, so PATH holds only the fakes and Python.
+        python = self.world.root / 'python'
+        python.mkdir()
+        (python / 'python3').symlink_to(sys.executable)
+        environment = {**self.world.smoke_environment(), 'PATH': f'{self.world.bin}:{python}'}
+        process = subprocess.run(self.world.smoke_argv('--skip', 'deploy_verify'), capture_output=True, text=True, env=environment, timeout=60)
+
+        checks = json.loads(process.stdout)['checks']
+        self.assertEqual(checks['tasks_tick']['error'], 'php_unavailable')
+
+    def test_scheduler_fails_when_its_process_runs_another_release(self):
+        world = self.world
+        previous = world.root / 'releases/0123456789ab/apps/gateway'
+        previous.mkdir(parents=True)
+        world.unit('orbit-process-7-scheduler.service', argv='/usr/bin/php artisan schedule:work', directory=world.checkout / 'apps/gateway', pid=world.process(previous))
+
+        checks = self.assert_only_failed(world.smoke(), ['scheduler'])
+
+        self.assertEqual(checks['scheduler']['error'], 'scheduler_old_release')
+        self.assertEqual(checks['scheduler']['detail']['process_path'], str(previous.resolve()))
+        self.assertEqual(checks['scheduler']['detail']['release_path'], str(world.application.resolve()))
+
+    def test_scheduler_fails_when_its_process_is_unknown(self):
+        world = self.world
+        world.unit('orbit-process-7-scheduler.service', argv='/usr/bin/php artisan schedule:work', directory=world.checkout / 'apps/gateway', pid=0)
+        checks = self.assert_only_failed(world.smoke(), ['scheduler'])
+        self.assertEqual(checks['scheduler']['error'], 'scheduler_pid_unknown')
+
+        gone = world.process(world.application)
+        world.processes[-1].kill()
+        world.processes[-1].wait()
+        world.unit('orbit-process-7-scheduler.service', argv='/usr/bin/php artisan schedule:work', directory=world.checkout / 'apps/gateway', pid=gone)
+        checks = self.assert_only_failed(world.smoke(), ['scheduler'])
+        self.assertEqual(checks['scheduler']['error'], 'scheduler_release_unknown')
 
     def test_agent_view_fails_when_inactive(self):
         self.world.unit('orbit-agent-view.service', argv='/usr/bin/php artisan orbit:agent-view', directory=self.world.checkout / 'apps/gateway', active='activating', sub='auto-restart')
@@ -428,6 +570,7 @@ class GatewaySmokeTest(unittest.TestCase):
         for command in ('node:list', 'tasks:list', 'tasks:status', 'project:document:create'):
             world.orbit(command, {}, sleep=30)
         (world.fake / 'systemctl/sleep').write_text('30')
+        (world.fake / 'php/sleep').write_text('30')
 
         process = world.smoke('--timeout', '3', '--write-check', '--smoke-project', 'gateway-smoke')
 
@@ -443,7 +586,7 @@ class GatewaySmokeTest(unittest.TestCase):
         for command in ('node:list', 'tasks:list', 'tasks:status'):
             world.orbit(command, {}, sleep=30)
 
-        process = world.start_smoke('--timeout', '60')
+        process = world.start_smoke('--timeout', '60', '--wait-for-tick')
         deadline = time.monotonic() + 10
         while len(world.orbit_pids()) < 3 and time.monotonic() < deadline:
             time.sleep(0.05)

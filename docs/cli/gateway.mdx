@@ -232,7 +232,7 @@ orbit gateway:release:smoke [<commit>] [--since=<time>] [--json]
 | Argument or option | Meaning |
 | --- | --- |
 | `commit` | The hex SHA, 7 to 40 characters, that the live Gateway must serve. Without it, smoke expects the commit of the current release. |
-| `--since` | The runtime handoff time, ISO 8601 with a zone, such as `2026-10-07T06:00:00Z`. The scheduler and agent view must have restarted after it, and a tasks tick must have started after it. |
+| `--since` | The runtime handoff time, ISO 8601 with a zone, such as `2026-10-07T06:00:00Z`. The scheduler and agent view must have restarted after it. Smoke does not wait for a tick; [`orbit gateway:release:auto:status`](#orbit-gatewayreleaseautostatus) shows whether the current release's scheduler has ticked. |
 
 The Gateway runs `bin/gateway-smoke` of the current release inside the request and answers when smoke ends, after about a minute by default. Meanwhile the CLI shows one running step. The detail tree shows the commit, the outcome, the check counts, the duration, and the start time. A failed run adds the smoke message and the next step. A table lists each check with its status, error, message, and duration. JSON returns `release`, `sha`, `outcome`, the smoke `report`, and `request_id`. The command exits 0 only when the outcome is `passed`.
 
@@ -256,7 +256,7 @@ Show the [automatic release](/reference/gateway-recovery#automatic-releases) sta
 orbit gateway:release:auto:status [--json]
 ```
 
-The detail tree shows whether automatic releases are enabled and paused, with the reason of a pause, the current release and commit, the branch and check, the last check and its result, and the stalls. JSON returns `enabled`, `paused`, `pause`, `current_release`, `current_sha`, `last_tick`, `stalled_since`, `branch_head`, `behind_since`, `branch`, `check`, and `request_id`.
+The detail tree shows whether automatic releases are enabled and paused, with the reason of a pause, the current release and commit, the branch and check, the last check and its result, the stalls, and whether the current release's scheduler has run `tasks:tick` ([post-release tick confirmation](/reference/gateway-recovery#post-release-tick-confirmation)). JSON returns `enabled`, `paused`, `pause`, `current_release`, `current_sha`, `last_tick`, `stalled_since`, `branch_head`, `behind_since`, `branch`, `check`, `tick_confirmation`, and `request_id`.
 
 ### orbit gateway:release:auto:enable and disable
 

@@ -214,6 +214,14 @@
                     },
                     "smoke": {
                         "outcome": "passed"
+                    },
+                    "tick": {
+                        "outcome": "confirmed",
+                        "since": "2026-10-07T12:00:05Z",
+                        "deadline": "2026-10-07T12:04:10Z",
+                        "last_tick_at": "2026-10-07T12:02:00.120000Z",
+                        "last_tick_version": "fedcba9876543210fedcba9876543210fedcba98",
+                        "decided_at": "2026-10-07T12:02:01Z"
                     }
                 },
                 "error_code": null,

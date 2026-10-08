@@ -24,7 +24,7 @@ Loading Gateway release...
 ├  Snapshot     —
 │
 ├  Steps        prepare prepared, guard passed, configuration cached, snapshot skipped, migrate skipped, switch
-│               switched, handoff done, verify passed, scheduler done, web published, smoke passed
+│               switched, handoff done, verify passed, scheduler done, web published, smoke passed, tick confirmed
 │
 ├  Error        —
 │

@@ -18,7 +18,7 @@ final class SmokeGatewayReleaseCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'gateway:release:smoke
         {commit? : Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release}
-        {--since= : Runtime handoff time, ISO 8601 with a zone. The scheduler, agent view, and a tick must have started after it}
+        {--since= : Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it}
         {--json : Return machine-readable JSON}';
 
     #[\Override]

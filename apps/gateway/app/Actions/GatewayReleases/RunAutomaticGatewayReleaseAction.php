@@ -17,6 +17,7 @@ use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
 use App\Infrastructure\GatewayReleases\GatewayReleaseRecorder;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSource;
 use App\Infrastructure\GatewayReleases\GatewayReleaseSupersession;
+use App\Infrastructure\GatewayReleases\GatewayReleaseTickConfirmation;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
 use InvalidArgumentException;
@@ -64,11 +65,16 @@ final readonly class RunAutomaticGatewayReleaseAction
         private GatewayReleaseAlerts $alerts,
         private BranchHeadReader $heads,
         private GatewayReleaseRecorder $recorder,
+        private ?GatewayReleaseTickConfirmation $ticks = null,
     ) {}
 
     /** @return Tick */
     public function execute(): array
     {
+        // Before anything that can return early: a manual deploy, a rollback, and a release while automatic releases
+        // are disabled or paused still get their tick confirmed.
+        $this->confirmTicks();
+
         if (! $this->automation->enabled()) {
             $this->automation->clearStall();
 
@@ -242,6 +248,15 @@ final readonly class RunAutomaticGatewayReleaseAction
             $this->source->checkName,
         ));
         $this->automation->branchHeadAlerted();
+    }
+
+    private function confirmTicks(): void
+    {
+        try {
+            $this->ticks?->check($this->layout->currentReleaseId());
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     /** A commit that just failed for a transient reason waits before the next attempt. */
