@@ -135,16 +135,17 @@ final readonly class InstanceEnvironmentStore
      */
     public function forceAppProdMode(Instance $target): void
     {
-        $target->loadMissing([node.roles, project]);
+        $target->loadMissing(['node.roles', 'project']);
         if (! $target->placedOnAppProd()) {
             return;
         }
-        $app = $target->appConfiguration()[name];
-        $mode = $target->project->type === ProjectType::SymfonyApp
-            ? [APP_ENV => prod, APP_DEBUG => 0]
-            : [APP_ENV => production, APP_DEBUG => false];
+        $configuration = $target->appConfiguration();
+        $app = $configuration['name'];
+        $mode = $configuration['type'] === ProjectType::SymfonyApp->value
+            ? ['APP_ENV' => 'prod', 'APP_DEBUG' => '0']
+            : ['APP_ENV' => 'production', 'APP_DEBUG' => 'false'];
         foreach ($mode as $key => $value) {
-            InstanceEnvironmentValue::query()->updateOrCreate([instance_id => $target->id, app => $app, env_key => $key], [env_value => $value]);
+            InstanceEnvironmentValue::query()->updateOrCreate(['instance_id' => $target->id, 'app' => $app, 'env_key' => $key], ['env_value' => $value]);
         }
     }
 

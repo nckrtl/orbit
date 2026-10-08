@@ -152,12 +152,12 @@ final readonly class RemoteVitePortRuntime implements ViteEnvironmentProjection,
     public function prepare(Process $process, Instance $instance): void
     {
         InstanceSandboxGuard::assertHostOperation($instance);
-        $app = $instance->appConfiguration($process->app)[name];
+        $app = $instance->appConfiguration($process->app)['name'];
         $applicationDirectory = $instance->applicationDirectory($app);
         $qualifiedApp = $instance->usesAppViteIdentity($app) ? $app : null;
         $ownership = SystemdProcessRenderer::viteEnvironmentMarker($instance->id, $qualifiedApp);
         $path = SystemdProcessRenderer::viteEnvironmentPath($instance->id, $qualifiedApp);
-        $port = $instance->runtimeForApp($app)[vite_port];
+        $port = $instance->runtimeForApp($app)['vite_port'];
         $marker = RuntimeHibernation::awakePath(RuntimeHibernation::key($instance->id));
         $this->ssh->execute($instance->node, new RemoteCommand(arguments: ['bash', '-c', <<<'BASH'
             set -euo pipefail

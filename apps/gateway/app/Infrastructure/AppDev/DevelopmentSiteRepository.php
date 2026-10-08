@@ -7,6 +7,7 @@ namespace App\Infrastructure\AppDev;
 use App\Actions\Instances\MigrateAppRuntimeAction;
 use App\Domain\Analytics\AnalyticsTrackingUpstream;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\CustomProxyUpstream;
 use App\Domain\Routes\PublicRouteEligibility;
@@ -509,7 +510,7 @@ final readonly class DevelopmentSiteRepository
             checkoutPath: $checkoutPath,
             documentRoot: $configuration['web_root'] === null ? $configuration['path'] : ($configuration['path'] === '.' ? $configuration['web_root'] : $configuration['path'].'/'.$configuration['web_root']),
             applicationPath: $configuration['path'],
-            phpVersion: $configuration['type'] === 'laravel-app' || $configuration['type'] === 'monorepo' && $runtime['laravel'] === true ? $runtime['php_version'] : null,
+            phpVersion: ProjectType::from($configuration['type'])->isWebServing() || $configuration['type'] === ProjectType::Monorepo->value && $runtime['laravel'] === true ? $runtime['php_version'] : null,
             domain: $route->domain,
             environment: $instance->defaultAppEnv(),
             productionUser: $instance->production_user,

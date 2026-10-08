@@ -51,8 +51,10 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
     public function verify(Node $node): void
     {
         $account = $this->accounts->resolve($node);
-        $installed = $this->installedProjection($node, $account);
-        $sites = $this->sites->forNode($node)->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null && ! $site->isProxy() && ! $site->usesDedicatedPhpRuntime())->values();
+        $sites = $this->desiredSites($node);
+        $installed = $this->installedProjection($node, $account, $this->workingDirectories($sites));
+        // Convergence publishes no pool for a missing working directory; verify the same view.
+        $sites = $sites->reject(static fn (DevelopmentSite $site): bool => in_array($site->phpWorkingDirectory(), $installed->missingDirectories, true))->values();
         $versions = array_values(array_unique([...$installed->versions, ...$sites->map(static fn (DevelopmentSite $site): string => $site->phpVersion ?? '')->all()]));
         foreach ($versions as $version) {
             $expected = $this->renderer->render($sites->where('phpVersion', $version)->values(), $account);
