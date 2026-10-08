@@ -175,6 +175,8 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
     $restore = [];
     $path = getenv('PATH') ?: '';
+    $environmentPath = $_ENV['PATH'] ?? null;
+    $_ENV['PATH'] = $path;
     if ($failure === 'stat') {
         \chmod($checkout.'/tracked.php', 0000);
         $restore[] = $checkout.'/tracked.php';
@@ -193,7 +195,9 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
         $git = trim((string) shell_exec('command -v git'));
         file_put_contents($bin.'/git', "#!/bin/sh\nfor argument in \"\$@\"; do if [ \"\$argument\" = ls-files ]; then echo ls-files-failed >&2; exit 1; fi; done\nexec ".escapeshellarg($git)." \"\$@\"\n");
         \chmod($bin.'/git', 0755);
+        // Symfony Process prefers $_ENV when PHP exposes environment variables.
         putenv('PATH='.$bin.':'.$path);
+        $_ENV['PATH'] = $bin.':'.$path;
     }
     $instance = review_diff_instance($checkout);
     $group = Task::topLevel()->create([
@@ -225,6 +229,11 @@ it('does not send a review when git cannot produce the stat, the body, or the fi
             \chmod($pathToRestore, 0644);
         }
         putenv('PATH='.$path);
+        if ($environmentPath === null) {
+            unset($_ENV['PATH']);
+        } else {
+            $_ENV['PATH'] = $environmentPath;
+        }
     }
 
     expect($task->fresh()?->status)->toBe(TaskStatus::Reviewing)
