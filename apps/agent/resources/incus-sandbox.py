@@ -444,6 +444,27 @@ class Host:
         digest = hashlib.sha256(json.dumps(template, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
         return {'name': name, 'digest': digest}
 
+    def project_image(self, spec):
+        if 'project_slug' not in spec:
+            return None
+        slug = spec['project_slug']
+        if (not isinstance(slug, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', slug)
+                or slug == 'orbit' or set(spec['images']) != {'operator'}
+                or spec.get('source_template') is not None or spec.get('pi_host') is not None
+                or spec.get('pi_port') is not None):
+            raise Refusal('A Project sandbox needs one independent development image.')
+        image = self.json('query', '/1.0/images/' + spec['images']['operator'] + '?project=' + self.project)
+        properties = image.get('properties', {})
+        required = {'user.orbit.project.owner': 'orbit-task-project-image',
+                    'user.orbit.project.slug': slug, 'user.orbit.project.account': 'orbit',
+                    'user.orbit.project.bootstrap': 'unenrolled'}
+        if (image.get('type') != 'virtual-machine' or image.get('architecture') != 'x86_64'
+                or image.get('public') is not False or not isinstance(properties, dict)
+                or any(properties.get(key) != value for key, value in required.items())
+                or any(key.startswith('user.orbit.template.') for key in properties)):
+            raise Refusal('The Project development image provenance does not match.')
+        return slug
+
     def provision(self, spec):
         images = spec.get('images')
         if not isinstance(images, dict) or not images or any(role not in ROLES for role in images):
@@ -452,6 +473,7 @@ class Host:
             raise Refusal('The sandbox needs an operator VM.')
         if any(not isinstance(value, str) or not re.fullmatch(r'[a-f0-9]{64}', value) for value in images.values()):
             raise Refusal('Sandbox images must be pinned fingerprints.')
+        project_slug = self.project_image(spec)
         pool = spec.get('pool')
         if not isinstance(pool, str) or not re.fullmatch(r'[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}', pool):
             raise Refusal('Invalid sandbox storage pool.')
@@ -476,6 +498,8 @@ class Host:
         current = {row['name']: row for row in self.instances()}
         for name, row in current.items():
             role = name[len(self.name) + 1:]
+            if row.get('config', {}).get('user.orbit.compute.project_slug') != project_slug:
+                raise Refusal('The sandbox Project identity cannot change.')
             if row.get('config', {}).get('user.orbit.compute.model_proxy_origin') != relay_origin:
                 raise Refusal('An existing model relay endpoint cannot change.')
             if role not in images or row.get('config', {}).get('volatile.base_image') != images[role]:
@@ -532,6 +556,8 @@ class Host:
             raise Refusal('The sandbox image template cannot change.')
         if volumes and volumes[0][1].get('config', {}).get('user.orbit.compute.template') != template_digest:
             raise Refusal('The sandbox worktree template cannot change.')
+        if volumes and volumes[0][1].get('config', {}).get('user.orbit.compute.project_slug') != project_slug:
+            raise Refusal('The worktree Project identity cannot change.')
         acls = self.json('network', 'acl', 'list', '--format=json')
         acl = next((row for row in acls if row['name'] == self.name), None)
         peers = ','.join(str(subnet.network_address + 10 + ROLES.index(role)) for role in images)
@@ -570,6 +596,8 @@ class Host:
         if network_policy:
             self.host_network('ensure')
         metadata = {**self.metadata(), **({'user.orbit.compute.template': template_digest} if template else {})}
+        if project_slug is not None:
+            metadata['user.orbit.compute.project_slug'] = project_slug
         if not volumes:
             if template:
                 self.run('query', '-X', 'POST', '/1.0/storage-pools/' + pool + '/volumes/custom?project=' + self.project,
