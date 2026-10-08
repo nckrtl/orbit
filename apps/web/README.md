@@ -43,6 +43,7 @@ The fixture files use the format of the recorded Gateway fixtures in `packages/p
 The URL carries the section, the open record, and the node and project filters. Hover, focus, and the selected row per pane live in `src/ui/store.ts`.
 
 - `src/demo`: the in-memory Gateway for demo mode and tests.
+- `src/update`: the build check that moves an open page to a newer release; `dev/build-id.ts` embeds the build id and writes `version.json`.
 - `tests/browser`: the browser tests and the expected screens.
 
 ## Annotation (toolbar pin tool)

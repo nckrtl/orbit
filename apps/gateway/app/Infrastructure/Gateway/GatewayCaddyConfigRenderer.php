@@ -14,6 +14,10 @@ namespace App\Infrastructure\Gateway;
  * finishes on the old release, and the next request runs the new one ([Runtime handoff](/reference/gateway-recovery#runtime-handoff)).
  * The `/grafana` authorization resolves the link the same way. A fixed `SCRIPT_FILENAME` through the link would let
  * each PHP-FPM worker keep the old release from its realpath cache for up to `realpath_cache_ttl` after a switch.
+ *
+ * Only a file that exists under `/assets/` is cached as immutable. A missing asset, which a page of a pruned
+ * release can still request, returns 404 with `no-cache` and never falls back to `index.html`: the fallback
+ * would give the script request HTML that a browser keeps for a year ([Web app](/reference/web-app#how-the-gateway-site-routes-requests)).
  */
 final readonly class GatewayCaddyConfigRenderer
 {
@@ -61,12 +65,18 @@ final readonly class GatewayCaddyConfigRenderer
                     }
                 }
 
+                handle /assets/* {
+                    root * {$webRoot}/current
+                    @asset file
+                    header @asset Cache-Control "public, max-age=31536000, immutable"
+                    @missing not file
+                    header @missing Cache-Control "no-cache"
+                    file_server
+                }
+
                 handle {
                     root * {$webRoot}/current
-                    @immutable path /assets/*
-                    header @immutable Cache-Control "public, max-age=31536000, immutable"
-                    @revalidate not path /assets/*
-                    header @revalidate Cache-Control "no-cache"
+                    header Cache-Control "no-cache"
                     try_files {path} /index.html
                     file_server
                 }
