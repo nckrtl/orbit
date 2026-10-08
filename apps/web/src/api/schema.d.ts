@@ -4081,6 +4081,8 @@ export interface components {
             task_workspace_routed?: boolean;
             /** @enum {string} */
             task_compute?: "shared" | "vm";
+            review_and_merge?: boolean;
+            merge_check?: string | null;
         };
         Annotation: {
             id?: string;
@@ -4453,6 +4455,7 @@ export interface components {
             /** @enum {string|null} */
             sandbox_power?: "running" | "stopped" | "destroyed" | null;
             preview?: boolean;
+            review_and_merge?: components["schemas"]["TaskReviewAndMerge"] | null;
         };
         Task: {
             id?: number;
@@ -4473,7 +4476,7 @@ export interface components {
             questions?: number;
             escalations?: number;
             /** @enum {string} */
-            type?: "implementation" | "annotation";
+            type?: "implementation" | "annotation" | "final_review";
             target_thread_id?: string | null;
             completion_summary?: string | null;
             check?: components["schemas"]["TaskCheck"] | null;
@@ -4496,6 +4499,24 @@ export interface components {
             changed_paths?: string[];
             failed_step?: string | null;
             output?: string | null;
+        };
+        TaskReviewAndMerge: {
+            enabled?: boolean;
+            pr_branch?: string | null;
+            /** @enum {string|null} */
+            merge_status?: "waiting" | "refused" | "merged" | null;
+            merge_reason?: string | null;
+            merged_sha?: string | null;
+            reviewed_commits?: components["schemas"]["TaskReviewedCommit"][];
+        };
+        TaskReviewedCommit: {
+            sha?: string;
+            /** @enum {string} */
+            source?: "orbit_push" | "pull_request_review";
+            review_task_id?: number | null;
+            pushed_at?: string | null;
+            github_review_id?: number | null;
+            recorded_at?: string;
         };
         AgentThread: {
             id?: number;
@@ -4562,6 +4583,7 @@ export interface components {
             enabled?: boolean;
             assistance?: components["schemas"]["TaskAssistance"][];
             last_tick_at?: string | null;
+            merges?: components["schemas"]["TaskMerge"][];
         };
         TaskAssistance: {
             id?: number;
@@ -4575,6 +4597,20 @@ export interface components {
             assistance_kind?: "direction" | "failure" | null;
             assistance_question?: string | null;
             assistance_reason?: string | null;
+        };
+        TaskMerge: {
+            id?: number;
+            project_id?: number;
+            project?: string;
+            project_code?: string;
+            title?: string;
+            /** @enum {string} */
+            status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "waiting_for_review" | "completed" | "failed" | "cancelled";
+            pr_url?: string | null;
+            pr_branch?: string | null;
+            /** @enum {string|null} */
+            merge_status?: "waiting" | "refused" | "merged" | null;
+            merge_reason?: string | null;
         };
         ToolInventory: {
             node_id?: number;
@@ -13374,6 +13410,10 @@ export interface operations {
                      * @enum {string}
                      */
                     task_compute?: "shared" | "vm";
+                    /** @description Review every push, review incoming pull requests, and merge reviewed green heads (true or false) */
+                    review_and_merge?: boolean;
+                    /** @description The check that must pass on a head before Orbit merges it, such as "Required checks" */
+                    merge_check?: string | null;
                 };
             };
         };

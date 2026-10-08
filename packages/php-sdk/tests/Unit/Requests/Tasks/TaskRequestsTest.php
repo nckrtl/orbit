@@ -138,6 +138,8 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     })->with([
         'status' => ['tasks-status/enabled', new ShowTasksStatusRequest, TasksStatusResponse::class],
         'assisted status' => ['tasks-status/assistance', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'review-and-merge status' => ['tasks-status/merges', new ShowTasksStatusRequest, TasksStatusResponse::class],
+        'review-and-merge show' => ['tasks-show/review-and-merge', new ShowTaskGroupRequest(1), TaskGroupResponse::class],
         'list' => ['tasks-list/default', new ListTaskGroupsRequest, TaskGroupsResponse::class],
         'empty list' => ['tasks-list/empty', new ListTaskGroupsRequest, TaskGroupsResponse::class],
         'create' => ['tasks-create/created', new CreateTaskGroupRequest(1, 'Add the tasks CLI', 'Brief'), TaskGroupResponse::class],
@@ -155,6 +157,31 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         'empty question list' => ['tasks-question-list/empty', new ListTaskQuestionsRequest, TaskQuestionsResponse::class],
         'agents' => ['tasks-agents/default', new ListTaskAgentsRequest(1), TaskAgentsResponse::class],
     ]);
+
+    it('keeps the review-and-merge state of a task and of tasks status', function (): void {
+        $group = task_fixture_send('tasks-show/review-and-merge', new ShowTaskGroupRequest(1));
+        $status = task_fixture_send('tasks-status/merges', new ShowTasksStatusRequest);
+        $plain = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));
+
+        expect($group)->toBeInstanceOf(TaskGroupResponse::class)
+            ->and($status)->toBeInstanceOf(TasksStatusResponse::class)
+            ->and($plain)->toBeInstanceOf(TaskGroupResponse::class);
+        assert($group instanceof TaskGroupResponse && $status instanceof TasksStatusResponse && $plain instanceof TaskGroupResponse);
+
+        expect($group->reviewAndMerge?->enabled)->toBeTrue()
+            ->and($group->reviewAndMerge?->prBranch)->toBe('cursor/login-throttle')
+            ->and($group->reviewAndMerge?->mergeStatus)->toBe('waiting')
+            ->and($group->reviewAndMerge?->reviewedCommits[0]['sha'] ?? null)->toBe(str_repeat('a', 40))
+            ->and($group->reviewAndMerge?->reviewedCommits[0]['source'] ?? null)->toBe('pull_request_review')
+            ->and($group->reviewAndMerge?->reviewedCommits[0]['github_review_id'] ?? null)->toBe(3311)
+            ->and($group->toArray()['review_and_merge']['pr_branch'] ?? null)->toBe('cursor/login-throttle')
+            ->and($plain->reviewAndMerge)->toBeNull()
+            ->and($plain->toArray())->not->toHaveKey('review_and_merge')
+            ->and($status->merges)->toHaveCount(1)
+            ->and($status->merges[0]->reference())->toBe('ORB-1')
+            ->and($status->merges[0]->mergeStatus)->toBe('waiting')
+            ->and($status->toArray()['merges'][0]['pr_branch'] ?? null)->toBe('cursor/login-throttle');
+    });
 
     it('keeps the Gateway fields of a group and its ordered subtasks', function (): void {
         $group = task_fixture_send('tasks-show/default', new ShowTaskGroupRequest(1));

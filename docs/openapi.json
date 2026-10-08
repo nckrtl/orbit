@@ -16364,6 +16364,18 @@
                       "vm"
                     ],
                     "description": "Compute for future task groups (shared or vm)"
+                  },
+                  "review_and_merge": {
+                    "type": "boolean",
+                    "description": "Review every push, review incoming pull requests, and merge reviewed green heads (true or false)"
+                  },
+                  "merge_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255,
+                    "description": "The check that must pass on a head before Orbit merges it, such as \"Required checks\""
                   }
                 },
                 "additionalProperties": false
@@ -29298,6 +29310,15 @@
               "shared",
               "vm"
             ]
+          },
+          "review_and_merge": {
+            "type": "boolean"
+          },
+          "merge_check": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -30740,6 +30761,16 @@
           },
           "preview": {
             "type": "boolean"
+          },
+          "review_and_merge": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskReviewAndMerge"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -30831,7 +30862,8 @@
             "type": "string",
             "enum": [
               "implementation",
-              "annotation"
+              "annotation",
+              "final_review"
             ]
           },
           "target_thread_id": {
@@ -30946,6 +30978,86 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TaskReviewAndMerge": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "pr_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "waiting",
+              "refused",
+              "merged",
+              null
+            ]
+          },
+          "merge_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merged_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewed_commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskReviewedCommit"
+            }
+          }
+        }
+      },
+      "TaskReviewedCommit": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "orbit_push",
+              "pull_request_review"
+            ]
+          },
+          "review_task_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pushed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "github_review_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "recorded_at": {
+            "type": "string"
           }
         }
       },
@@ -31247,6 +31359,12 @@
               "string",
               "null"
             ]
+          },
+          "merges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskMerge"
+            }
           }
         }
       },
@@ -31301,6 +31419,71 @@
             ]
           },
           "assistance_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TaskMerge": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "project_code": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo",
+              "reserved",
+              "running",
+              "reviewing",
+              "settling",
+              "waiting_for_review",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "pr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pr_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "waiting",
+              "refused",
+              "merged",
+              null
+            ]
+          },
+          "merge_reason": {
             "type": [
               "string",
               "null"

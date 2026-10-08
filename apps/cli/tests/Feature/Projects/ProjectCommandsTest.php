@@ -744,6 +744,35 @@ describe('project:update', function (): void {
         'missing value' => null,
     ]);
 
+    it('sends the review-and-merge switch and the merge check only when given', function (array $arguments, array $body): void {
+        $mockClient = MockClient::global([
+            UpdateProjectRequest::class => app_mock_response(),
+        ]);
+
+        $this->artisan('project:update', ['project' => '3', ...$arguments])->assertExitCode(0);
+
+        expect($mockClient->getLastRequest()?->body()->all())->toBe($body);
+    })->with([
+        'switch on with a check' => [['--review-and-merge' => 'true', '--merge-check' => 'Required checks'], ['review_and_merge' => true, 'merge_check' => 'Required checks']],
+        'switch off' => [['--review-and-merge' => 'false'], ['review_and_merge' => false]],
+        'clear the check' => [['--clear-merge-check' => true], ['merge_check' => null]],
+    ]);
+
+    it('rejects an invalid review-and-merge value or conflicting merge check flags before a request', function (array $arguments, string $code): void {
+        $mockClient = MockClient::global();
+
+        $this->artisan('project:update', ['project' => '3', '--json' => true, ...$arguments])
+            ->expectsOutputToContain($code)
+            ->assertExitCode(1);
+
+        expect($mockClient->getLastPendingRequest())->toBeNull();
+    })->with([
+        'yes' => [['--review-and-merge' => 'yes'], 'project.review_and_merge_invalid'],
+        'missing value' => [['--review-and-merge' => null], 'project.review_and_merge_invalid'],
+        'both check flags' => [['--merge-check' => 'Required checks', '--clear-merge-check' => true], 'project.merge_check_conflict'],
+        'blank check' => [['--merge-check' => '  '], 'project.merge_check_invalid'],
+    ]);
+
     it('refuses an empty update without gateway IO', function (): void {
         $mockClient = MockClient::global();
 

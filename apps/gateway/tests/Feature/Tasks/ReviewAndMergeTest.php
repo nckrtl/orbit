@@ -810,6 +810,17 @@ describe('incoming pull request watch', function (): void {
         expect(app(WatchIncomingPullRequestsAction::class)->execute())->toBe([]);
     });
 
+    it('runs on every scheduler tick', function (): void {
+        $project = rm_project();
+        config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);
+        $runtime = rm_runtime();
+        $runtime->open = [rm_listed(1)];
+
+        $this->artisan('tasks:tick')->assertSuccessful();
+
+        expect(Task::topLevel()->where('project_id', $project->id)->where('pr_url', 'https://github.com/acme/orbit/pull/1')->exists())->toBeTrue();
+    });
+
     it('ignores a Project without the flow', function (): void {
         rm_project(flow: false);
         config(['orbit.tasks.pull_request_authors' => ['acme/orbit' => [123]]]);

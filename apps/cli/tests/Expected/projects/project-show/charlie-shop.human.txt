@@ -23,6 +23,10 @@ Fetching Instances...
 │
 ├  Task workspace routed   yes
 │
+├  Review and merge        no
+│
+├  Merge check             —
+│
 └  Excluded nodes          —
 
  ┌────┬──────────────────┬─────────┬────────────────────────────────────┬────────┐
