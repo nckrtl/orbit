@@ -1,6 +1,7 @@
 [Unit]
 Description=Restore Orbit sandbox host network boundaries
-After=local-fs.target nftables.service ufw.service firewalld.service
+Wants=network-online.target
+After=network-online.target local-fs.target nftables.service ufw.service firewalld.service
 Before=incus.service
 
 [Service]

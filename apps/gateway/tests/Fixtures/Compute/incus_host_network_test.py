@@ -20,9 +20,9 @@ loader.loader.exec_module(policy)
 ID = '0bd99b9a-37f1-4872-88b6-4d9b1bee7cce'
 PROJECT = 'orbit-sandbox-proof-318a36c8'
 CONFIG = {'version': 1, 'projects': [PROJECT], 'pi_host': '10.44.0.7',
-          'gateway_address': '10.44.0.1', 'blocked_networks': ['192.168.6.0/24']}
+          'gateway_address': '10.44.0.1', 'wireguard_interface': 'eh', 'blocked_networks': ['192.168.6.0/24']}
 SPEC = {'version': 1, 'project': PROJECT, 'sandbox_id': ID, 'subnet': '10.233.209.0/24',
-        'gateway_address': '10.44.0.1', 'blocked_networks': ['192.168.6.0/24', '198.41.0.20/32'], 'config': CONFIG}
+        'gateway_address': '10.44.0.1', 'wireguard_interface': 'eh', 'blocked_networks': ['192.168.6.0/24', '198.41.0.20/32'], 'config': CONFIG}
 REQUEST = {'operation': 'ensure', 'project': PROJECT, 'sandbox_id': ID}
 
 
@@ -55,8 +55,8 @@ class ContractTests(unittest.TestCase):
     def test_ownership_and_bridge_policy_checked_before_rules(self):
         project = {'config': {'user.orbit.compute.owner': policy.OWNER, 'features.networks': 'false'}}
         acl = {'config': {'user.orbit.compute.owner': policy.OWNER, 'user.orbit.compute.id': ID}}
-        interfaces = [{'addr_info': [{'local': '10.44.0.7', 'prefixlen': 24}, {'local': '198.41.0.20', 'prefixlen': 32}]}]
-        with patch.object(policy, 'incus', side_effect=[project, network(), acl]), patch.object(policy, 'run', return_value=json.dumps(interfaces)):
+        interfaces = [{'ifname': 'eh', 'addr_info': [{'local': '10.44.0.7', 'prefixlen': 24}, {'local': '198.41.0.20', 'prefixlen': 32}]}]
+        with patch.object(policy, 'incus', side_effect=[project, network(), acl]), patch.object(policy, 'run', side_effect=[json.dumps(interfaces), json.dumps([{'ifname': 'eh', 'linkinfo': {'info_kind': 'wireguard'}}])]):
             result = policy.derive(REQUEST, CONFIG)
             self.assertEqual('10.233.209.0/24', result['subnet'])
             self.assertIn('198.41.0.20/32', result['blocked_networks'])
@@ -67,6 +67,44 @@ class ContractTests(unittest.TestCase):
             bad['config'][field] = value
             with self.subTest(field=field), patch.object(policy, 'incus', side_effect=[project, bad]), self.assertRaises(ValueError):
                 policy.derive(REQUEST, CONFIG)
+
+    def test_pi_host_requires_unique_wireguard_interface_ownership(self):
+        project = {'config': {'user.orbit.compute.owner': policy.OWNER, 'features.networks': 'false'}}
+        acl = {'config': {'user.orbit.compute.owner': policy.OWNER, 'user.orbit.compute.id': ID}}
+        interface = {'ifname': 'eh', 'addr_info': [{'local': '10.44.0.7', 'prefixlen': 16}]}
+        link = {'ifname': 'eh', 'linkinfo': {'info_kind': 'wireguard'}}
+        cases = [([], [link]), ([{**interface, 'ifname': 'foreign'}], [link]),
+                 ([interface, interface], [link]), ([interface], []),
+                 ([interface], [{**link, 'ifname': 'foreign'}]),
+                 ([interface], [{**link, 'linkinfo': {'info_kind': 'veth'}}])]
+        for interfaces, links in cases:
+            with self.subTest(interfaces=interfaces, links=links), \
+                    patch.object(policy, 'incus', side_effect=[project, network(), acl]), \
+                    patch.object(policy, 'run', side_effect=[json.dumps(interfaces), json.dumps(links)]), \
+                    self.assertRaises(ValueError):
+                policy.derive(REQUEST, CONFIG)
+
+    def test_configuration_refuses_unsafe_or_missing_interface_names(self):
+        with patch.object(policy, 'read', return_value=json.dumps(CONFIG)):
+            self.assertEqual(CONFIG, policy.configuration())
+        for interface in [None, '', '-orbit', 'orbit;id', 'orbit*', 'a'*16, 'orbit:1']:
+            with self.subTest(interface=interface), \
+                    patch.object(policy, 'read', return_value=json.dumps({**CONFIG, 'wireguard_interface': interface})), \
+                    self.assertRaises((ValueError, TypeError)):
+                policy.configuration()
+        config = {key: value for key, value in CONFIG.items() if key != 'wireguard_interface'}
+        with patch.object(policy, 'read', return_value=json.dumps(config)), self.assertRaises(ValueError):
+            policy.configuration()
+
+    def test_boot_waits_for_wireguard_address_and_refuses_timeout(self):
+        interfaces = [{'ifname': 'eh', 'addr_info': [{'local': '10.44.0.7', 'prefixlen': 16}]}]
+        with patch.object(policy, 'run', side_effect=[json.dumps([]), json.dumps(interfaces)]), \
+                patch.object(policy.time, 'sleep') as sleep:
+            self.assertEqual(interfaces, policy.boot_interfaces(CONFIG))
+            sleep.assert_called_once_with(0.1)
+        with patch.object(policy, 'run', return_value='[]'), \
+                patch.object(policy.time, 'monotonic', side_effect=[0, 61]), self.assertRaises(ValueError):
+            policy.boot_interfaces(CONFIG)
 
     def test_drift_and_jump_order_refuse_changes(self):
         rules, jumps = policy.chains(SPEC)
@@ -176,6 +214,8 @@ except (OSError,AssertionError): sys.exit(1)
         cls.guest = cls.namespace('g', '10.233.209.10', '10.233.209.1', cls.bridge)
         cls.pair = cls.namespace('p', '10.233.209.11', '10.233.209.1', cls.bridge)
         cls.external = cls.namespace('e', '198.19.0.2', '198.19.0.1')
+        cls.spoof = cls.namespace('s', '172.20.0.2', '172.20.0.1')
+        cls.command(['nsenter', '-t', str(cls.spoof.pid), '-n', 'ip', 'address', 'add', '10.44.0.1/32', 'dev', 'lo'])
         cls.paths = [('93.184.216.34', 80), ('93.184.216.34', 443), ('93.184.216.34', 22),
                      ('1.1.1.1', 53), ('9.9.9.9', 53), ('8.8.8.8', 53),
                      ('10.44.0.1', 443), ('10.44.0.99', 443), ('192.168.6.99', 80),
@@ -188,7 +228,7 @@ except (OSError,AssertionError): sys.exit(1)
         for address in ['1.1.1.1', '9.9.9.9', '8.8.8.8']:
             cls.listen(cls.external.pid, address, 53, udp=True)
         for address in ['10.44.0.7', '198.41.0.20']:
-            cls.command(['ip', 'address', 'add', address+'/32', 'dev', 'lo'])
+            cls.command(['ip', 'address', 'add', address+'/32', 'dev', 'eh' if address == '10.44.0.7' else 'lo'])
         cls.listen(None, '198.41.0.20', 80)
         cls.listen(None, '10.233.209.1', 8317)
         cls.listen(None, '10.233.209.1', 67, udp=True)
@@ -200,6 +240,9 @@ except (OSError,AssertionError): sys.exit(1)
             assert cls.connect(cls.guest.pid, '10.233.209.10', address, port), (address, port)
         assert cls.connect(cls.guest.pid, '10.233.209.10', '198.41.0.20', 80)
         assert cls.connect(cls.external.pid, '10.44.0.1', '10.233.209.10', 3774)
+        cls.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '172.20.0.2'])
+        assert cls.connect(cls.spoof.pid, '10.44.0.1', '10.233.209.10', 3774)
+        cls.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '198.19.0.2'])
         cls.streams = []
         for address, port in [('10.44.0.100', 443), ('93.184.216.35', 22)]:
             cls.command(['nsenter', '-t', str(cls.external.pid), '-n', 'ip', 'address', 'add', address+'/32', 'dev', 'lo'])
@@ -255,6 +298,13 @@ except TimeoutError: pass
         self.assertFalse(self.connect(self.external.pid, '10.44.0.99', '10.233.209.10', 3774))
         self.assertFalse(self.connect(self.external.pid, '10.44.0.1', '10.233.209.10', 80))
         self.assertTrue(self.connect(self.guest.pid, '10.233.209.10', '10.233.209.11', 80))
+
+    def test_gateway_source_on_another_interface_cannot_reach_pi(self):
+        self.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '172.20.0.2'])
+        try:
+            self.assertFalse(self.connect(self.spoof.pid, '10.44.0.1', '10.233.209.10', 3774))
+        finally:
+            self.command(['ip', 'route', 'replace', '10.44.0.1/32', 'via', '198.19.0.2'])
 
     def test_ipv6_forwarding_stays_blocked_when_guest_enables_it(self):
         self.command(['sysctl', '-q', '-w', 'net.ipv6.conf.all.forwarding=1'])
@@ -332,7 +382,15 @@ except TimeoutError: pass
                 policy.apply(REQUEST, CONFIG)
                 policy.apply(REQUEST, CONFIG)
             policy.change(SPEC, remove=True)
-            policy.restore(CONFIG)
+            with patch.object(policy, 'wireguard', return_value=None):
+                policy.restore(CONFIG)
+            old_run = policy.run
+            def changed_host(argv, data=None):
+                if argv[0] == '/usr/sbin/ip':
+                    return json.dumps([{'ifname': 'eh', 'addr_info': [{'local': '10.44.0.7', 'prefixlen': 32}, {'local': '93.184.217.10', 'prefixlen': 24}]}])
+                return old_run(argv, data)
+            with patch.object(policy, 'run', side_effect=changed_host), self.assertRaises(ValueError):
+                policy.restore(CONFIG)
             self.assertTrue(self.connect(self.guest.pid, '10.233.209.10', '93.184.216.34', 443))
             forward = next(chain for chain in policy.chains(SPEC)[0] if chain.startswith('OTF'))
             self.command(['iptables', '-A', forward, '-j', 'ACCEPT'])

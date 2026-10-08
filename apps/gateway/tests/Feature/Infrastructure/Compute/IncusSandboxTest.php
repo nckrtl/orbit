@@ -19,6 +19,13 @@ describe('Incus sandbox boundary', function (): void {
         expect($process->getExitCode())->toBe(0);
     });
 
+    it('filters real packets and restores only recorded host policies', function (): void {
+        $process = new Process(['sudo', '-n', 'unshare', '--net', 'python3', base_path('tests/Fixtures/Compute/incus_host_network_test.py'), base_path('../agent/resources/incus-host-network.py'), '--packets']);
+        $process->mustRun();
+
+        expect($process->getExitCode())->toBe(0);
+    })->group('privileged');
+
     it('accepts only the approved bundle commit and removes its trusted import', function (): void {
         $process = new Process(['python3', base_path('tests/Fixtures/Compute/trusted_bundle_test.py'), resource_path('compute/trusted-git-bundle.py')]);
         $process->mustRun();

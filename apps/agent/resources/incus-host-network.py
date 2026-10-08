@@ -21,7 +21,7 @@ OWNER = 'orbit-task-sandbox'
 UNIT = Path('/etc/systemd/system/orbit-sandbox-host-network.service')
 DEPENDENCY = Path('/etc/systemd/system/incus.service.d/orbit-sandbox-network.conf')
 UNIT_TEXT = ('[Unit]\nDescription=Restore Orbit sandbox host network boundaries\n'
-             'After=local-fs.target nftables.service ufw.service firewalld.service\nBefore=incus.service\n\n'
+             'Wants=network-online.target\nAfter=network-online.target local-fs.target nftables.service ufw.service firewalld.service\nBefore=incus.service\n\n'
              '[Service]\nType=oneshot\nExecStart=/usr/local/libexec/orbit-sandbox-network restore\n'
              'TimeoutStartSec=120\nRemainAfterExit=yes\nUMask=0077\n\n[Install]\nWantedBy=multi-user.target\n')
 DEPENDENCY_TEXT = '[Unit]\nRequires=orbit-sandbox-host-network.service\nAfter=orbit-sandbox-host-network.service\n'
@@ -110,7 +110,7 @@ def validate(request):
 
 def configuration():
     value = json.loads(read(CONFIG, 0o644))
-    require(isinstance(value, dict) and set(value) == {'version', 'projects', 'pi_host', 'gateway_address', 'blocked_networks'})
+    require(isinstance(value, dict) and set(value) == {'version', 'projects', 'pi_host', 'gateway_address', 'wireguard_interface', 'blocked_networks'})
     require(type(value['version']) is int and value['version'] == 1)
     require(isinstance(value['projects'], list) and 1 <= len(value['projects']) <= 32
             and len(set(value['projects'])) == len(value['projects']))
@@ -121,6 +121,8 @@ def configuration():
         address = ipaddress.ip_address(value[key])
         require(address in fleet and str(address) == value[key])
     require(value['pi_host'] != value['gateway_address'])
+    require(isinstance(value['wireguard_interface'], str)
+            and re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]{0,14}', value['wireguard_interface']))
     require(isinstance(value['blocked_networks'], list) and 1 <= len(value['blocked_networks']) <= 128)
     for cidr in value['blocked_networks']:
         require(isinstance(cidr, str) and ipaddress.ip_network(cidr, strict=True).version == 4)
@@ -133,6 +135,16 @@ def name(identity):
 
 def incus(path):
     return json.loads(run(['/usr/bin/incus', '--force-local', 'query', path]))
+
+
+def wireguard(config, interfaces):
+    owners = [interface for interface in interfaces if any(
+        address.get('local') == config['pi_host'] for address in interface.get('addr_info', []))]
+    require(len(owners) == 1 and owners[0].get('ifname') == config['wireguard_interface'])
+    links = json.loads(run(['/usr/sbin/ip', '-json', '-details', 'link', 'show', 'dev', config['wireguard_interface']]))
+    require(isinstance(links, list) and len(links) == 1
+            and links[0].get('ifname') == config['wireguard_interface']
+            and links[0].get('linkinfo', {}).get('info_kind') == 'wireguard')
 
 
 def derive(request, config):
@@ -156,12 +168,12 @@ def derive(request, config):
     require(all(acl.get(key) == value for key, value in metadata.items()))
     interfaces = json.loads(run(['/usr/sbin/ip', '-json', '-4', 'address', 'show']))
     addresses = [address for interface in interfaces for address in interface.get('addr_info', [])]
-    require(any(address.get('local') == config['pi_host'] for address in addresses))
+    wireguard(config, interfaces)
     # Exclude all host-connected networks, including public addresses on the host.
     blocked = sorted(set(config['blocked_networks'] + [str(ipaddress.ip_network(
         address['local'] + '/' + str(address['prefixlen']), strict=False)) for address in addresses]))
     return {'version': 1, 'project': project, 'sandbox_id': identity, 'subnet': str(subnet),
-            'gateway_address': config['gateway_address'], 'blocked_networks': blocked, 'config': config}
+            'gateway_address': config['gateway_address'], 'wireguard_interface': config['wireguard_interface'], 'blocked_networks': blocked, 'config': config}
 
 
 def chains(spec, ipv6=False):
@@ -174,13 +186,14 @@ def chains(spec, ipv6=False):
         host, operator = str(subnet.network_address + 1), str(subnet.network_address + 10)
         peers = [str(subnet.network_address + offset) for offset in range(10, 15)]
         gateway = spec['gateway_address']
+        interface = spec['wireguard_interface']
         forward = rules[names['FORWARD']]
         # Same-group peers stay within their bridge. NIC filters bind each guest address.
         forward += [f'-i {bridge} -o {bridge} -m iprange --src-range {peers[0]}-{peers[-1]} '
                     f'--dst-range {peers[0]}-{peers[-1]} -j ACCEPT']
-        forward += [f'-o {bridge} -s {gateway}/32 -d {operator}/32 -p tcp -m tcp --dport 3774 '
+        forward += [f'-i {interface} -o {bridge} -s {gateway}/32 -d {operator}/32 -p tcp -m tcp --dport 3774 '
                     '-m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT',
-                    f'-i {bridge} -s {operator}/32 -d {gateway}/32 -p tcp -m tcp --sport 3774 '
+                    f'-i {bridge} -o {interface} -s {operator}/32 -d {gateway}/32 -p tcp -m tcp --sport 3774 '
                     '-m conntrack --ctstate ESTABLISHED --ctdir REPLY -j ACCEPT']
         for cidr in sorted(set((*PRIVATE, *spec['blocked_networks']))):
             forward += [f'-i {bridge} -d {cidr} -j DROP', f'-o {bridge} -s {cidr} -j DROP']
@@ -359,11 +372,32 @@ def apply(request, config):
     return {'ready': True}
 
 
+def boot_interfaces(config):
+    deadline = time.monotonic() + 60
+    while True:
+        interfaces = json.loads(run(['/usr/sbin/ip', '-json', '-4', 'address', 'show']))
+        if any(address.get('local') == config['pi_host']
+               for interface in interfaces for address in interface.get('addr_info', [])):
+            return interfaces
+        require(time.monotonic() < deadline)
+        time.sleep(0.1)
+
+
+def check_host_exclusions(spec):
+    interfaces = boot_interfaces(spec['config'])
+    wireguard(spec['config'], interfaces)
+    for interface in interfaces:
+        for address in interface.get('addr_info', []):
+            network = ipaddress.ip_network(address['local'] + '/' + str(address['prefixlen']), strict=False)
+            require(any(network.subnet_of(ipaddress.ip_network(cidr)) for cidr in (*PRIVATE, *spec['blocked_networks'])))
+
+
 def restore(config):
     for path in sorted(ROOT.glob('*.json')):
         spec = json.loads(read(path))
         require(manifest_path(spec['sandbox_id']) == path and spec['config'] == config
                 and spec['project'] in config['projects'] and spec['version'] == 1)
+        check_host_exclusions(spec)
         change(spec)
 
 

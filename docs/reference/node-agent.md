@@ -285,7 +285,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Install and upgrade
 
-The Gateway pins agent 0.4.0. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
+The Gateway pins agent 0.4.1. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
 
 | Item | Path or value |
 | --- | --- |
