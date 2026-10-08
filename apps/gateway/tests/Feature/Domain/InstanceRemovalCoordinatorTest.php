@@ -1003,6 +1003,182 @@ it('removes a source-resolved task workspace that never received a Route', funct
         ->toBeFalse();
 });
 
+it('removes a source-resolved Instance with a pending Route and preserves the worktree seed', function (bool $force, string $routeStatus): void {
+    $instance = orb1193_coordinator_workspace();
+    $route = $instance->routes->sole();
+    $route->update([
+        'status' => $routeStatus,
+        'failed_step' => $routeStatus === 'failed' ? 'publication' : null,
+        'error_code' => $routeStatus === 'failed' ? 'route.publication_failed' : null,
+    ]);
+    $target = $route->targets->sole();
+    $seedPath = dirname($instance->checkout_path).'/default';
+    $this->orb181Inspector->commonRepositoryPath = $seedPath;
+    $this->orb181Inspector->linkedPaths = [$seedPath, $instance->checkout_path];
+
+    $removal = $this->orb181Coordinator->execute($instance, $force);
+    $member = $removal->members->sole();
+
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($removal->total)->toBe(1)
+        ->and($member->source_layout)->toBe(InstanceSourceLayout::Worktree->value)
+        ->and($member->common_repository_path)->toBe($seedPath)
+        ->and($member->route_id)->toBe($route->id)
+        ->and($member->route_outcome)->toBe('deleted')
+        ->and($member->source_finalized_at)->not->toBeNull()
+        ->and($member->runtime_published)->toBeFalse()
+        ->and($this->orb181Finalizer->calls)->toBe([
+            "prepare:{$instance->id}",
+            "revalidate:{$instance->id}:present",
+            "finalize:{$instance->id}:present",
+        ])
+        ->and($this->orb181Projector->calls)->toBe(["route:{$instance->id}", "runtime:{$instance->id}"]);
+    $this->assertModelMissing($instance);
+    $this->assertModelMissing($route);
+    $this->assertModelMissing($target);
+})->with([false, true])->with(['pending', 'failed']);
+
+it('refuses a source-resolved workspace with an active Route in either removal mode', function (bool $force): void {
+    $instance = orb1193_coordinator_workspace();
+    $route = $instance->routes->sole();
+    $route->update(['status' => RouteStatus::Active]);
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, $force))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused'));
+    $this->assertModelExists($instance);
+    $this->assertModelExists($route);
+    expect(InstanceRemoval::query()->count())->toBe(0)
+        ->and($this->orb181Finalizer->calls)->toBeEmpty();
+})->with([false, true]);
+
+it('refuses a source-resolved workspace whose pending Route also targets another Instance', function (bool $force): void {
+    $instance = orb1193_coordinator_workspace();
+    $route = $instance->routes->sole();
+    $other = Instance::query()->create([
+        'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id,
+        'name' => 'other',
+        'environment' => 'development',
+        'source_layout' => 'worktree',
+        'checkout_path' => dirname($instance->checkout_path).'/other',
+        'branch' => 'other',
+        'starting_commit' => str_repeat('a', 40),
+        'status' => InstanceState::SourceResolved,
+    ]);
+    // Simulate inconsistent stored targets without weakening the production persistence contract.
+    $trigger = DB::table('sqlite_master')->where('name', 'route_targets_contract_insert')->sole()->sql;
+    DB::statement('DROP TRIGGER route_targets_contract_insert');
+    try {
+        $target = $route->targets()->create(['instance_id' => $other->id, 'position' => 1]);
+    } finally {
+        DB::statement($trigger);
+    }
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, $force))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused'));
+    $this->assertModelExists($instance);
+    $this->assertModelExists($other);
+    $this->assertModelExists($route);
+    $this->assertModelExists($target);
+    expect(InstanceRemoval::query()->count())->toBe(0)
+        ->and($this->orb181Finalizer->calls)->toBeEmpty();
+})->with([false, true]);
+
+it('refuses a source-resolved production Instance with a pending Route', function (bool $force): void {
+    $instance = orb181_coordinator_instance(environment: 'production');
+    $route = $instance->routes->sole();
+    $instance->update(['status' => InstanceState::SourceResolved]);
+    $route->update(['status' => RouteStatus::Pending]);
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, $force))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused'));
+    $this->assertModelExists($instance);
+    $this->assertModelExists($route);
+    expect(InstanceRemoval::query()->count())->toBe(0)
+        ->and($this->orb183Content->calls)->toBeEmpty();
+})->with([false, true]);
+
+it('resumes a routed source-resolved workspace removal without repeating Route deletion', function (): void {
+    $instance = orb1193_coordinator_workspace();
+    $route = $instance->routes->sole();
+    $target = $route->targets->sole();
+    $this->orb181Projector->failRuntime = true;
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))->toThrow(InstanceRemovalException::class);
+    $operation = InstanceRemoval::query()->sole();
+    expect($operation->status)->toBe(InstanceRemovalStatus::Failed);
+    $this->assertModelExists($instance);
+    $this->assertModelMissing($route);
+    $this->assertModelMissing($target);
+    $this->orb181Projector->failRuntime = false;
+
+    $resumed = $this->orb181Coordinator->execute($instance->refresh(), false);
+
+    expect($resumed->id)->toBe($operation->id)
+        ->and($resumed->status)->toBe(InstanceRemovalStatus::Completed)
+        ->and($this->orb181Projector->calls)->toBe([
+            "route:{$instance->id}", "runtime:{$instance->id}", "runtime:{$instance->id}",
+        ]);
+    $this->assertModelMissing($instance);
+});
+
+it('keeps normal source refusals for a source-resolved workspace with a pending Route', function (): void {
+    $instance = orb1193_coordinator_workspace();
+    $route = $instance->routes->sole();
+    $this->orb181Inspector->normalUnsafeIds[] = $instance->id;
+
+    expect(fn () => $this->orb181Coordinator->execute($instance, false))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused'));
+    $this->assertModelExists($instance);
+    $this->assertModelExists($route);
+    expect(InstanceRemoval::query()->count())->toBe(0);
+});
+
+it('upgrades and reverses the routed workspace removal persistence guards', function (): void {
+    $instance = orb1193_coordinator_workspace();
+    $migration = require database_path('migrations/2026_10_12_000000_allow_source_resolved_workspace_route_removal.php');
+    $migration->down();
+    try {
+        expect(fn () => $this->orb181Coordinator->execute($instance, false))
+            ->toThrow(QueryException::class, 'Invalid AppInstance removal contract.');
+        $this->assertModelExists($instance);
+        expect(InstanceRemoval::query()->count())->toBe(0);
+    } finally {
+        $migration->up();
+    }
+
+    $removal = $this->orb181Coordinator->execute($instance, false);
+
+    expect($removal->status)->toBe(InstanceRemovalStatus::Completed);
+    $this->assertModelMissing($instance);
+});
+
+function orb1193_coordinator_workspace(): Instance
+{
+    $instance = orb181_coordinator_instance(layout: InstanceSourceLayout::Worktree->value, withRoute: false);
+    $instance->project->update(['type' => ProjectType::LaravelApp]);
+    $cluster = Cluster::query()->create(['name' => 'workspace-'.$instance->id, 'state' => 'active']);
+    $instance->node->update(['cluster_id' => $cluster->id]);
+    $instance->update([
+        'status' => InstanceState::SourceResolved,
+        'task_workspace_routed' => false,
+        'source_prepare_id' => (string) Str::uuid(),
+    ]);
+    $route = Route::query()->create([
+        'project_id' => $instance->project_id,
+        'node_id' => null,
+        'cluster_id' => $cluster->id,
+        'generation_basis_node_id' => $instance->node_id,
+        'domain' => 'workspace-'.$instance->id.'.acme.test',
+        'provenance' => RouteProvenance::Generated,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+
+    return $instance->refresh()->load(['project', 'node', 'routes.targets']);
+}
+
 it('removes a failed source-resolved development Instance and its partial routed runtime', function (): void {
     $instance = orb181_coordinator_instance();
     $instance->update(['status' => InstanceState::SourceResolved, 'failed_step' => 'provisioning', 'error_code' => 'instance.provisioning_failed']);

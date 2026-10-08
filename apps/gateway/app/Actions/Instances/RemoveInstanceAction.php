@@ -732,6 +732,15 @@ final readonly class RemoveInstanceAction implements InstanceRemover
 
     private function removableRouteState(Route $route, Instance $instance): bool
     {
+        if ($this->sourceResolvedWorkspace($instance) && ! $this->failedCreation($instance)) {
+            return in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
+                && $route->project_id === $instance->project_id
+                && ($route->node_id === $instance->node_id
+                    || ($route->node_id === null
+                        && $route->cluster_id !== null
+                        && $route->cluster_id === $instance->node->cluster_id));
+        }
+
         return $route->status === RouteStatus::Active
             || ($this->failedCreation($instance)
                 && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)
@@ -750,9 +759,30 @@ final readonly class RemoveInstanceAction implements InstanceRemover
             return true;
         }
 
-        return $instance->status === InstanceState::SourceResolved
-            && ! $instance->routes()->exists()
-            && ! RouteTarget::query()->where('instance_id', $instance->id)->exists();
+        if (! $this->sourceResolvedWorkspace($instance)) {
+            return false;
+        }
+
+        $routes = $instance->routes()->with('targets')->get();
+        if ($routes->isEmpty()) {
+            return ! RouteTarget::query()->where('instance_id', $instance->id)->exists();
+        }
+
+        if ($routes->count() !== 1) {
+            return false;
+        }
+
+        $route = $routes->sole();
+
+        return $this->removableRouteState($route, $instance)
+            && $route->targets->count() === 1
+            && $route->targets->sole()->instance_id === $instance->id;
+    }
+
+    private function sourceResolvedWorkspace(Instance $instance): bool
+    {
+        return $instance->placedOnAppDev()
+            && $instance->status === InstanceState::SourceResolved;
     }
 
     private function productionRouteIsSafe(Route $route, Instance $requested): bool

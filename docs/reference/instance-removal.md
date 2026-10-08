@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal}.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_source_resolved_workspace_route_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -40,7 +40,9 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, a development `source_resolved` workspace with no Route or exactly one pending or failed Route targeting only that Instance, or an [interrupted or failed development create](#pre-activation-removal) that never became active. A healthy `source_resolved` workspace cannot remove an active or shared Route. Its pending or failed Route, including a generated Cluster Route, is removed with its target in the same resumable operation. Production Instances do not qualify for this workspace rule, and normal dirty and unpublished-source checks still apply.
+
+An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
