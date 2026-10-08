@@ -65,7 +65,9 @@ The importer accepts blank lines, comments, quoted and escaped values, multiline
 
 Without `replace`, a file key that is already stored returns `env.import_conflict` (409), and nothing is stored. With `replace`, matching keys take the file value, new keys are added, and stored keys that the file lacks stay.
 
-For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps `APP_KEY` and every other value as the file has it. When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root.
+For a Laravel Instance, import stores `APP_URL` as `https://{{instance.domain}}`, so the URL follows the Route. It keeps a non-empty `APP_KEY` as the file has it. When the file contains `APP_KEY` with an empty value, import reuses the Instance's non-empty stored key, or generates a cryptographically random 32-byte key with the `base64:` prefix if no usable stored key exists. This also applies to the existing-file import during Instance creation. A missing `APP_KEY` stays missing; other values stay as the file has them. Non-Laravel imports do not generate keys.
+
+When a Route's domain changes, Orbit updates APP_URL in that application's `.env` and Laravel cached configuration, not in an unrelated file at the repository root.
 
 ## Update
 
@@ -139,7 +141,7 @@ A Project slug change updates the Laravel `APP_URL` that the Route domain owns. 
 
 ## Storage and recovery
 
-The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key. These operations never create or delete an application's `APP_KEY`.
+The Gateway encrypts every stored value, placeholders included, with its own application key before it writes the row. Restoring stored configuration needs that key. Laravel import creates an application's `APP_KEY` only when the source value is empty and no non-empty stored key exists. Synchronization never generates, rotates, or deletes a stored application key. An import without `replace` still refuses conflicting keys, including `APP_KEY`.
 
 ## Errors
 
@@ -164,6 +166,10 @@ These reasons explain the design. Check them before you propose a change.
 ### The Gateway holds the configuration
 
 A `.env` file on a Node holds values for one placement, such as its domain and paths. Another placement cannot rebuild it from the Gateway. So the Gateway stores the configuration, and synchronization writes it for the destination. Treating the Node's file as the source is a rejected alternative.
+
+### Empty Laravel keys are initialized before synchronization
+
+A fresh Laravel checkout often has an empty `APP_KEY`. Storing that empty value would make synchronization erase a key generated only on the Node, and the application could fail after deployment or cloning. Import therefore initializes an empty key in stored configuration before synchronization. It reuses an existing stored key to avoid invalidating sessions or encrypted data on repeated imports. It does not run application code or use the Gateway's own encryption key. Applications with a non-default cipher must supply their own compatible key.
 
 ### Every value is encrypted
 
