@@ -12,7 +12,7 @@
 /** The file each build writes at its top: `{"build": "<id>"}`. */
 export const VERSION_URL = "/version.json";
 
-/** The sessionStorage key that remembers the last newer build this tab loaded in full. */
+/** The sessionStorage key that holds the newer build this tab is loading. The build clears it when it starts. */
 export const RELOAD_KEY = "orbit.build-reload";
 
 /** The sessionStorage key that remembers the last build whose failed chunk reloaded this tab. */
@@ -24,6 +24,7 @@ const DEFAULT_INTERVAL_MS = 60_000;
 export type ReloadMemory = {
     getItem: (key: string) => string | null;
     setItem: (key: string, value: string) => void;
+    removeItem: (key: string) => void;
 };
 
 export type BuildCheckOptions = {
@@ -76,22 +77,30 @@ export async function fetchServedBuild(fetcher: typeof fetch = fetch): Promise<s
 
 /** Keeps the loop guard in memory when sessionStorage throws, as it can in a locked-down browser. */
 function guarded(memory: ReloadMemory | null | undefined): ReloadMemory {
-    let fallback: string | null = null;
+    const fallback = new Map<string, string>();
 
     return {
         getItem(key) {
             try {
-                return memory?.getItem(key) ?? fallback;
+                return memory?.getItem(key) ?? fallback.get(key) ?? null;
             } catch {
-                return fallback;
+                return fallback.get(key) ?? null;
             }
         },
         setItem(key, value) {
-            fallback = value;
+            fallback.set(key, value);
             try {
                 memory?.setItem(key, value);
             } catch {
                 // The in-memory copy still stops a second reload in this page.
+            }
+        },
+        removeItem(key) {
+            fallback.delete(key);
+            try {
+                memory?.removeItem(key);
+            } catch {
+                // Nothing to clear when storage is refused.
             }
         },
     };
@@ -104,6 +113,10 @@ export function createBuildCheck(options: BuildCheckOptions): BuildCheck {
     const memory = guarded(options.memory);
     const hasUnsavedInput = options.hasUnsavedInput ?? (() => false);
     const isEditing = options.isEditing ?? (() => false);
+
+    // This build arrived, so a later newer build may load again. A page that still runs an older build
+    // keeps the mark, so it never loads the same newer build twice: that would be a loop.
+    if (memory.getItem(RELOAD_KEY) === options.build) memory.removeItem(RELOAD_KEY);
 
     // The page has just loaded index.html, which is never cached, so the first read waits a full interval.
     let lastRead = now();
@@ -124,11 +137,17 @@ export function createBuildCheck(options: BuildCheckOptions): BuildCheck {
     /** A full load would lose a draft, or what the user is typing. */
     const busy = () => hasUnsavedInput() || isEditing();
 
+    /** Loads the newer build once. When the guard refuses, later reads look for a newer build again. */
+    const load = (go: () => void) => {
+        if (waiting === null) return;
+        if (!once(RELOAD_KEY, waiting, go)) waiting = null;
+    };
+
     /** Loads the navigation target in full, unless the page is busy. */
     const navigateToWaiting = () => {
         if (waiting === null || target === null || busy()) return;
         const href = target;
-        once(RELOAD_KEY, waiting, () => options.assign(href));
+        load(() => options.assign(href));
     };
 
     const navigateTo = (newer: string) => {
@@ -139,7 +158,7 @@ export function createBuildCheck(options: BuildCheckOptions): BuildCheck {
     const resumeTo = (newer: string) => {
         waiting = newer;
         if (busy()) return;
-        once(RELOAD_KEY, newer, options.reload);
+        load(options.reload);
     };
 
     const read = (then: (newer: string) => void) => {
@@ -173,6 +192,8 @@ export function createBuildCheck(options: BuildCheckOptions): BuildCheck {
             read(resumeTo);
         },
         chunkFailed() {
+            // A reload would lose the input, so the failure surfaces as an error instead.
+            if (busy()) return false;
             // The failed file belongs to this build, so the guard names this build: one reload per build.
             return once(CHUNK_RELOAD_KEY, options.build, options.reload);
         },
@@ -201,7 +222,7 @@ export function blocksUnload(blockers: readonly UnloadBlocker[]): boolean {
     });
 }
 
-type NavigationEvent = { toLocation: { href: string }; hrefChanged: boolean };
+type NavigationEvent = { toLocation: { href: string; publicHref?: string }; hrefChanged: boolean };
 
 type Navigations = {
     subscribe: (
@@ -230,9 +251,11 @@ const NON_TEXT_INPUTS = new Set([
     "submit",
 ]);
 
-/** A focused text field, where a reload would drop what the user is typing. */
+/** A focused text field, where a reload would drop what the user is typing. Follows focus into open shadow roots. */
 export function isEditingField(element: Element | null): boolean {
     if (element === null) return false;
+    const inner = element.shadowRoot?.activeElement;
+    if (inner !== null && inner !== undefined) return isEditingField(inner);
     const field = element as Partial<HTMLInputElement>;
     const writable = field.readOnly !== true && field.disabled !== true;
     if (element.tagName === "TEXTAREA") return writable;
@@ -265,7 +288,11 @@ export function installBuildCheck({
 
     const unsubscribers = [
         router.subscribe("onBeforeLoad", (event) => {
-            if (event.hrefChanged) check.navigated(event.toLocation.href);
+            if (!event.hrefChanged) return;
+            const href = event.toLocation.publicHref ?? event.toLocation.href;
+            // The router writes the new URL to browser history after this event. A full load runs after
+            // that write, so it replaces the entry instead of adding a second one.
+            win.setTimeout(() => check.navigated(href), 0);
         }),
         // React removes the left page's blockers in an effect after the router resolves.
         router.subscribe("onResolved", () => void win.setTimeout(() => check.settled(), 0)),

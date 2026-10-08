@@ -13,6 +13,8 @@ const SOURCES = [
     "package.json",
     "bun.lock",
     "vite.config.ts",
+    "tsconfig.json",
+    "dev",
     "src",
     "public",
     "../../packages/agent-annotation/src",

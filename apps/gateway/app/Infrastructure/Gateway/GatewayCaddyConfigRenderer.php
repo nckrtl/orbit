@@ -15,7 +15,7 @@ namespace App\Infrastructure\Gateway;
  * The `/grafana` authorization resolves the link the same way. A fixed `SCRIPT_FILENAME` through the link would let
  * each PHP-FPM worker keep the old release from its realpath cache for up to `realpath_cache_ttl` after a switch.
  *
- * Only a file that exists under `/assets/` is cached as immutable. A missing asset, which a page of a pruned
+ * Only a file that exists under `/assets/` is cached as immutable. A missing asset, which a page of an earlier
  * release can still request, returns 404 with `no-cache` and never falls back to `index.html`: the fallback
  * would give the script request HTML that a browser keeps for a year ([Web app](/reference/web-app#how-the-gateway-site-routes-requests)).
  */

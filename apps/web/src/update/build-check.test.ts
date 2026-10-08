@@ -21,6 +21,7 @@ function memoryStore(): ReloadMemory & { values: Map<string, string> } {
         values,
         getItem: (key) => values.get(key) ?? null,
         setItem: (key, value) => void values.set(key, value),
+        removeItem: (key) => void values.delete(key),
     };
 }
 
@@ -230,6 +231,34 @@ describe("resume", () => {
         expect(reload).not.toHaveBeenCalled();
     });
 
+    it("looks for a later build after the guard refused one", async () => {
+        let build = "new";
+        const { check, assign, memory, advance } = setup({ served: async () => build });
+        memory.setItem(RELOAD_KEY, "new");
+        advance(60_000);
+        check.navigated("/nodes");
+        await settle();
+        expect(assign).not.toHaveBeenCalled();
+
+        build = "newer";
+        advance(60_000);
+        check.navigated("/tasks");
+        await settle();
+        expect(assign).toHaveBeenCalledExactlyOnceWith("/tasks");
+    });
+
+    it("clears the mark when the loaded build arrived, and keeps it on an older page", () => {
+        const arrived = memoryStore();
+        arrived.setItem(RELOAD_KEY, "new");
+        createBuildCheck({ build: "new", assign: vi.fn(), reload: vi.fn(), memory: arrived });
+        expect(arrived.values.has(RELOAD_KEY)).toBe(false);
+
+        const stale = memoryStore();
+        stale.setItem(RELOAD_KEY, "new");
+        createBuildCheck({ build: "old", assign: vi.fn(), reload: vi.fn(), memory: stale });
+        expect(stale.values.get(RELOAD_KEY)).toBe("new");
+    });
+
     it("reloads again for a later build", async () => {
         const { check, reload, memory, advance } = setup({ served: async () => "newer" });
         memory.setItem(RELOAD_KEY, "new");
@@ -249,6 +278,9 @@ describe("resume", () => {
             },
             setItem: () => {
                 throw new Error("QuotaExceededError");
+            },
+            removeItem: () => {
+                throw new Error("SecurityError");
             },
         };
         const { check, reload, advance } = setup({ memory: throwing });
@@ -271,6 +303,13 @@ describe("failed chunks", () => {
         expect(check.chunkFailed()).toBe(false);
         expect(reload).toHaveBeenCalledOnce();
         expect(memory.values.get(CHUNK_RELOAD_KEY)).toBe("old");
+    });
+
+    it("do not reload over unsaved input", () => {
+        const { check, reload } = setup({ isEditing: () => true });
+
+        expect(check.chunkFailed()).toBe(false);
+        expect(reload).not.toHaveBeenCalled();
     });
 
     it("recognize the import failures of each engine", () => {
@@ -340,6 +379,12 @@ describe("unsaved input", () => {
         expect(isEditingField(field("INPUT", { type: "checkbox" }))).toBe(false);
         expect(isEditingField(field("INPUT", { type: "text", disabled: true }))).toBe(false);
         expect(isEditingField(field("DIV", { isContentEditable: true }))).toBe(true);
+        expect(
+            isEditingField(field("DIV", { shadowRoot: { activeElement: field("TEXTAREA") } })),
+        ).toBe(true);
+        expect(
+            isEditingField(field("DIV", { shadowRoot: { activeElement: field("BUTTON") } })),
+        ).toBe(false);
     });
 });
 

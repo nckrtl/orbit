@@ -203,7 +203,7 @@ The Menu drawer shows one support line with the display mode, the window and scr
 
 Each build carries its id, the commit it was built from. CI and `bin/web-deploy` build one exact commit. A build outside a Git checkout uses a hash of its sources instead. The build writes the id to `version.json` at its top, as `{"build": "<id>"}`. The Gateway serves that file with `Cache-Control: no-cache`, like every web file outside `/assets/`.
 
-A built page reads `/version.json` past the browser cache and compares it with its own id. It reads at most once a minute, and the first read comes a minute after the page loaded. It reads at these times:
+A built page reads `/version.json` past the browser cache and compares it with its own id. It reads at most once a minute and never in the first minute after the page loaded. It reads at these times:
 
 - A client-side navigation starts.
 - A hidden page becomes visible again.
@@ -216,9 +216,11 @@ A network error, a failed response, or a body that is not that JSON changes noth
 | A navigation | Loads the target URL in full, as Inertia does on a version mismatch. |
 | The page shows again | Reloads. |
 
-The page never loads a new build over unsaved input. A draft that the app protects, such as an unsaved Project Document, has a router blocker that asks before the page unloads. While such a draft exists, or while a text field has focus, the page waits. A later navigation loads the new build in full. When that navigation leaves the draft, its blocker asks first, and the full load follows once the draft is gone.
+The page does not load a new build over a draft that the app protects or over a focused text field. A protected draft, such as an unsaved Project Document, has a router blocker that asks before the page unloads. While such a draft exists, or while a text field has focus, also inside the annotation overlay, the page waits. A later navigation loads the new build in full. When that navigation leaves the draft, its blocker asks first, and the full load follows once the draft is gone.
 
-The page loads each newer build only once. It keeps that build id in `sessionStorage`, or in memory when the browser refuses storage. A Gateway that still serves the old `index.html` therefore cannot cause a reload loop. When a script or style of the running build fails to load (`vite:preloadError` or a failed `import()`), the page reloads once for that build.
+Typed text in a form without a blocker is not protected once its field loses focus, so a page that shows again can reload over it.
+
+The page loads each newer build only once. Before the full load, it marks that build in `sessionStorage`, or in memory when the browser refuses storage. The new build clears the mark when it starts. A page that still runs an older build keeps the mark and does not load that build again, so a Gateway that serves an old `index.html` cannot cause a reload loop. It still loads a later build. When a script or style of the running build fails to load (`vite:preloadError` or a failed `import()`), the page reloads once for that build, unless it holds such input.
 
 Added to the home screen of an iPhone or iPad, the app stays in memory and navigates only client-side. These checks move it to a new release. The id is the commit, so every Gateway release moves open pages once, also a release that does not change the web app. `vp dev` and `bun run demo` do not check, because Vite reloads the modules there.
 
@@ -344,7 +346,7 @@ The id is the commit and not a hash of the assets, so a page names the Gateway r
 
 ### A missing asset is an error
 
-A page of a pruned release can still ask for one of its own files. With the `index.html` fallback, that request got HTML with the immutable header, so a browser could keep HTML as that script for a year. A 404 with `no-cache` fails the request instead, and the page reloads into the current release.
+`current` serves one build. A page of any earlier release can ask for its own files, and `current` does not hold them. With the `index.html` fallback, such a request got HTML with the immutable header, so a browser could keep HTML as that script for a year. A 404 with `no-cache` fails the request instead and caches nothing.
 
 ### Grafana through the Metrics site
 
