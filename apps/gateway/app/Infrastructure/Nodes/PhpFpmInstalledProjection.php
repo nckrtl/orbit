@@ -121,4 +121,40 @@ final readonly class PhpFpmInstalledProjection
     {
         return $this->configurations[$version] ?? '';
     }
+
+    /**
+     * The previous configuration without the pools whose `chdir` is missing. A rollback restores this:
+     * the exact previous file can never pass `php-fpm -t` again once a pool directory is gone.
+     */
+    public function restorableConfiguration(string $version): string
+    {
+        $missing = array_column(
+            array_filter(
+                $this->poolsWithMissingDirectories(),
+                static fn (array $pool): bool => $pool['version'] === $version,
+            ),
+            'pool',
+        );
+
+        if ($missing === []) {
+            return $this->previousConfiguration($version);
+        }
+
+        $kept = [];
+        $keep = true;
+
+        foreach (preg_split('/(?<=\n)/', $this->previousConfiguration($version)) ?: [] as $line) {
+            $header = [];
+
+            if (preg_match('/\A\[([^\]]+)\]\R?\z/', $line, $header) === 1) {
+                $keep = ! in_array($header[1], $missing, strict: true);
+            }
+
+            if ($keep) {
+                $kept[] = $line;
+            }
+        }
+
+        return implode('', $kept);
+    }
 }

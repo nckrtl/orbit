@@ -540,7 +540,9 @@ it('publishes and verifies the OPcache runtime module per profile ahead of expli
             '&& sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1',
         )
         ->and(mb_strpos($script, 'sudo systemctl reload-or-restart "php$version-fpm.service"'))
-        ->toBeLessThan((int) mb_strpos($script, 'sudo systemctl enable "php$version-fpm.service"'));
+        ->toBeLessThan((int) mb_strpos($script, 'sudo systemctl enable "php$version-fpm.service"'))
+        ->and(substr_count($script, 'sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1'))
+        ->toBe(2, 'Both the runtime reload and its restore reload require valid installed pools.');
 })->with([
     'app-dev node' => ['app-dev', 'app-dev'],
     'app-prod node' => ['app-prod', 'app-prod'],

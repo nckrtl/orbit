@@ -261,6 +261,30 @@ it('deletes a final production Route after cleanup without publishing developmen
         ->toBeFalse();
 });
 
+it('finishes development runtime cleanup when PHP-FPM skips another site whose directory is missing', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    $route->delete();
+    $project = orb181_projector_app('broken');
+    $node = Node::query()->findOrFail($member->node_id);
+    $broken = orb181_projector_instance($project, $node, 'development', 'broken');
+    $brokenRoute = orb181_projector_route($project, $node, null, 'broken.acme.test');
+    $brokenRoute->targets()->create(['instance_id' => $broken->id, 'position' => 0]);
+    $brokenRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    $broken->update(['status' => InstanceState::Active]);
+    [$projector, $ssh] = orb181_removal_projector($this);
+    $ssh->phpDiscovery = "missing-directory\t{$broken->checkout_path}\n";
+
+    $projector->cleanupRuntime($member);
+
+    expect(orb181_caddy_configurations($ssh->commands))->not->toBeEmpty()
+        ->and(collect($ssh->commands)->contains(
+            static fn (RemoteCommand $command): bool => str_contains(
+                $command->input ?? '',
+                'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
+            ),
+        ))->toBeTrue();
+});
+
 it('skips PHP cleanup but removes Caddy and certificate state for non-PHP production Instances', function (): void {
     [$member, $route, $instance] = orb183_projector_production_member(shared: false);
     $route->delete();

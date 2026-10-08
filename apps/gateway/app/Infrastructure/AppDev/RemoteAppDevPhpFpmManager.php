@@ -19,6 +19,9 @@ use Illuminate\Support\Collection;
 
 final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
 {
+    /** Convergence published every other pool but skipped a desired pool whose working directory is missing. */
+    public const string PoolDirectoryMissing = 'app-dev.php_pool_directory_missing';
+
     public function __construct(
         private DevelopmentSiteRepository $sites,
         private DevelopmentPhpFpmConfigRenderer $renderer,
@@ -32,7 +35,9 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
     /**
      * Publishes one `orbit-scopes.conf` for each PHP version from stored state. A site whose working
      * directory is missing on the Node gets no pool: PHP-FPM refuses to start while any pool names a
-     * missing `chdir`, so one such pool would stop every site of that version. Doctor reports it as
+     * missing `chdir`, so one such pool would stop every site of that version. Convergence publishes the
+     * other pools first and then fails with `app-dev.php_pool_directory_missing`, so the operation that
+     * asked for the missing pool does not report success. Doctor reports it as
      * `role.php_pool_directory_missing`. Package installation never starts PHP-FPM; each publication
      * starts or reloads it after it installs the validated pools, so a stale pool that keeps PHP-FPM
      * from starting cannot block the publication that removes it.
@@ -100,12 +105,15 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         }
 
         $installedProjection = $this->installedProjection($node, $account, $this->workingDirectories($desiredSites));
-        $desiredSites = $desiredSites
-            ->reject(static fn (DevelopmentSite $site): bool => in_array(
+        $skippedSites = $desiredSites
+            ->filter(static fn (DevelopmentSite $site): bool => in_array(
                 needle: $site->phpWorkingDirectory(),
                 haystack: $installedProjection->missingDirectories,
                 strict: true,
             ))
+            ->values();
+        $desiredSites = $desiredSites
+            ->reject(static fn (DevelopmentSite $site): bool => $skippedSites->contains($site))
             ->values();
         $desiredVersions = $desiredSites
             ->map(static fn (DevelopmentSite $site): string => $site->phpVersion ?? '')
@@ -154,6 +162,18 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             );
 
             throw $recoveryFailure ?? $exception;
+        }
+
+        if ($skippedSites->isNotEmpty()) {
+            $pools = $skippedSites
+                ->map(static fn (DevelopmentSite $site): string => "{$site->poolName()} ({$site->phpWorkingDirectory()})")
+                ->implode(', ');
+
+            throw new RuntimeConvergenceException(
+                step: 'php-fpm-directories',
+                errorCode: self::PoolDirectoryMissing,
+                message: "PHP-FPM pools were not published on node [{$node->name}] because their working directories are missing: {$pools}.",
+            );
         }
     }
 
@@ -258,7 +278,7 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
             }
 
             try {
-                $this->publishVersion($node, $version, $installedProjection->previousConfiguration($version), $account);
+                $this->publishVersion($node, $version, $installedProjection->restorableConfiguration($version), $account);
             } catch (RuntimeConvergenceException $exception) {
                 $recoveryFailure ??= $exception;
             }

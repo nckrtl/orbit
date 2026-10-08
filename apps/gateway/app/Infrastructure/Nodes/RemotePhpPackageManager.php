@@ -556,7 +556,9 @@ final readonly class RemotePhpPackageManager
                             if [ "$runtime_had_link" = 0 ]; then
                                 sudo rm -f -- "$runtime_enabled"
                             fi
-                            if sudo systemctl is-active --quiet "php$version-fpm.service"; then
+                            if sudo systemctl is-active --quiet "php$version-fpm.service" \
+                                && sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1
+                            then
                                 sudo systemctl reload-or-restart "php$version-fpm.service" || true
                             fi
                         fi

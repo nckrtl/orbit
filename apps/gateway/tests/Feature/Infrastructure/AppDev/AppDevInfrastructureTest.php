@@ -622,7 +622,7 @@ it('restores the exact AppDev FPM file before the recovery reload when activatio
     }
 });
 
-it('skips a pool whose working directory is missing on the Node and publishes the other pools', function (): void {
+it('publishes the other pools, then fails, when a desired pool names a missing working directory', function (): void {
     [$node, $project] = app_dev_runtime_models();
     $present = app_dev_supported_app_instance($node, $project->id, 'present');
     app_dev_supported_route($present, 'present.app-dev.orbit');
@@ -643,7 +643,13 @@ it('skips a pool whose working directory is missing on the Node and publishes th
         packages: new RemotePhpPackageManager,
     );
 
-    $manager->converge($node);
+    expect(fn () => $manager->converge($node))
+        ->toThrow(function (RuntimeConvergenceException $exception) use ($missing): void {
+            expect($exception->errorCode)
+                ->toBe(RemoteAppDevPhpFpmManager::PoolDirectoryMissing)
+                ->and($exception->getMessage())
+                ->toContain('orbit-app-instance-'.$missing->id, '/home/orbit/apps/acme/missing');
+        });
 
     $publishCall = collect($ssh->commands)
         ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
@@ -656,6 +662,48 @@ it('skips a pool whose working directory is missing on the Node and publishes th
         ->not->toContain('[orbit-app-instance-'.$missing->id.']')
         ->and($publishCall?->input)
         ->toContain(base64_encode($kept));
+});
+
+it('rolls back to the previous pools without the pool whose working directory is gone', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $moving = app_dev_supported_app_instance($node, $project->id, 'moving');
+    app_dev_supported_route($moving, 'moving.app-dev.orbit');
+    $stable = app_dev_supported_app_instance($node, $project->id, 'stable');
+    app_dev_supported_route($stable, 'stable.app-dev.orbit');
+    $renderer = new DevelopmentPhpFpmConfigRenderer;
+    $current = $renderer->render(new DevelopmentSiteRepository()->forNode($node), new ManagedUserAccount('orbit', 'orbit', '/home/orbit'));
+    $previous = $current."[orbit-app-instance-342]\nchdir = /fast/apps/orbit-website/task-1172\n";
+    $moving->update(['selected_php_version' => '8.4']);
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "8.5\t".base64_encode($previous)."\nmissing-directory\t/fast/apps/orbit-website/task-1172\n", '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(0, '', '', 1, false),
+        new CommandResult(1, '', 'activation failed', 1, false),
+    ]);
+    $manager = new RemoteAppDevPhpFpmManager(
+        sites: new DevelopmentSiteRepository,
+        renderer: $renderer,
+        ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver(),
+        packages: new RemotePhpPackageManager,
+    );
+
+    expect(fn () => $manager->converge($node))
+        ->toThrow(function (RuntimeConvergenceException $exception): void {
+            expect($exception->errorCode)->toBe('app-dev.php_fpm_config_failed');
+        });
+
+    $publishCalls = collect($ssh->commands)
+        ->filter(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'))
+        ->values();
+
+    expect($publishCalls->map(static fn (RemoteCommand $command): string => $command->arguments[4])->all())
+        ->toBe(['8.5', '8.4', '8.5'])
+        ->and($publishCalls->last()?->input)
+        ->toContain(base64_encode($current))
+        ->not->toContain(base64_encode($previous));
 });
 
 it('reports the installed and desired pools whose working directory is missing, checked as root on the Node', function (): void {

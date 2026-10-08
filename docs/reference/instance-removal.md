@@ -128,7 +128,9 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 
 `runtime_cleanup` converges PHP-FPM and Caddy on the Instance's Node from stored state. By then the Instance has no Route target, so stored state renders neither its PHP-FPM pool nor its Caddy site, and convergence removes both. A development Instance runs this step even when it never became active and has no recorded Route.
 
-A pending Route can publish a pool before activation, and `route:destroy` can delete that Route before the Instance is removed. So neither the Route nor the Instance state proves that no pool is left. A production Instance that never published a runtime and has no Route skips the step's runtime work.
+A pending Route can publish a pool before activation, and `route:destroy` can delete that Route before the Instance is removed. So neither the Route nor the Instance state proves that no pool is left. A production Instance that never published a runtime and has no Route skips the step's runtime work. The cost is one PHP-FPM convergence and one Caddy build on the Node for each removed development Instance.
+
+Removal ignores `app-dev.php_pool_directory_missing` from that convergence. The error names another site's pool, and the convergence has already removed the removed Instance's pool. Doctor keeps reporting the skipped pool.
 
 `source_finalization` deletes the checkout before `runtime_cleanup`, so for a moment the live pool names a missing directory. [PHP-FPM convergence](/reference/php-runtime#development-runtime) never renders a pool for a missing directory and does not need PHP-FPM to start first, so a later convergence still repairs the Node if `runtime_cleanup` fails. A failed step keeps the removal open for retry, and Doctor reports the leftover pool as `role.php_pool_directory_missing`.
 
