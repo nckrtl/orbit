@@ -622,6 +622,180 @@ it('restores the exact AppDev FPM file before the recovery reload when activatio
     }
 });
 
+it('skips a pool whose working directory is missing on the Node and publishes the other pools', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $present = app_dev_supported_app_instance($node, $project->id, 'present');
+    app_dev_supported_route($present, 'present.app-dev.orbit');
+    $missing = app_dev_supported_app_instance($node, $project->id, 'missing');
+    app_dev_supported_route($missing, 'missing.app-dev.orbit');
+    $sites = new DevelopmentSiteRepository()->forNode($node);
+    $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+    $renderer = new DevelopmentPhpFpmConfigRenderer;
+    $missingSite = $sites->first(static fn (DevelopmentSite $site): bool => $site->domain === 'missing.app-dev.orbit');
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "8.5\t".base64_encode($renderer->render($sites, $account))."\nmissing-directory\t/home/orbit/apps/acme/missing\n", '', 1, false),
+    ]);
+    $manager = new RemoteAppDevPhpFpmManager(
+        sites: new DevelopmentSiteRepository,
+        renderer: $renderer,
+        ssh: app_dev_ssh($ssh),
+        accounts: app_dev_account_resolver(),
+        packages: new RemotePhpPackageManager,
+    );
+
+    $manager->converge($node);
+
+    $publishCall = collect($ssh->commands)
+        ->first(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'php-fpm.conf'));
+    $kept = $renderer->render($sites->reject(static fn (DevelopmentSite $site): bool => $site === $missingSite)->values(), $account);
+
+    expect($ssh->commands[0]->arguments)
+        ->toContain('/home/orbit/apps/acme/present', '/home/orbit/apps/acme/missing')
+        ->and($kept)
+        ->toContain('[orbit-app-instance-'.$present->id.']')
+        ->not->toContain('[orbit-app-instance-'.$missing->id.']')
+        ->and($publishCall?->input)
+        ->toContain(base64_encode($kept));
+});
+
+it('reports the installed and desired pools whose working directory is missing, checked as root on the Node', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $harness = new FpmPublishHarness;
+    $present = app_dev_supported_app_instance($node, $project->id, 'present');
+    $present->update(['checkout_path' => $harness->phpRoot().'/../apps/present']);
+    app_dev_supported_route($present, 'present.app-dev.orbit');
+    $missing = app_dev_supported_app_instance($node, $project->id, 'missing');
+    $missing->update(['checkout_path' => $harness->phpRoot().'/../apps/missing']);
+    app_dev_supported_route($missing, 'missing.app-dev.orbit');
+    $removed = $harness->phpRoot().'/../apps/task-1172';
+    $presentDirectory = $harness->phpRoot().'/../apps/present';
+    $missingDirectory = $harness->phpRoot().'/../apps/missing';
+    $harness->prepare('8.5', 'orbit-scopes.conf', implode("\n", [
+        '[orbit-app-instance-'.$present->id.']',
+        "chdir = {$presentDirectory}",
+        '[orbit-app-instance-342]',
+        "chdir = {$removed}",
+        '',
+    ]));
+    mkdir($presentDirectory, recursive: true);
+    $discovery = new AppDevFakeSshExecutor;
+
+    try {
+        $manager = static fn (AppDevFakeSshExecutor $ssh): RemoteAppDevPhpFpmManager => new RemoteAppDevPhpFpmManager(
+            sites: new DevelopmentSiteRepository,
+            renderer: new DevelopmentPhpFpmConfigRenderer,
+            ssh: app_dev_ssh($ssh),
+            accounts: app_dev_account_resolver(),
+            packages: new RemotePhpPackageManager,
+            phpRoot: $harness->phpRoot(),
+        );
+        $manager($discovery)->poolsWithMissingDirectories($node);
+        $result = $harness->run($discovery->commands[0]);
+        $pools = $manager(new AppDevFakeSshExecutor([$result]))->poolsWithMissingDirectories($node);
+
+        expect($result->succeeded())
+            ->toBeTrue($result->stderr)
+            ->and($discovery->commands[0]->arguments[0])
+            ->toBe('bash')
+            ->and($discovery->commands[0]->input)
+            ->toContain('| sudo xargs -0 -r -n 1 sh -c')
+            ->and($pools)
+            ->toBe([
+                ['pool' => 'orbit-app-instance-342', 'version' => '8.5', 'directory' => $removed, 'installed' => true],
+                ['pool' => 'orbit-app-instance-'.$missing->id, 'version' => '8.5', 'directory' => $missingDirectory, 'installed' => false],
+            ]);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('installs PHP without starting FPM and replaces a stale pool while FPM is failed', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    $account = new ManagedUserAccount('orbit', 'orbit', '/home/orbit');
+    $current = new DevelopmentPhpFpmConfigRenderer()->render(new DevelopmentSiteRepository()->forNode($node), $account);
+    $stale = $current."[orbit-app-instance-342]\nchdir = /fast/apps/orbit-website/task-1172\n";
+    $harness = new FpmPublishHarness;
+    $managed = $harness->prepare('8.5', 'orbit-scopes.conf', $stale);
+    $harness->stopService();
+    $harness->allowActivation();
+    $ssh = new AppDevFakeSshExecutor([
+        new CommandResult(0, "8.5\t".base64_encode($stale)."\nmissing-directory\t/fast/apps/orbit-website/task-1172\n", '', 1, false),
+    ]);
+
+    try {
+        $manager = new RemoteAppDevPhpFpmManager(
+            sites: new DevelopmentSiteRepository,
+            renderer: new DevelopmentPhpFpmConfigRenderer,
+            ssh: app_dev_ssh($ssh),
+            accounts: app_dev_account_resolver(),
+            packages: new RemotePhpPackageManager,
+            phpRoot: $harness->phpRoot(),
+            lockDirectory: $harness->lockDirectory(),
+        );
+        $manager->converge($node);
+        $install = $ssh->commands[2]->input ?? '';
+        $result = $harness->run($ssh->commands[3]);
+
+        expect($install)
+            ->toContain('sudo systemctl enable "php$version-fpm.service"')
+            ->not->toContain('enable --now')
+            ->and(mb_substr($install, (int) mb_strpos($install, 'sudo systemctl enable "php$version-fpm.service"')))
+            ->not->toContain('is-active')
+            ->and($result->succeeded())
+            ->toBeTrue($result->stderr)
+            ->and(file_get_contents($managed))
+            ->toBe($current)
+            ->and($harness->serviceCalls())
+            ->toBe(['enable php8.5-fpm', 'reload-or-restart php8.5-fpm'])
+            ->and($harness->serviceActive())
+            ->toBeTrue();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
+it('starts a failed PHP-FPM whose Orbit pools are already current', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    $current = new DevelopmentPhpFpmConfigRenderer()->render(
+        new DevelopmentSiteRepository()->forNode($node),
+        new ManagedUserAccount('orbit', 'orbit', '/home/orbit'),
+    );
+    $harness = new FpmPublishHarness;
+    $managed = $harness->prepare('8.5', 'orbit-scopes.conf', $current);
+    $harness->stopService();
+    $harness->allowActivation();
+    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "8.5\t".base64_encode($current)."\n", '', 1, false)]);
+
+    try {
+        $manager = new RemoteAppDevPhpFpmManager(
+            sites: new DevelopmentSiteRepository,
+            renderer: new DevelopmentPhpFpmConfigRenderer,
+            ssh: app_dev_ssh($ssh),
+            accounts: app_dev_account_resolver(),
+            packages: new RemotePhpPackageManager,
+            phpRoot: $harness->phpRoot(),
+            lockDirectory: $harness->lockDirectory(),
+        );
+        $manager->converge($node);
+        $result = $harness->run($ssh->commands[3]);
+
+        expect($result->succeeded())
+            ->toBeTrue($result->stderr)
+            ->and(file_get_contents($managed))
+            ->toBe($current)
+            ->and($harness->serviceCalls())
+            ->toBe(['enable php8.5-fpm', 'is-active --quiet php8.5-fpm', 'restart php8.5-fpm'])
+            ->and($harness->serviceActive())
+            ->toBeTrue();
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('rejects an unsupported PHP version before target discovery or installation', function (): void {
     [$node, $project] = app_dev_runtime_models();
     $unsupported = app_dev_supported_app_instance($node, $project->id, 'unsupported', '8.3');

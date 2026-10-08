@@ -417,6 +417,11 @@ final readonly class RemotePhpPackageManager
     }
 
     /**
+     * Installation enables the shared FPM service but never starts it. The caller starts or reloads
+     * it after it publishes the pools, so a stale pool that stops FPM from starting cannot block the
+     * publication that removes it. A changed runtime module reloads a running FPM only when the
+     * installed configuration passes `php-fpm -t`; otherwise the pool publication reloads it.
+     *
      * @param  list<string>  $packages
      * @param  array{source_step: string, source_error: string, install_step: string, install_error: string}  $failure
      */
@@ -589,12 +594,15 @@ final readonly class RemotePhpPackageManager
                     if [ "$fpm_pcov_before" != "$fpm_pcov_after" ]; then
                         runtime_changed=1
                     fi
-                    if [ "$runtime_changed" = 1 ] && sudo systemctl is-active --quiet "php$version-fpm.service"; then
+                    if [ "$runtime_changed" = 1 ] \
+                        && sudo systemctl is-active --quiet "php$version-fpm.service" \
+                        && sudo /usr/sbin/php-fpm"$version" -t >/dev/null 2>&1
+                    then
                         sudo systemctl reload-or-restart "php$version-fpm.service"
                     fi
                     trap - EXIT
                     rm -rf -- "$runtime_work"
-                    sudo systemctl enable --now "php$version-fpm.service"
+                    sudo systemctl enable "php$version-fpm.service"
 
                     /usr/bin/php"$version" -v >/dev/null
                     /usr/sbin/php-fpm"$version" -v >/dev/null
@@ -610,7 +618,6 @@ final readonly class RemotePhpPackageManager
                     fi
 
                     sudo systemctl is-enabled --quiet "php$version-fpm.service"
-                    sudo systemctl is-active --quiet "php$version-fpm.service"
                     BASH,
             ),
             step: $failure['install_step'],

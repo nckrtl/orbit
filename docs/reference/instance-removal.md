@@ -121,8 +121,16 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
 | `source_finalization` | Delete the development checkout, or keep the production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
-| `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). |
+| `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
+
+### Runtime cleanup
+
+`runtime_cleanup` converges PHP-FPM and Caddy on the Instance's Node from stored state. By then the Instance has no Route target, so stored state renders neither its PHP-FPM pool nor its Caddy site, and convergence removes both. A development Instance runs this step even when it never became active and has no recorded Route.
+
+A pending Route can publish a pool before activation, and `route:destroy` can delete that Route before the Instance is removed. So neither the Route nor the Instance state proves that no pool is left. A production Instance that never published a runtime and has no Route skips the step's runtime work.
+
+`source_finalization` deletes the checkout before `runtime_cleanup`, so for a moment the live pool names a missing directory. [PHP-FPM convergence](/reference/php-runtime#development-runtime) never renders a pool for a missing directory and does not need PHP-FPM to start first, so a later convergence still repairs the Node if `runtime_cleanup` fails. A failed step keeps the removal open for retry, and Doctor reports the leftover pool as `role.php_pool_directory_missing`.
 
 ### Route cleanup
 
