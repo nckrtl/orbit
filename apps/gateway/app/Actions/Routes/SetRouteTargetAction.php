@@ -6,6 +6,7 @@ namespace App\Actions\Routes;
 
 use App\Data\Routes\RouteData;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DevelopmentSourceAccess;
@@ -25,6 +26,7 @@ use App\Models\Instance;
 use App\Models\Route;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 final readonly class SetRouteTargetAction
 {
@@ -56,9 +58,14 @@ final readonly class SetRouteTargetAction
             ->values()
             ->all();
         $expectedTargetIds = array_values($expectedTargetIds);
-        $result = $this->environmentOperations->run(
+        // The projection owner is taken before the Route is read, so contention returns before any
+        // write. A source-access failure comes after the commit: the stored target is still
+        // announced, and the failure is reported afterwards.
+        [$result, $accessFailure] = $this->environmentOperations->run(
             [...$expectedTargetIds, $instanceId],
-            fn (): Route => $this->executeOwned($route, $instanceId, $expectedTargetIds),
+            fn (): array => $this->projections->run(
+                fn (): array => $this->executeOwned($route, $instanceId, $expectedTargetIds),
+            ),
         );
 
         ($this->broadcaster ?? app(RecordEventBroadcaster::class))->broadcast(
@@ -69,11 +76,18 @@ final readonly class SetRouteTargetAction
 
         $this->metrics?->reconcile();
 
+        if ($accessFailure instanceof Throwable) {
+            throw $accessFailure;
+        }
+
         return $result;
     }
 
-    /** @param list<int> $expectedTargetIds */
-    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): Route
+    /**
+     * @param  list<int>  $expectedTargetIds
+     * @return array{Route, ?Throwable}
+     */
+    private function executeOwned(Route $route, int $instanceId, array $expectedTargetIds): array
     {
         try {
             $updated = DB::transaction(function () use ($route, $instanceId, $expectedTargetIds): Route {
@@ -184,17 +198,30 @@ final readonly class SetRouteTargetAction
             );
         }
 
-        $this->grantSourceAccess($updated, $instanceId);
+        try {
+            $this->grantSourceAccess($updated, $instanceId);
+        } catch (RuntimeConvergenceException $exception) {
+            return [$updated, new RuntimeConvergenceException(
+                step: $exception->step,
+                errorCode: $exception->errorCode,
+                message: "{$exception->getMessage()} The Route target is stored. Set the same target on Route [{$updated->domain}] again to grant the access.",
+                previous: $exception,
+                result: $exception->result,
+            )];
+        } catch (Throwable $exception) {
+            return [$updated, $exception];
+        }
 
-        return $updated;
+        return [$updated, null];
     }
 
     /**
      * Setting a target does not build Caddy, but the next build on the target's Node serves the
      * Route's published sites with it. Route convergence on that Node walks only its own checkout,
-     * so the new target's Web root is made readable here. A retry of the same target on a Route
-     * that is not active grants again. An active Route only accepts its current target, as a no-op,
-     * and its convergence already granted that access.
+     * so the new target's Web root is made readable here, after the commit and under the caller's
+     * projection owner. A retry of the same target on a Route that is not active grants again, so
+     * it repairs a failed grant. An active Route only accepts its current target, as a no-op, and
+     * its convergence already granted that access.
      */
     private function grantSourceAccess(Route $route, int $instanceId): void
     {
@@ -208,6 +235,6 @@ final readonly class SetRouteTargetAction
             return;
         }
 
-        $this->projections->run(fn () => $this->sourceAccess->grant($target));
+        $this->sourceAccess->grant($target);
     }
 }

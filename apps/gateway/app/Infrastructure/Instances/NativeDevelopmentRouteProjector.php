@@ -7,6 +7,7 @@ namespace App\Infrastructure\Instances;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Instances\DevelopmentSourceAccess;
 use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
@@ -35,6 +36,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         private RemoteAppDevCaddyManager $caddy,
         private DnsmasqPrivateDnsManager $dns,
         private DevelopmentSshExecutor $ssh,
+        private DevelopmentSourceAccess $sourceAccess,
         private ?PublicRouteEdgeProjector $publicEdge = null,
     ) {}
 
@@ -48,7 +50,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $this->certificates->convergeInstance($instance, $route);
         $route->publishSites();
 
-        new NativeDevelopmentSourceAccess($this->ssh)->grant($instance);
+        $this->sourceAccess->grant($instance);
         $this->php->converge($instance->node);
         $this->caddy->build($instance->node);
 
