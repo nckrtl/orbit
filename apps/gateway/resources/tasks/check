@@ -214,9 +214,12 @@ def run_setup(checkout, setup, log):
             log.write(f"$ {step['command']}\n".encode())
             log.flush()
             try:
-                exit_code = subprocess.run(['bash', '-lc', step['command']], cwd=checkout, stdin=subprocess.DEVNULL,
-                                           stdout=log, stderr=subprocess.STDOUT,
-                                           timeout=step.get('timeout_seconds') or None).returncode
+                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.sh') as script:
+                    script.write(step['command'])
+                    script.flush()
+                    exit_code = subprocess.run(['bash', '-l', script.name], cwd=checkout, stdin=subprocess.DEVNULL,
+                                               stdout=log, stderr=subprocess.STDOUT,
+                                               timeout=step.get('timeout_seconds') or None).returncode
             except subprocess.TimeoutExpired:
                 log.write(f"Setup step {step['name']} timed out after {step['timeout_seconds']} seconds.\n".encode())
                 exit_code = 124

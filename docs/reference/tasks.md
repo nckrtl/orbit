@@ -919,6 +919,8 @@ The start records that claim before the process exists. The tick waits while the
 
 The check runs only the Project's ordered [setup steps](/reference/instance-setup), with their configured timeouts, and then its configured task check. It runs setup even when no task check is configured. Without a task check, it runs no check command. The engine neither inspects manifests nor infers install commands from the check text. The Project must record any dependency installation it needs as setup steps. Handoff checks run no setup.
 
+Setup commands run in a login shell from a private temporary script file, which the check removes when the step ends or times out. Large cache payloads do not enter shell arguments or depend on the operating system's argument-size limit.
+
 The Orbit repository's own check seeds its caches from a registered main cache store, as [Feature delivery](/reference/implementation-loop#seed-a-checkout) describes.
 
 A failed setup step or check asks for assistance at once, without a reminder. The reason names the step and the exit code, and the subtask's `check` shows the output. The engine keeps the command output as evidence and does not classify missing dependencies from its text. A cancelled baseline, a second `changed` run, a second `lost` run, and an interrupted start also ask for assistance. The interrupted-start reason says that the baseline start was interrupted and a check may still run in the workspace.
