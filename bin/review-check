@@ -13,7 +13,6 @@ import time
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
-ANNOTATION_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_TYPES = ('bash', '-lc', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && cmp -- "$generated" src/api/schema.d.ts')
 WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_TYPES)
 PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'),
@@ -114,9 +113,7 @@ def selected_projects(paths, root):
     """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
     selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS]
     if any(path.startswith('apps/web/') for path in paths):
-        selected.extend((('apps/web', (WEB_INSTALL,)),
-                         ('packages/agent-annotation', (ANNOTATION_INSTALL,)),
-                         ('apps/web', WEB_CHECK_COMMANDS)))
+        selected.extend((('apps/web', (WEB_INSTALL,)), ('apps/web', WEB_CHECK_COMMANDS)))
     elif 'docs/openapi.json' in paths:
         selected.append(('apps/web', (WEB_INSTALL, WEB_TYPES)))
     if any(path.startswith('apps/pi-server/') for path in paths):

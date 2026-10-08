@@ -53,10 +53,8 @@ function orb277_gate_fixture(
     mkdir($root.'/apps/web/src/api', 0o700, true);
     mkdir($root.'/apps/web/node_modules/.bin', 0o700, true);
     mkdir($root.'/apps/pi-server', 0o700, true);
-    mkdir($root.'/packages/agent-annotation', 0o700, true);
     mkdir($root.'/docs', 0o700, true);
     file_put_contents($root.'/.gitignore', ".orbit-tia/\n");
-    file_put_contents($root.'/packages/agent-annotation/.gitkeep', '');
     file_put_contents($root.'/apps/web/src/api/schema.d.ts', "export type Example = string;\n");
     file_put_contents($root.'/docs/openapi.json', "{}\n");
 
@@ -307,7 +305,7 @@ describe('Builder gate', function (): void {
         expect($receipt['passed'])->toBeTrue()
             ->and($receipt['changed_paths'])->toBe(['apps/web/src/App.tsx'])
             ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())
-            ->toBe([...orb277_selected_projects(), 'apps/web', 'packages/agent-annotation'])
+            ->toBe([...orb277_selected_projects(), 'apps/web'])
             ->and($web->pluck('command')->all())->toHaveCount(4)
             ->and($web[0]['command'])->toBe(['bun', 'install', '--frozen-lockfile'])
             ->and($web[1]['command'])->toBe(['bun', 'run', 'check'])
@@ -315,8 +313,6 @@ describe('Builder gate', function (): void {
             ->and($web->pluck('exit_code')->all())->toBe([0, 0, 0, 0]);
         expect($web[3]['command'][0])->toBe('bash')
             ->and($web[3]['command'][2])->toContain('./node_modules/.bin/openapi-typescript');
-        expect(collect($receipt['checks'])->firstWhere('project', 'packages/agent-annotation'))
-            ->toMatchArray(['command' => ['bun', 'install', '--frozen-lockfile'], 'exit_code' => 0]);
     });
 
     it('selects only the generated web types check for OpenAPI changes', function (): void {
