@@ -157,7 +157,14 @@ mod tests {
 
     #[test]
     fn accepts_lifecycle_operations_without_arbitrary_commands() {
-        for operation in ["observe", "capacity", "park", "resume", "destroy", "project_identity"] {
+        for operation in [
+            "observe",
+            "capacity",
+            "park",
+            "resume",
+            "destroy",
+            "project_identity",
+        ] {
             let mut value = base();
             value["operation"] = operation.into();
             assert!(request(value.to_string().as_bytes()).is_ok());
