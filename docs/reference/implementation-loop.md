@@ -86,6 +86,12 @@ GitHub CI runs on every pull request, on every push to `main`, every night on `m
 
 On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest` and `ComposerConfigurationTest`, because TIA does not link a workflow file to the tests that read it.
 
+A pull request job also runs the project's `subprocess` group when the pull request changes a file that the project's tests read. A test that starts PHP in a subprocess, such as `artisan` or a fixture script, declares `pest()->group('subprocess')` at the top of its file. PCOV records only the test's own process, so TIA does not link the code that the subprocess runs to the test.
+
+`bin/ci-tia subprocess` makes the choice. It compares the pull request with its merge base, and a push to `main` with the commit of the restored graph. A change inside the project, or outside it on a path that `bin/ci-tia` does not list as unrelated, runs the group. When the changes cannot be read, the group runs. The PHP SDK has no subprocess tests, so only its step passes with an empty group.
+
+The E2E contract `SubprocessTestGroupTest` fails when a test names `PHP_BINARY` or `PhpExecutableFinder`, or starts a `php` or `composer` command, without the group. It also follows a test helper under `tests/` that does so to the tests that use it.
+
 On `main`, `bin/ci-tia plan` chooses each project's tests from the restored `main` graph. A push runs the tests affected since the commit that the graph records, with `--tia`. That commit can be older than the parent when runs overlap, so the selection covers every merge since it. The project runs its full suite with `--tia --fresh` instead when any of these hold:
 
 - The run is the nightly run or a manual dispatch.
@@ -111,7 +117,7 @@ A `watch()` pattern matches the whole path relative to the project. `*` stays in
 
 Fixture changes run the full suite under TIA anyway. Docs and E2E tests read files across the repository, so these projects run their full suite whenever a file outside them changes. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the selection from a contributor's view.
 
-An affected run on `main` also runs the architecture tests, as a pull request does.
+An affected run on `main` also runs the architecture tests, as a pull request does. It runs the `subprocess` group when a change since the graph's commit is inside the project.
 
 After a passing run, `bin/ci-tia finish` requires the graph to record the tested commit and to hold a result for every test file it links. Pest records the commit itself after it runs tests. When no test is affected, Pest stops before it records the commit, so `finish` records it. The job then saves the graph to the cache.
 
@@ -417,7 +423,18 @@ Comparing with the parent commit is a rejected alternative: when runs overlap, t
 
 TIA cannot link every file to its tests. `bin/ci-tia` treats a change as visible only when it can show that TIA links it, and runs the full suite otherwise. Listing only the paths known to be invisible is a rejected alternative, because a new kind of input would then skip its tests silently.
 
-Two kinds of miss remain. A wrong entry in the list of unrelated paths can skip a test. A test that runs project code in a PHP subprocess is not linked to that code, so a change that another test covers in-process does not select it. The nightly full run finds such a miss within a day, and its failure switches pushes back to full runs until a full run passes again.
+TIA does not link a test to the code that it runs in a PHP subprocess. So a run that is not full also runs the `subprocess` group, and a contract test keeps each test that starts PHP in that group. Running those test files by path is a rejected alternative, because Paratest takes one path per run, and about fifty files would each pay its startup time. Leaving these tests to the nightly full run is also rejected, because a broken `main` commit can then ship before the nightly run fails.
+
+The group costs about two minutes on the Gateway and E2E jobs. So a run skips it when no change reaches the project, with the rules that `bin/ci-tia` already uses for unrelated paths. Running the group on every pull request and affected run is a rejected alternative, because a web-only or docs-only change would then wait for Gateway tests that cannot fail from it. Docs and E2E tests read files across the repository, so these projects run the group on every change.
+
+Some misses remain:
+
+- A wrong entry in the list of unrelated paths can skip a test.
+- A test that starts PHP only through project code, without naming the PHP binary, is not in the group.
+- A test that runs a PHP script directly, through its `#!/usr/bin/env php` line, is not in the group. The contract does not resolve script paths.
+- The contract does not treat `vendor/bin/pest` as a marker, because most tests name it as data in a command.
+
+The nightly full run finds such a miss within a day, and its failure switches pushes back to full runs until a full run passes again.
 
 ### CI caches stay separate
 

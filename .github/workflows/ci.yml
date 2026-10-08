@@ -228,13 +228,27 @@ jobs:
           case "$PROJECT" in
             apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php tests/Feature/CliBinaryBuildContractTest.php' ;;
             apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
-            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php' ;;
+            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php' ;;
             packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
             *) exit 0 ;;
           esac
           for architecture_test in $architecture_tests; do
             vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --compact "$architecture_test"
           done
+
+      # TIA does not link code that a test runs in a PHP subprocess to that test, so a run that is not full also runs
+      # them when a change since the pull request base, or since the commit of the main graph, reaches the project.
+      - name: Choose whether to run subprocess tests
+        id: orbit-subprocess
+        if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
+        run: ../../bin/ci-tia subprocess --base "$BASE"
+
+      # The PHP SDK has no subprocess tests. Every other project's group must find tests.
+      - name: Run subprocess tests
+        if: always() && steps.orbit-subprocess.outputs.run == 'true'
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --group=subprocess --compact${{ matrix.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}
 
       - name: Require the Pest TIA graph to describe this commit
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -326,6 +340,12 @@ jobs:
           composer install --no-interaction --prefer-dist
       - name: Run every privileged test
         run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
+      # A privileged test that writes into the checkout as root leaves files the runner user cannot delete, and
+      # every later checkout on that Sabre runner then fails. Remove anything root owns in the workspace.
+      - name: Remove root-owned files from the workspace
+        if: always() && runner.environment == 'self-hosted'
+        working-directory: ${{ github.workspace }}
+        run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
 
   api-reference:
     name: API reference

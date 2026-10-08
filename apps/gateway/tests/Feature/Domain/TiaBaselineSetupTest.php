@@ -16,6 +16,8 @@ use Symfony\Component\Process\Process;
 use Tests\Support\LifecycleSshExecutor;
 use Tests\Support\TiaBaselineTestSource;
 
+pest()->group('subprocess');
+
 function tia_setup_source(): void
 {
     app()->instance(TiaBaselineSource::class, new TiaBaselineTestSource);

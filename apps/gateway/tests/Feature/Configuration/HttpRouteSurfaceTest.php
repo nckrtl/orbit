@@ -7,6 +7,8 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\ServiceProvider;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 /** @return list<array{methods: list<string>, uri: string, name: ?string}> */
 $bootHttpRoutes = static function (string $environment, string $debug): array {
     $script = <<<'PHP'

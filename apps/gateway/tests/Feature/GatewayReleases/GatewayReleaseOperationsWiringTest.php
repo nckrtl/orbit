@@ -12,6 +12,8 @@ use App\Models\GatewayRelease;
 use App\Models\Node;
 use Tests\Support\GatewayReleasePipeline;
 
+pest()->group('subprocess');
+
 /*
  * These tests take every action, the recorder, the promoter, and the supersession check from the
  * service provider. Only leaf services are faked, so a dependency the provider does not wire fails here.

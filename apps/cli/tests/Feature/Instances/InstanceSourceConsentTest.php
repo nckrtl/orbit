@@ -13,6 +13,8 @@ use Orbit\Sdk\Requests\Instances\TransferInstanceRequest;
 use Orbit\Sdk\Requests\Nodes\ShowNodeRequest;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 function instance_source_reply(string $class, array $data): array
 {
     return ['class' => $class, 'body' => ['data' => $data,
