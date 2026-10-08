@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Routes\RemoveRouteAction;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Metrics\ExporterDegradationReason;
+use App\Domain\Nodes\NodeReachabilityProbe;
+use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -12,12 +16,15 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteRemovalResidue;
 use App\Models\RouteTarget;
 use Tests\Support\FakeRouteRemovalProjector;
 
 beforeEach(function (): void {
     $this->projector = new FakeRouteRemovalProjector;
     app()->instance(RouteRemovalProjector::class, $this->projector);
+    $this->probe = new TargetedRouteRemovalProbe;
+    app()->instance(NodeReachabilityProbe::class, $this->probe);
 });
 
 describe('targeted Route removal', function (): void {
@@ -96,6 +103,99 @@ describe('targeted Route removal', function (): void {
     });
 });
 
+describe('targeted Route removal on a Node the Gateway cannot reach', function (): void {
+    it('names the Node and the offline option when a step fails on an unreachable Node', function (): void {
+        $route = targeted_route_removal_route(InstanceState::SourceResolved);
+        $node = targeted_route_removal_node_for($route, $this->projector);
+        $this->probe->unreachable = [$node->id];
+        $this->projector->failures['caddy'] = 1;
+
+        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('route.node_unreachable')
+                    ->and($exception->status)->toBe(502)
+                    ->and($exception->getMessage())->toBe('Route removal could not change node [beast], which is unreachable or not active. Retry with --offline to remove the Route and leave that Node unchanged until its next converge.')
+                    ->and($exception->details)->toBe([
+                        'nodes' => 'beast',
+                        'step' => 'caddy',
+                        'underlying_error_code' => 'route.test_caddy',
+                    ]);
+            });
+
+        expect($route->refresh()->status)->toBe(RouteStatus::Failed)
+            ->and($route->failed_step)->toBe('targeted:caddy')
+            ->and($route->error_code)->toBe('route.node_unreachable')
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
+    });
+
+    it('keeps the step failure when every Node the step acts on answers', function (): void {
+        $route = targeted_route_removal_route(InstanceState::SourceResolved);
+        targeted_route_removal_node_for($route, $this->projector);
+        $this->projector->failures['caddy'] = 1;
+
+        expect(fn () => app(RemoveRouteAction::class)->execute($route))
+            ->toThrow(function (ResourceOperationException $exception): void {
+                expect($exception->errorCode)->toBe('route.test_caddy');
+            });
+
+        expect($route->refresh()->error_code)->toBe('route.test_caddy');
+    });
+
+    it('skips an unreachable Node offline, deletes the Route, and records what the Node still needs', function (): void {
+        $route = targeted_route_removal_route(InstanceState::SourceResolved);
+        $node = targeted_route_removal_node_for($route, $this->projector);
+        $this->probe->unreachable = [$node->id];
+
+        app(RemoveRouteAction::class)->execute($route, offline: true);
+
+        $residue = RouteRemovalResidue::query()->sole();
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and($this->projector->events)->toBe(['dns', 'caddy', 'php', 'certificates', 'firewall'])
+            ->and($this->projector->skipped)->toBe([
+                'caddy' => [$node->id],
+                'php' => [$node->id],
+                'certificates' => [$node->id],
+                'firewall' => [$node->id],
+            ])
+            ->and($residue->node_id)->toBe($node->id)
+            ->and($residue->route_id)->toBe($route->id)
+            ->and($residue->domain)->toBe('task-342.acme.beast.test')
+            ->and($residue->steps)->toBe(['caddy', 'php', 'firewall']);
+    });
+
+    it('skips a Node that is not active offline without probing it', function (): void {
+        $route = targeted_route_removal_route(InstanceState::SourceResolved);
+        $node = targeted_route_removal_node_for($route, $this->projector);
+        $node->update(['status' => LifecycleStatus::Failed]);
+
+        app(RemoveRouteAction::class)->execute($route, offline: true);
+
+        expect($this->probe->probed)->toBe([])
+            ->and($this->projector->skipped['caddy'])->toBe([$node->id])
+            ->and(RouteRemovalResidue::query()->sole()->node_id)->toBe($node->id);
+    });
+
+    it('keeps every step on a Node that answers even offline', function (): void {
+        $route = targeted_route_removal_route(InstanceState::SourceResolved);
+        $node = targeted_route_removal_node_for($route, $this->projector);
+        $this->projector->failures['caddy'] = 1;
+
+        expect(fn () => app(RemoveRouteAction::class)->execute($route, offline: true))
+            ->toThrow(ResourceOperationException::class, 'Injected caddy failure.');
+
+        expect($this->probe->probed)->toBe([$node->id])
+            ->and($this->projector->skipped['caddy'])->toBe([])
+            ->and($route->refresh()->failed_step)->toBe('targeted:caddy')
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
+
+        app(RemoveRouteAction::class)->execute($route, offline: true);
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
+    });
+});
+
 function targeted_route_removal_route(InstanceState $state): Route
 {
     $project = Project::query()->create([
@@ -136,4 +236,29 @@ function targeted_route_removal_route(InstanceState $state): Route
     $route->publishSites();
 
     return $route->refresh()->load('targets');
+}
+
+function targeted_route_removal_node_for(Route $route, FakeRouteRemovalProjector $projector): Node
+{
+    $node = Node::query()->findOrFail($route->node_id);
+    $projector->nodes = [new RouteRemovalNode($node, [RouteRemovalStep::Caddy, RouteRemovalStep::Php, RouteRemovalStep::Firewall])];
+
+    return $node;
+}
+
+/** Answers reachability without SSH, and records which Nodes it was asked about. */
+final class TargetedRouteRemovalProbe implements NodeReachabilityProbe
+{
+    /** @var list<int> */
+    public array $unreachable = [];
+
+    /** @var list<int> */
+    public array $probed = [];
+
+    public function degradation(Node $node): ?ExporterDegradationReason
+    {
+        $this->probed[] = $node->id;
+
+        return in_array($node->id, $this->unreachable, true) ? ExporterDegradationReason::Unreachable : null;
+    }
 }

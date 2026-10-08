@@ -12,11 +12,13 @@ use App\Actions\Routes\RemoveRouteAction;
 use App\Actions\Routes\SetRouteTargetAction;
 use App\Actions\Routes\ShowRouteAction;
 use App\Actions\Routes\UpdateRouteAction;
+use App\Data\Routes\RemovedRouteData;
 use App\Data\Routes\RouteData;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Routes\EmptyRouteRequest;
+use App\Http\Requests\Routes\RemoveRouteRequest;
 use App\Http\Requests\Routes\SetRouteTargetRequest;
 use App\Http\Requests\Routes\StoreRouteRequest;
 use App\Http\Requests\Routes\UpdateRouteRequest;
@@ -102,10 +104,10 @@ final class RoutesController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::RouteOwning)]
-    public function destroy(EmptyRouteRequest $request, Route $route, RemoveRouteAction $action): JsonResponse
+    public function destroy(RemoveRouteRequest $request, Route $route, RemoveRouteAction $action): JsonResponse
     {
         return response()->json([
-            'data' => RouteData::fromModel($action->execute($route))->toArray(),
+            'data' => RemovedRouteData::fromRemoval($action->execute($route, $request->offline()))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

@@ -428,6 +428,14 @@ The PHP-FPM step converges each Node of a development target, right after its si
 
 A targeted removal records its failed step with the prefix `targeted:`, for example `targeted:caddy`. A retry of the same removal resumes it. A Route whose untargeted removal failed and that has gained a target since then is refused with `env.owner_changed`.
 
+### Remove a Route from an unreachable Node
+
+The Caddy, PHP-FPM, certificate, and firewall steps change Nodes over SSH. When one of those Nodes does not answer, the step fails. The Gateway then probes the Nodes of that step and, for a Node that is not `active` or does not answer, returns `route.node_unreachable` instead of the step's error. The message names the Node and the `--offline` option, and `details` keeps the step and the original error code. The Route stays `failed` at that step.
+
+`route:destroy --offline` checks each Node before it changes anything. It skips a Node that is not `active`, or that the [reachability probe](/reference/node-provisioning#remove-a-node) finds unreachable. A Node that answers keeps every step, and a failure on it still stops the removal. The Gateway runs the other steps, deletes the Route, and records a residue for each skipped Node in the same transaction. The response lists them under `retained_on_nodes`, each with `node_id`, `node`, and the `steps` the Node still needs.
+
+Doctor reports each residue as `node.route_residue_retained` in the `node` family, also while the Node is down. The `route-residue` artifact of [`node:converge`](/reference/node-provisioning#converge-the-orbit-footprint) finishes the removal once the Node answers. It builds Caddy and converges PHP-FPM from stored state, which has no record of the removed Route. Then it removes the Route's certificates and firewall rules by Route ID and deletes the residue. A failure keeps the residue for the next converge. Node removal deletes the residues with the Node.
+
 Instance removal deletes a Route whose last target it removes, before it finalizes the source. A development removal first serves `503 Orbit Route unavailable` for the Route from stored state. Then it clears the site publication, builds Caddy without the Route, removes the Instance and Router certificates, and deletes the Route. A production removal republishes the remaining pool when a shared Route keeps other targets. [Instance removal](/reference/instance-removal) owns the cascade.
 
 | Removal | Guard |

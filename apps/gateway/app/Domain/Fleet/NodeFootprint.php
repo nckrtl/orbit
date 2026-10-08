@@ -54,6 +54,7 @@ final readonly class NodeFootprint
      * Re-applies every artifact whose digest differs from the one the Node last received. With
      * `$force`, it re-applies every artifact, or the named ones; each still leaves a matching live copy alone.
      * The digests cover only what Orbit renders from its own code and pins, never a user's sites or records.
+     * The one exception is the residue of an offline Route removal, which is Orbit's own unfinished work.
      *
      * @param  bool|list<string>  $force
      *

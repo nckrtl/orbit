@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Infrastructure\Routes;
 
 use App\Domain\AppDev\AppDevPhpFpmManager;
-use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Routes\RouteRemovalNode;
 use App\Domain\Routes\RouteRemovalProjector;
+use App\Domain\Routes\RouteRemovalStep;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
-use App\Infrastructure\AppDev\RemoteAppDevPhpFpmManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\AppDev\WithdrawnSitePhpConvergence;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Route;
@@ -28,22 +29,46 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         private ?AppDevPhpFpmManager $php = null,
     ) {}
 
+    public function nodes(Route $route): array
+    {
+        $nodes = [];
+        $steps = [];
+        $stepNodes = [
+            [RouteRemovalStep::Caddy, $this->projectionNodes($route)],
+            [RouteRemovalStep::Php, $this->developmentTargetNodes($route)],
+            [RouteRemovalStep::Certificates, $this->certificateNodes($route)],
+            [RouteRemovalStep::Firewall, $this->workloadNodes($route)],
+        ];
+
+        foreach ($stepNodes as [$step, $acting]) {
+            foreach ($acting as $node) {
+                $nodes[$node->id] = $node;
+                $steps[$node->id][] = $step;
+            }
+        }
+
+        return array_values(array_map(
+            static fn (Node $node): RouteRemovalNode => new RouteRemovalNode($node, $steps[$node->id]),
+            $nodes,
+        ));
+    }
+
     public function cleanupDns(Route $route): void
     {
         $this->dns->converge();
     }
 
-    public function cleanupCertificates(Route $route): void
+    public function cleanupCertificates(Route $route, array $skippedNodeIds = []): void
     {
         $route->loadMissing('node');
 
-        if ($route->isCustomProxy() && $route->node instanceof Node) {
+        if ($route->isCustomProxy() && $route->node instanceof Node && ! in_array($route->node->id, $skippedNodeIds, true)) {
             $this->certificates->removeCustomProxy($route, $route->node);
         }
 
         $router = $this->router($route);
 
-        if (! $router instanceof Node) {
+        if (! $router instanceof Node || in_array($router->id, $skippedNodeIds, true)) {
             return;
         }
 
@@ -51,41 +76,39 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         $this->certificates->removeRouteRouterHostnameChange($route, $router);
     }
 
-    public function cleanupCaddy(Route $route): void
+    public function cleanupCaddy(Route $route, array $skippedNodeIds = []): void
     {
-        foreach ($this->projectionNodes($route) as $node) {
+        foreach ($this->without($this->projectionNodes($route), $skippedNodeIds) as $node) {
             $this->caddy->build($node);
         }
     }
 
-    public function cleanupFirewall(Route $route): void
+    public function cleanupFirewall(Route $route, array $skippedNodeIds = []): void
     {
-        foreach ($this->workloadNodes($route) as $node) {
+        foreach ($this->without($this->workloadNodes($route), $skippedNodeIds) as $node) {
             $this->firewall->remove($node, $route->id);
         }
     }
 
-    /**
-     * Stored state renders no pool for a Route without published sites, so a convergence that
-     * skipped another site's pool for a missing directory has still withdrawn this Route's pools.
-     * Doctor reports the skipped pool; it must not keep this removal open.
-     */
-    public function cleanupPhp(Route $route): void
+    public function cleanupPhp(Route $route, array $skippedNodeIds = []): void
     {
-        foreach ($this->developmentTargetNodes($route) as $node) {
-            try {
-                $this->php()->converge($node);
-            } catch (RuntimeConvergenceException $exception) {
-                if ($exception->errorCode !== RemoteAppDevPhpFpmManager::PoolDirectoryMissing) {
-                    throw $exception;
-                }
-            }
+        $php = new WithdrawnSitePhpConvergence($this->php ?? app(AppDevPhpFpmManager::class));
+
+        foreach ($this->without($this->developmentTargetNodes($route), $skippedNodeIds) as $node) {
+            $php->converge($node);
         }
     }
 
-    private function php(): AppDevPhpFpmManager
+    /**
+     * @param  Collection<int, Node>  $nodes
+     * @param  list<int>  $skippedNodeIds
+     * @return Collection<int, Node>
+     */
+    private function without(Collection $nodes, array $skippedNodeIds): Collection
     {
-        return $this->php ?? app(AppDevPhpFpmManager::class);
+        return $nodes
+            ->reject(static fn (Node $node): bool => in_array($node->id, $skippedNodeIds, true))
+            ->values();
     }
 
     private function router(Route $route): ?Node
@@ -94,6 +117,17 @@ final readonly class NativeRouteRemovalProjector implements RouteRemovalProjecto
         $router = $route->cluster?->routerAssignment?->node;
 
         return $router instanceof Node ? $router : null;
+    }
+
+    /** @return Collection<int, Node> */
+    private function certificateNodes(Route $route): Collection
+    {
+        $route->loadMissing('node');
+
+        return collect([$route->isCustomProxy() ? $route->node : null, $this->router($route)])
+            ->filter(static fn (mixed $node): bool => $node instanceof Node)
+            ->unique(static fn (Node $node): int => $node->id)
+            ->values();
     }
 
     /** @return Collection<int, Node> */

@@ -21,6 +21,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Models\Node;
+use App\Models\RouteRemovalResidue;
 use Throwable;
 
 final readonly class NodeDoctorProbe implements DoctorFamilyProbe
@@ -52,6 +53,19 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 'Node lifecycle is not active.',
                 expected: 'active',
                 observed: $node->status->value,
+            );
+        }
+        // Stored state: an offline Route removal skipped this Node, so the report holds while it is down.
+        foreach (RouteRemovalResidue::query()->where('node_id', $node->id)->orderBy('route_id')->get() as $residue) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::RouteResidueRetained,
+                DoctorIssueKind::Drift,
+                'node',
+                $node->id,
+                $node->name,
+                "Removed Route [{$residue->route_id}] [{$residue->domain}] still has projections on the Node.",
+                expected: 'removed',
+                observed: implode(',', $residue->steps),
             );
         }
         if (! $this->eligibility->isManagedForObservation($node)) {

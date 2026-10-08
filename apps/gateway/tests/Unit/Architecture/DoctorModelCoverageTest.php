@@ -50,6 +50,7 @@ use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
+use App\Models\RouteRemovalResidue;
 use App\Models\RouteTarget;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
@@ -90,6 +91,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         Route::class,
         RouteTarget::class,
         RouteAnalyticsTracking::class,
+        RouteRemovalResidue::class,
         ProcessDefinition::class,
         ScheduleDefinition::class,
         DatabaseConnectionTarget::class,

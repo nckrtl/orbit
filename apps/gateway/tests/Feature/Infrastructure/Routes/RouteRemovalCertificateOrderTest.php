@@ -7,8 +7,10 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\RouteProvenance;
@@ -25,6 +27,7 @@ use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -41,6 +44,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteRemovalResidue;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -202,6 +206,73 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->removedWhileNamed)->toBe([])
             ->and($this->nodes->validates('10.44.0.30'))->toBeTrue()
             ->and($this->nodes->validates('10.44.0.20'))->toBeTrue();
+    });
+
+    it('refuses to remove a Route whose Node does not answer and names the offline option', function (): void {
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
+        $this->nodes->down = ['10.44.0.7'];
+
+        $this->deleteJson("/api/v1/routes/{$route->id}")
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'route.node_unreachable')
+            ->assertJsonPath(
+                'error.message',
+                'Route removal could not change node [beast], which is unreachable or not active. Retry with --offline to remove the Route and leave that Node unchanged until its next converge.',
+            );
+
+        expect($route->refresh()->status)->toBe(RouteStatus::Failed)
+            ->and($route->failed_step)->toBe('targeted:caddy')
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
+    });
+
+    it('removes a Route offline, leaves the dead Node unchanged, and finishes on its next converge', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
+        $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
+        $worker = certificate_order_node('worker', 30, RoleName::AppDev, $cluster);
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $worker, nodeScoped: false);
+        $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
+        certificate_order_caddy()->converge($router);
+        $this->nodes->down = ['10.44.0.30'];
+
+        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])
+            ->assertOk()
+            ->assertJsonPath('data.id', $route->id)
+            ->assertJsonPath('data.retained_on_nodes', [
+                ['node_id' => $worker->id, 'node' => 'worker', 'steps' => ['caddy', 'php', 'firewall']],
+            ]);
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and($this->php->converged)->toBe([])
+            ->and($this->nodes->firewallRemovals)->toBe([]);
+
+        $artifact = app(RouteResidueFootprintArtifact::class);
+        $this->nodes->down = [];
+
+        expect($artifact->applies($worker))->toBeTrue()
+            ->and($artifact->applies($router))->toBeFalse()
+            ->and($artifact->apply($worker))->toBeTrue()
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->php->converged)->toBe(['worker' => []])
+            ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
+            ->and($artifact->applies($worker))->toBeFalse()
+            ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.30'))->toBeTrue();
+    });
+
+    it('keeps the residue for a retry when the Node still does not answer at converge', function (): void {
+        [$route] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
+        $this->nodes->down = ['10.44.0.7'];
+        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->assertOk();
+
+        expect(fn () => app(RouteResidueFootprintArtifact::class)->apply($this->beast))
+            ->toThrow('The Caddy build for Node [beast] failed at stage [connect]');
+
+        expect(RouteRemovalResidue::query()->where('node_id', $this->beast->id)->exists())->toBeTrue();
     });
 
     it('keeps the certificate and a retryable Route when the Caddy build fails', function (): void {
@@ -377,7 +448,11 @@ function certificate_order_bind_projectors(
     );
     $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites));
 
+    $firewall = new RemoteAppDevRouteFirewallManager($executor);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
+    app()->instance(RemoteAppDevRouteFirewallManager::class, $firewall);
+    app()->instance(AppDevPhpFpmManager::class, $php);
+    app()->instance(NodeReachabilityProbe::class, new CertificateOrderReachability($nodes));
     app()->instance(RemoteAppDevCertificateManager::class, $certificates);
     app()->instance(
         CustomProxyRouteProjector::class,
@@ -385,7 +460,7 @@ function certificate_order_bind_projectors(
     );
     app()->instance(
         RouteRemovalProjector::class,
-        new NativeRouteRemovalProjector($dns, $certificates, $caddy, new RemoteAppDevRouteFirewallManager($executor), $php),
+        new NativeRouteRemovalProjector($dns, $certificates, $caddy, $firewall, $php),
     );
 }
 
@@ -473,12 +548,23 @@ final class CertificateOrderNodes implements SshExecutor
     /** @var list<string> */
     public array $firewallRemovals = [];
 
+    /**
+     * Hosts whose SSH does not connect.
+     *
+     * @var list<string>
+     */
+    public array $down = [];
+
     public ?string $failCaddy = null;
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $host = $connection->host;
         $input = is_string($command->input) ? $command->input : '';
+
+        if (in_array($host, $this->down, true)) {
+            return new CommandResult(255, '', "ssh: connect to host {$host} port 22: Connection timed out", 1, false);
+        }
 
         if (preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode \\|/", $input, $matches) === 1) {
             $configuration = (string) base64_decode($matches[1], true);
@@ -580,5 +666,16 @@ final class CertificateOrderPhpFpm implements AppDevPhpFpmManager
     public function converge(Node $node): void
     {
         $this->converged[$node->name] = certificate_order_php_sites($node);
+    }
+}
+
+/** The probe sees a Node as unreachable exactly when its simulated SSH does not connect. */
+final readonly class CertificateOrderReachability implements NodeReachabilityProbe
+{
+    public function __construct(private CertificateOrderNodes $nodes) {}
+
+    public function degradation(Node $node): ?ExporterDegradationReason
+    {
+        return in_array($node->wireguard_ip, $this->nodes->down, true) ? ExporterDegradationReason::Unreachable : null;
     }
 }
