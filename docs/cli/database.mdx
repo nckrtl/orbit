@@ -67,14 +67,14 @@ orbit database:create <slug> --server=SERVER [--instance=INSTANCE]
 ```bash
 orbit database:create app --driver=mysql --host=db.example.test --database=app --username=app --password=secret
 orbit database:create local --driver=sqlite --path=/var/lib/app/database.sqlite
-orbit database:create postgres --driver=pgsql --node=beast --host=127.0.0.1 --database=app --username=app --password=secret
+orbit database:create postgres --driver=pgsql --node=beast --host=10.44.0.7 --database=app --username=app --password=secret
 orbit database:create cache --driver=redis --host=127.0.0.1 --database=0
 orbit database:create dlf-leden --server=beast-mysql --instance=60
 ```
 
 The Gateway answers `validation.failed` when a mysql, pgsql, or redis record includes `--path`, when a sqlite record includes `--host`, `--port`, or `--database`, when a redis record omits `--host`, or when the request includes an unsupported field. A duplicate slug returns `database.slug_conflict` and leaves the existing record unchanged.
 
-Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. A connection with `--node` lets an Instance on the same Node reach a Docker Process there through `127.0.0.1`.
+Query, tables, schema, and describe refuse a redis connection with `database.driver_unsupported`. An Instance gets the stored `--host` and `--port` unchanged, also on the `--node` Node. Use an address that every Instance can reach, such as the database Node's WireGuard address.
 
 ## orbit database:list
 

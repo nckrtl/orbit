@@ -22,8 +22,15 @@ final class InstanceEnvironmentSynchronizationsController extends Controller
         $instance = $request->route('instance');
         assert($instance instanceof Instance);
 
+        $result = $action->execute($instance);
+
+        // Activity recording reads the base request, not this Form Request copy.
+        if ($result->testing !== null) {
+            request()->attributes->set('orbit.environment_testing', $result->testing->toArray());
+        }
+
         return response()->json([
-            'data' => $action->execute($instance)->toArray(),
+            'data' => $result->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

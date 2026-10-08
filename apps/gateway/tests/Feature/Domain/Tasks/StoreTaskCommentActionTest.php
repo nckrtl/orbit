@@ -2,35 +2,49 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\NullTaskReviewDiff;
 use App\Domain\Tasks\NullTaskWorkspaceDiffReader;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionStatus;
+use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
+use App\Domain\Tasks\TaskTurnMode;
+use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Domain\Tasks\TaskTurnReceipts;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceMcp;
+use App\Infrastructure\Tasks\TaskWorkspaceMetadata;
+use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskComment;
 use App\Models\TaskQuestion;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
+use Symfony\Component\Process\Process;
 use Tests\Support\AcceptingTaskWorkspaceMcp;
 use Tests\Support\AgentCommandDispatcher;
 use Tests\Support\AgentSnapshotReader;
 use Tests\Support\FakeTaskCheckRunner;
 use Tests\Support\FakeTaskTurnReceipts;
+use Tests\Support\NullAgentSnapshotReader;
 
 /** A blocked task in the given status, with an implementer and a reviewer thread. */
 function blocked_task(TaskStatus $status): Task
@@ -69,15 +83,22 @@ function blocked_task(TaskStatus $status): Task
 }
 
 /** Binds a T3 driver whose dispatcher records the thread of every started turn. */
-function recording_t3_turns(): object
+function recording_t3_turns(?Closure $beforeAccept = null): object
 {
-    $dispatcher = new class implements AgentCommandDispatcher
+    $dispatcher = new class($beforeAccept) implements AgentCommandDispatcher
     {
         /** @var list<string> */
         public array $threads = [];
 
+        /** @var list<array<string, mixed>> */
+        public array $commands = [];
+
+        public function __construct(private ?Closure $beforeAccept) {}
+
         public function dispatch(Node $node, array $command): array
         {
+            ($this->beforeAccept ?? static function (): void {})();
+            $this->commands[] = $command;
             $this->threads[] = (string) ($command['threadId'] ?? '');
 
             return ['sequence' => 1, 'thread_id' => (string) ($command['threadId'] ?? '')];
@@ -87,6 +108,287 @@ function recording_t3_turns(): object
 
     return $dispatcher;
 }
+
+it('resumes a deliverable correction on the same implementer with refreshed turn deliverables', function (): void {
+    $task = blocked_task(TaskStatus::Running);
+    $contract = [
+        ['id' => 'corrected', 'type' => 'file', 'description' => 'Same description.', 'path' => 'tests/CorrectedTest.php', 'change' => 'created'],
+        ['id' => 'repro', 'type' => 'command', 'description' => 'Same description.', 'command' => 'vendor/bin/pest --filter=corrected', 'directory' => 'apps/gateway', 'fails_on_base' => true, 'paths' => ['apps/gateway/tests/CorrectedTest.php']],
+    ];
+    $task->update(['deliverable_correction_check_id' => 1, 'deliverables' => $contract]);
+    $receipts = new FakeTaskTurnReceipts;
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $turns = recording_t3_turns();
+    $threadId = $task->implementer_agent_thread_id;
+
+    $comment = app(StoreTaskCommentAction::class)->execute($task, [
+        'type' => 'resolution', 'body' => 'The invalid deliverable is corrected. Resume handoff.', 'author' => 'operator',
+    ]);
+
+    expect($receipts->prepared)->toBe(['implementer'])
+        ->and($receipts->turnDeliverables)->toBe([['corrected', 'repro']])
+        ->and($turns->threads)->toBe(['implementer-thread']);
+    $message = $turns->commands[0]['message']['text'];
+    $json = explode("```json\n", $message)[1];
+    expect(json_decode(explode("\n```", $json)[0], true))->toBe($contract);
+    expect($task->fresh()?->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->parent->assistance_requested)->toBeFalse()
+        ->and($task->fresh()?->completion_attempt)->toBe(3)
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBe($comment->id)
+        ->and($task->fresh()?->implementer_agent_thread_id)->toBe($threadId)
+        ->and($task->fresh()?->status)->toBe(TaskStatus::Running);
+});
+
+it('replays a deliverable correction safely after prepare failures, lost replies, and a delivery commit crash', function (string $failure): void {
+    $task = blocked_task(TaskStatus::Running);
+    $task->update(['deliverable_correction_check_id' => 1, 'subtask_start_commit' => str_repeat('b', 40), 'deliverables' => [['id' => 'corrected', 'type' => 'review', 'description' => 'Corrected.']]]);
+    $checkout = sys_get_temp_dir().'/orbit-correction-replay-'.bin2hex(random_bytes(6));
+    File::ensureDirectoryExists($checkout.'/.git/orbit');
+    $task->parent->taskable->update(['checkout_path' => $checkout]);
+    $prepared = [];
+    $injectPrepare = true;
+    $receipts = Mockery::mock(TaskTurnReceipts::class);
+    $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode) use (&$prepared, &$injectPrepare, $failure, $checkout): void {
+        $prepared[] = $mode?->deliveryKey;
+        if ($injectPrepare && $failure === 'prepare-before') {
+            $injectPrepare = false;
+            throw new TaskTurnReceiptException('Injected failure before prepare.');
+        }
+        $payload = ['script' => base64_encode((string) file_get_contents(resource_path('tasks/turn'))), 'turn' => json_encode(['role' => $role->value, 'thread' => $threadId, 'delivery_key' => $mode?->deliveryKey, 'deliverables' => [['id' => 'corrected', 'type' => 'review', 'description' => 'Corrected.']]], JSON_THROW_ON_ERROR), 'context' => null];
+        $program = "checkout=\$1\n".TaskWorkspaceMetadata::bashPreamble().TaskWorkspaceMetadata::operation('turn', $payload);
+        (new Process(['bash', '-seu', '--', $checkout], input: $program))->mustRun();
+        if ($injectPrepare && $failure === 'prepare-after') {
+            $injectPrepare = false;
+            throw new TaskTurnReceiptException('Injected lost prepare reply.');
+        }
+    });
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $dispatcher = new class($checkout, $task->implementer_agent_thread_id, $failure) implements AgentCommandDispatcher
+    {
+        /** @var list<string> */
+        public array $calls = [];
+
+        /** @var array<string, bool> */
+        public array $accepted = [];
+
+        public bool $loseReplies = true;
+
+        public function __construct(private string $checkout, private ?int $threadId, private string $failure) {}
+
+        public function dispatch(Node $node, array $command): array
+        {
+            $key = (string) $command['commandId'];
+            $this->calls[] = $key;
+            if (! isset($this->accepted[$key])) {
+                $this->accepted[$key] = true;
+                (new Process([$this->checkout.'/.git/orbit/turn', '--thread='.$this->threadId, '--outcome=ready_for_review', '--summary=Resumed work done.', '--deliverable=corrected=Reviewed'], cwd: $this->checkout))->mustRun();
+            }
+            if ($this->loseReplies && $this->failure === 'send-replies-lost') {
+                throw new AgentDriverException('Accepted remotely, but both replies lost.');
+            }
+
+            return ['sequence' => 1, 'thread_id' => (string) $command['threadId']];
+        }
+    };
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $dispatcher, reader: new NullAgentSnapshotReader));
+    $injectCommit = $failure === 'commit-crash';
+    DB::beforeExecuting(function (string $sql) use (&$injectCommit): void {
+        if ($injectCommit && str_starts_with($sql, 'update') && str_contains($sql, 'completion_attempt') && str_contains($sql, 'deliverable_correction_resume')) {
+            $injectCommit = false;
+            throw new RuntimeException('Injected crash after accepted send, before delivery commit.');
+        }
+    });
+
+    try {
+        if ($failure === 'commit-crash') {
+            expect(fn () => app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Resume the corrected contract.', 'author' => 'operator']))->toThrow(RuntimeException::class, 'Injected crash');
+        } else {
+            app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Resume the corrected contract.', 'author' => 'operator']);
+        }
+        $pending = $task->fresh()?->deliverable_correction_resume;
+        expect($pending['state'])->toBe('pending');
+        expect($task->fresh()?->assistance_requested)->toBeTrue();
+        $receipt = file_exists($checkout.'/.git/orbit/receipt.json') ? file_get_contents($checkout.'/.git/orbit/receipt.json') : null;
+        $dispatcher->loseReplies = false;
+        app(TaskExtensionState::class)->enable();
+        app(TaskScheduler::class)->tick();
+
+        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('delivered')
+            ->and($task->fresh()?->assistance_requested)->toBeFalse()
+            ->and($task->fresh()?->completion_attempt)->toBe(3);
+        expect(array_unique($prepared))->toBe([$pending['key']]);
+        expect(array_keys($dispatcher->accepted))->toBe([$pending['key']]);
+        expect(array_unique($dispatcher->calls))->toBe([$pending['key']]);
+        if ($receipt !== null) {
+            expect(file_get_contents($checkout.'/.git/orbit/receipt.json'))->toBe($receipt);
+        }
+        $calls = count($dispatcher->calls);
+        app(ResumeDeliverableCorrectionAction::class)->execute($task->fresh() ?? $task);
+        expect(count($dispatcher->calls))->toBe($calls);
+    } finally {
+        File::deleteDirectory($checkout);
+    }
+})->with(['prepare-before', 'prepare-after', 'send-replies-lost', 'commit-crash']);
+
+it('preserves a real ended PR hold published after correction reservation at remote boundaries', function (string $boundary): void {
+    $task = blocked_task(TaskStatus::Running);
+    $task->update(['deliverable_correction_check_id' => 1]);
+    $group = $task->parent;
+    $group->update(['watched_pr_url' => 'https://github.com/example/app/pull/965', 'watched_pr_state' => 'closed']);
+    $turns = recording_t3_turns();
+    app()->instance(AgentDriverRegistry::class, test_snapshot_registry(dispatcher: $turns, reader: new class implements AgentSnapshotReader
+    {
+        public function snapshot(Node $node, string $threadId): ?array
+        {
+            return ['thread' => ['session' => ['status' => 'idle']]];
+        }
+    }));
+    $pending = null;
+    $reason = null;
+    $transactionLevel = DB::transactionLevel();
+    $publishHold = function () use ($task, $group, &$pending, &$reason, $transactionLevel): void {
+        expect(DB::transactionLevel())->toBe($transactionLevel);
+        $pending = $task->fresh()?->deliverable_correction_resume;
+        expect($pending['state'])->toBe('pending');
+        app(RequestEndedPullRequestAssistanceAction::class)->execute($group->fresh() ?? $group);
+        $reason = $group->fresh()?->assistance_reason;
+        expect(RequestEndedPullRequestAssistanceAction::isReason($reason))->toBeTrue();
+    };
+    $fetcher = Mockery::mock(TaskBaseBranchFetcher::class);
+    $fetcher->shouldReceive('fetchForTurn')->once()->andReturnUsing(function () use ($boundary, $publishHold): void {
+        if ($boundary === 'fetch') {
+            $publishHold();
+        }
+    });
+    app()->instance(TaskBaseBranchFetcher::class, $fetcher);
+    $prepared = [];
+    $receipts = Mockery::mock(TaskTurnReceipts::class);
+    $receipts->shouldReceive('prepare')->andReturnUsing(function (Instance $instance, TaskThreadRole $role, bool $final, array $deliverables, ?int $threadId, ?TaskTurnMode $mode) use (&$prepared, $boundary, $publishHold): void {
+        $prepared[] = $mode?->deliveryKey;
+        if ($boundary === 'prepare') {
+            $publishHold();
+        }
+    });
+    app()->instance(TaskTurnReceipts::class, $receipts);
+
+    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator']);
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Repeated resolution.', 'author' => 'operator']);
+
+    expect($task->fresh()?->deliverable_correction_resume)->toBe($pending)
+        ->and($task->fresh()?->completion_attempt)->toBe(2)
+        ->and($task->fresh()?->resolution_delivered_comment_id)->toBeNull();
+    expect($task->fresh()?->assistance_reason)->toBe($reason)
+        ->and($group->fresh()?->assistance_reason)->toBe($reason)
+        ->and($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure)
+        ->and($group->fresh()?->assistance_kind)->toBe(AssistanceKind::Failure);
+    expect($prepared)->toBe($boundary === 'fetch' ? [] : [$pending['key']]);
+    $noticeKey = $task->fresh()?->ended_pr_notice_key;
+    expect($noticeKey)->not->toBe($pending['key']);
+    expect(array_column($turns->commands, 'commandId'))->toBe([$noticeKey]);
+    expect(Activity::query()->where('description', 'deliverable correction resumed')->count())->toBe(0);
+})->with(['fetch', 'prepare']);
+
+it('preserves intervening direction before delivering a correction', function (bool $pending): void {
+    $task = blocked_task(TaskStatus::Running);
+    $task->update(['deliverable_correction_check_id' => 1, 'deliverables' => [['id' => 'corrected', 'type' => 'review', 'description' => 'Corrected.']]]);
+    $receipts = new FakeTaskTurnReceipts;
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $turns = recording_t3_turns();
+    if ($pending) {
+        $comment = TaskComment::query()->create(['task_group_id' => $task->parent_id, 'task_id' => $task->id, 'type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator', 'posted_at' => now()]);
+        app(ResumeDeliverableCorrectionAction::class)->reserve($task, $comment);
+    }
+    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'assistance_requested', 'body' => 'Which approach is safe?', 'author' => 'operator']);
+    $resume = $task->fresh()?->deliverable_correction_resume;
+    app(TaskExtensionState::class)->enable();
+
+    app(TaskScheduler::class)->tick();
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+
+    expect($turns->threads)->toBe([]);
+    expect($receipts->prepared)->toBe([]);
+    expect($task->fresh()?->deliverable_correction_resume)->toBe($resume);
+    expect($task->fresh()?->completion_attempt)->toBe(2);
+    expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction);
+    expect($task->fresh()?->parent->assistance_question)->toBe('Which approach is safe?');
+    AgentThread::query()->where('external_id', 'reviewer-thread')->update(['task_id' => $task->id]);
+    $resolution = app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Ask the reviewer about the safe approach.', 'author' => 'operator']);
+    expect($task->fresh()?->direction_relay_comment_id)->not->toBeNull();
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+    expect($turns->threads)->toBe(['reviewer-thread']);
+    if ($pending) {
+        expect($task->fresh()?->deliverable_correction_resume)->toBe($resume);
+    } else {
+        expect($task->fresh()?->deliverable_correction_resume['comment_id'])->toBe($resolution->id);
+        expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('pending');
+    }
+    expect($task->fresh()?->completion_attempt)->toBe(2);
+})->with(['before reservation' => false, 'pending retry' => true]);
+
+it('does not clear group-only direction through the ordinary resolution fallback after correction', function (): void {
+    $task = blocked_task(TaskStatus::Running);
+    $task->update(['deliverable_correction_check_id' => 1]);
+    TaskAssistance::apply($task->parent, AssistanceKind::Direction, 'New group direction.', 'New group direction.', replaceDirection: true);
+    $turns = recording_t3_turns();
+
+    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Resume correction.', 'author' => 'operator']);
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+
+    expect($turns->threads)->toBe([]);
+    expect($task->fresh()?->deliverable_correction_resume)->toBeNull();
+    expect($task->fresh()?->completion_attempt)->toBe(2);
+    expect($task->fresh()?->assistance_requested)->toBeTrue();
+    expect($task->fresh()?->parent->assistance_question)->toBe('New group direction.');
+});
+
+it('keeps a direction arriving during correction acceptance and suppresses repeat delivery', function (): void {
+    $task = blocked_task(TaskStatus::Running);
+    $task->update(['deliverable_correction_check_id' => 1]);
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
+    $turns = recording_t3_turns(function () use ($task): void {
+        app(StoreTaskCommentAction::class)->execute($task, ['type' => 'assistance_requested', 'body' => 'New direction during send.', 'author' => 'operator']);
+    });
+
+    app(StoreTaskCommentAction::class)->execute($task, ['type' => 'resolution', 'body' => 'Corrected.', 'author' => 'operator']);
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+
+    expect($turns->threads)->toBe(['implementer-thread']);
+    expect($task->fresh()?->deliverable_correction_resume['state'])->toBe('delivered');
+    expect($task->fresh()?->assistance_kind)->toBe(AssistanceKind::Direction);
+    expect($task->fresh()?->parent->assistance_question)->toBe('New direction during send.');
+    expect(TaskQuestion::query()->where('subtask_id', $task->id)->sole()->resolution_comment_id)->toBeNull();
+});
+
+it('retains the authenticated correction resolution caller and request through scheduler retry', function (): void {
+    $task = blocked_task(TaskStatus::Running);
+    $task->update(['deliverable_correction_check_id' => 1]);
+    $actor = $task->parent->taskable->node;
+    $this->markAsGateway($actor);
+    $this->withServerVariables(['REMOTE_ADDR' => $actor->wireguard_ip]);
+    app(TaskExtensionState::class)->enable();
+    $receipts = Mockery::mock(TaskTurnReceipts::class);
+    $receipts->shouldReceive('prepare')->once()->andThrow(new TaskTurnReceiptException('Lost reply.'));
+    app()->instance(TaskTurnReceipts::class, $receipts);
+    $turns = recording_t3_turns();
+    $requestId = 'bb94949e-6a5f-419c-872a-14fa89f5cc61';
+
+    $this->withHeader('X-Orbit-Request-Id', $requestId)->postJson("/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}/comments", ['type' => 'resolution', 'body' => 'Corrected.', 'author' => 'not-the-authenticated-actor'])->assertCreated();
+    $resume = $task->fresh()?->deliverable_correction_resume;
+    expect($resume['caller_node_id'])->toBe($actor->id);
+    expect($resume['request_id'])->toBe($requestId);
+    app()->instance(AgentSnapshotReader::class, new NullAgentSnapshotReader);
+    app()->instance(TaskTurnReceipts::class, new FakeTaskTurnReceipts);
+    app(TaskScheduler::class)->tick();
+    app(ResumeDeliverableCorrectionAction::class)->execute($task);
+
+    $audit = Activity::query()->where('description', 'deliverable correction resumed')->sole();
+    expect($audit->getRawOriginal('caller_node_id'))->toBe($actor->id);
+    expect($audit->caller_ip)->toBe($actor->wireguard_ip);
+    expect($audit->request_id)->toBe($requestId);
+    expect($audit->properties?->get('comment_id'))->toBe($resume['comment_id']);
+    expect($turns->threads)->toBe(['implementer-thread']);
+});
 
 it('relays a direction resolution to the reviewer of a running subtask', function (): void {
     $task = blocked_task(TaskStatus::Running);

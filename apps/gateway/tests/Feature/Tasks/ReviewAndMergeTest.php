@@ -98,6 +98,8 @@ function rm_group(array $subtasks, TaskGroupStatus $status = TaskGroupStatus::Re
     $instance = Instance::query()->create([
         'project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id,
         'checkout_path' => '/srv/orbit/apps/acme/task-'.$group->id, 'branch' => 'task-'.$group->id, 'status' => 'source_resolved',
+        // The implementer admission gate validates deliverables against a resolved review base.
+        'starting_commit' => str_repeat('a', 40),
     ]);
     $group->taskable()->associate($instance);
     $group->save();

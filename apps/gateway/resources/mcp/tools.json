@@ -7563,7 +7563,10 @@
         "group",
         "task"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "type",
+        "limit"
+      ],
       "streams": false,
       "input_schema": {
         "type": "object",
@@ -7575,6 +7578,24 @@
           },
           "task": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ready_for_review",
+              "changes_requested",
+              "approved",
+              "blocked",
+              "answered",
+              "topology_requested",
+              "assistance_requested",
+              "resolution"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
           }
         },
         "additionalProperties": false,
@@ -8399,6 +8420,7 @@
       "path": "/api/v1/task-groups",
       "path_inputs": [],
       "query_inputs": [
+        "compact",
         "project_id",
         "status"
       ],
@@ -8406,6 +8428,9 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "compact": {
+            "type": "boolean"
+          },
           "project_id": {
             "type": "integer",
             "minimum": 1
@@ -8486,7 +8511,9 @@
       "path_inputs": [
         "group"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "compact"
+      ],
       "streams": false,
       "input_schema": {
         "type": "object",
@@ -8495,6 +8522,9 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Task group ID."
+          },
+          "compact": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,

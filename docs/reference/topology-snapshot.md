@@ -148,7 +148,11 @@ A guest convergence script that exits nonzero stops that step. The harness error
 
 The harness redacts stderr the same way it redacts output in the [evidence log](/reference/incus-topologies#evidence-log). The tail is the end of that redacted text. It keeps at most the last 20 lines and 2000 characters. When those lines are longer, it keeps the last 2000 characters. A shorter stream is included whole. When stderr is empty, the error still names the script, the VM, and the exit code. Bytes that are not valid UTF-8 are replaced before the tail is cut, so a bad byte does not drop the tail.
 
-A probe that retries reports the last attempt. That error names the same script, VM, exit code, and stderr tail.
+A convergence probe that retries reports the last attempt. That error names the same script, VM, exit code, and stderr tail. Topology verification records a failed guest exit and the same redacted stderr tail in the probe's `observed` field. If a later attempt times out (exit 124), it also retains the last non-timeout failure, so the timeout does not hide an earlier HTTP 500 or guest error. The report fields stay unchanged.
+
+The `laravel.prod` HTTPS check uses at most three curl attempts, each with a 2-second connection timeout and a 5-second total timeout. The normal retry schedule takes at most 17 seconds, but an HTTP `Retry-After` header can extend curl's waits. An external `timeout` sends TERM after 18 seconds and KILL one second later if needed, bounding the curl process to 19 seconds, below the 30-second guest command timeout.
+
+A deadline expiry fails the probe with a nonzero exit and preserves curl's stderr. This leaves time for the other production checks and for collecting failure evidence. Curl's `--retry-max-time` is not used because it can return success after an HTTP failure when the retry deadline expires.
 
 A failed sample App state inspection stops verification before the probes. Its error names `converge-sample-app.sh`, the VM, and the exit code, then the same redacted stderr tail. When the inspection returns no result, the error names the script and the VM.
 

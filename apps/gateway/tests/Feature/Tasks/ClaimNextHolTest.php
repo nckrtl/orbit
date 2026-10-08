@@ -62,6 +62,7 @@ it('claimNext continues after provision null', function (): void {
         'node_id' => $node->id,
         'name' => 'claim-hol-second',
         'checkout_path' => '/tmp/claim-hol-second',
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
     ]);
 

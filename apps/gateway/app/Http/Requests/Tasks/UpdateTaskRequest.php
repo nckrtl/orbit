@@ -20,6 +20,8 @@ use UnexpectedValueException;
 
 final class UpdateTaskRequest extends FormRequest
 {
+    use ValidatesDeliverablePaths;
+
     /** @return array<string, list<string|Enum|In|DistinctDeliverableIds|FailsOnBase|CommandPaths>> */
     public function rules(): array
     {

@@ -439,6 +439,8 @@ final class TaskTeardownRoutes implements InstanceRemovalProjector
         return 'deleted';
     }
 
+    public function withdrawPhpPool(InstanceRemovalMember $member): void {}
+
     public function cleanupRuntime(InstanceRemovalMember $member): void {}
 }
 

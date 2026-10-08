@@ -72,6 +72,10 @@ An [annotation](/reference/agent-annotation) creates a task with `execution_mode
 
 Typed comments record the workflow. A stored turn receipt is a comment whose type is its outcome: `ready_for_review`, `blocked`, `changes_requested`, or `approved`. An operator posts `assistance_requested` and `resolution` comments. Each comment keeps its full body, author, time, and attempt. An approval that Orbit committed carries `commit_sha`. The approval of the last subtask also carries `pull_request`: the summary, changes, and breaking changes it proposed.
 
+`GET /api/v1/task-groups/{group}/tasks/{task}/comments` and the MCP tool `tasks-comment-list` accept optional `type` and `limit` query inputs. `type` must be a task comment type, such as `resolution` or `assistance_requested`. `limit` must be an integer from 1 to 100. The endpoint returns comments newest first, filters by type before applying the limit, and preserves each comment's full body and response shape. With neither input, it returns all comments as before. An unknown type or an invalid limit returns HTTP 422 with `validation.failed`. Use `type=resolution` and `limit=1` to read the newest resolution without returning the full comment history; the limit bounds the number of comments, not the byte size of an individual body.
+
+`GET /api/v1/task-groups` and `GET /api/v1/task-groups/{group}`, and their MCP tools `tasks-list` and `tasks-show`, accept an optional boolean `compact` query input. With `compact=true`, each group omits `brief`, `assistance_question`, and `assistance_reason`; each subtask omits those fields plus `completion_summary`, `deliverables`, and `fixup_problem`. The latest check keeps its metadata but omits `output`. Omitted keys are absent, not null. Ids, titles, statuses, positions, assistance flags and kinds, and counters remain available. Without `compact`, or with `compact=false`, the response is unchanged. Invalid boolean input returns HTTP 422 with `validation.failed`. Use compact reads to avoid returning long text in the MCP output; this reduces the response size but does not impose a byte limit or paginate the results.
+
 ### Task lifecycle
 
 A task moves through these statuses from preparation to its end.
@@ -241,7 +245,7 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 | `reserved`, `failed` | Nothing. Subtask create still appends |
 | `completed`, `cancelled` | Nothing |
 
-A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is.
+A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
 A `todo` subtask appended to a `settling` task returns the task to `running` on the next tick, as [Fix a settling pull request](#fix-a-settling-pull-request) describes.
 
@@ -271,6 +275,7 @@ The task and subtask operations return these errors.
 | `tasks.group_closed` | 409 | Subtask create in a `completed` or `cancelled` task |
 | `tasks.not_in_backlog` | 409 | A title or brief update outside `backlog`, or a subtask update or destroy that the table above does not permit |
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started |
+| `tasks.deliverable_base_unavailable` | 422 | The repository base or its complete file tree could not be read for path validation |
 | `tasks.already_claimed` | 409 | A status update on a task the scheduler already claimed |
 | `tasks.subtask_not_running` | 409 | A subtask cancel that the rules above do not permit |
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
@@ -314,6 +319,27 @@ Each deliverable has an `id`, a `type`, a `description`, and the fields of its t
 
 A field of another type is refused with HTTP 422 `validation.failed`. The error names the field path, such as `deliverables.0.path`. The `fails_on_base` and `paths` errors also name the deliverable's `id`. Only a `file` deliverable's `path` accepts a glob: `*` matches in one directory, `**` matches across directories, `?` matches one character, and `{a,b}` is a non-nested alternative, including a single choice such as `{php}`. Alternatives may contain slashes and the same `*`, `**`, and `?` rules. `paths` is not a glob.
 
+Task create, subtask create, and subtask update validate deliverable paths against a selected base commit. A resolved subtask base uses the recorded start commit, the base of a continuation's source subtask, the previous approved commit, or the workspace starting commit, in that order. When no base resolves, validation uses the Project's default-branch HEAD SHA at request time as a provisional base. It does not consult the default branch when a resolved base exists. Existing groups still validate subtask deliverables if the Project later switches to GitHub CLI source access; creating a new group still requires the GitHub App.
+
+Orbit reads the base tree from the task workspace when the group has one. In a [review-and-merge](#review-and-merge) Project, an approval is committed but not pushed, so only the workspace has it. Without a workspace, Orbit reads the commit from the Project repository. It also reads the Project repository when the workspace cannot list the commit. When neither source has the commit, the request fails with `tasks.deliverable_base_unavailable`.
+
+Before each implementer spawn, including retries and the next subtask after approval or cancellation, Orbit rechecks deliverable paths against the resolved review base after recording the subtask's start commit. It never falls back to the default branch at this gate. Missing paths request assistance instead of starting the agent; the reason names each failing deliverable id, path, and base SHA. An unresolved base or an unreadable base tree also requests assistance without starting the agent. This prevents a plan accepted against a provisional default-branch commit from reaching an agent on a release seed or task branch that lacks its paths.
+
+Every reason from this gate starts with `Deliverable path validation`. No implementer exists yet, so recovery does not go through an agent:
+
+1. Fix the cause.
+2. For missing paths, replace the subtask's `deliverables` with subtask update.
+3. Post a `resolution` comment on the subtask.
+4. The next scheduler tick runs the gate again.
+
+A `deliverables` update is accepted while the gate holds the subtask. It must pass the same base-path validation. Task activity records the old and new lists. This update does not use the one correction after `invalid_deliverable`.
+
+The resolution clears the subtask's assistance. It also clears the task's assistance when no other subtask asks for it. Task activity records `resolution queued deliverable gate retry`. When the gate passes on the next tick, the implementer starts. When it fails, the subtask asks for assistance again with the new reason.
+
+A file path must exist on that base, and a file glob must match at least one base file, unless `change` is `created`. File patterns and created-file companion patterns use the same relative-path normalization as handoff, including removal of leading `./`. Errors retain the submitted path.
+
+Every command `paths` entry must exist on the base unless a sibling file deliverable with `change: created` covers it, literally or through a glob. A sibling with `change: modified` or `change: any` is not a new-file marker. With `fails_on_base: true`, each command path must also be a test file: under a `tests/` directory, or ending in `Test.php`, `.test.ts`, `.spec.ts`, or `_test.go`. This prevents a base run from copying the implementation fix. A violation returns HTTP 422 `validation.failed`; its field error names the deliverable id, path, base SHA, and `base_kind=resolved` or `base_kind=provisional`.
+
 There is no `test` deliverable type. A migration converts stored `test` deliverables in tasks that are not completed, failed, or cancelled, and it leaves `task_check` unchanged. Each stored `test` deliverable names a Pest file and a test-name substring. The migration normalizes the project and file paths, then runs `vendor/bin/pest` from that project directory with the file and `--colors=never`. The name match is a case-sensitive substring, and regex characters in the name are escaped so they stay literal.
 
 It carries over `fails_on_base`. When the base run is on, `paths` lists the workspace-relative test file. The migration also adds a `file` deliverable with `change: any` for that file. The command and the file stay together, and each id stays unique and at most 64 characters.
@@ -354,7 +380,19 @@ The turn command refuses a missing confirmation, an unknown ID, an ID given twic
 
 ### Verify deliverables
 
-The [handoff check](#project-check) first rejects a command whose directory is outside the checkout, and a base run whose `paths` are missing or are not files in the workspace. An invalid deliverable fails the check at once, before the task check runs, with a message such as `Deliverable layout-repro names invalid overlay path apps/gateway/tests/Feature/HomeScreenTest.php.` The task then asks for assistance with that message. The implementer gets no reminder, because it cannot change deliverables.
+The [handoff check](#project-check) first rejects a command whose directory is outside the checkout, and a base run whose `paths` are missing or are not files in the workspace. An invalid deliverable fails the check at once, before the task check runs, with a message such as `Deliverable layout-repro names invalid overlay path apps/gateway/tests/Feature/HomeScreenTest.php.` The task then asks for assistance with that message. The implementer gets no reminder.
+
+While assistance is requested and the subtask and group are still running, the operator can use the existing subtask update flow (`PATCH /api/v1/task-groups/{group}/tasks/{task}`, or `tasks-subtask-update`) to replace only `deliverables` once after the latest handoff check fails with `failed_step: invalid_deliverable`. The replacement cannot be empty and must pass the same base-path validation, including test-only paths for `fails_on_base`. Invalid requests do not consume the correction.
+
+Task activity history records the failed check id and the old and new lists. The task stores consumption separately, in the same transaction as the correction and audit, so Activity cleanup cannot reopen recovery. A second correction returns `tasks.deliverables_locked`, even if another handoff fails with `invalid_deliverable`. Title, brief, position, and topology stay locked.
+
+After the correction, post a `resolution` comment through the existing task comment flow. Orbit stores the first resolution's delivery key, implementer thread, and full corrected contract before remote work. It refreshes the implementer's turn file and sends the complete corrected deliverable fields, including file paths and changes and command directories and commands. The same thread resumes. The next `ready_for_review` receipt runs a new handoff check. The workspace, start commit, and implementer's work stay in place; there is no cancel or recreate step.
+
+An ended-pull-request reason on either the subtask or group stops correction recovery. Orbit checks fresh reasons before preparing turn metadata, before sending the correction, and before committing delivery. It preserves the pending correction identity, completion attempt, and ended-pull-request holds.
+
+A failed or interrupted correction resume stays pending. The scheduler retries it before the assistance hold blocks progress. Metadata preparation and the agent send share the stored delivery identity. Replaying preparation after a lost reply preserves an already resumed turn and its receipt. Replaying a send reconciles remote acceptance instead of starting a second turn. Orbit clears assistance and records delivery together after acceptance. This recovery applies only to the correction's first resolution; other resolutions keep their existing flow.
+
+A newer direction request pauses correction recovery. If direction arrives before the first correction resolution, Orbit still reserves that resolution and its authenticated caller, but direction owns the delivery. When the reviewer answers that direction, Orbit includes the corrected contract in the implementer's continuation and records the pending correction as superseded in the same transaction that finishes the direction delivery. The old correction key is not prepared or sent again, so it cannot replace the newer turn or erase its receipt.
 
 When the task check passes, the check records the diff and runs each command in a login shell in its directory. A base run, when `fails_on_base` is set, runs on the start commit before the working-tree command. The Gateway checks each `file` deliverable against that diff. The `deliverables` rubric item fails when a confirmation is missing or a deliverable does not pass. Its reminder names each failing deliverable and why. The reviewer starts only when every deliverable passes.
 
