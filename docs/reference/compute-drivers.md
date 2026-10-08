@@ -474,3 +474,11 @@ Review expiry, merge, and cancellation use the owned cleanup path. A failed clea
 When review feedback resumes a group whose UpCloud VM was destroyed, Orbit first confirms an open pull request in the Project repository. It reserves a replacement VM only after the old reservation has finished cleanup. It restores `task-{group id}` at the confirmed pull request commit using temporary GitHub App access, prepares fresh Pi and model credentials, and reruns Project setup and baseline checks before starting the implementer. A missing branch or mismatched commit keeps the group waiting; recovery never starts from the default branch. Retries preserve the replacement reservation and local work.
 
 Orbit does not recreate a VM just for preview access because private task workspaces have no preview Route. Keep unattended claims disabled until the complete live UpCloud flow has passed acceptance.
+
+### Publish a local Project development image
+
+`bin/sandbox-project-image --plan`, `--prepare`, and `--publish` use one closed JSON request with `project`, `pool`, `sandbox_id`, `budget`, `project_slug`, `base_image`, and `source_template`. The project must be an owned proof project. The pinned base must be a private `app-dev` image published from the same source template. It must have no aliases. This path never converts an enrolled Node or changes an existing image.
+
+Preparation creates one owned VM with a 20 GiB root disk and no network or source mount. It verifies the managed account, toolchain, PHP extensions, and absence of fleet, task, agent, or repository credentials. The checkout is empty. Publication repeats that audit, stops the VM, and publishes a new private image with Project provenance. Partial failures retain the candidate for inspection. `--destroy` removes only the matching temporary VM and leaves the published image intact. The Project source, environment, setup, and CI baseline are prepared on each task's owned workspace.
+
+Preparation uses the host's running VM budget. Stopped guests keep their ownership and do not consume running capacity; an uncertain power state still does. Before publication, the builder verifies and removes inherited Orbit template properties only from its temporary candidate. The base image remains unchanged. The published image must carry Project provenance and no Orbit template properties.
