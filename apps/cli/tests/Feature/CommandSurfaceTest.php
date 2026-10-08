@@ -880,7 +880,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false,
             ],
         ],
-        'route:destroy' => [['route'], ['yes' => false, 'json' => false]],
+        'route:destroy' => [['route'], ['yes' => false, 'offline' => false, 'json' => false]],
         'route:show' => [['route'], ['json' => false]],
         'route:target:unset' => [['route'], ['yes' => false, 'json' => false]],
         'route:target:set' => [['route', 'target'], ['targets' => [], 'reassign' => [], 'remove' => [], 'json' => false]],

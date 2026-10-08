@@ -4435,6 +4435,35 @@ export interface components {
             id?: string;
             provider?: string;
         };
+        RemovedRoute: {
+            id?: number;
+            kind?: string;
+            project_id?: number | null;
+            node_id?: number | null;
+            cluster_id?: number | null;
+            generation_basis_node_id?: number | null;
+            domain?: string;
+            provenance?: string;
+            publication?: string;
+            status?: string;
+            failed_step?: string | null;
+            error_code?: string | null;
+            replaces_route_id?: number | null;
+            replaced_by_route_id?: number | null;
+            replacement_step?: string | null;
+            target_set_step?: string | null;
+            target?: components["schemas"]["RouteTarget"] | null;
+            targets?: components["schemas"]["RouteTarget"][];
+            process_id?: number | null;
+            upstream?: string | null;
+            analytics_instance_id?: number | null;
+            retained_on_nodes?: components["schemas"]["RouteRemovalResidue"][];
+        };
+        RouteRemovalResidue: {
+            node_id?: number;
+            node?: string;
+            steps?: string[];
+        };
         Schedule: {
             id?: string;
             target_type?: string;
@@ -17141,7 +17170,10 @@ export interface operations {
         };
         requestBody?: {
             content: {
-                "application/json": Record<string, never>;
+                "application/json": {
+                    /** @description Remove the Route without changing a Node the Gateway cannot reach */
+                    offline?: boolean;
+                };
             };
         };
         responses: {
@@ -17152,7 +17184,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        data: components["schemas"]["Route"];
+                        data: components["schemas"]["RemovedRoute"];
                         meta: components["schemas"]["Meta"];
                     };
                 };

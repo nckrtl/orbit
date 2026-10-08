@@ -115,6 +115,17 @@ final readonly class RemoteAppDevCertificateManager
         $this->remove($router, "route-{$route->id}-router-hostname-change");
     }
 
+    /**
+     * Removes every Route-owned certificate scope on the Node after the Route record is gone, as the
+     * cleanup of an offline removal does once the Node answers.
+     */
+    public function removeRemovedRoute(int $routeId, Node $node): void
+    {
+        foreach (["route-{$routeId}", "route-{$routeId}-router", "route-{$routeId}-router-hostname-change"] as $scope) {
+            $this->remove($node, $scope);
+        }
+    }
+
     public function removeRouteIngress(Route $route, Node $ingress): void
     {
         $this->remove($ingress, "route-{$route->id}-ingress");

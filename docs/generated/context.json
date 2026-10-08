@@ -2045,7 +2045,9 @@
                 "Process",
                 "Project",
                 "Role",
-                "Route"
+                "Route",
+                "Task",
+                "Task workspace"
             ],
             "governing_adrs": []
         },

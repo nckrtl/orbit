@@ -7009,6 +7009,10 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Route ID."
+          },
+          "offline": {
+            "type": "boolean",
+            "description": "Remove the Route without changing a Node the Gateway cannot reach"
           }
         },
         "additionalProperties": false,
