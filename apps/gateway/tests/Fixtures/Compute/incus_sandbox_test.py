@@ -115,6 +115,36 @@ class Boundary(unittest.TestCase):
         self.assertFalse(any(call[0] in ('start', 'stop', 'delete') or call[:3] in (
             ('network', 'acl', 'edit'), ('query', '-X', 'POST')) for call in host.calls))
 
+    def test_project_fleet_retry_accepts_enrollment_files_but_initial_admission_refuses_them(self):
+        import contextlib
+        import io
+        import stat
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        host, spec = self.project_prepared()
+        host.rows[0]['status'] = 'Running'
+        key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHdUmJNAeflz28V7EadKJL3DLqnMqS6JyEQJmpCPNG5T'
+        path = Mock()
+        path.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFREG | 0o644, st_uid=0, st_size=len(key))
+        path.read_text.return_value = key
+        def run(argv, data, timeout, limit):
+            output, code = io.StringIO(), 0
+            with patch('pwd.getpwnam', side_effect=lambda name: SimpleNamespace() if name == 'orbit' else (_ for _ in ()).throw(KeyError(name))), patch('os.path.lexists', return_value=True), patch('pathlib.Path', return_value=path), contextlib.redirect_stdout(output):
+                try:
+                    exec(argv[-1], {})
+                except SystemExit as error:
+                    code = error.code
+            return {'exit_code': code, 'stdout': base64.b64encode(output.getvalue().encode()).decode(),
+                    'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False}
+        with patch.dict(host.project_identity.__globals__, bounded_process=run):
+            with self.assertRaises(Refusal):
+                host.project_identity()
+            path.read_text.assert_not_called()
+            result = host.project_identity(initial=False)
+        self.assertEqual(key, result['ssh_key'])
+        path.read_text.assert_called_once()
+        self.assertFalse(any(call[0] in ('start', 'stop', 'delete') for call in host.calls))
+
     def test_project_identity_refuses_foreign_or_changed_placement_before_reading_a_key(self):
         changes = [
             lambda h: h.rows[0].update(status='Stopped'),

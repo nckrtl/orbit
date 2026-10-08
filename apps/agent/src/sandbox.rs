@@ -21,6 +21,7 @@ enum Operation {
     Destroy,
     GuestCommand,
     ProjectIdentity,
+    ProjectFleetIdentity,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -176,6 +177,7 @@ mod tests {
             "resume",
             "destroy",
             "project_identity",
+            "project_fleet_identity",
         ] {
             let mut value = base();
             value["operation"] = operation.into();

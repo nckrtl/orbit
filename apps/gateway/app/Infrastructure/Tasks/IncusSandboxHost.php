@@ -89,7 +89,7 @@ final readonly class IncusSandboxHost
             return ['available' => $data['available'], 'used' => $data['used'], 'budget' => $budget];
         }
         $name = 'ot-'.substr(hash('sha256', $sandboxId), 0, 10);
-        if ($operation === SandboxHostOperation::ProjectIdentity) {
+        if (in_array($operation, [SandboxHostOperation::ProjectIdentity, SandboxHostOperation::ProjectFleetIdentity], true)) {
             $fields = ['name', 'guest', 'project_slug', 'image', 'pool', 'subnet', 'address', 'ssh_key'];
             if (count($data) !== count($fields) || array_diff($fields, array_keys($data)) !== []
                 || ($data['name'] ?? null) !== $name || ($data['guest'] ?? null) !== $name.'-operator') {
@@ -129,12 +129,31 @@ final readonly class IncusSandboxHost
 
     public function projectIdentity(Node $host, TaskSandbox $sandbox, int $budget): HostKey
     {
+        return $this->readProjectIdentity($host, $sandbox, $budget, false);
+    }
+
+    public function projectFleetIdentity(Node $host, TaskSandbox $sandbox, int $budget): HostKey
+    {
+        $node = $sandbox->node_id === null ? null : Node::query()->find($sandbox->node_id);
+        if ($node === null || $node->compute_sandbox_id !== $sandbox->id
+            || ($sandbox->enrollment['node_id'] ?? null) !== $node->id
+            || ($sandbox->enrollment['incus_spec'] ?? null) !== $sandbox->spec
+            || ! is_string($sandbox->enrollment['ssh_fingerprint'] ?? null)) {
+            throw new ResourceOperationException('compute.invalid_host_request', 'The Project fleet identity is not reserved.', 409);
+        }
+
+        return $this->readProjectIdentity($host, $sandbox, $budget, true);
+    }
+
+    private function readProjectIdentity(Node $host, TaskSandbox $sandbox, int $budget, bool $fleet): HostKey
+    {
         $spec = $sandbox->spec;
         $group = $sandbox->group;
         $slug = $group?->project->slug;
         $subnet = $spec['subnet'] ?? null;
         if (! $sandbox->exists || $sandbox->provider !== 'incus' || $sandbox->state !== SandboxState::Running
-            || $sandbox->desired_power !== 'running' || $sandbox->node_id !== null || $sandbox->enrollment !== null
+            || $sandbox->desired_power !== 'running' || (! $fleet && ($sandbox->node_id !== null || $sandbox->enrollment !== null))
+            || ($fleet && ! is_array($spec['project_bootstrap'] ?? null))
             || $group?->task_compute !== TaskCompute::Vm || ! is_string($slug) || $slug === 'orbit'
             || ($spec['project_slug'] ?? null) !== $slug || ($spec['host_id'] ?? null) !== $host->id
             || $sandbox->name !== 'ot-'.substr(hash('sha256', $sandbox->id), 0, 10)
@@ -146,7 +165,7 @@ final readonly class IncusSandboxHost
             throw new ResourceOperationException('compute.invalid_host_request', 'The Project reservation is not ready for SSH identity verification.', 409);
         }
         $group->requireManagedExecution();
-        $data = $this->execute($host, SandboxHostOperation::ProjectIdentity, $spec['project'], $sandbox->id, $budget);
+        $data = $this->execute($host, $fleet ? SandboxHostOperation::ProjectFleetIdentity : SandboxHostOperation::ProjectIdentity, $spec['project'], $sandbox->id, $budget);
         if ($data['project_slug'] !== $slug || $data['image'] !== $spec['images']['operator']
             || $data['pool'] !== $spec['pool'] || $data['subnet'] !== $subnet
             || $data['address'] !== '10.233.'.$parts[1].'.10'

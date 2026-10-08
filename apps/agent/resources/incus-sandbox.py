@@ -401,7 +401,7 @@ class Host:
         return {'name': self.name, 'instances': [{'name': row['name'], 'state': row['status'].lower()} for row in rows],
                 'power': 'destroyed' if not rows else ('stopped' if all(row['status'] == 'Stopped' for row in rows) else 'running')}
 
-    def project_identity(self):
+    def project_identity(self, initial=True):
         rows = self.instances()
         if len(rows) != 1 or rows[0]['name'] != self.name + '-operator' or rows[0]['status'] != 'Running':
             raise Refusal('Project identity requires one running owned guest.')
@@ -443,7 +443,7 @@ class Host:
                 or volume.get('config', {}).get('user.orbit.compute.template') is not None):
             raise Refusal('The Project placement does not match.')
         # Read only the public key through the owned guest's Incus channel.
-        program = r'''
+        program = 'INITIAL = ' + repr(initial) + '\n' + r'''
 import os,pwd,stat,sys
 from pathlib import Path
 pwd.getpwnam('orbit')
@@ -453,7 +453,7 @@ try:
 except KeyError:
     pass
 for path in ('/etc/wireguard/wg0.conf', '/etc/orbit/agent/secret'):
-    if os.path.lexists(path):sys.exit(1)
+    if INITIAL and os.path.lexists(path):sys.exit(1)
 path=Path('/etc/ssh/ssh_host_ed25519_key.pub');details=path.lstat()
 if not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o022 or details.st_size > 512:sys.exit(1)
 sys.stdout.write(path.read_text())
@@ -832,11 +832,11 @@ def main():
     operation = request['operation']
     # Lock this group before the global budget lock. A long guest command never
     # blocks another group's provisioning or holds host capacity serialization.
-    with sandbox_lock('/run/lock/orbit-sandbox-' + host.name + '.lock', operation in ('guest_command', 'project_identity')):
+    with sandbox_lock('/run/lock/orbit-sandbox-' + host.name + '.lock', operation in ('guest_command', 'project_identity', 'project_fleet_identity')):
         if operation == 'guest_command':
             result = host.guest_command(request['guest'])
-        elif operation == 'project_identity':
-            result = host.project_identity()
+        elif operation in ('project_identity', 'project_fleet_identity'):
+            result = host.project_identity(initial=operation == 'project_identity')
         else:
             with sandbox_lock('/run/lock/orbit-task-sandboxes.lock'):
                 if operation == 'provision':
