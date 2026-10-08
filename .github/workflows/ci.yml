@@ -326,6 +326,12 @@ jobs:
           composer install --no-interaction --prefer-dist
       - name: Run every privileged test
         run: vendor/bin/pest --parallel --processes=4 --no-tia --group=privileged --fail-on-empty-test-suite --compact --colors=never
+      # A privileged test that writes into the checkout as root leaves files the runner user cannot delete, and
+      # every later checkout on that Sabre runner then fails. Remove anything root owns in the workspace.
+      - name: Remove root-owned files from the workspace
+        if: always() && runner.environment == 'self-hosted'
+        working-directory: ${{ github.workspace }}
+        run: sudo -n find . -xdev -user root -prune -exec rm -rf -- {} +
 
   api-reference:
     name: API reference
