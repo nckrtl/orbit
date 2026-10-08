@@ -44,6 +44,35 @@ const invalidated = (spy: { mock: { calls: unknown[][] } }) =>
     });
 
 describe("applyEvent", () => {
+    it("sets and clears a node's update from node.updated", () => {
+        const updating = {
+            kind: "fleet_rollout",
+            since: "2026-01-01T00:00:00+00:00",
+            rollout: 7,
+            release: null,
+        };
+        client.setQueryData(
+            ["nodes"],
+            [{ id: 2, name: "beast", status: "active", updating: null }],
+        );
+
+        applyEvent(
+            client,
+            event("node.updated", { id: 2, name: "beast", status: "active", updating }),
+        );
+        expect(client.getQueryData(["nodes"])).toEqual([
+            { id: 2, name: "beast", status: "active", updating },
+        ]);
+
+        applyEvent(
+            client,
+            event("node.updated", { id: 2, name: "beast", status: "active", updating: null }),
+        );
+        expect(client.getQueryData(["nodes"])).toEqual([
+            { id: 2, name: "beast", status: "active", updating: null },
+        ]);
+    });
+
     it("merges a status event into the row it names", () => {
         applyEvent(client, event("process.status", { id: 2, runtime_status: "active" }));
 

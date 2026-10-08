@@ -29934,6 +29934,16 @@
                 "type": "null"
               }
             ]
+          },
+          "updating": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NodeUpdating"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -29958,6 +29968,33 @@
           "path": {
             "type": [
               "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "NodeUpdating": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fleet_rollout",
+              "gateway_release"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "rollout": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "release": {
+            "type": [
+              "integer",
               "null"
             ]
           }

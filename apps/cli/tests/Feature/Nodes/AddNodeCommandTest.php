@@ -75,6 +75,7 @@ it('sends node provisioning to the active gateway', function (): void {
         'error_code' => null,
         'roles' => ['app-dev'],
         'settings' => null,
+        'updating' => null,
         'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
     ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 

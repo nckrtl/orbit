@@ -9,6 +9,7 @@ use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseCommit;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseUnitStarter;
+use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Models\Activity;
 use App\Models\GatewayRelease;
 use Illuminate\Support\Carbon;
@@ -38,6 +39,7 @@ final readonly class GatewayReleaseRecorder
         private ?GatewayReleaseAutomation $automation = null,
         private ?GatewayReleaseUnitStarter $units = null,
         private GatewayReleaseRetry $retry = new GatewayReleaseRetry,
+        private ?NodeUpdateBroadcaster $nodes = null,
     ) {}
 
     /**
@@ -74,18 +76,21 @@ final readonly class GatewayReleaseRecorder
 
         if ($record instanceof GatewayRelease) {
             $record->forceFill(['outcome' => GatewayRelease::Running])->save();
-
-            return $record;
+        } else {
+            $record = GatewayRelease::query()->create([
+                'requested' => $requested,
+                'trigger' => $trigger,
+                'outcome' => GatewayRelease::Running,
+                'force' => $force,
+                'phases' => [],
+                'duration_ms' => 0,
+            ]);
         }
 
-        return GatewayRelease::query()->create([
-            'requested' => $requested,
-            'trigger' => $trigger,
-            'outcome' => GatewayRelease::Running,
-            'force' => $force,
-            'phases' => [],
-            'duration_ms' => 0,
-        ]);
+        // The Gateway Node reads as updating while the record runs.
+        $this->nodes?->gateway();
+
+        return $record;
     }
 
     private function hasRecords(): bool
@@ -166,6 +171,7 @@ final readonly class GatewayReleaseRecorder
             'error_code' => 'gateway.release_interrupted',
             'message' => $message,
         ])->save();
+        $this->nodes?->gateway();
         $this->activity($record->trigger, GatewayRelease::Interrupted, $record->duration_ms, 'gateway.release_interrupted', [
             'release' => $record->release_id,
             'sha' => $record->sha,
@@ -226,6 +232,7 @@ final readonly class GatewayReleaseRecorder
             $row = GatewayRelease::query()->create($attributes);
         }
 
+        $this->nodes?->gateway();
         $this->pauseMarker($release);
         $this->pauseState($release, $row);
         $this->activity($release->trigger, $release->outcome, $release->durationMs, $release->errorCode, [
@@ -281,6 +288,8 @@ final readonly class GatewayReleaseRecorder
             'message' => $message,
             'duration_ms' => $durationMs,
         ])->save();
+
+        $this->nodes?->gateway();
 
         if (! $exception instanceof GatewayReleaseException) {
             report($exception);

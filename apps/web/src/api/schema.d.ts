@@ -4224,12 +4224,20 @@ export interface components {
             error_code?: string | null;
             roles?: string[];
             settings?: components["schemas"]["NodeSettings"] | null;
+            updating?: components["schemas"]["NodeUpdating"] | null;
         };
         NodeSettings: {
             apps?: components["schemas"]["NodeStorageApps"] | null;
         };
         NodeStorageApps: {
             path?: string | null;
+        };
+        NodeUpdating: {
+            /** @enum {string} */
+            kind?: "fleet_rollout" | "gateway_release";
+            since?: string;
+            rollout?: number | null;
+            release?: number | null;
         };
         NodeAccess: {
             can_access?: components["schemas"]["NodeAccessNode"][];
