@@ -99,7 +99,7 @@ A public repository and a repository on another host work with `github_app`. A `
 
 ## Repository identity
 
-The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout.
+The Gateway derives a repository identity from the host and path of the URL. Equivalent SSH and HTTPS URLs, with or without `.git`, have the same identity. A second Project for the same repository returns `project.repository_identity_conflict`. Registration uses this identity to find the Project of a checkout. [Doctor](/cli/doctor#what-each-family-checks) uses it to compare a checkout's origin with the Project, so an SSH origin of an HTTPS Project is not `project.repository_origin_mismatch`.
 
 ## Registration needs a Project
 
