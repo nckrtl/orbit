@@ -251,6 +251,7 @@ it('defines the exact stable issue-code catalog for every Doctor family', functi
             'role.packages_missing',
             'role.caddy_version_unsupported',
             'role.caddy_build_drift',
+            'role.php_pool_directory_missing',
             'role.services_inactive',
             'role.firewall_projection_mismatch',
             'role.vpn_inactive',

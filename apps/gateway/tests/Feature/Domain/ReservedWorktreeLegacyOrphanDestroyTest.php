@@ -106,7 +106,7 @@ function legacy_reserved_removal_source(Instance $instance, bool $force): Lifecy
     $finalizer->shouldReceive('finalize')->once()->andReturn(hash('sha256', 'reserved-receipt'));
     app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
     $projector = Mockery::mock(InstanceRemovalProjector::class);
-    $projector->shouldNotReceive('cleanupRuntime');
+    $projector->shouldReceive('cleanupRuntime')->once();
     $projector->shouldNotReceive('clearRouteTarget');
     app()->instance(InstanceRemovalProjector::class, $projector);
     ProjectLifecycleStep::query()->create([

@@ -15,6 +15,7 @@ use App\Domain\Doctor\DoctorIssueKind;
 use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\GatewayVpnInspectionData;
 use App\Domain\Doctor\GatewayVpnStateInspector;
+use App\Domain\Doctor\PhpPoolDirectoryInspector;
 use App\Domain\Doctor\RoleDoctorIssueCode;
 use App\Domain\Doctor\RoleInspectionData;
 use App\Domain\Doctor\RoleStateInspector;
@@ -45,6 +46,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
         private RoleRegistry $registry = new RoleRegistry,
         private ?CaddyBuildInspector $caddyBuilds = null,
         private ?NodeRoleConvergeLock $roleLock = null,
+        private ?PhpPoolDirectoryInspector $phpPools = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -128,6 +130,7 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
 
         if (! $context->inspectionFailed && $context->inspection->reachable) {
             $this->addCaddyBuildIssue($issues, $context, $roles);
+            $this->addPhpPoolDirectoryIssues($issues, $context, $roles);
         }
 
         return DoctorFamilyReportData::fromIssues(
@@ -197,6 +200,53 @@ final readonly class RoleDoctorProbe implements DoctorFamilyProbe
             $observation->expectedVersion ?? 'buildable',
             $observation->expectedVersion === null ? 'refused' : ($observation->liveVersion ?? 'not_built'),
         ));
+    }
+
+    /**
+     * The shared PHP-FPM service on a Node serves every app-dev and app-prod pool Orbit renders, so a pool
+     * whose working directory is missing is reported on the active app-dev role, or else app-prod. A live
+     * pool like that stops PHP-FPM from starting; a pool only stored state renders is skipped by converge.
+     *
+     * @param  array<int, list<DoctorIssueData>>  $issues
+     * @param  Collection<int, NodeRole>  $roles
+     */
+    private function addPhpPoolDirectoryIssues(array &$issues, DoctorNodeContext $context, Collection $roles): void
+    {
+        $active = $roles->filter(static fn (NodeRole $role): bool => $role->status === LifecycleStatus::Active);
+        $role = $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev)
+            ?? $active->first(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd);
+
+        if (! $role instanceof NodeRole) {
+            return;
+        }
+
+        try {
+            $observations = ($this->phpPools ?? app(PhpPoolDirectoryInspector::class))->inspect($context->node);
+        } catch (DoctorInspectionException) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::InspectionFailed,
+                DoctorIssueKind::Unverifiable,
+                'PHP-FPM pool observation failed.',
+                'verifiable',
+                'unverifiable',
+            ));
+
+            return;
+        }
+
+        foreach ($observations as $observation) {
+            $this->add($issues, $role, $this->issue(
+                $role,
+                RoleDoctorIssueCode::PhpPoolDirectoryMissing,
+                DoctorIssueKind::Drift,
+                $observation->installed
+                    ? "PHP {$observation->version} pool [{$observation->pool}] names the missing directory [{$observation->directory}], so PHP {$observation->version} FPM cannot start. A PHP-FPM converge on this Node removes the pool."
+                    : "PHP {$observation->version} pool [{$observation->pool}] names the missing directory [{$observation->directory}], so converge does not publish it.",
+                'present',
+                'missing',
+            ));
+        }
     }
 
     /**
