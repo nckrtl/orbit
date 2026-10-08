@@ -107,6 +107,35 @@ it('restores the request deadline after a nested operation instead of clearing i
     expect($deadline->cap(9_999.0))->toBe(9_999.0);
 });
 
+it('restores the outer request deadline when a nested request ends', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $endOuter = $deadline->startRequest(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    // A nested request starts later with the same budget; it cannot extend the outer deadline.
+    $now = 100.0;
+    $endInner = $deadline->startRequest(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    expect($deadline->cap(9_999.0))->toBe(450.0);
+
+    // The nested request runs out of forward time; ending it neither clears the outer deadline nor
+    // hands the outer cleanup reserve to the next nested request.
+    $now = 555.0;
+    expect(fn () => $deadline->cap(60.0))->toThrow(ResourceOperationException::class);
+    $endInner();
+    $deadline->startRequest(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    expect(fn () => $deadline->cap(60.0))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('command.deadline_exceeded');
+    });
+
+    $endOuter();
+
+    expect($deadline->cap(9_999.0))->toBe(9_999.0);
+});
+
 it('keeps a local forward-work budget separate from the parent cleanup reserve', function (float $reserve, float $remaining): void {
     $now = 0.0;
     $deadline = new CommandDeadline(static function () use (&$now): float {

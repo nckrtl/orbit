@@ -74,24 +74,25 @@ final readonly class RecordCommandActivity
 
     public function handle(Request $request, Closure $next): Response
     {
-        $this->deadline->start(Config::float('orbit.command_timeout', 570.0), CommandDeadline::CleanupReserveSeconds);
+        $endDeadline = $this->deadline->startRequest(Config::float('orbit.command_timeout', 570.0), CommandDeadline::CleanupReserveSeconds);
 
         try {
-            $response = $this->record($request, $next);
+            $response = $this->record($request, $next, $endDeadline);
         } catch (Throwable $exception) {
-            $this->deadline->clear();
+            $endDeadline();
 
             throw $exception;
         }
 
         if (! $response instanceof StreamedResponse) {
-            $this->deadline->clear();
+            $endDeadline();
         }
 
         return $response;
     }
 
-    private function record(Request $request, Closure $next): Response
+    /** @param Closure(): void $endDeadline */
+    private function record(Request $request, Closure $next, Closure $endDeadline): Response
     {
         $startedAt = microtime(true);
         $activity = $this->start($request);
@@ -99,10 +100,13 @@ final readonly class RecordCommandActivity
         $shutdown = $activity->exists ? ActivityShutdownFinalizer::arm($activity) : null;
 
         try {
+            // A request nested in one that has run out of forward time, such as a late call of an MCP
+            // tool batch, fails here instead of starting work that PHP-FPM would end.
+            $this->deadline->cap(Config::float('orbit.command_timeout', 570.0));
             $response = $next($request);
 
             if ($response instanceof StreamedResponse) {
-                return $this->deferStreamCompletion($activity, $request, $response, $startedAt, $shutdown);
+                return $this->deferStreamCompletion($activity, $request, $response, $startedAt, $shutdown, $endDeadline);
             }
 
             $this->complete($activity, $request, $response, $startedAt);
@@ -117,16 +121,18 @@ final readonly class RecordCommandActivity
         }
     }
 
+    /** @param Closure(): void $endDeadline */
     private function deferStreamCompletion(
         Activity $activity,
         Request $request,
         StreamedResponse $response,
         float $startedAt,
         ?ActivityShutdownFinalizer $shutdown,
+        Closure $endDeadline,
     ): StreamedResponse {
         $callback = $response->getCallback();
 
-        $response->setCallback(function () use ($activity, $request, $response, $startedAt, $callback, $shutdown): void {
+        $response->setCallback(function () use ($activity, $request, $response, $startedAt, $callback, $shutdown, $endDeadline): void {
             try {
                 if (! $callback instanceof Closure) {
                     throw new \LogicException('The Response callback must be set.');
@@ -141,7 +147,7 @@ final readonly class RecordCommandActivity
 
                 throw $exception;
             } finally {
-                $this->deadline->clear();
+                $endDeadline();
             }
         });
 
