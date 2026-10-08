@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
+use App\Domain\Instances\Removal\InstanceRemovalException;
 use App\Domain\Instances\Removal\InstanceRemovalProjector;
 use App\Domain\Instances\Removal\InstanceSourceInventory;
 use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
@@ -100,6 +102,38 @@ describe('reserved worktree removable', function (): void {
     });
 });
 
+describe('PHP-FPM pool withdrawal', function (): void {
+    it('withdraws the pool and reloads PHP-FPM before it deletes the task workspace source', function (): void {
+        $instance = reserved_removal_instance();
+        $steps = new ArrayObject;
+        reserved_removal_source($instance, true, $steps);
+
+        app(RemoveInstanceAction::class)->execute($instance, force: true);
+
+        expect($steps->getArrayCopy())->toBe(['pool-withdrawn', 'source-deleted']);
+    });
+
+    it('keeps the source and the open removal when the pool cannot be withdrawn', function (): void {
+        $instance = reserved_removal_instance();
+        $steps = new ArrayObject;
+        reserved_removal_source($instance, true, $steps, new RuntimeConvergenceException(
+            step: 'php-fpm-config',
+            errorCode: 'app-dev.php_fpm_config_failed',
+            message: 'PHP-FPM configuration failed.',
+        ));
+
+        expect(fn () => app(RemoveInstanceAction::class)->execute($instance, force: true))
+            ->toThrow(InstanceRemovalException::class);
+
+        $removal = InstanceRemoval::query()->sole();
+        expect($steps->getArrayCopy())->toBe(['pool-withdrawn'])
+            ->and($removal->failed_step?->value)->toBe('source_finalization')
+            ->and($removal->error_code)->toBe('app-dev.php_fpm_config_failed')
+            ->and(InstanceRemovalMember::query()->where('instance_id', $instance->id)->sole()->source_finalized_at)->toBeNull()
+            ->and(Instance::query()->find($instance->id))->not->toBeNull();
+    });
+});
+
 function reserved_removal_instance(): Instance
 {
     $project = Project::query()->create([
@@ -135,8 +169,16 @@ function reserved_removal_instance(): Instance
     ]);
 }
 
-function reserved_removal_source(Instance $instance, bool $force): LifecycleSshExecutor
-{
+/**
+ * @param  ArrayObject<int, string>|null  $steps  Records pool withdrawal and source deletion in order.
+ */
+function reserved_removal_source(
+    Instance $instance,
+    bool $force,
+    ?ArrayObject $steps = null,
+    ?Throwable $withdrawalFailure = null,
+): LifecycleSshExecutor {
+    $steps ??= new ArrayObject;
     $instance->loadMissing('project');
     $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
     $source->shouldReceive('inspect')->withArgs(fn (Instance $candidate, bool $forced): bool => $candidate->id === $instance->id && $forced === $force)
@@ -163,10 +205,22 @@ function reserved_removal_source(Instance $instance, bool $force): LifecycleSshE
         return true;
     });
     $finalizer->shouldReceive('revalidate')->andReturn(InstanceSourceRevalidationState::Present);
-    $finalizer->shouldReceive('finalize')->once()->andReturn(hash('sha256', 'reserved-receipt'));
+    $finalizer->shouldReceive('finalize')->times($withdrawalFailure instanceof Throwable ? 0 : 1)->andReturnUsing(function () use ($steps): string {
+        $steps[] = 'source-deleted';
+
+        return hash('sha256', 'reserved-receipt');
+    });
     app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
     $projector = Mockery::mock(InstanceRemovalProjector::class);
-    $projector->shouldReceive('cleanupRuntime')->once()->withArgs(
+    $projector->shouldReceive('withdrawPhpPool')->once()->andReturnUsing(function (InstanceRemovalMember $member) use ($instance, $steps, $withdrawalFailure): void {
+        expect($member->instance_id)->toBe($instance->id);
+        $steps[] = 'pool-withdrawn';
+
+        if ($withdrawalFailure instanceof Throwable) {
+            throw $withdrawalFailure;
+        }
+    });
+    $projector->shouldReceive('cleanupRuntime')->times($withdrawalFailure instanceof Throwable ? 0 : 1)->withArgs(
         fn (InstanceRemovalMember $member): bool => $member->instance_id === $instance->id,
     );
     $projector->shouldNotReceive('clearRouteTarget');

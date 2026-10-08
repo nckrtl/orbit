@@ -11,6 +11,7 @@ final readonly class InstanceEnvironmentResult
         public string $operation,
         public bool $changed,
         public int $keyCount,
+        public ?InstanceTestEnvironmentOutcome $testing = null,
     ) {}
 
     /** @return array{instance_id: int, operation: string, changed: bool, key_count: int} */

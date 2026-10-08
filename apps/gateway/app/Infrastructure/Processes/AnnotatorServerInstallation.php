@@ -10,74 +10,47 @@ use App\Infrastructure\Ssh\RemoteCommand;
 /** Publishes immutable server files so other Instances can keep serving during installation. */
 final readonly class AnnotatorServerInstallation
 {
-    public function __construct(private ?string $packagePath = null, private ?string $assetDirectory = null) {}
-
-    public static function sourceDigest(string $source): string
-    {
-        $paths = [$source.'/package.json', $source.'/vite.config.ts', $source.'/tsconfig.json', $source.'/bun.lock'];
-        foreach (['src', 'bin'] as $directory) {
-            if (! is_dir($source.'/'.$directory)) {
-                throw new ResourceOperationException('process.annotator_source_missing', 'The Gateway annotation sources are incomplete.');
-            }
-            $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($source.'/'.$directory, \FilesystemIterator::SKIP_DOTS));
-            foreach ($iterator as $file) {
-                if ($file instanceof \SplFileInfo && $file->isFile()) {
-                    $paths[] = $file->getPathname();
-                }
-            }
-        }
-        sort($paths);
-        $digest = hash_init('sha256');
-        foreach ($paths as $path) {
-            if (! is_file($path)) {
-                throw new ResourceOperationException('process.annotator_source_missing', 'The Gateway annotation sources are incomplete.');
-            }
-            $contents = file_get_contents($path);
-            if ($contents === false) {
-                throw new ResourceOperationException('process.annotator_source_missing', 'The Gateway annotation sources are incomplete.');
-            }
-            hash_update($digest, substr($path, strlen($source) + 1)."\0".$contents."\0");
-        }
-
-        return hash_final($digest);
-    }
+    /** The vendored files come from the @nckrtl/annotator release that bin/annotator-build copied. */
+    public function __construct(private ?string $assetDirectory = null) {}
 
     public function command(): RemoteCommand
     {
-        $source = $this->packagePath ?? base_path('../../packages/agent-annotation');
         $assetDirectory = $this->assetDirectory ?? resource_path('annotator');
-        $asset = $assetDirectory.'/inject.js.gz';
         $manifest = $assetDirectory.'/manifest.json';
-        if (! is_file($asset) || ! is_file($manifest)) {
-            throw new ResourceOperationException('process.annotator_asset_missing', 'Build and distribute the Gateway annotator asset with bin/annotator-build before installation.');
+        if (! is_file($manifest) || ! is_file($assetDirectory.'/inject.js.gz') || ! is_file($assetDirectory.'/bin/serve.mjs')) {
+            throw new ResourceOperationException('process.annotator_asset_missing', 'Vendor the annotator release with bin/annotator-build before installation.');
         }
         try {
             $metadata = json_decode((string) file_get_contents($manifest), true, flags: JSON_THROW_ON_ERROR);
         } catch (\JsonException) {
-            throw new ResourceOperationException('process.annotator_asset_stale', 'The Gateway annotator asset manifest is invalid. Rebuild with bin/annotator-build.');
+            throw new ResourceOperationException('process.annotator_asset_stale', 'The vendored annotator manifest is invalid. Run bin/annotator-build.');
         }
-        if (! is_array($metadata) || ($metadata['source_sha256'] ?? null) !== self::sourceDigest($source) || ($metadata['asset_sha256'] ?? null) !== hash_file('sha256', $asset)) {
-            throw new ResourceOperationException('process.annotator_asset_stale', 'Rebuild the Gateway annotator asset with bin/annotator-build before installation.');
+        $digests = is_array($metadata) && is_array($metadata['files'] ?? null) ? $metadata['files'] : [];
+        $vendored = array_map(
+            fn (string $file): string => substr($file, strlen($assetDirectory) + 1),
+            [...(glob($assetDirectory.'/bin/*') ?: []), $assetDirectory.'/inject.js.gz'],
+        );
+        sort($vendored);
+        $listed = array_keys($digests);
+        sort($listed);
+        if ($vendored !== $listed) {
+            throw new ResourceOperationException('process.annotator_asset_stale', 'The vendored annotator files do not match their manifest. Run bin/annotator-build.');
         }
-        $injection = gzdecode((string) file_get_contents($asset));
-        if (! is_string($injection) || $injection === '') {
-            throw new ResourceOperationException('process.annotator_asset_missing', 'The Gateway annotator asset is incomplete.');
-        }
-        $files = glob($source.'/bin/*') ?: [];
-        if ($files === [] || ! is_file($source.'/bin/serve.mjs')) {
-            throw new ResourceOperationException('process.annotator_source_missing', 'The Gateway annotation server files are missing.');
-        }
-        $payload = ['dist/inject.js' => $injection];
-        foreach ($files as $file) {
-            if (! is_file($file)) {
-                continue;
+        $payload = [];
+        foreach ($digests as $name => $digest) {
+            $contents = file_get_contents($assetDirectory.'/'.$name);
+            if ($contents === false || hash('sha256', $contents) !== $digest) {
+                throw new ResourceOperationException('process.annotator_asset_stale', 'A vendored annotator file changed after bin/annotator-build.');
             }
-            $contents = file_get_contents($file);
-            if ($contents === false) {
-                throw new ResourceOperationException('process.annotator_source_missing', 'The Gateway annotation server file could not be read.');
+            if ($name === 'inject.js.gz') {
+                $injection = gzdecode($contents);
+                if (! is_string($injection) || $injection === '') {
+                    throw new ResourceOperationException('process.annotator_asset_missing', 'The vendored annotator injection asset is incomplete.');
+                }
+                $payload['dist/inject.js'] = $injection;
+            } else {
+                $payload[$name] = $contents;
             }
-            $relative = str_starts_with($file, $source.'/bin/') ? 'bin/' : 'dist/';
-            $payload[$relative.basename($file)] = $contents;
         }
 
         return new RemoteCommand(arguments: ['sudo', 'python3', '-c', <<<'PY'

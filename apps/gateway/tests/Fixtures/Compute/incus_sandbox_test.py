@@ -90,6 +90,59 @@ class Boundary(unittest.TestCase):
             process.return_value.stdout = b'[]'
             return host.provision(spec)
 
+    def project_prepared(self):
+        host, spec = self.prepared()
+        spec['project_slug'] = 'dlf'
+        host.template_image = {'type': 'virtual-machine', 'architecture': 'x86_64', 'public': False,
+                               'properties': {'user.orbit.project.owner': 'orbit-task-project-image',
+                                              'user.orbit.project.slug': 'dlf', 'user.orbit.project.account': 'orbit',
+                                              'user.orbit.project.bootstrap': 'unenrolled'}}
+        host.rows[0]['config']['user.orbit.compute.project_slug'] = 'dlf'
+        host.storage_volumes[0]['config']['user.orbit.compute.project_slug'] = 'dlf'
+        return host, spec
+
+    def test_project_image_keeps_one_guest_and_pins_worktree_ownership(self):
+        host, spec = self.project_prepared()
+        host.rows, host.storage_volumes = [], []
+        self.assertEqual('running', self.provision(host, spec)['power'])
+        created = [json.loads(args[5]) for args, data in host.payloads
+                   if args[:3] == ('query', '-X', 'POST') and '/instances?' in args[3]]
+        self.assertEqual(1, len(created))
+        self.assertEqual('dlf', created[0]['config']['user.orbit.compute.project_slug'])
+        volume = next(args for args in host.calls if args[:3] == ('storage', 'volume', 'create'))
+        self.assertIn('user.orbit.compute.project_slug=dlf', volume)
+
+    def test_project_provenance_and_retry_drift_refuse_before_mutation(self):
+        changes = [
+            lambda h, s: h.template_image['properties'].update({'user.orbit.template.role': 'operator'}),
+            lambda h, s: h.template_image['properties'].update({'user.orbit.project.slug': 'foreign'}),
+            lambda h, s: h.template_image['properties'].pop('user.orbit.project.owner'),
+            lambda h, s: h.template_image['properties'].update({'user.orbit.project.account': 'root'}),
+            lambda h, s: h.template_image['properties'].update({'user.orbit.project.bootstrap': 'enrolled'}),
+            lambda h, s: h.template_image.update(type='container'),
+            lambda h, s: h.template_image.update(architecture='aarch64'),
+            lambda h, s: h.template_image.update(public=True),
+            lambda h, s: h.template_image.update(properties=[]),
+            lambda h, s: s.update(project_slug='orbit'),
+            lambda h, s: s.update(project_slug='../foreign'),
+            lambda h, s: s.update(project_slug=None),
+            lambda h, s: s['images'].update(gateway='b' * 64),
+            lambda h, s: s.update(source_template={'id': ID}),
+            lambda h, s: s.update(pi_port=23001),
+            lambda h, s: h.rows[0]['config'].update({'user.orbit.compute.project_slug': 'foreign'}),
+            lambda h, s: h.storage_volumes[0]['config'].pop('user.orbit.compute.project_slug'),
+            lambda h, s: s.pop('project_slug'),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                host, spec = self.project_prepared()
+                change(host, spec)
+                with self.assertRaises(Refusal):
+                    self.provision(host, spec)
+                self.assertFalse(any(call[0] in ('start', 'stop', 'delete') or call[:3] in (
+                    ('network', 'acl', 'edit'), ('network', 'acl', 'create'),
+                    ('query', '-X', 'POST'), ('storage', 'volume', 'create')) for call in host.calls))
+
     def test_new_bridge_opts_in_and_installs_policy_before_starting_guests(self):
         host, spec = self.prepared()
         host.rows, host.network = [], None

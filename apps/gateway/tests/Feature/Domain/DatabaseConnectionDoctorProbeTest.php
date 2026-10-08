@@ -201,17 +201,17 @@ it('restores drifted stored env from the registry with the same attach projectio
 
     $attached = app(AttachDatabaseConnectionAction::class)->execute($instance, $connection, 'DB');
 
-    expect($attached->host)->toBe('127.0.0.1')
+    expect($attached->host)->toBe('10.44.0.201')
         ->and($attached->port)
-        ->toBe(3307)
+        ->toBe(3306)
         ->and(database_connection_doctor_stored($instance)['DB_HOST'])
-        ->toBe('127.0.0.1');
+        ->toBe('10.44.0.201');
 
     $instance->environmentValues()->where('env_key', 'DB_HOST')->sole()->update([
-        'env_value' => '10.44.0.201',
+        'env_value' => '127.0.0.1',
     ]);
     $instance->environmentValues()->where('env_key', 'DB_PORT')->sole()->update([
-        'env_value' => '3306',
+        'env_value' => '3307',
     ]);
     $instance->environmentValues()->where('env_key', 'DB_PASSWORD')->delete();
 
@@ -230,9 +230,9 @@ it('restores drifted stored env from the registry with the same attach projectio
     expect($restored->issues)
         ->toBe([])
         ->and($stored['DB_HOST'])
-        ->toBe('127.0.0.1')
+        ->toBe('10.44.0.201')
         ->and($stored['DB_PORT'])
-        ->toBe('3307')
+        ->toBe('3306')
         ->and($stored['DB_PASSWORD'])
         ->toBe(DATABASE_CONNECTION_DOCTOR_SECRET);
 });
