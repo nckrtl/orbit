@@ -2048,6 +2048,8 @@ it('runs the Project setup steps and check on the fresh workspace before the fir
 
 it('reruns setup and baseline on a replacement VM despite old agents and old baseline evidence', function (TaskCheckStatus $oldStatus): void {
     $instance = UpCloudRuntimeWorkspace::create();
+    // The implementer admission gate validates deliverables against a resolved review base.
+    $instance->update(['starting_commit' => str_repeat('a', 40)]);
     $group = $instance->taskSandbox->group;
     $group->update(['status' => TaskGroupStatus::Running]);
     $group->project->update(['task_check' => 'composer check']);
