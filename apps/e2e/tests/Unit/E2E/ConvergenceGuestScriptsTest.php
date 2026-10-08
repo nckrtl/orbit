@@ -2353,7 +2353,7 @@ describe('convergence guest scripts', function () {
             chmod("{$root}/bin/caddy", 0o700);
             file_put_contents("{$root}/bin/sudo", "#!/usr/bin/env bash\nset -euo pipefail\n[[ \$1 == -u ]]\nshift 2\n[[ \$1 == -- ]]\nshift\nexec \"\$@\"\n");
             chmod("{$root}/bin/sudo", 0o700);
-            file_put_contents("{$root}/bin/curl", "#!/usr/bin/env bash\nset -euo pipefail\n[[ \" \$* \" == ' --fail --silent --show-error --retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors --connect-timeout 10 --max-time 30 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt https://e2e-prod.test/ ' ]]\n");
+            file_put_contents("{$root}/bin/curl", "#!/usr/bin/env bash\nset -euo pipefail\n[[ \" \$* \" == ' --fail --silent --show-error --retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors --connect-timeout 2 --max-time 5 --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt https://e2e-prod.test/ ' ]]\n");
             chmod("{$root}/bin/curl", 0o700);
             $site = "https://e2e-prod.test {\n    root * {$home}/public\n    php_fastcgi unix/{$socket}\n}\n";
             file_put_contents("{$version}/Caddyfile", "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n}\n\n{$site}");
@@ -2577,7 +2577,7 @@ describe('convergence guest scripts', function () {
             'gateway:status',
             'gateway.orbit',
             '--cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            '--retry 10 --retry-delay 2 --retry-connrefused --retry-all-errors',
+            '--retry 2 --retry-delay 1 --retry-connrefused --retry-all-errors',
             '--resolve laravel.internal:443:127.0.0.1',
             'SELECT wireguard_ip FROM nodes',
             '"orbit@$peer_address"',
