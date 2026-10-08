@@ -142,11 +142,17 @@ describe('delivery-line proof commands', function (): void {
             expect($result['stdout'])->toContain('--slurp')
                 ->and($result['stdout'])->toContain('COMMENTED');
         }
+        if ($script === 'gateway-smoke') {
+            expect($result['stdout'])->toContain('--write-check')
+                ->and($result['stdout'])->toContain('SSL_CERT_FILE')
+                ->and($result['stdout'])->toContain('Exit 0 when no check failed or timed out');
+        }
     })->with([
         'bug-repro' => ['bug-repro'],
         'task-group-check' => ['task-group-check'],
         'pr-head-check' => ['pr-head-check'],
         'deploy-verify' => ['deploy-verify'],
+        'gateway-smoke' => ['gateway-smoke'],
     ]);
 
     it('refuses to name a cached origin/main that does not match git ls-remote', function (): void {
@@ -280,6 +286,54 @@ describe('delivery-line proof commands', function (): void {
             ->and($result['stderr'])->toContain('fails_on_base true');
     });
 
+    it('reports merged field from the pull record with a terminal no-op instruction even when review is missing', function (): void {
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/945',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-945-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json'])->toMatchArray([
+                'merged' => true,
+                'passed' => false,
+                'error' => 'review_missing',
+            ]);
+
+        $repository = dirname(__DIR__, 5);
+        foreach (['.agents/skills/merging-pull-requests/SKILL.md', 'docs/reference/delivery-line.md'] as $path) {
+            expect(file_get_contents($repository.'/'.$path))
+                ->toContain('When the JSON has `merged:true`, stop:')
+                ->toContain('Do not review it again or run `gh pr merge`.')
+                ->toContain('This applies even when `passed` is `false`')
+                ->toContain('When `merged` is `false`,');
+        }
+    });
+
+    it('reports merged field as false and still requires review for an unmerged pull request', function (): void {
+        $pull = json_decode((string) file_get_contents(deliveryLineFixture('pr-945-pull.json')), true, flags: JSON_THROW_ON_ERROR);
+        $pull['merged'] = false;
+        $pullFile = temporaryPath('orbit-delivery-unmerged-', 6);
+        file_put_contents($pullFile, json_encode($pull, JSON_THROW_ON_ERROR));
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/945',
+            '--pull-file', $pullFile,
+            '--reviews-file', deliveryLineFixture('pr-945-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json'])->toMatchArray([
+                'merged' => false,
+                'passed' => false,
+                'error' => 'review_missing',
+            ])
+            ->and($result['stderr'])->toContain('Review the current head. Do not merge.');
+    });
+
     it('fails PR 945 when the review list is empty', function (): void {
         $result = deliveryLineRun('pr-head-check', [
             '--pr', 'https://github.com/nckrtl/orbit/pull/945',
@@ -306,6 +360,7 @@ describe('delivery-line proof commands', function (): void {
 
         expect($result['exit'])->toBe(0)
             ->and($result['json']['passed'] ?? null)->toBeTrue()
+            ->and($result['json']['merged'] ?? null)->toBeTrue()
             ->and($result['json']['kept_reviews'] ?? null)->toBe(1)
             ->and(data_get($result['json'], 'required_checks.conclusion'))->toBe('success');
     });
@@ -352,6 +407,110 @@ describe('delivery-line proof commands', function (): void {
         expect($result['exit'])->toBe(1)
             ->and($result['json']['error'] ?? null)->toBe('leftover')
             ->and($result['stderr'])->toContain('Do not merge');
+    });
+
+    it('names object-storage and Linear leftovers in the recorded dirty diff', function (string $fixture): void {
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/1',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-pass-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture($fixture),
+        ]);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json']['error'] ?? null)->toBe('leftover')
+            ->and($result['json']['leftovers'] ?? [])->toContain(
+                [
+                    'path' => 'apps/cli/config/storage.php',
+                    'leftover' => 'object-storage-host',
+                    'line' => "return ['host' => 'https://fixture-only.upcloudobjects.com'];",
+                ],
+                [
+                    'path' => 'apps/cli/resources/issue-note.md',
+                    'leftover' => 'linear-reference',
+                    'line' => 'Linear issue FIXTURE-123',
+                ],
+            )
+            ->and($result['stderr'])->toContain('Do not merge');
+    })->with([
+        'existing recorded leftover fixture' => ['pr-leftover-files.json'],
+        'storage and Linear recorded fixture' => ['pr-storage-linear-leftover-files.json'],
+    ]);
+
+    it('matches only generic storage.host and linear.reference forms in added lines', function (string $line, ?string $leftover, string $filename = 'apps/cli/resources/example.md'): void {
+        $path = temporaryPath('orbit-delivery-leftover-', 6).'.json';
+        file_put_contents($path, json_encode([
+            ['filename' => $filename, 'patch' => "@@ -1 +1 @@\n".$line."\n"],
+        ], JSON_THROW_ON_ERROR));
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/1',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-pass-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', $path,
+        ]);
+
+        expect($result['exit'])->toBe($leftover === null ? 0 : 1)
+            ->and($result['json']['leftovers'] ?? null)->toBe($leftover === null ? [] : [
+                ['path' => $filename, 'leftover' => $leftover, 'line' => substr($line, 1)],
+            ]);
+    })->with([
+        'provider host' => ['+https://fixture-only.upcloudobjects.com/path', 'object-storage-host'],
+        'case insensitive nested host' => ['+FIXTURE-ONLY.NESTED.UPCLOUDOBJECTS.COM', 'object-storage-host'],
+        'storage URL not-found path' => ['+https://fixture-only.upcloudobjects.com/not-found', 'object-storage-host'],
+        'Linear URL not-found path' => ['+https://linear.app/fixture-only/not-found', 'linear-reference'],
+        'sentence-ending provider host' => ['+Use fixture-only.upcloudobjects.com.', 'object-storage-host'],
+        'provider host before another sentence' => ['+Use fixture-only.upcloudobjects.com. Then continue.', 'object-storage-host'],
+        'configured DNS root dot' => ["+return ['host' => 'fixture-only.upcloudobjects.com.'];", 'object-storage-host', 'apps/cli/config/storage.php'],
+        'DNS root dot before URL path' => ['+https://fixture-only.upcloudobjects.com./path', 'object-storage-host'],
+        'unrelated negation in code' => ["+return ['not' => 'https://fixture-only.upcloudobjects.com'];", 'object-storage-host', 'apps/cli/config/storage.php'],
+        'unrelated negation in prose' => ['+The cache is not ready; use https://linear.app/fixture-only/issue/FIXTURE-123', 'linear-reference'],
+        'unrelated prohibition sentence' => ['+Do not change the cache. Use https://linear.app/fixture-only/issue/FIXTURE-123', 'linear-reference'],
+        'prohibition text in product code' => ["+return 'Do not add a Linear issue reference.';", 'linear-reference', 'apps/cli/config/example.php'],
+        'Linear URL' => ['+https://linear.app/fixture-only/issue/FIXTURE-123', 'linear-reference'],
+        'Linear issue ID' => ['+Linear FIXTURE-123', 'linear-reference'],
+        'Linear product wording' => ['+Linear product integration', 'linear-reference'],
+        'issue in Linear' => ['+Track the issue in Linear', 'linear-reference'],
+        'ordinary linear wording' => ['+Use linear interpolation', null],
+        'provider suffix alone' => ['+upcloudobjects.com', null],
+        'lookalike provider' => ['+fixture-only.upcloudobjects.com.example.test', null],
+        'removed host' => ['-fixture-only.upcloudobjects.com', null],
+        'forbidden Linear documentation' => ['+Do not add a Linear issue reference.', null],
+        'forbidden storage documentation' => ['+Do not use fixture-only.upcloudobjects.com.', null],
+        'lookalike provider with root dot' => ['+fixture-only.upcloudobjects.com.example.test.', null],
+    ]);
+
+    it('requires the merge skill to name each storage.host and linear.reference leftover', function (string $name): void {
+        $skill = dirname(__DIR__, 5).'/.agents/skills/merging-pull-requests/SKILL.md';
+        $path = temporaryPath('orbit-delivery-skill-', 6).'.md';
+        file_put_contents($path, str_replace($name, 'omitted-leftover', (string) file_get_contents($skill)));
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/1',
+            '--skill-file', $path,
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-pass-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(1)
+            ->and($result['json']['error'] ?? null)->toBe('leftover')
+            ->and($result['json']['missing_skill_names'] ?? null)->toBe([$name]);
+    })->with(['object-storage-host', 'linear-reference']);
+
+    it('passes a clean recorded diff with no object-storage or Linear leftovers', function (): void {
+        $result = deliveryLineRun('pr-head-check', [
+            '--pr', 'https://github.com/nckrtl/orbit/pull/1',
+            '--pull-file', deliveryLineFixture('pr-945-pull.json'),
+            '--reviews-file', deliveryLineFixture('pr-pass-reviews.json'),
+            '--checks-file', deliveryLineFixture('pr-945-checks.json'),
+            '--files-file', deliveryLineFixture('pr-945-files.json'),
+        ]);
+
+        expect($result['exit'])->toBe(0)
+            ->and($result['json']['passed'] ?? null)->toBeTrue()
+            ->and($result['json']['leftovers'] ?? null)->toBe([]);
     });
 
     it('does not treat the detector, leftover-refusal test, or leftover fixture as product leftovers', function (): void {

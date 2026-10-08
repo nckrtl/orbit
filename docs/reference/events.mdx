@@ -83,7 +83,7 @@ A `deleted` event carries a short snapshot, because the record is already gone. 
 | Type | Fires when | Data |
 | --- | --- | --- |
 | `node.created` | A Node is provisioned for the first time. | `NodeData` |
-| `node.updated` | A Node is provisioned again, renamed, retargeted, or its settings or roles change, including a role relocate. | `NodeData` |
+| `node.updated` | A Node is provisioned again, renamed, retargeted, or its settings or roles change, including a role relocate. It also fires when the Node's [`updating`](/reference/gateway-recovery#nodes-being-updated) value changes: a fleet rollout visit starts or ends on it, or a Gateway release starts running or ends on the Gateway Node. | `NodeData` |
 | `node.deleted` | A Node is removed. | `{ id, name }` |
 
 ### Project
@@ -217,7 +217,7 @@ An event fires only after its action succeeds. Two writes also fire after a fail
 
 A create call that finds the same record already stored, such as an identical Process, Schedule, or firewall rule, changes nothing and fires nothing.
 
-No event reports a change of a Node's or an Instance's runtime state. A Node's status changes only through actions that already fire `node.*`. Hibernation keeps an Instance's awake state outside the Instance and Process records.
+No event reports a change of a Node's or an Instance's runtime state. A Node's status changes only through actions that already fire `node.*`. A Node's `updating` value is the one exception, as the `node.updated` row says. Hibernation keeps an Instance's awake state outside the Instance and Process records.
 
 Creating, replacing, or deleting a task definition fires nothing. The [web app](/reference/web-app#polling) loads definition lists and the definition view when those pages open.
 

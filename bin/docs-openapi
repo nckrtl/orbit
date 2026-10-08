@@ -559,10 +559,11 @@ INPUT_PREFIX = re.compile(r'^(Create|Add(?!ed)|Update|Provision|Remove(?!d)|Regi
 
 # ---------------------------------------------------------------- families, summaries
 TAGS = [
-    ('gateway', 'Gateway', 'Status and trust of the active Gateway.'),
+    ('gateway', 'Gateway', 'Status and trust of the active Gateway, and the releases of the Gateway itself.'),
     ('node', 'Nodes', 'Machines in the fleet, their roles, access grants, and storage settings.'),
     ('cluster', 'Clusters', 'Groups of Nodes with one Router and one development TLD.'),
     ('firewall', 'Firewall', 'Named UFW rules on one Node.'),
+    ('fleet', 'Fleet rollout', 'The rollout of each verified Gateway release to the managed Nodes, and its catch-up.'),
     ('tool', 'Tools', 'Packages that Orbit installs on a Node through a Tool Manager.'),
     ('metrics', 'Metrics', 'The Prometheus and Grafana role and its exporters.'),
     ('github', 'GitHub App', "The Gateway's own read-only GitHub App and the accounts that installed it."),
@@ -585,7 +586,7 @@ TAGS = [
     ('internal', 'Node callbacks', 'Endpoints that managed Nodes and Caddy call; operators do not call them.'),
 ]
 TAG_BY_PREFIX = {p: t for p, t, _ in TAGS}
-INTERNAL = {'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
+INTERNAL = {'compute:github-token', 'tasks:agents', 'tasks:agent-stream', 'agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'metrics:grafana:authorize', 'schedule:complete', 'runtime-activation:app-instance', 'github:app:register', 'github:app:callback'}
 DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@processIndex': 'List process definitions',
     'ProjectRuntimeDefinitionsController@processStore': 'Create a process definition',
@@ -599,8 +600,9 @@ DEFINITION_ROUTES = {
     'ProjectRuntimeDefinitionsController@scheduleDestroy': 'Remove a Schedule definition',
 }
 SUMMARIES = {
+    'compute:github-token': 'Renew sandbox repository access',
     'instance:transfer': 'Transfer an Instance',
-    'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate',
+    'gateway:status': 'Show Gateway status', 'gateway:trust': 'Fetch the root CA certificate', 'gateway:desired-fleet-state': 'Show the desired fleet state',
     'node:list': 'List Nodes', 'node:show': 'Show a Node', 'node:add': 'Add a Node', 'node:remove': 'Remove a Node', 'node:settings': 'Update Node settings',
     'node:role:list': 'List the roles of a Node', 'node:role:add': 'Add a role to a Node', 'node:role:remove': 'Remove a role from a Node',
     'node:access:add': 'Grant Node access', 'node:access:remove': 'Revoke Node access',
@@ -652,8 +654,19 @@ SUMMARIES = {
     'tasks:complete': 'Complete a Task group', 'tasks:cancel': 'Cancel a Task group',
 }
 DESCRIPTIONS = {
+    'compute:github-token': 'Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.',
     'gateway:trust': 'Returns the PEM-encoded Orbit root certificate and its SHA-256 fingerprint so a client can pin it before it trusts the Gateway. This endpoint needs no WireGuard identity.',
-    'gateway:status': 'Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.',
+    'gateway:status': 'Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.',
+    'gateway:desired-fleet-state': 'Returns what every machine in the fleet should run for the Gateway\'s commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.',
+    'gateway:release:deploy': 'Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.',
+    'gateway:release:rollback': 'Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.',
+    'gateway:release:list': 'Lists the 50 newest Gateway release records, newest first, including queued and running ones.',
+    'gateway:release:show': 'Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.',
+    'gateway:release:smoke': 'Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request\'s command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.',
+    'gateway:release:auto:status': 'Shows whether automatic Gateway releases are enabled or paused, the current release, the last runner tick, and how long releases have made no progress. See /reference/gateway-recovery#automatic-releases.',
+    'gateway:release:auto:enable': 'Turns automatic Gateway releases on. A pause still holds them until `gateway:release:auto:resume`.',
+    'gateway:release:auto:disable': 'Turns automatic Gateway releases off. A release that already runs finishes.',
+    'gateway:release:auto:resume': 'Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.',
     'realtime:auth': 'A Pusher-protocol channel authorization endpoint. A client requests access to the private `orbit` channel with its `socket_id` and `channel_name`; any active WireGuard peer Node is authorized.',
     'agent:realtime': "The `orbit-agent` on a managed Node calls this endpoint to find its Reverb connection. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and returns the Reverb URL, serving address, and app key, the Node's `presence-node.{id}` channel, and the agent's `agent.{id}` member ID. Connection values are null when broadcasting is not configured.",
     'agent:workspaces': "The `orbit-agent` on a managed Node calls this endpoint every 60 seconds to learn which task checkouts to watch. The Gateway identifies the Node from the WireGuard address and the agent's bearer secret, and lists the Instances on that Node that hold the workspace of an unfinished task group, at most 64, with the checkout path, the Project's default branch as `base`, and the Instance's starting commit as `start`. The list is empty while the tasks extension is disabled.",
@@ -696,14 +709,14 @@ DESCRIPTIONS = {
     'tasks:create': 'Creates a Task group for a Project with an optional ordered list of Task subtasks. Requires Gateway access. `status` is `backlog` (the default) or `todo`; the scheduler never claims a `backlog` group. A `todo` group needs at least one subtask (`tasks.no_subtasks`), each with at least one deliverable (`tasks.subtask_deliverables_missing`), and create then asks the scheduler to claim the oldest `todo` group that still fits the concurrency ceilings. Optional `notify_coder` or Commander `notify_on_settle` opts the group into the Coder settle webhook. Returns `extension.disabled` while the extension is off.',
     'tasks:update': 'Updates a Task group. `title` and `brief` change only in `backlog` (`tasks.not_in_backlog`). `status` moves the group between `backlog` and `todo`; a claimed group cannot move (`tasks.already_claimed`), and `todo` needs at least one subtask (`tasks.no_subtasks`) and a deliverable on every subtask (`tasks.subtask_deliverables_missing`, whose details name the subtasks). Moving to `todo` asks the scheduler to claim. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:create': 'Appends one subtask to a Task group at the next position with status `todo`. Works in any group status except `completed` and `cancelled` (`tasks.group_closed`). `deliverables` is a list of at most five typed items the subtask must deliver, each with a unique slug `id`, a `type`, and a `description`: `file` adds `path` (a path or glob) and `change` (`created`, `modified`, or `any`); `command` adds `command`, an optional `directory` (default `.`), an optional boolean `fails_on_base`, and optional `paths` (workspace-relative file paths, not globs). Only `command` accepts `fails_on_base` and `paths`. With `fails_on_base: true`, `paths` must contain at least one file, and the command must fail on the start commit before it passes on the working tree; omitted `fails_on_base` is stored as false. `review` adds nothing. Orbit verifies file and command deliverables at handoff, and the reviewer confirms review deliverables. Outside `backlog`, a subtask needs at least one deliverable (`tasks.subtask_deliverables_missing`). Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
-    'tasks:subtask:update': 'Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
+    'tasks:subtask:update': 'Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
     'tasks:subtask:destroy': 'Deletes a subtask while its group is in `backlog` (`tasks.not_in_backlog`) and closes the position gap. Returns the deleted subtask. Served by the Node that holds the group\'s Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.',
     'tasks:list': 'Lists Task groups, newest first. Optional `project_id` and `status` filters. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
     'tasks:question:list': 'Lists task questions, newest first. Optional `project_id`, `cause`, `status`, and `since` filters. `since` is an ISO date and includes questions asked at that moment. Returns `extension.disabled` while the extension is off.',
     'tasks:show': 'Shows one Task group and its Tasks in position order. The group and each subtask include `assistance_requested`, `assistance_kind`, `assistance_question`, and `assistance_reason`. Returns `extension.disabled` while the extension is off.',
-    'tasks:subtask:cancel': 'Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.',
-    'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.',
-    'tasks:complete': 'Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.',
+    'tasks:subtask:cancel': 'Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.',
+    'tasks:cancel': 'Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.',
+    'tasks:complete': 'Completes a settling Task group or a VM group waiting for review without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.',
     'tasks:definition:list': 'Lists task definitions, optionally filtered by numeric `project_id`. Any authorized peer can list them. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:show': 'Shows one task definition. Any authorized peer can show it. The call does not start a task. Returns `extension.disabled` while the tasks extension is off.',
     'tasks:definition:create': 'Stores a task definition for a Project. The body is the whole definition. Gateway access is required. The call does not start a task. An invalid definition returns `tasks.definition_invalid` (422), and `details.rules` names each failing rule and the subtask key. A name the Project already uses returns `tasks.definition_exists` (409). Returns `extension.disabled` while the tasks extension is off.',
@@ -1480,7 +1493,7 @@ RESPONSE_OVERRIDES = {
 }
 CTRL_DATA_OVERRIDES = {
     'SchedulesController@index': ('ScheduleData', True), 'SchedulesController@show': ('ScheduleData', False), 'SchedulesController@run': ('ScheduleData', False), 'SchedulesController@activate': ('ScheduleData', False), 'SchedulesController@destroy': ('ScheduleData', False), 'SchedulesController@logs': ('ScheduleLogsData', False),
-    'ToolManagersController@index': ('ToolManagerData', True), 'DoctorRunsController@store': ('DoctorReportData', False), 'GatewayStatusesController@show': ('GatewayStatusData', False),
+    'ToolManagersController@index': ('ToolManagerData', True), 'DoctorRunsController@store': ('DoctorReportData', False), 'GatewayStatusesController@show': ('GatewayStatusData', False), 'GatewayDesiredFleetStatesController@show': ('DesiredFleetStateData', False),
     'MetricsController@store': ('MetricsMutationData', False), 'MetricsController@destroy': ('MetricsMutationData', False), 'MetricsController@enableExporter': ('MetricsMutationData', False), 'MetricsController@disableExporter': ('MetricsMutationData', False), 'MetricsController@status': ('MetricsStatusData', False), 'MetricsController@credentials': ('MetricsCredentialsData', False), 'MetricsController@reset': ('MetricsCredentialsData', False),
     'NodeAccessController@store': ('AddedNodeAccessData', False), 'NodeAccessController@destroy': ('RemovedNodeAccessData', False),
     'DatabaseConnectionAttachmentsController@store': ('DatabaseConnectionAttachmentData', False), 'DatabaseConnectionAttachmentsController@destroy': ('DatabaseConnectionAttachmentData', False),
@@ -1489,6 +1502,9 @@ CTRL_DATA_OVERRIDES = {
     'ProxyCliController@models': ('ProxyCliModelData', True),
     'TaskGroupsController@comments': ('TaskCommentData', True),
     'TasksController@status': ('TasksStatusData', False),
+    'GatewayReleasesController@smoke': ('GatewayReleaseSmokeData', False),
+    'GatewayReleaseAutomationController@show': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@enable': ('GatewayReleaseAutomationData', False),
+    'GatewayReleaseAutomationController@disable': ('GatewayReleaseAutomationData', False), 'GatewayReleaseAutomationController@resume': ('GatewayReleaseAutomationData', False),
 }
 SDK_RESPONSE_FALLBACK = {'NodesController@destroy': 'RemovedNodeResponse', 'InstanceEnvironmentImportsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentSynchronizationsController@store': 'EnvironmentOperationResponse', 'InstanceEnvironmentValuesController@update': 'EnvironmentOperationResponse'}
 NDJSON_SCHEMA = {'oneOf': [
@@ -1500,6 +1516,18 @@ NDJSON_SCHEMA = {'oneOf': [
 
 def data_schema_for(route):
     action = route['action']
+    if action.startswith('ProjectDocumentsController@'):
+        verb = action.split('@')[1]
+        if verb in ('index', 'search'):
+            return ref('DocumentEntryData'), True
+        if verb == 'versions':
+            return ref('DocumentVersionData'), True
+        if verb in ('read', 'download'):
+            field = 'content_text' if verb == 'read' else 'content_base64'
+            return {'type': 'object', 'properties': {'entry_id': {'type': 'integer'}, 'revision': {'type': 'integer'}, 'version': ref('DocumentVersionData'), field: {'type': 'string'}}, 'required': ['entry_id', 'revision', 'version', field], 'additionalProperties': False}, False
+        if verb == 'destroy':
+            return {'type': 'object', 'properties': {'id': {'type': 'integer'}, 'removed': {'type': 'boolean'}, 'cleanup_pending': {'type': 'boolean'}}, 'required': ['id', 'removed', 'cleanup_pending'], 'additionalProperties': False}, False
+        return ref('DocumentEntryData'), False
     if action in RESPONSE_OVERRIDES:
         return RESPONSE_OVERRIDES[action], False
     if action in CTRL_DATA_OVERRIDES:
@@ -1569,6 +1597,8 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     env_route = '/environment/' in path or ('/database-connections/' in path and '/instances/' in path)
     for p in params:
         sch, desc = PARAM_SCHEMAS.get(p, ({'type': 'string'}, ''))
+        if p == 'entry' and route['name'].startswith('project:document:'):
+            sch, desc = {'type': 'integer', 'minimum': 1}, 'Numeric Project Document entry ID.'
         if p == 'instance' and env_route:
             sch, desc = ENV_INSTANCE
         if p == 'name' and str(route.get('name') or '').startswith('tasks:definition:'):
@@ -1645,6 +1675,21 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             props['name'].update({'maxLength': 63, 'pattern': '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$'})
     if route['name'] in ('tasks:definition:create', 'tasks:definition:update') and body_schema:
         correct_task_definition_body(body_schema)
+    if route['name'] in ('project:document:create', 'project:document:write') and body_schema:
+        props = body_schema['properties']
+        props['content_text'].update({'maxLength': 1048576, 'description': 'Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB.'})
+        props['content_base64'].update({'maxLength': 13981016, 'description': 'Canonical RFC 4648 base64; decoded size is at most 10 MiB.'})
+        content_choices = [{'required': ['content_text'], 'not': {'required': ['content_base64']}}, {'required': ['content_base64'], 'not': {'required': ['content_text']}}]
+        if route['name'] == 'project:document:create':
+            body_schema['oneOf'] = [
+                {'properties': {'kind': {'const': 'folder'}}, 'not': {'anyOf': [{'required': [field]} for field in ('content_text', 'content_base64', 'media_type')]}},
+                {'properties': {'kind': {'const': 'file'}}, 'oneOf': content_choices},
+            ]
+        else:
+            body_schema['oneOf'] = content_choices
+        body_schema['additionalProperties'] = False
+    if route['name'] == 'project:document:update' and body_schema:
+        body_schema['anyOf'] = [{'required': ['name']}, {'required': ['parent_id']}]
     if body_schema is not None:
         if 'oneOf' not in body_schema:
             body_schema['additionalProperties'] = False
@@ -1715,6 +1760,10 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
             'id': {'type': 'string', 'description': 'The stream ID.'},
             'closed': {'type': 'boolean', 'const': True, 'description': 'Always true.'},
         }, 'required': ['id', 'closed']}, 'The request succeeded.')
+    elif route['name'] == 'compute:github-token':
+        responses['200'] = {'description': 'Fresh access scoped to the Project repository.', 'headers': {'Cache-Control': {'schema': {'type': 'string', 'const': 'no-store, private'}}}, 'content': {'application/json': {'schema': {'type': 'object', 'properties': {'token': {'type': 'string', 'description': 'Temporary installation token. Never persist or log it.'}}, 'required': ['token']}}}}
+        responses['403'] = error_response('The active WireGuard peer or running sandbox ownership and Pi credential are unavailable.')
+        responses['503'] = error_response('Temporary repository access could not be issued (`compute.github_unavailable`).')
     elif route['name'] == 'agent:realtime:auth':
         responses['200'] = {'description': 'The Pusher channel signature.', 'content': {'application/json': {'schema': {'type': 'object', 'properties': {
             'auth': {'type': 'string', 'description': 'Pusher channel signature.'},
@@ -1733,15 +1782,28 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         data, is_list = data_schema_for(route)
         if is_list:
             data = {'type': 'array', 'items': data}
-        if controllers.get(action, {}).get('created'):
+        if route['name'] in ('gateway:release:deploy', 'gateway:release:rollback'):
+            responses['202'] = envelope(data, 'Accepted. The release record is queued and its unit started.')
+            responses['503'] = error_response('systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed.')
+        elif controllers.get(action, {}).get('created'):
             responses['201'] = envelope(data, 'Created.')
             # Development deploy step creation refuses duplicate names, including exact retries.
-            if route['name'] != 'project:dev-deploy-step:create':
+            if route['name'] not in ('project:dev-deploy-step:create', 'project:document:create'):
                 responses['200'] = envelope(data, 'The request succeeded; an exact retry returned the existing record.')
         else:
             responses['200'] = envelope(data, 'The request succeeded.')
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
+        if route['name'] == 'gateway:release:smoke':
+            responses['500'] = error_response('Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`).')
+    if route['name'].startswith('project:document:'):
+        op['description'] = 'Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.'
+        if route['name'] in ('project:document:list', 'project:document:search', 'project:document:version:list'):
+            meta = responses['200']['content']['application/json']['schema']['properties']
+            meta['meta'] = {'allOf': [{'$ref': '#/components/schemas/Meta'}, {'type': 'object', 'properties': {'next_cursor': {'type': ['string', 'null']}}, 'required': ['next_cursor']}]}
+        if route['name'] == 'project:document:create':
+            responses.pop('200', None)
+            responses['201'] = envelope(ref('DocumentEntryData'), 'Created.')
     if route['name'] in ('agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams'):
         responses['401'] = error_response('The request carries no agent secret (`agent.secret_required`).')
     if route['name'] in ('agent:realtime', 'agent:workspaces', 'agent:log-streams'):
@@ -1765,7 +1827,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
     if route['name'] in ('tasks:list', 'tasks:show', 'tasks:question:list', 'tasks:agents', 'tasks:agent-stream'):
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`).')
     if route['name'] == 'tasks:cancel':
-        responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`).')
+        responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`), or the Task group is completed or in settling or waiting_for_review with a pull request (`tasks.not_cancellable`).')
         responses['502'] = error_response('The approved commits of a settling group could not be pushed to its task branch (`tasks.push_failed`). The group and its Instance stay.')
     if route['name'] == 'tasks:subtask:cancel':
         responses['409'] = error_response('The tasks extension is disabled (`extension.disabled`) or the subtask is not running (`tasks.subtask_not_running`).')
@@ -1797,6 +1859,17 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         responses['409'] = error_response('No Node has the Metrics role (`metrics.assignment_missing`).')
         responses['422'] = error_response('The Node is not an active, WireGuard-managed Node (`node.metrics_unavailable`).')
         responses['502'] = error_response('Grafana or Prometheus did not answer, or Prometheus has no samples for this Node, as for a Node without an enabled exporter (`node.metrics_unreachable`).')
+    if route['name'].startswith('project:document:'):
+        responses['404'] = error_response('Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.')
+        responses['422'] = error_response('Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).')
+        if route['method'] != 'GET':
+            responses['409'] = error_response('Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.')
+        if route['name'] in ('project:document:read', 'project:document:download'):
+            responses['409'] = error_response('Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.')
+        if route['name'] in ('project:document:create', 'project:document:write', 'project:document:read', 'project:document:download', 'project:document:restore-version'):
+            responses['413'] = error_response('Decoded content or JSON request exceeds the documented limit (`project_documents.content_too_large`).')
+            responses['502'] = error_response('Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.')
+            responses['503'] = error_response('Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.')
     op['responses'] = responses
     request_schema = op.get('requestBody', {}).get('content', {}).get('application/json', {}).get('schema') if (stream or body_schema is not None) else None
     samples = [{'lang': 'bash', 'label': 'curl', 'source': bash_sample(route, path, request_schema, query, tag)}]

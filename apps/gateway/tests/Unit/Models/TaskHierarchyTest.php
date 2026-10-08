@@ -100,6 +100,7 @@ it('refuses a subtask that would have children', function (): void {
         'agent_unavailable_since' => null,
         'agent_unavailable_notified_at' => null,
         'reserved_at' => null,
+        'preview' => null,
     ]);
 
     expect(fn () => $task->save())->toThrow(TaskHierarchyException::class, 'cannot have subtasks');

@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+use App\Domain\Tasks\TaskReviewRequestLogins;
 use App\Domain\Tasks\TaskReviewTrust;
 
 $implementerEffort = env('ORBIT_TASKS_IMPLEMENTER_EFFORT');
@@ -19,14 +20,45 @@ if (is_string($configuredHome) && $configuredHome !== '') {
 
 return [
     'home' => rtrim(string: $orbitHome, characters: '/'),
+    // Private ephemeral authorization, never in ORBIT_HOME or database backups.
+    'document_cleanup_runtime' => env('APP_ENV') === 'testing'
+        ? env('ORBIT_DOCUMENT_CLEANUP_RUNTIME', '/run/orbit/project-documents')
+        : '/run/orbit/project-documents',
     'gateway_checkout' => rtrim(
-        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit-gateway'),
+        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit/apps/gateway'),
         characters: '/',
     ),
+    // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
+    'gateway_releases' => [
+        'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
+        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 5),
+        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
+        'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
+        // A verified release whose own scheduler runs no tasks:tick within this many seconds raises one alert.
+        'tick_confirmation_seconds' => max(60, (int) env('ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS', 180)),
+        // Automatic releases ship the newest commit of this branch whose check run of this name passed.
+        // The repository is the origin of the shared release repository.
+        'branch' => env(key: 'ORBIT_GATEWAY_RELEASE_BRANCH', default: 'main'),
+        'check' => env(key: 'ORBIT_GATEWAY_RELEASE_CHECK', default: 'Required checks'),
+    ],
     'gateway_web' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
         characters: '/',
     ),
+    'gateway_verify_origin' => rtrim(
+        string: env(key: 'ORBIT_GATEWAY_VERIFY_ORIGIN', default: 'https://gateway.orbit'),
+        characters: '/',
+    ),
+    // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
+    // `cli-v0.N.0`, and the Git checkout whose history counts N. The checkout is the running Gateway's own.
+    'cli_releases' => [
+        'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
+        'git_directory' => base_path(),
+    ],
+    // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).
+    'gateway_release_smoke_timeout' => max(1, min(600, (int) env('ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT', 90))),
+    // A Project id or slug turns on the smoke write check, which writes one Project Document per release.
+    'gateway_release_smoke_project' => trim((string) env('ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT', '')),
     'app_dev_domain' => trim(
         string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
         characters: '.',
@@ -63,6 +95,11 @@ return [
         // from `owner/repo:id,id;owner/repo:id`. Empty disables review feedback. No logins, wildcards, roles, or
         // branch-provided settings.
         'github_reviewers' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_GITHUB_REVIEWERS')),
+        // ADR 0203: numeric GitHub account IDs whose pull requests Orbit reviews and merges, per repository.
+        'pull_request_authors' => TaskReviewTrust::parseEnv(env('ORBIT_TASKS_PULL_REQUEST_AUTHORS')),
+        // Comma-separated GitHub logins requested as reviewers after a task pull request is opened or reused.
+        // Unset or empty requests no one. The pull request author is omitted at request time.
+        'review_request_logins' => TaskReviewRequestLogins::parseEnv(env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS')),
         'worker_user' => env('ORBIT_TASKS_WORKER_USER'),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
@@ -72,11 +109,19 @@ return [
         // Effort for new threads. Existing threads keep their stored value.
         'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'high' : $implementerEffort,
         'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,
+        'provisioning_failure_threshold' => max(1, (int) env('ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD', 3)),
         'observation_grace_seconds' => (int) env('ORBIT_TASKS_OBSERVATION_GRACE_SECONDS', 120),
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         'coder_webhook_url' => env('ORBIT_CODER_WEBHOOK_URL'),
         'coder_webhook_secret' => env('ORBIT_CODER_WEBHOOK_SECRET'),
+        'opsbot_webhook_url' => env('ORBIT_OPSBOT_WEBHOOK_URL'),
+        'opsbot_webhook_secret' => env('ORBIT_OPSBOT_WEBHOOK_SECRET'),
+    ],
+    // Release alerts always write Activity and a problem. The signed webhook is skipped unless both values are set.
+    'releases' => [
+        'alert_webhook_url' => env('ORBIT_RELEASE_ALERT_WEBHOOK_URL'),
+        'alert_webhook_secret' => env('ORBIT_RELEASE_ALERT_WEBHOOK_SECRET'),
     ],
     // The outer loop neither counts nor files a listed fingerprint or a source path under a prefix.
     'problems' => [

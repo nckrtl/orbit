@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\ProjectDocuments\\WriteProjectDocumentRequest",
+    "route": "PUT /api/v1/projects/{project}/documents/{entry}/content",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "project_documents.revision_conflict",
+            "message": "Document has changed.",
+            "details": {
+                "entry_id": 1,
+                "current_revision": 3
+            }
+        }
+    }
+}

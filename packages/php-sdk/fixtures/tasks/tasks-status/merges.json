@@ -1,0 +1,30 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTasksStatusRequest",
+    "route": "GET /api/v1/tasks/status",
+    "status": 200,
+    "body": {
+        "data": {
+            "enabled": true,
+            "assistance": [],
+            "last_tick_at": null,
+            "merges": [
+                {
+                    "id": 1,
+                    "project_id": 1,
+                    "project": "orbit",
+                    "project_code": "ORB",
+                    "title": "Review #460: Throttle logins",
+                    "status": "settling",
+                    "pr_url": "https://github.com/nckrtl/orbit/pull/460",
+                    "pr_branch": "cursor/login-throttle",
+                    "merge_status": "waiting",
+                    "merge_reason": "Check Required checks is still running on aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa."
+                }
+            ]
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

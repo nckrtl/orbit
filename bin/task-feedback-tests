@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Keep shared-worker feedback independent of host sudo, without disabling Pest TIA."""
+import json
+import os
+from pathlib import Path
+import pwd
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+
+
+def main(arguments):
+    ci = bool(os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'))
+    feedback = os.environ.get('ORBIT_TASK_FEEDBACK') == 'shared' or pwd.getpwuid(os.geteuid()).pw_name == 'orbit-worker'
+    project = Path.cwd()
+    manifest = project / 'composer.json'
+    if ci or not feedback or not manifest.is_file() or json.loads(manifest.read_text()).get('name') != 'nckrtl/orbit-gateway':
+        return subprocess.call(arguments)
+    # Respect explicit alternate configurations such as the guidance-only gate.
+    if any(value in ('-c', '--configuration') or value.startswith('--configuration=') for value in arguments):
+        return subprocess.call(arguments)
+    config = ET.parse(project / 'phpunit.xml')
+    root = config.getroot()
+    for attribute in ('bootstrap', 'cacheDirectory'):
+        if root.get(attribute):
+            root.set(attribute, str(project / root.get(attribute)))
+    for element in root.iter():
+        if element.tag in ('directory', 'file') and element.text:
+            element.text = str(project / element.text)
+    groups = root.find('groups')
+    if groups is None:
+        groups = ET.SubElement(root, 'groups')
+    exclude = ET.SubElement(groups, 'exclude')
+    ET.SubElement(exclude, 'group').text = 'privileged'
+    environment = dict(os.environ)
+    # Excluded tests must never populate the authoritative cache with passing verdicts.
+    environment.setdefault('ORBIT_TIA_DIRECTORY', str(project / '.orbit-tia' / 'task-feedback'))
+    with tempfile.NamedTemporaryFile(prefix='orbit-feedback-', suffix='.xml') as candidate:
+        config.write(candidate, encoding='utf-8', xml_declaration=True)
+        candidate.flush()
+        return subprocess.call([*arguments, '--configuration', candidate.name], env=environment)
+
+
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:]))

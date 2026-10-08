@@ -10,6 +10,7 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\DevelopmentInstanceSourceLifecycle;
 use App\Domain\Instances\DevelopmentSourceResolution;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
@@ -37,6 +38,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function prepare(Instance $instance, bool $allowExisting): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         app(SelectInstanceSeedAction::class)->execute($instance);
         if ($instance->seed_commit !== null) {
             $instance->update(['source_layout' => InstanceSourceLayout::Worktree->value]);
@@ -94,6 +96,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function inspectPrepared(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         $this->ssh->execute(
             $instance->node,
@@ -120,6 +123,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function resolve(Instance $instance): DevelopmentSourceResolution
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         $defaultBranch = $this->defaultBranch($instance);
         $script = GitReadScript::for($this->access->for($context['repository'], $instance->project->source_access), self::preparedRepositoryGuard($instance->source_prepare_id, $instance->seed_repository).<<<'BASH'
@@ -180,6 +184,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function assertBranchCheckedOut(Instance $instance, ?string $branch): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         try {
             $result = $this->ssh->execute(
@@ -247,6 +252,7 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
 
     public function inspectResolved(Instance $instance): DevelopmentSourceResolution
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $context = $this->context($instance);
         $result = $this->ssh->execute(
             $instance->node,
@@ -446,17 +452,20 @@ final readonly class RemoteDevelopmentInstanceSourceLifecycle implements Develop
                 # enter. The worker owns everything below it, so the grants skip it instead of failing the whole prepare.
                 # setfacl writes access before defaults in a combined call. Finish inheritance first.
                 default_grant="d:u:$worker_user:rwX,d:u:$managed_user:rwX"
-                find -P "$checkout" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} + \)
+                # Always use a pruned traversal, even when every entry is managed-owned. A recursive
+                # setfacl fast path would reopen private caches, including other linked worktrees' temp.
+                share_entries() {
+                    sharing_root=$1
+                    shift
+                    find -P "$sharing_root" \( -path "$git_directory/orbit/tmp" -o -path "$common_directory/orbit/tmp" -o -path "$common_directory/worktrees/*/orbit/tmp" -o \( -type d \( ! -readable -o ! -executable \) \) \) -prune -o \( -user "$managed_user" "$@" \)
+                }
+                share_entries "$checkout" -type d -exec setfacl -m "$default_grant" -- {} +
                 access_grant="u:$worker_user:rwX,u:$managed_user:rwX"
-                if [ -z "$(find -P "$checkout" ! -user "$managed_user" -print -quit)" ]; then
-                    setfacl -R -P -m "$access_grant" -- "$checkout"
-                else
-                    # Worker-owned files already inherit access; only their owner can change their ACL.
-                    find -P "$checkout" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} + \)
-                fi
+                # Worker-owned files already inherit access; only their owner can change their ACL.
+                share_entries "$checkout" ! -type l -exec setfacl -m "$access_grant" -- {} +
                 # Linked worktrees need their own administration and the shared refs/objects.
-                find -P "$common_directory" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" -type d -exec setfacl -m "$default_grant" -- {} + \)
-                find -P "$common_directory" \( -type d \( ! -readable -o ! -executable \) -prune \) -o \( -user "$managed_user" ! -type l -exec setfacl -m "$access_grant" -- {} + \)
+                share_entries "$common_directory" -type d -exec setfacl -m "$default_grant" -- {} +
+                share_entries "$common_directory" ! -type l -exec setfacl -m "$access_grant" -- {} +
                 setfacl -m "u:$worker_user:r--" -- "$common_directory/config"
                 if [ -d "$common_directory/hooks" ]; then
                     find -P "$common_directory/hooks" -user "$managed_user" -type d -exec setfacl -m "u:$worker_user:r-X,d:u:$worker_user:r-X" -- {} +

@@ -26,6 +26,7 @@
                     "directory": "."
                 }
             ],
+            "topology": [],
             "status": "todo",
             "implementer_agent_thread_id": null,
             "tokens": null,

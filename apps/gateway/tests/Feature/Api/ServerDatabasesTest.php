@@ -164,6 +164,38 @@ describe('database:create --server', function (): void {
             ->not->toContain(SERVER_DATABASE_ROOT_SECRET);
     });
 
+    it('points a same-Node Instance at the server\'s WireGuard address over stale keys and an older MySQL Process', function (): void {
+        $older = Process::query()->findOrFail($this->server->process_id);
+        $older->update([
+            'name' => 'mysql-84',
+            'runtime_config' => [...$older->runtime_config, 'ports' => ['3308:3306']],
+        ]);
+        $serverProcess = Process::query()->create([
+            ...$older->only(['owner_type', 'owner_id', 'runtime', 'working_directory', 'restart_policy', 'desired_state', 'status']),
+            'name' => 'beast-mysql',
+            'runtime_config' => [...$older->runtime_config, 'ports' => ['10.44.0.80:3306:3306']],
+        ]);
+        $this->server->update(['process_id' => $serverProcess->id]);
+        $this->instance->environmentValues()->createMany([
+            ['env_key' => 'DB_HOST', 'env_value' => '127.0.0.1'],
+            ['env_key' => 'DB_PORT', 'env_value' => '13306'],
+        ]);
+
+        $this->postJson('/api/v1/database-connections', [
+            'slug' => 'ohdear',
+            'server' => 'beast-mysql',
+            'instance_id' => $this->instance->id,
+        ])->assertCreated()->assertJsonPath('data.host', '10.44.0.80')->assertJsonPath('data.port', 3306);
+
+        $environment = InstanceEnvironmentValue::query()
+            ->where('instance_id', $this->instance->id)
+            ->pluck('env_value', 'env_key')
+            ->all();
+
+        expect($environment['DB_HOST'] ?? null)->toBe('10.44.0.80')
+            ->and($environment['DB_PORT'] ?? null)->toBe('3306');
+    });
+
     it('reuses the Instance user and its password for a second database on the same server', function (): void {
         $this->postJson('/api/v1/database-connections', [
             'slug' => 'dlf-leden',

@@ -162,6 +162,10 @@ final readonly class TaskDefinitionDocument
             $this->copyString($row, $subtask, 'operation');
             $this->copyString($row, $subtask, 'question');
 
+            if (array_key_exists('topology', $subtask)) {
+                $row['topology'] = TaskTopology::from($subtask['topology']);
+            }
+
             if (isset($subtask['deliverables']) && is_array($subtask['deliverables']) && $subtask['deliverables'] !== []) {
                 $row['deliverables'] = array_values(array_map(
                     static fn (mixed $deliverable): array => TaskDeliverable::fromArray(is_array($deliverable) ? $deliverable : [])->toArray(),

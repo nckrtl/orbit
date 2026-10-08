@@ -16,6 +16,9 @@
             "root": "web/public",
             "task_check": null,
             "task_workspace_routed": true,
+            "task_compute": "shared",
+            "review_and_merge": false,
+            "merge_check": null,
             "excluded_nodes": []
         },
         "meta": {

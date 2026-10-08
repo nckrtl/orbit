@@ -1,0 +1,17 @@
+Converging Node footprint...
+
+┌  Converge Node footprint
+│
+├  ● Converged Node footprint
+│
+└  Converged Node footprint.
+
+Node #2 [app-dev] footprint is current. Nothing changed.
+ ┌──────────┬───────────┐
+ │ ARTIFACT │ RESULT    │
+ ├──────────┼───────────┤
+ │ agent    │ unchanged │
+ │ caddy    │ unchanged │
+ └──────────┴───────────┘
+Digest: 4a2ad6359d29c8298dccb7ab6acc61ca0f71edac499dcd3d0ef64ae7134e332f
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

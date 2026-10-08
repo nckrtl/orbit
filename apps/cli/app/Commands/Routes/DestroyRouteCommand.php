@@ -6,14 +6,18 @@ namespace App\Commands\Routes;
 
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
+use App\Support\Console\ConsoleWriter;
 use Orbit\Sdk\Requests\Routes\DestroyRouteRequest;
 use Orbit\Sdk\Requests\Routes\ShowRouteRequest;
+use Orbit\Sdk\Responses\Routes\RemovedRouteResponse;
+use Orbit\Sdk\Responses\Routes\RouteRemovalResidueResponse;
 use Orbit\Sdk\Responses\Routes\RouteResponse;
 
 final class DestroyRouteCommand extends RouteCommand
 {
     #[\Override]
     protected $signature = 'route:destroy {route : Numeric Route ID} {--yes : Confirm removal without prompting}
+        {--offline : Remove the Route without changing a Node the Gateway cannot reach}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -45,10 +49,46 @@ final class DestroyRouteCommand extends RouteCommand
             }
         }
 
-        $route = $this->sendWithProgress($connector, new DestroyRouteRequest($id), RouteResponse::class, ['Remove Route', 'Removing Route', 'Removed Route']);
+        $removed = $this->sendWithProgress(
+            $connector,
+            new DestroyRouteRequest($id, offline: $this->option('offline') === true ? true : null),
+            RemovedRouteResponse::class,
+            ['Remove Route', 'Removing Route', 'Removed Route'],
+        );
 
-        return $route instanceof RouteResponse
-            ? $this->renderRoute($route)
-            : self::FAILURE;
+        if (! $removed instanceof RemovedRouteResponse) {
+            return self::FAILURE;
+        }
+
+        if ($this->option('json') === true) {
+            $this->writeJson($removed->toArray());
+
+            return self::SUCCESS;
+        }
+
+        $this->renderRoute($removed->route);
+        $this->renderRetained($removed->retainedOnNodes);
+
+        return self::SUCCESS;
+    }
+
+    /** @param list<RouteRemovalResidueResponse> $retained */
+    private function renderRetained(array $retained): void
+    {
+        if ($retained === []) {
+            return;
+        }
+
+        ConsoleWriter::write($this->output, $this->humanRenderer()->properties([[
+            'title' => 'Left on Nodes the Gateway could not reach:',
+            'items' => array_map(
+                static fn (RouteRemovalResidueResponse $residue): array => [
+                    'label' => "{$residue->node}: ".implode(', ', $residue->steps),
+                    'fields' => [],
+                ],
+                $retained,
+            ),
+        ]]));
+        $this->writeHumanMessage('Run orbit node:converge NODE once the Node answers to remove them.');
     }
 }

@@ -14,6 +14,8 @@ use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 require_once __DIR__.'/../../Support/InstanceSourceOutput.php';
 
 beforeEach(function (): void {

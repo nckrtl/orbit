@@ -1,0 +1,98 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest",
+    "route": "POST /api/v1/gateway/release-smoke",
+    "status": 200,
+    "body": {
+        "data": {
+            "release": "0123456789ab",
+            "sha": "0123456789ab0123456789ab0123456789ab0123",
+            "outcome": "failed",
+            "report": {
+                "schema": 1,
+                "passed": false,
+                "source": "live",
+                "expected_sha": "0123456789ab0123456789ab0123456789ab0123",
+                "since": null,
+                "started_at": "2026-10-07T12:00:00Z",
+                "finished_at": "2026-10-07T12:00:42Z",
+                "duration_ms": 42000,
+                "timeout_seconds": 90,
+                "summary": {
+                    "passed": 5,
+                    "failed": 2,
+                    "timeout": 0,
+                    "skipped": 1
+                },
+                "checks": {
+                    "deploy_verify": {
+                        "status": "passed",
+                        "error": null,
+                        "message": "The Gateway serves 0123456789ab0123456789ab0123456789ab0123.",
+                        "duration_ms": 2100,
+                        "detail": []
+                    },
+                    "node_list": {
+                        "status": "passed",
+                        "error": null,
+                        "message": "node:list returned 3 Nodes.",
+                        "duration_ms": 900,
+                        "detail": []
+                    },
+                    "tasks_list": {
+                        "status": "passed",
+                        "error": null,
+                        "message": "tasks:list answered.",
+                        "duration_ms": 800,
+                        "detail": []
+                    },
+                    "web": {
+                        "status": "failed",
+                        "error": "web_release_mismatch",
+                        "message": "web/current serves build aaaaaaaaaaaa, not 0123456789ab.",
+                        "duration_ms": 300,
+                        "detail": []
+                    },
+                    "scheduler": {
+                        "status": "failed",
+                        "error": "scheduler_inactive",
+                        "message": "orbit-process-108-schedule-work.service is not active.",
+                        "duration_ms": 100,
+                        "detail": []
+                    },
+                    "tasks_tick": {
+                        "status": "passed",
+                        "error": null,
+                        "message": "A tasks tick started at 2026-10-07T12:00:00Z.",
+                        "duration_ms": 41000,
+                        "detail": []
+                    },
+                    "agent_view": {
+                        "status": "passed",
+                        "error": null,
+                        "message": "orbit-agent-view.service is active.",
+                        "duration_ms": 100,
+                        "detail": []
+                    },
+                    "documents": {
+                        "status": "skipped",
+                        "error": null,
+                        "message": "No --smoke-project; the write check is off.",
+                        "duration_ms": 0,
+                        "detail": []
+                    }
+                },
+                "error": "checks_failed",
+                "failed_checks": [
+                    "web",
+                    "scheduler"
+                ],
+                "message": "2 of 7 checks did not pass: web, scheduler.",
+                "next": "Fix the failed checks, then run smoke again. Do not deploy."
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

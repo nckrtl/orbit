@@ -13,6 +13,8 @@ use Symfony\Component\Console\Output\BufferedOutput;
 use Symfony\Component\Console\Output\ConsoleOutput;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 describe('invocation console modes', function (): void {
     it('preserves live decoration when the framework creates its plain internal buffer', function (): void {
         $formatter = new InvocationFormatter(new OutputFormatter(true), true);

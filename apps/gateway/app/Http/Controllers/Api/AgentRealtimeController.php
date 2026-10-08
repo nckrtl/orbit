@@ -14,6 +14,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AgentRealtimeAuthRequest;
+use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\Node;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -71,7 +72,7 @@ final class AgentRealtimeController extends Controller
         ]);
     }
 
-    public function authenticate(AgentRealtimeAuthRequest $request, RealtimeConnection $realtime, ManagedNodeEligibility $eligibility, PresenceChannelSigner $signer): JsonResponse
+    public function authenticate(AgentRealtimeAuthRequest $request, RealtimeConnection $realtime, ManagedNodeEligibility $eligibility, PresenceChannelSigner $signer, AgentReportedVersions $versions): JsonResponse
     {
         $node = $this->peer($request);
         $this->ensureEligible($node, $eligibility);
@@ -87,6 +88,13 @@ final class AgentRealtimeController extends Controller
 
         if ($connection === null) {
             throw new ResourceOperationException('realtime.not_configured', 'Realtime is not configured.', 404);
+        }
+
+        $version = $request->version();
+
+        // The agent's version in presence: the fleet rollout checks it after an update (ADR 0202).
+        if ($channel === "presence-node.{$id}" && $version !== null) {
+            $versions->record($id, $version);
         }
 
         return response()->json($signer->sign($request->socketId(), $channel, $connection, 'agent.'.$node->id, [

@@ -199,6 +199,10 @@ final readonly class CommandActivityInputSanitizer
     {
         $normalized = $this->normalizeKey($key);
 
+        if (in_array($normalized, ['content_text', 'content_base64'], true)) {
+            return true;
+        }
+
         if (in_array($normalized, self::NON_SECRET_KEYS, strict: true)) {
             return false;
         }

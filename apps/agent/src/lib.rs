@@ -8,6 +8,7 @@ use std::{
     net::{IpAddr, SocketAddr},
 };
 pub mod logs;
+pub mod sandbox;
 pub mod workspace;
 use workspace::WorkspaceState;
 

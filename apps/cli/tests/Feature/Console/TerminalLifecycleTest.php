@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 describe('owned renderer lifecycle', function (): void {
     it('keeps the callback in the parent and restores signal state for actual renderer processes', function (string $case, int $status): void {
         $trace = tempnam(sys_get_temp_dir(), 'orbit-ux-trace-');

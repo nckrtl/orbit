@@ -25,6 +25,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--brief= : Goal and acceptance}
         {--status= : backlog (default) or todo}
         {--subtasks= : JSON file with an ordered array of objects that each hold a title, a brief, and optional deliverables}
+        {--preview : Keep the sandbox running during review}
         {--notify-coder : Post the Coder settle webhook when the group settles}
         {--json : Return machine-readable JSON}';
 
@@ -87,6 +88,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 status: is_string($status) ? $status : null,
                 notifyCoder: $this->option('notify-coder') === true ? true : null,
                 tasks: $subtasks,
+                preview: $this->option('preview') === true ? true : null,
             ),
             TaskGroupResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],
@@ -138,9 +140,10 @@ final class CreateTaskGroupCommand extends TaskCommand
             $title = is_array($entry) ? ($entry['title'] ?? null) : null;
             $brief = is_array($entry) ? ($entry['brief'] ?? null) : null;
             $deliverables = self::deliverables(is_array($entry) ? ($entry['deliverables'] ?? []) : null);
+            $topology = self::topology(is_array($entry) && array_key_exists('topology', $entry) ? $entry['topology'] : []);
 
             if (
-                ! is_string($title) || ! is_string($brief) || $deliverables === null
+                ! is_string($title) || ! is_string($brief) || $deliverables === null || $topology === null
                 || self::textError($title, 'Title', self::TITLE_MAX) !== null
                 || self::textError($brief, 'Brief', self::BRIEF_MAX) !== null
             ) {
@@ -149,7 +152,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 return false;
             }
 
-            $subtasks[] = new SubtaskInput($title, $brief, $deliverables);
+            $subtasks[] = new SubtaskInput($title, $brief, $deliverables, array_key_exists('topology', $entry) ? $topology : null);
         }
 
         return $subtasks;

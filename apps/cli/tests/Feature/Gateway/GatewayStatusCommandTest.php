@@ -56,6 +56,10 @@ describe(GatewayStatusCommand::class, function (): void {
             'version' => '0.1.0',
             'php_version' => '8.5.8',
             'laravel_version' => '13.26.1',
+            'desired_fleet_state' => null,
+            'release' => null,
+            'release_sha' => null,
+            'auto_release' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -101,6 +105,10 @@ describe(GatewayStatusCommand::class, function (): void {
             'version' => '',
             'php_version' => '',
             'laravel_version' => '',
+            'desired_fleet_state' => null,
+            'release' => null,
+            'release_sha' => null,
+            'auto_release' => null,
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
 
@@ -126,10 +134,41 @@ describe(GatewayStatusCommand::class, function (): void {
         $this
             ->artisan('gateway:status')
             ->expectsOutputToContain('Gateway: test')
-            ->expectsOutputToContain('URL               https://10.70.0.1')
-            ->expectsOutputToContain('Status            —')
-            ->expectsOutputToContain('Version           —')
-            ->expectsOutputToContain('Request ID        0198e15c-bf97-7c23-8f1f-61b8fe67a844')
+            ->expectsOutputToContain('URL                  https://10.70.0.1')
+            ->expectsOutputToContain('Status               —')
+            ->expectsOutputToContain('Version              —')
+            ->expectsOutputToContain('Release              —')
+            ->expectsOutputToContain('Automatic releases   —')
+            ->expectsOutputToContain('Request ID           0198e15c-bf97-7c23-8f1f-61b8fe67a844')
+            ->assertExitCode(0);
+    });
+
+    it('shows the current release and the automatic release state', function (): void {
+        app(GatewayConfigRepository::class)->add(new GatewayProfile(
+            name: 'test',
+            url: 'https://10.70.0.1',
+            caPath: '/home/orbit/.orbit/ca/root.pem',
+        ));
+        MockClient::global([
+            ShowGatewayStatusRequest::class => MockResponse::make([
+                'data' => [
+                    'name' => 'orbit-gateway',
+                    'status' => 'ok',
+                    'version' => '0123456789ab0123456789ab0123456789ab0123',
+                    'php_version' => '8.5.8',
+                    'laravel_version' => '13.26.1',
+                    'release' => '0123456789ab',
+                    'release_sha' => '0123456789ab0123456789ab0123456789ab0123',
+                    'auto_release' => ['enabled' => true, 'paused' => false, 'last_checked_at' => '2026-10-07T12:00:00Z', 'last_result' => 'up_to_date'],
+                ],
+                'meta' => ['request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844'],
+            ]),
+        ]);
+
+        $this
+            ->artisan('gateway:status')
+            ->expectsOutputToContain('Release              0123456789ab')
+            ->expectsOutputToContain('Automatic releases   enabled, last check 2026-10-07T12:00:00Z: up_to_date')
             ->assertExitCode(0);
     });
 

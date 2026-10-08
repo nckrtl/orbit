@@ -55,7 +55,7 @@ The collector Node must be an active Linux Node with a WireGuard address. Otherw
 
 `--cliproxy-url` is the CLIProxyAPI Management API origin, as the collector Node sees it. Use `http://127.0.0.1:8317` when CLIProxyAPI runs on that Node. The Gateway stores the management key as a secret setting and passes it to the collector Process. No API response contains it.
 
-Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again. A collector that is already running keeps its old script until setup runs again. Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
+Setup can run again. It keeps the read and control tokens, writes the collector script, recreates the collector Process, and publishes the hostname again. The [fleet rollout](/reference/node-provisioning#converge-the-orbit-footprint) and `orbit node:converge` also write a changed script after a Gateway release and restart the collector Process. A script that already matches stays, and the collector keeps running. Setup with another `--node` sets up only the new Node and leaves the old Node's collector in place. To move the collector, run `proxycli:teardown` first.
 
 ## What setup deploys
 

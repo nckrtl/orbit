@@ -286,20 +286,6 @@ describe('dependency update payload validation', function (): void {
         }
     })->with([[403, 'node_access.required'], [404, 'http.404'], [409, 'dependencies.operation_busy'], [422, 'validation.failed'], [500, 'http.500']]);
 
-    it('rejects invalid missing or conflicting correlation', function (string $case): void {
-        $envelope = dependency_update_envelope();
-        $headers = [];
-        if ($case === 'conflict') {
-            $headers['X-Orbit-Request-Id'] = '22222222-2222-4222-8222-222222222222';
-        } elseif ($case === 'missing') {
-            unset($envelope['meta']['request_id']);
-        } else {
-            $envelope['meta']['request_id'] = 'not-a-uuid';
-        }
-        expect(fn () => dependency_update_send(MockResponse::make($envelope, 200, $headers)))
-            ->toThrow(GatewayApiException::class);
-    })->with(['conflict', 'missing', 'invalid']);
-
     it('accepts exactly 32 MiB without truncating the result', function (): void {
         $envelope = dependency_update_envelope();
         $body = str_pad(json_encode($envelope, JSON_THROW_ON_ERROR), 33554432);

@@ -11,9 +11,9 @@ use PDOException;
 final readonly class DynamicPdoConnection
 {
     /**
-     * Open a one-shot PDO connection from a Laravel-shaped config array.
+     * Open a one-shot local SQLite connection.
      *
-     * @param  array{driver: string, path?: string, host?: string, port?: int, database?: string, username?: string|null, password?: string|null}  $config
+     * @param  array{driver: string, path?: string, username?: string|null, password?: string|null}  $config
      */
     public function connect(array $config, bool $write): PDO
     {
@@ -32,23 +32,11 @@ final readonly class DynamicPdoConnection
     }
 
     /**
-     * @param  array{driver: string, path?: string, host?: string, port?: int, database?: string}  $config
+     * @param  array{driver: string, path?: string}  $config
      */
     public function dsn(array $config): string
     {
         return match ($config['driver']) {
-            'mysql' => sprintf(
-                'mysql:host=%s;port=%d;dbname=%s;charset=utf8mb4',
-                $config['host'] ?? '',
-                $config['port'] ?? 3306,
-                $config['database'] ?? '',
-            ),
-            'pgsql' => sprintf(
-                'pgsql:host=%s;port=%d;dbname=%s',
-                $config['host'] ?? '',
-                $config['port'] ?? 5432,
-                $config['database'] ?? '',
-            ),
             'sqlite' => 'sqlite:'.($config['path'] ?? ''),
             default => throw new LocalDatabaseQueryException(
                 'database.query_failed',

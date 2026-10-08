@@ -1,0 +1,17 @@
+Reading desired state...
+Updating agent...
+Updating CLI...
+
+┌  Update Orbit
+│
+├  ● Read desired state
+│    CLI 0.4681.0, agent 0.4.1
+│
+├  ● Update agent
+│    This machine is not a managed Node.
+│
+├  ● CLI up to date
+│    0.4600.0 → 0.4681.0
+│
+└  Orbit updated.
+

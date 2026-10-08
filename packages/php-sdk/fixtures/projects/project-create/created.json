@@ -15,7 +15,10 @@
             "default_branch": "main",
             "root": "public",
             "task_check": null,
-            "task_workspace_routed": true
+            "task_workspace_routed": true,
+            "task_compute": "shared",
+            "review_and_merge": false,
+            "merge_check": null
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

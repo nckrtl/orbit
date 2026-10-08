@@ -37,6 +37,12 @@ it('maps the node collection and response metadata', function (): void {
         ->toBeInstanceOf(NodeResponse::class)
         ->and($response->nodes[0]->toArray())
         ->toBe(first_list_node_with_request_id())
+        ->and($response->nodes[0]->updating?->kind)
+        ->toBe('fleet_rollout')
+        ->and($response->nodes[0]->updating?->rollout)
+        ->toBe(12)
+        ->and($response->nodes[1]->updating)
+        ->toBeNull()
         ->and($response->nodes[1]->failedStep)
         ->toBe('wireguard-server-validate')
         ->and($response->nodes[1]->errorCode)
@@ -96,6 +102,12 @@ function list_nodes_gateway_data(): array
             'error_code' => null,
             'roles' => ['app-dev'],
             'settings' => null,
+            'updating' => [
+                'kind' => 'fleet_rollout',
+                'since' => '2026-10-08T11:59:00+00:00',
+                'rollout' => 12,
+                'release' => null,
+            ],
         ],
         [
             'id' => 7,
@@ -118,6 +130,7 @@ function list_nodes_gateway_data(): array
             'error_code' => 'vpn.server_config_invalid',
             'roles' => ['app-prod'],
             'settings' => null,
+            'updating' => null,
         ],
     ];
 }

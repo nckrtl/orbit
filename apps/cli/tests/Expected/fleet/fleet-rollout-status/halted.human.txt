@@ -1,0 +1,35 @@
+Loading fleet rollout...
+
+┌  Show fleet rollout
+│
+├  ● Loaded fleet rollout
+│
+└  Loaded fleet rollout.
+
+
+┌  Fleet rollout
+│
+├  Rollout          on
+│
+├  Status           halted
+│
+├  Desired commit   0123456789ab
+│
+├  Rollout ID       1
+│
+├  Commit           0123456789ab
+│
+├  Halted at        app-dev
+│
+├  Error            fleet.self_update_failed
+│
+└  Message          self-update failed on app-dev
+
+ ┌───┬──────────┬─────────┬─────────────┬─────┬───────┬──────────────────────────┐
+ │ # │ NODE     │ OUTCOME │ STEP        │ CLI │ AGENT │ ERROR                    │
+ ├───┼──────────┼─────────┼─────────────┼─────┼───────┼──────────────────────────┤
+ │ 1 │ app-dev  │ failed  │ self-update │ —   │ —     │ fleet.self_update_failed │
+ │ 2 │ app-prod │ pending │ —           │ —   │ —     │ —                        │
+ └───┴──────────┴─────────┴─────────────┴─────┴───────┴──────────────────────────┘
+Not in the rollout: gateway (gateway).
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

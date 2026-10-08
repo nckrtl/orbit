@@ -5,16 +5,20 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\Projects\LifecycleStep;
+use App\Domain\Projects\TiaBaselineSetup;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckProcess;
 use App\Domain\Tasks\TaskCheckReading;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskWorkspaceSnapshot;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Tools\VpToolManager;
 use App\Models\Instance;
 use App\Support\ValidatedData;
 use JsonException;
+use Throwable;
 
 /**
  * Installs `.git/orbit/check` and drives it over SSH. Each call returns at once; the check itself runs detached.
@@ -24,7 +28,11 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
     /** A finished status carries the result, the deliverable evidence and a 16 KiB output tail. It outgrows the 64 KiB process default. */
     public const int OutputLimitBytes = 8 * 1024 * 1024;
 
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(
+        private TaskWorkspaceExecutor $ssh,
+        private VpToolManager $vp,
+        private TiaBaselineSetup $tia,
+    ) {}
 
     public function start(Instance $instance, ?string $command, array $setup = [], ?array $deliverables = null): TaskCheckProcess
     {
@@ -33,6 +41,19 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         if ($script === false) {
             throw new TaskCheckException('The check script is missing from the Gateway.');
         }
+        foreach ($setup as &$step) {
+            if ($step['command'] === LifecycleStep::RestoreTiaBaseline) {
+                try {
+                    $instance->loadMissing('project');
+                    $started = microtime(true);
+                    $step['command'] = $this->tia->command($instance->project, $step['timeout_seconds']);
+                    $step['timeout_seconds'] = max(1, (int) floor($step['timeout_seconds'] - (microtime(true) - $started)));
+                } catch (ResourceOperationException $exception) {
+                    throw new TaskCheckException('Setup step ['.$step['name'].']: '.$exception->getMessage());
+                }
+            }
+        }
+        unset($step);
         $steps = json_encode($setup, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
         $verify = $deliverables === null ? null : json_encode($deliverables, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         $install = TaskWorkspaceMetadata::operation('check', [
@@ -40,7 +61,7 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         ]);
         $stepsArgument = $setup === [] ? '-' : '"$dir/setup.json"';
         $deliverablesArgument = $deliverables === null ? '-' : '"$dir/deliverables.json"';
-        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"');
+        $data = $this->run($instance, [], $install.'check_python "$dir/check" start "$checkout" '.$stepsArgument.' '.$deliverablesArgument.' "$dir/check-command"', withVpHome: true, allocateTemporary: true);
         $pid = $data['pid'] ?? null;
         $started = $data['started'] ?? null;
         $head = $data['head'] ?? null;
@@ -130,25 +151,41 @@ final readonly class RemoteTaskCheckRunner implements TaskCheckRunner
         string $command,
         string $unreachable = 'The task workspace could not be reached for the check.',
         string $invalid = 'The check answered with invalid output.',
+        bool $withVpHome = false,
+        bool $allocateTemporary = false,
     ): array {
         $instance->loadMissing('node');
         if ($instance->checkout_path === '') {
             throw new TaskCheckException('The task workspace has no checkout.');
         }
+        $vpEnvironment = '';
+        if ($withVpHome && $instance->task_sandbox_id === null) {
+            try {
+                $vpEnvironment = 'export VP_HOME='.escapeshellarg(dirname($this->vp->existingBinary($instance->node), 2))."\n";
+            } catch (Throwable $exception) {
+                // Only the read-only probe ran: no check can have started, so its reservation may be released.
+                throw new TaskCheckException($unreachable, previous: $exception);
+            }
+        }
         try {
             // The check runs as the managed user, so host-dependent tests keep its sudo, ACL and caddy access.
             // It shares what it creates with the task worker before it reports a result.
-            $worker = TaskWorkerUser::name() ?? '';
-            $prefix = "checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->seed_path ?? '')."\nseed_commit=".escapeshellarg($instance->seed_commit ?? '')."\n".<<<'BASH'
+            $worker = TaskWorkerUser::name($instance) ?? '';
+            $prefix = $vpEnvironment."checkout=\$1\nworker=".escapeshellarg($worker)."\nseed_path=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_path ?? '') : '')."\nseed_commit=".escapeshellarg($instance->task_sandbox_id === null ? ($instance->seed_commit ?? '') : '')."\n".<<<'BASH'
                 dir="$(git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$checkout" rev-parse --absolute-git-dir)/orbit"
                 check_python() {
                     ORBIT_TASK_WORKER_USER="$worker" ORBIT_SEED_PATH="$seed_path" ORBIT_SEED_COMMIT="$seed_commit" python3 "$@"
                 }
 
                 BASH;
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
+            $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path, ...$arguments],
-                input: $prefix.TaskWorkspaceMetadata::bashPreamble().$command."\n",
+                input: $prefix.TaskWorkspaceMetadata::bashPreamble().
+                    // Start allocates a host TMPDIR for the detached check. The check removes it when it ends. Later SSH calls do not.
+                    ($allocateTemporary
+                        ? 'TMPDIR="$('.TaskWorkspaceMetadata::operation('tmpdir', ['sandbox' => $instance->task_sandbox_id !== null]).')"'."\nexport TMPDIR\n"
+                        : '').
+                    $command."\n",
                 maxOutputBytes: self::OutputLimitBytes,
             ), 'task-check', 'tasks.check_failed');
         } catch (RuntimeConvergenceException $exception) {

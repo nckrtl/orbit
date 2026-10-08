@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Compute\SandboxSpec;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Settings\SettingRepository;
@@ -23,6 +24,7 @@ use App\Infrastructure\WireGuard\NativeWireGuardPeerConverger;
 use App\Infrastructure\WireGuard\VpnConfigurationRepository;
 use App\Infrastructure\WireGuard\WireGuardServerConfigRenderer;
 use App\Models\Node;
+use App\Models\TaskSandbox;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -3008,3 +3010,37 @@ function remote_wireguard_peer_rewrite_shell(string $input, string $root): strin
         $input,
     );
 }
+
+it('persists the owned sandbox WireGuard port through native peer installation and recovery', function (int $port): void {
+    $harness = remote_wireguard_peer_install_harness(false, 'inactive', 'disabled');
+    try {
+        $peer = $harness->peer();
+        $id = (string) Str::uuid();
+        $sandbox = TaskSandbox::query()->create([
+            'id' => $id, 'node_id' => $peer->id, 'name' => 'orbit-sandbox-'.$id,
+            'provider' => 'upcloud', 'state' => 'running', 'desired_power' => 'running',
+            'spec' => (new SandboxSpec('nl-ams1', '93.184.216.34', '93.184.216.35', $port,
+                'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFakePublicMaterial'))->toArray(),
+        ]);
+        $peer->compute_sandbox_id = $sandbox->id;
+        $peer->save();
+
+        $harness->converger()->converge($peer, $harness->connection());
+        expect($harness->state()['live']['contents'])->toContain('ListenPort = '.$port);
+
+        $harness->converger()->convergeRecoverably($peer->refresh(), $harness->connection(), function (): void {});
+        expect($harness->state()['live']['contents'])->toContain('ListenPort = '.$port);
+    } finally {
+        $harness->cleanup();
+    }
+})->with([51820, 51821]);
+
+it('keeps automatic WireGuard port selection for an ordinary fleet peer', function (): void {
+    $harness = remote_wireguard_peer_install_harness(false, 'inactive', 'disabled');
+    try {
+        $harness->converger()->converge($harness->peer(), $harness->connection());
+        expect($harness->state()['live']['contents'])->not->toContain('ListenPort');
+    } finally {
+        $harness->cleanup();
+    }
+});

@@ -28,7 +28,7 @@ final readonly class ProblemEvidence
 
         $evidence['observation_times'] = array_slice($times, -20);
 
-        foreach (['request_ids' => 5, 'paths' => 5] as $key => $cap) {
+        foreach (['request_ids' => 5, 'paths' => 5, 'evidence_urls' => 5] as $key => $cap) {
             if (! is_array($observation[$key] ?? null)) {
                 continue;
             }
@@ -80,6 +80,14 @@ final readonly class ProblemEvidence
 
             if (is_string($value) && $value !== '') {
                 $evidence[$key] = mb_substr($value, 0, 1000);
+            }
+        }
+
+        foreach (['release_repository' => 255, 'release_id' => 64] as $key => $limit) {
+            $value = $observation[$key] ?? null;
+
+            if (is_string($value) && $value !== '') {
+                $evidence[$key] = mb_substr($value, 0, $limit);
             }
         }
 

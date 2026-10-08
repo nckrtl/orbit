@@ -52,8 +52,10 @@ function rename_migration_rows(): object
         'repository_url' => 'https://example.test/rename.git',
         'default_branch' => 'main',
     ]);
-    // The schema at the rename migration has no source_access column yet.
+    // These Project settings were added after the rename migration.
     $project->offsetUnset('source_access');
+    $project->offsetUnset('task_compute');
+    $project->offsetUnset('review_and_merge');
     $project->save();
     $instance = Instance::query()->create([
         'project_id' => $project->id,

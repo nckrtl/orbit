@@ -2,19 +2,25 @@
 
 declare(strict_types=1);
 
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use Illuminate\Support\Facades\File;
 use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ResolvedVp;
 
 function per_project_baseline_checkout(): string
 {
@@ -27,7 +33,7 @@ function per_project_baseline_checkout(): string
 
 function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRunner
 {
-    return new RemoteTaskCheckRunner(new DevelopmentSshExecutor(
+    return new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -50,7 +56,7 @@ function per_project_baseline_runner(SshExecutor $transport): RemoteTaskCheckRun
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
 }
 
 beforeEach(function (): void {

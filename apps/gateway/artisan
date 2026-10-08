@@ -4,6 +4,7 @@
 declare(strict_types=1);
 
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Console\Kernel;
 use Symfony\Component\Console\Input\ArgvInput;
 
 define('LARAVEL_START', microtime(true));
@@ -14,6 +15,11 @@ require __DIR__.'/vendor/autoload.php';
 // Bootstrap Laravel and handle the command...
 /** @var Application $app */
 $app = require_once __DIR__.'/bootstrap/app.php';
+
+// Real consumer startup must forward security lifecycle events even with APP_ENV=testing.
+/** @var Kernel $kernel */
+$kernel = $app->make(Illuminate\Contracts\Console\Kernel::class);
+$kernel->rerouteSymfonyCommandEvents();
 
 $status = $app->handleCommand(new ArgvInput);
 

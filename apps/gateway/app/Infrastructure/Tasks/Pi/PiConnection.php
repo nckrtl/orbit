@@ -15,8 +15,11 @@ use SensitiveParameter;
  */
 final readonly class PiConnection
 {
-    public function baseUrl(Node $node): string
+    public function baseUrl(Node|PiEndpoint $node): string
     {
+        if ($node instanceof PiEndpoint) {
+            return $node->url;
+        }
         $url = $this->settings($node)['url'];
         if ($url !== null) {
             return rtrim($url, '/');
@@ -31,8 +34,12 @@ final readonly class PiConnection
         return 'http://'.$host.':'.($port > 0 && $port <= 65535 ? $port : 3774);
     }
 
-    public function token(Node $node): string
+    public function token(Node|PiEndpoint $node): string
     {
+        if ($node instanceof PiEndpoint) {
+            return $node->token();
+        }
+
         return $this->settings($node)['token'] ?? throw new AgentDriverException('The Node has no Pi server token configured.');
     }
 

@@ -23,6 +23,8 @@ use Symfony\Component\Process\Process;
 use Tests\Support\LocalShellSshExecutor;
 use Tests\Support\TaskWorkerSshExecutor;
 
+pest()->group('privileged');
+
 describe('TaskGitHardening', function (): void {
     it('suppresses fsmonitor through sudo and inside candidate submodules', function (): void {
         $root = sys_get_temp_dir().'/orbit-clone-monitor-'.bin2hex(random_bytes(6));

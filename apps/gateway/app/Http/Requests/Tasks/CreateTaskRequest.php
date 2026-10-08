@@ -7,6 +7,7 @@ namespace App\Http\Requests\Tasks;
 use App\Data\Tasks\CreateTaskData;
 use App\Domain\Tasks\TaskDeliverable;
 use App\Domain\Tasks\TaskDeliverableType;
+use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
@@ -20,12 +21,16 @@ use UnexpectedValueException;
 
 final class CreateTaskRequest extends FormRequest
 {
+    use ValidatesDeliverablePaths;
+
     /** @return array<string, list<string|Enum|In|DistinctDeliverableIds|FailsOnBase|CommandPaths>> */
     public function rules(): array
     {
         return [
             'title' => ['required', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:8000'],
+            'topology' => ['sometimes', 'array', 'list', 'max:3'],
+            'topology.*' => ['required', 'string', 'distinct:strict', Rule::in(['app-dev', 'app-prod', 'app-prod-2'])],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
@@ -45,7 +50,7 @@ final class CreateTaskRequest extends FormRequest
     public function validationData(): array
     {
         try {
-            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'deliverables']);
+            return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), ['title', 'brief', 'deliverables', 'topology']);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -57,6 +62,7 @@ final class CreateTaskRequest extends FormRequest
             title: $this->string('title')->toString(),
             brief: $this->string('brief')->toString(),
             deliverables: self::deliverables($this->validated('deliverables')),
+            topology: TaskTopology::from($this->validated('topology', [])),
         );
     }
 

@@ -341,15 +341,6 @@ it('rejects impossible create shapes before transport', function (array $argumen
         ],
         'instance.id_invalid',
     ],
-    'publication without value' => [
-        [
-            'instance' => '3',
-            'domain' => 'app.test',
-            '--publication' => null,
-            '--json' => true,
-        ],
-        'route.publication_invalid',
-    ],
     'missing domain' => [
         [
             'instance' => '3',
@@ -466,6 +457,28 @@ it('lists, shows, updates, targets, clears, and removes through exact requests',
     ]);
     $this->artisan('route:target:unset', ['route' => '11', '--yes' => true])->assertExitCode(0);
     $this->artisan('route:destroy', ['route' => '11', '--yes' => true])->assertExitCode(0);
+});
+
+it('removes a Route offline and names what it left on each Node', function (): void {
+    $payload = [...route_payload(), 'retained_on_nodes' => [
+        ['node_id' => 4, 'node' => 'beast', 'steps' => ['caddy', 'php', 'firewall']],
+    ]];
+    $mock = MockClient::global([
+        DestroyRouteRequest::class => MockResponse::make(['data' => $payload, 'meta' => ['request_id' => route_request_id()]]),
+    ]);
+
+    $this->artisan('route:destroy', ['route' => '11', '--yes' => true, '--offline' => true])
+        ->expectsOutputToContain('Left on Nodes the Gateway could not reach:')
+        ->expectsOutputToContain('beast: caddy, php, firewall')
+        ->expectsOutputToContain('Run orbit node:converge NODE once the Node answers to remove them.')
+        ->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all())->toBe(['offline' => true]);
+
+    expect(Artisan::call('route:destroy', ['route' => '11', '--yes' => true, '--json' => true]))->toBe(0);
+    $json = json_decode(Artisan::output(), associative: true, flags: JSON_THROW_ON_ERROR);
+    expect($mock->getLastRequest()?->body()->all())->toBe([])
+        ->and($json['retained_on_nodes'])->toBe([['node_id' => 4, 'node' => 'beast', 'steps' => ['caddy', 'php', 'firewall']]])
+        ->and($json['id'])->toBe(11);
 });
 
 it('rejects the removed hostname argument and option', function (string $command, array $arguments, string $message): void {

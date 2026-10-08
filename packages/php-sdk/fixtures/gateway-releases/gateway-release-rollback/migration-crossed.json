@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\RollbackGatewayReleaseRequest",
+    "route": "POST /api/v1/gateway/releases/{release}/rollback",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "gateway.release_migration_crossed",
+            "message": "Release [fedcba987654] does not know 1 migration(s) the database has applied, such as [2026_10_02_000000_two]. Pass --force to switch the code and leave the schema.",
+            "details": {}
+        }
+    }
+}

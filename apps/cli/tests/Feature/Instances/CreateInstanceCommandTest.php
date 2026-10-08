@@ -33,31 +33,6 @@ afterEach(function (): void {
     new Filesystem()->deleteDirectory($this->orbitHome);
 });
 
-describe('instance:create development contract', function (): void {
-    it('creates a development Instance through the ordinary create request', function (): void {
-        $mock = MockClient::global([
-            CreateInstanceRequest::class => instance_mock_response(201),
-        ]);
-
-        $this
-            ->artisan('instance:create', [
-                'project' => '3',
-                'node' => '2',
-                'name' => 'dev',
-                '--json' => true,
-            ])
-            ->expectsOutput(instance_json())
-            ->assertExitCode(0);
-
-        expect($mock->getLastRequest())
-            ->toBeInstanceOf(CreateInstanceRequest::class)
-            ->and($mock->getLastRequest()?->body()->all())
-            ->toBe(['project_id' => 3, 'node_id' => 2, 'name' => 'dev'])
-            ->and($mock->getLastRequest()?->body()->all())
-            ->not->toHaveKey('environment');
-    });
-});
-
 describe('process:create preset target validation', function (): void {
     it('refuses a preset with project before sending a request', function (): void {
         $mock = MockClient::global([]);

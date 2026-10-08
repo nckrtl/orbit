@@ -44,7 +44,7 @@ final readonly class DatabaseConnectionDoctorInspection
 
         try {
             $stored = $this->storedValues($attachment->instance_id);
-            $projected = $this->projection->project($connection, $attachment->instance, $attachment->prefix);
+            $projected = $this->projection->project($connection, $attachment->prefix);
         } catch (DecryptException) {
             return [$this->issue(
                 DatabaseConnectionDoctorIssueCode::InspectionFailed,

@@ -17,6 +17,8 @@ use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Process;
 use Tests\Support\RecordingProcessRunner;
 
+pest()->group('subprocess');
+
 function node_locks_another_process(): NodeLocks
 {
     return new NodeLocks(Cache::store('array'));

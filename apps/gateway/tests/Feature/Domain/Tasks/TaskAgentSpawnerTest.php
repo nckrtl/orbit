@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskReviewDiff;
 use App\Domain\Tasks\TaskReviewDiffException;
@@ -33,6 +34,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use App\Models\TaskSandbox;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -46,7 +48,7 @@ beforeEach(function (): void {
     app()->instance(TaskWorkspaceMcp::class, new AcceptingTaskWorkspaceMcp);
 });
 
-function task_spawner_group(): Task
+function task_spawner_group(TaskCompute $compute = TaskCompute::Shared): Task
 {
     $project = Project::query()->create([
         'name' => 'orbit',
@@ -76,6 +78,7 @@ function task_spawner_group(): Task
         'title' => 'Wire an agent',
         'brief' => 'Spawn reviewer and implementer.',
         'status' => TaskGroupStatus::Running,
+        'task_compute' => $compute,
     ]);
     $group->taskable()->associate($instance);
     $group->save();
@@ -138,6 +141,35 @@ it('spawns fresh role threads on the workspace Node with the configured model an
         ->and($dispatcher->commands[1]['model'])->toBe(TaskAgentDefaults::ImplementerModel)
         ->and($dispatcher->commands[1]['effort'])->toBe(config('orbit.tasks.implementer_effort'))
         ->and($dispatcher->commands[1]['message']['text'])->toContain('Implement this subtask', 'The group started at '.str_repeat('b', 40), 'Follow this repository\'s task instructions.');
+});
+
+it('pins new sandbox threads to the reservation instead of the shared host runtime', function (): void {
+    $group = task_spawner_group(TaskCompute::Vm);
+    $sandbox = TaskSandbox::query()->create([
+        'id' => '8b0cb334-dda5-4490-a6ac-c3b3cf4b10d6', 'group_id' => $group->id, 'provider' => 'incus',
+        'name' => 'ot-proof', 'state' => 'running', 'desired_power' => 'running', 'spec' => [],
+    ]);
+    $group->taskable->update(['task_sandbox_id' => $sandbox->id]);
+    [$spawner] = task_spawner_stack();
+
+    $threadId = $spawner->spawnImplementer($group->tasks->sole());
+
+    expect(AgentThread::query()->findOrFail($threadId)->runtime_key)->toBe('sandbox:'.$sandbox->id);
+});
+
+it('does not create a session from a pending reservation belonging to another runtime', function (): void {
+    $group = task_spawner_group();
+    $task = $group->tasks->sole();
+    $pending = AgentThread::query()->create([
+        'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $group->taskable->node_id,
+        'driver' => 'pi', 'runtime_key' => 'sandbox:8b0cb334-dda5-4490-a6ac-c3b3cf4b10d6',
+        'external_id' => TaskAgentSpawner::PendingPrefix.'old-runtime', 'role' => 'implementer',
+    ]);
+    [$spawner, $dispatcher] = task_spawner_stack();
+
+    expect($spawner->spawnImplementer($task))->toBeNull();
+    expect($dispatcher->commands)->toBe([]);
+    expect($pending->fresh())->toBeNull();
 });
 
 it('shows the base failure kind and message to the reviewer', function (): void {

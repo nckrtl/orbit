@@ -264,7 +264,7 @@ final readonly class TaskAgentSpawner implements AgentSpawner
             'task_id' => $taskId,
             'node_id' => $instance->node_id,
             'driver' => $reviewer ? $group->reviewer_agent_driver : $group->implementer_agent_driver,
-            'runtime_key' => 'node:'.$instance->node_id,
+            'runtime_key' => $instance->task_sandbox_id === null ? 'node:'.$instance->node_id : 'sandbox:'.$instance->task_sandbox_id,
             'external_id' => self::PendingPrefix.(string) Str::uuid(),
             'role' => $role->value,
             'model' => $reviewer ? $group->reviewer_model : $group->implementer_model,
@@ -333,7 +333,8 @@ final readonly class TaskAgentSpawner implements AgentSpawner
         $prompt = $this->fetchNotice->apply($prompt);
         $group = Task::topLevel()->with('taskable')->find($thread->task_group_id);
         $instance = $group?->taskable;
-        if (! $group instanceof Task || ! $instance instanceof Instance) {
+        if (! $group instanceof Task || ! $instance instanceof Instance
+            || $thread->runtime_key !== ($instance->task_sandbox_id === null ? 'node:'.$instance->node_id : 'sandbox:'.$instance->task_sandbox_id)) {
             $thread->delete();
 
             return null;

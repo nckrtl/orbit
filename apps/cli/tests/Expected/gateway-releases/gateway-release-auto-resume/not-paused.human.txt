@@ -1,0 +1,9 @@
+Resuming automatic releases...
+
+┌  Resume automatic releases
+│
+├  ● Resuming automatic releases
+│
+└  Operation failed.
+
+Automatic releases are not paused.

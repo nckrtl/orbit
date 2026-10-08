@@ -8,6 +8,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use Illuminate\Support\Facades\Cache;
@@ -35,7 +36,7 @@ final readonly class WatchTaskBranchPullRequestAction
                 return;
             }
             $pullRequests = $this->github->pullRequestsByHead(
-                $this->access->cachedReadToken($repository), $repository, 'task-'.$group->id,
+                $this->access->cachedReadToken($repository), $repository, TaskRemoteBranch::for($group),
             );
         } catch (Throwable) {
             return;

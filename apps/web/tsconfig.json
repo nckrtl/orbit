@@ -23,9 +23,7 @@
         "erasableSyntaxOnly": true,
         "noFallthroughCasesInSwitch": true,
         "paths": {
-            "@/*": ["./src/*"],
-            "@nckrtl/annotator": ["../../packages/agent-annotation/src/index.ts"],
-            "@nckrtl/annotator/*": ["../../packages/agent-annotation/src/*"]
+            "@/*": ["./src/*"]
         }
     },
     "include": ["src", "dev", "tests", "vite.config.ts"]

@@ -5,7 +5,7 @@ covers:
   - apps/cli/app/Commands/Nodes/**
   - apps/cli/app/Support/NodeSettingOptions.php
   - apps/gateway/app/Actions/Nodes/{RenameNodeAction,RelocateNodeRoleAction,GrantGatewayRoleAccessAction,AddNodeAccessAction,RemoveNodeAccessAction,ShowNodeMetricsAction}.php
-  - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController}.php
+  - apps/gateway/app/Http/Controllers/Api/{NodesController,NodeRolesController,NodeAccessController,NodeFootprintsController}.php
   - apps/gateway/app/Http/Requests/Nodes/**
   - packages/php-sdk/src/Requests/Nodes/**
   - packages/php-sdk/src/Responses/Nodes/**
@@ -20,6 +20,7 @@ A Node is a machine that the Gateway manages over SSH and reaches over WireGuard
 | Command | Result |
 | --- | --- |
 | [`node:add`](#orbit-nodeadd) | Add a machine, or converge an existing Node. |
+| [`node:converge`](#orbit-nodeconverge) | Re-apply the Gateway-rendered Orbit footprint of a Node. |
 | [`node:list`](#orbit-nodelist) | List the Nodes. |
 | [`node:show`](#orbit-nodeshow) | Show one Node. |
 | [`node:metrics`](#orbit-nodemetrics) | Show one metrics snapshot of a Node. |
@@ -126,6 +127,24 @@ Human output shows bytes and durations in readable units. JSON keeps the raw num
 | `node.metrics_unavailable` | 422 | The Node is not active or has no WireGuard address. |
 | `metrics.assignment_missing` | 409 | No Node has the Metrics role. |
 | `node.metrics_unreachable` | 502 | Grafana could not answer, or Prometheus has no samples for the Node yet. |
+
+## orbit node:converge
+
+Re-apply the Gateway-rendered Orbit footprint of a Node: its agent files, Caddyfile, private-DNS listener on the `vpn` Node, ProxyCli collector, and annotator server files. The fleet rollout runs the same step on each Node. It never changes an Instance or a role, so it works on a Node that owns Instances, unlike `node:add`.
+
+```bash
+orbit node:converge <node> [--force] [--json]
+```
+
+| Option | Meaning |
+| --- | --- |
+| `--force` | Re-apply every artifact, not only the ones whose digest changed. Each artifact still leaves a matching live copy alone |
+
+The table lists each artifact as `applied` or `unchanged`, then the Node's footprint digest. When every digest matches the one the Node last received, the Gateway sends the Node no command. A Node that is not an active, managed Linux Node fails with `node.converge_unsupported`. [Converge the Orbit footprint](/reference/node-provisioning#converge-the-orbit-footprint) lists the artifacts and error codes.
+
+```bash
+orbit node:converge beast
+```
 
 ## orbit node:rename
 

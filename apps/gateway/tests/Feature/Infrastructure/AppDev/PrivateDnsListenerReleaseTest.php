@@ -7,6 +7,8 @@ use App\Infrastructure\AppDev\PrivateDnsMessageCodec;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 it('builds the release from the listener classes only, with an id that follows their contents', function (): void {
     $release = PrivateDnsListenerRelease::fromGateway();
     $files = $release->files();
