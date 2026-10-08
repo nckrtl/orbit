@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Actions\Fleet\ResumeFleetRolloutAction;
+use App\Actions\Fleet\ShowFleetRolloutAction;
+use App\Data\Fleet\FleetRolloutExclusionData;
 use App\Domain\Fleet\FleetNodeOutcome;
 use App\Domain\Fleet\FleetRolloutRunner;
 use App\Domain\Fleet\FleetRolloutStatus;
@@ -235,6 +237,24 @@ describe('fleet rollout', function (): void {
         fleetRun();
 
         expect($visitor->visited)->toBe(['new', 'db', 'prod']);
+    });
+
+    it('never visits a task sandbox, in the rollout or in the catch-up, and lists it as excluded', function (): void {
+        ['visitor' => $visitor] = FleetFixtures::bind();
+        FleetFixtures::node('dev', [RoleName::AppDev]);
+        $first = FleetFixtures::sandbox();
+
+        fleetRun();
+        $visitor->visited = [];
+        $second = FleetFixtures::sandbox();
+        fleetRun();
+        $status = app(ShowFleetRolloutAction::class)->execute();
+
+        expect($visitor->visited)->toBe([])
+            ->and(fleetOutcomes())->toBe(['dev' => 'converged'])
+            ->and(FleetRollout::query()->sole()->status)->toBe(FleetRolloutStatus::Completed)
+            ->and(array_map(static fn (FleetRolloutExclusionData $excluded): array => [$excluded->node, $excluded->reason], $status->excluded))
+            ->toBe([[$first->name, 'sandbox'], [$second->name, 'sandbox']]);
     });
 
     it('does nothing while the rollout is off', function (): void {

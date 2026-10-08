@@ -16,6 +16,7 @@ use App\Models\NodeRole;
  *
  * A Node is in the rollout when all of these hold:
  *
+ * - it is not a disposable task sandbox: it has no `compute_sandbox_id` (ADR 0200);
  * - it is `active` and runs Linux;
  * - the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
  * - it holds at least one active role other than `gateway`;
@@ -23,7 +24,8 @@ use App\Models\NodeRole;
  * - its `/usr/local/bin/orbit` is not a CLI Orbit did not install ({@see NodeCliState}).
  *
  * Roleless Nodes, such as operator machines, and macOS Nodes are never visited. They update
- * themselves with `orbit self-update`.
+ * themselves with `orbit self-update`. A task sandbox gets its agent and footprint when it is
+ * provisioned and is destroyed with its task group, so neither the rollout nor its catch-up visits it.
  *
  * The rollout goes lowest risk first. Each role belongs to a group, and a Node with several roles
  * goes in the latest group of its roles, so it waits until every lower-risk Node is done:
@@ -103,10 +105,14 @@ final readonly class FleetRolloutMembership
     /**
      * Why the rollout leaves the Node out, or null when it is in the rollout set.
      *
-     * @return 'inactive'|'platform'|'unmanaged'|'gateway'|'roleless'|'foreign_cli'|null
+     * @return 'sandbox'|'inactive'|'platform'|'unmanaged'|'gateway'|'roleless'|'foreign_cli'|null
      */
     public function exclusion(Node $node): ?string
     {
+        if ($node->compute_sandbox_id !== null) {
+            return 'sandbox';
+        }
+
         if ($node->status !== LifecycleStatus::Active) {
             return 'inactive';
         }

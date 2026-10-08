@@ -690,13 +690,18 @@ A run that is still busy when a newer release goes current does not take the sta
 
 The rollout visits a Node when all of these hold:
 
+- it is not a disposable task sandbox;
 - it is `active` and runs Linux;
 - the Gateway manages it over SSH: it has a WireGuard address and a pinned SSH host key;
 - it holds at least one active role other than `gateway`;
 - it is not the Gateway's own machine: it holds no `gateway` role and is not the serving host;
 - its `/usr/local/bin/orbit` is not a CLI that Orbit did not install.
 
-Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. `fleet:rollout:status` lists every Node it leaves out, with the reason `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
+Roleless Nodes, such as operator machines, and macOS Nodes stay out. Their operators run `orbit self-update`. `fleet:rollout:status` lists every Node it leaves out, with the reason `sandbox`, `inactive`, `platform`, `unmanaged`, `gateway`, `roleless`, or `foreign_cli`.
+
+A task sandbox is an `app-dev` Node that an [UpCloud sandbox reservation](/reference/compute-drivers#enroll-an-owned-project-vm) owns: its `compute_sandbox_id` names the reservation. The Gateway creates it for one task group and removes it when the group ends or its review window expires ([ADR 0200](/decisions/0200-run-each-task-group-in-its-own-sandbox-vm)). Provisioning gives it the agent and footprint of the Gateway's release at that time.
+
+The rollout and the catch-up never visit a task sandbox, provisioning installs no Orbit CLI on it, and Doctor reports no `node.release_lag` for it. A group that resumes after its sandbox was destroyed gets a new sandbox Node, provisioned from the current release. The `sandbox` reason comes first, so a sandbox shows it in every state.
 
 A Node leaves the rollout set as `foreign_cli` when the [CLI install](/reference/node-provisioning#orbit-cli) finds a link, a script, or another program at `/usr/local/bin/orbit`. That visit is `skipped`, never `failed`, and Doctor reports `node.cli_foreign`. Every later run probes the Node and, when it answers, inspects the path again, so the Node rejoins once an operator moved the file aside.
 
@@ -789,7 +794,7 @@ After the rollout, every run visits some Nodes again, one at a time and with the
 
 So a Node that was offline is converged within 5 minutes after it returns.
 
-Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. `observed` says why: `no rollout yet`, `not in the rollout`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a run already resolved; it never asks Git or GitHub.
+Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no rollout yet`, `not in the rollout`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a run already resolved; it never asks Git or GitHub.
 
 ## Limits
 
