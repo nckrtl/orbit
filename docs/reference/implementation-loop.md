@@ -122,7 +122,9 @@ An affected run on `main` also runs the architecture tests, as a pull request do
 
 After a passing run, `bin/ci-tia finish` requires the graph to record the tested commit and to hold a result for every test file it links. Pest records the commit itself after it runs tests. When no test is affected, Pest stops before it records the commit, so `finish` records it. The job then saves the graph to the cache.
 
-A new push to a pull request cancels that pull request's older run. A push to `main` never cancels or replaces another run. Each `main` commit has its own concurrency group, so every `main` commit gets a complete `Required checks` result, even when several merges land close together. A shared `main` group would not be enough: GitHub keeps one pending run per group and cancels the older pending run when a newer one queues. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful result, so a run must not disappear because a later merge followed it.
+A new push to a pull request cancels that pull request's older run. Pushes to `main` share one concurrency group and never cancel a running run. GitHub keeps one running and one waiting run per group, and a newer push replaces the waiting one. So when several merges land close together, the newest `main` commit is tested next. The commits in between get a cancelled run instead of a result.
+
+Nothing goes untested. A push run selects the tests affected since the commit its restored `main` graph describes, which is the last tested `main` commit. So the newest run covers every change in between. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful `Required checks` result and skip commits without one, so the release includes the skipped commits. Scheduled and manual full runs have a group per commit, so a push never cancels one.
 
 The project jobs check out the branch by name. On `main` they then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for.
 
