@@ -46,14 +46,55 @@ function fake_cli_release_github(array $overrides = []): void
 }
 
 /**
- * @param  array<string, int>  $ancestors  The commits the Gateway's commit reaches, newest first, with their counts.
+ * Fakes GitHub for several releases built from the fixture release: each number is published with its tag on the
+ * commit. The arrays are read on every request, so a test can publish a release or fail a path later. A path
+ * in `$responses` answers before any release.
+ *
+ * @param  array<int, string>  $published  Commit per release number.
+ * @param  array<string, mixed>  $responses  Response per URL path.
  */
-function fake_release_history(?string $commit = CLI_RELEASE_FIXTURE_COMMIT, ?int $count = CLI_RELEASE_FIXTURE_NUMBER, array $ancestors = []): void
+function fake_cli_releases(array &$published, array &$responses = []): void
 {
-    app()->instance(ReleaseHistory::class, new readonly class($commit, $count, $ancestors) implements ReleaseHistory
+    Http::preventStrayRequests();
+    Http::fake(static function (Request $request) use (&$published, &$responses) {
+        $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+        if (isset($responses[$path])) {
+            return $responses[$path];
+        }
+
+        if (preg_match('#/cli-v0\.([0-9]+)\.0(/|\z)#', $path, $match) === 1 && isset($published[(int) $match[1]])) {
+            $fixture = static fn (string $name): string => str_replace(
+                ['0.'.CLI_RELEASE_FIXTURE_NUMBER.'.0', CLI_RELEASE_FIXTURE_COMMIT],
+                ['0.'.$match[1].'.0', $published[(int) $match[1]]],
+                cli_release_fixture($name),
+            );
+
+            return match (true) {
+                str_contains($path, '/git/ref/tags/') => Http::response($fixture('tag-ref.json')),
+                str_contains($path, '/releases/tags/') => Http::response($fixture('release.json')),
+                str_ends_with($path, '/SHA256SUMS') => Http::response($fixture('SHA256SUMS')),
+                default => Http::response(['message' => 'Not Found'], 404),
+            };
+        }
+
+        return Http::response(['message' => 'Not Found'], 404);
+    });
+}
+
+/**
+ * @param  array<string, int>  $ancestors  The commits the Gateway's commit reaches, newest first, with their counts.
+ * @param  list<string>  $cliChanged  Ancestors whose CLI build inputs differ from the Gateway's commit.
+ */
+function fake_release_history(?string $commit = CLI_RELEASE_FIXTURE_COMMIT, ?int $count = CLI_RELEASE_FIXTURE_NUMBER, array $ancestors = [], array $cliChanged = []): void
+{
+    app()->instance(ReleaseHistory::class, new readonly class($commit, $count, $ancestors, $cliChanged) implements ReleaseHistory
     {
-        /** @param  array<string, int>  $older */
-        public function __construct(private ?string $resolved, private ?int $total, private array $older) {}
+        /**
+         * @param  array<string, int>  $older
+         * @param  list<string>  $changed
+         */
+        public function __construct(private ?string $resolved, private ?int $total, private array $older, private array $changed) {}
 
         public function commit(string $revision): ?string
         {
@@ -68,6 +109,11 @@ function fake_release_history(?string $commit = CLI_RELEASE_FIXTURE_COMMIT, ?int
         public function ancestors(string $commit, int $limit): array
         {
             return array_slice(array_keys($this->older), 0, $limit);
+        }
+
+        public function unchanged(string $from, string $to, array $paths): bool
+        {
+            return array_intersect([$from, $to], $this->changed) === [];
         }
     });
 }

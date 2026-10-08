@@ -20,11 +20,12 @@ use Illuminate\Support\Facades\Config;
  * A published release never changes, so a confirmed CLI release stays cached for its commit. A release that is
  * not there yet is asked for again after a minute, because CI publishes it a few minutes after the checks pass.
  *
- * GitHub can refuse to publish a commit's release, for example when the commit is no longer the tip of `main`
- * and its workflow files differ from the tip's. When the commit's release has been missing, mismatched, or
- * incomplete for {@see self::FallbackAfterSeconds}, the state names the newest published release of a commit
- * this one reaches instead, so the fleet rollout does not wait for a release that never comes. That fallback is
- * asked for again every {@see self::FallbackSeconds}, and the commit's own release replaces it once it appears.
+ * GitHub can refuse to publish a commit's release, for example after a newer commit reached `main` with other
+ * workflow files. When the commit's release has been missing, mismatched, or incomplete for
+ * {@see self::FallbackAfterSeconds}, the state names the newest published release of an ancestor whose CLI
+ * build inputs ({@see CliReleaseName::BuildInputs}) are the same, so its binary is the one this commit would
+ * build. The fleet rollout then does not wait for a release that never comes. The Gateway keeps that fallback
+ * for the commit, and asks for the commit's own release every {@see self::FallbackSeconds} until it appears.
  */
 final readonly class DesiredFleetState
 {
@@ -44,7 +45,7 @@ final readonly class DesiredFleetState
     public const int FallbackSeconds = 5 * 60;
 
     /** How many of the commit's ancestors the fallback searches for a published release. */
-    public const int FallbackDepth = 20;
+    public const int FallbackDepth = 50;
 
     /** The reasons a commit's release can stay missing for good, so a fallback may stand in for it. */
     private const array FallbackReasons = [
@@ -54,6 +55,10 @@ final readonly class DesiredFleetState
     ];
 
     private const string CacheKey = 'orbit:desired-fleet-state:v1:';
+
+    private const string MissingSinceKey = self::CacheKey.'missing-since:';
+
+    private const string FallbackKey = self::CacheKey.'fallback:';
 
     public function __construct(
         private ReleaseHistory $history,
@@ -95,19 +100,10 @@ final readonly class DesiredFleetState
 
     private function resolveAndStore(string $revision): DesiredFleetStateData
     {
-        [$commit, $cli] = $this->resolve($revision);
-        $state = new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromFootprint());
-        $this->cache->put(
-            $this->key($revision),
-            ['commit' => $commit, 'cli' => $cli->toArray()],
-            match (true) {
-                $state->cliFallback() => self::FallbackSeconds,
-                $cli->isAvailable() => self::AvailableSeconds,
-                default => self::UnavailableSeconds,
-            },
-        );
+        [$commit, $cli, $seconds] = $this->resolve($revision);
+        $this->cache->put($this->key($revision), ['commit' => $commit, 'cli' => $cli->toArray()], $seconds);
 
-        return $state;
+        return new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromFootprint());
     }
 
     /** The state from the cache alone, without Git or GitHub, or null when nothing is cached for this commit. */
@@ -139,11 +135,15 @@ final readonly class DesiredFleetState
         return new DesiredFleetStateData($commit, $cli, DesiredAgentData::fromFootprint());
     }
 
-    /** @return array{?string, DesiredCliReleaseData} */
+    /**
+     * The commit, its CLI release, and how long to keep that answer.
+     *
+     * @return array{?string, DesiredCliReleaseData, int}
+     */
     private function resolve(string $revision): array
     {
         if (preg_match('/\A[0-9a-f]{7,40}\z/D', $revision) !== 1) {
-            return [null, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::GatewayCommitUnknown)];
+            return [null, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::GatewayCommitUnknown), self::UnavailableSeconds];
         }
 
         $commit = $this->history->commit($revision);
@@ -152,31 +152,55 @@ final readonly class DesiredFleetState
             return [
                 strlen($revision) === 40 ? $revision : null,
                 DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::GatewayCommitUnknown),
+                self::UnavailableSeconds,
             ];
         }
 
         $count = $this->history->count($commit);
 
         if ($count === null || $count < 1) {
-            return [$commit, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::HistoryUnavailable)];
+            return [$commit, DesiredCliReleaseData::unavailable(CliReleaseUnavailableReason::HistoryUnavailable), self::UnavailableSeconds];
         }
 
         $release = $this->catalog->find($commit, new CliReleaseName($count));
 
-        return [$commit, $this->fallback($revision, $commit, $release) ?? $release];
+        if ($release->isAvailable()) {
+            return [$commit, $release, self::AvailableSeconds];
+        }
+
+        // A fallback, once found, stays until the commit's own release appears. A GitHub error never drops it.
+        $kept = DesiredCliReleaseData::fromArray($this->cache->get(self::FallbackKey.hash('sha256', $revision)));
+
+        if ($kept instanceof DesiredCliReleaseData && $kept->isAvailable()) {
+            return [$commit, $kept, self::FallbackSeconds];
+        }
+
+        if (! in_array($release->reason, self::FallbackReasons, true) || ! $this->missingLongEnough($revision)) {
+            return [$commit, $release, self::UnavailableSeconds];
+        }
+
+        [$fallback, $searched] = $this->fallback($commit);
+
+        if (! $fallback instanceof DesiredCliReleaseData) {
+            // A search that found nothing runs again after a while, not on every lookup.
+            return [$commit, $release, $searched ? self::FallbackSeconds : self::UnavailableSeconds];
+        }
+
+        $this->cache->put(self::FallbackKey.hash('sha256', $revision), $fallback->toArray(), self::AvailableSeconds);
+
+        return [$commit, $fallback, self::FallbackSeconds];
     }
 
     /**
-     * The newest published release of an ancestor, once the commit's own release has been missing for
-     * {@see self::FallbackAfterSeconds}. Release numbers grow along `main`, so the highest number is the newest.
-     * It stops at the first ancestor GitHub cannot answer for, and names nothing rather than an older guess.
+     * The newest published release of an ancestor whose CLI build inputs match the commit's. Release numbers grow
+     * along `main`, so the highest number is the newest. Git filters the candidates before GitHub sees any.
+     * The search stops at the first ancestor GitHub cannot answer for, and names nothing rather than an older
+     * guess. Returns the release, and whether the search completed.
+     *
+     * @return array{?DesiredCliReleaseData, bool}
      */
-    private function fallback(string $revision, string $commit, DesiredCliReleaseData $release): ?DesiredCliReleaseData
+    private function fallback(string $commit): array
     {
-        if (! in_array($release->reason, self::FallbackReasons, true) || ! $this->missingLongEnough($revision)) {
-            return null;
-        }
-
         $candidates = [];
 
         foreach ($this->history->ancestors($commit, self::FallbackDepth) as $ancestor) {
@@ -190,28 +214,33 @@ final readonly class DesiredFleetState
         usort($candidates, static fn (array $left, array $right): int => $right[1] <=> $left[1]);
 
         foreach ($candidates as [$ancestor, $number]) {
+            if (! $this->history->unchanged($ancestor, $commit, CliReleaseName::BuildInputs)) {
+                continue;
+            }
+
             $found = $this->catalog->find($ancestor, new CliReleaseName($number));
 
             if ($found->isAvailable()) {
-                return $found;
+                return [$found, true];
             }
 
             if ($found->reason === CliReleaseUnavailableReason::GitHubUnavailable) {
-                return null;
+                return [null, false];
             }
         }
 
-        return null;
+        return [null, true];
     }
 
     /** Whether the commit's own release has been missing for {@see self::FallbackAfterSeconds}, from the first time it was. */
     private function missingLongEnough(string $revision): bool
     {
-        $key = self::CacheKey.'missing-since:'.hash('sha256', $revision);
+        $key = self::MissingSinceKey.hash('sha256', $revision);
         $this->cache->add($key, now()->getTimestamp(), self::AvailableSeconds);
         $since = $this->cache->get($key);
 
-        return is_int($since) && now()->getTimestamp() - $since >= self::FallbackAfterSeconds;
+        // Redis returns the stored number as a numeric string.
+        return is_numeric($since) && now()->getTimestamp() - (int) $since >= self::FallbackAfterSeconds;
     }
 
     private function key(string $revision): string

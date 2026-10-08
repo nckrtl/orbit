@@ -129,7 +129,7 @@ So a green commit gets no release when both of these are true:
 - A newer commit reached `main` before the release workflow published. A rerun of the commit's CI makes that likely.
 - The commits between them changed a file under `.github/workflows`.
 
-The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit fails in the same way. The Gateway does not wait for such a release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit, and the next commit's release replaces it.
+The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit cannot publish it either. The Gateway does not wait for such a release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit, and the next commit's release replaces it.
 
 ## Pull-request builds
 
@@ -185,7 +185,7 @@ A Node or an updater needs a binary that is always there and needs no login. Wor
 
 ### A fallback instead of a stronger token
 
-Only a token with the `workflows` permission can tag a commit whose workflow files differ from the tip of `main`. The job token cannot have that permission. A GitHub App or personal token with it could also change workflows on `main`, so the release job would hold far more than it needs. The refused case is rare and the next release fixes it, so the Gateway falls back to an ancestor's release instead.
+Only a token with the `workflows` permission can tag a commit whose workflow files differ from the tip of `main`. The job token cannot have that permission. A GitHub App or personal token with it could also change workflows on `main`, so the release job would hold far more than it needs. The refused case is rare and the next release fixes it, so the Gateway falls back instead, to an ancestor's release built from the same CLI code.
 
 ### A version from the commit count
 

@@ -87,14 +87,14 @@ The Gateway usually deploys a commit a minute after its checks pass, minutes bef
 | `cli.status` | `reason` | Meaning |
 | --- | --- | --- |
 | `available` | null | Every field is set. `cli.commit` is the Gateway's commit, or an ancestor's for a [fallback](#fallback-to-an-ancestor-release). |
-| `pending` | `release_missing` | The version and tag are set, but the release is not published yet. Check again in a few minutes. |
+| `pending` | `release_missing` | The version, tag, and commit are set, but the release is not published yet. Check again in a few minutes. |
 | `unavailable` | `gateway_commit_unknown` | The Gateway version is not a commit its Git history knows. |
 | `unavailable` | `history_unavailable` | The Gateway checkout is shallow or Git failed, so the version is unknown. |
 | `unavailable` | `release_mismatch` | The tag points at another commit. |
 | `unavailable` | `release_incomplete` | The release lacks a binary, or `SHA256SUMS` lacks a valid line. |
 | `unavailable` | `github_unavailable` | GitHub did not answer or refused the request, for example at its rate limit. |
 
-An available release is kept for its commit for 30 days, because a published release never changes. A fallback is kept for 5 minutes. A `pending` or `unavailable` answer is kept for 60 seconds. Only the desired-fleet-state endpoint and the scheduler resolve the state. The scheduler runs `php artisan orbit:desired-fleet-state` every 5 minutes, which prints it as JSON. One caller resolves a commit at a time under a cache lock; the others wait up to 30 seconds and read its answer.
+An available release is kept for its commit for 30 days, because a published release never changes. A fallback is checked against the commit's own release every 5 minutes. A `pending` or `unavailable` answer is kept for 60 seconds, or for 5 minutes after a fallback search found nothing. Only the desired-fleet-state endpoint and the scheduler resolve the state. The scheduler runs `php artisan orbit:desired-fleet-state` every 5 minutes, which prints it as JSON. One caller resolves a commit at a time under a cache lock; the others wait up to 30 seconds and read its answer.
 
 ### Fallback to an ancestor release
 
@@ -102,11 +102,20 @@ Sometimes a green commit never gets its CLI release. After a newer commit reache
 
 When the commit's release stays `release_missing`, `release_mismatch`, or `release_incomplete` for 30 minutes, the Gateway names the newest published release of an ancestor instead:
 
-1. It takes the 20 newest commits that the Gateway's commit reaches.
-2. It tries their releases from the highest release number down, and checks each one as it checks its own release.
-3. The first available release becomes `cli`, with `status` `available` and that ancestor's `commit`.
+1. It takes the 50 newest commits that the Gateway's commit reaches.
+2. It keeps only the commits whose CLI build inputs match the Gateway's commit. The [build inputs](#cli-build-inputs) are listed below.
+3. It tries their releases from the highest release number down, and checks each one as it checks its own release. A release number whose tag points at another commit is skipped.
+4. The first available release becomes `cli`, with `status` `available` and that ancestor's `commit`.
 
-When GitHub does not answer for an ancestor, the search stops and the state stays as it was. When no ancestor has a release, the state stays `pending` or `unavailable`. A fallback is asked for again every 5 minutes, so the commit's own release replaces it once it is published.
+#### CLI build inputs
+
+A commit's CLI binary is built from `apps/cli`, `packages/php-sdk`, `bin/orbit-build-cli-binary`, `bin/orbit-version`, and `.github/workflows/orbit-cli-binary.yml`. When these match, an ancestor's release has the binary the commit would build, apart from the version it prints. So the new footprint never runs next to older CLI code.
+
+#### Keeping a fallback
+
+The Gateway keeps a fallback for the commit. Every 5 minutes it asks GitHub for the commit's own release, which replaces the fallback once it is published. A GitHub error never drops the fallback.
+
+When GitHub does not answer for an ancestor, the search stops and names nothing. When no ancestor qualifies, the state stays `pending` or `unavailable`, and the search runs again after 5 minutes.
 
 CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release. The [fleet rollout](/reference/gateway-recovery#desired-state) raises `rollout_cli_fallback` once when it uses a fallback.
 

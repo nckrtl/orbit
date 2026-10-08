@@ -230,6 +230,23 @@ describe('fleet rollout waiting', function (): void {
             ->and($alerts->alerts)->toHaveCount(1);
     });
 
+    it('visits no Node of a started rollout while its CLI release cannot be confirmed', function (): void {
+        ['visitor' => $visitor, 'catalog' => $catalog, 'alerts' => $alerts] = FleetFixtures::bind();
+        FleetFixtures::node('dev', [RoleName::AppDev]);
+        expect(safetyRun()['status'])->toBe('completed');
+
+        // The confirmed release expires from the cache, and GitHub then answers without it.
+        FleetFixtures::node('new', [RoleName::AppDev]);
+        $catalog->available = false;
+        $visitor->visited = [];
+        Carbon::setTestNow(now()->addSeconds(DesiredFleetState::AvailableSeconds + 1));
+
+        expect(safetyRun()['status'])->toBe('waiting')
+            ->and($visitor->visited)->toBe([])
+            ->and($alerts->alerts)->toBe([])
+            ->and(FleetRollout::query()->sole()->status)->toBe(FleetRolloutStatus::Completed);
+    });
+
     it('keeps the incomplete count across a deferred visit', function (): void {
         ['visitor' => $visitor] = FleetFixtures::bind();
         FleetFixtures::node('dev', [RoleName::AppDev]);

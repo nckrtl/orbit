@@ -20,4 +20,11 @@ interface ReleaseHistory
      * @return list<string>
      */
     public function ancestors(string $commit, int $limit): array;
+
+    /**
+     * Whether no file under the paths differs between two commits. False when the history cannot tell.
+     *
+     * @param  list<string>  $paths
+     */
+    public function unchanged(string $from, string $to, array $paths): bool;
 }

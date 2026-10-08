@@ -18,6 +18,20 @@ final readonly class CliReleaseName
 
     public const string ChecksumsAsset = 'SHA256SUMS';
 
+    /**
+     * The repository paths a CLI binary is built from: the CLI, the SDK it bundles, the builder, and the build
+     * workflow. Two commits with the same files here build the same binary, apart from the version it prints.
+     *
+     * @var list<string>
+     */
+    public const array BuildInputs = [
+        'apps/cli',
+        'packages/php-sdk',
+        'bin/orbit-build-cli-binary',
+        'bin/orbit-version',
+        '.github/workflows/orbit-cli-binary.yml',
+    ];
+
     public function __construct(public int $number)
     {
         if ($number < 1) {

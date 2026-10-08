@@ -73,6 +73,18 @@ final readonly class GitReleaseHistory implements ReleaseHistory
         return array_slice($commits, 0, $limit);
     }
 
+    public function unchanged(string $from, string $to, array $paths): bool
+    {
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $from) !== 1 || preg_match('/\A[0-9a-f]{40}\z/D', $to) !== 1 || $paths === []) {
+            return false;
+        }
+
+        $result = $this->git(['diff', '--quiet', $from, $to, '--', ...$paths]);
+
+        // Exit status 1 means a difference; anything but 0 is not proof that the paths match.
+        return $result instanceof CommandResult && $result->succeeded();
+    }
+
     /** @param  list<string>  $arguments */
     private function git(array $arguments): ?CommandResult
     {

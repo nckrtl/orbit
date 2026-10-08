@@ -40,6 +40,11 @@ final readonly class StaticCliRelease implements CliReleaseCatalog, ReleaseHisto
         return [];
     }
 
+    public function unchanged(string $from, string $to, array $paths): bool
+    {
+        return false;
+    }
+
     public function find(string $commit, CliReleaseName $release): DesiredCliReleaseData
     {
         $manifest = $this->manifest();

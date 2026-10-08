@@ -371,8 +371,35 @@ describe('CLI release workflow', function (): void {
         'workflows differ from main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/nckrtl/orbit/releases)', true, true],
         'same workflows as main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/nckrtl/orbit/releases)', false, false],
         'another failure' => [1, 'HTTP 500 (https://api.github.com/repos/nckrtl/orbit/releases)', true, false],
+        'secondary rate limit' => [1, 'HTTP 403: You have exceeded a secondary rate limit (https://api.github.com/repos/nckrtl/orbit/releases)', true, false],
         'published' => [0, 'Uploading assets', true, false],
     ]);
+
+    it('still explains a refusal when it cannot fetch main to compare the workflows', function (): void {
+        $checkout = (string) cli_release_temp('orbit-cli-release-checkout');
+        File::ensureDirectoryExists($checkout);
+        cli_release_git($checkout, 'init', '--quiet', '--initial-branch=main');
+        cli_release_git($checkout, 'remote', 'add', 'origin', 'file://'.$checkout.'-missing');
+        $bin = (string) cli_release_temp('orbit-cli-release-bin');
+        File::ensureDirectoryExists($bin);
+        File::put($bin.'/gh', "#!/bin/sh\necho 'HTTP 403: Resource not accessible by integration' >&2\nexit 1\n");
+        chmod($bin.'/gh', 0755);
+
+        $steps = array_column(cli_release_workflow()['jobs']['publish']['steps'], null, 'name');
+        $process = new Process(['bash', '-e', '-c', $steps['Publish GitHub release']['run']], $checkout, [
+            'PATH' => $bin.':'.getenv('PATH'),
+            'GIT_CONFIG_GLOBAL' => '/dev/null',
+            'GIT_CONFIG_NOSYSTEM' => '1',
+            'REPOSITORY' => 'nckrtl/orbit',
+            'COMMIT' => str_repeat('a', 40),
+            'VERSION' => '0.2.0',
+            'TAG' => 'cli-v0.2.0',
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe(1)
+            ->and($process->getOutput())->toContain('::error title=Release refused::', 'could not be compared');
+    });
 
     it('never runs release-commit code with the write token', function (): void {
         $jobs = cli_release_workflow()['jobs'];

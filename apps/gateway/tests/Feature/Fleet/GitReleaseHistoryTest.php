@@ -56,6 +56,22 @@ describe(GitReleaseHistory::class, function (): void {
             ->and($this->history->ancestors('HEAD', 20))->toBe([]);
     });
 
+    it('tells whether files under some paths match between two commits', function (): void {
+        $parent = release_history_git($this->repository, ['rev-parse', 'HEAD~1']);
+        mkdir($this->repository.'/apps/cli', 0755, true);
+        file_put_contents($this->repository.'/apps/cli/orbit', 'cli');
+        file_put_contents($this->repository.'/README.md', 'docs');
+        release_history_git($this->repository, ['add', '.']);
+        release_history_git($this->repository, ['commit', '--quiet', '-m', 'cli and docs']);
+        $changed = release_history_git($this->repository, ['rev-parse', 'HEAD']);
+
+        expect($this->history->unchanged($parent, $this->head, ['apps/cli']))->toBeTrue()
+            ->and($this->history->unchanged($this->head, $changed, ['bin', 'docs']))->toBeTrue()
+            ->and($this->history->unchanged($this->head, $changed, ['bin', 'apps/cli']))->toBeFalse()
+            ->and($this->history->unchanged(str_repeat('0', 40), $changed, ['apps/cli']))->toBeFalse()
+            ->and($this->history->unchanged($this->head, $changed, []))->toBeFalse();
+    });
+
     it('resolves no commit for an unknown or non-hexadecimal revision', function (string $revision): void {
         expect($this->history->commit($revision))->toBeNull();
     })->with(['unknown commit' => str_repeat('0', 40), 'branch name' => 'main', 'option' => '--all', 'tag syntax' => 'HEAD~1']);

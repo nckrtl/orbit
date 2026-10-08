@@ -110,6 +110,12 @@ final readonly class FleetRolloutRunner
             return $this->wait($rollout, $state);
         }
 
+        // A started rollout whose CLI release cannot be confirmed now, after a GitHub error for example, visits
+        // no Node: each Node would get a release it cannot install.
+        if (! $state->cli->isAvailable()) {
+            return $this->summary('waiting', $rollout);
+        }
+
         $this->noticeCliFallback($rollout, $state);
 
         $visited = [];
