@@ -340,7 +340,7 @@ Files copied into the Gateway checkout's `public` directory would follow Gateway
 
 ### A build from CI
 
-Building on the Gateway would need Node and Bun on the control plane only for this step. CI already builds the web app for every `main` commit, so a Gateway release installs that build. `bin/web-deploy` builds on the operator's machine for a commit CI did not publish.
+Building on the Gateway would need Node and Bun on the control plane only for this step. CI already builds the web app for every `main` commit whose run is not replaced by a newer push, and a Gateway release ships only such a commit, so it installs that build. `bin/web-deploy` builds on the operator's machine for a commit CI did not publish.
 
 ### A version file instead of a service worker
 

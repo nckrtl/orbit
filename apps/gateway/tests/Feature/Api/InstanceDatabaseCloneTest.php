@@ -257,7 +257,9 @@ describe('instance:create database clone', function (): void {
                 'DB_USERNAME' => 'acme_feature_x',
                 'DB_PASSWORD' => $password,
             ])
-            ->and($testing)->toBe([
+            ->and($testing)->toMatchArray([
+                'APP_ENV' => 'testing',
+                'APP_KEY' => 'base64:kept',
                 'DB_CONNECTION' => 'mysql',
                 'DB_DATABASE' => 'acme_feature_x_test',
                 'DB_HOST' => '10.44.0.3',
@@ -325,10 +327,13 @@ describe('instance:create database clone', function (): void {
             ->and($clone->path)->toBe('/srv/orbit/apps/acme/feature-x/database/database.sqlite')
             ->and($clone->test_database)->toBe(':memory:')
             ->and(database_clone_env((string) $this->environment->contents)['DB_DATABASE'])->toBe('/srv/orbit/apps/acme/feature-x/database/database.sqlite')
-            ->and(database_clone_env((string) $this->environment->testingContents))->toBe([
+            ->and(database_clone_env((string) $this->environment->testingContents))->toMatchArray([
+                'APP_ENV' => 'testing',
+                'APP_KEY' => 'base64:kept',
                 'DB_CONNECTION' => 'sqlite',
                 'DB_DATABASE' => ':memory:',
-            ]);
+            ])
+            ->and(database_clone_env((string) $this->environment->testingContents))->not->toHaveKey('DB_HOST');
     });
 
     it('creates no copy without a DB attachment on the default Instance or for the default Instance itself', function (): void {
@@ -561,7 +566,8 @@ describe('.env.testing on synchronization', function (): void {
         ]);
     });
 
-    it('merges only the DB keys of the test database into an untracked .env.testing and records the test database', function (): void {
+    // The writer seeds a missing file with these contents and merges only the managed keys into an existing one.
+    it('sends the full .env.testing seed with the test database and records the test database', function (): void {
         $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
         $instance = Instance::query()->where('name', 'feature-x')->sole();
         $this->environment->testingContents = null;
@@ -572,9 +578,13 @@ describe('.env.testing on synchronization', function (): void {
 
         $activity = Activity::query()->where('request_id', $response->json('meta.request_id'))->sole();
 
-        expect(array_keys(database_clone_env((string) $this->environment->testingContents)))
-            ->toBe(['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_PASSWORD', 'DB_PORT', 'DB_USERNAME'])
-            ->and(database_clone_env((string) $this->environment->testingContents)['DB_DATABASE'])->toBe('acme_feature_x_test')
+        expect(database_clone_env((string) $this->environment->testingContents))->toMatchArray([
+            'APP_ENV' => 'testing',
+            'APP_KEY' => 'base64:kept',
+            'DB_DATABASE' => 'acme_feature_x_test',
+            'DB_HOST' => '10.44.0.3',
+        ])
+            ->and($this->environment->testingManagedKeys)->toBe(['DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD'])
             ->and($activity->properties?->toArray()['testing'] ?? null)->toBe([
                 'file' => '.env.testing',
                 'status' => 'written',

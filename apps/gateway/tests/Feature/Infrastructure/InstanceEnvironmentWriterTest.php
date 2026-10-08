@@ -63,7 +63,7 @@ it('creates and atomically replaces a complete protected environment file', func
     }
 });
 
-it('merges .env.testing next to .env with the same protection and leaves .env alone', function (): void {
+it('seeds a missing .env.testing with the complete supplied contents and leaves .env alone', function (): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -71,17 +71,18 @@ it('merges .env.testing next to .env with the same protection and leaves .env al
     $directory = writer_environment_directory();
     file_put_contents("{$directory}/.env", "APP_ENV=\"local\"\n");
     chmod("{$directory}/.env", 0600);
+    $seed = "APP_ENV=\"testing\"\nAPP_KEY=\"base64:seed\"\nDB_CONNECTION=\"mysql\"\nDB_DATABASE=\"app_test\"\n";
     $keys = ['DB_CONNECTION', 'DB_HOST', 'DB_DATABASE'];
 
     try {
         $access = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner));
-        $written = $access->mergeTesting(writer_environment_context($directory), "DB_DATABASE=\"app_test\"\n", $keys);
-        $repeated = $access->mergeTesting(writer_environment_context($directory), "DB_DATABASE=\"app_test\"\n", $keys);
+        $written = $access->mergeTesting(writer_environment_context($directory), $seed, $keys);
+        $repeated = $access->mergeTesting(writer_environment_context($directory), $seed, $keys);
 
         expect($written->changed)->toBeTrue()
             ->and($written->tracked)->toBeFalse()
             ->and($repeated->changed)->toBeFalse()
-            ->and(file_get_contents("{$directory}/.env.testing"))->toBe("DB_DATABASE=\"app_test\"\n")
+            ->and(file_get_contents("{$directory}/.env.testing"))->toBe($seed)
             ->and(fileperms("{$directory}/.env.testing") & 0777)->toBe(0600)
             ->and(file_get_contents("{$directory}/.env"))->toBe("APP_ENV=\"local\"\n");
     } finally {
@@ -102,7 +103,7 @@ it('replaces only the managed keys of an untracked .env.testing and keeps every 
         $access = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner));
         $merged = $access->mergeTesting(
             writer_environment_context($directory),
-            "DB_DATABASE=\"app_test\"\nDB_HOST=\"10.44.0.7\"\n",
+            "APP_ENV=\"testing\"\nAPP_KEY=\"base64:seed\"\nDB_DATABASE=\"app_test\"\nDB_HOST=\"10.44.0.7\"\n",
             ['DB_HOST', 'DB_PORT', 'DB_DATABASE'],
         );
 
@@ -140,6 +141,53 @@ it('never writes a .env.testing that Git tracks in the checkout', function (): v
         writer_remove_directory($directory);
     }
 });
+
+it('refuses .env.testing when Git cannot report whether the checkout tracks it', function (
+    string $repository,
+    ?string $existing,
+): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $directory = writer_environment_directory();
+    $replacements = [];
+
+    if ($repository === 'dubious ownership') {
+        writer_git($directory, 'init', '--quiet');
+        $replacements = ['GIT_OPTIONAL_LOCKS="0"' => 'GIT_OPTIONAL_LOCKS="0", GIT_TEST_ASSUME_DIFFERENT_OWNER="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_NOSYSTEM="1"'];
+    } elseif ($repository === 'damaged config') {
+        writer_git($directory, 'init', '--quiet');
+        file_put_contents("{$directory}/.git/config", "[core\n");
+    } else {
+        file_put_contents("{$directory}/.git", "gitdir: {$directory}/missing\n");
+    }
+
+    if ($existing !== null) {
+        file_put_contents("{$directory}/.env.testing", $existing);
+    }
+
+    try {
+        $access = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner, $replacements));
+
+        try {
+            $access->mergeTesting(writer_environment_context($directory), "APP_KEY=\"base64:seed\"\nDB_DATABASE=\"app_test\"\n", ['DB_DATABASE']);
+            $error = null;
+        } catch (ResourceOperationException $exception) {
+            $error = $exception->errorCode;
+        }
+
+        expect($error)->toBe('env.testing_tracking_unknown')
+            ->and(is_file("{$directory}/.env.testing") ? file_get_contents("{$directory}/.env.testing") : null)->toBe($existing)
+            ->and(glob("{$directory}/.env.orbit-*"))->toBe([]);
+    } finally {
+        writer_remove_directory($directory);
+    }
+})->with([
+    'dubious ownership' => ['dubious ownership', "DB_DATABASE=committed\n"],
+    'damaged repository config' => ['damaged config', "DB_DATABASE=committed\n"],
+    'broken .git file without a .env.testing' => ['broken git file', null],
+]);
 
 it('retains file identity for an identical protected repeat and repairs mode drift', function (): void {
     if (LinuxHost::delegate($this)) {

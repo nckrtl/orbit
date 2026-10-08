@@ -68,7 +68,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         $snapshot = $this->store->synchronizationSnapshot($context);
         $contents = $this->renderer->render($context, $snapshot->values());
         $changed = $this->confirmed($this->writer->write($context, $contents));
-        $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId);
+        $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId, $snapshot->values());
         $outcome = null;
 
         if ($plan !== null) {
