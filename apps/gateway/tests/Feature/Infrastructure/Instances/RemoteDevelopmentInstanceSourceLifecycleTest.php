@@ -3594,6 +3594,8 @@ function orb895_native_removal_action(
             return 'deleted';
         }
 
+        public function withdrawPhpPool(InstanceRemovalMember $member): void {}
+
         public function cleanupRuntime(InstanceRemovalMember $member): void
         {
             if ($this->cleanup !== null) {

@@ -622,6 +622,39 @@ it('restores the exact AppDev FPM file before the recovery reload when activatio
     }
 });
 
+it('keeps the previous AppDev FPM file and service untouched when the candidate fails php-fpm -t', function (): void {
+    [$node, $project] = app_dev_runtime_models();
+    $instance = app_dev_supported_app_instance($node, $project->id);
+    app_dev_supported_route($instance, 'acme.app-dev.orbit');
+    $harness = new FpmPublishHarness;
+    $managed = $harness->prepare('8.5', 'orbit-scopes.conf', "previous app-dev pool\n");
+    $harness->failConfigTest();
+    $ssh = new AppDevFakeSshExecutor([new CommandResult(0, "8.5\n", '', 1, false)]);
+
+    try {
+        $manager = new RemoteAppDevPhpFpmManager(
+            sites: new DevelopmentSiteRepository,
+            renderer: new DevelopmentPhpFpmConfigRenderer,
+            ssh: app_dev_ssh($ssh),
+            accounts: app_dev_account_resolver(),
+            packages: new RemotePhpPackageManager,
+            phpRoot: $harness->phpRoot(),
+            lockDirectory: $harness->lockDirectory(),
+        );
+        $manager->converge($node);
+        $result = $harness->run($ssh->commands[3]);
+
+        expect($result->succeeded())
+            ->toBeFalse()
+            ->and(file_get_contents($managed))
+            ->toBe("previous app-dev pool\n")
+            ->and($harness->serviceCalls())
+            ->toBe([]);
+    } finally {
+        $harness->cleanup();
+    }
+});
+
 it('publishes the other pools, then fails, when a desired pool names a missing working directory', function (): void {
     [$node, $project] = app_dev_runtime_models();
     $present = app_dev_supported_app_instance($node, $project->id, 'present');

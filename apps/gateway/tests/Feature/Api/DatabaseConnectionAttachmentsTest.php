@@ -146,7 +146,25 @@ it('writes sqlite-appropriate keys and clears leftover host keys on prefix reuse
         ->toBe(DatabaseConnection::query()->where('slug', 'local')->sole()->id);
 });
 
-it('rewrites same-node Docker Process host and port and keeps remote registry values otherwise', function (string $binding, string $expectedHost): void {
+it('writes the registry host and port for a same-Node Instance even when a Node Docker Process publishes the port', function (string $ports): void {
+    Process::query()->create([
+        'owner_type' => Node::class,
+        'owner_id' => $this->instance->node_id,
+        'name' => 'mysql-84',
+        'runtime' => ProcessRuntime::Docker,
+        'working_directory' => '/app',
+        'runtime_config' => [
+            'image' => 'mysql:8.4',
+            'command' => ['mysqld'],
+            'environment' => [],
+            'ports' => [$ports],
+            'volumes' => [],
+        ],
+        'restart_policy' => 'unless-stopped',
+        'desired_state' => DesiredProcessState::Running,
+        'status' => LifecycleStatus::Active,
+    ]);
+
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'app',
         'driver' => 'mysql',
@@ -158,24 +176,6 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
         'password' => DATABASE_ATTACHMENT_SECRET,
     ])->assertCreated();
 
-    Process::query()->create([
-        'owner_type' => Node::class,
-        'owner_id' => $this->instance->node_id,
-        'name' => 'mysql',
-        'runtime' => ProcessRuntime::Docker,
-        'working_directory' => '/app',
-        'runtime_config' => [
-            'image' => 'mysql:8',
-            'command' => ['mysqld'],
-            'environment' => [],
-            'ports' => [$binding.':3307:3306/tcp'],
-            'volumes' => [],
-        ],
-        'restart_policy' => 'unless-stopped',
-        'desired_state' => DesiredProcessState::Stopped,
-        'status' => LifecycleStatus::Active,
-    ]);
-
     $this->call(
         'PUT',
         "/api/v1/instances/{$this->instance->id}/database-connections/app",
@@ -183,11 +183,11 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
         content: '{}',
     )
         ->assertOk()
-        ->assertJsonPath('data.host', $expectedHost)
-        ->assertJsonPath('data.port', 3307);
+        ->assertJsonPath('data.host', '10.44.0.201')
+        ->assertJsonPath('data.port', 3306);
 
-    expect(stored_env($this->instance)['DB_HOST'])->toBe($expectedHost)
-        ->and(stored_env($this->instance)['DB_PORT'])->toBe('3307');
+    expect(stored_env($this->instance)['DB_HOST'])->toBe('10.44.0.201')
+        ->and(stored_env($this->instance)['DB_PORT'])->toBe('3306');
 
     $remote = Node::query()->create([
         'name' => 'remote-app',
@@ -231,7 +231,7 @@ it('rewrites same-node Docker Process host and port and keeps remote registry va
 
     expect(stored_env($remoteInstance->fresh())['DB_HOST'])->toBe('10.44.0.201')
         ->and(stored_env($remoteInstance->fresh())['DB_PORT'])->toBe('3306');
-})->with([['127.0.0.1', '127.0.0.1'], ['10.44.0.2', '10.44.0.2'], ['0.0.0.0', '127.0.0.1']]);
+})->with(['3308:3306', '127.0.0.1:3307:3306/tcp', '0.0.0.0:3307:3306/tcp', '10.44.0.201:3307:3306']);
 it('detaches the mapping and clears related stored keys without logging the password', function (): void {
     $this->postJson('/api/v1/database-connections', [
         'slug' => 'app',

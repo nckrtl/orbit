@@ -61,6 +61,12 @@ final class FpmPublishHarness
         $this->files->put($this->root.'/activation-failed', '');
     }
 
+    /** `php-fpm -t` rejects the next candidate configuration. */
+    public function failConfigTest(): void
+    {
+        $this->files->put($this->root.'/config-test-failed', '');
+    }
+
     /** PHP-FPM is failed or stopped until a restart or reload-or-restart starts it. */
     public function stopService(): void
     {
@@ -83,6 +89,7 @@ final class FpmPublishHarness
             'HARNESS_SERVICE_LOG' => $this->root.'/systemctl.log',
             'HARNESS_ACTIVATION_MARKER' => $this->root.'/activation-failed',
             'HARNESS_INACTIVE_MARKER' => $this->root.'/service-inactive',
+            'HARNESS_CONFIG_TEST_MARKER' => $this->root.'/config-test-failed',
         ]);
         $process->setInput($command->input);
         $process->run();
@@ -157,6 +164,7 @@ final class FpmPublishHarness
                 test "$1" = -y
                 test -f "$2"
                 test "$3" = -t
+                test ! -e "${HARNESS_CONFIG_TEST_MARKER}"
                 BASH,
         );
         $this->files->put(

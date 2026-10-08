@@ -494,6 +494,8 @@ beforeEach(function (): void {
             return 'deleted';
         }
 
+        public function withdrawPhpPool(InstanceRemovalMember $member): void {}
+
         public function cleanupRuntime(InstanceRemovalMember $member): void
         {
             $this->record('runtime', $member);
