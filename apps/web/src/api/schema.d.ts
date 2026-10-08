@@ -4224,12 +4224,20 @@ export interface components {
             error_code?: string | null;
             roles?: string[];
             settings?: components["schemas"]["NodeSettings"] | null;
+            updating?: components["schemas"]["NodeUpdating"] | null;
         };
         NodeSettings: {
             apps?: components["schemas"]["NodeStorageApps"] | null;
         };
         NodeStorageApps: {
             path?: string | null;
+        };
+        NodeUpdating: {
+            /** @enum {string} */
+            kind?: "fleet_rollout" | "gateway_release";
+            since?: string;
+            rollout?: number | null;
+            release?: number | null;
         };
         NodeAccess: {
             can_access?: components["schemas"]["NodeAccessNode"][];
@@ -13881,7 +13889,7 @@ export interface operations {
                 } | ({
                     /** @constant */
                     kind?: "file";
-                } & (unknown | unknown)));
+                } & (unknown  )));
             };
         };
         responses: {
@@ -14173,7 +14181,7 @@ export interface operations {
                     /** @description New name */
                     name?: string;
                     parent_id?: number | null;
-                } | unknown | unknown;
+                } | unknown  ;
             };
         };
         responses: {
@@ -14419,7 +14427,7 @@ export interface operations {
                     content_base64?: string;
                     /** @description Media type */
                     media_type?: string;
-                } & (unknown | unknown);
+                } & (unknown  );
             };
         };
         responses: {
@@ -16977,7 +16985,7 @@ export interface operations {
                     node_id: number;
                     upstream?: string;
                     process_id?: number;
-                } & (unknown | unknown));
+                } & (unknown  ));
             };
         };
         responses: {

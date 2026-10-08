@@ -23,6 +23,7 @@ use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayServingHost;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Nodes\NodeCliInstaller;
+use App\Domain\Nodes\NodeUpdateBroadcaster;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\Fleet\Footprint\AgentFootprintArtifact;
@@ -91,6 +92,7 @@ final class FleetServiceProvider extends ServiceProvider
                 enabled: Config::boolean('fleet.rollout'),
                 serving: $app->make(FleetServingRelease::class),
                 units: $app->make(FleetConvergeUnits::class),
+                nodeUpdates: $app->make(NodeUpdateBroadcaster::class),
             ),
         );
         $this->app->bind(

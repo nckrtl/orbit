@@ -24,7 +24,8 @@
                 "failed_step": null,
                 "error_code": null,
                 "roles": ["gateway"],
-                "settings": null
+                "settings": null,
+                "updating": null
             },
             {
                 "id": 2,
@@ -46,7 +47,13 @@
                 "failed_step": null,
                 "error_code": null,
                 "roles": ["app-dev", "database"],
-                "settings": null
+                "settings": null,
+                "updating": {
+                    "kind": "fleet_rollout",
+                    "since": "2026-01-02T09:58:00+00:00",
+                    "rollout": 7,
+                    "release": null
+                }
             },
             {
                 "id": 3,
@@ -68,7 +75,8 @@
                 "failed_step": "install_runtime",
                 "error_code": "node.provisioning_failed",
                 "roles": ["app-prod"],
-                "settings": null
+                "settings": null,
+                "updating": null
             },
             {
                 "id": 4,
@@ -90,7 +98,8 @@
                 "failed_step": null,
                 "error_code": null,
                 "roles": [],
-                "settings": null
+                "settings": null,
+                "updating": null
             }
         ],
         "meta": {

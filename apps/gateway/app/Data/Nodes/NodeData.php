@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Nodes;
 
+use App\Domain\Nodes\NodeUpdates;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Models\Node;
@@ -37,10 +38,16 @@ final class NodeData extends Data
         public ?string $errorCode,
         public array $roles,
         public ?NodeSettingsData $settings = null,
+        public ?NodeUpdatingData $updating = null,
     ) {}
 
-    public static function fromModel(Node $node): self
+    /**
+     * @param  array<int, NodeUpdatingData>|null  $updates  The update states a list read for all its Nodes at once,
+     *                                                      keyed by Node id. Null reads this Node's state.
+     */
+    public static function fromModel(Node $node, ?array $updates = null): self
     {
+        $updating = $updates === null ? app(NodeUpdates::class)->forNode($node) : ($updates[$node->id] ?? null);
         $platform = $node->getAttribute('platform');
         $architecture = $node->getAttribute('architecture');
         $tld = $node->getAttribute('tld');
@@ -74,6 +81,7 @@ final class NodeData extends Data
             errorCode: ValidatedData::nullableString($errorCode),
             roles: self::roles($node),
             settings: new NodeSettingsNormalizer()->fromStored($node->settings),
+            updating: $updating,
         );
     }
 

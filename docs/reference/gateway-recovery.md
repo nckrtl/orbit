@@ -9,7 +9,7 @@ covers:
   - apps/gateway/app/Infrastructure/Gateway/GatewayCheckoutAccessConverger.php
   - apps/gateway/app/**/GatewayReleases/**
   - apps/gateway/app/**/*GatewayRelease*.php
-  - apps/gateway/{app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
+  - apps/gateway/{app/Domain/Nodes/NodeUpdat*.php,app/Data/Nodes/NodeUpdatingData.php,app/Domain/Fleet/**,app/Infrastructure/Fleet/**,app/Actions/Fleet/**,app/Data/Fleet/**,app/Models/FleetRollout*.php,app/Console/Commands/FleetConvergeCommand.php,app/Http/Controllers/Api/FleetRolloutsController.php,config/fleet.php}
 ---
 
 # Update and recover a Gateway
@@ -329,6 +329,8 @@ A record is `interrupted` when its process ended before it wrote an outcome, for
 Under the lock no release process runs, so a `running` record is dead. `ExecStopPost` also ends a `running` record only while the lock is free. A `queued` record is dead when its unit does not run two minutes after the request. When an interrupted record's steps show a snapshot, a migration, or a switch, it pauses automatic releases and alerts, because a retry could run old code on a migrated schema.
 
 Otherwise it spends one attempt of the commit's retry budget, and it alerts once that budget is spent. An attempt that died before prepare named the commit counts by the full SHA it requested.
+
+While a record is `running`, the Gateway Node reads as [updating](#nodes-being-updated).
 
 One release step holds `ORBIT_HOME/gateway-release.lock`. A second step is refused with `gateway.release_in_progress`.
 
@@ -812,6 +814,23 @@ After the rollout, every run visits some Nodes again, one at a time and with the
 So a Node that was offline is converged within 5 minutes after it returns.
 
 Doctor reports a lagging Node of the rollout set as `node.release_lag` while the rollout is on. A Node outside the set, such as a task sandbox, never gets it. `observed` says why: `no rollout yet`, `not in the rollout`, the Node's outcome, or `drifted`. Doctor reads only the desired state that a run already resolved; it never asks Git or GitHub.
+
+### Nodes being updated
+
+Each Node in `GET /api/v1/nodes` and `GET /api/v1/nodes/{node}` has an `updating` field. It is null unless the Gateway is updating that Node now:
+
+| `kind` | The Node is updating while | `since` | Id field |
+| --- | --- | --- | --- |
+| `fleet_rollout` | The rollout or the catch-up visits it: the visit has a `started_at` and no `finished_at` | The visit's `started_at` | `rollout`, the rollout id |
+| `gateway_release` | A [release record](#release-records) is `running`. Only the Node with the active `gateway` role updates | The record's `created_at` | `release`, the record id |
+
+The other id field is null. A visit clears its `finished_at` when it starts, so a catch-up visit of a converged Node counts too. The rollout visits one Node at a time, so at most one Node is `fleet_rollout`. The Gateway Node is never in the [rollout set](#rollout-set-and-order), so one Node is never both. A `queued` release record does not count, because nothing changed yet.
+
+The Gateway ignores a visit that started more than 20 minutes ago, because the run's fleet lock has expired and its process is gone. The next run visits the Node again. A dead `running` release record ends as `interrupted`, as [Release records](#release-records) describes.
+
+The list reads every Node's state with two queries: one for the visits in progress and one for a running release.
+
+The Gateway broadcasts [`node.updated`](/reference/events#node) with the new value when a visit starts and ends, and when a release record starts running and ends. The [web app](/reference/web-app#live-node-and-process-state) shows the Node as `updating`.
 
 ## Limits
 
