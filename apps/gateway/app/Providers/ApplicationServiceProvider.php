@@ -170,6 +170,7 @@ use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Schedules\ScheduleRuntimeAccountResolver;
 use App\Domain\Schedules\ScheduleRuntimeManager;
 use App\Domain\SourceControl\RepositoryDefaultBranchResolver;
+use App\Domain\T3\T3ServerClient;
 use App\Domain\Tools\ToolInspector;
 use App\Domain\Tools\ToolManagerMaterializer;
 use App\Domain\Tools\ToolManagerRegistry;
@@ -364,6 +365,7 @@ use App\Infrastructure\Ssh\NativeSshExecutor;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshHostKeyScanner;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\T3\HttpT3ServerClient;
 use App\Infrastructure\Tools\AptToolManager;
 use App\Infrastructure\Tools\ComposerToolManager;
 use App\Infrastructure\Tools\HomebrewCaskToolManager;
@@ -401,6 +403,7 @@ final class ApplicationServiceProvider extends ServiceProvider
 {
     /** @var array<class-string, class-string> */
     public array $bindings = [
+        T3ServerClient::class => HttpT3ServerClient::class,
         ReleaseAlertNotifier::class => GatewayReleaseAlertNotifier::class,
         ReleaseAlertWebhook::class => HttpReleaseAlertWebhook::class,
         InstanceDestinationGuard::class => RemoteInstanceDestinationGuard::class,

@@ -7408,6 +7408,346 @@
       }
     },
     {
+      "name": "t3-environment-list",
+      "extension": null,
+      "title": "List T3 servers",
+      "description": "Lists registered T3 servers with their URL, server version, registration time, and admin session expiry. `status` is `session_expired` when the server must register again.",
+      "method": "GET",
+      "path": "/api/v1/t3/environments",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "t3-environment-register",
+      "extension": null,
+      "title": "Register a T3 server",
+      "description": "Called by a T3 server on startup. The Gateway checks that `url` serves `environment_id`, exchanges `pairing_url` for an admin session as a T3 client pairs, stores the session encrypted, and revokes its earlier sessions on that server. Returns `t3.environment_mismatch` or `t3.admin_scope_missing` (422), and `t3.server_unreachable`, `t3.session_rejected`, `t3.request_refused`, or `t3.response_invalid` (502).",
+      "method": "POST",
+      "path": "/api/v1/t3/environments",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "environment_id": {
+            "type": "string",
+            "pattern": "^\\S+$(?![\\s\\S])",
+            "maxLength": 255
+          },
+          "label": {
+            "type": "string",
+            "maxLength": 255
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 2048
+          },
+          "pairing_url": {
+            "type": "string",
+            "format": "uri",
+            "maxLength": 4096
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "environment_id",
+          "label",
+          "url",
+          "pairing_url"
+        ]
+      }
+    },
+    {
+      "name": "t3-me",
+      "extension": null,
+      "title": "Show the calling peer",
+      "description": "Returns the calling WireGuard peer and the profile it is bound to, or `null`. Any address in the VPN subnet is a peer, also one that is not a Node. A caller outside the subnet gets `peer.identity_unknown` (403).",
+      "method": "GET",
+      "path": "/api/v1/t3/me",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "t3-me-profile",
+      "extension": null,
+      "title": "Bind the calling peer to a profile",
+      "description": "Binds the calling peer to one profile, replacing an earlier binding. Returns the peer and its profile.",
+      "method": "PUT",
+      "path": "/api/v1/t3/me/profile",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "profile_id": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "profile_id"
+        ]
+      }
+    },
+    {
+      "name": "t3-pairing-create",
+      "extension": null,
+      "title": "Mint a pairing link",
+      "description": "Mints a one-time pairing link on the T3 server for the calling peer and records it. Open `pairing_url` in T3 Code to pair. An expired admin session returns `t3.session_expired` (409).",
+      "method": "POST",
+      "path": "/api/v1/t3/environments/{environment}/pairings",
+      "path_inputs": [
+        "environment"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "environment"
+        ]
+      }
+    },
+    {
+      "name": "t3-pairing-list",
+      "extension": null,
+      "title": "List pairings on a T3 server",
+      "description": "Lists the pairing links the Gateway minted on one T3 server, newest first, with the peer and revocation time of each.",
+      "method": "GET",
+      "path": "/api/v1/t3/environments/{environment}/pairings",
+      "path_inputs": [
+        "environment"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "environment"
+        ]
+      }
+    },
+    {
+      "name": "t3-pairing-revoke",
+      "extension": null,
+      "title": "Revoke a peer's sessions on a T3 server",
+      "description": "Revokes the sessions a peer paired from its links on one T3 server, and its unused links. Without `peer_id` it revokes the calling peer. WireGuard access does not change.",
+      "method": "POST",
+      "path": "/api/v1/t3/environments/{environment}/pairings/revoke",
+      "path_inputs": [
+        "environment"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "environment": {
+            "type": "string"
+          },
+          "peer_id": {
+            "type": "integer"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "environment"
+        ]
+      }
+    },
+    {
+      "name": "t3-profile-create",
+      "extension": null,
+      "title": "Create a T3 profile",
+      "description": "Creates a profile with an empty settings document at version 1. A taken name returns `validation.failed` (422).",
+      "method": "POST",
+      "path": "/api/v1/t3/profiles",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "name"
+        ]
+      }
+    },
+    {
+      "name": "t3-profile-list",
+      "extension": null,
+      "title": "List T3 profiles",
+      "description": "Lists every T3 profile. Every peer sees every profile.",
+      "method": "GET",
+      "path": "/api/v1/t3/profiles",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "t3-profile-settings-show",
+      "extension": null,
+      "title": "Show profile settings",
+      "description": "Returns the profile settings document, its version, and when it last changed.",
+      "method": "GET",
+      "path": "/api/v1/t3/profiles/{profile}/settings",
+      "path_inputs": [
+        "profile"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "profile"
+        ]
+      }
+    },
+    {
+      "name": "t3-profile-settings-update",
+      "extension": null,
+      "title": "Replace profile settings",
+      "description": "Replaces the whole settings document. Send the version you last read; a stale version returns `t3.settings_version_conflict` (409) with `details.current_version`. The document holds `workspaces` only; its keys keep T3 Code camelCase.",
+      "method": "PUT",
+      "path": "/api/v1/t3/profiles/{profile}/settings",
+      "path_inputs": [
+        "profile"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "workspaces": {
+                "type": "array",
+                "maxItems": 200,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "name": {
+                      "type": "string",
+                      "maxLength": 100
+                    },
+                    "color": {
+                      "type": "string",
+                      "maxLength": 32
+                    },
+                    "icon": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 64
+                    },
+                    "image": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^data:image\\/(png|jpeg|webp);base64,[A-Za-z0-9+\\/]+=*$(?![\\s\\S])"
+                    },
+                    "projectRefs": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^[^:\\s]+:\\S+$(?![\\s\\S])",
+                        "maxLength": 512
+                      }
+                    },
+                    "projectKeys": {
+                      "type": "array",
+                      "maxItems": 500,
+                      "items": {
+                        "type": "string",
+                        "maxLength": 512
+                      }
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "color",
+                    "icon",
+                    "projectRefs"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "workspaces"
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "profile",
+          "version",
+          "settings"
+        ]
+      }
+    },
+    {
       "name": "tasks-agents",
       "extension": "tasks",
       "title": "List task agent sessions",

@@ -26,6 +26,7 @@ use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
+use App\Http\Middleware\RequireT3Peer;
 use App\Http\Middleware\ValidateDocumentPostSize;
 use App\Infrastructure\Activity\ActivityShutdownFinalizer;
 use App\Infrastructure\Caddy\Build\NodeCaddyBuildException;
@@ -79,6 +80,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prepend(EnsureRequestId::class);
         $middleware->api(prepend: [NormalizeErrorDetails::class, RecordCommandActivity::class, RequireEnabledExtension::class], append: [AnnounceDesiredCliVersion::class]);
         $middleware->prependToPriorityList(SubstituteBindings::class, RequireActiveWireGuardPeer::class);
+        $middleware->prependToPriorityList(SubstituteBindings::class, RequireT3Peer::class);
         $middleware->appendToPriorityList(SubstituteBindings::class, RequireNodeAccess::class);
         $middleware->appendToPriorityList(RequireNodeAccess::class, RequireEnabledExtension::class);
     })

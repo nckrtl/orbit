@@ -65,6 +65,10 @@ use App\Http\Controllers\Api\RuntimeActivationsController;
 use App\Http\Controllers\Api\SandboxGitHubTokensController;
 use App\Http\Controllers\Api\ScheduleCompletionsController;
 use App\Http\Controllers\Api\SchedulesController;
+use App\Http\Controllers\Api\T3EnvironmentsController;
+use App\Http\Controllers\Api\T3PairingsController;
+use App\Http\Controllers\Api\T3PeersController;
+use App\Http\Controllers\Api\T3ProfilesController;
 use App\Http\Controllers\Api\TaskDefinitionsController;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TaskQuestionsController;
@@ -76,6 +80,7 @@ use App\Http\Middleware\RecordCommandActivity;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\RequireNodeAgentSecret;
+use App\Http\Middleware\RequireT3Peer;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function (): void {
@@ -92,6 +97,25 @@ Route::prefix('v1')->group(function (): void {
             Route::post('{annotation}/status', [AnnotationsController::class, 'update'])->name('annotation:update');
             Route::post('{annotation}/retry', [AnnotationsController::class, 'retry'])->name('annotation:retry');
         });
+
+    // T3 Code: any WireGuard peer, a Node or a plain client peer such as a phone, may use every endpoint.
+    Route::middleware([RequireT3Peer::class])->prefix('t3')->group(function (): void {
+        Route::get('me', [T3PeersController::class, 'show'])->name('t3:me');
+        Route::put('me/profile', [T3PeersController::class, 'bindProfile'])->name('t3:me:profile');
+        Route::get('profiles', [T3ProfilesController::class, 'index'])->name('t3:profile:list');
+        Route::post('profiles', [T3ProfilesController::class, 'store'])->name('t3:profile:create');
+        Route::get('profiles/{profile}/settings', [T3ProfilesController::class, 'settings'])
+            ->whereNumber('profile')
+            ->name('t3:profile:settings:show');
+        Route::put('profiles/{profile}/settings', [T3ProfilesController::class, 'replaceSettings'])
+            ->whereNumber('profile')
+            ->name('t3:profile:settings:update');
+        Route::get('environments', [T3EnvironmentsController::class, 'index'])->name('t3:environment:list');
+        Route::post('environments', [T3EnvironmentsController::class, 'store'])->name('t3:environment:register');
+        Route::get('environments/{environment}/pairings', [T3PairingsController::class, 'index'])->name('t3:pairing:list');
+        Route::post('environments/{environment}/pairings', [T3PairingsController::class, 'store'])->name('t3:pairing:create');
+        Route::post('environments/{environment}/pairings/revoke', [T3PairingsController::class, 'revoke'])->name('t3:pairing:revoke');
+    });
 
     Route::middleware([RequireActiveWireGuardPeer::class, RequireNodeAccess::class])->group(function (): void {
         Route::get('extensions', [ExtensionsController::class, 'index'])->name('extension:list');

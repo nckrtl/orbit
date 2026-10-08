@@ -120,6 +120,7 @@
               "reference/tasks",
               "reference/compute-drivers",
               "reference/pi-server",
+              "reference/t3-code",
               "reference/cli-binaries",
               "reference/self-update",
               "reference/events",
@@ -578,6 +579,23 @@
               "GET /api/v1/proxycli/models",
               "GET /api/v1/proxycli/providers",
               "GET /api/v1/proxycli/providers/{provider}"
+            ]
+          },
+          {
+            "group": "T3 Code",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/t3/environments",
+              "POST /api/v1/t3/environments",
+              "GET /api/v1/t3/environments/{environment}/pairings",
+              "POST /api/v1/t3/environments/{environment}/pairings",
+              "POST /api/v1/t3/environments/{environment}/pairings/revoke",
+              "GET /api/v1/t3/me",
+              "PUT /api/v1/t3/me/profile",
+              "GET /api/v1/t3/profiles",
+              "POST /api/v1/t3/profiles",
+              "GET /api/v1/t3/profiles/{profile}/settings",
+              "PUT /api/v1/t3/profiles/{profile}/settings"
             ]
           },
           {
