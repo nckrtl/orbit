@@ -63,7 +63,7 @@ A restored file leaves out a pool whose working directory is gone, because that 
 
 PHP-FPM refuses to start while any pool names a missing `chdir`, so one such pool would stop every site of that version. That is why convergence skips such a pool and still publishes the others.
 
-Instance removal runs this convergence for every development Instance, also when the Instance never became active or its Route was destroyed first. At that point stored state renders no pool for the Instance, so the convergence removes it. See [Instance removal](/reference/instance-removal#removal-steps).
+Instance removal runs this convergence for every development Instance, also when the Instance never became active or its Route was destroyed first. It runs after the Route target is cleared and before the checkout is deleted. At that point stored state renders no pool for the Instance, so the convergence removes the pool and reloads PHP-FPM while its directory still exists. See [Instance removal](/reference/instance-removal#runtime-cleanup).
 
 Orbit publishes one module per version at `/etc/php/<version>/mods-available/orbit-runtime.ini` and enables it for FPM only, as `/etc/php/<version>/fpm/conf.d/99-orbit-runtime.ini`. The CLI keeps stock settings. At each convergence, the Gateway compares the module with the installed file, repairs the link, and reloads a running service only when the module or its enablement changed and the installed pools pass `php-fpm<version> -t`. Otherwise the pool publication reloads it.
 
@@ -185,7 +185,9 @@ The operator tunes `local.conf` on the Node. Storing tuning in the Gateway was r
 
 ### Publish pools before starting PHP-FPM
 
-On 2026-10-08, an unattended package upgrade restarted PHP 8.5 FPM on a development Node. The service did not start, because `orbit-scopes.conf` still named three removed task workspaces whose directories were gone. Every PHP 8.5 site on the Node was down. A convergence could not repair it, because package installation started the service before it rewrote the pools. So installation now only enables the service, publication starts it, and convergence never renders a pool for a missing directory. Validating the candidate with `php-fpm -t` and restoring the previous file on a failed start still protect a running service from a bad change.
+On 2026-10-08, an unattended package upgrade restarted PHP 8.5 FPM on a development Node. The service did not start, because `orbit-scopes.conf` still named three removed task workspaces whose directories were gone. Every PHP 8.5 site on the Node was down. A convergence could not repair it, because package installation started the service before it rewrote the pools.
+
+So installation now only enables the service, publication starts it, and convergence never renders a pool for a missing directory. Validating the candidate with `php-fpm -t` and restoring the previous file on a failed start still protect a running service from a bad change. Instance removal also withdraws the pool and reloads PHP-FPM before it deletes the checkout, so a removal never leaves a live pool that names a deleted directory.
 
 ### PHP from Composer
 

@@ -709,6 +709,7 @@
                 "packages/php-sdk"
             ],
             "concepts": [
+                "Activity",
                 "Gateway",
                 "Instance",
                 "Node",
