@@ -16842,6 +16842,7 @@ export interface operations {
     "tasks-list": {
         parameters: {
             query?: {
+                compact?: boolean;
                 project_id?: number;
                 status?: "backlog" | "todo" | "reserved" | "running" | "reviewing" | "settling" | "completed" | "failed" | "cancelled";
             };
@@ -16987,7 +16988,9 @@ export interface operations {
     };
     "tasks-show": {
         parameters: {
-            query?: never;
+            query?: {
+                compact?: boolean;
+            };
             header?: never;
             path: {
                 /** @description Numeric Task group ID. */

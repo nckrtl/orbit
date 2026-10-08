@@ -45,6 +45,18 @@ final class TaskData extends Data
         public ?string $fixupProblem,
     ) {}
 
+    /** @return array<string, mixed> */
+    public function toCompactArray(): array
+    {
+        $data = $this->toArray();
+        unset($data['brief'], $data['completion_summary'], $data['deliverables'], $data['assistance_question'], $data['assistance_reason'], $data['fixup_problem']);
+        if (is_array($data['check'])) {
+            unset($data['check']['output']);
+        }
+
+        return $data;
+    }
+
     public static function fromModel(Task $task): self
     {
         $check = $task->checks()->latest('id')->first();
