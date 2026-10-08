@@ -622,7 +622,8 @@
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
               "decisions/0196-derive-application-directory-from-web-root",
               "decisions/0198-keep-delivery-line-proofs-as-repo-commands",
-              "decisions/0200-run-each-task-group-in-its-own-sandbox-vm"
+              "decisions/0200-run-each-task-group-in-its-own-sandbox-vm",
+              "decisions/0203-review-and-merge-pull-requests-inside-orbit"
             ]
           }
         ]
