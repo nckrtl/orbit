@@ -36,6 +36,17 @@ describe('fleet rollout set', function (): void {
             ]);
     });
 
+    it('leaves out a disposable task sandbox, though it is an active, managed app-dev Node', function (): void {
+        $dev = FleetFixtures::node('dev', [RoleName::AppDev]);
+        $sandbox = FleetFixtures::sandbox();
+        $membership = app(FleetRolloutMembership::class);
+
+        expect(array_map(static fn (Node $node): string => $node->name, $membership->members()))->toBe(['dev'])
+            ->and($membership->includes($sandbox))->toBeFalse()
+            ->and($membership->exclusion($sandbox))->toBe('sandbox')
+            ->and($membership->exclusion($dev))->toBeNull();
+    });
+
     it('puts a Node in the latest group of its roles', function (): void {
         $membership = app(FleetRolloutMembership::class);
 

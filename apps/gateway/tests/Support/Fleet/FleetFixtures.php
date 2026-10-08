@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support\Fleet;
 
+use App\Domain\Compute\SandboxState;
 use App\Domain\Fleet\CliReleaseCatalog;
 use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\FleetNodeVisitor;
@@ -18,9 +19,11 @@ use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Infrastructure\Nodes\NodeUpdateLock;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\TaskSandbox;
 use Illuminate\Cache\ArrayStore;
 use Illuminate\Cache\Repository;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Str;
 
 /** Nodes, roles, and fakes for the fleet rollout tests. */
 final class FleetFixtures
@@ -85,6 +88,26 @@ final class FleetFixtures
         foreach ($roles as $role) {
             NodeRole::query()->create(['node_id' => $node->id, 'role' => $role, 'status' => LifecycleStatus::Active]);
         }
+
+        return $node->load('roles');
+    }
+
+    /** An enrolled UpCloud task sandbox: an active, managed `app-dev` Node that its reservation owns (ADR 0200). */
+    public static function sandbox(): Node
+    {
+        $id = (string) Str::uuid();
+        $sandbox = TaskSandbox::query()->create([
+            'id' => $id,
+            'provider' => 'upcloud',
+            'name' => 'orbit-sandbox-'.$id,
+            'state' => SandboxState::Running,
+            'desired_power' => 'running',
+            'network_policy' => 'sealed',
+            'spec' => [],
+        ]);
+        $node = self::node($sandbox->name, [RoleName::AppDev]);
+        $node->forceFill(['compute_sandbox_id' => $sandbox->id])->save();
+        $sandbox->forceFill(['node_id' => $node->id])->save();
 
         return $node->load('roles');
     }
