@@ -118,6 +118,14 @@ Each plan freezes its parent kind/ID, Instance and Node placement, normalized re
 
 Receipt creation has a stable retry identity of its own. Snapshot/receipt creation, stop, write, reload, state restoration and cleanup each require a committed intent. After interruption or a lost response, recovery inspects that receipt and actual owned artifacts before retrying; it never captures an already modified file as its original snapshot. Missing, damaged or foreign evidence stops recovery without guessing or deleting foreign files. A committed intent without acknowledgment remains uncertain even when no error was recorded. New preparation is refused until recovery verifies that step's protected evidence or checkpointed restoration finishes. Restore and cleanup are checkpointed steps too.
 
+Native serving access prepares the before and candidate Web roots through the existing Node access owner before environment or cached APP_URL receipts capture file and directory protections. Protected access checkpoints record each native ACL write's before and intended result before execution. Recovery verifies the latest owned state and skips acknowledged writes instead of repairing foreign ACL changes. The protected handoff records whether file initialization has started; an untouched pre-file phase can resume initialization or finish owned restoration. Once initialization is acknowledged, missing or damaged file receipts remain conflicts.
+
+The preparation keeps unchanged app roots in the same Node-wide access policy; it does not publish candidate sites or app maps. Independent access maintenance leaves a checkout alone while its projection owns protected receipts.
+
+Cached APP_URL preparation and restoration stage files in an operation-bound, protected directory outside the managed checkout and on the target filesystem. A creation intent and directory ownership checkpoint precede file creation. Recovery verifies the intended bytes and protections inside that private scope if creation lost its acknowledgment; it never adopts an unrecorded file from the public target directory.
+
+Publication checks the held parent directory and target again at the switch, verifies the final file, and retains displaced files until owned cleanup. A removed prepared target, replaced parent, foreign file or changed protection stops recovery instead of resurrecting or overwriting it.
+
 Shared receipts authorize remote preparation, restoration and cleanup only; the parent alone installs public maps/profiles. Completed retries verify completion and return the current resource without restarting runtimes. Environment bytes appear only in encrypted control-plane storage or protected remote snapshots/transport, never plaintext journal fields, command arguments, logs or public output. [Environment](/reference/environment-variables#app-path-preparation-and-protected-receipts) owns file checks and protection details.
 
 ### Instance override update lifecycle

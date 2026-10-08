@@ -10,6 +10,7 @@ use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
+use App\Domain\SourceControl\ApplicationDirectory;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -29,6 +30,14 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         $instance->loadMissing(['project', 'node']);
 
         $configuration = $instance->appConfiguration($app);
+
+        return $this->inspectConfiguration($instance, $configuration);
+    }
+
+    /** @param array{name: string, path: string, web_root: ?string, type: string} $configuration */
+    public function inspectConfiguration(Instance $instance, array $configuration, ?string $checkoutPath = null): DevelopmentSourceProfile
+    {
+        $instance->loadMissing(['project', 'node']);
         $app = $configuration['name'];
         $type = ProjectType::from($configuration['type']);
         if ($type === ProjectType::Monorepo && ! $instance->routes()->where('routes.app', $app)->exists()) {
@@ -36,10 +45,11 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         }
 
         $account = $this->accounts->resolve($instance->node);
+        $checkoutPath ??= $instance->placedOnAppProd() && is_string($instance->production_home) ? $instance->production_home.'/current' : $instance->checkout_path;
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->applicationDirectory($app), $account->user],
+                arguments: ['bash', '-seu', '--', ApplicationDirectory::resolvePath($checkoutPath, $configuration['path']), $account->user],
                 input: <<<'BASH'
                     checkout=$1
                     managed_user=$2

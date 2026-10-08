@@ -9,7 +9,7 @@ final readonly class AppProjectionEnvironmentProgram
 {
     public static function script(): string
     {
-        return <<<'PYTHON'
+        return AppProjectionAccessProgram::library()."\n".<<<'PYTHON'
             import base64, fcntl, hashlib, json, os, pathlib, pwd, re, stat, sys
             class Conflict(Exception):
                 def __init__(self, code, reason): self.code, self.reason = code, reason
@@ -175,9 +175,12 @@ final readonly class AppProjectionEnvironmentProgram
                 try: os.mkdir(receipt_id, 0o700, dir_fd=base); sync(base); fresh = True
                 except FileExistsError: pass
                 root = directory(base_path + '/' + receipt_id, True)
-                if fresh and action == 'recover': fail('missing_receipt')
+                if fresh and action == 'recover':
+                    if not access_handoff(data): fail('missing_receipt')
+                    action = 'prepare'
                 if fresh:
                     if action == 'prepare':
+                        access_handoff(data)
                         records, occupied = [], set()
                         targets = data['contexts']
                         if not targets: fail('targets')
@@ -232,6 +235,7 @@ final readonly class AppProjectionEnvironmentProgram
                     manifest = load(root, 'manifest.json')
                     if manifest['binding'] != binding or manifest['targets'] != data['targets']: fail('binding')
                     if 'source_binding' in manifest and (manifest['source_binding'] != data.get('source_binding') or manifest['source_receipt'] != data.get('source_receipt')): fail('binding')
+                if manifest['state'] in ('preparing', 'prepared'): access_handoff(data, True)
                 operation = manifest['state']
                 if action != 'recover' and ((action == 'prepare' and operation not in ('preparing', 'prepared')) or (action in ('restore', 'cleanup') and operation != action)): fail('phase')
                 if operation in ('preparing', 'prepared'):

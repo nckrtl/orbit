@@ -17,6 +17,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
+use App\Models\InstanceAppProjection;
 use App\Models\InstanceAppProjectionStep;
 use InvalidArgumentException;
 use Throwable;
@@ -80,8 +81,23 @@ final readonly class NativeAppProjectionEnvironment implements AppProjectionEnvi
                 $this->conflict();
             }
         }
+        $access = new AppProjectionServingAccess($this->ssh);
+        $preFile = false;
+        if ($phase === 'prepare') {
+            $paths = [];
+            foreach ($this->targets as $target) {
+                foreach ([$target->old->path, $target->candidate->path] as $path) {
+                    $paths[] = $path.'/.env';
+                    $paths[] = $path.'/.env.testing';
+                }
+            }
+            $preFile = $access->prepare($step, $this->published->node, array_values(array_unique($paths)));
+        }
         $payload = ['action' => $recover ? 'recover' : $phase, 'binding' => $this->binding($step), 'targets' => $intent['targets'],
             'user' => $this->published->executionUser];
+        if (new CommittedAppServingView()->resources(InstanceAppProjection::query()->findOrFail($step->instance_app_projection_id)) !== []) {
+            $payload['access_binding'] = AppProjectionServingAccess::binding($step);
+        }
         if ($phase !== 'prepare') {
             $sourceId = $intent['targets']['restores_step_id'] ?? $intent['targets']['cleans_step_id'] ?? null;
             $source = is_string($sourceId) ? InstanceAppProjectionStep::query()->find($sourceId) : null;
@@ -90,9 +106,13 @@ final readonly class NativeAppProjectionEnvironment implements AppProjectionEnvi
                 || $source->plan_digest !== $step->plan_digest) {
                 $this->conflict();
             }
+            if ($phase === 'restore' && ($receipt = $access->restoreBeforeFiles($step, $source, $this->published->node)) !== null) {
+                return $receipt;
+            }
+            unset($payload['access_binding']);
             $payload['source_receipt'] = $source->receipt_id;
             $payload['source_binding'] = $this->binding($source);
-        } elseif (! $recover) {
+        } elseif (! $recover || $preFile) {
             $values = $this->store->projectionSnapshot($this->published, $step)->values();
             $testing = $values === [] ? null : $this->testing->values($this->published->instanceId, $values);
             $payload['contexts'] = [];

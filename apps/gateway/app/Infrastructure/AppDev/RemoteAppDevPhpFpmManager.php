@@ -33,6 +33,21 @@ final readonly class RemoteAppDevPhpFpmManager implements AppDevPhpFpmManager
         $this->convergeSites($node);
     }
 
+    /** Verify a completed projection without installing packages or reloading shared services. */
+    public function verify(Node $node): void
+    {
+        $account = $this->accounts->resolve($node);
+        $installed = $this->installedProjection($node, $account);
+        $sites = $this->sites->forNode($node)->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null && ! $site->isProxy() && ! $site->usesDedicatedPhpRuntime())->values();
+        $versions = array_values(array_unique([...$installed->versions, ...$sites->map(static fn (DevelopmentSite $site): string => $site->phpVersion ?? '')->all()]));
+        foreach ($versions as $version) {
+            $expected = $this->renderer->render($sites->where('phpVersion', $version)->values(), $account);
+            if ($installed->previousConfiguration($version) !== $expected) {
+                throw new RuntimeConvergenceException('php-fpm-verify', 'app.projection_receipt_conflict', 'The installed PHP pools differ from the committed serving view.');
+            }
+        }
+    }
+
     private function convergeSites(Node $node): void
     {
         $account = $this->accounts->resolve($node);
