@@ -279,6 +279,14 @@ The release record stores the smoke JSON as `phases.smoke.report`, also when smo
 Run the same smoke by hand against the live Gateway. It runs `bin/gateway-smoke` of the current release for its commit, or for the commit you name. It changes nothing and writes no release record.
 
 ```bash
+orbit gateway:release:smoke [<SHA>] [--since=<TIME>]
+```
+
+From any Node with access to the Gateway, [`orbit gateway:release:smoke`](/cli/gateway#orbit-gatewayreleasesmoke) asks the Gateway to run it. Smoke restarts nothing and writes no record, so it runs inside the API request, unlike a deploy. PHP-FPM ends a request after 600 seconds, so the API lowers the smoke limit to 540 seconds at most. With the 15-second grace period and the stop and kill delays, the run ends before PHP-FPM ends the request. The default limit of 90 seconds stays as it is. Checks that did not pass answer with the `failed` outcome and the report, and the CLI exits 1.
+
+On the Gateway host, the Artisan command runs the same smoke without the lower limit:
+
+```bash
 php /home/orbit/orbit/apps/gateway/artisan gateway:release:smoke [<SHA>] [--since=<TIME>]
 ```
 

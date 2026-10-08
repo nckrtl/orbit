@@ -84,7 +84,7 @@ Some families have actions outside the pairs above. Each action belongs only to 
 | `env` | `import`, `sync` | The CLI imports or synchronizes Instance environment values. |
 | `firewall` | `allow`, `deny` | The CLI writes an allow or deny firewall rule. |
 | `fleet` | `resume`, `status` | The CLI shows the [fleet rollout](/reference/gateway-recovery#fleet-rollout) with `fleet:rollout:status`, or resumes a halted one with `fleet:rollout:resume`. |
-| `gateway` | `deploy`, `resume`, `rollback`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. `gateway:release:deploy` and `gateway:release:rollback` release the Gateway itself, and `gateway:release:auto:status` and `gateway:release:auto:resume` read and clear an automatic release pause. |
+| `gateway` | `deploy`, `resume`, `rollback`, `smoke`, `status`, `trust`, `use` | The CLI reports Gateway status, pins the root certificate, or selects a profile. The `gateway:release` commands deploy, roll back, and smoke-test the Gateway itself, and resume paused automatic releases. |
 | `instance` | `clone`, `deploy`, `logs`, `register`, `rename`, `rollback`, `scan`, `setup`, `transfer` | The CLI operates on Instance source and runtime, reads logs, scans dependencies, and runs setup. Rename records the checked-out branch and can move its Route. |
 | `metrics` | `status` | The CLI reports Metrics role status. |
 | `proxycli` | `models`, `setup`, `teardown`, `status` | The CLI lists models from the collector snapshot, deploys or removes the fleet CLIProxyAPI quota collector, or reports its state. |

@@ -9,6 +9,7 @@ use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\GatewayReleases\GatewayVersion;
 use App\Infrastructure\GatewayReleases\ScriptGatewayReleaseSmoke;
+use App\Infrastructure\Nodes\NodeLocks;
 use DateTimeImmutable;
 use Exception;
 use Illuminate\Support\Facades\Config;
@@ -20,6 +21,12 @@ use Illuminate\Support\Facades\Config;
  */
 final readonly class SmokeGatewayReleaseAction
 {
+    /**
+     * The time a smoke run gets in an API request: PHP-FPM ends a request at 600 seconds
+     * (`NodeLocks::RequestSeconds`), and the response needs time to go out after the run.
+     */
+    public const int RequestSeconds = NodeLocks::RequestSeconds - 30;
+
     public function __construct(
         private GatewayReleaseLayout $layout,
         private ScriptGatewayReleaseSmoke $smoke,
@@ -28,8 +35,42 @@ final readonly class SmokeGatewayReleaseAction
     /** @return array{release: string|null, sha: string, outcome: string, report: array<array-key, mixed>|null} */
     public function execute(?string $commit, ?string $since): array
     {
-        $sha = $commit === null || $commit === '' ? $this->currentCommit() : GatewayReleaseCommit::parse($commit);
-        $result = $this->smoke->runFrom($this->layout->currentPath(), $sha, $this->since($since));
+        return $this->run($this->smoke, $this->commit($commit), $since);
+    }
+
+    /**
+     * The same smoke inside one API request. The smoke limit is lowered when needed so the run ends
+     * within RequestSeconds. Checks that did not pass are a result, not an error: the outcome is
+     * `failed` and the report says which checks failed and why.
+     *
+     * @return array{release: string|null, sha: string, outcome: string, report: array<array-key, mixed>|null}
+     */
+    public function inRequest(?string $commit, ?string $since): array
+    {
+        $sha = $this->commit($commit);
+
+        try {
+            return $this->run($this->smoke->within(self::RequestSeconds), $sha, $since);
+        } catch (GatewayReleaseException $exception) {
+            $report = $exception->phase['report'] ?? null;
+
+            if ($exception->errorCode !== 'gateway.release_smoke_failed' || ! is_array($report)) {
+                throw $exception;
+            }
+
+            return [
+                'release' => $this->layout->currentReleaseId(),
+                'sha' => $sha,
+                'outcome' => 'failed',
+                'report' => $report,
+            ];
+        }
+    }
+
+    /** @return array{release: string|null, sha: string, outcome: string, report: array<array-key, mixed>|null} */
+    private function run(ScriptGatewayReleaseSmoke $smoke, string $sha, ?string $since): array
+    {
+        $result = $smoke->runFrom($this->layout->currentPath(), $sha, $this->since($since));
 
         return [
             'release' => $this->layout->currentReleaseId(),
@@ -37,6 +78,11 @@ final readonly class SmokeGatewayReleaseAction
             'outcome' => $result['outcome'],
             'report' => $result['report'],
         ];
+    }
+
+    private function commit(?string $commit): string
+    {
+        return $commit === null || $commit === '' ? $this->currentCommit() : GatewayReleaseCommit::parse($commit);
     }
 
     private function currentCommit(): string

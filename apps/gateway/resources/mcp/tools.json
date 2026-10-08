@@ -2070,6 +2070,39 @@
       }
     },
     {
+      "name": "gateway-release-smoke",
+      "extension": null,
+      "title": "gateway:release:smoke",
+      "description": "Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to 540 seconds at most so the run ends before PHP-FPM ends the request. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-smoke",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{7,40}$(?![\\s\\S])",
+            "description": "Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "description": "Runtime handoff time, ISO 8601 with a zone. The scheduler, agent view, and a tick must have started after it"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "gateway-status",
       "extension": null,
       "title": "Show Gateway status",

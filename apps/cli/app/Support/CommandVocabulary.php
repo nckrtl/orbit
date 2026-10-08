@@ -32,7 +32,7 @@ final readonly class CommandVocabulary
         'env' => ['import', 'sync'],
         'firewall' => ['allow', 'deny'],
         'fleet' => ['resume', 'status'],
-        'gateway' => ['deploy', 'resume', 'rollback', 'status', 'trust', 'use'],
+        'gateway' => ['deploy', 'resume', 'rollback', 'smoke', 'status', 'trust', 'use'],
         'instance' => [
             'clone',
             'deploy',
