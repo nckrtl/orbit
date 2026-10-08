@@ -25,6 +25,7 @@ use App\Domain\Shared\StoredInteger;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Route;
+use App\Models\RouteTarget;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -637,8 +638,7 @@ final readonly class ConvergeRouteAction
         bool $allowGenerated = false,
     ): array {
         $targets = array_values($route->targets
-            ->map(static fn ($row) => $row->instance)
-            ->filter(static fn ($instance): bool => $instance instanceof Instance)
+            ->map(static fn (RouteTarget $row): Instance => $row->instance)
             ->all());
 
         if ($targets === []) {
