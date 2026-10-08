@@ -50,11 +50,16 @@ it('reads tracked and untracked review diff without updating the index', functio
     (new Process(['git', 'init', '--quiet', $checkout]))->mustRun();
     (new Process(['git', '-C', $checkout, 'config', 'user.email', 'test@example.com']))->mustRun();
     (new Process(['git', '-C', $checkout, 'config', 'user.name', 'Test']))->mustRun();
+    (new Process(['git', '-C', $checkout, 'config', 'core.trustctime', 'false']))->mustRun();
+    (new Process(['git', '-C', $checkout, 'config', 'core.checkStat', 'minimal']))->mustRun();
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 1;\n");
+    touch($checkout.'/tracked.php', 1_700_000_000);
     (new Process(['git', '-C', $checkout, 'add', 'tracked.php']))->mustRun();
     (new Process(['git', '-C', $checkout, 'commit', '--quiet', '-m', 'start']))->mustRun();
     $start = trim((new Process(['git', '-C', $checkout, 'rev-parse', 'HEAD']))->mustRun()->getOutput());
+    touch($checkout.'/.git/index', 1_700_000_000);
     file_put_contents($checkout.'/tracked.php', "<?php\nreturn 2;\n");
+    touch($checkout.'/tracked.php', 1_700_000_000);
     file_put_contents($checkout.'/untracked.php', "<?php\nreturn 'new';\n");
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'git@example.test:orbit.git', 'default_branch' => 'main']);
     $node = Node::query()->create(['name' => 'review-diff-node', 'status' => LifecycleStatus::Active, 'platform' => 'linux', 'public_ssh_host' => '10.44.0.144', 'wireguard_ip' => '10.44.0.144', 'user' => 'orbit']);

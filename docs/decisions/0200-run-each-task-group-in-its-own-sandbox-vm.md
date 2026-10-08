@@ -28,6 +28,10 @@ Orbit assigns each task group its own sandbox through the compute driver and lan
 
 A **compute driver** provides sandboxes. Its interface is `provision(image, size, network)`, `park`, `resume`, `destroy`, and `capacity`. The first driver is local Incus, on beast, sabre, and shark. UpCloud follows as overspill. The scheduler places a group on local capacity first and on a cloud driver when local capacity is full. A `vm` group counts against the driver's VM budget, not `TaskCeilings::PerNode`.
 
+### Local host firewall boundary
+
+The trusted Incus host installs a fixed root-owned network helper, selected projects, and a boot dependency before enabling new local sandboxes. The helper derives ownership and network identity from local Incus and accepts no caller-supplied rules or host commands. It persists one policy per bridge and checks it before guests start or resume. Existing unmarked bridges keep their policy. Dedicated filter chains enforce the complete boundary before permitting traffic through the host firewall; an unconditional bridge accept bypasses the intended restrictions. Persistent recovery and exact cleanup are part of the compute lifecycle. See [Durable firewall policy](/reference/compute-drivers#durable-firewall-policy-on-an-incus-host).
+
 ### Two lanes
 
 | | Orbit lane (the `orbit` Project) | Project lane (every other Project) |

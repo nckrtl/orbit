@@ -14,7 +14,7 @@ use Saloon\Http\Faking\MockResponse;
 
 const SELF_UPDATE_OLD_BINARY = "#!/bin/sh\necho 'Orbit 0.4600.0'\n";
 
-const SELF_UPDATE_AGENT_BYTES = "orbit-agent 0.4.0 fixture binary\n";
+const SELF_UPDATE_AGENT_BYTES = "orbit-agent 0.4.1 fixture binary\n";
 
 function self_update_release_bytes(string $name): string
 {
@@ -41,7 +41,7 @@ function self_update_agent_sums(): string
 {
     $digest = hash('sha256', SELF_UPDATE_AGENT_BYTES);
 
-    return "{$digest}  orbit-agent-0.4.0-linux-aarch64\n{$digest}  orbit-agent-0.4.0-linux-x86_64\n";
+    return "{$digest}  orbit-agent-0.4.1-linux-aarch64\n{$digest}  orbit-agent-0.4.1-linux-x86_64\n";
 }
 
 /**
@@ -71,8 +71,8 @@ function fake_self_update_processes(object $test, array $downloads = [], string 
             }
 
             $bytes = $downloads[$key] ?? match ($key) {
-                'agent-v0.4.0/SHA256SUMS' => self_update_agent_sums(),
-                'agent-v0.4.0/orbit-agent-0.4.0-linux-x86_64' => SELF_UPDATE_AGENT_BYTES,
+                'agent-v0.4.1/SHA256SUMS' => self_update_agent_sums(),
+                'agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64' => SELF_UPDATE_AGENT_BYTES,
                 default => str_starts_with($url, ReleaseLocation::Default.'/cli-v0.4681.0/') ? self_update_release_bytes(basename($url)) : null,
             };
 
