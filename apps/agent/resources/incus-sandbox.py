@@ -123,6 +123,13 @@ def project_bootstrap(spec, subnet, interfaces):
     return json.dumps(value, sort_keys=True, separators=(',', ':'))
 
 
+def project_ssh_proxy(bootstrap, subnet):
+    descriptor = json.loads(bootstrap)
+    return {'type': 'proxy', 'bind': 'host', 'nat': 'true',
+            'listen': 'tcp:' + descriptor['ssh_host'] + ':' + str(descriptor['ssh_port']),
+            'connect': 'tcp:' + str(subnet.network_address + 10) + ':22'}
+
+
 def pi_proxy(spec, subnet, interfaces):
     values = [spec.get(key) for key in ('pi_host', 'pi_port', 'gateway_address')]
     if all(value is None for value in values):
@@ -338,11 +345,11 @@ class Host:
         if result.returncode or len(result.stdout) > 4096:
             raise Refusal('Sandbox host network operation failed.')
         value = json.loads(result.stdout)
-        if operation == 'enabled':
+        if operation in ('enabled', 'project_enabled'):
             if not isinstance(value, dict) or set(value) != {'enabled'} or type(value['enabled']) is not bool:
                 raise Refusal('Sandbox host network returned invalid output.')
             return value['enabled']
-        if value != ({'ready': True} if operation == 'ensure' else {'removed': True}):
+        if value != ({'ready': True} if operation in ('ensure', 'verify') else {'removed': True}):
             raise Refusal('Sandbox host network returned invalid output.')
         return True
 
@@ -438,10 +445,26 @@ class Host:
             'worktree': {'type': 'disk', 'pool': pool, 'source': self.name + '-worktree', 'path': '/home/orbit/orbit'},
             'eth0': {'type': 'nic', 'network': self.name, 'name': 'eth0', 'ipv4.address': address,
                      'security.mac_filtering': 'true', 'security.ipv4_filtering': 'true'}}
+        bootstrap = config.get('user.orbit.compute.project_bootstrap')
+        if (volume['config'].get('user.orbit.compute.project_bootstrap') != bootstrap
+                or network['config'].get('user.orbit.compute.project_bootstrap') != bootstrap):
+            raise Refusal('The Project bootstrap markers do not match.')
+        if bootstrap is not None:
+            descriptor = json.loads(bootstrap)
+            interfaces = json.loads(subprocess.run(['ip', '-json', '-4', 'address', 'show'], capture_output=True, check=True, timeout=10).stdout)
+            validated = project_bootstrap({'project_slug': slug, 'project_bootstrap': descriptor}, subnet.network, interfaces)
+            if (validated != bootstrap or volume['config'].get('user.orbit.compute.project_bootstrap') != bootstrap
+                    or network['config'].get('user.orbit.compute.project_bootstrap') != bootstrap
+                    or network['config'].get('user.orbit.compute.project_slug') != slug
+                    or network['config'].get('user.orbit.compute.host_network') != '1'):
+                raise Refusal('The Project bootstrap reservation does not match.')
+            expected_devices['ssh'] = project_ssh_proxy(bootstrap, subnet.network)
         if (guest.get('profiles') != [] or guest.get('devices') != expected_devices
                 or config.get('user.orbit.compute.template') is not None
                 or volume.get('config', {}).get('user.orbit.compute.template') is not None):
             raise Refusal('The Project placement does not match.')
+        if bootstrap is not None:
+            self.host_network('verify')
         # Read only the public key through the owned guest's Incus channel.
         program = 'INITIAL = ' + repr(initial) + '\n' + r'''
 import os,pwd,stat,sys
@@ -581,6 +604,9 @@ sys.stdout.write(path.read_text())
         addresses = subprocess.run(['ip', '-json', '-4', 'address', 'show'], capture_output=True, check=True, timeout=10)
         interfaces = json.loads(addresses.stdout)
         bootstrap = project_bootstrap(spec, subnet, interfaces)
+        ssh = project_ssh_proxy(bootstrap, subnet) if bootstrap else None
+        if bootstrap and not self.host_network('project_enabled'):
+            raise Refusal('Project bootstrap needs its own approved host network policy.')
         proxy = pi_proxy(spec, subnet, interfaces)
         relay_origin = spec.get('model_proxy_origin')
         relay = ModelRelay(self.name, self.id)
@@ -617,9 +643,10 @@ sys.stdout.write(path.read_text())
             devices = row.get('devices', {})
             nic = devices.get('eth0', {})
             root = devices.get('root', {})
-            expected_devices = {'root', 'eth0', 'worktree'} | ({'pi'} if proxy and role == 'operator' else set())
+            expected_devices = {'root', 'eth0', 'worktree'} | ({'pi'} if proxy and role == 'operator' else set()) | ({'ssh'} if ssh else set())
             if (row.get('profiles') != [] or set(devices) != expected_devices
                     or (devices.get('pi') != (proxy if role == 'operator' else None))
+                    or devices.get('ssh') != ssh
                     or root != {'type': 'disk', 'path': '/', 'pool': pool, 'size': '20GiB'}
                     or devices.get('worktree') != {'type': 'disk', 'pool': pool, 'source': self.name + '-worktree', 'path': '/home/orbit/orbit'}
                     or nic != {'type': 'nic', 'network': self.name, 'name': 'eth0',
@@ -640,6 +667,10 @@ sys.stdout.write(path.read_text())
                             'security.acls.default.ingress.action': 'reject'}
                 if network.get('type') != 'bridge' or any(network.get('config', {}).get(key) != value for key, value in expected.items()):
                     raise Refusal('Sandbox network policy drifted; no mutation performed.')
+                if bootstrap and (network['config'].get('user.orbit.compute.project_bootstrap') != bootstrap
+                                  or network['config'].get('user.orbit.compute.project_slug') != project_slug
+                                  or network['config'].get('user.orbit.compute.host_network') != '1'):
+                    raise Refusal('The Project bridge bootstrap reservation changed.')
             else:
                 address = network.get('config', {}).get('ipv4.address')
                 if address not in (None, '', 'none', 'auto') and subnet.overlaps(ipaddress.ip_network(address, strict=False)):
@@ -677,6 +708,14 @@ sys.stdout.write(path.read_text())
             acl_data['ingress'].append({'action': 'allow', 'source': spec['gateway_address'],
                                         'destination': str(subnet.network_address + 10),
                                         'protocol': 'tcp', 'destination_port': '3774', 'state': 'enabled'})
+        if bootstrap:
+            descriptor = json.loads(bootstrap)
+            acl_data['ingress'].append({'action': 'allow', 'source': descriptor['gateway_address'],
+                                        'destination': str(subnet.network_address + 10),
+                                        'protocol': 'tcp', 'destination_port': '22', 'state': 'enabled'})
+            acl_data['egress'].append({'action': 'allow', 'source': str(subnet.network_address + 10),
+                                       'destination': descriptor['wireguard_address'], 'protocol': 'udp',
+                                       'destination_port': str(descriptor['wireguard_port']), 'state': 'enabled'})
         if acl is None:
             self.run('network', 'acl', 'create', self.name, data=json.dumps(acl_data).encode())
         else:
@@ -687,11 +726,12 @@ sys.stdout.write(path.read_text())
         if network_policy not in (None, '1'):
             raise Refusal('Unknown sandbox host network policy.')
         if existing_network is None:
-            network_policy = '1' if self.host_network('enabled') else None
+            network_policy = '1' if bootstrap or self.host_network('enabled') else None
             self.run('network', 'create', self.name, '--type=bridge', 'ipv4.address=' + str(subnet.network_address + 1) + '/24',
                      'ipv4.nat=true', 'ipv6.address=none', 'dns.mode=none', 'security.acls=' + self.name,
                      'security.acls.default.egress.action=reject', 'security.acls.default.ingress.action=reject',
                      *[key + '=' + value for key, value in self.metadata().items()],
+                     *(['user.orbit.compute.project_slug=' + project_slug, 'user.orbit.compute.project_bootstrap=' + bootstrap] if bootstrap else []),
                      *(['user.orbit.compute.host_network=1'] if network_policy else []))
         if network_policy:
             self.host_network('ensure')
@@ -727,8 +767,13 @@ sys.stdout.write(path.read_text())
                                             'security.mac_filtering': 'true', 'security.ipv4_filtering': 'true'}}}
             if proxy and role == 'operator':
                 payload['devices']['pi'] = proxy
+            if ssh:
+                payload['devices']['ssh'] = ssh
             self.run('query', '-X', 'POST', '/1.0/instances?project=' + self.project,
                      '-d', json.dumps(payload), '--wait', timeout=300)
+            if bootstrap:
+                # Root independently attests the stopped guest, image, proxy, and volume before exposure.
+                self.host_network('ensure')
             self.run('start', name, timeout=180)
         for row in stopped:
             self.run('start', row['name'], timeout=180)
@@ -739,6 +784,8 @@ sys.stdout.write(path.read_text())
     def park(self):
         rows = self.instances()
         volumes = self.volumes()
+        if any(row.get('config', {}).get('user.orbit.compute.project_bootstrap') is not None for row in rows):
+            self.ensure_host_network()
         for row in rows:
             if row['status'] != 'Stopped':
                 self.run('stop', row['name'], '--timeout=60', timeout=90)
@@ -774,6 +821,8 @@ sys.stdout.write(path.read_text())
                 self.run('storage', 'volume', 'snapshot', 'restore', pool, volume['name'], 'parked')
         for row in stopped:
             self.run('snapshot', 'restore', row['name'], 'parked')
+        if stopped and any(row.get('config', {}).get('user.orbit.compute.project_bootstrap') is not None for row in rows):
+            self.ensure_host_network()
         for row in stopped:
             self.run('start', row['name'])
         return self.observe()

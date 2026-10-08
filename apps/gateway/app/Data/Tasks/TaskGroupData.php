@@ -61,6 +61,16 @@ final class TaskGroupData extends Data
         public ?TaskReviewAndMergeData $reviewAndMerge = null,
     ) {}
 
+    /** @return array<string, mixed> */
+    public function toCompactArray(): array
+    {
+        $data = $this->toArray();
+        unset($data['brief'], $data['assistance_question'], $data['assistance_reason']);
+        $data['tasks'] = array_map(static fn (TaskData $task): array => $task->toCompactArray(), $this->tasks);
+
+        return $data;
+    }
+
     public static function fromModel(Task $group): self
     {
         $group->loadMissing(['project', 'tasks']);

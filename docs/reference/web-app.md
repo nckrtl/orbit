@@ -94,6 +94,8 @@ CPU and memory come from [`process.usage`](/reference/events#process-usage) even
 
 ## Live tasks
 
+The generated task comment list operation accepts optional `type` and `limit` query inputs. These types describe the [comment list contract](/reference/tasks#model); they add no web controls and do not change comment bodies.
+
 The generated task schema keeps `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` apart from `pr_url`. The watched fields describe the pull request found on the task branch while subtasks are open; `pr_url` still identifies the reviewed pull request Orbit opened. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns that distinction. Regenerate the web schema after these response fields change, and keep typed test fixtures current. A task with no watched pull request has null watched fields; do not copy `pr_url` into them.
 
 The generated subtask schema includes `topology`, a workload-role array, and the create and update inputs accept the same declaration. Response fixtures retain `[]` for subtasks without a declaration. Regenerate these types together with OpenAPI after a topology contract change. The [compute driver](/reference/compute-drivers) validates declarations and gates dispatch on native readiness. These API types add no topology controls to the task board.
