@@ -1,0 +1,16 @@
+{
+  "capture": "Read-only GET of the GitHub REST pulls/{n}/reviews endpoint, the source of gh api repos/{owner}/{repo}/pulls/{n}/reviews. Captured without authentication because gh auth was unavailable.",
+  "normalization": "Selected one submitted review from each list. Only commit_id is replaced with aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa to match the existing pull and check fixtures. All other fields, including id, user, and state, are retained from the response.",
+  "fixtures": {
+    "pr-commented-reviews.json": {
+      "endpoint": "https://api.github.com/repos/nckrtl/orbit/pulls/946/reviews",
+      "id": 5407909532,
+      "original_commit_id": "869557fe5a88a217773e0a661019d8acbeaeeb61"
+    },
+    "pr-pass-reviews.json": {
+      "endpoint": "https://api.github.com/repos/cli/cli/pulls/14592/reviews",
+      "id": 5416756442,
+      "original_commit_id": "7e47f88bae69f491d43e70e41092a9aa9898aaeb"
+    }
+  }
+}

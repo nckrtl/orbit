@@ -22,14 +22,16 @@ Ship four repository commands that print one JSON object, exit nonzero on failur
 | --- | --- |
 | `bin/bug-repro` | The given command exits nonzero on current main, with the task engine's overlay `paths` |
 | `bin/task-group-check` | One ordered group matches `CreateTaskGroupRequest` plus Orbit's goal, acceptance, gate, and bug-repro rules |
-| `bin/pr-head-check` | One review and Required checks match the current head, and the diff has no leftover the merge skill already names |
+| `bin/pr-head-check` | An `APPROVED` review and Required checks match the exact current head, and the diff has no leftover the merge skill already names |
 | `bin/deploy-verify` | Live `APP_VERSION` matches the merged SHA, `/up` is up, and gateway status is `ok` |
 
 The commands do not file a task, merge, deploy, or roll back. Instance rollback stays the production-code selector. It is not OpsBot's production rollback after a bad deploy.
 
 `bin/bug-repro` names current main only when the local `origin/main` or `main` SHA matches `git ls-remote origin main`. It does not fetch. A cached ref that differs is `main_stale`. `bin/deploy-verify` tells the operator to set `SSL_CERT_FILE` to Orbit's root CA when HTTPS fails certificate verification. An unreachable result from one machine is not a reason to change the live checks.
 
-`bin/pr-head-check` flattens both a bare check-runs object and the one-element array `gh api --paginate --slurp` wraps around it. It omits `--slurp` on older `gh` that do not have the flag. A `COMMENTED` review on the current head is enough; pass does not require `APPROVED`. The leftover scan skips the detector, the leftover-refusal test, and recorded delivery-line fixtures. A leftover added in product code still fails.
+`bin/pr-head-check` flattens both a bare check-runs object and the one-element array `gh api --paginate --slurp` wraps around it. It omits `--slurp` on older `gh` that do not have the flag. It keeps a review only when its state is `APPROVED` and its `commit_id` equals the current full head SHA. `COMMENTED`, `CHANGES_REQUESTED`, `DISMISSED`, and `PENDING` do not count. The leftover scan skips the detector, the leftover-refusal test, and recorded delivery-line fixtures. A leftover added in product code still fails.
+
+This repository does not wake ReviewBot when a GitHub `pull_request_review` event arrives without a new push; wiring that wake is a follow-up. A review event never bypasses `bin/pr-head-check`: an `APPROVED` review and successful `Required checks` must still match the exact current head.
 
 ## Rejected alternatives
 

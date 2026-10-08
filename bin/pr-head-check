@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read-only check that a pull request head is reviewed and clean to merge.
 
-Pass only when one review has commit_id equal to the current pull request head,
+Pass only when an APPROVED review has commit_id equal to the current pull request head,
 Required checks are success with that same head_sha, and the diff has no leftover
 already named by .agents/skills/merging-pull-requests/SKILL.md. Print one JSON
 object. Do not merge.
@@ -129,9 +129,7 @@ def kept_reviews(reviews, head):
             raise RuntimeError('The review list was unparsable.')
         state = review.get('state')
         commit = review.get('commit_id')
-        if state in ('DISMISSED', 'PENDING'):
-            continue
-        if commit == head:
+        if state == 'APPROVED' and commit == head:
             kept.append(review)
     return kept
 
@@ -215,9 +213,9 @@ def build_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description='Read-only check that the current pull request head is reviewed and clean. Print one JSON object. Do not merge.',
         epilog="""
-Pass only when one review commit_id equals the current head, Required checks
-succeeded with that head_sha, and the diff has no leftover the merge skill names.
-COMMENTED on the current head is enough. Pass does not require APPROVED.
+Pass only when an APPROVED review commit_id equals the current head, Required
+checks succeeded with that head_sha, and the diff has no leftover the merge skill
+names. COMMENTED, CHANGES_REQUESTED, DISMISSED, and PENDING do not count.
 
 Newer gh wraps paginated check-runs in a one-element array (--slurp). Older
 gh has no --slurp and returns the check-runs object. Both shapes are flattened.
@@ -319,7 +317,7 @@ def main(argv=None):
             **payload,
             'passed': False,
             'error': 'review_missing',
-            'message': 'The review list is empty. No review has commit_id equal to the current head.',
+            'message': 'The review list is empty. No APPROVED review matches the current head.',
             'next': 'Review the current head. Do not merge.',
             'reviews': 0,
             'kept_reviews': 0,
@@ -329,8 +327,8 @@ def main(argv=None):
             **payload,
             'passed': False,
             'error': 'head_mismatch',
-            'message': 'No review has commit_id equal to the current pull request head.',
-            'next': 'Review the new head. Do not merge.',
+            'message': 'No APPROVED review has commit_id equal to the current pull request head.',
+            'next': 'Obtain an APPROVED review of the current head. Do not merge.',
             'reviews': len(reviews),
             'kept_reviews': 0,
         })
