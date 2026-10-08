@@ -31,7 +31,8 @@ final readonly class CommandVocabulary
         'doctor' => ['doctor'],
         'env' => ['import', 'sync'],
         'firewall' => ['allow', 'deny'],
-        'gateway' => ['status', 'trust', 'use'],
+        'fleet' => ['resume', 'status'],
+        'gateway' => ['deploy', 'resume', 'rollback', 'status', 'trust', 'use'],
         'instance' => [
             'clone',
             'deploy',
@@ -44,7 +45,7 @@ final readonly class CommandVocabulary
             'transfer',
         ],
         'metrics' => ['status'],
-        'node' => ['relocate', 'rename'],
+        'node' => ['converge', 'relocate', 'rename'],
         'process' => ['logs', 'restart', 'start', 'stop'],
         'proxycli' => ['models', 'setup', 'status', 'teardown'],
         'project' => ['archive', 'download', 'read', 'restore', 'restore-version', 'search', 'upload', 'versions', 'write'],

@@ -1,0 +1,1 @@
+{"error":{"code":"gateway.release_migration_crossed","message":"Release [fedcba987654] does not know 1 migration(s) the database has applied, such as [2026_10_02_000000_two]. Pass --force to switch the code and leave the schema.","request_id":null}}

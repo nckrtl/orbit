@@ -1,0 +1,18 @@
+Loading Gateway releases...
+
+┌  List Gateway releases
+│
+├  ● Loaded Gateway releases
+│
+└  Loaded Gateway releases.
+
+ ┌────┬──────────────┬─────────┬───────────────┬───────────────────────────────┬───────────┬───────────────────────────┐
+ │ ID │ RELEASE      │ TRIGGER │ OUTCOME       │ ERROR                         │ DURATION  │ STARTED                   │
+ ├────┼──────────────┼─────────┼───────────────┼───────────────────────────────┼───────────┼───────────────────────────┤
+ │ 4  │ fedcba987654 │ deploy  │ running       │ —                             │ 0 ms      │ 2026-10-07T12:00:00+00:00 │
+ │ 3  │ fedcba9      │ deploy  │ failed        │ gateway.release_commit_unknow │ 2 s       │ 2026-10-07T12:00:00+00:00 │
+ │    │              │         │               │ n                             │           │                           │
+ │ 2  │ fedcba987654 │ deploy  │ switched_back │ gateway.release_verify_failed │ 52 s      │ 2026-10-07T12:00:00+00:00 │
+ │ 1  │ 0123456789ab │ auto    │ verified      │ —                             │ 1 min 3 s │ 2026-10-07T12:00:00+00:00 │
+ └────┴──────────────┴─────────┴───────────────┴───────────────────────────────┴───────────┴───────────────────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

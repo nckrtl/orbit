@@ -672,6 +672,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/fleet/rollout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * fleet:rollout:status
+         * @description Show the newest fleet rollout, each Node's result, and the Nodes it leaves out.
+         */
+        get: operations["fleet-rollout-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/fleet/rollout/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * fleet:rollout:resume
+         * @description Resume the halted fleet rollout. The Gateway runs it in orbit-fleet-converge.service.
+         */
+        post: operations["fleet-rollout-resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gateway/desired-fleet-state": {
         parameters: {
             query?: never;
@@ -692,6 +732,150 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/gateway/release-automation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * gateway:release:auto:status
+         * @description Shows whether automatic Gateway releases are enabled or paused, the current release, the last runner tick, and how long releases have made no progress. See /reference/gateway-recovery#automatic-releases.
+         */
+        get: operations["gateway-release-auto-status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-automation/disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:auto:disable
+         * @description Turns automatic Gateway releases off. A release that already runs finishes.
+         */
+        post: operations["gateway-release-auto-disable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-automation/enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:auto:enable
+         * @description Turns automatic Gateway releases on. A pause still holds them until `gateway:release:auto:resume`.
+         */
+        post: operations["gateway-release-auto-enable"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/release-automation/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:auto:resume
+         * @description Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.
+         */
+        post: operations["gateway-release-auto-resume"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/releases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * gateway:release:list
+         * @description Lists the 50 newest Gateway release records, newest first, including queued and running ones.
+         */
+        get: operations["gateway-release-list"];
+        put?: never;
+        /**
+         * gateway:release:deploy
+         * @description Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.
+         */
+        post: operations["gateway-release-deploy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/releases/{release}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * gateway:release:show
+         * @description Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.
+         */
+        get: operations["gateway-release-show"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/gateway/releases/{release}/rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * gateway:release:rollback
+         * @description Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.
+         */
+        post: operations["gateway-release-rollback"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/gateway/status": {
         parameters: {
             query?: never;
@@ -701,7 +885,7 @@ export interface paths {
         };
         /**
          * Show Gateway status
-         * @description Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.
+         * @description Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.
          */
         get: operations["gateway-status"];
         put?: never;
@@ -1623,6 +1807,26 @@ export interface paths {
          * @description Remove a node registered with the active gateway.
          */
         delete: operations["node-remove"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/nodes/{node}/converge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * node:converge
+         * @description Re-apply the Gateway-rendered Orbit footprint of a Node. It never changes an Instance or a role.
+         */
+        post: operations["node-converge"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -3673,6 +3877,62 @@ export interface components {
             version?: string;
             assets?: components["schemas"]["FleetReleaseAsset"][];
         };
+        GatewayReleaseAutomation: {
+            enabled?: boolean;
+            paused?: boolean;
+            pause?: components["schemas"]["GatewayReleasePause"] | null;
+            current_release?: string | null;
+            current_sha?: string | null;
+            last_tick?: components["schemas"]["GatewayReleaseTick"] | null;
+            stalled_since?: string | null;
+            branch_head?: string | null;
+            behind_since?: string | null;
+            branch?: string;
+            check?: string;
+        };
+        GatewayReleasePause: {
+            reason?: string;
+            since?: string | null;
+            record?: number | null;
+            release?: string | null;
+            sha?: string | null;
+            error_code?: string | null;
+            snapshot?: string | null;
+        };
+        GatewayReleaseTick: {
+            checked_at?: string;
+            result?: string;
+            sha?: string | null;
+            record?: number | null;
+            error_code?: string | null;
+            message?: string | null;
+        };
+        GatewayRelease: {
+            id?: number;
+            release?: string | null;
+            sha?: string | null;
+            requested?: string | null;
+            trigger?: string;
+            force?: boolean;
+            outcome?: string;
+            finished?: boolean;
+            migrations_ran?: boolean;
+            retryable?: boolean;
+            cleanup_paused?: boolean;
+            snapshot?: string | null;
+            previous?: string | null;
+            phases?: {
+                [key: string]: unknown;
+            };
+            error_code?: string | null;
+            message?: string | null;
+            duration_ms?: number;
+            alert?: {
+                [key: string]: unknown;
+            } | null;
+            created_at?: string | null;
+            updated_at?: string | null;
+        };
         GatewayStatus: {
             name?: string;
             status?: string;
@@ -3680,6 +3940,15 @@ export interface components {
             php_version?: string;
             laravel_version?: string;
             desired_fleet_state?: components["schemas"]["DesiredFleetState"] | null;
+            release?: string | null;
+            release_sha?: string | null;
+            auto_release?: components["schemas"]["GatewayAutoReleaseStatus"] | null;
+        };
+        GatewayAutoReleaseStatus: {
+            enabled?: boolean;
+            paused?: boolean;
+            last_checked_at?: string | null;
+            last_result?: string | null;
         };
         Instance: {
             id?: number;
@@ -6676,6 +6945,95 @@ export interface operations {
             };
         };
     };
+    "fleet-rollout-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "fleet-rollout-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Node ID or name to leave out of this rollout, usually the Node it halted on */
+                    skip?: string | null;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
     "gateway-desired-fleet-state": {
         parameters: {
             query?: never;
@@ -6699,6 +7057,379 @@ export interface operations {
             };
             /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-disable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-enable": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-auto-resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayReleaseAutomation"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-list": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"][];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-deploy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** @description Hex SHA of the commit to release, 7 to 40 characters */
+                    commit: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The release record is queued and its unit started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed. */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-show": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "gateway-release-rollback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                release: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Switch the code across a migration the target release does not have */
+                    force?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description Accepted. The release record is queued and its unit started. */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: components["schemas"]["GatewayRelease"];
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed. */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -10372,6 +11103,75 @@ export interface operations {
             };
             /** @description A step failed on the Node; `error.details.step` names it. When a role step failed, `error.details.error_code` names that step's own code. */
             502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    "node-converge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Numeric Node ID. */
+                node: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @description Re-apply every artifact, not only the ones whose digest changed */
+                    force?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description The request succeeded. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        data: Record<string, never>;
+                        meta: components["schemas"]["Meta"];
+                    };
+                };
+            };
+            /** @description The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`). */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description No record matches the path parameters. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description A guard refused the change and the Gateway changed nothing; `error.code` names the guard. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`). */
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

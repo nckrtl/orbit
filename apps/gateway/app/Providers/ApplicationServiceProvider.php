@@ -59,11 +59,14 @@ use App\Domain\Firewall\FirewallManager;
 use App\Domain\Firewall\RouterLanIngressPublisher;
 use App\Domain\Firewall\RouterLanIngressReconciler;
 use App\Domain\Fleet\CliReleaseCatalog;
+use App\Domain\Fleet\FleetConvergeUnits;
 use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Gateway\GatewayCacheStore;
 use App\Domain\Gateway\GatewaySelfAccessConverger;
 use App\Domain\Gateway\GatewayVpnConverger;
 use App\Domain\Gateway\GatewayWebConverger;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
+use App\Domain\GitHub\BranchHeadReader;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubCliToken;
@@ -243,6 +246,7 @@ use App\Infrastructure\Firewall\NativeUfwFirewallManager;
 use App\Infrastructure\Firewall\UfwStatusParser;
 use App\Infrastructure\Fleet\GitHubCliReleaseCatalog;
 use App\Infrastructure\Fleet\GitReleaseHistory;
+use App\Infrastructure\Gateway\GatewayApplicationPath;
 use App\Infrastructure\Gateway\GatewayCheckoutAccessConverger;
 use App\Infrastructure\Gateway\GatewayFpmConfigRenderer;
 use App\Infrastructure\Gateway\GatewayWebDirectoryConverger;
@@ -251,6 +255,7 @@ use App\Infrastructure\Gateway\NativeGatewayCertificatePublisher;
 use App\Infrastructure\Gateway\NativeGatewayFpmConverger;
 use App\Infrastructure\Gateway\NativeGatewaySelfAccessConverger;
 use App\Infrastructure\Gateway\NativeGatewayWebConverger;
+use App\Infrastructure\GitHub\GitHubBranchHeadReader;
 use App\Infrastructure\GitHub\GitHubGreenCommitResolver;
 use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\GitHub\HttpGitHubTiaBaseline;
@@ -504,6 +509,7 @@ final class ApplicationServiceProvider extends ServiceProvider
         GitHubApi::class => HttpGitHubApi::class,
         GitHubCliToken::class => ProcessGitHubCliToken::class,
         GreenCommitResolver::class => GitHubGreenCommitResolver::class,
+        BranchHeadReader::class => GitHubBranchHeadReader::class,
         RepositoryDefaultBranchResolver::class => NativeRepositoryDefaultBranchResolver::class,
         SshExecutor::class => NativeSshExecutor::class,
         DatabaseInspectionExecutor::class => RegisteredDatabaseInspectionExecutor::class,
@@ -607,7 +613,8 @@ final class ApplicationServiceProvider extends ServiceProvider
                 caPath: rtrim(string: Config::string('orbit.home'), characters: '/').'/ca/root.pem',
                 commit: static function () use ($app): ?string {
                     $result = $app->make(ProcessRunner::class)->run(
-                        new ProcessInvocation(['git', '-C', base_path(), 'rev-parse', 'HEAD'], timeout: 10.0),
+                        // The stable path follows a release switch; base_path() stays on the release this process runs.
+                        new ProcessInvocation(['git', '-C', GatewayApplicationPath::resolve(), 'rev-parse', 'HEAD'], timeout: 10.0),
                     );
 
                     return $result->succeeded() ? trim($result->stdout) : null;
@@ -833,6 +840,8 @@ final class ApplicationServiceProvider extends ServiceProvider
                 checkoutPath: rtrim(string: Config::string('orbit.gateway_checkout'), characters: '/'),
                 hibernator: app(RuntimeHibernatorConverger::class),
                 agentView: app(AgentViewConverger::class),
+                releaseUnits: app(GatewayReleaseUnitConverger::class),
+                fleet: app(FleetConvergeUnits::class),
             ),
         );
         $this->app->singleton(

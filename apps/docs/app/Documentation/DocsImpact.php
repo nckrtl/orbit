@@ -10,7 +10,7 @@ use RuntimeException;
 final readonly class DocsImpact
 {
     private const array CLI_FAMILIES = [
-        'activity', 'analytics', 'app', 'cluster', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall',
+        'activity', 'analytics', 'app', 'cluster', 'database', 'dns', 'doctor', 'env', 'extension', 'firewall', 'fleet',
         'gateway', 'github', 'instance', 'internal', 'metrics', 'node', 'process', 'profile', 'project', 'proxycli',
         'realtime', 'route', 'schedule', 'self-update', 'tasks', 'tool', 'workspace',
     ];

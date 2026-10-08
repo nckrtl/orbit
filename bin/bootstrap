@@ -17,6 +17,13 @@ fi
 repository_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 projects=("apps/cli" "apps/docs" "apps/gateway" "apps/e2e" "packages/php-sdk")
 
+# A Gateway release is immutable (docs/reference/gateway-recovery.md#release-layout). Installing
+# dependencies in place would change the code the Gateway serves; deploy another commit instead.
+if [[ -e "$repository_root/REVISION" ]]; then
+    printf 'This checkout is an immutable Gateway release. Use gateway:release:deploy instead of updating it in place.\n' >&2
+    exit 2
+fi
+
 if ! command -v composer >/dev/null 2>&1; then
     printf 'Composer is required.\n' >&2
     exit 2

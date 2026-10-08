@@ -25,11 +25,26 @@ return [
         ? env('ORBIT_DOCUMENT_CLEANUP_RUNTIME', '/run/orbit/project-documents')
         : '/run/orbit/project-documents',
     'gateway_checkout' => rtrim(
-        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit-gateway'),
+        string: env(key: 'ORBIT_GATEWAY_CHECKOUT', default: '/home/orbit/orbit/apps/gateway'),
         characters: '/',
     ),
+    // Gateway release limits (docs/reference/gateway-recovery.md#release-layout).
+    'gateway_releases' => [
+        'min_free_mb' => (int) env('ORBIT_GATEWAY_RELEASE_MIN_FREE_MB', 1024),
+        'keep' => (int) env('ORBIT_GATEWAY_RELEASES_KEEP', 5),
+        'snapshots_keep' => (int) env('ORBIT_GATEWAY_RELEASE_SNAPSHOTS_KEEP', 5),
+        'scheduler_drain_seconds' => (int) env('ORBIT_GATEWAY_RELEASE_SCHEDULER_DRAIN_SECONDS', 600),
+        // Automatic releases ship the newest commit of this branch whose check run of this name passed.
+        // The repository is the origin of the shared release repository.
+        'branch' => env(key: 'ORBIT_GATEWAY_RELEASE_BRANCH', default: 'main'),
+        'check' => env(key: 'ORBIT_GATEWAY_RELEASE_CHECK', default: 'Required checks'),
+    ],
     'gateway_web' => rtrim(
         string: env(key: 'ORBIT_GATEWAY_WEB', default: '/home/orbit/web'),
+        characters: '/',
+    ),
+    'gateway_verify_origin' => rtrim(
+        string: env(key: 'ORBIT_GATEWAY_VERIFY_ORIGIN', default: 'https://gateway.orbit'),
         characters: '/',
     ),
     // Where the Gateway finds the CLI release of its own commit (ADR 0202): the public repository whose CI publishes
@@ -38,6 +53,10 @@ return [
         'repository' => env(key: 'ORBIT_CLI_RELEASE_REPOSITORY', default: 'https://github.com/nckrtl/orbit'),
         'git_directory' => base_path(),
     ],
+    // The limit bin/gateway-smoke gets in each release, in seconds (1 to 600).
+    'gateway_release_smoke_timeout' => max(1, min(600, (int) env('ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT', 90))),
+    // A Project id or slug turns on the smoke write check, which writes one Project Document per release.
+    'gateway_release_smoke_project' => trim((string) env('ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT', '')),
     'app_dev_domain' => trim(
         string: env(key: 'ORBIT_APP_DEV_DOMAIN', default: 'orbit'),
         characters: '.',

@@ -199,7 +199,7 @@ Each agent converge reads the file's hash with `sudo sha256sum` and keeps the se
 
 The converge writes the secret file first, then installs the other files, restarts the agent, and stores the new hash last. The running agent reads its secret only when it starts. So a converge that fails at any step leaves the running agent with a secret that the Gateway still accepts. Doctor then reports `mismatch`, and the next converge repairs it.
 
-One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 4 minutes. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
+One converge runs per Node at a time, under a lock in a file cache store under `ORBIT_HOME`. A second converge waits up to 2 minutes and then fails with `agent.converge_busy`. The lock expires after 7 minutes, which covers the wait for the Node's update lock below. A running converge renews it before each step and stops with `agent.converge_lock_lost` when the lock has expired. The binary download is limited to 20 seconds to connect and 120 seconds in total, so one step fits in the lock's term.
 
 ## Gateway view
 
@@ -222,7 +222,9 @@ A new member makes every agent on the channel send a complete snapshot. So when 
 
 Every 5 seconds, the subscriber checks the Reverb connection, and every 30 seconds the Node list. It joins new Nodes, leaves removed ones, and reconnects when the Reverb key changes. During a `websocket` move, it keeps one link to each Reverb server that holds clients and uses the link with the newest agent event. Without an active `websocket` role, it checks again every 60 seconds.
 
-When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node. Every 60 seconds, it compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code.
+When the connection drops, the subscriber clears the view and reconnects with a backoff from 1 to 30 seconds, with jitter. It sends its own ping after 30 quiet seconds and reconnects when no answer comes in 30 more seconds. It ignores a message larger than 64 KB and keeps at most 4,096 units per Node.
+
+Every 60 seconds, the subscriber compares the Gateway checkout's commit with the one it started from. When they differ, it exits, and systemd starts it with the new code. The unit and that check use the stable `ORBIT_GATEWAY_CHECKOUT` path, so in the [release layout](/reference/gateway-recovery#release-layout) they follow a release switch. A release's runtime handoff also restarts the subscriber at once.
 
 ### Stored state
 
@@ -314,9 +316,15 @@ The Gateway converges the agent at these points.
 | `node:add`, after the Metrics exporters | Provisioning fails at step `agent` with `node.agent_install_failed`. A new Node becomes `failed`, and an active Node stays `active`. |
 | A role converge on the Node | The role converge continues. The Gateway logs a warning, and Doctor reports the drift. |
 
-To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, and deploy the Gateway. Then run `sudo orbit self-update` on each Node. It reads the pin from the Gateway's [desired fleet state](/reference/self-update#desired-fleet-state) and replaces the binary only when it differs from the pin, with the candidate, checksum, owner, mode, and rename steps above. It then restarts `orbit-agent.service` and restores the previous binary when the agent does not stay up.
+To upgrade the fleet, [release](#releases) a new version, update the pin in the Gateway, and release the Gateway. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) then runs `sudo orbit self-update` on each Node of the rollout set, one at a time. It reads the pin from the Gateway's [desired fleet state](/reference/self-update#desired-fleet-state) and replaces the binary only when it differs from the pin, with the candidate, checksum, owner, mode, and rename steps above. It then restarts `orbit-agent.service` and restores the previous binary when the agent does not stay up.
 
-The converge moves its binary into place under `/run/lock/orbit-self-update.lock`, the lock `orbit self-update` holds, so the two never swap the agent together. It changes no configuration, certificate, secret, or unit; a converge still owns those. Doctor reports each Node that runs another version. [ADR 0202](/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update) runs `orbit self-update` on every Node after each Gateway release. The agent still only observes.
+The converge holds `/run/lock/orbit-self-update.lock`, the lock `orbit self-update` holds, from the secret check through the agent restart. So it never swaps or restarts the agent while a self-update replaces it or watches its health.
+
+The converge holds the lock across its SSH commands through a transient unit, `orbit-update-lock-<random>`, that waits up to 5 minutes for the lock and keeps it until the converge stops the unit. The unit ends after 30 minutes in any case, so a Gateway process that dies cannot keep the lock. A self-update that keeps the lock longer than 5 minutes fails the converge with `node.update_busy`.
+
+`self-update` changes no configuration, certificate, secret, or unit; the rollout's footprint step re-applies those when their digest changed. Doctor reports each Node that runs another version. The agent still only observes.
+
+The agent sends its version with each channel authorization. The Gateway keeps the version of `presence-node.{id}` in the agent view's file store without an expiry, because an agent that stays connected never joins again. The fleet rollout waits for the pinned version there after `self-update`, and the catch-up visits a Node whose agent reports another version.
 
 ## Failures
 
@@ -354,6 +362,7 @@ Doctor checks the agent in the `node` family on every managed Linux Node.
 | `node.agent_inactive` | The unit exists but is not active. |
 | `node.agent_secret_mismatch` | The secret file is `missing`, or its hash does not match the stored one: `mismatch`. Doctor reads only the hash, and the report shows neither the secret nor a hash. |
 | `node.agent_view_stale` | The agent unit is active and a `websocket` role is active, but the Gateway has no fresh view of the Node. |
+| `node.release_lag` | The [fleet rollout](/reference/gateway-recovery#catch-up) is on, and this Node of the rollout set does not run the desired state of the Gateway's commit. |
 
 Run `orbit node:add <node>` to repair the first four. `node:add` refuses a Node that owns Instances. Repair such a Node by converging one of its roles with `orbit node:role:add <node> <role> --converge`.
 
@@ -389,7 +398,8 @@ The agent has these limits.
 - The agent reports presence, Process state, and task checkout Git state, and tails logs only for live log streams.
 - One-shot log reads, task reads that gate an action, the Horizon queue, and `ufw status` run over SSH.
 - The agent does not report CPU or memory. The Gateway pushes them from Prometheus as [Process usage](#process-usage).
-- The agent supports Linux on `x86_64` and `aarch64` only.
+- The agent supports Linux on `x86_64` and `aarch64` only. There is no macOS agent.
+- The agent cannot trigger `orbit self-update`. The [fleet rollout](/reference/gateway-recovery#fleet-rollout) runs it over SSH.
 
 ## Why it works this way
 
@@ -398,6 +408,8 @@ These reasons explain the design. Check them before you propose a change.
 ### The agent only observes
 
 An agent that also runs commands would be a second way to change a Node, with its own authorization, listener, and recovery, while SSH would still be needed when the agent breaks. So the agent listens on no port, runs nothing on anyone's behalf, and SSH stays the only way to change a Node. A compromised Gateway gains no new way into a Node, and a compromised Node can only report false state about itself.
+
+The same boundary keeps updates out of the agent. An agent that pulls and applies updates would make a compromised Gateway, Reverb secret, or release key a root code-execution path to every Node. It would need offline signing and a privileged updater first, and it would still not cover Macs, which have no agent. So the Gateway runs [`orbit self-update`](/reference/self-update) on each Node over SSH. A self-update that an agent signal triggers stays possible, but it needs its own decision, with signed manifests and a narrow privileged trigger.
 
 ### Rust
 

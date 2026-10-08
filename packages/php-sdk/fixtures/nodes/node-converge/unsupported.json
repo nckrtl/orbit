@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest",
+    "route": "POST /api/v1/nodes/{node}/converge",
+    "status": 422,
+    "body": {
+        "error": {
+            "code": "node.converge_unsupported",
+            "message": "Only an active, managed Linux Node has a Gateway-rendered footprint.",
+            "details": {}
+        }
+    }
+}

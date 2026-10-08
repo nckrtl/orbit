@@ -28,6 +28,8 @@ Instance create, list, and show fixtures include `annotator_port` and `annotator
 
 Gateway fixtures record the [desired fleet state](/reference/self-update#desired-fleet-state) with an available and a pending CLI release, and `gateway:status` as an active peer sees it. The Gateway test serves the release-shaped GitHub responses under `apps/gateway/tests/Fixtures/GitHub/CliRelease`. The `self-update` contract downloads the stand-in binaries under `apps/cli/tests/Fixtures/SelfUpdate`, whose checksums those fixtures name.
 
+Gateway release fixtures under `gateway-releases` record one release record at each point the CLI can see it: queued, running, live, switched back, paused, and rolled back. `gateway:release:deploy` and `gateway:release:rollback` replay the queued response and then a sequence of record reads, so their expected output shows how the progress tree follows a release. The automatic release fixtures record the state disabled, enabled, paused, and resumed.
+
 Project Document fixtures record a complete file lifecycle, reads of earlier versions, revision conflicts, and redacted storage status. The SDK and CLI replay the same envelopes, preserving IDs, revisions, checksums, cursors, and request IDs. Human show, list, and version-history expectations live under `apps/cli/tests/Expected/project-documents`; raw read and download tests check exact bytes separately.
 
 ## Record a fixture

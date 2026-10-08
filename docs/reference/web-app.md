@@ -1,6 +1,6 @@
 ---
 title: "Web app"
-description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how the app stays live, how bin/web-deploy releases it, and how to roll a release back."
+description: "How the Gateway serves the Orbit web app at https://gateway.orbit, how the app stays live, how each Gateway release installs its CI build, how bin/web-deploy releases it by hand, and how to roll a release back."
 covers:
   - apps/web/**
   - bin/web-deploy
@@ -48,7 +48,7 @@ The Gateway's Caddy site sends each request to one of three places.
 
 A path without a file returns the release's `index.html`, and the app's router shows the page. Files under `/assets/` carry content hashes, so browsers cache them as immutable. Every other web response has `Cache-Control: no-cache`, so a new release shows on the next load.
 
-`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
+`/grafana/*` checks the browser's address with `GET /api/v1/metrics/grafana/authorize`, removes the `/grafana` prefix, and forwards the request to `metrics.orbit`. For PHP requests and that check, Caddy resolves the checkout link for each request (`resolve_root_symlink`), so a Gateway [release](/reference/gateway-recovery#runtime-handoff) switch reaches every request at once. The Metrics publication owns that site and its Grafana upstream. When Metrics is disabled, the app shows `—` for Node metrics.
 
 The app connects to Reverb at the URL that `GET /api/v1/realtime` returns.
 
@@ -215,19 +215,21 @@ The web directory is `/home/orbit/web`. `ORBIT_GATEWAY_WEB` can name another dir
 5. It publishes the site.
 6. It converges the runtime hibernator and the [agent view subscriber](/reference/node-agent#subscriber).
 
-It changes no role, VPN setting, or Node. A Gateway deploy never changes the releases or `current`.
+It changes no role, VPN setting, or Node, and it never changes the releases or `current`. A [Gateway release](/reference/gateway-recovery#web-build) installs its own web build in `releases/` and switches `current` after the release verified.
 
 ## Release a build
 
-[ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) releases the web app with each Gateway release, from the build that CI publishes for the commit. `bin/web-deploy` stays for manual releases and roll back.
+Each Gateway release ships the web app of its commit. CI builds `apps/web` on every push to `main` and uploads it as the artifact `web-dist-<sha>`. While it prepares the release, the Gateway downloads that artifact through its GitHub App and installs it as `releases/<commit>`. It switches `current` after the release verified, and switches it back when the release switches back. The Gateway needs no Node or Bun for this. [Web build](/reference/gateway-recovery#web-build) describes the checks, and [Deploy a release](/reference/gateway-recovery#deploy-a-release) the order.
 
-Run `bin/web-deploy` from a clean checkout of the commit to release.
+When the Gateway prunes a release, it removes that release's web build too. After each verified release it also removes every build that belongs to no retained release, a `bin/web-deploy` build of another commit included. It never removes the build `current` names.
+
+`bin/web-deploy` stays for manual use: a build of a commit CI did not publish, or a Gateway that does not release itself. Run it from a clean checkout of the commit to release.
 
 ```bash
 bin/web-deploy
 ```
 
-The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases and never removes the current one.
+The command refuses uncommitted changes. It checks the commit out into a temporary worktree and builds it there with a minimal environment, so ignored files such as `apps/web/.env.local` and `VITE_*` variables never reach a release. It installs the locked dependencies of `packages/agent-annotation` and `apps/web`, builds `apps/web`, uploads the build to `releases/<commit>`, and switches `current` in one rename. It keeps the five newest releases. It never removes the release `current` serves, or the build of a retained Gateway release, one whose `releases/<id>/REVISION` exists in the Gateway releases directory. So a manual run never removes a build that a Gateway rollback needs.
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
@@ -235,6 +237,7 @@ The command refuses uncommitted changes. It checks the commit out into a tempora
 | `ORBIT_WEB_DEPLOY_SSH` | `ssh` | SSH command, including options such as `-i KEY`. |
 | `ORBIT_WEB_DIR` | `/home/orbit/web` | Web directory on the Gateway host. |
 | `ORBIT_WEB_GROUP` | `caddy` | Group that must read the release. |
+| `ORBIT_GATEWAY_RELEASES` | `/home/orbit/releases` | Gateway [releases directory](/reference/gateway-recovery#release-layout) on the Gateway host. Their web builds are never pruned. |
 
 ## Roll back
 
@@ -300,9 +303,9 @@ Loopback publication plus SSH forwarding gives Mac access without a public liste
 
 Files copied into the Gateway checkout's `public` directory would follow Gateway deploys, and a deploy that cleans the checkout would remove them. A separate web directory lets a web release and a Gateway deploy happen independently. A rollback only moves `current`.
 
-### A build on the operator's machine
+### A build from CI
 
-Building on the Gateway host would need Node or Bun there only for this step.
+Building on the Gateway would need Node and Bun on the control plane only for this step. CI already builds the web app for every `main` commit, so a Gateway release installs that build. `bin/web-deploy` builds on the operator's machine for a commit CI did not publish.
 
 ### Grafana through the Metrics site
 

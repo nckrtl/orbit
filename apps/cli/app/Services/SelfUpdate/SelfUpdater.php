@@ -31,6 +31,15 @@ final readonly class SelfUpdater
 
     private const string VersionedBinary = '/\Aorbit-0\.[1-9][0-9]{0,9}\.0\z/D';
 
+    /**
+     * A pre-release build of Orbit, which printed its full 40-character commit instead of `0.N.0`. Every
+     * release is newer, so it updates without `--allow-downgrade`, and its file is kept as {@see self::LegacyBackup}.
+     * Any other version that is not a release still needs the downgrade consent.
+     */
+    private const string LegacyVersion = '/\A[0-9a-f]{40}\z/D';
+
+    public const string LegacyBackup = 'orbit.orbit-previous';
+
     private const string AgentVersion = '/\A[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}\z/D';
 
     public function __construct(
@@ -109,9 +118,13 @@ final readonly class SelfUpdater
 
             $previous = basename($running);
 
-            // The first self-update turns a plain binary into the link; it keeps that binary for a rollback.
+            // The first self-update turns a plain binary into the link; it keeps that binary for a rollback. A
+            // pre-release build has no release version to name it by, so it is kept under a fixed name.
             if ($link === $running && preg_match(self::ReleaseVersion, $currentVersion) === 1 && 'orbit-'.$currentVersion !== basename($target)) {
                 $previous = 'orbit-'.$currentVersion;
+                $this->installer->keep($running, dirname($link).'/'.$previous);
+            } elseif ($link === $running && preg_match(self::LegacyVersion, $currentVersion) === 1) {
+                $previous = self::LegacyBackup;
                 $this->installer->keep($running, dirname($link).'/'.$previous);
             }
 
@@ -210,7 +223,7 @@ final readonly class SelfUpdater
             throw new SelfUpdateFailure('self_update.release_mismatch', "The Gateway names CLI version {$target}, which is not a release.");
         }
 
-        if ($allowDowngrade) {
+        if ($allowDowngrade || preg_match(self::LegacyVersion, $current) === 1) {
             return;
         }
 

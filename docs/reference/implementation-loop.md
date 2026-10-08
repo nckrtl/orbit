@@ -84,7 +84,7 @@ GitHub CI runs on every pull request, on every push to `main`, and on manual dis
 
 On a pull request, each Composer project job runs the TIA-selected tests and the architecture tests. The architecture tests include the contract tests that read the workflow files, `CliBinaryBuildContractTest` and `ComposerConfigurationTest`, because TIA does not link a workflow file to the tests that read it. On a push to `main` or a manual dispatch, it runs the full suite once with `--tia --fresh`, which also records a new TIA graph, and saves that graph to the cache.
 
-A new push to a pull request cancels that pull request's older run. A push to `main` never cancels or replaces another run. Each `main` commit has its own concurrency group, so every `main` commit gets a complete `Required checks` result, even when several merges land close together. A shared `main` group would not be enough: GitHub keeps one pending run per group and cancels the older pending run when a newer one queues. [Automatic Gateway releases](/decisions/0201-release-the-gateway-automatically-from-green-main) deploy the newest `main` commit with a successful result, so a run must not disappear because a later merge followed it.
+A new push to a pull request cancels that pull request's older run. A push to `main` never cancels or replaces another run. Each `main` commit has its own concurrency group, so every `main` commit gets a complete `Required checks` result, even when several merges land close together. A shared `main` group would not be enough: GitHub keeps one pending run per group and cancels the older pending run when a newer one queues. [Automatic Gateway releases](/reference/gateway-recovery#automatic-releases) deploy the newest `main` commit with a successful result, so a run must not disappear because a later merge followed it.
 
 The project jobs check out the branch by name. On `main` they then reset it to the run's own commit, so a run that starts after a later push still tests the commit its result is reported for.
 
@@ -351,6 +351,10 @@ Test-impact analysis can omit a changed test file even when it selects other tes
 ### Repeated findings become checks
 
 Reviewers report `strtotime()`, inline type overrides, and unguarded classification fakes again and again. Each one is deterministic, so a check rejects it before review. Asking reviewers to remember them is a rejected alternative, because it spends a review round on a finding that code can detect.
+
+### Every main commit gets its own run
+
+An automatic Gateway release ships only a commit with its own successful `Required checks` run. A `main` run that a later merge cancels leaves its commit without a result, so that commit can never ship. So `main` runs are never cancelled. The cost is more work on the runners on Sabre during merge bursts. Watch their queue time when many pull requests merge together.
 
 ### Main caches come only from clean main
 

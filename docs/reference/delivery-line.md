@@ -148,7 +148,7 @@ On any mismatch the JSON names the mismatch. For an unmerged pull request, the n
 
 Read the live tip version, `/up`, and gateway status. Pass when `APP_VERSION` equals the given merged SHA, `/up` is up, and gateway status is `ok`. Those are the checks recorded in ops verified-merges. Do not deploy and do not roll back.
 
-[ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) runs the same checks as the verify step of each Gateway release. The command stays a read-only check from outside the Gateway.
+Each [Gateway release](/reference/gateway-recovery#deploy-a-release) runs the same checks as its verify step. The command stays a read-only check from outside the Gateway.
 
 ```bash
 bin/deploy-verify --sha SHA [--up-url URL] [--status-url URL] [--dry-run] [--fixture FILE]
@@ -178,7 +178,7 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 
 ## bin/gateway-smoke
 
-Smoke-test a Gateway release after its switch, on the Gateway host. Step 8 of a release in [ADR 0201](/decisions/0201-release-the-gateway-automatically-from-green-main) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
+Smoke-test a Gateway release after its switch, on the Gateway host. Each [Gateway release](/reference/gateway-recovery#smoke) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
 
 ```bash
 bin/gateway-smoke --sha SHA [--since TIME] [--tick-within SECONDS] [--timeout SECONDS] [--skip CHECK ...] [--write-check --smoke-project PROJECT] [--dry-run]
@@ -216,6 +216,8 @@ All checks run at the same time. Each has its own time limit, and `--timeout` bo
 | `--write-check`, `--smoke-project` | off | Run `documents` in that Project, by ID or slug. Both or neither. |
 | `--dry-run` | off | Print each check and its target. Call nothing. |
 
+Each check command runs in a session of its own. When the run itself receives `SIGTERM`, `SIGINT`, or `SIGHUP`, it first kills every running check command. Then it prints a result with `error` `terminated` and exits `128` plus the signal number. So a caller that stops smoke leaves no check behind.
+
 The write check is off by default, because it writes to the live Gateway on every release. Use a dedicated Project for it. The file is named `gateway-smoke-<sha12>-<random>.txt`. When a step fails after create, the check removes the file and records `cleanup` as `removed`. When that fails too, `cleanup` is `failed` and the message names the entry to remove.
 
 ### Result
@@ -235,7 +237,7 @@ The command prints one JSON object and exits `0` when no check failed or timed o
 | `checks.<name>.error` | `null`, or a stable token from the table below. |
 | `checks.<name>.message` | One sentence about the result. |
 | `checks.<name>.duration_ms`, `checks.<name>.detail` | The check's time, and what it read: URLs, status codes, units, timestamps, or the deploy-verify JSON. |
-| `error`, `failed_checks`, `message`, `next` | Present on failure. `error` is `checks_failed`. |
+| `error`, `failed_checks`, `message`, `next` | Present on failure. `error` is `checks_failed`, or `terminated` when a signal stopped the run; a terminated result has no `checks` or `failed_checks`. |
 
 | `error` | Check | Meaning |
 | --- | --- | --- |

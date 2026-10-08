@@ -197,4 +197,6 @@ return [
     '0195' => ['0195-request-topologies-for-review-with-an-operator-container'],
     '0197' => ['0197-native-project-documents-with-private-s3-storage'],
     '0199' => ['0199-post-direction-requests-to-opsbot-immediately'],
+    '0201' => ['0201-release-the-gateway-automatically-from-green-main'],
+    '0202' => ['0202-the-fleet-follows-the-gateway-through-orbit-self-update'],
 ];

@@ -34,6 +34,9 @@ final class ShowGatewayStatusRequest extends GatewayRequest
             laravelVersion: is_string($data['laravel_version'] ?? null) ? $data['laravel_version'] : '',
             requestId: $requestId,
             desiredFleetState: $this->desiredFleetState($data['desired_fleet_state'] ?? null, $requestId),
+            release: is_string($data['release'] ?? null) ? $data['release'] : null,
+            releaseSha: is_string($data['release_sha'] ?? null) ? $data['release_sha'] : null,
+            autoRelease: $this->autoRelease($data['auto_release'] ?? null),
         );
     }
 
@@ -49,5 +52,20 @@ final class ShowGatewayStatusRequest extends GatewayRequest
         } catch (InvalidArgumentException) {
             return null;
         }
+    }
+
+    /** @return array{enabled: bool, paused: bool, last_checked_at: string|null, last_result: string|null}|null */
+    private function autoRelease(mixed $value): ?array
+    {
+        if (! is_array($value) || ! is_bool($value['enabled'] ?? null) || ! is_bool($value['paused'] ?? null)) {
+            return null;
+        }
+
+        return [
+            'enabled' => $value['enabled'],
+            'paused' => $value['paused'],
+            'last_checked_at' => is_string($value['last_checked_at'] ?? null) ? $value['last_checked_at'] : null,
+            'last_result' => is_string($value['last_result'] ?? null) ? $value['last_result'] : null,
+        ];
     }
 }

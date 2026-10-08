@@ -1,0 +1,29 @@
+Resuming fleet rollout...
+
+┌  Resume fleet rollout
+│
+├  ● Resumed fleet rollout
+│
+└  Resumed fleet rollout.
+
+
+┌  Fleet rollout resumed
+│
+├  Rollout          on
+│
+├  Status           running
+│
+├  Desired commit   0123456789ab
+│
+├  Rollout ID       1
+│
+└  Commit           0123456789ab
+
+ ┌───┬──────────┬─────────┬─────────────┬─────┬───────┬──────────────────────────┐
+ │ # │ NODE     │ OUTCOME │ STEP        │ CLI │ AGENT │ ERROR                    │
+ ├───┼──────────┼─────────┼─────────────┼─────┼───────┼──────────────────────────┤
+ │ 1 │ app-dev  │ skipped │ self-update │ —   │ —     │ fleet.self_update_failed │
+ │ 2 │ app-prod │ pending │ —           │ —   │ —     │ —                        │
+ └───┴──────────┴─────────┴─────────────┴─────┴───────┴──────────────────────────┘
+Not in the rollout: gateway (gateway).
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844
