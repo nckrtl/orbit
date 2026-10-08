@@ -101,19 +101,18 @@ final readonly class FleetRolloutRunner
 
         $this->recheckForeignClis();
         $rollout = FleetRollout::query()->where('commit', $state->commit)->latest('id')->first();
+        $open = $rollout instanceof FleetRollout && $rollout->status !== FleetRolloutStatus::Superseded;
 
-        $rollout = $rollout instanceof FleetRollout && $rollout->status !== FleetRolloutStatus::Superseded
-            ? $this->planner->refresh($rollout, $state)
-            : $this->planner->open($state, $gate['release']);
+        // A started rollout whose CLI release cannot be confirmed now, after a GitHub error for example, visits
+        // no Node, because each Node would get a release it cannot install. It keeps the state it rolled out.
+        if ($open && $rollout->status !== FleetRolloutStatus::Waiting && ! $state->cli->isAvailable()) {
+            return $this->summary('waiting', $rollout);
+        }
+
+        $rollout = $open ? $this->planner->refresh($rollout, $state) : $this->planner->open($state, $gate['release']);
 
         if ($rollout->status === FleetRolloutStatus::Waiting) {
             return $this->wait($rollout, $state);
-        }
-
-        // A started rollout whose CLI release cannot be confirmed now, after a GitHub error for example, visits
-        // no Node: each Node would get a release it cannot install.
-        if (! $state->cli->isAvailable()) {
-            return $this->summary('waiting', $rollout);
         }
 
         $this->noticeCliFallback($rollout, $state);

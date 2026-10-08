@@ -244,7 +244,8 @@ describe('fleet rollout waiting', function (): void {
         expect(safetyRun()['status'])->toBe('waiting')
             ->and($visitor->visited)->toBe([])
             ->and($alerts->alerts)->toBe([])
-            ->and(FleetRollout::query()->sole()->status)->toBe(FleetRolloutStatus::Completed);
+            ->and(FleetRollout::query()->sole()->status)->toBe(FleetRolloutStatus::Completed)
+            ->and(FleetRollout::query()->sole()->desired_state['cli']['status'])->toBe('available');
     });
 
     it('keeps the incomplete count across a deferred visit', function (): void {

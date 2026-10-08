@@ -23,8 +23,8 @@ use Illuminate\Support\Facades\Config;
  * GitHub can refuse to publish a commit's release, for example after a newer commit reached `main` with other
  * workflow files. When the commit's release has been missing, mismatched, or incomplete for
  * {@see self::FallbackAfterSeconds}, the state names the newest published release of an ancestor whose CLI
- * build inputs ({@see CliReleaseName::BuildInputs}) are the same, so its binary is the one this commit would
- * build. The fleet rollout then does not wait for a release that never comes. The Gateway keeps that fallback
+ * build inputs ({@see CliReleaseName::BuildInputs}) are the same, so its binary is built from the same CLI
+ * code. The fleet rollout then does not wait for a release that never comes. The Gateway keeps that fallback
  * for the commit, and asks for the commit's own release every {@see self::FallbackSeconds} until it appears.
  */
 final readonly class DesiredFleetState

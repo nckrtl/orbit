@@ -109,7 +109,7 @@ When the commit's release stays `release_missing`, `release_mismatch`, or `relea
 
 #### CLI build inputs
 
-A commit's CLI binary is built from `apps/cli`, `packages/php-sdk`, `bin/orbit-build-cli-binary`, `bin/orbit-version`, and `.github/workflows/orbit-cli-binary.yml`. When these match, an ancestor's release has the binary the commit would build, apart from the version it prints. So the new footprint never runs next to older CLI code.
+A commit's CLI binary is built from `apps/cli`, `packages/php-sdk`, `bin/orbit-build-cli-binary`, `bin/orbit-version`, and `.github/workflows/orbit-cli-binary.yml`. When these match, an ancestor's release is built from the same CLI code as the commit and differs only in the version it prints. So the new footprint never runs next to older CLI code.
 
 #### Keeping a fallback
 

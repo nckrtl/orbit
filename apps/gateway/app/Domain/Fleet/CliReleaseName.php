@@ -20,7 +20,7 @@ final readonly class CliReleaseName
 
     /**
      * The repository paths a CLI binary is built from: the CLI, the SDK it bundles, the builder, and the build
-     * workflow. Two commits with the same files here build the same binary, apart from the version it prints.
+     * workflow. Two commits with the same files here build the CLI from the same code.
      *
      * @var list<string>
      */
