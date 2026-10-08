@@ -11,6 +11,8 @@ use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\DB;
 use Tests\Support\GatewayReleasePipeline;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     $this->travelTo(CarbonImmutable::parse('2026-10-08T06:05:10Z'));
     $this->pipeline = new GatewayReleasePipeline;

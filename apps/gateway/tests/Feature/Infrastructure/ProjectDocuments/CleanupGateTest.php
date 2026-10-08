@@ -12,6 +12,8 @@ use Illuminate\Support\Facades\File;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     $this->gateDirectory = sys_get_temp_dir().'/orbit-cleanup-gate-'.Str::uuid();
     config(['orbit.document_cleanup_runtime' => $this->gateDirectory]);

@@ -1063,7 +1063,7 @@ mod protocol_tests {
         let forms = state.forms.lock().unwrap();
         assert_eq!(forms[0]["socket_id"], "1.2");
         assert_eq!(forms[0]["channel_name"], "presence-node-logs.12");
-        assert_eq!(forms[0]["version"], "0.4.0");
+        assert_eq!(forms[0]["version"], env!("CARGO_PKG_VERSION"));
     }
 
     #[tokio::test]

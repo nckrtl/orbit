@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 /**
  * Runs PHPStan on one file and decodes its JSON report from stdout only. Under an AI agent,
  * PHPStan writes guidance to stderr, which would corrupt the report.

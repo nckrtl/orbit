@@ -809,7 +809,7 @@ final readonly class UpdateProjectAction
 
     private function assertTypeChange(Project $project, ProjectType $type): void
     {
-        if ($type !== ProjectType::LaravelApp) {
+        if (! $type->isWebServing()) {
             return;
         }
 
@@ -825,7 +825,7 @@ final readonly class UpdateProjectAction
 
         throw new ResourceOperationException(
             errorCode: 'project.type_requires_route',
-            message: 'A laravel-app Project cannot be assigned while an active Instance has no Route.',
+            message: "A {$type->value} Project cannot be assigned while an active Instance has no Route.",
             status: 409,
             details: ['instance_ids' => $unrouted->implode(',')],
         );

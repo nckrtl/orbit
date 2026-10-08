@@ -34,6 +34,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 it('serializes concurrent complete-result validation through SQLite immediate transactions', function (): void {
     $directory = sys_get_temp_dir().'/orbit-env-concurrency-'.bin2hex(random_bytes(8));
     mkdir($directory, 0700);

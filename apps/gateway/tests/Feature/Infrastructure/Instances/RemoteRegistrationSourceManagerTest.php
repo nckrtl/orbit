@@ -522,6 +522,28 @@ it('reports the configured origin, not the insteadOf rewrite Git applies', funct
     }
 });
 
+it('infers the public web root of a Laravel or Symfony checkout', function (?string $entryPoint, ?string $root): void {
+    $fixture = orb105_relocation_fixture(false);
+    mkdir($fixture['source'].'/public');
+    file_put_contents($fixture['source'].'/composer.json', "{}\n");
+
+    if (is_string($entryPoint)) {
+        file_put_contents($fixture['source'].'/'.$entryPoint, "#!/usr/bin/env php\n");
+    }
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+        expect($facts->inferredRoot)->toBe($root);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with([
+    'Laravel' => ['artisan', 'public'],
+    'Symfony' => ['bin/console', 'public'],
+    'plain Composer' => [null, null],
+]);
+
 it('fails closed when an incomplete stage has no verified original', function (): void {
     $fixture = orb105_relocation_fixture();
 

@@ -90,6 +90,91 @@ class Boundary(unittest.TestCase):
             process.return_value.stdout = b'[]'
             return host.provision(spec)
 
+    def test_new_bridge_opts_in_and_installs_policy_before_starting_guests(self):
+        host, spec = self.prepared()
+        host.rows, host.network = [], None
+        operations = []
+        def policy(operation):
+            operations.append((operation, len(host.calls)))
+            return True
+        with patch.object(host, 'host_network', side_effect=policy):
+            self.provision(host, spec)
+        creation = next(call for call in host.calls if call[:2] == ('network', 'create'))
+        self.assertIn('user.orbit.compute.host_network=1', creation)
+        self.assertEqual(['enabled', 'ensure'], [operation for operation, _ in operations])
+        self.assertLess(operations[1][1], next(i for i, call in enumerate(host.calls) if call[0] == 'start'))
+
+    def test_existing_unmarked_bridge_never_adopts_policy(self):
+        host, spec = self.prepared()
+        with patch.object(host, 'host_network', side_effect=AssertionError('must not adopt')):
+            self.provision(host, spec)
+            host.resume()
+            host.destroy()
+
+    def test_marked_bridge_requires_policy_before_resume_and_retains_resources_on_failure(self):
+        host, spec = self.prepared()
+        host.network['config']['user.orbit.compute.host_network'] = '1'
+        with patch.object(host, 'host_network', side_effect=Refusal('network unavailable')):
+            with self.assertRaises(Refusal):
+                self.provision(host, spec)
+            with self.assertRaises(Refusal):
+                host.resume()
+        self.assertEqual('Stopped', host.rows[0]['status'])
+        self.assertFalse(any(call[0] in ('start', 'delete') for call in host.calls))
+
+    def test_cleanup_removes_owned_guests_then_policy_then_bridge(self):
+        host, spec = self.prepared()
+        host.network['config']['user.orbit.compute.host_network'] = '1'
+        def policy(operation):
+            self.assertEqual('remove', operation)
+            self.assertEqual([], host.rows)
+            self.assertFalse(any(call[:2] == ('network', 'delete') for call in host.calls))
+            return True
+        with patch.object(host, 'host_network', side_effect=policy):
+            host.destroy()
+        self.assertTrue(any(call[:2] == ('network', 'delete') for call in host.calls))
+
+    def test_failed_policy_cleanup_retains_bridge_for_retry(self):
+        host, spec = self.prepared()
+        host.network['config']['user.orbit.compute.host_network'] = '1'
+        with patch.object(host, 'host_network', side_effect=Refusal('drift')):
+            with self.assertRaises(Refusal):
+                host.destroy()
+        self.assertFalse(any(call[:2] == ('network', 'delete') for call in host.calls))
+
+    def test_host_policy_control_uses_only_fixed_helper_and_refuses_invalid_enabled_response(self):
+        host, _ = self.prepared()
+        helper = '/usr/local/libexec/orbit-sandbox-network'
+        def details(path):
+            return SimpleNamespace(st_uid=0, st_nlink=1, st_mode=0o100755 if str(path) == helper else 0o40755)
+        with patch.object(Path, 'exists', return_value=True), patch.object(Path, 'lstat', autospec=True, side_effect=details), patch('subprocess.run') as process:
+            for value in [{'enabled': True}, {'enabled': False}]:
+                process.return_value = SimpleNamespace(returncode=0, stdout=json.dumps(value).encode())
+                self.assertEqual(value['enabled'], host.host_network('enabled'))
+                self.assertEqual(['/usr/bin/sudo', '-n', '--', helper], process.call_args.args[0])
+                self.assertEqual({'operation': 'enabled', 'project': host.project, 'sandbox_id': host.id}, json.loads(process.call_args.kwargs['input']))
+            for value in [{'enabled': 1}, {'removed': True}, {'enabled': True, 'extra': 'ignored'}]:
+                process.return_value.stdout = json.dumps(value).encode()
+                with self.assertRaises(Refusal):
+                    host.host_network('enabled')
+
+    def test_absent_helper_preserves_default_but_refuses_marked_policy(self):
+        host, _ = self.prepared()
+        with patch.object(Path, 'exists', return_value=False), patch.object(Path, 'is_symlink', return_value=False):
+            self.assertFalse(host.host_network('enabled'))
+            with self.assertRaises(Refusal):
+                host.host_network('ensure')
+        with patch.object(Path, 'exists', autospec=True, side_effect=lambda p: str(p) == '/etc/orbit/sandbox-network.json'), patch.object(Path, 'is_symlink', return_value=False):
+            with self.assertRaises(Refusal):
+                host.host_network('enabled')
+
+    def test_writable_helper_is_refused_before_privileged_execution(self):
+        host, _ = self.prepared()
+        with patch.object(Path, 'exists', return_value=True), patch.object(Path, 'lstat', return_value=SimpleNamespace(st_uid=0, st_nlink=1, st_mode=0o100777)), patch('subprocess.run') as process:
+            with self.assertRaises(Refusal):
+                host.host_network('enabled')
+            process.assert_not_called()
+
     def templated(self):
         host, spec = self.prepared()
         template = {'id': '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository': 'https://github.com/acme/orbit.git',

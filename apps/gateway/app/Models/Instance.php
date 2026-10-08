@@ -319,7 +319,7 @@ final class Instance extends Model
     {
         $this->loadMissing('project');
 
-        return $this->project->type === ProjectType::LaravelApp;
+        return $this->project->type->isWebServing();
     }
 
     public function servesPhp(): bool
@@ -387,7 +387,7 @@ final class Instance extends Model
 
     public function dependencyDirectory(): string
     {
-        if ($this->source_is_laravel === true || $this->project->type === ProjectType::LaravelApp) {
+        if ($this->source_is_laravel === true || $this->project->type->isWebServing()) {
             return $this->applicationDirectory();
         }
 

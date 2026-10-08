@@ -292,6 +292,46 @@ class Host:
     def json(self, *args):
         return json.loads(self.run(*args))
 
+    def host_network(self, operation):
+        helper = Path('/usr/local/libexec/orbit-sandbox-network')
+        config = Path('/etc/orbit/sandbox-network.json')
+        if not helper.exists() and not helper.is_symlink():
+            if operation != 'enabled' or config.exists() or config.is_symlink():
+                raise Refusal('The installed sandbox host network helper is required.')
+            return False
+        details = helper.lstat()
+        if (not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_nlink != 1
+                or details.st_mode & 0o022 or not details.st_mode & 0o111):
+            raise Refusal('Unsafe sandbox host network helper.')
+        for parent in helper.parents:
+            details = parent.lstat()
+            if not stat.S_ISDIR(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o022:
+                raise Refusal('Unsafe sandbox host network helper directory.')
+        result = subprocess.run(['/usr/bin/sudo', '-n', '--', str(helper)],
+                                input=json.dumps({'operation': operation, 'project': self.project,
+                                                  'sandbox_id': self.id}).encode(),
+                                capture_output=True, timeout=120, check=False)
+        if result.returncode or len(result.stdout) > 4096:
+            raise Refusal('Sandbox host network operation failed.')
+        value = json.loads(result.stdout)
+        if operation == 'enabled':
+            if not isinstance(value, dict) or set(value) != {'enabled'} or type(value['enabled']) is not bool:
+                raise Refusal('Sandbox host network returned invalid output.')
+            return value['enabled']
+        if value != ({'ready': True} if operation == 'ensure' else {'removed': True}):
+            raise Refusal('Sandbox host network returned invalid output.')
+        return True
+
+    def ensure_host_network(self):
+        network = next((row for row in self.json('network', 'list', '--format=json') if row['name'] == self.name), None)
+        if network:
+            self.own(network)
+            marker = network.get('config', {}).get('user.orbit.compute.host_network')
+            if marker not in (None, '1'):
+                raise Refusal('Unknown sandbox host network policy.')
+            if marker == '1':
+                self.host_network('ensure')
+
     def metadata(self):
         return {'user.orbit.compute.owner': OWNER, 'user.orbit.compute.id': self.id}
 
@@ -516,11 +556,19 @@ class Host:
         else:
             self.own(acl)
             self.run('network', 'acl', 'edit', self.name, data=json.dumps(acl_data).encode())
-        if not any(row['name'] == self.name for row in networks):
+        existing_network = next((row for row in networks if row['name'] == self.name), None)
+        network_policy = existing_network.get('config', {}).get('user.orbit.compute.host_network') if existing_network else None
+        if network_policy not in (None, '1'):
+            raise Refusal('Unknown sandbox host network policy.')
+        if existing_network is None:
+            network_policy = '1' if self.host_network('enabled') else None
             self.run('network', 'create', self.name, '--type=bridge', 'ipv4.address=' + str(subnet.network_address + 1) + '/24',
                      'ipv4.nat=true', 'ipv6.address=none', 'dns.mode=none', 'security.acls=' + self.name,
                      'security.acls.default.egress.action=reject', 'security.acls.default.ingress.action=reject',
-                     *[key + '=' + value for key, value in self.metadata().items()])
+                     *[key + '=' + value for key, value in self.metadata().items()],
+                     *(['user.orbit.compute.host_network=1'] if network_policy else []))
+        if network_policy:
+            self.host_network('ensure')
         metadata = {**self.metadata(), **({'user.orbit.compute.template': template_digest} if template else {})}
         if not volumes:
             if template:
@@ -576,6 +624,7 @@ class Host:
     def resume(self):
         rows = self.instances()
         volumes = self.volumes()
+        self.ensure_host_network()
         origins = {row.get('config', {}).get('user.orbit.compute.model_proxy_origin') for row in rows}
         if len(origins) > 1:
             raise Refusal('Sandbox model relay identities disagree.')
@@ -616,6 +665,11 @@ class Host:
         for pool, volume in volumes:
             self.run('storage', 'volume', 'delete', pool, volume['name'])
         if network:
+            marker = network.get('config', {}).get('user.orbit.compute.host_network')
+            if marker not in (None, '1'):
+                raise Refusal('Unknown sandbox host network policy.')
+            if marker == '1':
+                self.host_network('remove')
             self.run('network', 'delete', self.name)
         if acl:
             self.run('network', 'acl', 'delete', self.name)

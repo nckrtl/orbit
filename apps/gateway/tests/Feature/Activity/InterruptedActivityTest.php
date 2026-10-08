@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 function interrupted_activity_row(string $status, int $ageSeconds, string $command = 'process:list'): int
 {
     $createdAt = Carbon::now()->subSeconds($ageSeconds);

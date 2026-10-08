@@ -788,7 +788,7 @@ final readonly class RemoteRegistrationSourceManager implements RegistrationSour
                     'commit': git(path, 'rev-parse', '--verify', 'HEAD^{commit}'),
                     'default_branch': default_branch,
                     'inferred_slug': slug,
-                    'inferred_root': 'public' if (pathlib.Path(path, 'composer.json').is_file() and pathlib.Path(path, 'artisan').is_file() and pathlib.Path(path, 'public').is_dir()) else None,
+                    'inferred_root': 'public' if (pathlib.Path(path, 'composer.json').is_file() and (pathlib.Path(path, 'artisan').is_file() or pathlib.Path(path, 'bin', 'console').is_file()) and pathlib.Path(path, 'public').is_dir()) else None,
                     'common_repository_path': common,
                     'worktree_paths': worktrees,
                     'source_digest': digest(path),

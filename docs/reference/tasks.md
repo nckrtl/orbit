@@ -965,7 +965,7 @@ Before each review turn, opening or continued, Orbit writes `$(git rev-parse --g
 
 Dropped lines leave one line that says how many were omitted. The diff and the stat replace bytes that are not valid UTF-8. The packet does not name a feature contract. A continued turn keeps the review rules, the subtask brief, the new diff stat, the new handoff result, the diff body, the retrieval block, and the closing instructions. It leaves out the task brief, the deliverables, the earlier approvals, the held resolution, and the answered consults. `$(git rev-parse --git-path orbit)/context.md` still holds those parts.
 
-The review packet includes untracked symlinks as link targets, without reading the files or directories they point to. Its diff reader uses a temporary copy of the Git index and leaves the workspace index unchanged.
+The review packet includes untracked symlinks as link targets, without reading the files or directories they point to. Its diff reader uses a temporary copy of the Git index and leaves the workspace index unchanged. The copy preserves the index timestamp, so Git also finds edits of the same size when file timestamps match cached values.
 
 The retrieval commands print the diff the caps cut, including untracked files, without updating the index. The packet puts the subtask's start commit in place of `START`:
 
