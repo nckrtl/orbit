@@ -1176,6 +1176,7 @@
                 "Cluster",
                 "Deployment",
                 "Doctor",
+                "Extension",
                 "Gateway",
                 "Instance",
                 "Node",

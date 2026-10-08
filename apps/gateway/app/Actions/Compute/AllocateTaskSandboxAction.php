@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Compute\TaskSandboxLifecycle;
+use App\Infrastructure\Compute\TaskSandboxWarmPool;
 use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskSandbox;
@@ -20,7 +21,7 @@ use Illuminate\Support\Str;
 /** Reserve local capacity first. Cloud overspill is restricted to the project lane. */
 final readonly class AllocateTaskSandboxAction
 {
-    public function __construct(private TaskSandboxDrivers $drivers, private ProvisionTaskSandboxAction $cloud, private TaskSandboxLifecycle $lifecycle) {}
+    public function __construct(private TaskSandboxDrivers $drivers, private ProvisionTaskSandboxAction $cloud, private TaskSandboxLifecycle $lifecycle, private TaskSandboxWarmPool $warmPool) {}
 
     public function execute(Task $group): TaskSandbox
     {
@@ -29,6 +30,10 @@ final readonly class AllocateTaskSandboxAction
         $existing = $this->existing($group);
         if ($existing instanceof TaskSandbox) {
             return $this->activate($existing);
+        }
+        $warm = $this->warmPool->claim($group);
+        if ($warm instanceof TaskSandbox) {
+            return $this->activate($warm);
         }
         $candidates = [];
         if (config('compute.incus.enabled', false)) {

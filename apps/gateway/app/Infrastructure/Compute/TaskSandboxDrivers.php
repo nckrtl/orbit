@@ -12,6 +12,7 @@ use App\Models\Node;
 use App\Models\TaskSandbox;
 use Illuminate\Support\Str;
 
+/** @phpstan-type IncusHost array{node_id: int, project: string, pool: string, max_vms: int, warm_pairs: int, orbit_images: array<string, string>, orbit_source_template: array<string, string>|null, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null, model_proxy_origin: string|null} */
 final readonly class TaskSandboxDrivers
 {
     public function __construct(private UpCloudComputeDriver $upcloud, private IncusSandboxHost $transport, private ComputeLocks $locks) {}
@@ -34,7 +35,7 @@ final readonly class TaskSandboxDrivers
         throw new ComputeException('compute.host_unconfigured', 'Restore the recorded Incus host configuration before recovering this sandbox.');
     }
 
-    /** @return list<array{node_id: int, project: string, pool: string, max_vms: int, orbit_images: array<string, string>, orbit_source_template: array<string, string>|null, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null, model_proxy_origin: string|null}> */
+    /** @return list<IncusHost> */
     public function localHosts(): array
     {
         $value = config('compute.incus.hosts', []);
@@ -50,6 +51,10 @@ final readonly class TaskSandboxDrivers
                 || ! is_string($host['pool'] ?? null) || preg_match('/\A[a-zA-Z0-9][a-zA-Z0-9_-]{0,62}\z/D', $host['pool']) !== 1
                 || ! is_string($host['project'] ?? null) || preg_match('/\Aorbit-(?:task-sandboxes|sandbox-proof-[a-z0-9]+)\z/D', $host['project']) !== 1
                 || ! is_array($host['blocked_networks'] ?? null) || ! array_is_list($host['blocked_networks']) || $host['blocked_networks'] === []) {
+                throw $this->invalidConfiguration();
+            }
+            $warm = $host['warm_pairs'] ?? 0;
+            if (! is_int($warm) || $warm < 0 || $warm > 2 || $warm * 2 > $host['max_vms']) {
                 throw $this->invalidConfiguration();
             }
             $gateway = $host['gateway_address'] ?? null;
@@ -69,7 +74,7 @@ final readonly class TaskSandboxDrivers
             }
             $ids[] = $host['node_id'];
             $result[] = [
-                'node_id' => $host['node_id'], 'project' => $host['project'], 'pool' => $host['pool'], 'max_vms' => $host['max_vms'],
+                'node_id' => $host['node_id'], 'project' => $host['project'], 'pool' => $host['pool'], 'max_vms' => $host['max_vms'], 'warm_pairs' => $warm,
                 'orbit_source_template' => $this->sourceTemplate($host['orbit_source_template'] ?? null),
                 'orbit_images' => $orbit, 'project_images' => $this->images($host['project_images'] ?? []), 'blocked_networks' => $blocked, 'gateway_address' => $gateway,
                 'model_proxy_origin' => $this->modelProxyOrigin($host['model_proxy_origin'] ?? null),

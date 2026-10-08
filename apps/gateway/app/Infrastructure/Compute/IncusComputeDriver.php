@@ -91,6 +91,7 @@ final readonly class IncusComputeDriver implements ComputeDriver
             }
             $spec = $sandbox->spec;
             if ($operation === SandboxHostOperation::Provision && isset($spec['model_proxy_origin'])
+                && ! TaskSandboxWarmPool::isUnassigned($sandbox)
                 && ($sandbox->model_proxy_origin !== $spec['model_proxy_origin'] || $sandbox->model_key_registered_at === null || $sandbox->model_key === null)) {
                 throw new ComputeException('compute.model_proxy_unconfirmed', 'The model relay must match the registered credential endpoint.');
             }
