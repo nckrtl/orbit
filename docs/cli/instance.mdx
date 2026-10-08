@@ -680,7 +680,7 @@ orbit instance:database:add <slug> --instance=SELECTOR [--prefix=PREFIX] [--json
 | `--instance=SELECTOR` | required | Positive Instance ID or exact Route domain. |
 | `--prefix=PREFIX` | `DB` | Uppercase key prefix that starts with a letter, at most 32 characters. |
 
-For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. When the connection names the same Node as the Instance and aligns with a Node-owned Docker Process, the Gateway writes host `127.0.0.1` and the published host port.
+For mysql and pgsql the Gateway writes `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, and `DB_PASSWORD`. For sqlite it writes `DB_CONNECTION=sqlite` and `DB_DATABASE` as the absolute path, plus username and password only when stored. The Gateway writes the connection's stored host and port, also when the Instance runs on the connection's Node.
 
 ```bash
 orbit instance:database:add app --instance=12

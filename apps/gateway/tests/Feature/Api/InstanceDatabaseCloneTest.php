@@ -266,6 +266,39 @@ describe('instance:create database clone', function (): void {
             ->and($response->getContent())->not->toContain($password)->not->toContain(DATABASE_CLONE_ROOT_SECRET);
     });
 
+    it('points the copy at the server\'s WireGuard address over the imported .env and an older MySQL Process', function (): void {
+        Process::query()->create([
+            'owner_type' => Node::class,
+            'owner_id' => $this->node->id,
+            'name' => 'mysql-84',
+            'runtime' => ProcessRuntime::Docker,
+            'working_directory' => '/app',
+            'runtime_config' => ['image' => 'mysql:8.4', 'command' => ['mysqld'], 'environment' => [], 'ports' => ['3308:3306'], 'volumes' => []],
+            'restart_policy' => 'unless-stopped',
+            'desired_state' => DesiredProcessState::Running,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $server = database_clone_server($this->node);
+        database_clone_source($this->default, [
+            'driver' => 'mysql',
+            'node_id' => $this->node->id,
+            'database_server_id' => $server->id,
+            'host' => '10.44.0.3',
+            'port' => 3306,
+            'database' => 'acme_default',
+            'username' => 'acme_default',
+            'password' => 'default-secret',
+        ]);
+        $this->environment->source = "APP_KEY=base64:kept\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=13306\n";
+
+        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
+
+        $endpoint = ['DB_HOST' => '10.44.0.3', 'DB_PORT' => '3306'];
+
+        expect(database_clone_env((string) $this->environment->contents))->toMatchArray($endpoint)
+            ->and(database_clone_env((string) $this->environment->testingContents))->toMatchArray($endpoint);
+    });
+
     it('copies a SQLite default database into the same relative path of the new checkout', function (): void {
         database_clone_source($this->default, [
             'driver' => 'sqlite',
@@ -616,6 +649,8 @@ final class DatabaseCloneEnvironmentFakes implements InstanceEnvironmentReader, 
 
     public bool $missing = false;
 
+    public string $source = "APP_KEY=base64:kept\nAPP_URL=http://localhost\nDB_CONNECTION=sqlite\n";
+
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
     public function assertEnvironmentWritable(InstanceEnvironmentContext $context, int $requiredCapacityBytes): void {}
@@ -628,7 +663,7 @@ final class DatabaseCloneEnvironmentFakes implements InstanceEnvironmentReader, 
             throw new ResourceOperationException('env.import_source_missing', 'The recorded Instance environment file does not exist.', 404);
         }
 
-        return "APP_KEY=base64:kept\nAPP_URL=http://localhost\nDB_CONNECTION=sqlite\n";
+        return $this->source;
     }
 
     public function write(InstanceEnvironmentContext $context, #[SensitiveParameter] string $contents): InstanceEnvironmentWriteResult

@@ -118,7 +118,7 @@ For an Instance that owns its `DB` database, [synchronization](/reference/enviro
 
 The Gateway removes the other keys of the prefix, for example `DB_HOST` when a sqlite connection replaces a mysql one. A second add with the same prefix replaces the earlier mapping.
 
-When the record has a `node_id` and a port, the Gateway looks for a Docker Node Process on that Node that publishes the port, as host port or container port. When it finds one and the Instance runs on the same Node, it writes host `127.0.0.1`, or the explicit bind address of that port, and the published host port. Otherwise it writes the stored host and port.
+The Gateway writes the stored host and port, also when the Instance runs on the record's Node. It never derives them from the Node's Processes. A database on a [Database server](/reference/database-servers) stores the Node's WireGuard address and the published port, so every Instance in the fleet reaches it at that address.
 
 The result names the Instance, slug, prefix, written keys, host, port, whether stored configuration changed, and the key count. It never holds a value.
 
