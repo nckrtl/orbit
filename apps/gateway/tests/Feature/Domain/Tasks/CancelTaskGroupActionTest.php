@@ -2,9 +2,18 @@
 
 declare(strict_types=1);
 
+use App\Actions\Instances\RemoveInstanceAction;
 use App\Actions\Tasks\CancelTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
+use App\Domain\AppDev\AppDevSourceOperationLock;
+use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
+use App\Domain\Instances\Removal\DevelopmentInstanceSourceRemoval;
+use App\Domain\Instances\Removal\InstanceRemovalProjector;
+use App\Domain\Instances\Removal\InstanceSourceInventory;
+use App\Domain\Instances\Removal\InstanceSourceRevalidationState;
+use App\Domain\Processes\ProcessAdmissionLock;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
@@ -15,8 +24,10 @@ use App\Domain\Tasks\TaskScheduler;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
+use App\Models\InstanceRemovalMember;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Facades\Artisan;
@@ -449,6 +460,156 @@ describe('a workspace the group never attached', function (): void {
             ->and(Instance::query()->find($workspace->id))->not->toBeNull();
     });
 });
+
+/** Binds only the Node-side source, projection, and lock boundaries; cancellation uses the real remover. */
+function cancel_real_remover(Instance $workspace, bool $refused = false): void
+{
+    foreach ([InstanceEnvironmentOperationLock::class, ProcessAdmissionLock::class, AppDevSourceOperationLock::class] as $contract) {
+        $lock = Mockery::mock($contract);
+        $lock->shouldReceive($contract === AppDevSourceOperationLock::class ? 'synchronized' : 'run')
+            ->andReturnUsing(static fn (mixed $owner, Closure $operation): mixed => $operation());
+        app()->instance($contract, $lock);
+    }
+    $source = Mockery::mock(DevelopmentInstanceSourceRemoval::class);
+    $finalizer = Mockery::mock(DevelopmentInstanceSourceFinalizer::class);
+    if ($refused) {
+        $source->shouldNotReceive('inspect');
+        $finalizer->shouldNotReceive('finalize');
+    } else {
+        $source->shouldReceive('inspect')->withArgs(static fn (Instance $instance, bool $force): bool => $instance->id === $workspace->id && $force)
+            ->andReturn(new InstanceSourceInventory(
+                instanceId: $workspace->id,
+                layout: $workspace->source_layout,
+                repositoryIdentity: $workspace->project->repository_identity,
+                checkoutPath: $workspace->checkout_path,
+                root: '/srv/orbit/apps',
+                branch: $workspace->branch,
+                startingCommit: str_repeat('a', 40),
+                commonRepositoryPath: $workspace->checkout_path,
+                sourceIdentity: 'cancel-workspace:'.$workspace->id,
+                linkedWorktreePaths: [$workspace->checkout_path],
+                digest: hash('sha256', $workspace->checkout_path),
+            ));
+        $finalizer->shouldReceive('prepare');
+        $finalizer->shouldReceive('revalidate')->andReturn(InstanceSourceRevalidationState::Present);
+        $finalizer->shouldReceive('finalize')->once()->andReturn(hash('sha256', 'cancel-receipt'));
+    }
+    app()->instance(DevelopmentInstanceSourceRemoval::class, $source);
+    app()->instance(DevelopmentInstanceSourceFinalizer::class, $finalizer);
+    $projector = new class implements InstanceRemovalProjector
+    {
+        public function clearRouteTarget(InstanceRemovalMember $member): string
+        {
+            Route::query()->findOrFail($member->route_id)->delete();
+
+            return 'deleted';
+        }
+
+        public function cleanupRuntime(InstanceRemovalMember $member): void {}
+    };
+    app()->instance(InstanceRemovalProjector::class, $projector);
+    app()->instance(InstanceRemover::class, app(RemoveInstanceAction::class));
+}
+
+function cancel_pending_route(Instance $workspace): Route
+{
+    $workspace->update(['root' => 'public', 'branch' => $workspace->name, 'starting_commit' => str_repeat('a', 40)]);
+    $workspace->node->roles()->create(['role' => 'app-dev', 'status' => LifecycleStatus::Active]);
+    $route = Route::query()->create([
+        'project_id' => $workspace->project_id,
+        'node_id' => $workspace->node_id,
+        'domain' => 'cancel-workspace-'.$workspace->id.'.example.test',
+        'provenance' => 'explicit',
+        'publication' => 'private',
+        'status' => 'pending',
+    ]);
+    $route->targets()->create(['instance_id' => $workspace->id, 'position' => 0]);
+
+    return $route;
+}
+
+it('removes an attached routed source-resolved workspace with its pending Route', function (): void {
+    app(TaskExtensionState::class)->enable();
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    $workspace = $group->taskable;
+    $route = cancel_pending_route($workspace);
+    $target = $route->targets()->sole();
+    cancel_real_remover($workspace);
+
+    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+
+    expect($cancelled->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($cancelled->taskable_id)->toBeNull()
+        ->and($cancelled->assistance_requested)->toBeFalse();
+    $this->assertModelMissing($workspace);
+    $this->assertModelMissing($route);
+    $this->assertModelMissing($target);
+    expect(InstanceRemoval::query()->sole()->status->value)->toBe('completed');
+});
+
+it('re-cancels a cancelled group and removes its unattached routed source-resolved workspace', function (): void {
+    app(TaskExtensionState::class)->enable();
+    [$group, $workspace] = cancel_unattached_workspace(TaskGroupStatus::Cancelled);
+    $route = cancel_pending_route($workspace);
+    $target = $route->targets()->sole();
+    cancel_real_remover($workspace);
+
+    $cancelled = app(CancelTaskGroupAction::class)->execute($group);
+    $again = app(CancelTaskGroupAction::class)->execute($cancelled);
+
+    expect($again->status)->toBe(TaskGroupStatus::Cancelled)
+        ->and($again->taskable_id)->toBeNull()
+        ->and($again->assistance_requested)->toBeFalse()
+        ->and($again->assistance_reason)->toBeNull();
+    $this->assertModelMissing($workspace);
+    $this->assertModelMissing($route);
+    $this->assertModelMissing($target);
+    expect(InstanceRemoval::query()->count())->toBe(1);
+});
+
+it('asks for assistance and keeps a routed source-resolved workspace with an active or shared Route', function (string $routeState): void {
+    app(TaskExtensionState::class)->enable();
+    $group = cancellable_task_group(TaskGroupStatus::Running);
+    $workspace = $group->taskable;
+    $route = cancel_pending_route($workspace);
+    $target = $route->targets()->sole();
+    if ($routeState === 'active') {
+        $route->update(['status' => 'active']);
+    } else {
+        $other = Instance::query()->create([
+            'project_id' => $workspace->project_id,
+            'node_id' => $workspace->node_id,
+            'name' => 'other',
+            'checkout_path' => '/srv/orbit/apps/cancel-app/other',
+            'status' => 'source_resolved',
+        ]);
+        // Exercise inconsistent stored targets without weakening the production persistence contract.
+        $trigger = DB::table('sqlite_master')->where('name', 'route_targets_contract_insert')->sole()->sql;
+        DB::statement('DROP TRIGGER route_targets_contract_insert');
+        try {
+            $otherTarget = $route->targets()->create(['instance_id' => $other->id, 'position' => 1]);
+        } finally {
+            DB::statement($trigger);
+        }
+    }
+    cancel_real_remover($workspace, refused: true);
+
+    expect(fn () => app(CancelTaskGroupAction::class)->execute($group))
+        ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('instance.remove_refused'));
+
+    expect($group->fresh()->status)->toBe(TaskGroupStatus::Running)
+        ->and($group->fresh()->taskable_id)->toBe($workspace->id)
+        ->and($group->fresh()->assistance_requested)->toBeTrue()
+        ->and($group->fresh()->assistance_reason)->toStartWith(RemoveTaskWorkspaceAction::RemovalFailedPrefix)
+        ->and(InstanceRemoval::query()->count())->toBe(0);
+    $this->assertModelExists($workspace);
+    $this->assertModelExists($route);
+    $this->assertModelExists($target);
+    if (isset($other, $otherTarget)) {
+        $this->assertModelExists($other);
+        $this->assertModelExists($otherTarget);
+    }
+})->with(['active', 'shared']);
 
 it('cancels open subtasks left in a cancelled group', function (): void {
     $default = DB::getDefaultConnection();
