@@ -42,7 +42,7 @@ final readonly class UpdateTaskAction
         $taskState = $task->getRawOriginal();
         $projectState = $group->project->getRawOriginal();
         if ($check !== null) {
-            if ($data->title !== null || $data->brief !== null || $data->position !== null) {
+            if ($data->title !== null || $data->brief !== null || $data->position !== null || $data->topology !== null) {
                 throw TaskGroupGuard::notInBacklog();
             }
             if ($data->deliverables === []) {
@@ -70,7 +70,7 @@ final readonly class UpdateTaskAction
                 throw TaskGroupGuard::deliverablesLocked();
             }
             if ($data->deliverables !== null && ($currentCheck = TaskGroupGuard::deliverableCorrectionCheck($locked, $task)) !== null) {
-                if ($data->title !== null || $data->brief !== null || $data->position !== null) {
+                if ($data->title !== null || $data->brief !== null || $data->position !== null || $data->topology !== null) {
                     throw TaskGroupGuard::notInBacklog();
                 }
                 if ($data->deliverables === []) {

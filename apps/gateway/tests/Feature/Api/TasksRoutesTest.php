@@ -1228,7 +1228,9 @@ it('validates a deliverable correction without consuming it on refused requests'
     $this->patchJson($url, ['deliverables' => [deliverable_path_file('tests/MissingTest.php')]])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     $this->patchJson($url, ['deliverables' => []])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
     $this->patchJson($url, ['title' => 'Changed', 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
-    expect($task->fresh()?->deliverables)->toBe($before);
+    $this->patchJson($url, ['topology' => ['app-dev'], 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+    expect($task->fresh()?->deliverables)->toBe($before)
+        ->and($task->fresh()?->topology)->toBeNull();
     expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(0);
 
     $command['paths'] = ['tests/ExistingTest.php'];
