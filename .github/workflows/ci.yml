@@ -345,7 +345,7 @@ jobs:
       - name: Remove root-owned files from the workspace
         if: always() && runner.environment == 'self-hosted'
         working-directory: ${{ github.workspace }}
-        run: sudo -n find . -xdev -user root -prune -exec rm -rf -- {} +
+        run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
 
   api-reference:
     name: API reference
