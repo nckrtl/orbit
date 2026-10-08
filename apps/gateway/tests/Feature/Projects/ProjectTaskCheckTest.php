@@ -146,5 +146,6 @@ it('gives every existing Project the composer check task check whatever its type
         'laravel-package' => 'composer check',
         'monorepo' => 'composer check',
         'node-package' => 'composer check',
+        'symfony-app' => 'composer check',
     ]);
 });

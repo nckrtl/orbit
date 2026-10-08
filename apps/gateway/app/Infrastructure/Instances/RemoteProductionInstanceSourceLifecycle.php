@@ -290,7 +290,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolve($checkout, $root)],
+                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolve($checkout, $root), $instance->project->type->frameworkEntryPoint()],
                 input: <<<'BASH'
                     # find must restore its working directory after sudo changes users.
                     cd /
@@ -298,11 +298,12 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     relative_root=$2
                     checkout=$3
                     application=$4
+                    entry_point=$5
                     application_real=$(sudo -u "$user" -H realpath -m -- "$application")
                     test "$application_real" = "$application" || { printf 'UNSAFE\n'; exit 0; }
                     case "$application_real" in "$checkout"|"$checkout"/*) ;; *) printf 'UNSAFE\n'; exit 0 ;; esac
                     composer="$application/composer.json"
-                    artisan="$application/artisan"
+                    artisan="$application/$entry_point"
                     candidate="$checkout/$relative_root"
                     resolved=$(sudo -u "$user" -H realpath -m -- "$candidate")
 

@@ -38,16 +38,17 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->applicationDirectory(), $account->user],
+                arguments: ['bash', '-seu', '--', $instance->applicationDirectory(), $account->user, $instance->project->type->frameworkEntryPoint()],
                 input: <<<'BASH'
                     checkout=$1
                     managed_user=$2
+                    entry_point=$3
                     if [ -d "$checkout" ] && [ "$(realpath -e -- "$checkout")" != "$checkout" ]; then
                         printf 'UNSAFE\n'
                         exit 0
                     fi
                     composer="$checkout/composer.json"
-                    artisan="$checkout/artisan"
+                    artisan="$checkout/$entry_point"
 
                     if [ -L "$composer" ] || { [ -e "$composer" ] && [ ! -f "$composer" ]; }; then
                         printf 'UNSAFE\n'

@@ -40,7 +40,7 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` or `symfony-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 

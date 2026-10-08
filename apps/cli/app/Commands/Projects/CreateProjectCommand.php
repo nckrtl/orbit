@@ -18,7 +18,7 @@ final class CreateProjectCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'project:create
         {slug : Unique project slug}
-        {type : Project type (monorepo, laravel-app, laravel-package, or node-package)}
+        {type : Project type (monorepo, laravel-app, symfony-app, laravel-package, or node-package)}
         {repository : Git repository URL}
         {--name= : Optional display name}
         {--source-access= : How Orbit reads a private github.com repository: github_app (default) or gh_cli}
@@ -89,10 +89,10 @@ final class CreateProjectCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        if (! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
+        if (! in_array($type, ['monorepo', 'laravel-app', 'symfony-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
+                'Project type must be monorepo, laravel-app, symfony-app, laravel-package, or node-package.',
             );
         }
 

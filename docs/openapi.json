@@ -16065,10 +16065,11 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
+                      "symfony-app",
                       "laravel-package",
                       "node-package"
                     ],
-                    "description": "Project type (monorepo, laravel-app, laravel-package, or node-package)"
+                    "description": "Project type (monorepo, laravel-app, symfony-app, laravel-package, or node-package)"
                   },
                   "repository_url": {
                     "type": "string",
@@ -16427,6 +16428,7 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
+                      "symfony-app",
                       "laravel-package",
                       "node-package"
                     ],
@@ -29078,6 +29080,7 @@
             "enum": [
               "monorepo",
               "laravel-app",
+              "symfony-app",
               "laravel-package",
               "node-package"
             ]
@@ -29396,6 +29399,7 @@
             "enum": [
               "monorepo",
               "laravel-app",
+              "symfony-app",
               "laravel-package",
               "node-package"
             ]

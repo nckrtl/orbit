@@ -28,7 +28,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `slug` | Unique name, at most 63 characters. It names the directory of each new checkout and the generated domains. |
 | `name` | Display name. It defaults to the slug. |
 | `code` | Unique code of three uppercase letters. See [Project codes](#project-codes). |
-| `type` | `monorepo`, `laravel-app`, `laravel-package`, or `node-package`. See [Project types](#project-types). |
+| `type` | `monorepo`, `laravel-app`, `symfony-app`, `laravel-package`, or `node-package`. See [Project types](#project-types). |
 | `repository_url` | HTTPS or SSH Git URL that Orbit uses to fetch. |
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
@@ -61,11 +61,14 @@ The type belongs to the Project, so every Instance of one repository behaves the
 | Type | Route | PHP-FPM | Root `.` allowed | Default `task_check` |
 | --- | --- | --- | --- | --- |
 | `laravel-app` | Exactly one per active Instance | Yes | No | none |
+| `symfony-app` | Exactly one per active Instance | Yes | No | none |
 | `monorepo` | Only an explicit Route | Only with a Route to a Laravel source | No | none |
 | `laravel-package` | Only an explicit Route | No | Yes | none |
 | `node-package` | Only an explicit Route | No | Yes | none |
 
 `.` means the repository root. A Route cannot target an Instance whose root is `.`. Set a relative web root first. A `laravel-package` Project does not need an `artisan` file.
+
+A `symfony-app` serves like a `laravel-app`: one Route, a PHP-FPM pool, and the PHP version from `composer.json`. Orbit runs no Laravel step for it. It writes no `APP_URL` and patches no Laravel configuration cache. See [Symfony applications](/domains/applications#symfony-applications).
 
 ## Create a Project
 
@@ -228,7 +231,7 @@ Before `publishing`, the old values are still in effect, so a rollback is safe. 
 
 ### Type decides capabilities
 
-Instances of one repository share one serving contract. Per-Instance route or PHP-FPM flags were rejected. A Laravel package or a monorepo must not publish a domain or keep an idle PHP-FPM master, so only `laravel-app` gets a Route by default.
+Instances of one repository share one serving contract. Per-Instance route or PHP-FPM flags were rejected. A Laravel package or a monorepo must not publish a domain or keep an idle PHP-FPM master, so only `laravel-app` and `symfony-app` get a Route by default.
 
 ### A setting routes task workspaces
 
