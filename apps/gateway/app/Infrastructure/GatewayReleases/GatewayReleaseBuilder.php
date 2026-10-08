@@ -351,16 +351,21 @@ final readonly class GatewayReleaseBuilder
         }
     }
 
+    /**
+     * Installs only the packages a release runs. Test, analysis, and agent tooling such as Pest, PHPStan, and Boost
+     * stay out, which roughly halves the install time and the size of `vendor/`. The Gateway registers Boost only when
+     * its classes exist, and the CLI binary is built from a no-dev install too.
+     */
     private function installDependencies(string $path): void
     {
         foreach (['apps/cli', 'apps/gateway'] as $project) {
             $directory = $path.'/'.$project;
             $this->run('dependencies', 'gateway.release_dependencies_failed', [
                 ...ReleaseArtisan::locked($this->stepLock),
-                $this->composer, '--working-dir='.$directory, 'install', '--prefer-dist', '--no-interaction', '--no-progress',
+                $this->composer, '--working-dir='.$directory, 'install', '--no-dev', '--prefer-dist', '--no-interaction', '--no-progress',
             ], $this->composerTimeout);
             $this->run('dependencies', 'gateway.release_dependencies_failed', [
-                $this->composer, '--working-dir='.$directory, 'check-platform-reqs', '--no-interaction',
+                $this->composer, '--working-dir='.$directory, 'check-platform-reqs', '--no-dev', '--no-interaction',
             ], 120.0);
         }
     }
