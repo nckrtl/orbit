@@ -193,6 +193,7 @@ it('returns 409 for a completed group or a settling group with a pull request', 
         });
 })->with([
     'settling with a pull request' => [TaskGroupStatus::Settling, 'https://github.com/nckrtl/orbit/pull/7'],
+    'waiting for review' => [TaskGroupStatus::WaitingForReview, 'https://github.com/nckrtl/orbit/pull/7'],
     'completed' => [TaskGroupStatus::Completed, null],
 ]);
 
@@ -504,6 +505,8 @@ function cancel_real_remover(Instance $workspace, bool $refused = false): void
 
             return 'deleted';
         }
+
+        public function withdrawPhpPool(InstanceRemovalMember $member): void {}
 
         public function cleanupRuntime(InstanceRemovalMember $member): void {}
     };

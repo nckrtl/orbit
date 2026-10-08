@@ -58,7 +58,7 @@ it('canonicalizes the current directory through symlinked ancestors', function (
     try {
         foreach (['physical', 'alias', 'alias/child'] as $path) {
             chdir($root.'/'.$path);
-            $target = new DependencyInstanceSelector()->select($connector);
+            $target = new DependencyInstanceSelector()->resolveDirectory($connector);
             expect($target?->instanceId)->toBe(17)->and($mock->getLastPendingRequest()?->query()->all())
                 ->toBe(['directory' => $root.'/physical'.(str_ends_with($path, '/child') ? '/child' : '')]);
         }
@@ -71,7 +71,7 @@ it('canonicalizes the current directory through symlinked ancestors', function (
     }
 });
 
-it('honors explicit domain and all selection even when the working directory disappears', function (): void {
+it('resolves an explicit domain but refuses directory resolution when the working directory disappears', function (): void {
     $root = sys_get_temp_dir().'/orbit-directory-'.bin2hex(random_bytes(8));
     mkdir($root, 0700);
     $previous = getcwd();
@@ -85,10 +85,8 @@ it('honors explicit domain and all selection even when the working directory dis
         chdir($root);
         rmdir($root);
         $selector = new DependencyInstanceSelector;
-        expect($selector->select($connector, domain: 'app.example.test')?->instanceId)->toBe(17)
-            ->and($selector->select($connector, all: true))->toBeNull();
-        expect(fn () => $selector->select($connector))->toThrow(GatewayApiException::class, 'The current directory is unavailable.')
-            ->and(fn () => $selector->select($connector, domain: 'app.example.test', all: true))->toThrow(GatewayApiException::class, 'Project and all-instance selectors cannot be combined.');
+        expect($selector->resolveDomain($connector, 'app.example.test')->instanceId)->toBe(17);
+        expect(fn () => $selector->resolveDirectory($connector))->toThrow(GatewayApiException::class, 'The current directory is unavailable.');
         $mock->assertSentCount(1);
     } finally {
         chdir($previous);
@@ -101,6 +99,6 @@ it('does not fall back after unmanaged directory refusal', function (): void {
     ], 404)]);
     $connector = new GatewayConnector('https://gateway.test');
     $connector->withMockClient($mock);
-    expect(fn () => new DependencyInstanceSelector()->select($connector))->toThrow(GatewayApiException::class);
+    expect(fn () => new DependencyInstanceSelector()->resolveDirectory($connector))->toThrow(GatewayApiException::class);
     $mock->assertSentCount(1);
 });

@@ -1,0 +1,87 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." >/dev/null 2>&1 && pwd)"
+
+cd "$repo_root"
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-cli-release-version [--tag] [--on-main <ref>] <commit>
+
+Prints the Orbit CLI release version for a commit: 0.N.0, where N is
+`git rev-list --count <commit>`. With --tag, prints the release tag
+cli-v0.N.0 instead.
+
+N grows with every commit on main, so release versions sort in main's
+history order. A shallow clone has the wrong count and is refused.
+
+With --on-main, the commit must be on that ref's first-parent history.
+A side commit merged into main is not a release commit: it can reach
+the same number of commits as a different main commit, and the two
+would share one version.
+EOF
+}
+
+fail() {
+    printf 'orbit-cli-release-version: %s\n' "$*" >&2
+    exit 1
+}
+
+prefix=''
+main_ref=''
+
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --tag)
+            prefix='cli-v'
+            shift
+            ;;
+        --on-main)
+            if [ "$#" -lt 2 ] || [ -z "${2:-}" ]; then
+                usage >&2
+                exit 2
+            fi
+            main_ref="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        --)
+            shift
+            break
+            ;;
+        -*)
+            fail "unknown option: ${1}"
+            ;;
+        *)
+            break
+            ;;
+    esac
+done
+
+commit="${1:-}"
+
+if [ -z "$commit" ] || [ "$#" -ne 1 ]; then
+    usage >&2
+    exit 2
+fi
+
+git rev-parse --is-inside-work-tree >/dev/null 2>&1 || fail 'not a git checkout'
+[ "$(git rev-parse --is-shallow-repository)" = "false" ] || fail 'shallow clone: fetch the full history first'
+
+resolved="$(git rev-parse --verify --quiet "${commit}^{commit}")" || fail "unknown commit: ${commit}"
+
+if [ -n "$main_ref" ]; then
+    git rev-parse --verify --quiet "${main_ref}^{commit}" >/dev/null || fail "unknown main ref: ${main_ref}"
+    # grep reads all input: with -q it could exit first, and pipefail would turn the SIGPIPE into a miss.
+    if ! git rev-list --first-parent "$main_ref" | grep -x -- "$resolved" >/dev/null; then
+        fail "${resolved} is not on the first-parent history of ${main_ref}"
+    fi
+fi
+
+printf '%s0.%s.0\n' "$prefix" "$(git rev-list --count "$resolved")"

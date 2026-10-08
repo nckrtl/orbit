@@ -61,6 +61,8 @@ final class GatewayStatusCommand extends GatewayCommand
             return self::SUCCESS;
         }
 
+        $fleet = $status->desiredFleetState;
+
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Gateway: {$profile->name}", [
             'URL' => $profile->url,
             'Name' => $status->name,
@@ -68,9 +70,29 @@ final class GatewayStatusCommand extends GatewayCommand
             'Version' => $status->version,
             'PHP version' => $status->phpVersion,
             'Laravel version' => $status->laravelVersion,
+            ...($fleet === null ? [] : [
+                'CLI release' => $fleet->cli->version ?? 'unavailable: '.($fleet->cli->reason ?? 'unknown'),
+                'Agent version' => $fleet->agent->version,
+            ]),
+            'Release' => $status->release,
+            'Automatic releases' => self::autoRelease($status->autoRelease),
             'Request ID' => $status->requestId,
         ]));
 
         return self::SUCCESS;
+    }
+
+    /** @param array{enabled: bool, paused: bool, last_checked_at: string|null, last_result: string|null}|null $state */
+    private static function autoRelease(?array $state): ?string
+    {
+        if ($state === null) {
+            return null;
+        }
+
+        $switch = $state['paused'] ? 'paused' : ($state['enabled'] ? 'enabled' : 'disabled');
+
+        return $state['last_checked_at'] === null
+            ? $switch
+            : "{$switch}, last check {$state['last_checked_at']}: {$state['last_result']}";
     }
 }

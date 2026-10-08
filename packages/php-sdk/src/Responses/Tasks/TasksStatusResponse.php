@@ -8,11 +8,15 @@ final readonly class TasksStatusResponse
 {
     /**
      * @param  list<TaskAssistanceResponse>|null  $assistance  Null when this route does not report assistance.
+     * @param  string|null  $lastTickAt  When the latest `tasks:tick` started its work. Null when no tick is remembered or this route does not report it.
+     * @param  list<TaskMergeResponse>  $merges  Open tasks of review-and-merge Projects. Empty when this route does not report them.
      */
     public function __construct(
         public bool $enabled,
         public string $requestId,
         public ?array $assistance = null,
+        public ?string $lastTickAt = null,
+        public array $merges = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -24,7 +28,19 @@ final readonly class TasksStatusResponse
             throw TaskFields::invalid('tasks extension status', $requestId);
         }
 
-        return new self($enabled, $requestId, array_key_exists('assistance', $data) ? self::assistance($data['assistance'], $requestId) : null);
+        $lastTickAt = $data['last_tick_at'] ?? null;
+
+        if ($lastTickAt !== null && ! is_string($lastTickAt)) {
+            throw TaskFields::invalid('tasks extension status', $requestId);
+        }
+
+        return new self(
+            $enabled,
+            $requestId,
+            array_key_exists('assistance', $data) ? self::assistance($data['assistance'], $requestId) : null,
+            $lastTickAt,
+            array_key_exists('merges', $data) ? array_map(static fn (array $group): TaskMergeResponse => TaskMergeResponse::fromGatewayData($group, $requestId), self::rows($data['merges'], $requestId)) : [],
+        );
     }
 
     /**
@@ -41,6 +57,9 @@ final readonly class TasksStatusResponse
      *         assistance_question: string|null,
      *         assistance_reason: string|null
      *     }>,
+     *     last_tick_at: string|null,
+     *     merges: list<array{id: int, project_id: int, project: string|null, project_code: string|null, title: string, status: string,
+     *         pr_url: string|null, pr_branch: string|null, merge_status: string|null, merge_reason: string|null}>,
      *     request_id: string
      * }
      */
@@ -56,6 +75,8 @@ final readonly class TasksStatusResponse
         return [
             'enabled' => $this->enabled,
             'assistance' => array_map(static fn (TaskAssistanceResponse $group): array => $group->toArray(), $this->assistance),
+            'last_tick_at' => $this->lastTickAt,
+            'merges' => array_map(static fn (TaskMergeResponse $group): array => $group->toArray(), $this->merges),
             'request_id' => $this->requestId,
         ];
     }
@@ -65,28 +86,36 @@ final readonly class TasksStatusResponse
      */
     private static function assistance(mixed $value, string $requestId): array
     {
+        return array_map(static fn (array $group): TaskAssistanceResponse => TaskAssistanceResponse::fromGatewayData($group, $requestId), self::rows($value, $requestId));
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private static function rows(mixed $value, string $requestId): array
+    {
         if (! is_array($value) || ! array_is_list($value)) {
             throw TaskFields::invalid('tasks extension status', $requestId);
         }
 
-        $groups = [];
+        $rows = [];
 
-        foreach ($value as $group) {
-            if (! is_array($group)) {
+        foreach ($value as $row) {
+            if (! is_array($row)) {
                 throw TaskFields::invalid('tasks extension status', $requestId);
             }
 
             $data = [];
-            foreach ($group as $key => $item) {
+            foreach ($row as $key => $item) {
                 if (! is_string($key)) {
                     throw TaskFields::invalid('tasks extension status', $requestId);
                 }
                 $data[$key] = $item;
             }
 
-            $groups[] = TaskAssistanceResponse::fromGatewayData($data, $requestId);
+            $rows[] = $data;
         }
 
-        return $groups;
+        return $rows;
     }
 }

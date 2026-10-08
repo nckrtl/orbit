@@ -14,6 +14,9 @@ use App\Models\DatabaseServer;
 use App\Models\DatabaseUser;
 use App\Models\DependencyPackage;
 use App\Models\FirewallRule;
+use App\Models\FleetRollout;
+use App\Models\FleetRolloutNode;
+use App\Models\GatewayRelease;
 use App\Models\Instance;
 use App\Models\InstanceDependencyEdge;
 use App\Models\InstanceDependencyObservation;
@@ -28,6 +31,7 @@ use App\Models\InstanceTransfer;
 use App\Models\JevDecision;
 use App\Models\Node;
 use App\Models\NodeAccess;
+use App\Models\NodeFootprint;
 use App\Models\NodeRole;
 use App\Models\ProblemCollectorState;
 use App\Models\ProblemFingerprint;
@@ -35,12 +39,18 @@ use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
+use App\Models\ProjectDocumentCleanup;
+use App\Models\ProjectDocumentEntry;
+use App\Models\ProjectDocumentStorage;
+use App\Models\ProjectDocumentUpload;
+use App\Models\ProjectDocumentVersion;
 use App\Models\ProjectLifecycleStep;
 use App\Models\ProjectNodeExclusion;
 use App\Models\ProjectUpdate;
 use App\Models\Route;
 use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteCustomProxy;
+use App\Models\RouteRemovalResidue;
 use App\Models\RouteTarget;
 use App\Models\Schedule;
 use App\Models\ScheduleDefinition;
@@ -50,6 +60,8 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskDefinition;
 use App\Models\TaskQuestion;
+use App\Models\TaskReviewedCommit;
+use App\Models\TaskSandbox;
 use App\Models\Tool;
 use App\Models\ToolManagerRecord;
 
@@ -70,15 +82,26 @@ it('partitions every persisted model across doctor dispositions', function (): v
         InstanceEnvironmentValue::class,
         ToolManagerRecord::class,
         Setting::class,
+        ProjectDocumentStorage::class,
+        ProjectDocumentEntry::class,
+        ProjectDocumentVersion::class,
+        ProjectDocumentUpload::class,
+        ProjectDocumentCleanup::class,
         Cluster::class,
         Route::class,
         RouteTarget::class,
         RouteAnalyticsTracking::class,
+        RouteRemovalResidue::class,
         ProcessDefinition::class,
         ScheduleDefinition::class,
         DatabaseConnectionTarget::class,
     ];
     $excluded = [
+        TaskSandbox::class,
+        GatewayRelease::class,
+        FleetRollout::class,
+        FleetRolloutNode::class,
+        NodeFootprint::class,
         Annotation::class,
         DependencyPackage::class,
         InstanceDependencyObservation::class,
@@ -109,6 +132,7 @@ it('partitions every persisted model across doctor dispositions', function (): v
         TaskComment::class,
         TaskCheck::class,
         TaskQuestion::class,
+        TaskReviewedCommit::class,
     ];
     $modelsDirectory = new ReflectionClass(Node::class)->getFileName();
     if (! is_string($modelsDirectory)) {

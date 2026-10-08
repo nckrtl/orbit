@@ -90,25 +90,6 @@ final readonly class ProxyCliSnapshotStore
         return $snapshot;
     }
 
-    public function backoffUntil(string $target): ?int
-    {
-        $value = $this->cache->get(ProxyCliKeys::backoff($target));
-
-        if (! is_string($value) || ! ctype_digit($value)) {
-            return null;
-        }
-
-        $until = (int) $value;
-
-        return $until > time() ? $until : null;
-    }
-
-    public function backOff(string $target, int $seconds): void
-    {
-        $until = (string) (time() + max(1, $seconds));
-        $this->cache->put(ProxyCliKeys::backoff($target), $until, $seconds);
-    }
-
     /**
      * @param  array<array-key, mixed>  $data
      */

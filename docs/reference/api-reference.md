@@ -53,6 +53,10 @@ Requests that inspect raw JSON also declare their body fields in `rules()`. The 
 
 The Project development deploy step operations publish typed step responses from the SDK response fields. Create publishes HTTP 201 for a new step and HTTP 422 for a duplicate name, including an exact retry; it has no HTTP 200 retry response. Their generated write schemas include the name pattern, timeout bounds and default, and `required: true` default on create. The [development deploy contract](/reference/deployments#development-deploy-steps) owns the list limits and refusal rules.
 
+[Project Documents](/reference/project-documents#api-contract) publish typed entry and version schemas, numeric entry IDs, cursor metadata, and the same JSON text/base64 bodies for HTTP and MCP. Their generated create schema distinguishes folders from files and requires exactly one content field for files. Write has the same content choice; metadata update requires a name or parent. These constraints remain on MCP tools when the body already has shared object properties. Create returns only HTTP 201, not an upsert retry response.
+
+The script publishes HTTP 202 and the queued release record for `gateway:release:deploy` and `gateway:release:rollback`, because the [Gateway release](/reference/gateway-recovery#deploy-through-the-api) runs in its own unit after the request ends. It also maps the automatic release controller to its state schema.
+
 A request field the API validates as a boolean is a JSON `boolean` in `docs/openapi.json`. [MCP](/reference/mcp) keeps that type in the tool schema.
 
 The Instance rename body has optional `branch` and `domain` fields, but requires at least one. Its schema sets `minProperties: 1` and rejects extra fields. The PHP example supplies a branch rather than sending an empty body; that branch must already be checked out on the Node.

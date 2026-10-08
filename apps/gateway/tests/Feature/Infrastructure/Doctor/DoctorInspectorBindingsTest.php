@@ -8,6 +8,7 @@ use App\Domain\Doctor\GatewayVpnStateInspector;
 use App\Domain\Doctor\InstalledPackageInventory;
 use App\Domain\Doctor\InstanceStateInspector;
 use App\Domain\Doctor\NodeStateInspector;
+use App\Domain\Doctor\PhpPoolDirectoryInspector;
 use App\Domain\Doctor\PrivateRouteProjectionInspector;
 use App\Domain\Doctor\ProcessStateInspector;
 use App\Domain\Doctor\ProjectStateInspector;
@@ -20,6 +21,7 @@ use App\Infrastructure\Doctor\NativeCaddyBuildInspector;
 use App\Infrastructure\Doctor\NativeCustomProxyRouteInspector;
 use App\Infrastructure\Doctor\NativeGatewayVpnStateInspector;
 use App\Infrastructure\Doctor\NativeInstanceStateInspector;
+use App\Infrastructure\Doctor\NativePhpPoolDirectoryInspector;
 use App\Infrastructure\Doctor\NativePrivateRouteProjectionInspector;
 use App\Infrastructure\Doctor\NativeProcessStateInspector;
 use App\Infrastructure\Doctor\NativeProjectStateInspector;
@@ -40,6 +42,8 @@ it('resolves every read-only inspector through its domain contract', function ()
         ->toBeInstanceOf(NativeGatewayVpnStateInspector::class)
         ->and(app(CaddyBuildInspector::class))
         ->toBeInstanceOf(NativeCaddyBuildInspector::class)
+        ->and(app(PhpPoolDirectoryInspector::class))
+        ->toBeInstanceOf(NativePhpPoolDirectoryInspector::class)
         ->and(app(ProjectStateInspector::class))
         ->toBeInstanceOf(NativeProjectStateInspector::class)
         ->and(app(InstanceStateInspector::class))

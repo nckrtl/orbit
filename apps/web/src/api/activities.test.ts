@@ -5,7 +5,6 @@ import {
     activitiesQuery,
     activityQuery,
     insertActivityCreated,
-    mergeActivityFirstPage,
     mergeCachedActivityLists,
     olderActivityBeforeId,
     patchActivityUpdated,
@@ -261,60 +260,6 @@ describe("activity polling", () => {
     it("does not poll on its own clock", () => {
         expect(activitiesQuery()).not.toHaveProperty("refetchInterval");
         expect(activityQuery(1)).not.toHaveProperty("refetchInterval");
-    });
-});
-
-describe("mergeActivityFirstPage", () => {
-    it("merges the newest page by id and keeps older pages without a duplicate", () => {
-        const merged = mergeActivityFirstPage(
-            { pages: [pageOf(100, 50), pageOf(50, 50)], pageParams: [undefined, 51] },
-            pageOf(110, 50),
-        );
-        const ids = idsOf(merged);
-
-        expect(ids).toEqual(Array.from({ length: 110 }, (_, index) => 110 - index));
-        expect(new Set(ids).size).toBe(ids.length);
-        expect(merged.pages.map((page) => page.length)).toEqual([50, 50, 10]);
-        for (let index = 1; index < ids.length; index += 1) {
-            expect(ids[index - 1]).toBeGreaterThan(ids[index]!);
-        }
-    });
-
-    it("keeps a cached row the first page omits and lets the fetched fields replace the cached ones", () => {
-        const merged = mergeActivityFirstPage(
-            {
-                pages: [
-                    [activity(100), activity(90, { status: "running" }), activity(80)],
-                    [activity(70)],
-                ],
-                pageParams: [undefined, 80],
-            },
-            [activity(110), activity(100, { status: "failed" }), activity(80)],
-        );
-
-        expect(idsOf(merged)).toEqual([110, 100, 90, 80, 70]);
-        expect(merged.pages.flat().find((row) => row.id === 100)?.status).toBe("failed");
-        expect(merged.pages.flat().find((row) => row.id === 90)?.status).toBe("running");
-        expect(idsOf(merged).filter((id) => id === 100)).toEqual([100]);
-    });
-
-    it("keeps newest-first order when the fetched page overlaps an older page", () => {
-        const merged = mergeActivityFirstPage(
-            {
-                pages: [
-                    pageOf(200, 50, { status: "running" }),
-                    pageOf(150, 50, { status: "running" }),
-                ],
-                pageParams: [undefined, 151],
-            },
-            [...pageOf(200, 25, { status: "running" }), ...pageOf(140, 25, { status: "running" })],
-        );
-        const ids = idsOf(merged);
-
-        expect(ids).toEqual(Array.from({ length: 100 }, (_, index) => 200 - index));
-        expect(ids).toContain(175);
-        expect(ids).toContain(141);
-        expect(merged.pages.at(-1)?.length).toBe(ACTIVITY_PAGE_LIMIT);
     });
 });
 

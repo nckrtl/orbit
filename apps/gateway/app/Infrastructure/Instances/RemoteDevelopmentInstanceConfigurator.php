@@ -8,6 +8,7 @@ use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentSourceProfile;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
@@ -25,6 +26,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function inspect(Instance $instance): DevelopmentSourceProfile
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
 
         // An unrouted monorepo is a source checkout, not a single PHP application.
@@ -36,16 +38,17 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $instance->applicationDirectory(), $account->user],
+                arguments: ['bash', '-seu', '--', $instance->applicationDirectory(), $account->user, $instance->project->type->frameworkEntryPoint()],
                 input: <<<'BASH'
                     checkout=$1
                     managed_user=$2
+                    entry_point=$3
                     if [ -d "$checkout" ] && [ "$(realpath -e -- "$checkout")" != "$checkout" ]; then
                         printf 'UNSAFE\n'
                         exit 0
                     fi
                     composer="$checkout/composer.json"
-                    artisan="$checkout/artisan"
+                    artisan="$checkout/$entry_point"
 
                     if [ -L "$composer" ] || { [ -e "$composer" ] && [ ! -f "$composer" ]; }; then
                         printf 'UNSAFE\n'
@@ -75,6 +78,7 @@ final readonly class RemoteDevelopmentInstanceConfigurator implements Developmen
 
     public function configureLaravelUrl(Instance $instance, string $url): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
         $this->ssh->execute(

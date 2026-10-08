@@ -1,0 +1,25 @@
+Queuing release...
+
+┌  Deploy Gateway release fedcba987654
+│
+├  ● Queuing release
+│
+├  ○ Prepare release
+│
+├  ○ Migrate database
+│
+├  ○ Switch release
+│
+├  ○ Hand off runtime
+│
+├  ○ Verify release
+│
+├  ○ Move scheduler
+│
+├  ○ Publish web app
+│
+├  ○ Run smoke tests
+│
+└  Operation failed.
+
+Another Gateway release step is running. Wait for it to finish.

@@ -281,7 +281,7 @@ describe('watcher persistence without repair dispatch', function (): void {
                 return Http::response([$source], $response->status, $response->incomplete
                     ? ['Link' => '<https://api.github.com/repos/acme/orbit/pulls/42/reviews?per_page=100&page=2>; rel="next"'] : []);
             },
-            'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['check_runs' => []]),
+            'https://api.github.com/repos/acme/orbit/commits/*/check-runs*' => Http::response(['total_count' => 0, 'check_runs' => []]),
         ]);
         // An uncached default read also persists; a cache hit never refreshes confirmed evidence.
         app(HttpTaskPullRequestWatcher::class)->reviews($group);

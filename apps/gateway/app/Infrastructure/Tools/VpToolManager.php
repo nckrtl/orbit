@@ -18,8 +18,6 @@ use App\Models\Node;
 
 final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 {
-    private const string VP_BINARY = '/usr/local/bin/vp';
-
     private const int MAX_PACKAGE_LENGTH = 214;
 
     private const int MAX_VERSION_LENGTH = 255;
@@ -74,8 +72,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
                 saw_conflict=1
                 return 0
             fi
-            if [ ! -x "$binary" ] && [ ! -L "$binary" ]; then
-                saw_conflict=1
+            if [ ! -e "$binary" ] && [ ! -L "$binary" ]; then
                 return 0
             fi
             binary_owner=$(/usr/bin/stat -f '%Su' "$binary" 2>/dev/null || true)
@@ -108,7 +105,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     /**
      * Verifies the enrolled account's existing Linux Vite+ global scope.
-     * The first existing store wins, in materialize order. A later store is not a conflict.
+     * The first store with bin/vp wins, in materialize order. A later store is not a conflict.
      * It does not install Vite+, publish launchers, or change the scope.
      */
     private const string LINUX_SCOPE_SCRIPT = <<<'BASH'
@@ -179,8 +176,7 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
                 exit 43
             fi
             if [ ! -e "$binary" ] && [ ! -L "$binary" ]; then
-                printf 'Orbit Vite Plus scope conflict\n' >&2
-                exit 43
+                return 0
             fi
             binary_owner=$(/usr/bin/stat -c '%U:%G' "$binary" 2>/dev/null || true)
             if [ "$binary_owner" != "$account:$group" ] || [ ! -x "$binary" ]; then
@@ -267,6 +263,15 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             launcher_environment=
             for candidate in /opt/orbit/vite-plus "$managed_home/.vite-plus" "$managed_home/.local/share/vite-plus"; do
                 if [ -e "$candidate" ] || [ -L "$candidate" ]; then
+                    if [ -d "$candidate" ] && [ ! -L "$candidate" ] \
+                        && [ ! -e "$candidate/bin/vp" ] && [ ! -L "$candidate/bin/vp" ]; then
+                        candidate_owner=$(stat -c '%U:%G' "$candidate" 2>/dev/null || true)
+                        if [ "$candidate_owner" != "$managed_user:$managed_group" ]; then
+                            printf 'Orbit Vite Plus directory conflict: %s\n' "$candidate" >&2
+                            exit 1
+                        fi
+                        continue
+                    fi
                     vp_home="$candidate"
                     break
                 fi
@@ -274,10 +279,8 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             if [ -z "$vp_home" ]; then
                 vp_home="$managed_home/.local/share/vite-plus"
             fi
-            if [ "$vp_home" = /opt/orbit/vite-plus ]; then
-                vp_environment='VP_HOME=/opt/orbit/vite-plus'
-                launcher_environment='export VP_HOME=/opt/orbit/vite-plus'
-            fi
+            vp_environment="VP_HOME=$vp_home"
+            launcher_environment="export VP_HOME=\"$vp_home\""
             if { [ -e "$vp_home" ] || [ -L "$vp_home" ]; } \
                 && { [ -L "$vp_home" ] || [ ! -d "$vp_home" ]; }; then
                 printf 'Orbit Vite Plus directory conflict: %s\n' "$vp_home" >&2
@@ -287,22 +290,26 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             if [ ! -x "$vp_binary" ]; then
                 sudo -u "$managed_user" -H env -u VP_HOME bash -o pipefail -c 'curl -fsSL https://vite.plus | bash'
                 test -x "$vp_binary"
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env setup
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env on
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env install lts
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" env default lts
-                sudo -u "$managed_user" -H env ${vp_environment:-} "$vp_binary" install -g --node lts pnpm
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env setup
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env on
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env install lts
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" env default lts
+                sudo -u "$managed_user" -H env "$vp_environment" "$vp_binary" install -g --node lts pnpm
             fi
             test -x "$vp_binary"
             test -x "$vp_home/bin/pnpm"
 
             launcher_candidates=$(mktemp -d "/usr/local/bin/.orbit-vp-runtime.XXXXXX")
             published_paths=
+            upgraded_binaries=
             rollback_vp_runtime() {
                 runtime_status=$?
                 if [ "$runtime_status" -ne 0 ]; then
                     for published_path in $published_paths; do
                         rm -f -- "$published_path"
+                    done
+                    for binary in $upgraded_binaries; do
+                        mv -f -- "$launcher_candidates/previous-$binary" "/usr/local/bin/$binary"
                     done
                 fi
                 rm -rf -- "$launcher_candidates"
@@ -326,11 +333,17 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
             for binary in vp node pnpm npm npx; do
                 launcher="/usr/local/bin/$binary"
                 candidate="$launcher_candidates/$binary"
+                legacy="$launcher_candidates/legacy-$binary"
+                legacy_header='#!/bin/sh'
+                if [ "$vp_home" = /opt/orbit/vite-plus ]; then
+                    legacy_header="$legacy_header\\nexport VP_HOME=/opt/orbit/vite-plus"
+                fi
+                printf '%b\n' "$legacy_header" "exec \"$vp_home/bin/$binary\" \"\$@\"" > "$legacy"
                 if { [ -e "$launcher" ] || [ -L "$launcher" ]; } \
                     && { [ -L "$launcher" ] || [ ! -f "$launcher" ] \
                         || [ "$(stat -c '%U:%G' "$launcher")" != 'root:root' ] \
                         || [ "$(stat -c '%a' "$launcher")" != '755' ] \
-                        || ! cmp -s "$launcher" "$candidate"; }; then
+                        || { ! cmp -s "$launcher" "$candidate" && ! cmp -s "$launcher" "$legacy"; }; }; then
                     printf 'Orbit Vite Plus launcher conflict: %s\n' "$launcher" >&2
                     exit 1
                 fi
@@ -342,6 +355,10 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
                 if ! { [ -e "$launcher" ] || [ -L "$launcher" ]; }; then
                     mv "$candidate" "$launcher"
                     published_paths="$published_paths $launcher"
+                elif ! cmp -s "$launcher" "$candidate"; then
+                    cp -p -- "$launcher" "$launcher_candidates/previous-$binary"
+                    upgraded_binaries="$upgraded_binaries $binary"
+                    mv -f -- "$candidate" "$launcher"
                 fi
             done
 
@@ -489,7 +506,6 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     {
         $this->guardNode($node);
         $this->guardPackage($package);
-        $this->existingBinary($node);
         $version = $this->installedVersion($node, $package);
 
         if ($version === null) {
@@ -505,6 +521,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function install(Node $node, string $package): void
     {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+
         $this->mutate(
             node: $node,
             package: $package,
@@ -515,6 +534,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function update(Node $node, string $package): void
     {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+
         $this->mutate(
             node: $node,
             package: $package,
@@ -541,6 +563,9 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
 
     public function remove(Node $node, string $package): void
     {
+        $this->guardNode($node);
+        $this->guardPackage($package);
+
         $this->mutate(
             node: $node,
             package: $package,
@@ -627,11 +652,11 @@ final readonly class VpToolManager implements SupportsToolAdoption, ToolManager
     /** @return non-empty-list<string> */
     private function vpArguments(Node $node, string ...$arguments): array
     {
-        $binary = $node->platform === 'macos'
-            ? $this->resolveMacBinary($node)
-            : self::VP_BINARY;
+        $binary = $this->existingBinary($node);
 
         return array_values([
+            'env',
+            'VP_HOME='.dirname($binary, 2),
             $binary,
             ...$arguments,
         ]);

@@ -16,5 +16,6 @@ final class UpdateTaskGroupData extends Data
         public ?string $title,
         public ?string $brief,
         public ?TaskGroupStatus $status,
+        public ?bool $preview = null,
     ) {}
 }

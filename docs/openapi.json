@@ -15,7 +15,7 @@
   "tags": [
     {
       "name": "Gateway",
-      "description": "Status and trust of the active Gateway."
+      "description": "Status and trust of the active Gateway, and the releases of the Gateway itself."
     },
     {
       "name": "Nodes",
@@ -28,6 +28,10 @@
     {
       "name": "Firewall",
       "description": "Named UFW rules on one Node."
+    },
+    {
+      "name": "Fleet rollout",
+      "description": "The rollout of each verified Gateway release to the managed Nodes, and its catch-up."
     },
     {
       "name": "Tools",
@@ -2158,6 +2162,72 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Clusters\\SetClusterRouterRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SetClusterRouterRequest(clusterId: 3, nodeId: 7))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/compute/github-token": {
+      "post": {
+        "operationId": "compute-github-token",
+        "summary": "Renew sandbox repository access",
+        "tags": [
+          "Node callbacks"
+        ],
+        "description": "Internal UpCloud VM credential renewal. Requires the enrolled active WireGuard peer, binary access to its own Node, and its private Pi bearer token. The Gateway derives the repository from the active task workspace; request fields cannot select another repository. Issues a fresh one-hour GitHub App token with contents, pull requests, and workflows write plus Actions read. The response is not cached or recorded in command activity. Stopped, destroying, detached, and inactive task ownership is refused.",
+        "responses": {
+          "200": {
+            "description": "Fresh access scoped to the Project repository.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string",
+                  "const": "no-store, private"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "token": {
+                      "type": "string",
+                      "description": "Temporary installation token. Never persist or log it."
+                    }
+                  },
+                  "required": [
+                    "token"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporary repository access could not be issued (`compute.github_unavailable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/compute/github-token\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           }
         ]
       }
@@ -4372,6 +4442,949 @@
         ]
       }
     },
+    "/api/v1/fleet/rollout": {
+      "get": {
+        "operationId": "fleet-rollout-status",
+        "summary": "fleet:rollout:status",
+        "tags": [
+          "Fleet rollout"
+        ],
+        "description": "Show the newest fleet rollout, each Node's result, and the Nodes it leaves out.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/fleet/rollout\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Fleet\\ShowFleetRolloutRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowFleetRolloutRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/fleet/rollout/resume": {
+      "post": {
+        "operationId": "fleet-rollout-resume",
+        "summary": "fleet:rollout:resume",
+        "tags": [
+          "Fleet rollout"
+        ],
+        "description": "Resume the halted fleet rollout. The Gateway runs it in orbit-fleet-converge.service.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "skip": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255,
+                    "description": "Node ID or name to leave out of this rollout, usually the Node it halted on"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/fleet/rollout/resume\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"skip\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ResumeFleetRolloutRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/desired-fleet-state": {
+      "get": {
+        "operationId": "gateway-desired-fleet-state",
+        "summary": "Show the desired fleet state",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Returns what every machine in the fleet should run for the Gateway's commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DesiredFleetState"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/gateway/desired-fleet-state\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowDesiredFleetStateRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/release-automation": {
+      "get": {
+        "operationId": "gateway-release-auto-status",
+        "summary": "gateway:release:auto:status",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Shows whether automatic Gateway releases are enabled or paused, the current release, the last runner tick, and how long releases have made no progress. See /reference/gateway-recovery#automatic-releases.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayReleaseAutomation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/gateway/release-automation\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseAutomationRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowGatewayReleaseAutomationRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/release-automation/disable": {
+      "post": {
+        "operationId": "gateway-release-auto-disable",
+        "summary": "gateway:release:auto:disable",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Turns automatic Gateway releases off. A release that already runs finishes.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayReleaseAutomation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/release-automation/disable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\DisableGatewayReleaseAutomationRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DisableGatewayReleaseAutomationRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/release-automation/enable": {
+      "post": {
+        "operationId": "gateway-release-auto-enable",
+        "summary": "gateway:release:auto:enable",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Turns automatic Gateway releases on. A pause still holds them until `gateway:release:auto:resume`.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayReleaseAutomation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/release-automation/enable\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\EnableGatewayReleaseAutomationRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new EnableGatewayReleaseAutomationRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/release-automation/resume": {
+      "post": {
+        "operationId": "gateway-release-auto-resume",
+        "summary": "gateway:release:auto:resume",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayReleaseAutomation"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/release-automation/resume\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\ResumeGatewayReleaseAutomationRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ResumeGatewayReleaseAutomationRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/release-smoke": {
+      "post": {
+        "operationId": "gateway-release-smoke",
+        "summary": "gateway:release:smoke",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request's command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9a-f]{7,40}$(?![\\s\\S])",
+                    "description": "Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release"
+                  },
+                  "since": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 64,
+                    "description": "Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayReleaseSmoke"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/release-smoke\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"commit\": \"example\", \"since\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\SmokeGatewayReleaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SmokeGatewayReleaseRequest())->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/releases": {
+      "get": {
+        "operationId": "gateway-release-list",
+        "summary": "gateway:release:list",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Lists the 50 newest Gateway release records, newest first, including queued and running ones.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/GatewayRelease"
+                      }
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/gateway/releases\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\ListGatewayReleasesRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListGatewayReleasesRequest())->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "gateway-release-deploy",
+        "summary": "gateway:release:deploy",
+        "tags": [
+          "Gateway"
+        ],
+        "description": "Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "commit": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{7,40}$(?![\\s\\S])",
+                    "description": "Hex SHA of the commit to release, 7 to 40 characters"
+                  }
+                },
+                "required": [
+                  "commit"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The release record is queued and its unit started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayRelease"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/releases\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"commit\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\DeployGatewayReleaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DeployGatewayReleaseRequest(commit: 'value'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/releases/{release}": {
+      "get": {
+        "operationId": "gateway-release-show",
+        "summary": "gateway:release:show",
+        "tags": [
+          "Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "release",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayRelease"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/gateway/releases/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowGatewayReleaseRequest(release: '20260914T101500Z'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/gateway/releases/{release}/rollback": {
+      "post": {
+        "operationId": "gateway-release-rollback",
+        "summary": "gateway:release:rollback",
+        "tags": [
+          "Gateway"
+        ],
+        "parameters": [
+          {
+            "name": "release",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": ""
+          }
+        ],
+        "description": "Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "force": {
+                    "type": "boolean",
+                    "description": "Switch the code across a migration the target release does not have"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted. The release record is queued and its unit started.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/GatewayRelease"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "systemd did not start the release unit (`gateway.release_unit_failed`). The record ends as failed.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/gateway/releases/1/rollback\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"force\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\GatewayReleases\\RollbackGatewayReleaseRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RollbackGatewayReleaseRequest(release: '20260914T101500Z'))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/gateway/status": {
       "get": {
         "operationId": "gateway-status",
@@ -4379,7 +5392,7 @@
         "tags": [
           "Gateway"
         ],
-        "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.",
+        "description": "Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.",
         "responses": {
           "200": {
             "description": "The request succeeded.",
@@ -11297,6 +12310,121 @@
         ]
       }
     },
+    "/api/v1/nodes/{node}/converge": {
+      "post": {
+        "operationId": "node-converge",
+        "summary": "node:converge",
+        "tags": [
+          "Nodes"
+        ],
+        "parameters": [
+          {
+            "name": "node",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Node ID."
+          }
+        ],
+        "description": "Re-apply the Gateway-rendered Orbit footprint of a Node. It never changes an Instance or a role.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "force": {
+                    "type": "boolean",
+                    "description": "Re-apply every artifact, not only the ones whose digest changed"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No record matches the path parameters.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/nodes/7/converge\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"force\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Nodes\\ConvergeNodeRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ConvergeNodeRequest(nodeId: 7))->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/nodes/{node}/excluded-projects": {
       "get": {
         "operationId": "node-excluded-project-list",
@@ -14681,6 +15809,170 @@
         ]
       }
     },
+    "/api/v1/project-document-storage": {
+      "get": {
+        "operationId": "project-document-storage-show",
+        "summary": "project:document-storage:show",
+        "tags": [
+          "Projects"
+        ],
+        "description": "Show private Project Document storage.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentStorage"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/project-document-storage\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\ShowProjectDocumentStorageRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowProjectDocumentStorageRequest())->dto();\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "project-document-storage-update",
+        "summary": "project:document-storage:update",
+        "tags": [
+          "Projects"
+        ],
+        "description": "Update private Project Document storage.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "HTTPS storage origin"
+                  },
+                  "region": {
+                    "type": "string",
+                    "pattern": "^[\\x21-\\x7e]{1,63}$(?![\\s\\S])",
+                    "description": "Signing region"
+                  },
+                  "bucket": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9](?:[a-z0-9.-]{1,61})[a-z0-9]$(?![\\s\\S])",
+                    "description": "Bucket name"
+                  },
+                  "access_key_id": {
+                    "type": "string"
+                  },
+                  "secret_access_key": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentStorage"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A guard refused the change and the Gateway changed nothing; `error.code` names the guard.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "The JSON body is not an object, has duplicate or unknown members, or fails validation (`validation.failed`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/project-document-storage\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"endpoint\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\UpdateProjectDocumentStorageRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProjectDocumentStorageRequest())->dto();\n"
+          }
+        ]
+      }
+    },
     "/api/v1/projects": {
       "get": {
         "operationId": "project-list",
@@ -14773,10 +16065,11 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
+                      "symfony-app",
                       "laravel-package",
                       "node-package"
                     ],
-                    "description": "Project type (monorepo, laravel-app, laravel-package, or node-package)"
+                    "description": "Project type (monorepo, laravel-app, symfony-app, laravel-package, or node-package)"
                   },
                   "repository_url": {
                     "type": "string",
@@ -14811,6 +16104,14 @@
                   "task_workspace_routed": {
                     "type": "boolean",
                     "description": "Whether new task workspaces get a Route (true or false)"
+                  },
+                  "task_compute": {
+                    "type": "string",
+                    "enum": [
+                      "shared",
+                      "vm"
+                    ],
+                    "description": "Compute for future task groups (shared or vm)"
                   }
                 },
                 "required": [
@@ -15127,6 +16428,7 @@
                     "enum": [
                       "monorepo",
                       "laravel-app",
+                      "symfony-app",
                       "laravel-package",
                       "node-package"
                     ],
@@ -15171,6 +16473,26 @@
                   "task_workspace_routed": {
                     "type": "boolean",
                     "description": "Change routing for future task workspaces (true or false)"
+                  },
+                  "task_compute": {
+                    "type": "string",
+                    "enum": [
+                      "shared",
+                      "vm"
+                    ],
+                    "description": "Compute for future task groups (shared or vm)"
+                  },
+                  "review_and_merge": {
+                    "type": "boolean",
+                    "description": "Review every push, review incoming pull requests, and merge reviewed green heads (true or false)"
+                  },
+                  "merge_check": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 255,
+                    "description": "The check that must pass on a head before Orbit merges it, such as \"Required checks\""
                   }
                 },
                 "additionalProperties": false
@@ -15714,6 +17036,2052 @@
             "lang": "php",
             "label": "PHP SDK",
             "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\Projects\\UpdateProjectDevelopmentDeployStepRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProjectDevelopmentDeployStepRequest(projectId: 4, name: 'example'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents": {
+      "get": {
+        "operationId": "project-document-list",
+        "summary": "project:document:list",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "parent_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 1
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "archived",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "folder",
+                "file"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DocumentEntry"
+                      }
+                    },
+                    "meta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Meta"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "next_cursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "next_cursor"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/documents?parent_id=1&state=active&kind=1&cursor=1&limit=25\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\ListProjectDocumentsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProjectDocumentsRequest(projectId: 4))->dto();\n"
+          }
+        ]
+      },
+      "post": {
+        "operationId": "project-document-create",
+        "summary": "project:document:create",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "folder",
+                      "file"
+                    ],
+                    "description": "folder or file"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Document name"
+                  },
+                  "parent_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  },
+                  "content_text": {
+                    "type": "string",
+                    "maxLength": 1048576,
+                    "description": "Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB."
+                  },
+                  "content_base64": {
+                    "type": "string",
+                    "maxLength": 13981016,
+                    "description": "Canonical RFC 4648 base64; decoded size is at most 10 MiB."
+                  },
+                  "media_type": {
+                    "type": "string",
+                    "maxLength": 127,
+                    "description": "Media type"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "oneOf": [
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "folder"
+                      }
+                    },
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "content_text"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "content_base64"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "media_type"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "properties": {
+                      "kind": {
+                        "const": "file"
+                      }
+                    },
+                    "oneOf": [
+                      {
+                        "required": [
+                          "content_text"
+                        ],
+                        "not": {
+                          "required": [
+                            "content_base64"
+                          ]
+                        }
+                      },
+                      {
+                        "required": [
+                          "content_base64"
+                        ],
+                        "not": {
+                          "required": [
+                            "content_text"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentEntry"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Decoded content or JSON request exceeds the documented limit (`project_documents.content_too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/documents\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"kind\": \"folder\", \"name\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\CreateProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new CreateProjectDocumentRequest(projectId: 4, kind: 'value', name: 'example'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/search": {
+      "get": {
+        "operationId": "project-document-search",
+        "summary": "project:document:search",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "minLength": 1
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "active",
+                "archived",
+                "all"
+              ]
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "folder",
+                "file"
+              ]
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DocumentEntry"
+                      }
+                    },
+                    "meta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Meta"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "next_cursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "next_cursor"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/documents/search?q=1&state=active&kind=1&cursor=1&limit=25\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\SearchProjectDocumentsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new SearchProjectDocumentsRequest(projectId: 4, q: 'value'))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/{entry}": {
+      "delete": {
+        "operationId": "project-document-destroy",
+        "summary": "project:document:destroy",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                  },
+                  "recursive": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "id": {
+                          "type": "integer"
+                        },
+                        "removed": {
+                          "type": "boolean"
+                        },
+                        "cleanup_pending": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "removed",
+                        "cleanup_pending"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/projects/4/documents/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"expected_revision\": 1, \"recursive\": true}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\DestroyProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DestroyProjectDocumentRequest(projectId: 4, entryId: 1, expectedRevision: 1))->dto();\n"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "project-document-show",
+        "summary": "project:document:show",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentEntry"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/documents/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\ShowProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ShowProjectDocumentRequest(projectId: 4, entryId: 1))->dto();\n"
+          }
+        ]
+      },
+      "patch": {
+        "operationId": "project-document-update",
+        "summary": "project:document:update",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Observed revision"
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "New name"
+                  },
+                  "parent_id": {
+                    "type": [
+                      "integer",
+                      "null"
+                    ],
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ],
+                "anyOf": [
+                  {
+                    "required": [
+                      "name"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "parent_id"
+                    ]
+                  }
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentEntry"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/projects/4/documents/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"expected_revision\": 1, \"name\": \"example\", \"parent_id\": 1}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\UpdateProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new UpdateProjectDocumentRequest(projectId: 4, entryId: 1, expectedRevision: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/{entry}/archive": {
+      "post": {
+        "operationId": "project-document-archive",
+        "summary": "project:document:archive",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Observed revision"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentEntry"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/documents/1/archive\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"expected_revision\": 1}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\ArchiveProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ArchiveProjectDocumentRequest(projectId: 4, entryId: 1, expectedRevision: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/{entry}/content": {
+      "get": {
+        "operationId": "project-document-read",
+        "summary": "project:document:read",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entry_id": {
+                          "type": "integer"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "version": {
+                          "$ref": "#/components/schemas/DocumentVersion"
+                        },
+                        "content_text": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "entry_id",
+                        "revision",
+                        "version",
+                        "content_text"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Decoded content or JSON request exceeds the documented limit (`project_documents.content_too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/documents/1/content?version=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\ReadProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ReadProjectDocumentRequest(projectId: 4, entryId: 1))->dto();\n"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "project-document-write",
+        "summary": "project:document:write",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Observed revision"
+                  },
+                  "content_text": {
+                    "type": "string",
+                    "maxLength": 1048576,
+                    "description": "Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB."
+                  },
+                  "content_base64": {
+                    "type": "string",
+                    "maxLength": 13981016,
+                    "description": "Canonical RFC 4648 base64; decoded size is at most 10 MiB."
+                  },
+                  "media_type": {
+                    "type": "string",
+                    "maxLength": 127,
+                    "description": "Media type"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ],
+                "oneOf": [
+                  {
+                    "required": [
+                      "content_text"
+                    ],
+                    "not": {
+                      "required": [
+                        "content_base64"
+                      ]
+                    }
+                  },
+                  {
+                    "required": [
+                      "content_base64"
+                    ],
+                    "not": {
+                      "required": [
+                        "content_text"
+                      ]
+                    }
+                  }
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentEntry"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Decoded content or JSON request exceeds the documented limit (`project_documents.content_too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X PUT \"https://gateway.orbit/api/v1/projects/4/documents/1/content\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"expected_revision\": 1, \"content_text\": \"example\", \"content_base64\": \"example\", \"media_type\": \"example\"}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\WriteProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new WriteProjectDocumentRequest(projectId: 4, entryId: 1, expectedRevision: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/{entry}/download": {
+      "get": {
+        "operationId": "project-document-download",
+        "summary": "project:document:download",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": {
+                        "entry_id": {
+                          "type": "integer"
+                        },
+                        "revision": {
+                          "type": "integer"
+                        },
+                        "version": {
+                          "$ref": "#/components/schemas/DocumentVersion"
+                        },
+                        "content_base64": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "entry_id",
+                        "revision",
+                        "version",
+                        "content_base64"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Storage is not configured (`project_documents.storage_not_configured`); metadata remains available.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Decoded content or JSON request exceeds the documented limit (`project_documents.content_too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/documents/1/download?version=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\DownloadProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new DownloadProjectDocumentRequest(projectId: 4, entryId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/{entry}/restore": {
+      "post": {
+        "operationId": "project-document-restore",
+        "summary": "project:document:restore",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Observed revision"
+                  }
+                },
+                "required": [
+                  "expected_revision"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentEntry"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/documents/1/restore\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"expected_revision\": 1}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\RestoreProjectDocumentRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RestoreProjectDocumentRequest(projectId: 4, entryId: 1, expectedRevision: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/{entry}/restore-version": {
+      "post": {
+        "operationId": "project-document-restore-version",
+        "summary": "project:document:restore-version",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Observed revision"
+                  },
+                  "version_id": {
+                    "type": "integer",
+                    "minimum": 1
+                  }
+                },
+                "required": [
+                  "expected_revision",
+                  "version_id"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "$ref": "#/components/schemas/DocumentEntry"
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Revision conflict (`project_documents.revision_conflict`, with entry_id and current_revision), duplicate sibling name (`project_documents.name_conflict`), archived destination (`project_documents.archived`), nonempty folder (`project_documents.folder_not_empty`), abandoned upload (`project_documents.upload_abandoned`), or unconfigured storage (`project_documents.storage_not_configured`). No automatic retry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Decoded content or JSON request exceeds the documented limit (`project_documents.content_too_large`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Committed body is missing or corrupt (`project_documents.body_unavailable`); metadata is retained.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage is unavailable (`project_documents.storage_unavailable`); provider diagnostics are not returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/projects/4/documents/1/restore-version\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"expected_revision\": 1, \"version_id\": 1}'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\RestoreProjectDocumentVersionRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new RestoreProjectDocumentVersionRequest(projectId: 4, entryId: 1, expectedRevision: 1, versionId: 1))->dto();\n"
+          }
+        ]
+      }
+    },
+    "/api/v1/projects/{project}/documents/{entry}/versions": {
+      "get": {
+        "operationId": "project-document-version-list",
+        "summary": "project:document:version:list",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project ID."
+          },
+          {
+            "name": "entry",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Numeric Project Document entry ID."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 4096
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
+          }
+        ],
+        "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+        "responses": {
+          "200": {
+            "description": "The request succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DocumentVersion"
+                      }
+                    },
+                    "meta": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/Meta"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "next_cursor": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "next_cursor"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "data",
+                    "meta"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller is not an active WireGuard peer (`peer.identity_unknown`) or lacks Node access to the target (`node_access.required`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project-scoped entry or file-scoped version not found (`project_documents.not_found`); a missing Project returns `http.404`.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Invalid fields, content encoding, names, hierarchy, query or cursor (`validation.failed`), folder content operation (`project_documents.not_file`), or content outside inline editing limits (`project_documents.not_editable`).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "bash",
+            "label": "curl",
+            "source": "curl -sS \"https://gateway.orbit/api/v1/projects/4/documents/1/versions?cursor=1&limit=25\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+          },
+          {
+            "lang": "php",
+            "label": "PHP SDK",
+            "source": "<?php\n\nuse Orbit\\Sdk\\GatewayConnector;\nuse Orbit\\Sdk\\Requests\\ProjectDocuments\\ListProjectDocumentVersionsRequest;\n\n$connector = new GatewayConnector(\n    baseUrl: 'https://gateway.orbit',\n    caPemPath: '/path/to/orbit-root-ca.pem',\n);\n\n$response = $connector->send(new ListProjectDocumentVersionsRequest(projectId: 4, entryId: 1))->dto();\n"
           }
         ]
       }
@@ -20084,6 +23452,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
+                "properties": {
+                  "offline": {
+                    "type": "boolean",
+                    "description": "Remove the Route without changing a Node the Gateway cannot reach"
+                  }
+                },
                 "additionalProperties": false
               }
             }
@@ -20098,7 +23472,7 @@
                   "type": "object",
                   "properties": {
                     "data": {
-                      "$ref": "#/components/schemas/Route"
+                      "$ref": "#/components/schemas/RemovedRoute"
                     },
                     "meta": {
                       "$ref": "#/components/schemas/Meta"
@@ -20157,7 +23531,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/routes/9\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\n"
+            "source": "curl -sS -X DELETE \"https://gateway.orbit/api/v1/routes/9\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"offline\": false}'\n"
           },
           {
             "lang": "php",
@@ -21552,6 +24926,14 @@
         ],
         "parameters": [
           {
+            "name": "compact",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
             "name": "project_id",
             "in": "query",
             "required": false,
@@ -21573,6 +24955,7 @@
                 "running",
                 "reviewing",
                 "settling",
+                "waiting_for_review",
                 "completed",
                 "failed",
                 "cancelled"
@@ -21633,7 +25016,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups?project_id=4&status=success\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups?compact=1&project_id=4&status=success\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           },
           {
             "lang": "php",
@@ -21679,6 +25062,10 @@
                     ],
                     "description": "backlog (default) or todo"
                   },
+                  "preview": {
+                    "type": "boolean",
+                    "description": "Keep the sandbox running during review"
+                  },
                   "notify_coder": {
                     "type": "boolean",
                     "description": "Post the Coder settle webhook when the group settles"
@@ -21699,6 +25086,18 @@
                         "brief": {
                           "type": "string",
                           "maxLength": 8000
+                        },
+                        "topology": {
+                          "type": "array",
+                          "maxItems": 3,
+                          "items": {
+                            "type": "string",
+                            "enum": [
+                              "app-dev",
+                              "app-prod",
+                              "app-prod-2"
+                            ]
+                          }
                         },
                         "deliverables": {
                           "type": "array",
@@ -21891,6 +25290,14 @@
               "minimum": 1
             },
             "description": "Numeric Task group ID."
+          },
+          {
+            "name": "compact",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "x-orbit-extension": "tasks",
@@ -21953,7 +25360,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1?compact=1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           },
           {
             "lang": "php",
@@ -21989,6 +25396,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "preview": {
+                    "type": "boolean",
+                    "description": "Keep the sandbox running during review"
+                  },
                   "title": {
                     "type": "string",
                     "maxLength": 160,
@@ -22081,7 +25492,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/task-groups/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"status\": \"success\"}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/task-groups/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"preview\": true, \"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"status\": \"success\"}'\n"
           },
           {
             "lang": "php",
@@ -22277,7 +25688,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
+        "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Workspace cleanup uses forced Instance removal, including Project teardown and checkout deletion. A development source_resolved workspace with no Route or one pending or failed exclusive Route is removed with its Route and target; active or shared Routes still refuse removal. Re-cancelling also removes an unattached leftover matched by Project, task-{group} name, and branch, unless a live claim owns it. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.",
         "requestBody": {
           "required": false,
           "content": {
@@ -22333,7 +25744,7 @@
             }
           },
           "409": {
-            "description": "The tasks extension is disabled (`extension.disabled`), or the Task group is completed or settling with a pull request (`tasks.not_cancellable`). A disabled extension returns HTTP 409 (`extension.disabled`).",
+            "description": "The tasks extension is disabled (`extension.disabled`), or the Task group is completed or in settling or waiting_for_review with a pull request (`tasks.not_cancellable`). A disabled extension returns HTTP 409 (`extension.disabled`).",
             "content": {
               "application/json": {
                 "schema": {
@@ -22397,7 +25808,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
+        "description": "Completes a settling Task group or a VM group waiting for review without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
         "requestBody": {
           "required": false,
           "content": {
@@ -22534,6 +25945,19 @@
                     "type": "string",
                     "maxLength": 8000,
                     "description": "Goal and acceptance of the step"
+                  },
+                  "topology": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "app-dev",
+                        "app-prod",
+                        "app-prod-2"
+                      ]
+                    },
+                    "description": "JSON array of required workload nodes; [] removes declarations"
                   },
                   "deliverables": {
                     "type": "array",
@@ -22702,7 +26126,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"deliverables\": [{\"id\": \"example\", \"type\": \"file\", \"description\": \"example\"}]}'\n"
+            "source": "curl -sS -X POST \"https://gateway.orbit/api/v1/task-groups/1/tasks\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"topology\": [\"app-dev\"], \"deliverables\": [{\"id\": \"example\", \"type\": \"file\", \"description\": \"example\"}]}'\n"
           },
           {
             "lang": "php",
@@ -22858,7 +26282,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
+        "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
         "requestBody": {
           "required": false,
           "content": {
@@ -22880,6 +26304,19 @@
                     "type": "integer",
                     "minimum": 1,
                     "description": "New position, starting at 1"
+                  },
+                  "topology": {
+                    "type": "array",
+                    "maxItems": 3,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "app-dev",
+                        "app-prod",
+                        "app-prod-2"
+                      ]
+                    },
+                    "description": "JSON array of required workload nodes; [] removes declarations"
                   },
                   "deliverables": {
                     "type": "array",
@@ -23022,7 +26459,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/task-groups/1/tasks/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\", \"brief\": \"Persist groups. Accept when create and list work.\", \"position\": 1, \"deliverables\": [{\"id\": \"example\", \"type\": \"file\", \"description\": \"example\"}]}'\n"
+            "source": "curl -sS -X PATCH \"https://gateway.orbit/api/v1/task-groups/1/tasks/1\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81' \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"title\": \"Absorb Commander\"}'\n"
           },
           {
             "lang": "php",
@@ -23061,7 +26498,7 @@
           }
         ],
         "x-orbit-extension": "tasks",
-        "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
+        "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
         "requestBody": {
           "required": false,
           "content": {
@@ -23300,6 +26737,34 @@
               "type": "string"
             },
             "description": ""
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "ready_for_review",
+                "changes_requested",
+                "approved",
+                "blocked",
+                "answered",
+                "topology_requested",
+                "assistance_requested",
+                "resolution"
+              ]
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1
+            }
           }
         ],
         "x-orbit-extension": "tasks",
@@ -23365,7 +26830,7 @@
           {
             "lang": "bash",
             "label": "curl",
-            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/comments\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
+            "source": "curl -sS \"https://gateway.orbit/api/v1/task-groups/1/tasks/1/comments?type=1&limit=25\" \\\n  --cacert /path/to/orbit-root-ca.pem \\\n  -H 'Accept: application/json' \\\n  -H 'X-Orbit-Request-Id: 9d6b1e5c-4a3f-4a1b-9f0e-6d2c3f5a7b81'\n"
           },
           {
             "lang": "php",
@@ -25063,6 +28528,380 @@
           }
         }
       },
+      "DesiredFleetState": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cli": {
+            "$ref": "#/components/schemas/DesiredCliRelease"
+          },
+          "agent": {
+            "$ref": "#/components/schemas/DesiredAgent"
+          }
+        }
+      },
+      "DesiredCliRelease": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "pending",
+              "unavailable"
+            ]
+          },
+          "reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "gateway_commit_unknown",
+              "history_unavailable",
+              "release_missing",
+              "release_mismatch",
+              "release_incomplete",
+              "github_unavailable",
+              null
+            ]
+          },
+          "version": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tag": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "checksums_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetReleaseAsset"
+            }
+          }
+        }
+      },
+      "FleetReleaseAsset": {
+        "type": "object",
+        "properties": {
+          "platform": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          }
+        }
+      },
+      "DesiredAgent": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FleetReleaseAsset"
+            }
+          }
+        }
+      },
+      "GatewayReleaseAutomation": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "pause": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GatewayReleasePause"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "current_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_tick": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GatewayReleaseTick"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "stalled_since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch_head": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "behind_since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "branch": {
+            "type": "string"
+          },
+          "check": {
+            "type": "string"
+          },
+          "tick_confirmation": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "GatewayReleasePause": {
+        "type": "object",
+        "properties": {
+          "reason": {
+            "type": "string"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "record": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "snapshot": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "GatewayReleaseTick": {
+        "type": "object",
+        "properties": {
+          "checked_at": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "record": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "GatewayReleaseSmoke": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha": {
+            "type": "string"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "report": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          }
+        }
+      },
+      "GatewayRelease": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "requested": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "trigger": {
+            "type": "string"
+          },
+          "force": {
+            "type": "boolean"
+          },
+          "outcome": {
+            "type": "string"
+          },
+          "finished": {
+            "type": "boolean"
+          },
+          "migrations_ran": {
+            "type": "boolean"
+          },
+          "retryable": {
+            "type": "boolean"
+          },
+          "cleanup_paused": {
+            "type": "boolean"
+          },
+          "snapshot": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "previous": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phases": {
+            "type": "object",
+            "additionalProperties": true
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "message": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "duration_ms": {
+            "type": "integer"
+          },
+          "alert": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
+          },
+          "created_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
       "GatewayStatus": {
         "type": "object",
         "properties": {
@@ -25080,6 +28919,61 @@
           },
           "laravel_version": {
             "type": "string"
+          },
+          "desired_fleet_state": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DesiredFleetState"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "release": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "release_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "auto_release": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/GatewayAutoReleaseStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "GatewayAutoReleaseStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "paused": {
+            "type": "boolean"
+          },
+          "last_checked_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_result": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -25255,6 +29149,7 @@
             "enum": [
               "monorepo",
               "laravel-app",
+              "symfony-app",
               "laravel-package",
               "node-package"
             ]
@@ -25573,6 +29468,7 @@
             "enum": [
               "monorepo",
               "laravel-app",
+              "symfony-app",
               "laravel-package",
               "node-package"
             ]
@@ -25607,6 +29503,22 @@
           },
           "task_workspace_routed": {
             "type": "boolean"
+          },
+          "task_compute": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "vm"
+            ]
+          },
+          "review_and_merge": {
+            "type": "boolean"
+          },
+          "merge_check": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         }
       },
@@ -26104,6 +30016,16 @@
                 "type": "null"
               }
             ]
+          },
+          "updating": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/NodeUpdating"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -26128,6 +30050,33 @@
           "path": {
             "type": [
               "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "NodeUpdating": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "fleet_rollout",
+              "gateway_release"
+            ]
+          },
+          "since": {
+            "type": "string"
+          },
+          "rollout": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "release": {
+            "type": [
+              "integer",
               "null"
             ]
           }
@@ -26364,6 +30313,154 @@
           "user": {
             "type": [
               "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DocumentStorage": {
+        "type": "object",
+        "properties": {
+          "configured": {
+            "type": "boolean"
+          },
+          "endpoint": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "bucket": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "credentials_configured": {
+            "type": "boolean"
+          },
+          "updated_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pending_cleanup_count": {
+            "type": "integer"
+          },
+          "oldest_pending_cleanup_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "last_cleanup_error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "cleanup_state": {
+            "type": "string"
+          },
+          "cleanup_generation": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reconciliation_report_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "DocumentEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "revision": {
+            "type": "integer"
+          },
+          "archived_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "is_archived": {
+            "type": "boolean"
+          },
+          "current_version": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/DocumentVersion"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "DocumentVersion": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "number": {
+            "type": "integer"
+          },
+          "media_type": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "created_by_node_id": {
+            "type": [
+              "integer",
               "null"
             ]
           }
@@ -26641,6 +30738,146 @@
           }
         }
       },
+      "RemovedRoute": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "node_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "cluster_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "generation_basis_node_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "domain": {
+            "type": "string"
+          },
+          "provenance": {
+            "type": "string"
+          },
+          "publication": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "failed_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "error_code": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "replaces_route_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "replaced_by_route_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "replacement_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_set_step": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/RouteTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "targets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteTarget"
+            }
+          },
+          "process_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "upstream": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "analytics_instance_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "retained_on_nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RouteRemovalResidue"
+            }
+          }
+        }
+      },
+      "RouteRemovalResidue": {
+        "type": "object",
+        "properties": {
+          "node_id": {
+            "type": "integer"
+          },
+          "node": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "Schedule": {
         "type": "object",
         "properties": {
@@ -26750,6 +30987,7 @@
               "running",
               "reviewing",
               "settling",
+              "waiting_for_review",
               "completed",
               "failed",
               "cancelled"
@@ -26868,6 +31106,48 @@
               "managed",
               "existing_thread"
             ]
+          },
+          "task_compute": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "shared",
+              "vm",
+              null
+            ]
+          },
+          "capacity_wait_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "sandbox_power": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "running",
+              "stopped",
+              "destroyed",
+              null
+            ]
+          },
+          "preview": {
+            "type": "boolean"
+          },
+          "review_and_merge": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/TaskReviewAndMerge"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -26893,6 +31173,12 @@
             "type": "array",
             "items": {
               "type": "object"
+            }
+          },
+          "topology": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
           "status": {
@@ -26953,7 +31239,8 @@
             "type": "string",
             "enum": [
               "implementation",
-              "annotation"
+              "annotation",
+              "final_review"
             ]
           },
           "target_thread_id": {
@@ -27068,6 +31355,86 @@
               "string",
               "null"
             ]
+          }
+        }
+      },
+      "TaskReviewAndMerge": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "pr_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "waiting",
+              "refused",
+              "merged",
+              null
+            ]
+          },
+          "merge_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merged_sha": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reviewed_commits": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskReviewedCommit"
+            }
+          }
+        }
+      },
+      "TaskReviewedCommit": {
+        "type": "object",
+        "properties": {
+          "sha": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "orbit_push",
+              "pull_request_review"
+            ]
+          },
+          "review_task_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "pushed_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "github_review_id": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "recorded_at": {
+            "type": "string"
           }
         }
       },
@@ -27363,6 +31730,18 @@
             "items": {
               "$ref": "#/components/schemas/TaskAssistance"
             }
+          },
+          "last_tick_at": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merges": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskMerge"
+            }
           }
         }
       },
@@ -27393,6 +31772,7 @@
               "running",
               "reviewing",
               "settling",
+              "waiting_for_review",
               "completed",
               "failed",
               "cancelled"
@@ -27416,6 +31796,71 @@
             ]
           },
           "assistance_reason": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        }
+      },
+      "TaskMerge": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer"
+          },
+          "project_id": {
+            "type": "integer"
+          },
+          "project": {
+            "type": "string"
+          },
+          "project_code": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "backlog",
+              "todo",
+              "reserved",
+              "running",
+              "reviewing",
+              "settling",
+              "waiting_for_review",
+              "completed",
+              "failed",
+              "cancelled"
+            ]
+          },
+          "pr_url": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "pr_branch": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "merge_status": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "waiting",
+              "refused",
+              "merged",
+              null
+            ]
+          },
+          "merge_reason": {
             "type": [
               "string",
               "null"

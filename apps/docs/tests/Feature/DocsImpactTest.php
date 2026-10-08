@@ -366,6 +366,22 @@ it('docs impact owns the scheduled development-default deployment command and it
         ->and(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('orbit:deploy-development-defaults', 'everyMinute', 'withoutOverlapping');
 });
 
+it('docs impact owns document cleanup and reserved probe commands and their scheduler cadence', function (): void {
+    $root = docsImpactFixture();
+    file_put_contents($root.'/docs/reference/schedules.md', "---\ntitle: Schedules\n---\nSchedules\n");
+    file_put_contents($root.'/docs/reference/project-documents.md', "---\ntitle: Project Documents\n---\nProbe recovery\n");
+    $schedule = 'apps/gateway/app/Console/Kernel.php';
+    $repair = 'apps/gateway/app/Console/Commands/RepairDocumentProbeCredentials.php';
+    file_put_contents($root.'/'.$schedule, "<?php Schedule::command('project-documents:probes:reconcile')->everyMinute()->withoutOverlapping(10); Schedule::command('project-documents:cleanup:work')->everyFiveMinutes()->withoutOverlapping(60);\n");
+    file_put_contents($root.'/'.$repair, "<?php class RepairDocumentProbeCredentials { protected \$signature = 'project-documents:probes:repair {record}'; }\n");
+
+    $report = new DocsImpact($root)->report(null, [$schedule, $repair]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/reference/project-documents.md', 'docs/reference/schedules.md')
+        ->and(collect($report['surfaces'])->pluck('reason')->implode(' '))->toContain('project-documents:cleanup:work', 'project-documents:probes:reconcile', 'project-documents:probes:repair', 'everyMinute', 'everyFiveMinutes', 'withoutOverlapping');
+});
+
 it('docs impact reports MCP tool ownership and generator status', function (): void {
     $root = docsImpactFixture();
     file_put_contents($root.'/docs/reference/mcp.mdx', "---\ntitle: MCP\n---\nMCP\n");

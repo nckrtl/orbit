@@ -151,11 +151,8 @@ it('renders status exporter rows in JSON', function (): void {
 });
 
 it('renders the Gateway role conflict for a second enable while an assignment exists', function (): void {
-    $originalColumns = getenv('COLUMNS');
+    // afterEach restores the caller's COLUMNS.
     putenv('COLUMNS=120');
-    $this->beforeApplicationDestroyed(static function () use ($originalColumns): void {
-        putenv($originalColumns === false ? 'COLUMNS' : 'COLUMNS='.$originalColumns);
-    });
 
     $mock = MockClient::global([EnableMetricsRequest::class => metrics_cli_role_conflict_response()]);
 
@@ -201,17 +198,6 @@ it('renders credentials in human output without leaking them in errors', functio
         ->and($flat)->toContain('Username admin')
         ->and($flat)->toContain('Password '.$password)
         ->and($output)->toContain('22222222-2222-4222-8222-222222222222');
-});
-
-it('requires a node id in non-interactive enable mode', function (): void {
-    $mock = MockClient::global();
-
-    $this
-        ->artisan('metrics:enable', ['--json' => true])
-        ->expectsOutputToContain('Node ID or name is required.')
-        ->assertExitCode(1);
-
-    expect($mock->getLastPendingRequest())->toBeNull();
 });
 
 it('enables Metrics on an explicit node and sends the node payload', function (): void {

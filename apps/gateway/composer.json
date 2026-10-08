@@ -7,12 +7,14 @@
     "license": "MIT",
     "require": {
         "php": "^8.5",
+        "ext-curl": "*",
         "ext-intl": "*",
         "composer/semver": "^3.4",
         "laravel/ai": "^1.0@dev",
         "laravel/framework": "^13.0",
         "laravel/mcp": "^1.0",
         "laravel/tinker": "^3.0",
+        "league/flysystem-aws-s3-v3": "^3.0",
         "pusher/pusher-php-server": "^7.3",
         "spatie/laravel-activitylog": "^5.1",
         "spatie/laravel-data": "^4.23",
@@ -68,7 +70,8 @@
             "@rector",
             "@format:check",
             "@analyse",
-            "@annotator:check"
+            "@annotator:check",
+            "@compute-guests:check"
         ],
         "annotator:check": "python3 ../../bin/annotator-build --check",
         "format": "vendor/bin/pint",
@@ -96,7 +99,8 @@
         ],
         "pre-package-uninstall": [
             "Illuminate\\Foundation\\ComposerScripts::prePackageUninstall"
-        ]
+        ],
+        "compute-guests:check": "python3 ../../bin/compute-guest-build --check"
     },
     "extra": {
         "laravel": {

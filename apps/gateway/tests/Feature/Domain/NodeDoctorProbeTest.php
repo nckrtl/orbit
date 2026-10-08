@@ -10,6 +10,7 @@ use App\Domain\Doctor\NodeDiskFilesystemData;
 use App\Domain\Doctor\NodeInspectionData;
 use App\Domain\Shared\LifecycleStatus;
 use App\Models\Node;
+use App\Models\RouteRemovalResidue;
 use Illuminate\Database\Eloquent\Collection;
 
 it('reports disk low for scarce space or inodes on managed Nodes, including the Gateway', function (int $freeKiB, int $freeInodes, bool $low): void {
@@ -63,6 +64,40 @@ it('reports disk low on a separate home filesystem without exposing the device',
     expect($issues)->toHaveCount(1)
         ->and($issues[0]->observed)->toContain('home: 16384 KiB free')
         ->and(json_encode($report, JSON_THROW_ON_ERROR))->not->toContain('/dev/');
+});
+
+it('reports what an offline Route removal left on a Node, also while the Node is unreachable', function (): void {
+    $node = Node::query()->create([
+        'name' => 'beast',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'architecture' => 'amd64',
+        'public_ssh_host' => '192.0.2.7',
+        'wireguard_ip' => '10.44.0.7',
+        'ssh_host_fingerprint' => 'SHA256:managed',
+    ]);
+    RouteRemovalResidue::query()->create([
+        'node_id' => $node->id,
+        'route_id' => 171,
+        'domain' => 'task-342.acme.beast.test',
+        'steps' => ['caddy', 'php', 'firewall'],
+    ]);
+
+    $report = new NodeDoctorProbe()->inspect(
+        new DoctorNodeContext($node, new NodeInspectionData(false, null, null, null)),
+    );
+    $issues = array_values(array_filter(
+        $report->issues,
+        static fn (DoctorIssueData $issue): bool => $issue->code === 'node.route_residue_retained',
+    ));
+
+    expect($issues)->toHaveCount(1)
+        ->and($issues[0]->kind->value)->toBe('drift')
+        ->and($issues[0]->resourceName)->toBe('beast')
+        ->and($issues[0]->summary)->toBe('Removed Route [171] [task-342.acme.beast.test] still has projections on the Node.')
+        ->and($issues[0]->expected)->toBe('removed')
+        ->and($issues[0]->observed)->toBe('caddy,php,firewall')
+        ->and(collect($report->issues)->pluck('code')->all())->toContain('node.ssh_unreachable');
 });
 
 it('reports bounded node drift and unreachable state', function (): void {

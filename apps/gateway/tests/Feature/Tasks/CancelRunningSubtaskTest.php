@@ -59,6 +59,7 @@ function cancel_subtask_in_baseline(int $suffix): array
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-baseline/task-workspace',
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
     $group = Task::topLevel()->create([
@@ -160,6 +161,7 @@ it('cancel running subtask preserves its group and Instance', function (): void 
         'node_id' => $node->id,
         'name' => 'task-workspace',
         'checkout_path' => '/srv/orbit/apps/cancel-subtask/task-workspace',
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'source_resolved',
     ]);
     $group = Task::topLevel()->create([

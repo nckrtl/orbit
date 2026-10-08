@@ -31,7 +31,8 @@ final readonly class CommandVocabulary
         'doctor' => ['doctor'],
         'env' => ['import', 'sync'],
         'firewall' => ['allow', 'deny'],
-        'gateway' => ['status', 'trust', 'use'],
+        'fleet' => ['resume', 'status'],
+        'gateway' => ['deploy', 'resume', 'rollback', 'smoke', 'status', 'trust', 'use'],
         'instance' => [
             'clone',
             'deploy',
@@ -44,12 +45,14 @@ final readonly class CommandVocabulary
             'transfer',
         ],
         'metrics' => ['status'],
-        'node' => ['relocate', 'rename'],
+        'node' => ['converge', 'relocate', 'rename'],
         'process' => ['logs', 'restart', 'start', 'stop'],
         'proxycli' => ['models', 'setup', 'status', 'teardown'],
+        'project' => ['archive', 'download', 'read', 'restore', 'restore-version', 'search', 'upload', 'versions', 'write'],
         'profile' => ['profile'],
         'realtime' => ['tail'],
         'schedule' => ['logs', 'run'],
+        'self-update' => ['self-update'],
         'tasks' => ['cancel', 'complete', 'status'],
         'tool' => ['adopt', 'scan'],
     ];
@@ -121,7 +124,7 @@ final readonly class CommandVocabulary
      */
     public static function routeRequiresMatchingCommand(string $routeName, array $commandNames): bool
     {
-        if (in_array($routeName, ['instance:dependencies:show'], true)) {
+        if (in_array($routeName, ['instance:dependencies:show', 'project:document:destroy', 'project:document:version:list'], true)) {
             return false;
         }
 

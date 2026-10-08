@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Instances;
 
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\Logs\InstanceLogReader;
 use App\Domain\Logs\LogReadLimit;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -26,6 +27,7 @@ final readonly class RemoteInstanceLogReader implements InstanceLogReader
 
     public function tail(Instance $instance, int $lines): string
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $result = $this->ssh->execute(
             $this->connection($instance->node),
             new RemoteCommand(

@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Fleet\\ResumeFleetRolloutRequest",
+    "route": "POST /api/v1/fleet/rollout/resume",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "fleet.rollout_not_halted",
+            "message": "No fleet rollout is halted.",
+            "details": {}
+        }
+    }
+}

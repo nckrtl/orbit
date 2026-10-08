@@ -201,6 +201,33 @@ it('releases an untargeted retiring Route hostname from Cluster Router DNS selec
         ->toBe('192.168.10.20');
 });
 
+it('releases a targeted Route hostname once its removal withdraws the publication', function (
+    RouteStatus $status,
+    ?string $failedStep,
+    bool $selected,
+): void {
+    [$route, $outside, $eligible] = orb260_cluster_routes();
+    $route->targets->sole()->instance->update(['status' => InstanceState::SourceResolved]);
+    $route->update([
+        'status' => $status,
+        'sites_published' => false,
+        'failed_step' => $failedStep,
+        'error_code' => $failedStep === null ? null : 'route.test',
+    ]);
+
+    $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();
+    $eligibleKey = DnsRequester::registered($eligible->id, (string) $eligible->wireguard_ip)->cacheKey();
+
+    expect(isset($catalog->overrides[$eligibleKey][$route->domain]))
+        ->toBe($selected)
+        ->and($catalog->overrides[$eligibleKey][$outside->domain])
+        ->toBe('192.168.10.20');
+})->with([
+    'removal in progress' => [RouteStatus::Retiring, null, false],
+    'failed targeted removal' => [RouteStatus::Failed, 'targeted:caddy', false],
+    'failed creation' => [RouteStatus::Failed, 'projection', true],
+]);
+
 it('fills requester catalog overrides for eligible LAN members only', function (): void {
     [$route, $outside, $eligible] = orb260_cluster_routes();
     $catalog = new DevelopmentDnsConfigRenderer(new DevelopmentSiteRepository)->catalog();

@@ -42,6 +42,13 @@ final readonly class NativeGatewayFpmConverger
             throw $exception;
         }
 
+        $this->installCleanupStartup();
+        // A running distro FPM service can activate the Gateway pool with a reload, which skips ExecStartPre.
+        $this->run(
+            step: 'gateway-fpm-cleanup-invalidate',
+            errorCode: 'gateway.fpm_start_failed',
+            arguments: ['sudo', GatewayCleanupStartupRenderer::HOOK_PATH],
+        );
         $this->run(
             step: 'gateway-fpm-enable',
             errorCode: 'gateway.fpm_start_failed',
@@ -110,6 +117,37 @@ final readonly class NativeGatewayFpmConverger
                 chown root:root "$candidate_main"
                 chmod 0644 "$candidate_main"
                 BASH,
+        );
+    }
+
+    private function installCleanupStartup(): void
+    {
+        $renderer = new GatewayCleanupStartupRenderer;
+        $hook = $renderer->renderHook(config()->string('orbit.gateway_checkout'), config()->string('orbit.home'));
+        $dropIn = $renderer->renderDropIn();
+        $program = <<<'BASH'
+            install -d -o root -g root -m 0755 /etc/orbit /etc/systemd/system/php8.5-fpm.service.d
+            hook=$(mktemp /etc/orbit/.document-cleanup-start.XXXXXX)
+            unit=$(mktemp /etc/systemd/system/php8.5-fpm.service.d/.document-cleanup.XXXXXX)
+            trap 'rm -f -- "$hook" "$unit"' EXIT
+            BASH;
+        $program .= "\nprintf '%s' ".escapeshellarg($hook).' > "$hook"';
+        $program .= "\nprintf '%s' ".escapeshellarg($dropIn).' > "$unit"';
+        $program .= <<<'BASH'
+
+            chown root:root "$hook" "$unit"
+            chmod 0755 "$hook"
+            chmod 0644 "$unit"
+            bash -n "$hook"
+            mv -f -- "$hook" /etc/orbit/project-document-cleanup-start
+            mv -f -- "$unit" /etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf
+            systemctl daemon-reload
+            BASH;
+        $this->run(
+            step: 'gateway-fpm-cleanup-startup',
+            errorCode: 'gateway.fpm_config_install_failed',
+            arguments: ['sudo', 'bash', '-seu'],
+            input: $program,
         );
     }
 

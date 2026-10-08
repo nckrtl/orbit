@@ -127,7 +127,7 @@ After the Gateway starts, stops, or restarts a Process, it reads the new status 
 
 Open Grafana at `https://metrics.orbit` from the active Gateway Node, or from an active WireGuard peer with an access grant to the Gateway Node. A grant to only the Metrics Node is not enough. Grafana then asks for its own login.
 
-Private DNS answers `metrics.orbit` with the Gateway's WireGuard address. The Gateway's Caddy presents an Orbit CA certificate. Before each request, Caddy calls `GET /api/v1/metrics/grafana/authorize` with the connection address. It ignores forwarding and identity headers from the caller. It proxies admitted traffic over WireGuard to Grafana on the Metrics Node.
+Private DNS answers `metrics.orbit` with the Gateway's WireGuard address. The Gateway's Caddy presents an Orbit CA certificate. Before each request, Caddy calls `GET /api/v1/metrics/grafana/authorize` with the connection address. It ignores forwarding and identity headers from the caller. Caddy runs that check in the current Gateway release: it resolves the stable Gateway application path for each request, as the Gateway site does ([Runtime handoff](/reference/gateway-recovery#runtime-handoff)). It proxies admitted traffic over WireGuard to Grafana on the Metrics Node.
 
 The Gateway refuses an unknown, inactive, ungranted, or public caller. It also refuses when it cannot establish the caller's identity or authority. The Gateway reloads its Caddy when a Node is removed, or when an access grant to the Gateway Node is removed, while a Metrics role exists. Later requests fail, and open streaming connections close.
 

@@ -17,6 +17,8 @@ Every result that the CLI prints carries a Gateway request ID. That ID is the li
 
 Project development deploy step changes record `project:dev-deploy-step:create`, `project:dev-deploy-step:update`, or `project:dev-deploy-step:destroy`. Their Activity input omits commands, including on refused requests. Use the request ID to find a step edit without exposing its shell command.
 
+[Project Document](/reference/project-documents) commands record their operation, target path, caller, outcome, and request ID. Activity input is empty for this family, including refused writes, so document bytes are never parsed or recorded before authorization. Storage credentials remain redacted.
+
 ## Commands
 
 | Command | Result |
@@ -85,7 +87,7 @@ An `activity` that is not a positive integer fails with `activity.id_invalid`. H
 
 The target is the request path, so reading the logs of two Processes keeps a record for each. A polling client therefore adds about one record per command and target per minute. When the sampling cache fails, the Gateway records the read and logs a warning. `--request-id` finds no record for a successful read inside another read's window. A read has no `running` state, because the Gateway writes it once, when it ends.
 
-These routes record no Activity, for any method: the Node agent endpoints, the annotation event stream, the Grafana access check, the two GitHub App registration pages, the Schedule completion report, the Instance wake check, the log stream renewals, and the task agent list and stream. An MCP tool call records the Activity of the API request it runs.
+These routes record no Activity, for any method: the Node agent endpoints, the annotation event stream, the Grafana access check, the two GitHub App registration pages, the Schedule completion report, the Instance wake check, the log stream renewals, and the task agent list and stream. An MCP tool call records the Activity of the API request it runs. In an [MCP batch](/reference/mcp#endpoints), a call that starts after the batch has used up its forward time is recorded as `failed` with `command.deadline_exceeded`.
 
 ## Interrupted requests
 

@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Models\Instance;
 
 /** The task account is optional during rollout, but a configured account never falls back to SSH's user. */
 final readonly class TaskWorkerUser
 {
-    public static function name(): ?string
+    public static function name(?Instance $workspace = null): ?string
     {
+        if ($workspace?->task_sandbox_id !== null) {
+            return null;
+        }
         $worker = config('orbit.tasks.worker_user');
         if ($worker === null || $worker === '') {
             return null;
@@ -29,9 +33,9 @@ final readonly class TaskWorkerUser
     /** @param list<string> $arguments
      * @return list<string>
      */
-    public static function arguments(array $arguments): array
+    public static function arguments(array $arguments, ?Instance $workspace = null): array
     {
-        $worker = self::name();
+        $worker = self::name($workspace);
 
         if ($worker === null) {
             return $arguments;

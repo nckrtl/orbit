@@ -7,6 +7,7 @@ namespace App\Infrastructure\Instances;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\Transfer\InstanceTransferRouteProjector;
 use App\Domain\Routes\PublicRouteEdgeProjector;
 use App\Domain\Routes\RouteDomainProjector;
@@ -25,6 +26,7 @@ use App\Models\InstanceTransfer;
 use App\Models\Node;
 use App\Models\Route;
 use App\Models\RouteTarget;
+use Illuminate\Support\Collection;
 
 final readonly class NativeDevelopmentRouteProjector implements DevelopmentRouteProjector, InstanceTransferRouteProjector, RouteDomainProjector
 {
@@ -39,6 +41,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function converge(Instance $instance, Route $route): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
         // Creation stores the publication record once the certificate its sites name exists, and
@@ -48,9 +51,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
         $this->ssh->execute(
             $instance->node,
-            new DevelopmentCaddyAccessCommand()->command(
-                new DevelopmentSiteRepository()->forNode($instance->node),
-            ),
+            new DevelopmentCaddyAccessCommand()->command($this->sourceAccessSites($instance)),
             step: 'source-access',
             errorCode: 'app-dev.source_access_failed',
         );
@@ -84,8 +85,31 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
         $this->dns->converge();
     }
 
+    /**
+     * The access walk covers the converging Instance's checkout and any served checkout nested in
+     * it, because the recursive deny on the Instance's tree would otherwise revoke a nested
+     * worktree's Web root. Every other checkout on the Node keeps the access its own convergence
+     * granted, so the walk does not grow with the Node's other Instances.
+     *
+     * @return Collection<int, DevelopmentSite>
+     */
+    private function sourceAccessSites(Instance $instance): Collection
+    {
+        $checkout = rtrim($instance->checkout_path, '/');
+
+        if ($checkout === '') {
+            return collect();
+        }
+
+        return new DevelopmentSiteRepository()->forNode($instance->node)
+            ->filter(static fn (DevelopmentSite $site): bool => $site->checkoutPath === $checkout
+                || str_starts_with($site->checkoutPath, $checkout.'/'))
+            ->values();
+    }
+
     public function prepareWorkloadCertificate(Instance $instance, Route $current, Route $candidate): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->certificates->convergeInstanceHostnameChange($instance, $candidate->domain);
     }
 
@@ -142,12 +166,14 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function prepareWorkloadCaddy(Instance $instance, Route $current, Route $candidate): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->caddy->build($instance->node);
     }
 
     public function prepareRouterCertificate(Instance $instance, Route $current, Route $candidate): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $router = $this->router($instance, $candidate);
 
         if ($router instanceof Node) {
@@ -157,6 +183,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function prepareFirewallPolicy(Instance $instance, Route $candidate): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $router = $this->router($instance, $candidate);
 
         if ($router instanceof Node) {
@@ -166,6 +193,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function verifyWorkload(Instance $instance, Route $candidate): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $router = $this->router($instance, $candidate);
 
         if ($router instanceof Node) {
@@ -175,6 +203,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function prepareRouterCaddy(Instance $instance, Route $current, Route $candidate): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $router = $this->router($instance, $candidate);
 
         if ($router instanceof Node) {
@@ -231,6 +260,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
      */
     public function prepareCleanup(Instance $instance, Route $route): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $route->loadMissing('cluster.routerAssignment.node');
         $this->certificates->convergeInstance($instance, $route);
@@ -247,6 +277,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
      */
     public function cleanup(Instance $instance, Route $route): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $route->loadMissing(['cluster.routerAssignment.node', 'transitionCluster.routerAssignment.node']);
         $router = $this->routeRouter($route);
@@ -342,6 +373,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function rollbackCaddy(Instance $instance, Route $route): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->caddy->build($instance->node);
         $router = $this->router($instance, $route);
@@ -353,6 +385,7 @@ final readonly class NativeDevelopmentRouteProjector implements DevelopmentRoute
 
     public function rollbackCertificates(Instance $instance, Route $route): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->certificates->removeHostnameChange($instance, $route);
     }
 

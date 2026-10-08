@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\WireGuard;
 
+use App\Domain\Compute\SandboxSpec;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\WireGuard\GatewayPeerProjectionManager;
 use App\Infrastructure\Processes\CommandResult;
@@ -11,6 +12,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Node;
+use App\Models\TaskSandbox;
 use Closure;
 
 final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuardPeerConverger, WireGuardPeerConverger
@@ -129,6 +131,8 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     ): void {
         $retainTransaction = $transactionMode === 'retain';
         $vpn = $this->configuration->forPeer($node);
+        $sandbox = $node->compute_sandbox_id !== null ? TaskSandbox::query()->findOrFail($node->compute_sandbox_id) : null;
+        $listenPort = $sandbox?->provider === 'upcloud' ? SandboxSpec::fromArray($sandbox->spec)->wireguardPort : null;
         $node->update(['wireguard_public_key' => $publicKey]);
         $this->gatewayPeers->converge($node);
         $dnsMode = match (true) {
@@ -151,6 +155,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 'operatorDns' => $rolelessOperator ? $gatewayWireGuardAddress : '',
                 'dnsPolicy' => $vpn->usesDefaultDnsResolver ? 'default' : 'split',
             ],
+            $listenPort,
         );
         $peerResult = $this->ssh->execute($connection, $peerCommand);
         foreach (self::PEER_INSTALL_RETRY_DELAYS as $delay) {
@@ -486,7 +491,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
     /**
      * @param  array{appDevTld: ?string, transactionMode: string, dnsMode: string, operatorDns: string, dnsPolicy: string}  $dns
      */
-    private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns): RemoteCommand
+    private function peerCommand(VpnConfiguration $vpn, string $peerPublicKey, array $dns, ?int $listenPort = null): RemoteCommand
     {
         [
             'appDevTld' => $appDevTld,
@@ -527,8 +532,8 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                 $dnsPolicy,
             ],
             input: str_replace(
-                '__FINALIZE__',
-                $cleanup,
+                ['__FINALIZE__', '__LISTEN_PORT__'],
+                [$cleanup, $listenPort === null ? '' : 'ListenPort = '.$listenPort],
                 <<<'BASH_WRAP'
                     server_public_key=$1
                     peer_public_key=$2
@@ -768,6 +773,7 @@ final readonly class NativeWireGuardPeerConverger implements RecoverableWireGuar
                     [Interface]
                     PrivateKey = $private_key
                     Address = $address
+                    __LISTEN_PORT__
                     $operator_dns_line
                     $dns_hooks
 

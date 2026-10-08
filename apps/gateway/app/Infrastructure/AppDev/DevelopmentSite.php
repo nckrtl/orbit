@@ -65,6 +65,12 @@ final readonly class DevelopmentSite
         return ApplicationDirectory::resolve($this->checkoutPath, $this->documentRoot);
     }
 
+    /** The working directory (`chdir`) of the site's PHP-FPM pool. A production site runs from its checkout. */
+    public function phpWorkingDirectory(): string
+    {
+        return $this->environment === 'production' ? $this->checkoutPath : $this->applicationDirectory();
+    }
+
     public function poolName(): string
     {
         return "orbit-{$this->scope}";

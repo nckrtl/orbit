@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+usage() {
+    cat <<'EOF'
+Usage:
+  bin/orbit-cli-release-assets <version> <artifact-dir> <out-dir>
+
+Turns the Orbit CLI Binary workflow artifacts into Orbit CLI release assets.
+<artifact-dir> holds one directory per artifact, as actions/download-artifact
+writes them. <out-dir> must not exist yet.
+
+  artifact                       release asset
+  orbit-linux-x64/linux-x64      orbit-<version>-linux-x86_64
+  orbit-linux-arm64/linux-arm    orbit-<version>-linux-aarch64
+  orbit-macos-arm64/mac-arm      orbit-<version>-macos-arm64
+
+It refuses a version that is not 0.N.0, a missing or empty binary, and a
+binary built for another platform. It writes SHA256SUMS in sha256sum format,
+sorted by asset name.
+EOF
+}
+
+fail() {
+    printf 'orbit-cli-release-assets: %s\n' "$*" >&2
+    exit 1
+}
+
+if [ "${1:-}" = "-h" ] || [ "${1:-}" = "--help" ]; then
+    usage
+    exit 0
+fi
+
+[ "$#" -eq 3 ] || {
+    usage >&2
+    exit 2
+}
+
+version="$1"
+artifact_dir="$2"
+out_dir="$3"
+
+[[ "$version" =~ ^0\.[1-9][0-9]*\.0$ ]] || fail "not a release version: ${version}"
+[ -d "$artifact_dir" ] || fail "artifact directory not found: ${artifact_dir}"
+[ ! -e "$out_dir" ] || fail "output directory already exists: ${out_dir}"
+
+command -v sha256sum >/dev/null 2>&1 || fail 'sha256sum is required.'
+
+# Leading bytes of each format: the ELF e_machine field or the Mach-O CPU type.
+header() {
+    od -An -tx1 -N20 -v "$1" | tr -d ' \n'
+}
+
+check_platform() {
+    local path="$1" platform="$2" bytes
+    bytes="$(header "$path")"
+
+    case "$platform" in
+        linux-x86_64)
+            [[ "$bytes" == 7f454c4602* && "${bytes:36:4}" == "3e00" ]]
+            ;;
+        linux-aarch64)
+            [[ "$bytes" == 7f454c4602* && "${bytes:36:4}" == "b700" ]]
+            ;;
+        macos-arm64)
+            [[ "$bytes" == cffaedfe0c000001* ]]
+            ;;
+    esac || fail "${path} is not a ${platform} executable"
+}
+
+targets=(
+    'orbit-linux-x64/linux-x64:linux-x86_64'
+    'orbit-linux-arm64/linux-arm:linux-aarch64'
+    'orbit-macos-arm64/mac-arm:macos-arm64'
+)
+
+for target in "${targets[@]}"; do
+    source_path="${artifact_dir}/${target%%:*}"
+    [ -f "$source_path" ] || fail "missing binary: ${source_path}"
+    [ -s "$source_path" ] || fail "empty binary: ${source_path}"
+    check_platform "$source_path" "${target##*:}"
+done
+
+mkdir -p "$out_dir"
+
+for target in "${targets[@]}"; do
+    install -m 0755 "${artifact_dir}/${target%%:*}" "${out_dir}/orbit-${version}-${target##*:}"
+done
+
+(
+    cd "$out_dir"
+    LC_ALL=C sha256sum -- orbit-"${version}"-* | LC_ALL=C sort -k 2 > SHA256SUMS
+    sha256sum --check --strict --quiet SHA256SUMS
+)
+
+printf 'orbit-cli-release-assets: wrote %s\n' "$out_dir"

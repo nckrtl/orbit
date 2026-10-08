@@ -70,6 +70,7 @@ function ws_read_frame($stream): array
     $second = ord($header[1]);
     $opcode = $first & 0x0F;
     $masked = ($second & 0x80) === 0x80;
+    expect($masked)->toBeTrue();
     $length = $second & 0x7F;
 
     if ($length === 126) {

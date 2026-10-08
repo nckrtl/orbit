@@ -16,6 +16,14 @@ use App\Domain\Tasks\AgentDriverException;
  */
 final readonly class PiModel
 {
+    public static function forSandbox(string $model): string
+    {
+        $qualified = self::forModel($model, 'orbit-sandbox');
+        $name = substr($qualified, strpos($qualified, '/') + 1);
+
+        return 'orbit-sandbox/'.$name;
+    }
+
     public static function forModel(string $model, ?string $provider = null): string
     {
         $slash = strpos($model, '/');

@@ -378,5 +378,40 @@
                 "purpose": "Shown when the proxycli extension is disabled or the collector is not configured."
             }
         ]
+    },
+    {
+        "path": "/projects/$id/documents",
+        "purpose": "Project folders, versioned files, safe explicit-save editing, and recovery.",
+        "reach": "Open a Project, then Documents in its section menu.",
+        "controls": [
+            {
+                "testid": "project-documents",
+                "purpose": "Project Documents menu item."
+            },
+            {
+                "testid": "documents-filters",
+                "purpose": "Search and archive filter sheet."
+            },
+            {
+                "testid": "documents-create",
+                "purpose": "Create folder, text file, or upload."
+            },
+            {
+                "testid": "documents-breadcrumbs",
+                "purpose": "Navigate to root or an ancestor folder."
+            },
+            {
+                "testid": "documents-list",
+                "purpose": "Direct children or Project search results."
+            },
+            {
+                "testid": "documents-save",
+                "purpose": "Explicit save of the captured revision."
+            },
+            {
+                "testid": "documents-error",
+                "purpose": "Conflict or storage recovery guidance."
+            }
+        ]
     }
 ]

@@ -1,0 +1,40 @@
+Running smoke tests...
+
+┌  Run smoke tests
+│
+├  ● Running smoke tests
+│
+└  Smoke tests failed.
+
+
+┌  Gateway smoke: 0123456789ab
+│
+├  Commit     0123456789ab0123456789ab0123456789ab0123
+│
+├  Outcome    failed
+│
+├  Checks     5 passed, 2 failed, 0 timeout, 1 skipped
+│
+├  Message    2 of 7 checks did not pass: web, scheduler.
+│
+├  Next       Fix the failed checks, then run smoke again. Do not deploy.
+│
+├  Duration   42 s
+│
+└  Started    2026-10-07T12:00:00Z
+
+ ┌───────────────┬─────────┬──────────────────────┬─────────────────────────────────────────────────────────┬──────────┐
+ │ CHECK         │ STATUS  │ ERROR                │ MESSAGE                                                 │ DURATION │
+ ├───────────────┼─────────┼──────────────────────┼─────────────────────────────────────────────────────────┼──────────┤
+ │ deploy_verify │ passed  │ —                    │ The Gateway serves 0123456789ab0123456789ab0123456789ab │ 2 s      │
+ │               │         │                      │ 0123.                                                   │          │
+ │ node_list     │ passed  │ —                    │ node:list returned 3 Nodes.                             │ 900 ms   │
+ │ tasks_list    │ passed  │ —                    │ tasks:list answered.                                    │ 800 ms   │
+ │ web           │ failed  │ web_release_mismatch │ web/current serves build aaaaaaaaaaaa, not 0123456789ab │ 300 ms   │
+ │               │         │                      │ .                                                       │          │
+ │ scheduler     │ failed  │ scheduler_inactive   │ orbit-process-108-schedule-work.service is not active.  │ 100 ms   │
+ │ tasks_tick    │ passed  │ —                    │ A tasks tick started at 2026-10-07T12:00:00Z.           │ 41 s     │
+ │ agent_view    │ passed  │ —                    │ orbit-agent-view.service is active.                     │ 100 ms   │
+ │ documents     │ skipped │ —                    │ No --smoke-project; the write check is off.             │ 0 ms     │
+ └───────────────┴─────────┴──────────────────────┴─────────────────────────────────────────────────────────┴──────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

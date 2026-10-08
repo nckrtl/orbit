@@ -61,10 +61,27 @@ import { AnalyticsPanel } from "./AnalyticsPanel";
 import { QueuePanel } from "./QueuePanel";
 import { QuotaProviderPage } from "./Quota";
 import { RecordLayout } from "./RecordLayout";
+import { ProjectMenu } from "./ProjectDocuments";
 
 const GAPS = "gap-x-[1ch] gap-y-[var(--panel-gap)]";
 
 function ProjectPage({ fleet, project }: { fleet: Fleet; project: Project }) {
+    return (
+        <div className="flex min-h-0 min-w-0 flex-col gap-2 md:flex-row">
+            <ProjectMenu project={project} documents={false} />
+            <div
+                id={`project-${project.id}-overview-panel`}
+                role="tabpanel"
+                aria-labelledby={`project-${project.id}-overview-tab`}
+                className="min-h-0 min-w-0 flex-1"
+            >
+                <ProjectOverview fleet={fleet} project={project} />
+            </div>
+        </div>
+    );
+}
+
+function ProjectOverview({ fleet, project }: { fleet: Fleet; project: Project }) {
     const columns = useMemo(() => instanceColumns(fleet, "node"), [fleet]);
     const schedules = useMemo(() => scheduleColumns(fleet, "instance"), [fleet]);
 

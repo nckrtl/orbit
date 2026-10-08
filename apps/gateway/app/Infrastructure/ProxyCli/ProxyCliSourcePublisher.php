@@ -7,15 +7,25 @@ namespace App\Infrastructure\ProxyCli;
 use App\Infrastructure\Processes\ProtectedInput;
 use App\Infrastructure\Ssh\RemoteCommand;
 
-/** Installs and removes the Orbit collector script on the Process Node. */
+/**
+ * Installs and removes the Orbit collector script on the Process Node. The install prints
+ * `orbit-proxycli-source=unchanged` when the live script already matches, and
+ * `orbit-proxycli-source=published` after it replaced it.
+ */
 final readonly class ProxyCliSourcePublisher
 {
+    public const string Published = 'orbit-proxycli-source=published';
+
+    public const string Unchanged = 'orbit-proxycli-source=unchanged';
+
     public function command(string $script): RemoteCommand
     {
         $encoded = base64_encode($script);
         $directory = ProxyCliFootprint::SourceDirectory;
         $path = ProxyCliFootprint::SourcePath;
 
+        $published = self::Published;
+        $unchanged = self::Unchanged;
         $body = <<<BASH
             directory={$directory}
             path={$path}
@@ -26,9 +36,11 @@ final readonly class ProxyCliSourcePublisher
             chmod 0644 "\$candidate"
             if [ -f "\$path" ] && cmp -s -- "\$candidate" "\$path"; then
                 rm -f -- "\$candidate"
+                echo {$unchanged}
                 exit 0
             fi
             mv -fT -- "\$candidate" "\$path"
+            echo {$published}
             BASH;
 
         return new RemoteCommand(

@@ -244,6 +244,33 @@ describe('node storage settings', function (): void {
         'contains' => '/srv',
     ]);
 
+    it('rejects roots that overlap the Gateway release layout', function (string $path): void {
+        config()->set('orbit.gateway_checkout', '/srv/orbit/apps/gateway');
+        $node = Node::query()->create([
+            'name' => 'app-dev',
+            'status' => LifecycleStatus::Active,
+            'public_ssh_host' => '192.0.2.10',
+            'user' => 'orbit',
+            'wireguard_ip' => '10.44.0.3',
+        ]);
+        $node->roles()->create([
+            'role' => RoleName::AppDev,
+            'status' => LifecycleStatus::Active,
+        ]);
+
+        $this
+            ->patchJson("/api/v1/nodes/{$node->id}/settings", [
+                'apps' => ['path' => $path],
+            ])
+            ->assertUnprocessable()
+            ->assertJsonPath('error.code', 'node.settings_path_protected');
+    })->with([
+        'current link' => '/srv/orbit',
+        'releases' => '/srv/releases',
+        'one release' => '/srv/releases/0123456789ab',
+        'shared state' => '/srv/shared/gateway-storage',
+    ]);
+
     it('accepts a sibling of the configured Gateway checkout', function (): void {
         config()->set('orbit.gateway_checkout', '/srv/orbit-gateway');
         $inspected = [];

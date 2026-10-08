@@ -1019,6 +1019,41 @@ it('retains active workload and Router sites while publishing a second Route on 
     }
 });
 
+it('grants source access only to the converging checkout and checkouts nested in it', function (): void {
+    [$instance, $route, $node] = orb127_route_projection_models(coLocated: true, phpVersion: '8.5');
+    $served = static function (string $name, string $checkout, bool $releases = false) use ($instance, $route, $node): void {
+        $other = Instance::query()->create([
+            'project_id' => $instance->project_id, 'node_id' => $node->id, 'name' => $name,
+            'checkout_path' => $checkout, 'development_release_layout' => $releases, 'root' => 'public',
+            'branch' => $name, 'starting_commit' => str_repeat('b', 40), 'selected_php_version' => '8.5',
+            'status' => InstanceState::Active,
+        ]);
+        $otherRoute = Route::query()->create([
+            'project_id' => $instance->project_id, 'cluster_id' => $route->cluster_id, 'domain' => "{$name}.acme.test",
+            'provenance' => RouteProvenance::Explicit, 'publication' => RoutePublication::Private,
+            'status' => RouteStatus::Pending,
+        ]);
+        $otherRoute->targets()->create(['instance_id' => $other->id, 'position' => 0]);
+        $otherRoute->publishSites();
+        $otherRoute->update(['status' => RouteStatus::Active]);
+    };
+    $served('sibling', '/home/orbit/apps/acme/other', releases: true);
+    $served('prefix', '/home/orbit/apps/acme/feature-two');
+    $served('nested', '/home/orbit/apps/acme/feature/.worktrees/nested');
+    [$projector, $ssh, , $home] = orb127_route_projector();
+
+    try {
+        $projector->converge($instance, $route);
+
+        $access = collect($ssh->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'u:caddy:r-X'));
+        $checkouts = collect(array_slice($access->arguments, 3))->chunk(3)->map(static fn ($site): mixed => $site->first())->values()->all();
+
+        expect($checkouts)->toBe(['/home/orbit/apps/acme/feature', '/home/orbit/apps/acme/feature/.worktrees/nested']);
+    } finally {
+        new Filesystem()->deleteDirectory($home);
+    }
+});
+
 it('uses WireGuard only when the workload has no configured LAN address', function (): void {
     [$instance, $route] = orb127_route_projection_models();
     [$projector, $ssh, $processes, $home] = orb127_route_projector();

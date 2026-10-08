@@ -27,7 +27,8 @@
                 "roles": [
                     "app-dev"
                 ],
-                "settings": null
+                "settings": null,
+                "updating": null
             },
             {
                 "id": 1,
@@ -51,7 +52,8 @@
                 "roles": [
                     "gateway"
                 ],
-                "settings": null
+                "settings": null,
+                "updating": null
             }
         ],
         "meta": {

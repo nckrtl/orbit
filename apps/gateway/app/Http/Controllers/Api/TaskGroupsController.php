@@ -26,10 +26,13 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
 use App\Http\Requests\Tasks\CreateTaskRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
+use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
+use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
 use App\Http\Requests\Tasks\UpdateTaskRequest;
+use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Http\JsonResponse;
@@ -74,7 +77,7 @@ final class TaskGroupsController extends Controller
         abort_unless($task->parent_id === $group->id, 404);
 
         return response()->json([
-            'data' => TaskData::fromModel($action->execute($group, $task, $request->payload()))->toArray(),
+            'data' => TaskData::fromModel($action->execute($group, $task, $request->payload(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id')))->toArray(),
             'meta' => $this->meta($request),
         ]);
     }
@@ -116,18 +119,26 @@ final class TaskGroupsController extends Controller
     public function storeComment(StoreTaskCommentRequest $request, Task $group, Task $task, StoreTaskCommentAction $action): JsonResponse
     {
         abort_unless($task->parent_id === $group->id, 404);
-        $comment = $action->execute($task, $request->validated());
+        $comment = $action->execute($task, $request->validated(), $request->user() instanceof Node ? $request->user() : null, $request->attributes->getString('orbit.request_id'));
 
         return response()->json(['data' => TaskCommentData::fromModel($comment)->toArray(), 'meta' => $this->meta($request)], 201);
     }
 
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function comments(Request $request, Task $group, Task $task): JsonResponse
+    public function comments(ListTaskCommentsRequest $request, Task $group, Task $task): JsonResponse
     {
         abort_unless($task->parent_id === $group->id, 404);
+        $comments = $task->comments()->latest('posted_at');
+
+        if ($request->type() !== null) {
+            $comments->where('type', $request->type());
+        }
+        if ($request->limit() !== null) {
+            $comments->limit($request->limit());
+        }
 
         return response()->json([
-            'data' => $task->comments()->latest('posted_at')->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),
+            'data' => $comments->get()->map(static fn (TaskComment $comment): array => TaskCommentData::fromModel($comment)->toArray())->all(),
             'meta' => $this->meta($request),
         ]);
     }
@@ -137,7 +148,9 @@ final class TaskGroupsController extends Controller
     {
         return response()->json([
             'data' => $action->execute($request->projectId(), $request->status())
-                ->map(static fn (Task $group): array => TaskGroupData::fromModel($group)->toArray())
+                ->map(static fn (Task $group): array => $request->boolean('compact')
+                    ? TaskGroupData::fromModel($group)->toCompactArray()
+                    : TaskGroupData::fromModel($group)->toArray())
                 ->values()
                 ->all(),
             'meta' => $this->meta($request),
@@ -145,10 +158,12 @@ final class TaskGroupsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::Collection)]
-    public function show(Request $request, Task $group, ShowTaskGroupAction $action): JsonResponse
+    public function show(ShowTaskGroupRequest $request, Task $group, ShowTaskGroupAction $action): JsonResponse
     {
+        $data = TaskGroupData::fromModel($action->execute($group));
+
         return response()->json([
-            'data' => TaskGroupData::fromModel($action->execute($group))->toArray(),
+            'data' => $request->boolean('compact') ? $data->toCompactArray() : $data->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

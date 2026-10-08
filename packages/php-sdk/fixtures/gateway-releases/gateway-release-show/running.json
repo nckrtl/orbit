@@ -1,0 +1,56 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseRequest",
+    "route": "GET /api/v1/gateway/releases/{release}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "release": "fedcba987654",
+            "sha": "fedcba9876543210fedcba9876543210fedcba98",
+            "requested": "fedcba9876543210fedcba9876543210fedcba98",
+            "trigger": "deploy",
+            "force": false,
+            "outcome": "running",
+            "finished": false,
+            "migrations_ran": false,
+            "retryable": false,
+            "cleanup_paused": false,
+            "snapshot": null,
+            "previous": null,
+            "phases": {
+                "prepare": {
+                    "outcome": "prepared",
+                    "duration_ms": 41000
+                },
+                "guard": {
+                    "outcome": "passed",
+                    "force": false
+                },
+                "configuration": {
+                    "outcome": "cached"
+                },
+                "snapshot": {
+                    "outcome": "skipped"
+                },
+                "migrate": {
+                    "outcome": "skipped"
+                },
+                "switch": {
+                    "outcome": "switched",
+                    "from": "0123456789ab",
+                    "to": "fedcba987654"
+                }
+            },
+            "error_code": null,
+            "message": null,
+            "duration_ms": 0,
+            "alert": null,
+            "created_at": "2026-10-07T12:00:00+00:00",
+            "updated_at": "2026-10-07T12:00:00+00:00"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

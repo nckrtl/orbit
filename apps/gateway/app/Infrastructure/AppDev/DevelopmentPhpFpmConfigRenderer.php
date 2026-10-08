@@ -31,7 +31,7 @@ final readonly class DevelopmentPhpFpmConfigRenderer
                 $homeEnvironment = $production ? "env[HOME] = {$home}\nenv[USER] = {$user}\n" : '';
                 $validateTimestamps = $production ? 0 : 1;
                 $revalidateFrequency = $production ? '' : "php_admin_value[opcache.revalidate_freq] = 0\n";
-                $directory = $production ? $site->checkoutPath : $site->applicationDirectory();
+                $directory = $site->phpWorkingDirectory();
 
                 return <<<FPM
                     [{$site->poolName()}]

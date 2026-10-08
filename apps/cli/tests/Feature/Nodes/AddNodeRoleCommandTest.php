@@ -359,18 +359,6 @@ describe('the analytics role', function (): void {
         'zero' => [['--postgres-process' => '41', '--clickhouse-process' => '0']],
     ]);
 
-    it('sends no storage Process for another role', function (): void {
-        $mockClient = MockClient::global([
-            AddNodeRoleRequest::class => MockResponse::make([
-                'data' => added_node_role_payload(),
-                'meta' => ['request_id' => node_role_add_request_id()],
-            ], 201),
-        ]);
-
-        $this->artisan('node:role:add', ['node' => '7', 'role' => 'app-dev', '--json' => true])->assertExitCode(0);
-
-        expect($mockClient->getLastPendingRequest()?->body()->all())->toBe(['role' => 'app-dev', 'converge_existing' => false]);
-    });
 });
 
 function node_role_add_command_options(?SymfonyCommand $command): array

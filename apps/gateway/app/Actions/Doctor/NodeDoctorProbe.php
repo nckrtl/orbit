@@ -15,10 +15,13 @@ use App\Domain\Doctor\DoctorNodeContext;
 use App\Domain\Doctor\NodeDiskFilesystemData;
 use App\Domain\Doctor\NodeDoctorIssueCode;
 use App\Domain\Doctor\NodeInspectionData;
+use App\Domain\Fleet\FleetReleaseLag;
+use App\Domain\Fleet\NodeCliState;
 use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\WebSocket\WebSocketCredentialManager;
 use App\Models\Node;
+use App\Models\RouteRemovalResidue;
 use Throwable;
 
 final readonly class NodeDoctorProbe implements DoctorFamilyProbe
@@ -27,6 +30,7 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
         private ManagedNodeEligibility $eligibility = new ManagedNodeEligibility,
         private ?AgentStateView $view = null,
         private ?WebSocketCredentialManager $websocket = null,
+        private ?FleetReleaseLag $releaseLag = null,
     ) {}
 
     public function family(): DoctorFamily
@@ -49,6 +53,19 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                 'Node lifecycle is not active.',
                 expected: 'active',
                 observed: $node->status->value,
+            );
+        }
+        // Stored state: an offline Route removal skipped this Node, so the report holds while it is down.
+        foreach (RouteRemovalResidue::query()->where('node_id', $node->id)->orderBy('route_id')->get() as $residue) {
+            $issues[] = new DoctorIssueData(
+                NodeDoctorIssueCode::RouteResidueRetained,
+                DoctorIssueKind::Drift,
+                'node',
+                $node->id,
+                $node->name,
+                "Removed Route [{$residue->route_id}] [{$residue->domain}] still has projections on the Node.",
+                expected: 'removed',
+                observed: implode(',', $residue->steps),
             );
         }
         if (! $this->eligibility->isManagedForObservation($node)) {
@@ -213,6 +230,31 @@ final readonly class NodeDoctorProbe implements DoctorFamilyProbe
                     'Node agent secret does not match the Gateway record.',
                     expected: 'match',
                     observed: $secret,
+                );
+            }
+            if (new NodeCliState()->isForeign($node)) {
+                $issues[] = new DoctorIssueData(
+                    NodeDoctorIssueCode::CliForeign,
+                    DoctorIssueKind::Drift,
+                    'node',
+                    $node->id,
+                    $node->name,
+                    '/usr/local/bin/orbit is a CLI Orbit did not install, so the fleet rollout leaves the Node out.',
+                    expected: 'orbit release',
+                    observed: 'foreign',
+                );
+            }
+            $lag = ($this->releaseLag ?? app(FleetReleaseLag::class))->observe($node);
+            if ($lag !== null) {
+                $issues[] = new DoctorIssueData(
+                    NodeDoctorIssueCode::ReleaseLag,
+                    DoctorIssueKind::Drift,
+                    'node',
+                    $node->id,
+                    $node->name,
+                    'The Node does not run the desired fleet state of the Gateway release.',
+                    expected: $lag['expected'],
+                    observed: $lag['observed'],
                 );
             }
             $view = $inspection->agentActive === true ? $this->agentViewProblem($node) : null;

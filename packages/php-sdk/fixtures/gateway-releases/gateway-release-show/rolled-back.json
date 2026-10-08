@@ -1,0 +1,71 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseRequest",
+    "route": "GET /api/v1/gateway/releases/{release}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "release": "fedcba987654",
+            "sha": "fedcba9876543210fedcba9876543210fedcba98",
+            "requested": "fedcba987654",
+            "trigger": "rollback",
+            "force": true,
+            "outcome": "verified",
+            "finished": true,
+            "migrations_ran": false,
+            "retryable": false,
+            "cleanup_paused": false,
+            "snapshot": "/home/orbit/.orbit/backups/pre-0123456789ab.sqlite",
+            "previous": "0123456789ab",
+            "phases": {
+                "rollback": {
+                    "outcome": "started",
+                    "force": true,
+                    "snapshot": "/home/orbit/.orbit/backups/pre-0123456789ab.sqlite"
+                },
+                "configuration": {
+                    "outcome": "cached"
+                },
+                "switch": {
+                    "outcome": "switched",
+                    "from": "0123456789ab",
+                    "to": "fedcba987654"
+                },
+                "handoff": {
+                    "caddy": "unchanged",
+                    "fpm": "unchanged",
+                    "opcache": "reset",
+                    "agent_view": "restarted"
+                },
+                "verify": {
+                    "outcome": "passed",
+                    "status": "ok",
+                    "version": "fedcba9876543210fedcba9876543210fedcba98"
+                },
+                "scheduler": {
+                    "scheduler": "restarted",
+                    "scheduler_unit": "orbit-process-108-schedule-work.service",
+                    "cleanup": "resumed",
+                    "cleanup_error_code": null,
+                    "cleanup_paused": false
+                },
+                "web": {
+                    "outcome": "published"
+                },
+                "smoke": {
+                    "outcome": "passed"
+                }
+            },
+            "error_code": null,
+            "message": null,
+            "duration_ms": 19000,
+            "alert": null,
+            "created_at": "2026-10-07T12:00:00+00:00",
+            "updated_at": "2026-10-07T12:00:00+00:00"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

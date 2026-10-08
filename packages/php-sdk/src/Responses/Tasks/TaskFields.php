@@ -13,6 +13,26 @@ use Orbit\Sdk\GatewayApiException;
  */
 final class TaskFields
 {
+    /** @param array<string, mixed> $data
+     * @return list<string>
+     */
+    public static function topology(array $data, string $requestId): array
+    {
+        $value = $data['topology'] ?? [];
+        if (! is_array($value) || ! array_is_list($value) || count($value) > 3) {
+            throw self::invalid('subtask', $requestId);
+        }
+        $roles = [];
+        foreach ($value as $role) {
+            if (! is_string($role) || strlen($role) > 64) {
+                throw self::invalid('subtask', $requestId);
+            }
+            $roles[] = $role;
+        }
+
+        return $roles;
+    }
+
     /** @param array<string, mixed> $data */
     public static function id(array $data, string $key, string $record, string $requestId): int
     {

@@ -19,11 +19,9 @@ function NodeStatus({
 }) {
     const agent = useAgentState(node.id);
     const value = agent === "not_seen" ? node.status : agent === "online" ? "online" : "offline";
-    return dot ? (
-        <StatusDot value={value} reach={agent === "not_seen" ? reach : null} />
-    ) : (
-        <Status value={value} reach={agent === "not_seen" ? reach : null} />
-    );
+    // An update the Gateway runs on the node wins over the agent and Prometheus.
+    const props = { value, reach: agent === "not_seen" ? reach : null, updating: node.updating };
+    return dot ? <StatusDot {...props} /> : <Status {...props} />;
 }
 
 /**

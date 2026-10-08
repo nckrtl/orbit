@@ -10,6 +10,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 describe(NativeMetricsCredentialOperationLock::class, function (): void {
     it('excludes another process for one Node without blocking another Node', function (): void {
         $directory = sys_get_temp_dir().'/orbit-metrics-credential-process-'.Str::uuid();
