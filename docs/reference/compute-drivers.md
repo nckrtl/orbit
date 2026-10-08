@@ -111,7 +111,7 @@ Only UUID-derived resources with the reservation's ownership markers can be
 changed. Existing image identities, devices, profiles, and network policy must
 match. Public HTTP(S) and public DNS are permitted; fleet, private, host, metadata,
 and other group addresses are excluded. Host forwarding policy must also permit
-the dedicated bridge. This driver does not change the host firewall.
+the dedicated bridge. Host firewall access requires the opt-in policy below.
 
 ### Image test baselines
 
@@ -237,6 +237,26 @@ This prepares source only; the claim gate still requires the runtime, model prox
 ### Keep guest paths off the host
 
 Generic Instance operations refuse sandbox workspaces with `instance.sandbox_managed`. This includes source preparation, deployment, removal, setup, dependency commands, logs, environment operations, and host runtime projection. A missing reservation on a VM task also refuses the operation. Manage sandbox workspaces through their task group and the compute driver. Task checks, receipts, source preparation, and publication use the sandbox transports described above. Physical host doctor reports exclude sandbox workspaces; their guest paths do not describe host drift.
+
+### Durable firewall policy on an Incus host
+
+Install the fixed `apps/agent/resources/incus-host-network.py` helper as root-owned `/usr/local/libexec/orbit-sandbox-network` with mode `0755`. Grant the trusted compute account passwordless sudo for that exact executable with no arguments. Never grant a caller-supplied Python script or interpreter. The helper accepts only a bounded JSON request with `operation` (`enabled`, `ensure`, or `remove`), `project`, and `sandbox_id` on standard input.
+
+The root-owned `/etc/orbit/sandbox-network.json` file opts in selected Incus projects. It has exactly `version: 1`, `projects`, `pi_host`, `gateway_address`, `wireguard_interface`, and `blocked_networks`. Use canonical IPv4 values for the host and Gateway WireGuard addresses. Set `wireguard_interface` to the host’s WireGuard interface name. The host address must belong only to that interface, and its link kind must be `wireguard`. Include the host's LAN networks in `blocked_networks`. Keep the file at mode `0644` under directories that only root can write. An absent installation preserves the existing behavior. An incomplete or unsafe installation refuses new provisioning. The helper verifies the installed boot unit, its enablement, and the loaded Incus dependency before granting access.
+
+Only new bridges receive `user.orbit.compute.host_network=1`. Existing unmarked bridges retain their current firewall policy. The helper checks the root configuration, project ownership, exact bridge identity, bridge settings, and ACL ownership through local Incus before granting access. It derives the subnet from the bridge and excludes private, metadata, multicast, host, LAN, and other sandbox destinations from public access. The request cannot supply rules, addresses, paths, or commands.
+
+The helper installs dedicated IPv4 filter chains and scoped jumps ahead of the host's existing INPUT, OUTPUT, and FORWARD rules. It permits public HTTP(S), UDP/TCP DNS only to `1.1.1.1` and `9.9.9.9`, replies to those connections, DHCP, the operator's own model relay, and the recorded Gateway's Pi connection through that WireGuard interface. Pi replies must leave through the same interface. A matching source address on another interface is refused. Own topology peers can communicate. Other traffic involving the bridge is dropped. Dedicated IPv6 chains drop all traffic involving the bridge. Incus NIC filtering and ACLs remain active.
+
+Root-owned manifests persist before rules are applied. Each address family changes in one `iptables-restore --noflush` transaction. IPv6 protection precedes IPv4 access. A failed second transaction retains the manifest and the first family's rules for retry. Retries restore a completely missing owned policy, but refuse changed chains, jumps, configuration, or foreign files.
+
+Boot restoration waits up to 60 seconds for the recorded host WireGuard address, then verifies its interface before restoring access. Resume checks the policy before starting guests. Parking retains it. Destruction stops and removes guests, removes only the recorded policy, audits its absence, and then deletes the bridge. Unrelated chains and rules are preserved.
+
+Install `apps/agent/resources/orbit-sandbox-host-network.service` and the supplied Incus service dependency before opting in. The boot service waits for host networking, verifies that every connected host network is still excluded, and restores every recorded policy before Incus can start. A new public host network outside the saved exclusions refuses startup until the operator recovers the policy.
+
+The host needs Python 3, systemd, `iptables`, `ip6tables`, their save/restore tools, and local Incus. Firewall reloads must restore the owned policies before starting or resuming sandbox work. Do not flush the helper's chains as part of another service's policy update. Rule or jump drift requires operator recovery; the helper does not overwrite it. Drain every marked sandbox before removing the configuration, helper, or boot dependency.
+
+The privileged CI test runs real packet checks in a disposable Linux network namespace. This proves packet filtering, retries, drift refusal, and exact cleanup without changing the host namespace. Installing the durable policy on a live host and proving disposable Incus connectivity are separate rollout steps. Keep Orbit VM claims disabled until those steps pass.
 
 ### Pi proxy on an Incus host
 
