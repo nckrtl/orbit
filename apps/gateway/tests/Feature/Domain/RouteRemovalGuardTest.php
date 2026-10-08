@@ -220,7 +220,7 @@ it('eligible Route removal deletes only owned target rows and releases unrelated
     expect(Route::query()->count())
         ->toBe(0)
         ->and($projector->events)
-        ->toBe(['dns', 'caddy', 'certificates', 'firewall', 'php'])
+        ->toBe(['dns', 'caddy', 'php', 'certificates', 'firewall'])
         ->and(RouteTarget::query()->count())
         ->toBe(0)
         ->and($this->instance->fresh())

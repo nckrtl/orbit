@@ -31,7 +31,7 @@ describe('targeted Route removal', function (): void {
             ->and(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and(RouteTarget::query()->where('route_id', $route->id)->exists())->toBeFalse()
             ->and(Instance::query()->findOrFail($instanceId)->status)->toBe(InstanceState::SourceResolved)
-            ->and($this->projector->events)->toBe(['dns', 'caddy', 'certificates', 'firewall', 'php'])
+            ->and($this->projector->events)->toBe(['dns', 'caddy', 'php', 'certificates', 'firewall'])
             ->and(array_unique($this->projector->routeIds))->toBe([$route->id]);
 
         // Every step sees the withdrawn publication, so each build renders the Route's sites away.
@@ -60,13 +60,13 @@ describe('targeted Route removal', function (): void {
 
         expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
             ->and(array_slice($this->projector->events, $completed))
-            ->toBe(['dns', 'caddy', 'certificates', 'firewall', 'php']);
+            ->toBe(['dns', 'caddy', 'php', 'certificates', 'firewall']);
     })->with([
         'DNS' => ['dns'],
         'Caddy' => ['caddy'],
+        'PHP-FPM' => ['php'],
         'certificates' => ['certificates'],
         'firewall' => ['firewall'],
-        'PHP-FPM' => ['php'],
     ]);
 
     it('refuses an active target before it changes or withdraws anything', function (): void {

@@ -163,7 +163,7 @@ Clearing an empty Route returns it unchanged. The Gateway returns `route.target_
 
 ## orbit route:destroy
 
-Remove a Route and its DNS records, Caddy sites, certificates, and firewall rules. For a Route whose Instances are not active, also withdraw their PHP-FPM pools. See [Remove a Route](/reference/routes#remove-a-route).
+Remove a Route and its DNS records, Caddy sites, certificates, and firewall rules. For a Route whose Instances are not active, also withdraw the PHP-FPM pools of its development Instances. See [Remove a Route](/reference/routes#remove-a-route).
 
 ```bash
 orbit route:destroy <route> [--yes]

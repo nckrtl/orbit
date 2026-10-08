@@ -158,46 +158,37 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->validates('10.44.0.20'))->toBeTrue();
     });
 
-    it('withdraws a published pending targeted Route before it deletes the record', function (): void {
-        // The incident state: a task workspace Route whose Instance resolved its source has published
-        // its sites, so its workload and Router sites, certificates, firewall rule, and PHP-FPM pool
-        // are live while the Route is still pending.
+    it('withdraws a published pending targeted Route on its own Node before it deletes the record', function (): void {
+        // The incident state on beast: a Node-scoped task workspace Route whose Instance resolved its
+        // source has published its site, so the site and its PHP-FPM pool are live while the Route is
+        // still pending.
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
+
+        expect($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and(certificate_order_php_sites($this->beast))->toBe(['task-342.acme.test']);
+
+        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.7:orbit:route-{$route->id}-lan"])
+            ->and($this->php->converged)->toBe(['beast' => []])
+            ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.7'))->toBeTrue();
+    });
+
+    it('withdraws a published pending targeted Route from its Router and workload Node', function (): void {
         $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
         $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
         $worker = certificate_order_node('worker', 30, RoleName::AppDev, $cluster);
-        $project = Project::query()->create([
-            'name' => 'Acme',
-            'slug' => 'acme',
-            'repository_url' => 'https://example.test/acme.git',
-            'root' => 'public',
-        ]);
-        $instance = Instance::query()->create([
-            'project_id' => $project->id,
-            'node_id' => $worker->id,
-            'name' => 'task-342',
-            'checkout_path' => '/srv/acme/task-342',
-            'branch' => 'task-342',
-            'starting_commit' => str_repeat('a', 40),
-            'selected_php_version' => '8.5',
-            'status' => InstanceState::SourceResolved,
-        ]);
-        $route = Route::query()->create([
-            'project_id' => $project->id,
-            'cluster_id' => $cluster->id,
-            'domain' => 'task-342.acme.test',
-            'provenance' => RouteProvenance::Explicit,
-            'publication' => RoutePublication::Private,
-            'status' => RouteStatus::Pending,
-        ]);
-        $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
-        $route->publishSites();
-        $this->nodes->issue('10.44.0.30', "app-instance-{$instance->id}");
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $worker, nodeScoped: false);
         $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
-        certificate_order_caddy()->converge($worker);
         certificate_order_caddy()->converge($router);
 
         expect($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
-            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue();
+            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue()
+            ->and(certificate_order_php_sites($worker))->toBe(['task-342.acme.test']);
 
         $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
 
@@ -206,7 +197,7 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
             ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
             ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
-            ->and($this->nodes->firewallRemovals)->toContain("10.44.0.30:orbit:route-{$route->id}-lan")
+            ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
             ->and($this->php->converged)->toBe(['worker' => []])
             ->and($this->nodes->removedWhileNamed)->toBe([])
             ->and($this->nodes->validates('10.44.0.30'))->toBeTrue()
@@ -398,6 +389,62 @@ function certificate_order_bind_projectors(
     );
 }
 
+/**
+ * A pending task workspace Route that published its site: the Instance resolved its source, its
+ * workload certificate exists, and its Node's Caddy serves the site.
+ *
+ * @return array{Route, Instance}
+ */
+function certificate_order_targeted_route(CertificateOrderNodes $nodes, Node $node, bool $nodeScoped): array
+{
+    $project = Project::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://example.test/acme.git',
+        'root' => 'public',
+    ]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-342',
+        'checkout_path' => '/srv/acme/task-342',
+        'branch' => 'task-342',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'status' => InstanceState::SourceResolved,
+    ]);
+    $route = Route::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $nodeScoped ? $node->id : null,
+        'cluster_id' => $nodeScoped ? null : $node->cluster_id,
+        'domain' => 'task-342.acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->publishSites();
+    $nodes->issue((string) $node->wireguard_ip, "app-instance-{$instance->id}");
+    certificate_order_caddy()->converge($node);
+
+    return [$route, $instance];
+}
+
+/**
+ * The PHP sites stored state renders on the Node, which are the pools PHP-FPM converges to.
+ *
+ * @return list<string>
+ */
+function certificate_order_php_sites(Node $node): array
+{
+    return new DevelopmentSiteRepository()
+        ->forNode($node)
+        ->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null)
+        ->map(static fn (DevelopmentSite $site): string => $site->domain)
+        ->values()
+        ->all();
+}
+
 function certificate_order_caddy(): RemoteAppDevCaddyManager
 {
     return app(RemoteAppDevCaddyManager::class);
@@ -532,11 +579,6 @@ final class CertificateOrderPhpFpm implements AppDevPhpFpmManager
 
     public function converge(Node $node): void
     {
-        $this->converged[$node->name] = new DevelopmentSiteRepository()
-            ->forNode($node)
-            ->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null)
-            ->map(static fn (DevelopmentSite $site): string => $site->domain)
-            ->values()
-            ->all();
+        $this->converged[$node->name] = certificate_order_php_sites($node);
     }
 }

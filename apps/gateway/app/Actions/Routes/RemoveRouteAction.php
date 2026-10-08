@@ -118,6 +118,15 @@ final readonly class RemoveRouteAction
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupCaddy($locked);
             });
+
+            // The site is gone once Caddy builds, so its pool leaves next.
+            if ($targeted) {
+                $failureStep = RouteRemovalStep::Php;
+                $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
+                    $this->projection->cleanupPhp($locked);
+                });
+            }
+
             $failureStep = RouteRemovalStep::Certificates;
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupCertificates($locked);
@@ -126,14 +135,6 @@ final readonly class RemoveRouteAction
             $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
                 $this->projection->cleanupFirewall($locked);
             });
-
-            if ($targeted) {
-                $failureStep = RouteRemovalStep::Php;
-                $this->cleanupStep($locked, $failureStep, function () use ($locked): void {
-                    $this->projection->cleanupPhp($locked);
-                });
-            }
-
             $failureStep = RouteRemovalStep::Record;
 
             return $this->deleteRecord($locked, $expectedTargetIds, $allowTracking);
@@ -300,9 +301,9 @@ final readonly class RemoveRouteAction
         return match ($step) {
             RouteRemovalStep::Dns => 0,
             RouteRemovalStep::Caddy => 1,
-            RouteRemovalStep::Certificates => 2,
-            RouteRemovalStep::Firewall => 3,
-            RouteRemovalStep::Php => 4,
+            RouteRemovalStep::Php => 2,
+            RouteRemovalStep::Certificates => 3,
+            RouteRemovalStep::Firewall => 4,
             RouteRemovalStep::Record => 5,
         };
     }
