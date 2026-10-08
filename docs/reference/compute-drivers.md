@@ -119,6 +119,12 @@ A new local Project reservation records `project_slug` beside its one pinned `op
 
 Provisioning verifies the Project marker on an existing guest and worktree volume before any mutation. A retry cannot change the Project or adopt an unmarked reservation. These image checks do not enroll the guest or authorize SSH, WireGuard, or hub access. Local Project claim admission remains unavailable until its bootstrap, network, fleet, Route, and cleanup contracts are implemented and accepted.
 
+### Local Project SSH identity
+
+The typed `project_identity` host operation reads the SSH public key from one running, owned Project VM. It verifies the private image provenance, guest and worktree Project markers, storage pool, subnet and devices first. The bridge must reject traffic by default. It refuses an Orbit topology guest, additional guests, foreign worktree attachments, or changed placement. The Gateway compares the response with the reserved Project, image, pool and subnet and validates the Ed25519 key before using it as a pinned SSH identity. Private key bytes never leave the guest.
+
+This read-only check does not create a bootstrap endpoint, enroll a Node, or change host or hub networking. Those steps remain required before local Project claims can start.
+
 ### Image test baselines
 
 Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums.

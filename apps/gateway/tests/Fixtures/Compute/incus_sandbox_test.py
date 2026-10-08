@@ -101,6 +101,59 @@ class Boundary(unittest.TestCase):
         host.storage_volumes[0]['config']['user.orbit.compute.project_slug'] = 'dlf'
         return host, spec
 
+    def test_project_identity_reads_only_the_public_key_from_the_owned_guest(self):
+        host, spec = self.project_prepared()
+        host.rows[0]['status'] = 'Running'
+        key = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHdUmJNAeflz28V7EadKJL3DLqnMqS6JyEQJmpCPNG5T'
+        result = {'exit_code': 0, 'stdout': base64.b64encode((key + ' fixture\n').encode()).decode(),
+                  'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False}
+        with patch.dict(host.project_identity.__globals__, bounded_process=lambda argv, data, timeout, limit: result):
+            value = host.project_identity()
+        self.assertEqual({'name': host.name, 'guest': host.name + '-operator', 'project_slug': 'dlf',
+                          'image': 'a' * 64, 'pool': 'proof', 'subnet': spec['subnet'],
+                          'address': '10.233.201.10', 'ssh_key': key}, value)
+        self.assertFalse(any(call[0] in ('start', 'stop', 'delete') or call[:3] in (
+            ('network', 'acl', 'edit'), ('query', '-X', 'POST')) for call in host.calls))
+
+    def test_project_identity_refuses_foreign_or_changed_placement_before_reading_a_key(self):
+        changes = [
+            lambda h: h.rows[0].update(status='Stopped'),
+            lambda h: h.rows.append({**copy.deepcopy(h.rows[0]), 'name': h.name + '-gateway'}),
+            lambda h: h.rows[0]['config'].pop('user.orbit.compute.project_slug'),
+            lambda h: h.rows[0]['config'].update({'user.orbit.compute.id': 'foreign'}),
+            lambda h: h.rows[0]['config'].update({'volatile.base_image': 'unpinned'}),
+            lambda h: h.template_image['properties'].update({'user.orbit.template.role': 'operator'}),
+            lambda h: h.storage_volumes[0]['config'].update({'user.orbit.compute.project_slug': 'foreign'}),
+            lambda h: h.storage_volumes[0].update(used_by=['/1.0/instances/foreign']),
+            lambda h: h.rows[0]['devices']['eth0'].update(network='foreign'),
+            lambda h: h.rows[0]['devices']['root'].update(source='/'),
+            lambda h: h.rows[0].update(profiles=['default']),
+            lambda h: h.network['config'].update({'security.acls.default.egress.action': 'allow'}),
+            lambda h: h.network['config'].update({'ipv4.address': '10.233.202.2/24'}),
+            lambda h: h.network['config'].update({'user.orbit.compute.id': 'foreign'}),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                host, spec = self.project_prepared()
+                host.rows[0]['status'] = 'Running'
+                change(host)
+                with patch.dict(host.project_identity.__globals__, bounded_process=lambda *args: self.fail('must not read a guest key')):
+                    with self.assertRaises(Refusal):
+                        host.project_identity()
+
+    def test_project_identity_refuses_unbounded_or_malformed_public_keys(self):
+        for key, changes in [('ssh-ed25519 invalid', {}), ('ssh-rsa AA==', {}),
+                             ('ssh-ed25519 AA==', {}), ('', {'truncated': True}),
+                             ('', {'timed_out': True}), ('', {'exit_code': 1})]:
+            with self.subTest(key=key, changes=changes):
+                host, spec = self.project_prepared()
+                host.rows[0]['status'] = 'Running'
+                result = {'exit_code': 0, 'stdout': base64.b64encode(key.encode()).decode(),
+                          'stderr': '', 'duration_ms': 1, 'truncated': False, 'timed_out': False, **changes}
+                with patch.dict(host.project_identity.__globals__, bounded_process=lambda *args: result):
+                    with self.assertRaises((Refusal, ValueError)):
+                        host.project_identity()
+
     def test_project_image_keeps_one_guest_and_pins_worktree_ownership(self):
         host, spec = self.project_prepared()
         host.rows, host.storage_volumes = [], []

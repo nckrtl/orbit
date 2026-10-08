@@ -1504,6 +1504,8 @@ The base run is the exception that remains. It copies only installed `vendor` an
 
 New Projects have no task check until one is configured, regardless of type. Existing stored checks remain unchanged. Shared instructions, reminders, the check runner, and pull request descriptions name only an explicit Project check; none supplies a fallback. Without a check, Orbit still verifies the tree and deliverables and requires review.
 
+Local Project VM admission also requires a pinned guest SSH identity. The [host identity check](/reference/compute-drivers#local-project-ssh-identity) verifies the reserved placement before enrollment. This check alone does not enable local Project claims.
+
 ## Why it works this way
 
 These reasons explain the design. Check them before you propose a change.

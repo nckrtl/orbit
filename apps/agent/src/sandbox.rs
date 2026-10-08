@@ -20,6 +20,7 @@ enum Operation {
     Resume,
     Destroy,
     GuestCommand,
+    ProjectIdentity,
 }
 
 #[derive(Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -156,7 +157,7 @@ mod tests {
 
     #[test]
     fn accepts_lifecycle_operations_without_arbitrary_commands() {
-        for operation in ["observe", "capacity", "park", "resume", "destroy"] {
+        for operation in ["observe", "capacity", "park", "resume", "destroy", "project_identity"] {
             let mut value = base();
             value["operation"] = operation.into();
             assert!(request(value.to_string().as_bytes()).is_ok());

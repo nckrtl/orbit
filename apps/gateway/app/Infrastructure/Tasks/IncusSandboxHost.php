@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Tasks;
 
+use App\Domain\Compute\SandboxState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\SandboxHostOperation;
+use App\Domain\Tasks\TaskCompute;
 use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProtectedInput;
+use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Node;
+use App\Models\TaskSandbox;
 use App\Support\ValidatedData;
 use Illuminate\Support\Str;
 use JsonException;
@@ -85,6 +89,20 @@ final readonly class IncusSandboxHost
             return ['available' => $data['available'], 'used' => $data['used'], 'budget' => $budget];
         }
         $name = 'ot-'.substr(hash('sha256', $sandboxId), 0, 10);
+        if ($operation === SandboxHostOperation::ProjectIdentity) {
+            $fields = ['name', 'guest', 'project_slug', 'image', 'pool', 'subnet', 'address', 'ssh_key'];
+            if (count($data) !== count($fields) || array_diff($fields, array_keys($data)) !== []
+                || ($data['name'] ?? null) !== $name || ($data['guest'] ?? null) !== $name.'-operator') {
+                throw new ResourceOperationException('compute.invalid_host_response', 'The Project host returned invalid ownership.', 502);
+            }
+            foreach ($fields as $field) {
+                if (! is_string($data[$field]) || strlen($data[$field]) > 512) {
+                    throw new ResourceOperationException('compute.invalid_host_response', 'The Project host returned an invalid identity.', 502);
+                }
+            }
+
+            return $data;
+        }
         if ($guest !== null) {
             return $this->guestResponse(ValidatedData::object($data), $guest, $name);
         }
@@ -107,6 +125,41 @@ final readonly class IncusSandboxHost
         }
 
         return ['name' => $name, 'power' => $data['power'], 'instances' => $data['instances']];
+    }
+
+    public function projectIdentity(Node $host, TaskSandbox $sandbox, int $budget): HostKey
+    {
+        $spec = $sandbox->spec;
+        $group = $sandbox->group;
+        $slug = $group?->project->slug;
+        $subnet = $spec['subnet'] ?? null;
+        if (! $sandbox->exists || $sandbox->provider !== 'incus' || $sandbox->state !== SandboxState::Running
+            || $sandbox->desired_power !== 'running' || $sandbox->node_id !== null || $sandbox->enrollment !== null
+            || $group?->task_compute !== TaskCompute::Vm || ! is_string($slug) || $slug === 'orbit'
+            || ($spec['project_slug'] ?? null) !== $slug || ($spec['host_id'] ?? null) !== $host->id
+            || $sandbox->name !== 'ot-'.substr(hash('sha256', $sandbox->id), 0, 10)
+            || ! is_string($spec['project'] ?? null) || ! is_string($spec['pool'] ?? null)
+            || ! is_array($spec['images'] ?? null) || array_keys($spec['images']) !== ['operator']
+            || ! is_string($spec['images']['operator'])
+            || ! is_string($subnet) || preg_match('/\A10\.233\.([0-9]{1,3})\.0\/24\z/D', $subnet, $parts) !== 1
+            || (int) $parts[1] > 255) {
+            throw new ResourceOperationException('compute.invalid_host_request', 'The Project reservation is not ready for SSH identity verification.', 409);
+        }
+        $group->requireManagedExecution();
+        $data = $this->execute($host, SandboxHostOperation::ProjectIdentity, $spec['project'], $sandbox->id, $budget);
+        if ($data['project_slug'] !== $slug || $data['image'] !== $spec['images']['operator']
+            || $data['pool'] !== $spec['pool'] || $data['subnet'] !== $subnet
+            || $data['address'] !== '10.233.'.$parts[1].'.10'
+            || preg_match('/\Assh-ed25519 ([A-Za-z0-9+\/]+={0,2})\z/D', ValidatedData::string($data['ssh_key']), $key) !== 1) {
+            throw new ResourceOperationException('compute.invalid_host_response', 'The Project host identity does not match the reservation.', 502);
+        }
+        $raw = base64_decode($key[1], true);
+        if ($raw === false || strlen($raw) !== 51 || ! str_starts_with($raw, "\0\0\0\x0bssh-ed25519\0\0\0\x20")
+            || base64_encode($raw) !== $key[1]) {
+            throw new ResourceOperationException('compute.invalid_host_response', 'The Project SSH public key is invalid.', 502);
+        }
+
+        return new HostKey('ssh-ed25519', $key[1], 'SHA256:'.rtrim(base64_encode(hash('sha256', $raw, true)), '='));
     }
 
     public function executeGuest(Node $host, string $project, string $sandboxId, int $budget, RemoteCommand $command, string $role = 'operator'): CommandResult
