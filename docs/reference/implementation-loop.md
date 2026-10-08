@@ -100,7 +100,8 @@ TIA only sees files inside the project. It links a non-PHP file only through a `
 - a non-PHP file without a `watch()` pattern;
 - a removed file that no test covered;
 - a changed PHP file that no test covered;
-- a new PHP file outside `app/` and `src/`, such as a config file, a migration, or a file under `routes/`, or a new CLI command in `app/Commands`;
+- a new PHP file outside `app/` and `src/`, such as a config file or a migration;
+- a new command or listener that the framework discovers;
 - a test file whose name does not end in `Test.php`;
 - a change outside the project that `bin/ci-tia` does not list as unrelated to it.
 
@@ -410,7 +411,7 @@ Comparing with the parent commit is a rejected alternative: when runs overlap, t
 
 TIA cannot link every file to its tests. `bin/ci-tia` treats a change as visible only when it can show that TIA links it, and runs the full suite otherwise. Listing only the paths known to be invisible is a rejected alternative, because a new kind of input would then skip its tests silently.
 
-Two kinds of miss remain. A wrong entry in the list of unrelated paths can skip a test. A test that runs Gateway code in a PHP subprocess is not linked to that code, so a change that another test covers in-process does not select it. The nightly full run finds such a miss within a day, and its failure switches pushes back to full runs until a full run passes again.
+Two kinds of miss remain. A wrong entry in the list of unrelated paths can skip a test. A test that runs project code in a PHP subprocess is not linked to that code, so a change that another test covers in-process does not select it. The nightly full run finds such a miss within a day, and its failure switches pushes back to full runs until a full run passes again.
 
 ### CI caches stay separate
 

@@ -20,10 +20,11 @@ SHA = re.compile(r'[0-9a-f]{40}')
 NO_AFFECTED_TESTS = 'No affected tests found.'
 # The runs on main that always test every project in full.
 FULL_RUN_EVENTS = ('schedule', 'workflow_dispatch')
-# Class directories where a new PHP file runs only when changed code that Pest links calls it. Laravel Zero discovers
-# the CLI's commands in app/Commands, and Laravel loads new config, migration, and route files on its own.
+# Class directories where a new PHP file runs only when changed code that Pest links calls it. Laravel discovers
+# commands and listeners, Laravel Zero discovers the CLI's commands in app/Commands, and Laravel loads new config,
+# migration, and route files on its own.
 CLASS_DIRECTORIES = ('app/', 'src/')
-FRAMEWORK_DISCOVERED = ('app/Commands/',)
+FRAMEWORK_DISCOVERED = ('app/Commands/', 'app/Console/Commands/', 'app/Listeners/')
 # Paths outside each project that its tests do not read. Pest only sees files inside the project, so a change
 # anywhere else outside it runs the project's full suite. Docs and E2E tests read files across the repository.
 UNRELATED = {

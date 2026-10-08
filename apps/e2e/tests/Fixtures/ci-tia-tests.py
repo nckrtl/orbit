@@ -141,7 +141,8 @@ class CiTiaTest(unittest.TestCase):
 
     def test_runs_the_full_suite_for_changes_pest_cannot_see(self):
         for path in (f'{PROJECT}/resources/compute/script.py', f'{PROJECT}/app/Uncovered.php', f'{PROJECT}/app/Stale.php',
-                     f'{PROJECT}/app/Commands/NewCommand.php', f'{PROJECT}/config/new.php',
+                     f'{PROJECT}/app/Commands/NewCommand.php', f'{PROJECT}/app/Console/Commands/Nested/NewCommand.php',
+                     f'{PROJECT}/app/Listeners/NewListener.php', f'{PROJECT}/config/new.php',
                      f'{PROJECT}/database/migrations/2026_01_01_000000_create_things.php', f'{PROJECT}/routes/new.php',
                      f'{PROJECT}/resources/scripts/.hidden.py',
                      f'{PROJECT}/tests/Support/Helper.php', f'{PROJECT}/tests/Fixtures/data.json',
