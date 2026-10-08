@@ -35,18 +35,18 @@ Each release has one version, derived from its commit, and a tag that names it.
 
 `N` counts every commit that the commit reaches, itself included. `main` only moves forward, so each later `main` commit has a larger `N`. Compare releases by `N`, not by tag text or release date. Release numbers have gaps, because only green commits are published. Only a commit on the first-parent history of `main` is a release commit. A side commit brought in by a merge can reach the same count as a different `main` commit, so it is not given a version.
 
-A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`. The build passes the version to Laravel Zero's `app:build --build-version`, which stores it in the PHAR, and each build job runs the binary and requires that output. Only a release has a version that matches `^0\.[1-9][0-9]*\.0$`. Other builds report a tag-prefixed or hex version that never matches. A pull-request build reports `git describe --tags --always --dirty` from a checkout without tags, so it prints the short commit hash, such as `Orbit 60bccef`. A source checkout reports its nearest tag of any kind, `git describe --tags --abbrev=0`, such as `cli-v0.4681.0`.
+A released binary reports its version: `orbit --version` prints `Orbit 0.4681.0`. The build passes the version to Laravel Zero's `app:build --build-version`, which stores it in the PHAR. The workflow runs each binary on its own platform and requires that output. Only a release has a version that matches `^0\.[1-9][0-9]*\.0$`. Other builds report a tag-prefixed or hex version that never matches. A pull-request build reports `git describe --tags --always --dirty` from a checkout without tags, so it prints the short commit hash, such as `Orbit 60bccef`. A source checkout reports its nearest tag of any kind, `git describe --tags --abbrev=0`, such as `cli-v0.4681.0`.
 
 ### Assets
 
 Each release has one binary per supported platform and a checksum file.
 
-| Asset | Platform | Builder |
-| --- | --- | --- |
-| `orbit-0.N.0-linux-x86_64` | Linux x86_64 | Hosted `ubuntu-26.04` |
-| `orbit-0.N.0-linux-aarch64` | Linux arm64 | Hosted `ubuntu-26.04-arm` |
-| `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `macos-26` |
-| `SHA256SUMS` | Checksums of the three binaries | |
+| Asset | Platform | Built on | Run on |
+| --- | --- | --- | --- |
+| `orbit-0.N.0-linux-x86_64` | Linux x86_64 | Hosted `ubuntu-26.04` | The same runner |
+| `orbit-0.N.0-linux-aarch64` | Linux arm64 | Hosted `ubuntu-26.04-arm` | The same runner |
+| `orbit-0.N.0-macos-arm64` | macOS on Apple silicon | Hosted `ubuntu-26.04` | Hosted `macos-26` |
+| `SHA256SUMS` | Checksums of the three binaries | | |
 
 Each binary is one executable file with a static PHP 8.5 inside. The Linux names follow `uname -m`, as the `orbit-agent` release does. `SHA256SUMS` has the `sha256sum` format: one line per binary, sorted by name, with the lowercase hex digest, two spaces, and the asset name.
 
@@ -124,13 +124,13 @@ The build uses the commit's own builder, so a commit from before CLI releases ex
 
 The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, builds the three targets on every pull request to `main` and on `workflow_dispatch`. The release workflow calls the same workflow for the commit it publishes. Pull-request builds are packaging checks. They are not part of `Required checks`.
 
-| Target | Runner | Builder | Artifact | File |
-| --- | --- | --- | --- | --- |
-| Linux x86_64 | `ubuntu-26.04` | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
-| Linux arm64 | `ubuntu-26.04-arm` | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
-| macOS Apple silicon | `macos-26` | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
+| Target | Build runner | Run runner | Builder | Artifact | File |
+| --- | --- | --- | --- | --- | --- |
+| Linux x86_64 | `ubuntu-26.04` | The same | `bin/orbit-build-cli-binary linux x64 <version>` | `orbit-linux-x64` | `apps/cli/builds/dist/linux/linux-x64` |
+| Linux arm64 | `ubuntu-26.04-arm` | The same | `bin/orbit-build-cli-binary linux arm <version>` | `orbit-linux-arm64` | `apps/cli/builds/dist/linux/linux-arm` |
+| macOS Apple silicon | `ubuntu-26.04` | `macos-26` | `bin/orbit-build-cli-binary mac arm <version>` | `orbit-macos-arm64` | `apps/cli/builds/dist/mac/mac-arm` |
 
-Each job runs its binary on its own platform with an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the job.
+The `Build` jobs build every target on Linux. Each Linux job then runs its own binary. The `Run macos-arm64` job downloads the macOS artifact on a hosted Mac and runs it. It needs no PHP, Composer, or checkout. Every run uses an empty environment and requires `orbit --version` to print the build version. A binary that does not start fails the workflow, and the release workflow publishes only when every job passes.
 
 ## Build locally
 
@@ -181,11 +181,13 @@ The release workflow accepts only that first-parent history. A side commit merge
 
 A client that verified a checksum must get the same file later, so a published release is never re-uploaded. `gh release create` uploads to a draft and publishes it last, so the tag and the release appear only with every asset. The repository's single **Latest** marker would jump between CLI and `orbit-agent` releases, and an older commit can finish its checks after a newer one. Clients find a CLI release by its tag instead.
 
-### Hosted runners for every target
+### Build on Linux, run on each platform
 
-PHPacker does not compile. It appends the PHAR to a prebuilt PHP binary for the target, so every host writes the same kind of file. What a native runner adds is the proof that the binary starts on its platform. The repository is public, so hosted macOS and Linux arm64 runners cost nothing.
+PHPacker does not compile. It appends the PHAR to a prebuilt static PHP binary for the target, so any host writes the same file for a target. A Linux runner therefore builds the macOS binary too. What a native runner adds is the proof that the binary starts on its platform. Linux arm64 builds on its own runner, so one job builds and runs it.
 
-An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network.
+The macOS job only runs the binary, so it needs no PHP. In October 2026 `shivammathur/setup-php` could not install PHP 8.5 on `macos-26`. That one failed job blocked every CLI release, and the fleet rollout waited for a Linux binary that was never published. Now the Mac needs nothing that a hosted runner does not already have. The release still waits for the macOS run, so it never publishes a macOS binary that does not start.
+
+The repository is public, so hosted macOS and Linux arm64 runners cost nothing. An earlier design built macOS on mini, a Mac Node on the Orbit network, through a self-hosted runner. That runner was not registered, so CI skipped the macOS job and a macOS binary needed a manual build over SSH. A hosted job also never needs a path into the Orbit network.
 
 ### Linux arm64
 
