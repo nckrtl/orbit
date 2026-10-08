@@ -8,6 +8,7 @@ use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\RemoveTaskSandboxAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\Tasks\RequestEndedPullRequestAssistanceAction;
+use App\Actions\Tasks\ResumeDeliverableCorrectionAction;
 use App\Actions\Tasks\RetryTaskBaselineAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
 use App\Actions\Tasks\WatchTaskBranchPullRequestAction;
@@ -142,6 +143,8 @@ final readonly class TaskScheduler
         private TaskSandboxGroupLifecycle $sandboxes,
         private TaskSandboxWarmPool $warmPool,
         private TaskPullRequestMerger $merger,
+        private DeliverablePathChecker $deliverablePaths,
+        private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
     /**
@@ -250,6 +253,11 @@ final readonly class TaskScheduler
 
                 if (! $task instanceof Task || ! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
                     continue;
+                }
+                if ($task->status === TaskStatus::Running && ($task->deliverable_correction_resume['state'] ?? null) === 'pending') {
+                    $this->correctionResume->execute($task);
+                    $task->refresh();
+                    $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
                 }
                 if ($task->status === TaskStatus::Running && $task->assistance_requested && $task->resolution_delivered_comment_id !== null) {
                     try {
@@ -712,7 +720,7 @@ final readonly class TaskScheduler
                 $missing = $this->coverage->missing(
                     $group,
                     $pullRequest,
-                    $receipt instanceof TaskComment ? $receipt->id : null,
+                    $receipt->id,
                     $pullRequest->changes,
                 );
             } catch (TaskSessionClassificationException $exception) {
@@ -2140,7 +2148,7 @@ final readonly class TaskScheduler
             if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
                 return;
             }
-            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
         } catch (Throwable $exception) {
             report($exception);
             $this->recordCommunicationFailure($task, $group, 'The consult answer could not be sent to the implementer. ('.class_basename($exception).').');
@@ -2157,6 +2165,7 @@ final readonly class TaskScheduler
             if ($locked->consult_comment_id === null) {
                 return;
             }
+            $this->correctionResume->supersede($locked, $receipt);
             $locked->update([
                 'consult_comment_id' => null,
                 'direction_answer_key' => null,
@@ -2323,7 +2332,7 @@ final readonly class TaskScheduler
             if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
                 return;
             }
-            $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
+            $this->actor->relayAnswer($group, $implementer, $this->correctionResume->continuationMessage($task, $receipt->body), $key);
         } catch (Throwable $exception) {
             // Keep this receipt's key. An uncertain response may still have been accepted, and a
             // rejected T3 command id stays rejected, so the same id is not replaced on this failure.
@@ -2380,6 +2389,7 @@ final readonly class TaskScheduler
             if ($locked->direction_relay_comment_id === null) {
                 return;
             }
+            $this->correctionResume->supersede($locked, $receipt);
             $locked->update([
                 'direction_relay_comment_id' => null,
                 'direction_answer_key' => null,
@@ -4865,7 +4875,12 @@ final readonly class TaskScheduler
             return;
         }
 
-        $group = $task->parent()->with('taskable')->first();
+        $this->recordSubtaskStart($task);
+        $group = $task->parent()->with(['project', 'taskable'])->first();
+        if ($group instanceof Task && ! $this->validateImplementerDeliverablePaths($task, $group)) {
+            return;
+        }
+
         $threadId = null;
         try {
             if ($group instanceof Task) {
@@ -4890,6 +4905,33 @@ final readonly class TaskScheduler
 
         $task->implementer_agent_thread_id = $threadId;
         $task->save();
+    }
+
+    /** No thread is reserved or spawned until its deliverables pass on the actual review base. */
+    private function validateImplementerDeliverablePaths(Task $task, Task $group): bool
+    {
+        $base = TaskReviewBase::commit($task);
+        if ($base === '') {
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix.'cannot start the implementer: the review base is unresolved.');
+
+            return false;
+        }
+
+        try {
+            $workspace = $group->taskable instanceof Instance ? $group->taskable : null;
+            $errors = $this->deliverablePaths->check($group->project, $task->deliverables ?? [], $base, 'resolved', $workspace);
+        } catch (ResourceOperationException $exception) {
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix."could not read base {$base}: ".$exception->getMessage());
+
+            return false;
+        }
+        if ($errors !== []) {
+            $this->requestAssistance($task, $group, TaskGroupGuard::DeliverableGatePrefix.'failed before implementer start. '.implode(' ', $errors));
+
+            return false;
+        }
+
+        return true;
     }
 
     /**

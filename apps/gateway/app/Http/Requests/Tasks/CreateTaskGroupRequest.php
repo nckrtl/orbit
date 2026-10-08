@@ -25,6 +25,8 @@ use UnexpectedValueException;
 
 final class CreateTaskGroupRequest extends FormRequest
 {
+    use ValidatesDeliverablePaths;
+
     /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
     public function rules(): array
     {

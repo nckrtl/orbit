@@ -2189,6 +2189,7 @@
                 "Project",
                 "Role",
                 "Route",
+                "Schedule",
                 "Task",
                 "Task workspace"
             ],
