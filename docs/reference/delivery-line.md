@@ -20,7 +20,7 @@ The style matches [`bin/review-check`](/reference/implementation-loop#the-candid
 | --- | --- | --- |
 | [`bin/bug-repro`](#binbug-repro) | The command fails on current main | Runs the command on an extracted main tree. Does not file a task. |
 | [`bin/task-group-check`](#bintask-group-check) | The payload is one valid ordered group | None. Does not create a group. |
-| [`bin/pr-head-check`](#binpr-head-check) | The current head has a matching review and Required checks, and no named leftover | None. Does not merge. |
+| [`bin/pr-head-check`](#binpr-head-check) | The current head has a matching review and Required checks that ran with the current main tip, and no named leftover | None. Does not merge. |
 | [`bin/deploy-verify`](#bindeploy-verify) | Live `APP_VERSION` matches the merged SHA, `/up` is up, and gateway status is `ok` | None. Does not deploy or roll back. |
 | [`bin/gateway-smoke`](#bingateway-smoke) | A switched Gateway release serves its version, CLI reads, and its web build, runs its scheduler from the new release with `tasks:tick` scheduled, and runs agent view | None by default. `--write-check` creates and removes one Project Document. |
 
@@ -121,13 +121,17 @@ bin/pr-head-check --pr URL
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--pr` | required | A GitHub pull request URL or `owner/repo#number`. |
-| `--pull-file`, `--reviews-file`, `--checks-file`, `--files-file` | GitHub through `gh api` | Recorded JSON for tests. |
+| `--pull-file`, `--reviews-file`, `--checks-file`, `--files-file`, `--compare-file` | GitHub through `gh api` | Recorded JSON for tests. |
 
 The result includes `merged`, copied from the pull request record, alongside the existing `passed` and mismatch fields. Before any review or merge attempt, read this field even when the command exits nonzero. When the JSON has `merged:true`, stop: the pull request is already merged and the merge flow is a terminal no-op. Do not review it again or run `gh pr merge`. This applies even when `passed` is `false` or the result names a missing review or another mismatch. When `merged` is `false`, all review and merge requirements still apply. A missing or unreadable `merged` field is not evidence of a merge; resolve the read before proceeding.
 
 The command keeps a review only when its `commit_id` equals the current full head SHA and its state is not `DISMISSED` or `PENDING`. `COMMENTED` counts. Pass does not require `APPROVED`. GitHub refuses `APPROVE` from the pull request author. An empty successful review list is missing. A failed, partial, or unparsable read is unreadable and is not treated as empty.
 
 On that same full head SHA, the GitHub Actions check run named `Required checks` must have `status` `completed` and `conclusion` `success`. That run's `head_sha` must equal the pull request head. Newer `gh` wraps `gh api --paginate --slurp` check-runs in a one-element array of the check-runs object. Older `gh` has no `--slurp` and returns the object. Both shapes flatten to the `check_runs` list. A check that is not completed is pending. A completed check whose conclusion is not `success` is failed. No run with that name is missing. The admin bypass is not a successful check.
+
+Those checks must also have run with the current tip of the pull request's base branch, which is main for Orbit pull requests. The command compares the base branch with the head (`gh api repos/{owner}/{repo}/compare/main...<head-sha>`). The checks ran with the tip when the head contains it (`behind_by` is 0), or when the pull request's recorded `base.sha` equals it, because the `pull_request` run merged the head into that base.
+
+Otherwise the result is `base_behind`: green on an older base does not prove the head still works on current main. The JSON `base` object names the base ref, the recorded base SHA, the current tip, and `behind_by`. A merged pull request skips this comparison.
 
 The diff fails when it adds a leftover the merge skill already names: GitHub auto-merge, `--auto`, `--admin`, an `orbit tasks:merge` command, a Gateway merge endpoint, a merge SDK, MCP, or API contract, a ruleset change, an App permission change, an `object-storage-host`, or a `linear-reference`. Markdown sentences that explicitly prohibit those leftovers are exempt. A negation in a URL, another sentence, or product code does not exempt the match. The scan also skips the detector (`bin/pr-head-check`), the delivery-line test that names the leftover refusal, and recorded delivery-line fixtures. Those files hold the forbidden names so the checker can refuse them. A leftover added in product code still fails.
 
@@ -142,6 +146,7 @@ On any mismatch the JSON names the mismatch. For an unmerged pull request, the n
 | `review_unreadable` | Re-read the reviews until the list is complete. Do not merge. |
 | `check_missing`, `check_pending`, `check_failed` | Wait for `Required checks` on this head, or review the new head. Do not merge. |
 | `head_mismatch` | Review the new head. Do not merge. |
+| `base_behind` | Update the branch with main, wait for `Required checks` to pass on the new head, and re-review the new head. Do not merge. |
 | `leftover` | Remove the named leftover. Do not merge. |
 
 ## bin/deploy-verify
@@ -285,7 +290,7 @@ The Gateway task engine is generic. Orbit's policy lives in the repository skill
 
 ### A stale head is named, not merged
 
-`bin/pr-head-check` stops when the review or `Required checks` belong to another SHA. The next step is to review the new head. Auto-merge, `--admin`, and a `tasks:merge` command remain the leftovers the merge skill already forbids.
+`bin/pr-head-check` stops when the review or `Required checks` belong to another SHA. The next step is to review the new head. It also stops when those checks never ran with the current main tip. A branch that was green before main moved can still break main without a textual conflict. The next step is to update the branch, wait for green, and review the new head. Auto-merge, `--admin`, and a `tasks:merge` command remain the leftovers the merge skill already forbids.
 
 ### A smoke test reads, and writing is opt-in
 
