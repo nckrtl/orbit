@@ -4,35 +4,52 @@ declare(strict_types=1);
 
 use App\Domain\Broadcasting\RecordBroadcast;
 use App\Domain\Broadcasting\RecordEventType;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\InstanceRemover;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\AgentSpawner;
+use App\Domain\Tasks\DeliverablePathChecker;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\QuestionAsker;
 use App\Domain\Tasks\QuestionCause;
 use App\Domain\Tasks\QuestionStatus;
 use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
+use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskStatus;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Api\TaskGroupsController;
 use App\Http\Controllers\Api\TasksController;
+use App\Infrastructure\Processes\CommandResult;
+use App\Infrastructure\Processes\ProcessInvocation;
+use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceRemoval;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use App\Models\TaskComment;
 use App\Models\TaskQuestion;
+use Illuminate\Filesystem\Filesystem;
 use Illuminate\Routing\Route;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
+use Tests\Support\DeliverablePathWorkspace;
 use Tests\Support\FakeTaskCheckRunner;
+use Tests\Support\TestOrbitHome;
 
 function tasks_gateway(): Node
 {
@@ -194,6 +211,41 @@ it('enables and disables the extension through empty JSON objects', function ():
     expect(app(TaskExtensionState::class)->enabled())->toBeFalse();
 });
 
+it('reports when the last tasks tick started its work on tasks status', function (): void {
+    tasks_gateway();
+    $this->travelTo(Carbon::parse('2026-10-07T06:00:00Z'));
+
+    $this->artisan('tasks:tick')->assertSuccessful();
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', null);
+
+    enable_tasks();
+    $this->artisan('tasks:tick')->assertSuccessful();
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
+
+    $this->travelTo(Carbon::parse('2026-10-07T06:00:10Z'));
+    $held = Cache::lock('orbit:tasks:tick', 300);
+    expect($held->get())->toBeTrue();
+    $this->artisan('tasks:tick')
+        ->expectsOutput('Another tasks tick is already running.')
+        ->assertSuccessful();
+    $held->release();
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:00.000000Z');
+
+    $this->artisan('tasks:tick')->assertSuccessful();
+    $this->postJson('/api/v1/extensions/tasks/disable')
+        ->assertOk()
+        ->assertJsonMissingPath('data.last_tick_at');
+    $this->getJson('/api/v1/tasks/status')
+        ->assertOk()
+        ->assertJsonPath('data.last_tick_at', '2026-10-07T06:00:10.000000Z');
+});
+
 it('accepts notify_on_settle as the Commander alias for notify_coder', function (): void {
     tasks_gateway();
     enable_tasks();
@@ -245,6 +297,7 @@ it('still returns the created group, and fails it when the first implementer can
         'node_id' => $node->id,
         'name' => 'workspace',
         'checkout_path' => '/tmp/tasks-spawn-failure',
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
     ]);
 
@@ -615,6 +668,7 @@ function tasks_cli_record(array $group): array
         $src = dirname(__DIR__, 5).'/packages/php-sdk/src/Responses/Tasks';
         require_once $src.'/TaskFields.php';
         require_once $src.'/SubtaskResponse.php';
+        require_once $src.'/TaskReviewAndMergeResponse.php';
         require_once $src.'/TaskGroupResponse.php';
         $loaded = true;
     }
@@ -892,3 +946,360 @@ it('returns 403 node_access.required when listing questions without collection a
         ->assertOk()
         ->assertJsonPath('data', []);
 });
+
+function deliverable_path_repository(): object
+{
+    if (! interface_exists(DeliverablePathRepository::class)) {
+        return new stdClass;
+    }
+    $repository = new class implements DeliverablePathRepository
+    {
+        public int $defaultLookups = 0;
+
+        /** @var list<string> */
+        public array $commits = [];
+
+        public function defaultBranchCommit(Project $project): string
+        {
+            expect($project->default_branch)->toBe('main');
+            $this->defaultLookups++;
+
+            return str_repeat('a', 40);
+        }
+
+        public function files(Project $project, string $commit, ?Instance $workspace = null): array
+        {
+            $this->commits[] = $commit;
+
+            return $commit === str_repeat('a', 40)
+                ? ['tests/ExistingTest.php', 'app/OnlyOnMain.php', 'docs/reference/tasks.md']
+                : ['tests/ExistingTest.php', 'tests/OnlyOnOtherRefTest.php'];
+        }
+    };
+    app()->instance(DeliverablePathRepository::class, $repository);
+
+    return $repository;
+}
+
+function deliverable_path_file(string $path, string $change = 'modified'): array
+{
+    return ['id' => 'file-check', 'type' => 'file', 'description' => 'Check the file.', 'path' => $path, 'change' => $change];
+}
+
+it('uses the provisional_base default branch SHA for workspace-less create', function (string $status): void {
+    tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+    $repository = deliverable_path_repository();
+    $response = $this->postJson('/api/v1/task-groups', [
+        'project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Validate paths.', 'status' => $status,
+        'tasks' => [['title' => 'Check', 'brief' => 'Check.', 'deliverables' => [deliverable_path_file('tests/OnlyOnOtherRefTest.php')]]],
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($response->json('error.details')['tasks.0.deliverables.0.path'][0])->toBe(
+        'Deliverable file-check path tests/OnlyOnOtherRefTest.php is missing on base '.str_repeat('a', 40).' (base_kind=provisional).',
+    );
+    expect($repository->defaultLookups)->toBe(1)->and($repository->commits)->toBe([str_repeat('a', 40)]);
+    expect(Task::query()->count())->toBe(0);
+})->with(['backlog', 'todo']);
+
+it('uses the resolved_base directly for subtask create and update', function (string $source, string $operation): void {
+    $gateway = tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+    $repository = deliverable_path_repository();
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Paths.', 'status' => TaskGroupStatus::Backlog]);
+    $base = str_repeat('b', 40);
+    if ($source === 'workspace') {
+        $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $gateway->id, 'name' => 'path-base', 'checkout_path' => '/srv/apps/path-base', 'starting_commit' => $base, 'status' => 'source_resolved']);
+        $group->taskable()->associate($instance);
+        $group->save();
+    } elseif ($source === 'approved') {
+        $previous = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Earlier', 'brief' => 'Earlier.', 'status' => TaskStatus::Completed]);
+        TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $previous->id, 'type' => TaskCommentType::Approved, 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $base]);
+    }
+    $task = Task::query()->create(['parent_id' => $group->id, 'position' => 2, 'title' => 'Check', 'brief' => 'Check.', 'status' => TaskStatus::Todo, 'subtask_start_commit' => $source === 'recorded' ? $base : null]);
+    $payload = ['title' => 'Check', 'brief' => 'Check.', 'deliverables' => [deliverable_path_file('app/OnlyOnMain.php')]];
+    $response = $operation === 'create'
+        ? $this->postJson("/api/v1/task-groups/{$group->id}/tasks", $payload)
+        : $this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", $payload);
+    $response->assertUnprocessable();
+    expect($response->json('error.details')['deliverables.0.path'][0])->toBe('Deliverable file-check path app/OnlyOnMain.php is missing on base '.$base.' (base_kind=resolved).');
+    expect($repository->defaultLookups)->toBe(0)->and($repository->commits)->toBe([$base]);
+})->with([['workspace', 'create'], ['workspace', 'update'], ['approved', 'create'], ['approved', 'update'], ['recorded', 'update']]);
+
+it('validates deliverable.path on existing groups after a GhCli source access change', function (string $operation, string $kind): void {
+    tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+    $repository = deliverable_path_repository();
+    $group = $this->postJson('/api/v1/task-groups', [
+        'project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Validate paths.',
+        'tasks' => [['title' => 'Check', 'brief' => 'Check.']],
+    ])->assertCreated()->json('data');
+    $taskId = $group['tasks'][0]['id'];
+    $project->update(['source_access' => ProjectSourceAccess::GhCli]);
+    $deliverable = match ($kind) {
+        'file' => deliverable_path_file('missing.php'),
+        'missing-command' => ['id' => 'base-check', 'type' => 'command', 'description' => 'Run.', 'command' => 'vendor/bin/pest', 'paths' => ['tests/MissingTest.php']],
+        default => ['id' => 'base-check', 'type' => 'command', 'description' => 'Run.', 'command' => 'vendor/bin/pest', 'fails_on_base' => true, 'paths' => ['app/OnlyOnMain.php']],
+    };
+    $payload = ['title' => 'Check', 'brief' => 'Check.', 'deliverables' => [$deliverable]];
+    $response = $operation === 'create'
+        ? $this->postJson("/api/v1/task-groups/{$group['id']}/tasks", $payload)
+        : $this->patchJson("/api/v1/task-groups/{$group['id']}/tasks/{$taskId}", $payload);
+    $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    $field = $kind === 'file' ? 'deliverables.0.path' : 'deliverables.0.paths.0';
+    $reason = match ($kind) {
+        'file' => 'Deliverable file-check path missing.php is missing',
+        'missing-command' => 'Deliverable base-check path tests/MissingTest.php is missing',
+        default => 'Deliverable base-check path app/OnlyOnMain.php must be a test file for fails_on_base',
+    };
+    expect($response->json('error.details')[$field][0])->toBe($reason.' on base '.str_repeat('a', 40).' (base_kind=provisional).');
+    expect($repository->defaultLookups)->toBe(1)->and($repository->commits)->toBe([str_repeat('a', 40)]);
+    expect(Task::query()->where('parent_id', $group['id'])->count())->toBe(1);
+    expect(Task::query()->findOrFail($taskId)->deliverables)->toBe([]);
+})->with(['create', 'update'])->with(['file', 'missing-command', 'implementation-overlay']);
+
+it('checks deliverable.path and fails_on_base command paths at every request boundary', function (array $deliverables, ?string $field, ?string $reason): void {
+    tasks_gateway();
+    enable_tasks();
+    $project = tasks_app();
+    deliverable_path_repository();
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Paths.', 'status' => TaskGroupStatus::Backlog]);
+    $task = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Check', 'brief' => 'Check.', 'status' => TaskStatus::Todo]);
+    $payload = ['title' => 'Check', 'brief' => 'Check.', 'deliverables' => $deliverables];
+    $responses = [
+        [$this->postJson('/api/v1/task-groups', ['project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Paths.', 'tasks' => [$payload]]), 'tasks.0.deliverables.'],
+        [$this->postJson("/api/v1/task-groups/{$group->id}/tasks", $payload), 'deliverables.'],
+        [$this->patchJson("/api/v1/task-groups/{$group->id}/tasks/{$task->id}", $payload), 'deliverables.'],
+    ];
+    foreach ($responses as [$response, $prefix]) {
+        if ($field === null) {
+            expect($response->status())->toBeIn([200, 201]);
+        } else {
+            $response->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+            expect($response->json('error.details')[$prefix.$field][0])->toContain($reason, str_repeat('a', 40), 'base_kind=provisional');
+        }
+    }
+})->with(function (): array {
+    $command = static fn (string $path, bool $base = true): array => ['id' => 'base-check', 'type' => 'command', 'description' => 'Run.', 'command' => 'vendor/bin/pest', 'fails_on_base' => $base, 'paths' => [$path]];
+
+    return [
+        'path_missing literal' => [[deliverable_path_file('missing.php')], '0.path', 'file-check path missing.php is missing'],
+        'zero match glob' => [[deliverable_path_file('tests/{Unit,Feature}/Missing*.php')], '0.path', 'file-check path tests/{Unit,Feature}/Missing*.php is missing'],
+        'created file' => [[deliverable_path_file('missing.php', 'created')], null, null],
+        'brace glob exists' => [[deliverable_path_file('docs/{reference,decisions}/tasks.md')], null, null],
+        'relative file prefix' => [[deliverable_path_file('./docs/reference/tasks.md')], null, null],
+        'relative glob prefix' => [[deliverable_path_file('./docs/{reference,decisions}/tasks.*')], null, null],
+        'relative missing file preserves submitted path' => [[deliverable_path_file('./missing.php')], '0.path', 'file-check path ./missing.php is missing'],
+        'relative missing glob preserves submitted path' => [[deliverable_path_file('./tests/Missing*.php')], '0.path', 'file-check path ./tests/Missing*.php is missing'],
+        'fails_on_base implementation' => [[$command('app/OnlyOnMain.php')], '0.paths.0', 'base-check path app/OnlyOnMain.php must be a test file'],
+        'fails_on_base existing test' => [[$command('tests/ExistingTest.php')], null, null],
+        'unmarked command path' => [[$command('tests/NewTest.php')], '0.paths.0', 'base-check path tests/NewTest.php is missing'],
+        'created literal companion' => [[$command('tests/NewTest.php'), deliverable_path_file('tests/NewTest.php', 'created')], null, null],
+        'created glob companion' => [[$command('tests/NewTest.php'), deliverable_path_file('tests/{New,Other}*.php', 'created')], null, null],
+        'relative created literal companion' => [[$command('tests/NewTest.php'), deliverable_path_file('./tests/NewTest.php', 'created')], null, null],
+        'relative created glob companion' => [[$command('tests/NewTest.php'), deliverable_path_file('./tests/{New,Other}*.php', 'created')], null, null],
+        'modified companion' => [[$command('tests/NewTest.php'), deliverable_path_file('tests/*Test.php', 'modified')], '0.paths.0', 'base-check path tests/NewTest.php is missing'],
+        'any companion' => [[$command('tests/NewTest.php'), deliverable_path_file('tests/*Test.php', 'any')], '0.paths.0', 'base-check path tests/NewTest.php is missing'],
+        'ordinary command missing path' => [[$command('app/Missing.php', false)], '0.paths.0', 'base-check path app/Missing.php is missing'],
+        'ordinary implementation command' => [[$command('app/OnlyOnMain.php', false)], null, null],
+        'PHP test suffix' => [[$command('integration/NewTest.php'), deliverable_path_file('integration/NewTest.php', 'created')], null, null],
+        'TS test suffix' => [[$command('src/new.test.ts'), deliverable_path_file('src/new.test.ts', 'created')], null, null],
+        'TS spec suffix' => [[$command('src/new.spec.ts'), deliverable_path_file('src/new.spec.ts', 'created')], null, null],
+        'Go test suffix' => [[$command('pkg/new_test.go'), deliverable_path_file('pkg/new_test.go', 'created')], null, null],
+        'nested tests directory' => [[$command('apps/gateway/tests/new.php'), deliverable_path_file('apps/gateway/tests/new.php', 'created')], null, null],
+        'created implementation still refused' => [[$command('app/New.php'), deliverable_path_file('app/New.php', 'created')], '0.paths.0', 'base-check path app/New.php must be a test file'],
+    ];
+});
+
+function deliverable_correction_task(?string $failedStep = 'invalid_deliverable'): Task
+{
+    tasks_gateway();
+    enable_tasks();
+    deliverable_path_repository();
+    $project = tasks_app('correction');
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Correction', 'brief' => 'Keep the work.', 'status' => TaskGroupStatus::Running, 'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.']);
+    $task = Task::query()->create([
+        'parent_id' => $group->id, 'position' => 1, 'title' => 'Started', 'brief' => 'Keep this brief.',
+        'status' => TaskStatus::Running, 'subtask_start_commit' => str_repeat('b', 40),
+        'deliverables' => [deliverable_path_file('tests/MissingTest.php')],
+        'assistance_requested' => true, 'assistance_reason' => 'Invalid overlay path.',
+        'completion_attempt' => 2,
+    ]);
+    $receipt = TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $task->id, 'type' => TaskCommentType::ReadyForReview, 'body' => 'Ready.', 'author' => 'implementer', 'posted_at' => now(), 'completion_attempt' => 2]);
+    $task->update(['completion_handoff_comment_id' => $receipt->id]);
+    TaskCheck::query()->create([
+        'task_id' => $task->id, 'task_comment_id' => $receipt->id, 'kind' => TaskCheckKind::Handoff,
+        'status' => TaskCheckStatus::Failed, 'failed_step' => $failedStep,
+        'pid' => 123, 'process_started' => 'check-start', 'head_before' => str_repeat('c', 40), 'tree_before' => str_repeat('d', 40),
+        'started_at' => now(), 'finished_at' => now(),
+    ]);
+
+    return $task;
+}
+
+it('allows one invalid_deliverable correction and audits it without discarding work', function (): void {
+    $task = deliverable_correction_task();
+    $before = $task->deliverables;
+    $replacement = [deliverable_path_file('tests/ExistingTest.php')];
+    $url = "/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}";
+
+    $requestId = '19c10948-0ca3-4c1a-b1d0-6c99eb4c05f5';
+    $actor = Node::query()->where('name', 'tasks-gateway')->sole();
+    $this->withHeader('X-Orbit-Request-Id', $requestId)->patchJson($url, ['deliverables' => $replacement])->assertOk()->assertJsonPath('data.deliverables', $replacement);
+
+    $task->refresh();
+    expect($task->deliverables)->toBe($replacement)
+        ->and($task->status)->toBe(TaskStatus::Running)
+        ->and($task->subtask_start_commit)->toBe(str_repeat('b', 40))
+        ->and($task->completion_attempt)->toBe(2)
+        ->and($task->assistance_requested)->toBeTrue();
+    $audit = Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->sole();
+    expect($audit->getRawOriginal('caller_node_id'))->toBe($actor->id);
+    expect($audit->caller_ip)->toBe($actor->wireguard_ip);
+    expect($audit->request_id)->toBe($requestId);
+    expect($audit->properties?->get('old'))->toBe($before)
+        ->and($audit->properties?->get('new'))->toBe($replacement)
+        ->and($audit->properties?->get('check_id'))->toBe(TaskCheck::query()->where('task_id', $task->id)->sole()->id);
+
+    $this->patchJson($url, ['deliverables' => $replacement])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+    $check = TaskCheck::query()->where('task_id', $task->id)->sole();
+    $again = $check->replicate();
+    $again->save();
+    $this->patchJson($url, ['deliverables' => $replacement])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+    expect($task->fresh()?->deliverables)->toBe($replacement);
+    expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(1);
+});
+
+it('does not reopen a deliverable correction after activity cleanup and another invalid handoff', function (): void {
+    $task = deliverable_correction_task();
+    $url = "/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}";
+    $replacement = [deliverable_path_file('tests/ExistingTest.php')];
+    $this->patchJson($url, ['deliverables' => $replacement])->assertOk();
+    $consumed = $task->fresh()?->deliverable_correction_check_id;
+    Activity::query()->where('log_name', 'tasks')->update(['created_at' => now()->subDays(400)]);
+
+    $this->artisan('activitylog:clean', ['log' => 'tasks', '--days' => 1])->assertExitCode(0);
+
+    expect(Activity::query()->where('description', 'deliverables corrected')->count())->toBe(0);
+    $again = TaskCheck::query()->where('task_id', $task->id)->sole()->replicate();
+    $again->save();
+    $this->patchJson($url, ['deliverables' => $replacement])->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+    expect($task->fresh()?->deliverable_correction_check_id)->toBe($consumed)->not->toBeNull();
+});
+
+it('keeps deliverables_locked for ordinary running edits and unrelated failures', function (?string $failedStep): void {
+    $task = deliverable_correction_task($failedStep);
+    $before = $task->deliverables;
+
+    $this->patchJson("/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}", ['deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+
+    expect($task->fresh()?->deliverables)->toBe($before);
+})->with([null, 'project_check']);
+
+it('keeps deliverable correction locked outside the failed handoff assistance window', function (string $case): void {
+    $task = deliverable_correction_task();
+    $before = $task->deliverables;
+    if ($case === 'not-assisted') {
+        $task->update(['assistance_requested' => false, 'assistance_reason' => null]);
+    } elseif ($case === 'new-attempt') {
+        $task->update(['completion_attempt' => 3]);
+    } elseif ($case === 'reviewing') {
+        $task->update(['status' => TaskStatus::Reviewing]);
+    } elseif ($case === 'closed-group') {
+        $task->parent->update(['status' => TaskGroupStatus::Cancelled]);
+    } elseif ($case === 'old-receipt') {
+        $task->update(['completion_handoff_comment_id' => null]);
+    } else {
+        $newer = TaskCheck::query()->where('task_id', $task->id)->sole()->replicate();
+        $newer->status = TaskCheckStatus::Passed;
+        $newer->save();
+    }
+
+    $this->patchJson("/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}", ['deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])
+        ->assertConflict()->assertJsonPath('error.code', 'tasks.deliverables_locked');
+
+    expect($task->fresh()?->deliverables)->toBe($before);
+})->with(['not-assisted', 'new-attempt', 'reviewing', 'closed-group', 'old-receipt', 'newer-check']);
+
+it('validates a deliverable correction without consuming it on refused requests', function (): void {
+    $task = deliverable_correction_task();
+    $before = $task->deliverables;
+    $url = "/api/v1/task-groups/{$task->parent_id}/tasks/{$task->id}";
+    $command = ['id' => 'repro', 'type' => 'command', 'description' => 'Reproduce.', 'command' => 'vendor/bin/pest', 'fails_on_base' => true, 'paths' => ['app/New.php']];
+
+    $response = $this->patchJson($url, ['deliverables' => [$command, deliverable_path_file('app/New.php', 'created')]])
+        ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($response->json('error.details')['deliverables.0.paths.0'][0])->toContain('must be a test file', str_repeat('b', 40), 'base_kind=resolved');
+    $this->patchJson($url, ['deliverables' => [deliverable_path_file('tests/MissingTest.php')]])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    $this->patchJson($url, ['deliverables' => []])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.subtask_deliverables_missing');
+    $this->patchJson($url, ['title' => 'Changed', 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+    $this->patchJson($url, ['topology' => ['app-dev'], 'deliverables' => [deliverable_path_file('tests/ExistingTest.php')]])->assertConflict()->assertJsonPath('error.code', 'tasks.not_in_backlog');
+    expect($task->fresh()?->deliverables)->toBe($before)
+        ->and($task->fresh()?->topology)->toBeNull();
+    expect(Activity::query()->where('subject_id', $task->id)->where('description', 'deliverables corrected')->count())->toBe(0);
+
+    $command['paths'] = ['tests/ExistingTest.php'];
+    $this->patchJson($url, ['deliverables' => [$command]])->assertOk();
+    expect($task->fresh()?->deliverables[0]['fails_on_base'])->toBeTrue();
+});
+
+it('allows DeliverablePathChecker callers to supply an explicit commit without default branch lookup', function (): void {
+    $repository = deliverable_path_repository();
+    $errors = app(DeliverablePathChecker::class)->check(tasks_app(), [deliverable_path_file('app/OnlyOnMain.php')], str_repeat('b', 40));
+    expect($errors['0.path'])->toContain(str_repeat('b', 40), 'base_kind=resolved');
+    expect($repository->defaultLookups)->toBe(0)->and($repository->commits)->toBe([str_repeat('b', 40)]);
+});
+
+it('accepts a subtask appended after a review-and-merge approval that exists only in the task workspace', function (): void {
+    $gateway = tasks_gateway();
+    enable_tasks();
+    $project = tasks_app('local-approval');
+    $project->update(['review_and_merge' => true, 'merge_check' => 'Required checks']);
+    $git = DeliverablePathWorkspace::repositories();
+    $origin = new class implements ProcessRunner
+    {
+        public int $reads = 0;
+
+        public function run(ProcessInvocation $invocation): CommandResult
+        {
+            $this->reads++;
+
+            return new CommandResult(128, '', 'fatal: unable to access origin', 0, false);
+        }
+    };
+    app()->instance(DeliverablePathRepository::class, new NativeDeliverablePathRepository($origin, app(RepositoryReadAccess::class), new Filesystem, DeliverablePathWorkspace::localExecutor()));
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Local approval', 'brief' => 'Keep approvals local.', 'status' => TaskGroupStatus::Running]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $gateway->id, 'name' => 'local-approval', 'checkout_path' => $git['checkout'], 'starting_commit' => $git['pushed'], 'status' => 'source_resolved']);
+    $group->taskable()->associate($instance);
+    $group->save();
+    $previous = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Earlier', 'brief' => 'Earlier.', 'status' => TaskStatus::Completed]);
+    TaskComment::query()->create(['task_group_id' => $group->id, 'task_id' => $previous->id, 'type' => TaskCommentType::Approved, 'body' => 'Approved.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => $git['local']]);
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
+        'title' => 'Follow up', 'brief' => 'Change the approved file.', 'deliverables' => [deliverable_path_file('app/LocalOnly.php')],
+    ])->assertCreated()->assertJsonPath('data.position', 2);
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
+        'title' => 'Missing', 'brief' => 'Name a missing file.', 'deliverables' => [deliverable_path_file('app/Absent.php')],
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
+    expect($origin->reads)->toBe(0);
+
+    TaskComment::query()->where('commit_sha', $git['local'])->update(['commit_sha' => str_repeat('e', 40)]);
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", [
+        'title' => 'Unknown base', 'brief' => 'The base is in neither source.', 'deliverables' => [deliverable_path_file('app/Pushed.php')],
+    ])->assertUnprocessable()->assertJsonPath('error.code', 'tasks.deliverable_base_unavailable');
+    TestOrbitHome::clearScratch();
+});
+
+it('normalises command paths like file paths before the base check', function (string $path): void {
+    tasks_gateway();
+    enable_tasks();
+    deliverable_path_repository();
+    $project = tasks_app('command-paths');
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Paths', 'brief' => 'Paths.', 'status' => TaskGroupStatus::Backlog]);
+    $command = ['id' => 'repro', 'type' => 'command', 'description' => 'Reproduce.', 'command' => 'vendor/bin/pest', 'fails_on_base' => true, 'paths' => [$path]];
+
+    $this->postJson("/api/v1/task-groups/{$group->id}/tasks", ['title' => 'Repro', 'brief' => 'Repro.', 'deliverables' => [$command]])->assertCreated();
+})->with(['./tests/ExistingTest.php', 'tests//ExistingTest.php', './/tests/ExistingTest.php']);

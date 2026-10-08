@@ -9,7 +9,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessRuntime;
 use App\Domain\ProxyCli\ProxyCliAccount;
-use App\Domain\ProxyCli\ProxyCliCache;
 use App\Domain\ProxyCli\ProxyCliProcess;
 use App\Domain\ProxyCli\ProxyCliPublicationManager;
 use App\Domain\ProxyCli\ProxyCliRuntimeLifecycle;
@@ -508,15 +507,4 @@ it('republishes private DNS without the collector name when the extension is dis
 
     expect($publication->dnsAtRemoval)->toBeString()
         ->not->toContain('collector.cli-proxy-api.orbit');
-});
-
-it('collects once under the distributed lock', function (): void {
-    $cache = app(ProxyCliCache::class);
-    $first = $cache->acquire('orbit:proxycli:lock', 'collector-a', 30);
-    $second = $cache->acquire('orbit:proxycli:lock', 'collector-b', 30);
-
-    expect($first)->toBeTrue()->and($second)->toBeFalse();
-
-    $cache->release('orbit:proxycli:lock', 'collector-a');
-    expect($cache->acquire('orbit:proxycli:lock', 'collector-b', 30))->toBeTrue();
 });

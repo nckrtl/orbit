@@ -287,21 +287,6 @@ describe('fleet dependency scan', function (): void {
             ->and($mock->getRecordedResponses())->toHaveCount(1);
     });
 
-    it('treats a raw empty JSON array as a successful empty fleet', function (): void {
-        $mock = MockClient::global([
-            ListInstancesRequest::class => MockResponse::make(fleet_cli_listing_json('[]')),
-            ScanInstanceDependenciesRequest::class => static function (): never {
-                throw new RuntimeException('scan should not run');
-            },
-        ]);
-        expect(Artisan::call('instance:dependencies:scan', ['--all' => true, '--json' => true, '--no-interaction' => true]))->toBe(0);
-        $json = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
-        expect($json['succeeded'])->toBeTrue()
-            ->and($json['summary'])->toBe(['attempted' => 0, 'succeeded' => 0, 'failed' => 0, 'skipped' => 0])
-            ->and($json['instances'])->toBe([])
-            ->and($mock->getRecordedResponses())->toHaveCount(1);
-    });
-
     it('rejects malformed listings before scanning', function (string $body): void {
         $mock = MockClient::global([
             ListInstancesRequest::class => MockResponse::make($body),

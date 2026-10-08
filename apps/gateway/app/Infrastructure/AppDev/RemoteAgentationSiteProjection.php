@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\AgentationSiteProjection;
 use App\Domain\AppDev\DevelopmentProjectionOperationLock;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Models\Instance;
 
 final readonly class RemoteAgentationSiteProjection implements AgentationSiteProjection
@@ -17,6 +18,7 @@ final readonly class RemoteAgentationSiteProjection implements AgentationSitePro
 
     public function project(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->projection->run(function () use ($instance): void {
             $instance->load(['routes', 'node']);
 

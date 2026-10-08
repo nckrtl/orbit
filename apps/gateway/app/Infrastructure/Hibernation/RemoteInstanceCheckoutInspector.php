@@ -9,6 +9,7 @@ use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\LocalRuntimeDependencies;
 use App\Domain\Hibernation\RuntimeDependencyState;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -31,6 +32,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function inspect(Instance $instance): RuntimeDependencyState
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $checkout = $this->checkout($instance);
         $result = $this->ssh->execute(
             $this->connection($instance->node),
@@ -52,6 +54,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function prune(Instance $instance, RuntimeDependencyState $state): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->checkout($instance);
         $targets = [];
 
@@ -87,6 +90,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function restore(Instance $instance, RuntimeDependencyState $state): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->checkout($instance);
         $checkout = $this->application($instance);
         $account = $this->accounts->resolve($instance->node);

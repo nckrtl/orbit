@@ -16,7 +16,7 @@ The Project's [development deploy steps](/reference/deployments#development-depl
 
 ## Endpoints
 
-Both endpoints speak MCP over streamable HTTP and offer the same catalogue.
+Both endpoints speak MCP over streamable HTTP and offer the same catalogue. Their JSON-RPC envelopes are limited to 15 MiB (15,728,640 bytes), checked after active-peer authorization and before parsing. An oversized envelope receives HTTP 413 without invoking a tool. Dispatched API requests still apply their own limits and Node access checks. This envelope limit admits the full 10 MiB decoded [Project Document upload](/reference/project-documents#content-and-versions), including base64 and JSON-RPC overhead.
 
 | Endpoint | Tools it lists | Use it when |
 | --- | --- | --- |
@@ -25,17 +25,22 @@ Both endpoints speak MCP over streamable HTTP and offer the same catalogue.
 
 `search_tools` returns exact tool names with their input schemas. An empty query browses the catalogue. `execute_tools` takes `{"calls": [{"name": "...", "arguments": {...}}]}`, runs up to 25 calls in order, and stops at the first error. A nested empty object in a tool argument, such as `{"options":{}}`, stays an object through a direct `tools/call` and through `execute_tools`, and an empty list stays a list. The tool result text keeps that shape. `/mcp/search` limits the output of one call to 65,536 bytes. `execute_tools` stops when the combined results pass that limit, so a large list result can fail through `/mcp/search` and still work through `/mcp`.
 
+One MCP request has one 570-second command deadline, the same deadline as one API request. PHP-FPM ends a Gateway request after 600 seconds. All tool calls in one `execute_tools` batch share that deadline. A tool call cannot extend or reset it. Forward work stops 20 seconds before the deadline, which leaves that time for cleanup. A call that starts after the batch has used up its forward time returns the tool error `command.deadline_exceeded` (status 504) and does not run. The batch then stops at that call. Send long tools, such as `gateway-release-smoke` or `instance-deploy`, as separate requests.
+
 ## Identity and access
 
 The caller is the Node whose WireGuard address the connection comes from. There is no token and no login.
 
 - A connection from an address that is not an active Node receives HTTP `403` with `peer.identity_unknown`, before it can list tools.
+- `gateway-desired-fleet-state` needs no access grant. Any active Node may read the [desired fleet state](/reference/self-update#where-it-is-served).
 - Each tool call runs as an internal API request with the caller's address. The API checks the caller and its [access grants](/cli/node#orbit-nodeaccessadd) again. A missing grant returns the API's `403` with `node_access.required` as the tool error.
 - The Gateway certificate chains to the Orbit root certificate authority (CA). Orbit installs that root in the system trust store only on a Node where it converges an Instance, Route, router, ingress, or custom proxy certificate. On any other machine, run `orbit gateway:trust` first, or point the client at the root CA file.
 
 ## Tools
 
 A tool's name is the operation ID in the [API reference](/api/overview), `<family>-<verb>`, such as `node-list`, `instance-show`, or `process-restart`. Its input is one object with the operation's path parameters, query parameters, and JSON body fields. An input the API validates as a boolean is a JSON `boolean` in the tool schema. The caller sends that value as a JSON boolean. The Gateway serves each tool's input schema exactly as `bin/mcp-tools` generated it in `resources/mcp/tools.json`, with empty schemas encoded as JSON objects (`{}`), not lists (`[]`). The server puts each value where the operation expects it. A `GET` tool is marked read-only, and a `DELETE` tool is marked destructive.
+
+`project-document-storage-show` and `project-document-storage-update` expose the Gateway-wide [Project Documents storage configuration](/reference/project-documents#private-s3-boundary). Both require Gateway access and take no Project selector. Update accepts `endpoint`, `region`, `bucket`, and the paired write-only fields `access_key_id` and `secret_access_key`. Omitting both credential fields preserves them. Results contain only redacted configuration and cleanup status; show does not probe the provider. Update verifies access before saving and returns `project_documents.storage_unavailable` without provider diagnostics on failure.
 
 `tool-scan` reads the enrolled account's Homebrew formulae, casks, and Vite+ global packages for one Node. Its only input is `node_id`. The call does not create a Tool row.
 

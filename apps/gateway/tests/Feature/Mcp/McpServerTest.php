@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 use App\Domain\Routes\RouteRemovalProjector;
 use App\Domain\Shared\LifecycleStatus;
+use App\Infrastructure\Processes\CommandDeadline;
+use App\Models\Activity;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use Illuminate\Foundation\Http\Events\RequestHandled;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Testing\TestResponse;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Tests\Support\FakeRouteRemovalProjector;
@@ -192,5 +196,36 @@ describe('POST /mcp/search', function (): void {
 
         expect($executed['result']['isError'])->toBeFalse()
             ->and($executed['result']['content'][0]['text'])->toContain('gateway');
+    });
+
+    it('bounds a whole execute_tools batch by one command deadline', function (): void {
+        $now = 1_000.0;
+        $deadline = new CommandDeadline(static function () use (&$now): float {
+            return $now;
+        });
+        $this->app->instance(CommandDeadline::class, $deadline);
+        // Each tool call is a nested API request. The first one uses up the batch's 550 seconds of forward work.
+        Event::listen(RequestHandled::class, static function () use (&$now): void {
+            $now += 551.0;
+        });
+
+        $executed = mcp_message(mcp_call($this, 'tools/call', [
+            'name' => 'execute_tools',
+            'arguments' => ['calls' => [
+                ['name' => 'node-list', 'arguments' => (object) []],
+                ['name' => 'node-list', 'arguments' => (object) []],
+            ]],
+        ], '/mcp/search'));
+        $results = json_decode($executed['result']['content'][0]['text'], true)['results'];
+        $late = json_decode($results[1]['content'][0]['text'], true);
+
+        expect($executed['result']['isError'])->toBeTrue()
+            ->and($results[0]['isError'] ?? false)->toBeFalse()
+            ->and($results[1]['isError'])->toBeTrue()
+            ->and($late['status'])->toBe(504)
+            ->and($late['error']['code'])->toBe('command.deadline_exceeded')
+            ->and(Activity::query()->where('command', 'node:list')->where('error_code', 'command.deadline_exceeded')->exists())->toBeTrue()
+            // The deadline ends with the MCP request.
+            ->and($deadline->cap(9_999.0))->toBe(9_999.0);
     });
 });

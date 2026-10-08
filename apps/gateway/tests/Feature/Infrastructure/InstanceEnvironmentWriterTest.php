@@ -63,7 +63,7 @@ it('creates and atomically replaces a complete protected environment file', func
     }
 });
 
-it('writes .env.testing next to .env with the same protection and leaves .env alone', function (): void {
+it('merges .env.testing next to .env with the same protection and leaves .env alone', function (): void {
     if (LinuxHost::delegate($this)) {
         return;
     }
@@ -71,17 +71,71 @@ it('writes .env.testing next to .env with the same protection and leaves .env al
     $directory = writer_environment_directory();
     file_put_contents("{$directory}/.env", "APP_ENV=\"local\"\n");
     chmod("{$directory}/.env", 0600);
+    $keys = ['DB_CONNECTION', 'DB_HOST', 'DB_DATABASE'];
 
     try {
         $access = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner));
-        $written = $access->writeTesting(writer_environment_context($directory), "APP_ENV=\"testing\"\n");
-        $repeated = $access->writeTesting(writer_environment_context($directory), "APP_ENV=\"testing\"\n");
+        $written = $access->mergeTesting(writer_environment_context($directory), "DB_DATABASE=\"app_test\"\n", $keys);
+        $repeated = $access->mergeTesting(writer_environment_context($directory), "DB_DATABASE=\"app_test\"\n", $keys);
 
         expect($written->changed)->toBeTrue()
+            ->and($written->tracked)->toBeFalse()
             ->and($repeated->changed)->toBeFalse()
-            ->and(file_get_contents("{$directory}/.env.testing"))->toBe("APP_ENV=\"testing\"\n")
+            ->and(file_get_contents("{$directory}/.env.testing"))->toBe("DB_DATABASE=\"app_test\"\n")
             ->and(fileperms("{$directory}/.env.testing") & 0777)->toBe(0600)
             ->and(file_get_contents("{$directory}/.env"))->toBe("APP_ENV=\"local\"\n");
+    } finally {
+        writer_remove_directory($directory);
+    }
+});
+
+it('replaces only the managed keys of an untracked .env.testing and keeps every other line', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $directory = writer_environment_directory();
+    writer_git($directory, 'init', '--quiet');
+    file_put_contents("{$directory}/.env.testing", "# Test settings\nAPP_KEY=base64:kept\nexport DB_HOST=127.0.0.1\nDB_PORT=3308\nDB_HOST=duplicate\nCACHE_STORE=array");
+
+    try {
+        $access = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner));
+        $merged = $access->mergeTesting(
+            writer_environment_context($directory),
+            "DB_DATABASE=\"app_test\"\nDB_HOST=\"10.44.0.7\"\n",
+            ['DB_HOST', 'DB_PORT', 'DB_DATABASE'],
+        );
+
+        expect($merged->changed)->toBeTrue()
+            ->and(file_get_contents("{$directory}/.env.testing"))
+            ->toBe("# Test settings\nAPP_KEY=base64:kept\nDB_HOST=\"10.44.0.7\"\nCACHE_STORE=array\nDB_DATABASE=\"app_test\"\n");
+    } finally {
+        writer_remove_directory($directory);
+    }
+});
+
+it('never writes a .env.testing that Git tracks in the checkout', function (): void {
+    if (LinuxHost::delegate($this)) {
+        return;
+    }
+
+    $directory = writer_environment_directory();
+    $tracked = "DB_DATABASE=committed\n";
+    writer_git($directory, 'init', '--quiet');
+    file_put_contents("{$directory}/.env.testing", $tracked);
+    writer_git($directory, 'add', '.env.testing');
+
+    try {
+        $access = writer_environment_access(new WriterLocalSshExecutor(new NativeProcessRunner));
+        $inode = fileinode("{$directory}/.env.testing");
+        $result = $access->mergeTesting(writer_environment_context($directory), "DB_DATABASE=\"app_test\"\n", ['DB_DATABASE']);
+
+        expect($result->confirmed)->toBeTrue()
+            ->and($result->tracked)->toBeTrue()
+            ->and($result->changed)->toBeFalse()
+            ->and(file_get_contents("{$directory}/.env.testing"))->toBe($tracked)
+            ->and(fileinode("{$directory}/.env.testing"))->toBe($inode)
+            ->and(glob("{$directory}/.env.orbit-*"))->toBe([]);
     } finally {
         writer_remove_directory($directory);
     }
@@ -369,6 +423,15 @@ function writer_environment_directory(): string
     mkdir($directory, 0700);
 
     return $directory;
+}
+
+function writer_git(string $directory, string ...$arguments): void
+{
+    $result = new NativeProcessRunner()->run(new ProcessInvocation(['git', '-C', $directory, ...$arguments], timeout: 30.0));
+
+    if (! $result->succeeded()) {
+        throw new RuntimeException('git failed in the writer test directory.');
+    }
 }
 
 function writer_remove_directory(string $directory): void

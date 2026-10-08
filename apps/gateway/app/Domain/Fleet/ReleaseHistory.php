@@ -1,0 +1,15 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domain\Fleet;
+
+/** The Gateway's own Git history, which maps its commit to a CLI release number. */
+interface ReleaseHistory
+{
+    /** The full SHA of the commit that a hexadecimal revision names, or null when the history cannot resolve it. */
+    public function commit(string $revision): ?string;
+
+    /** `git rev-list --count` of the commit, or null when the history is shallow or cannot be read. */
+    public function count(string $commit): ?int;
+}

@@ -1,0 +1,22 @@
+Queuing release...
+
+┌  Roll back Gateway to release fedcba987654
+│
+├  ● Queuing release
+│
+├  ○ Switch release
+│
+├  ○ Hand off runtime
+│
+├  ○ Verify release
+│
+├  ○ Move scheduler
+│
+├  ○ Publish web app
+│
+├  ○ Run smoke tests
+│
+└  Operation failed.
+
+Release [fedcba987654] does not know 1 migration(s) the database has applied, such as [2026_10_02_000000_two]. Pass --fo
+rce to switch the code and leave the schema.

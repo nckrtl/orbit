@@ -8,7 +8,9 @@ import json
 import os
 import secrets
 import stat
+import subprocess
 import sys
+import tempfile
 
 DIRECTORY_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
 FILE_FLAGS = os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
@@ -174,6 +176,18 @@ def perform(checkout, operation, payload):
                 metadata.publish(info, 'exclude', exclude)
             installed = metadata.publish(metadata.checkout, '.mcp.json', payload['config'].encode() + b'\n', missing=True)
             return 'installed\n' if installed else 'present\n'
+        if operation == 'tmpdir':
+            # Allocate outside the ACL-shared checkout so stripping defaults cannot lock the root.
+            path = tempfile.mkdtemp(prefix=f'orbit-check-{os.geteuid()}-', dir='/tmp')
+            directory = metadata.keep(os.open(path, DIRECTORY_FLAGS))
+            metadata.require_owner(directory)
+            if payload.get('sandbox') is True:
+                os.fchmod(directory, 0o700)
+            else:
+                subprocess.run(['setfacl', '-b', '-k', f'/proc/self/fd/{directory}'],
+                               pass_fds=(directory,), check=True)
+                os.fchmod(directory, 0o711)
+            return os.readlink(f'/proc/self/fd/{directory}')
         if operation in {'check', 'snapshot', 'turn'}:
             orbit = metadata.orbit(create=True)
             if operation in {'check', 'snapshot'}:
@@ -186,12 +200,19 @@ def perform(checkout, operation, payload):
                     else:
                         metadata.publish(orbit, 'deliverables.json', payload['deliverables'].encode())
             else:
+                incoming = json.loads(payload['turn'])
+                delivery_key = incoming.get('delivery_key')
+                if delivery_key is not None:
+                    existing = metadata.read(orbit, 'turn.json')
+                    if existing is not None and json.loads(existing).get('delivery_key') == delivery_key:
+                        return ''
                 metadata.publish(orbit, 'turn', base64.b64decode(payload['script'], validate=True), 0o755)
-                metadata.publish(orbit, 'turn.json', payload['turn'].encode() + b'\n')
                 if payload['context'] is not None:
                     metadata.publish(orbit, 'context.md', payload['context'].encode())
                 for name in ('receipt.json', 'run', 'run.json'):
                     metadata.unlink(orbit, name)
+                # Commit the delivery identity last, before any caller may send the turn.
+                metadata.publish(orbit, 'turn.json', payload['turn'].encode() + b'\n')
             return ''
         try:
             orbit = metadata.orbit()

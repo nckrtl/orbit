@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\Transfer\TransferSourceCapture;
 use App\Domain\Nodes\Storage\StoragePath;
@@ -33,6 +34,11 @@ it('transfers the private annotator store through the source archive and deletes
         $transport->source()->cleanupSource($transfer);
         expect(is_dir($sandbox.'/annotator-store'))->toBeFalse()
             ->and(file_get_contents($sandbox.'/destination/.orbit/annotator/annotations.json'))->toBe('durable annotations');
+    } catch (RuntimeConvergenceException $exception) {
+        throw new RuntimeException(
+            'Local transfer fixture failed at '.$exception->step.': '.($exception->result?->stderr ?? 'No process diagnostics.'),
+            previous: $exception,
+        );
     } finally {
         if ($captured !== null && is_file($captured->archiveIdentity)) {
             unlink($captured->archiveIdentity);
@@ -48,10 +54,13 @@ it('stages the archive on Gateway disk outside the system temporary directory an
     try {
         $transport->source()->materialize($capture, $destination, StoragePath::parse($sandbox.'/destination'));
 
+        $stagingDirectory = storage_path('app/transfer-staging');
+        $systemTemporaryDirectory = realpath(sys_get_temp_dir()) ?: rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR);
+
         expect($transport->stagedPaths)->toHaveCount(2)
             ->and($transport->stagedPaths[0])->toBe($transport->stagedPaths[1])
-            ->and(dirname($transport->stagedPaths[0]))->toBe(storage_path('app/transfer-staging'))
-            ->and(str_starts_with($transport->stagedPaths[0], sys_get_temp_dir().'/'))->toBeFalse()
+            ->and(dirname($transport->stagedPaths[0]))->toBe($stagingDirectory)
+            ->and($stagingDirectory)->not->toBe($systemTemporaryDirectory)
             ->and($transport->stagedModes)->toBe([0600, 0600])
             ->and(file_exists($transport->stagedPaths[0]))->toBeFalse()
             ->and(file_get_contents($sandbox.'/destination/README.md'))->toBe('checkout archive');

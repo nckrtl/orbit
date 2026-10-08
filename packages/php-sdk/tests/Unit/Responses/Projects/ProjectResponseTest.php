@@ -17,6 +17,7 @@ describe(ProjectResponse::class, function (): void {
             'root' => 'public',
             'task_check' => 'composer check',
             'task_workspace_routed' => false,
+            'task_compute' => 'vm',
         ], '0198e15c-bf97-7c23-8f1f-61b8fe67a844');
 
         expect($response->toArray())->toBe([
@@ -30,6 +31,7 @@ describe(ProjectResponse::class, function (): void {
             'root' => 'public',
             'task_check' => 'composer check',
             'task_workspace_routed' => false,
+            'task_compute' => 'vm',
             'request_id' => '0198e15c-bf97-7c23-8f1f-61b8fe67a844',
         ]);
     });

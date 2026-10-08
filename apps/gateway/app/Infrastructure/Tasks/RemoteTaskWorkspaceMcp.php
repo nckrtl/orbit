@@ -6,7 +6,6 @@ namespace App\Infrastructure\Tasks;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Tasks\TaskWorkspaceMcp;
-use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\Shared\StoredValue;
 use App\Infrastructure\SourceControl\WorkspaceGit;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -20,7 +19,7 @@ use Illuminate\Support\Facades\Log;
  */
 final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
 {
-    public function __construct(private DevelopmentSshExecutor $ssh) {}
+    public function __construct(private TaskWorkspaceExecutor $ssh) {}
 
     public function installWhenMissing(Instance $instance): bool
     {
@@ -35,15 +34,18 @@ final readonly class RemoteTaskWorkspaceMcp implements TaskWorkspaceMcp
             return false;
         }
 
+        $gateway = $instance->task_sandbox_id !== null && $instance->project->slug === 'orbit'
+            ? 'https://gateway.orbit'
+            : rtrim(StoredValue::string(config('app.url')), '/');
         $config = json_encode(
-            ['mcpServers' => ['orbit' => ['type' => 'http', 'url' => rtrim(StoredValue::string(config('app.url')), '/').'/mcp/search']]],
+            ['mcpServers' => ['orbit' => ['type' => 'http', 'url' => $gateway.'/mcp/search']]],
             JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT,
         );
 
         try {
-            $result = $this->ssh->execute($instance->node, new RemoteCommand(
+            $result = $this->ssh->execute($instance, new RemoteCommand(
                 arguments: ['bash', '-seu', '--', $instance->checkout_path],
-                input: "checkout=\$1\n".WorkspaceGit::workerPreamble(TaskWorkerUser::name()).TaskWorkspaceMetadata::bashPreamble().<<<'BASH'
+                input: "checkout=\$1\n".WorkspaceGit::workerPreamble(TaskWorkerUser::name($instance)).TaskWorkspaceMetadata::bashPreamble().<<<'BASH'
                     status=0
                     workspace_git -C "$checkout" ls-files --error-unmatch -- .mcp.json >/dev/null 2>&1 || status=$?
                     if [ "$status" = 0 ]; then

@@ -1,0 +1,13 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\DeployGatewayReleaseRequest",
+    "route": "POST /api/v1/gateway/releases",
+    "status": 409,
+    "body": {
+        "error": {
+            "code": "gateway.release_in_progress",
+            "message": "Another Gateway release step is running. Wait for it to finish.",
+            "details": {}
+        }
+    }
+}

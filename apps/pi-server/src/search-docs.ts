@@ -4,6 +4,8 @@ import { join, relative, resolve } from "node:path";
 import { Type } from "@earendil-works/pi-ai";
 import { defineTool } from "@earendil-works/pi-coding-agent";
 
+import { workspaceTmpdir } from "./workspace-tmpdir.ts";
+
 const DEFAULT_TIMEOUT_MS = 60_000;
 const OUTPUT_TAIL = 2_000;
 const MCP_PROTOCOL_VERSION = "2025-06-18";
@@ -19,6 +21,7 @@ export interface SearchDocsOptions {
 
 export interface BoostCall {
     appRoot: string;
+    workspace?: string;
     queries: string[];
     packages?: string[];
     php?: string;
@@ -65,6 +68,7 @@ export function createSearchDocsTool(options: SearchDocsOptions) {
             const appRoot = resolveLaravelApp(options.cwd, params.project);
             const text = await callBoostSearchDocs({
                 appRoot,
+                workspace: options.cwd,
                 queries: params.queries,
                 ...(params.packages === undefined ? {} : { packages: params.packages }),
                 ...(options.php === undefined ? {} : { php: options.php }),
@@ -140,7 +144,7 @@ export function callBoostSearchDocs(call: BoostCall): Promise<string> {
     return new Promise((resolvePromise, rejectPromise) => {
         const child = spawn(call.php ?? "php", ["artisan", "boost:mcp"], {
             cwd: call.appRoot,
-            env: childEnv(),
+            env: { ...childEnv(), TMPDIR: workspaceTmpdir(call.workspace ?? call.appRoot) },
             stdio: ["pipe", "pipe", "pipe"],
         });
         let settled = false;

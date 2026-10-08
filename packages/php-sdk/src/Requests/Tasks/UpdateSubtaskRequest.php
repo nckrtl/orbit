@@ -18,7 +18,10 @@ final class UpdateSubtaskRequest extends GatewayRequest implements HasBody
     #[\Override]
     protected Method $method = Method::PATCH;
 
-    /** @param list<array<string, string|bool|list<string>>>|null $deliverables replaces the whole list; null leaves it unchanged */
+    /**
+     * @param  list<array<string, string|bool|list<string>>>|null  $deliverables  replaces the whole list; null leaves it unchanged
+     * @param  list<string>|null  $topology  null leaves it unchanged; an empty list removes declarations
+     */
     public function __construct(
         private readonly int $groupId,
         private readonly int $taskId,
@@ -26,6 +29,7 @@ final class UpdateSubtaskRequest extends GatewayRequest implements HasBody
         private readonly ?string $brief = null,
         private readonly ?int $position = null,
         private readonly ?array $deliverables = null,
+        private readonly ?array $topology = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -52,6 +56,7 @@ final class UpdateSubtaskRequest extends GatewayRequest implements HasBody
                 'brief' => $this->brief,
                 'position' => $this->position,
                 'deliverables' => $this->deliverables,
+                'topology' => $this->topology,
             ],
             static fn (mixed $value): bool => $value !== null,
         );

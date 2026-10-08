@@ -29,6 +29,7 @@ final readonly class LaravelAiTaskBriefCoverage implements TaskBriefCoverage
     {
         $subtasks = $group->tasks()
             ->whereNotIn('status', [TaskStatus::Cancelled, TaskStatus::Failed])
+            ->withoutFinalReviews()
             ->orderBy('position')
             ->orderBy('id')
             ->get();

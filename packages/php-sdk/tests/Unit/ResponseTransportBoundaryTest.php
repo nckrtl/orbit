@@ -101,6 +101,8 @@ it('normalizes unsafe Route and Metrics success error codes before diagnostics',
         ->toBeNull()
         ->and($instance->route?->errorCode)
         ->toBeNull()
+        ->and($route->toArray()['error_code'])->toBeNull()
+        ->and($metrics->toArray()['assignment']['error_code'])->toBeNull()
         ->and($metrics->assignment['error_code'])
         ->toBeNull();
 
@@ -111,6 +113,8 @@ it('normalizes unsafe Route and Metrics success error codes before diagnostics',
             (string) json_encode($response->toArray(), JSON_THROW_ON_ERROR),
         ]);
 
+        expect($diagnostics)->not->toContain('array-secret-credential');
+
         if (is_string($unsafeCode) && $unsafeCode !== '') {
             expect($diagnostics)->not->toContain($unsafeCode);
         }
@@ -119,7 +123,7 @@ it('normalizes unsafe Route and Metrics success error codes before diagnostics',
     'credential-shaped code' => 'token=route-metrics-response-credential',
     'control characters' => "metrics.runtime_failed\r\nX-Orbit-Control: injected",
     'surrounding whitespace' => ' metrics.runtime_failed ',
-    'non-string value' => [['metrics.runtime_failed']],
+    'non-string value' => [['token=array-secret-credential']],
     'oversized code' => str_repeat('a', times: 129),
 ]);
 

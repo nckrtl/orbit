@@ -26,6 +26,22 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositoryPullRequestToken($credentials, $installation, $repository);
     }
 
+    /** Disposable VMs never borrow a shared GitHub CLI login or fall back anonymously. */
+    public function readToken(GitHubRepository $repository): string
+    {
+        [$credentials, $installation] = $this->installation($repository);
+
+        return $this->github->repositoryReadToken($credentials, $installation, $repository);
+    }
+
+    /** Fresh repository-scoped access for a disposable development VM, never cached. */
+    public function sandboxToken(GitHubRepository $repository): string
+    {
+        [$credentials, $installation] = $this->installation($repository);
+
+        return $this->github->repositorySandboxToken($credentials, $installation, $repository);
+    }
+
     /** A separate read-only review token. Missing access is an error, never anonymous or empty success. */
     public function reviewsToken(GitHubRepository $repository): string
     {

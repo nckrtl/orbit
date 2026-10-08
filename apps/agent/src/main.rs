@@ -71,6 +71,13 @@ async fn main() {
 }
 
 async fn run() -> Result<(), Box<dyn Error + Send + Sync>> {
+    let arguments: Vec<String> = std::env::args().skip(1).collect();
+    if arguments == ["sandbox"] {
+        return orbit_agent::sandbox::run().map_err(Into::into);
+    }
+    if !arguments.is_empty() {
+        return Err("unsupported agent arguments".into());
+    }
     let cgroup = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
     if !orbit_agent::runs_in_service_unit(&cgroup) {
         return Err(format!(
@@ -1056,7 +1063,7 @@ mod protocol_tests {
         let forms = state.forms.lock().unwrap();
         assert_eq!(forms[0]["socket_id"], "1.2");
         assert_eq!(forms[0]["channel_name"], "presence-node-logs.12");
-        assert_eq!(forms[0]["version"], "0.3.0");
+        assert_eq!(forms[0]["version"], env!("CARGO_PKG_VERSION"));
     }
 
     #[tokio::test]

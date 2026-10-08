@@ -2,11 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domain\Compute\SandboxState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\CoderSettleNotifier;
+use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\InstanceProvisioning;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskCommentType;
+use App\Domain\Tasks\TaskCompute;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestWatcher;
@@ -16,6 +19,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskComment;
+use App\Models\TaskSandbox;
 
 beforeEach(function (): void {
     $gateway = $this->markAsGateway(Node::query()->create([
@@ -45,6 +49,18 @@ beforeEach(function (): void {
         }
     };
     app()->instance(InstanceProvisioning::class, $this->provisioning);
+    app()->instance(DeliverablePathRepository::class, new class implements DeliverablePathRepository
+    {
+        public function defaultBranchCommit(Project $project): string
+        {
+            return str_repeat('a', 40);
+        }
+
+        public function files(Project $project, string $commit, ?Instance $workspace = null): array
+        {
+            return ['docs/reference/tasks.md', 'app/Data/PantrySync/Item.php', 'resources/js/PantryIntegration.tsx', 'apps/gateway/app/Domain/Tasks/Task.php', 'apps/gateway/tests/Feature/HomeScreenTest.php'];
+        }
+    });
 });
 
 /**
@@ -773,3 +789,116 @@ function stored_test_deliverables(array $deliverables): array
         return $deliverable;
     }, $deliverables);
 }
+
+it('reports observed sandbox power independently of review status', function (SandboxState $state, ?string $power): void {
+    $group = Task::topLevel()->create([
+        'project_id' => $this->appRecord->id, 'title' => 'Power', 'brief' => 'Observed power.',
+        'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm,
+    ]);
+    $sandbox = TaskSandbox::query()->create([
+        'id' => '11111111-1111-4111-8111-111111111111', 'group_id' => $group->id,
+        'node_id' => Node::query()->firstOrFail()->id, 'provider' => 'incus', 'name' => 'power-proof',
+        'state' => $state, 'desired_power' => 'running', 'spec' => [],
+    ]);
+    $workspace = Instance::query()->create([
+        'project_id' => $group->project_id, 'node_id' => $sandbox->node_id,
+        'name' => 'task-'.$group->id, 'task_sandbox_id' => $sandbox->id, 'checkout_path' => '/home/orbit/orbit',
+    ]);
+    $group->update(['taskable_type' => Instance::class, 'taskable_id' => $workspace->id]);
+
+    $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()
+        ->assertJsonStructure(['data' => ['sandbox_power']])
+        ->assertJsonPath('data.status', 'waiting_for_review')->assertJsonPath('data.sandbox_power', $power);
+})->with([
+    'running' => [SandboxState::Running, 'running'],
+    'stopped despite running intent' => [SandboxState::Stopped, 'stopped'],
+    'destroyed' => [SandboxState::Destroyed, 'destroyed'],
+    'uncertain' => [SandboxState::Uncertain, null],
+    'starting' => [SandboxState::Starting, null],
+    'stopping' => [SandboxState::Stopping, null],
+    'reserved' => [SandboxState::Reserved, null],
+    'creating' => [SandboxState::Creating, null],
+    'destroying' => [SandboxState::Destroying, null],
+]);
+
+it('keeps destroyed power after workspace cleanup without trusting foreign reservations', function (): void {
+    $group = Task::topLevel()->create([
+        'project_id' => $this->appRecord->id, 'title' => 'Power', 'brief' => 'Retained audit.',
+        'status' => TaskGroupStatus::Completed, 'task_compute' => TaskCompute::Vm,
+    ]);
+    $sandbox = TaskSandbox::query()->create([
+        'id' => '11111111-1111-4111-8111-111111111111', 'group_id' => $group->id,
+        'provider' => 'incus', 'name' => 'power-proof', 'state' => SandboxState::Destroyed,
+        'desired_power' => 'destroyed', 'spec' => [], 'destroyed_at' => now(),
+    ]);
+    $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()->assertJsonPath('data.sandbox_power', 'destroyed');
+
+    $sandbox->update(['state' => SandboxState::Running, 'destroyed_at' => null]);
+    TaskSandbox::query()->create([
+        'id' => '22222222-2222-4222-8222-222222222222', 'group_id' => $group->id,
+        'provider' => 'incus', 'name' => 'newer-destroyed-proof', 'state' => SandboxState::Destroyed,
+        'desired_power' => 'destroyed', 'spec' => [], 'destroyed_at' => now(),
+    ]);
+    $this->getJson('/api/v1/task-groups/'.$group->id)->assertOk()->assertJsonPath('data.sandbox_power', null);
+
+    $foreign = Task::topLevel()->create([
+        'project_id' => $this->appRecord->id, 'title' => 'Foreign', 'brief' => 'Other group.',
+        'status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm,
+    ]);
+    $workspace = Instance::query()->create([
+        'project_id' => $group->project_id, 'node_id' => Node::query()->firstOrFail()->id,
+        'name' => 'task-'.$group->id, 'task_sandbox_id' => $sandbox->id, 'checkout_path' => '/home/orbit/orbit',
+    ]);
+    $foreign->update(['taskable_type' => Instance::class, 'taskable_id' => $workspace->id]);
+    $this->getJson('/api/v1/task-groups/'.$foreign->id)->assertOk()->assertJsonPath('data.sandbox_power', null);
+});
+
+it('stores preview intent on groups only and preserves explicit false', function (?bool $preview): void {
+    $data = backlog_group($this, ['One'], $preview === null ? [] : ['preview' => $preview]);
+    expect($data['preview'])->toBe($preview ?? false);
+    $group = Task::topLevel()->findOrFail($data['id']);
+    expect($group->preview)->toBe($preview ?? false)->and($group->tasks()->firstOrFail()->preview)->toBeNull();
+    $group->tasks()->firstOrFail()->update(['title' => 'Subtask still editable']);
+})->with([true, false, null]);
+
+it('changes preview intent during review while preserving title restrictions', function (): void {
+    $data = backlog_group($this);
+    $group = Task::topLevel()->findOrFail($data['id']);
+    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'task_compute' => TaskCompute::Vm]);
+    $url = '/api/v1/task-groups/'.$group->id;
+
+    $this->patchJson($url, ['preview' => true])->assertOk()->assertJsonPath('data.preview', true)
+        ->assertJsonPath('data.status', 'waiting_for_review')->assertJsonPath('data.sandbox_power', null);
+    $this->json('PATCH', $url, [], [], JSON_FORCE_OBJECT)->assertOk()->assertJsonPath('data.preview', true);
+    $this->patchJson($url, ['preview' => false])->assertOk()->assertJsonPath('data.preview', false);
+    $this->patchJson($url, ['title' => 'Too late', 'preview' => true])->assertConflict();
+    expect($group->fresh()->preview)->toBeFalse();
+});
+
+it('refuses preview changes for ended groups', function (TaskGroupStatus $status): void {
+    $data = backlog_group($this);
+    $group = Task::topLevel()->findOrFail($data['id']);
+    $group->update(['status' => $status]);
+
+    $this->patchJson('/api/v1/task-groups/'.$group->id, ['preview' => true])->assertConflict()
+        ->assertJsonPath('error.code', 'tasks.preview_closed');
+    expect($group->fresh()->preview)->toBeFalse();
+})->with([TaskGroupStatus::Completed, TaskGroupStatus::Cancelled, TaskGroupStatus::Failed]);
+
+it('requires a strict JSON boolean for preview intent', function (mixed $value): void {
+    $data = backlog_group($this);
+    $this->patchJson('/api/v1/task-groups/'.$data['id'], ['preview' => $value])->assertUnprocessable();
+    $this->postJson('/api/v1/task-groups', [
+        'project_id' => $this->appRecord->id, 'title' => 'Invalid', 'brief' => 'Invalid flag.', 'preview' => $value,
+    ])->assertUnprocessable();
+})->with([0, 1, 'true', 'false', null, [[]]]);
+
+it('backfills preview only for preexisting groups without changing their subtasks', function (): void {
+    $data = backlog_group($this, ['Existing subtask']);
+    $migration = require database_path('migrations/2026_10_12_000800_add_preview_to_tasks_table.php');
+    $migration->down();
+    $migration->up();
+
+    $group = Task::topLevel()->findOrFail($data['id']);
+    expect($group->preview)->toBeFalse()->and($group->tasks()->firstOrFail()->preview)->toBeNull();
+});

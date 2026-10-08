@@ -15,25 +15,6 @@ abstract class RouteCommand extends GatewayCommand
         return $this->positiveId('route', 'Route', 'route.id_invalid');
     }
 
-    protected function optionId(string $option, string $label): ?int
-    {
-        $value = $this->option($option);
-
-        if ($value === null) {
-            return null;
-        }
-
-        $id = filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-
-        if (! is_int($id)) {
-            $this->renderGatewayFailure('route.id_invalid', "{$label} ID must be a positive integer.");
-
-            return 0;
-        }
-
-        return $id;
-    }
-
     /**
      * Returns the given `--publication` value when it is a non-empty string, or null after rendering
      * `route.publication_invalid`. The Gateway owns the accepted publication values; this only

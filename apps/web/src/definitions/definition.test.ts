@@ -190,6 +190,15 @@ describe("parseDefinition", () => {
                 subtasks: [{ key: "update", title: "Update", kind: "agent" }],
             }),
         ).toMatchObject({ name: "maintenance", schedule: { cron: "0 3 * * 1" } });
-        expect(parseDefinition({ name: "empty", subtasks: [] })).toBeNull();
+        expect(
+            parseDefinition({
+                project_id: 3,
+                name: "empty",
+                title: "Empty",
+                brief: "Brief",
+                status: "todo",
+                subtasks: [],
+            }),
+        ).toBeNull();
     });
 });

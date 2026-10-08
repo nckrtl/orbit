@@ -1,6 +1,6 @@
 ---
 name: reviewing-pull-requests
-description: Use when independently reviewing an Orbit feature proposal before coding or a completed PR before merge.
+description: Use when independently reviewing an Orbit feature proposal or completed PR, or auditing test quality and unused code on request.
 ---
 
 # Reviewing Pull Requests
@@ -8,6 +8,8 @@ description: Use when independently reviewing an Orbit feature proposal before c
 Independently assess whether the feature's architecture, documentation, and behavior agree. Review the supplied proposal or PR and record the revision.
 
 For a requested review before coding, check the intended behavior, feasibility, proposed ADRs, documentation, and important failure cases. Return findings for the author to address.
+
+For a requested test cleanup or dead-code sweep, use the [optional audit procedure](references/test-audit.md). It adds evidence for safe removals and assertion repairs, not a mandatory PR gate. Use the project’s existing testing guidance for routine test review.
 
 ## Review a completed PR
 

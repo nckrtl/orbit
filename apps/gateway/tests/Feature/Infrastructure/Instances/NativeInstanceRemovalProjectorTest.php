@@ -261,6 +261,97 @@ it('deletes a final production Route after cleanup without publishing developmen
         ->toBeFalse();
 });
 
+it('finishes development runtime cleanup when PHP-FPM skips another site whose directory is missing', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    $route->delete();
+    $project = orb181_projector_app('broken');
+    $node = Node::query()->findOrFail($member->node_id);
+    $broken = orb181_projector_instance($project, $node, 'development', 'broken');
+    $brokenRoute = orb181_projector_route($project, $node, null, 'broken.acme.test');
+    $brokenRoute->targets()->create(['instance_id' => $broken->id, 'position' => 0]);
+    $brokenRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    $broken->update(['status' => InstanceState::Active]);
+    [$projector, $ssh] = orb181_removal_projector($this);
+    $ssh->phpDiscovery = "missing-directory\t{$broken->checkout_path}\n";
+
+    $projector->cleanupRuntime($member);
+
+    expect(orb181_caddy_configurations($ssh->commands))->not->toBeEmpty()
+        ->and(collect($ssh->commands)->contains(
+            static fn (RemoteCommand $command): bool => str_contains(
+                $command->input ?? '',
+                'rm -rf -- "$managed_home/.orbit/certificates/$scope"',
+            ),
+        ))->toBeTrue();
+});
+
+it('withdraws the pool of a member whose Route is cleared and keeps the other pools', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    $route->delete();
+    $instance = Instance::query()->findOrFail($member->instance_id);
+    $node = Node::query()->findOrFail($member->node_id);
+    $project = orb181_projector_app('neighbour');
+    $neighbour = orb181_projector_instance($project, $node, 'development', 'neighbour');
+    $neighbourRoute = orb181_projector_route($project, $node, null, 'neighbour.acme.test');
+    $neighbourRoute->targets()->create(['instance_id' => $neighbour->id, 'position' => 0]);
+    $neighbourRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    $neighbour->update(['status' => InstanceState::Active]);
+    $member->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+    [$projector, $ssh] = orb181_removal_projector($this);
+    $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
+        "[orbit-app-instance-{$instance->id}]",
+        "chdir = {$instance->checkout_path}",
+        "[orbit-app-instance-{$neighbour->id}]",
+        "chdir = {$neighbour->checkout_path}",
+        '',
+    ]))."\n";
+
+    $projector->withdrawPhpPool($member);
+
+    $published = orb181_published_php_pools($ssh->commands);
+    expect($published)->toHaveCount(1)
+        ->and($published[0])
+        ->toContain("[orbit-app-instance-{$neighbour->id}]")
+        ->not->toContain("[orbit-app-instance-{$instance->id}]");
+});
+
+it('withdraws the pool even when PHP-FPM skips another site whose directory is missing', function (): void {
+    [$member, $route] = orb181_projector_development_member();
+    $route->delete();
+    $member->update(['route_cleared_at' => now(), 'route_outcome' => 'deleted']);
+    $project = orb181_projector_app('broken');
+    $node = Node::query()->findOrFail($member->node_id);
+    $broken = orb181_projector_instance($project, $node, 'development', 'broken');
+    $brokenRoute = orb181_projector_route($project, $node, null, 'broken.acme.test');
+    $brokenRoute->targets()->create(['instance_id' => $broken->id, 'position' => 0]);
+    $brokenRoute->update(['status' => RouteStatus::Active, 'sites_published' => true]);
+    $broken->update(['status' => InstanceState::Active]);
+    $instance = Instance::query()->findOrFail($member->instance_id);
+    [$projector, $ssh] = orb181_removal_projector($this);
+    $ssh->phpDiscovery = "8.5\t".base64_encode(implode("\n", [
+        "[orbit-app-instance-{$instance->id}]",
+        "chdir = {$instance->checkout_path}",
+        "[orbit-app-instance-{$broken->id}]",
+        "chdir = {$broken->checkout_path}",
+        '',
+    ]))."\nmissing-directory\t{$broken->checkout_path}\n";
+
+    $projector->withdrawPhpPool($member);
+
+    expect(orb181_published_php_pools($ssh->commands))->toBe(['']);
+});
+
+it('leaves the dedicated runtime of a production member to runtime cleanup', function (): void {
+    [$member] = orb183_projector_production_member(shared: false);
+    $phpRuntime = new Orb214RemovalPhpRuntimeManager;
+    [$projector, $ssh] = orb181_removal_projector($this, $phpRuntime);
+
+    $projector->withdrawPhpPool($member);
+
+    expect($ssh->commands)->toBeEmpty()
+        ->and($phpRuntime->removed)->toBeEmpty();
+});
+
 it('skips PHP cleanup but removes Caddy and certificate state for non-PHP production Instances', function (): void {
     [$member, $route, $instance] = orb183_projector_production_member(shared: false);
     $route->delete();
@@ -694,6 +785,27 @@ function orb181_projector_member(Instance $instance, Route $route): InstanceRemo
     $member->update(['source_prepared_at' => now()]);
 
     return $member->refresh();
+}
+
+/**
+ * The shared PHP-FPM pool files that each publication installs.
+ *
+ * @param  list<RemoteCommand>  $commands
+ * @return list<string>
+ */
+function orb181_published_php_pools(array $commands): array
+{
+    $pools = [];
+
+    foreach ($commands as $command) {
+        $input = $command->input ?? '';
+
+        if (str_contains($input, 'orbit-scopes.conf') && preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode/", $input, $match) === 1) {
+            $pools[] = (string) base64_decode($match[1], true);
+        }
+    }
+
+    return $pools;
 }
 
 /** @param list<RemoteCommand> $commands @return list<string> */

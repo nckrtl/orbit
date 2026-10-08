@@ -1,0 +1,25 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\ProjectDocuments\\ReadProjectDocumentRequest",
+    "route": "GET /api/v1/projects/{project}/documents/{entry}/content",
+    "status": 200,
+    "body": {
+        "data": {
+            "entry_id": 1,
+            "revision": 1,
+            "version": {
+                "id": 1,
+                "number": 1,
+                "media_type": "text/plain",
+                "size_bytes": 6,
+                "sha256": "b640e840b19d378660b32fb51ae18d67dccb4a8596a29e7bd72c1b2ae5928f41",
+                "created_at": "2026-01-01T00:00:00.000000Z",
+                "created_by_node_id": 1
+            },
+            "content_text": "first\n"
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

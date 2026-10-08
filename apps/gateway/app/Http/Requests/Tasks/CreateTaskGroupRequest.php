@@ -8,11 +8,13 @@ use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
+use App\Rules\TaskTopologyList;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
@@ -23,7 +25,9 @@ use UnexpectedValueException;
 
 final class CreateTaskGroupRequest extends FormRequest
 {
-    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths>> */
+    use ValidatesDeliverablePaths;
+
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
     public function rules(): array
     {
         return [
@@ -31,11 +35,14 @@ final class CreateTaskGroupRequest extends FormRequest
             'title' => ['required', 'string', 'max:160'],
             'brief' => ['required', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::in([TaskGroupStatus::Backlog->value, TaskGroupStatus::Todo->value])],
+            'preview' => ['sometimes', 'boolean:strict'],
             'notify_coder' => ['sometimes', 'boolean'],
             'notify_on_settle' => ['sometimes', 'boolean'],
             'tasks' => ['sometimes', 'array', 'max:50'],
             'tasks.*.title' => ['required', 'string', 'max:160'],
             'tasks.*.brief' => ['required', 'string', 'max:8000'],
+            'tasks.*.topology' => ['sometimes', 'array', 'list', 'max:3', new TaskTopologyList],
+            'tasks.*.topology.*' => ['required', 'string', Rule::in(['app-dev', 'app-prod', 'app-prod-2'])],
             'tasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'tasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'tasks.*.deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
@@ -60,6 +67,7 @@ final class CreateTaskGroupRequest extends FormRequest
                 'title',
                 'brief',
                 'status',
+                'preview',
                 'notify_coder',
                 'notify_on_settle',
                 'tasks',
@@ -83,6 +91,7 @@ final class CreateTaskGroupRequest extends FormRequest
                 title: $task['title'],
                 brief: $task['brief'],
                 deliverables: CreateTaskRequest::deliverables($task['deliverables'] ?? null),
+                topology: TaskTopology::from($task['topology'] ?? []),
             );
         }
 
@@ -93,6 +102,7 @@ final class CreateTaskGroupRequest extends FormRequest
             status: TaskGroupStatus::from($this->string('status', TaskGroupStatus::Backlog->value)->toString()),
             notifyCoder: $this->boolean('notify_coder') || $this->boolean('notify_on_settle'),
             tasks: $tasks,
+            preview: $this->boolean('preview'),
         );
     }
 }

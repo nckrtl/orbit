@@ -1,0 +1,9 @@
+Loading Gateway release...
+
+┌  Show Gateway release
+│
+├  ● Loading Gateway release
+│
+└  Operation failed.
+
+No release record exists for [99].

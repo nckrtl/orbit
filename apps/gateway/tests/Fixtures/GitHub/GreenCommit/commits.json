@@ -1,0 +1,377 @@
+[
+  {
+    "sha": "12c0d3df0d3880c5738012ebd4448c934c79a953",
+    "html_url": "https://github.com/nckrtl/orbit/commit/12c0d3df0d3880c5738012ebd4448c934c79a953",
+    "commit": {
+      "message": "Adopt verified source templates before task bundle imports",
+      "committer": {
+        "date": "2026-10-07T06:18:41Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "c7f8ae627b0efcd2afa96e671f163967214070d7"
+      }
+    ]
+  },
+  {
+    "sha": "c7f8ae627b0efcd2afa96e671f163967214070d7",
+    "html_url": "https://github.com/nckrtl/orbit/commit/c7f8ae627b0efcd2afa96e671f163967214070d7",
+    "commit": {
+      "message": "Clone pinned source templates with sandbox pairs",
+      "committer": {
+        "date": "2026-10-07T06:04:12Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "57425b0050606b32a4cc22748f26b67cb71bbac8"
+      }
+    ]
+  },
+  {
+    "sha": "57425b0050606b32a4cc22748f26b67cb71bbac8",
+    "html_url": "https://github.com/nckrtl/orbit/commit/57425b0050606b32a4cc22748f26b67cb71bbac8",
+    "commit": {
+      "message": "Let requesters retain sandbox previews during review",
+      "committer": {
+        "date": "2026-10-07T05:42:32Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "dc629e7fb299bdca90bfb47d5912e67043b88bd3"
+      }
+    ]
+  },
+  {
+    "sha": "dc629e7fb299bdca90bfb47d5912e67043b88bd3",
+    "html_url": "https://github.com/nckrtl/orbit/commit/dc629e7fb299bdca90bfb47d5912e67043b88bd3",
+    "commit": {
+      "message": "Report task sandbox power separately from review status",
+      "committer": {
+        "date": "2026-10-07T05:18:31Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "dabaa4e2d67f2d60e11418d6e20513cc6f4b2ab9"
+      }
+    ]
+  },
+  {
+    "sha": "dabaa4e2d67f2d60e11418d6e20513cc6f4b2ab9",
+    "html_url": "https://github.com/nckrtl/orbit/commit/dabaa4e2d67f2d60e11418d6e20513cc6f4b2ab9",
+    "commit": {
+      "message": "Support isolated Gateway and operator clone identities",
+      "committer": {
+        "date": "2026-10-07T05:02:42Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "5783f9247bd7865dbcada7cc18437d00e62b8699"
+      }
+    ]
+  },
+  {
+    "sha": "5783f9247bd7865dbcada7cc18437d00e62b8699",
+    "html_url": "https://github.com/nckrtl/orbit/commit/5783f9247bd7865dbcada7cc18437d00e62b8699",
+    "commit": {
+      "message": "Clean task sandboxes through recorded compute ownership",
+      "committer": {
+        "date": "2026-10-07T04:38:50Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "da85dd5d9ec490076303d524c5e7276c4cc0eb04"
+      }
+    ]
+  },
+  {
+    "sha": "da85dd5d9ec490076303d524c5e7276c4cc0eb04",
+    "html_url": "https://github.com/nckrtl/orbit/commit/da85dd5d9ec490076303d524c5e7276c4cc0eb04",
+    "commit": {
+      "message": "Reconcile sandbox review power and prioritize recoverable VM resumes",
+      "committer": {
+        "date": "2026-10-07T04:23:52Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "e1be95fdb908bc0da8901e5ad324cd29be617ce8"
+      }
+    ]
+  },
+  {
+    "sha": "e1be95fdb908bc0da8901e5ad324cd29be617ce8",
+    "html_url": "https://github.com/nckrtl/orbit/commit/e1be95fdb908bc0da8901e5ad324cd29be617ce8",
+    "commit": {
+      "message": "Track published VM tasks as waiting for review across scheduler and clients",
+      "committer": {
+        "date": "2026-10-07T04:09:54Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "39accd742d1b8b1b777b3ad5c8ed9dcc2337d511"
+      }
+    ]
+  },
+  {
+    "sha": "39accd742d1b8b1b777b3ad5c8ed9dcc2337d511",
+    "html_url": "https://github.com/nckrtl/orbit/commit/39accd742d1b8b1b777b3ad5c8ed9dcc2337d511",
+    "commit": {
+      "message": "Persist sandbox review grace, preview retention, and cloud expiry",
+      "committer": {
+        "date": "2026-10-07T04:02:45Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "ed83558ee3403a48b297303abb11346d18cc02ee"
+      }
+    ]
+  },
+  {
+    "sha": "ed83558ee3403a48b297303abb11346d18cc02ee",
+    "html_url": "https://github.com/nckrtl/orbit/commit/ed83558ee3403a48b297303abb11346d18cc02ee",
+    "commit": {
+      "message": "Record the default branch in sandbox bundle checkouts for TIA",
+      "committer": {
+        "date": "2026-10-07T03:49:35Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "83d1cb660bfbfe2835efa8ccf9bea40f4d11a558"
+      }
+    ]
+  },
+  {
+    "sha": "83d1cb660bfbfe2835efa8ccf9bea40f4d11a558",
+    "html_url": "https://github.com/nckrtl/orbit/commit/83d1cb660bfbfe2835efa8ccf9bea40f4d11a558",
+    "commit": {
+      "message": "Validate and import CI test baselines into private sandbox caches",
+      "committer": {
+        "date": "2026-10-07T03:32:54Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "ef4a84d2b23ecfd9db3aff19941b911ae6c9ce68"
+      }
+    ]
+  },
+  {
+    "sha": "ef4a84d2b23ecfd9db3aff19941b911ae6c9ce68",
+    "html_url": "https://github.com/nckrtl/orbit/commit/ef4a84d2b23ecfd9db3aff19941b911ae6c9ce68",
+    "commit": {
+      "message": "Publish tested main TIA baselines for sandbox image preparation",
+      "committer": {
+        "date": "2026-10-07T03:19:06Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "cacfb65343f46e13a26a962e8462ef2d49b8d458"
+      }
+    ]
+  },
+  {
+    "sha": "cacfb65343f46e13a26a962e8462ef2d49b8d458",
+    "html_url": "https://github.com/nckrtl/orbit/commit/cacfb65343f46e13a26a962e8462ef2d49b8d458",
+    "commit": {
+      "message": "Bind private sandbox model relays to owned Incus resources",
+      "committer": {
+        "date": "2026-10-07T03:12:30Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "e6eecf210a7e859fa4db32132de0fb8688bc4dd6"
+      }
+    ]
+  },
+  {
+    "sha": "e6eecf210a7e859fa4db32132de0fb8688bc4dd6",
+    "html_url": "https://github.com/nckrtl/orbit/commit/e6eecf210a7e859fa4db32132de0fb8688bc4dd6",
+    "commit": {
+      "message": "Prepare sandbox Pi services with group credentials and a fixed model provider",
+      "committer": {
+        "date": "2026-10-07T02:49:57Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "e4c243525652dbbe1b0e731540ff2780ef59b3d9"
+      }
+    ]
+  },
+  {
+    "sha": "e4c243525652dbbe1b0e731540ff2780ef59b3d9",
+    "html_url": "https://github.com/nckrtl/orbit/commit/e4c243525652dbbe1b0e731540ff2780ef59b3d9",
+    "commit": {
+      "message": "Bind sandbox credentials to allocation and compute cleanup",
+      "committer": {
+        "date": "2026-10-07T02:39:11Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "ad2e9e446a87b574da9934416abc940b14c694b4"
+      }
+    ]
+  },
+  {
+    "sha": "ad2e9e446a87b574da9934416abc940b14c694b4",
+    "html_url": "https://github.com/nckrtl/orbit/commit/ad2e9e446a87b574da9934416abc940b14c694b4",
+    "commit": {
+      "message": "Reserve and revoke encrypted sandbox model keys without URL credentials",
+      "committer": {
+        "date": "2026-10-07T02:33:08Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "42a9b6dd522066b6b00ab411e3cdfbe0cf8c8764"
+      }
+    ]
+  },
+  {
+    "sha": "42a9b6dd522066b6b00ab411e3cdfbe0cf8c8764",
+    "html_url": "https://github.com/nckrtl/orbit/commit/42a9b6dd522066b6b00ab411e3cdfbe0cf8c8764",
+    "commit": {
+      "message": "Split Pi proxy documentation to satisfy prose checks",
+      "committer": {
+        "date": "2026-10-07T02:32:46Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "8c2ce14ad2e2d57c22aff4eb5d328ec2d283c0df"
+      }
+    ]
+  },
+  {
+    "sha": "8c2ce14ad2e2d57c22aff4eb5d328ec2d283c0df",
+    "html_url": "https://github.com/nckrtl/orbit/commit/8c2ce14ad2e2d57c22aff4eb5d328ec2d283c0df",
+    "commit": {
+      "message": "Reserve private Pi proxies for owned Incus operators",
+      "committer": {
+        "date": "2026-10-07T02:19:23Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "211e9c25fc4ba67215806dd0f779b67b1fad106a"
+      }
+    ]
+  },
+  {
+    "sha": "211e9c25fc4ba67215806dd0f779b67b1fad106a",
+    "html_url": "https://github.com/nckrtl/orbit/commit/211e9c25fc4ba67215806dd0f779b67b1fad106a",
+    "commit": {
+      "message": "Recheck sandbox source origin on prepared checkout retries",
+      "committer": {
+        "date": "2026-10-07T02:16:19Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "1adb4d0c870a1879ec95bebf21563363a6cea2b4"
+      }
+    ]
+  },
+  {
+    "sha": "1adb4d0c870a1879ec95bebf21563363a6cea2b4",
+    "html_url": "https://github.com/nckrtl/orbit/commit/1adb4d0c870a1879ec95bebf21563363a6cea2b4",
+    "commit": {
+      "message": "Refuse generic host operations on task sandbox workspaces",
+      "committer": {
+        "date": "2026-10-07T02:08:23Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "b1873c7ba7ca1d013b31da42d66d7b3bcbb9ea88"
+      }
+    ]
+  },
+  {
+    "sha": "b1873c7ba7ca1d013b31da42d66d7b3bcbb9ea88",
+    "html_url": "https://github.com/nckrtl/orbit/commit/b1873c7ba7ca1d013b31da42d66d7b3bcbb9ea88",
+    "commit": {
+      "message": "Prepare owned sandbox source through trusted Git bundles",
+      "committer": {
+        "date": "2026-10-07T02:01:10Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "cb37b5f86dcae8382645912637bc879baeb92f69"
+      }
+    ]
+  },
+  {
+    "sha": "cb37b5f86dcae8382645912637bc879baeb92f69",
+    "html_url": "https://github.com/nckrtl/orbit/commit/cb37b5f86dcae8382645912637bc879baeb92f69",
+    "commit": {
+      "message": "Keep sandbox MCP setup and topology requests off the shared host",
+      "committer": {
+        "date": "2026-10-07T01:49:37Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "8c6776223c0848a1cd79bf260542cfe5b78b5016"
+      }
+    ]
+  },
+  {
+    "sha": "8c6776223c0848a1cd79bf260542cfe5b78b5016",
+    "html_url": "https://github.com/nckrtl/orbit/commit/8c6776223c0848a1cd79bf260542cfe5b78b5016",
+    "commit": {
+      "message": "Bind Pi sessions and credentials to their task sandbox",
+      "committer": {
+        "date": "2026-10-07T01:46:19Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "7c0b9cc3a413d3bfb8e6432ed1691dee4822f31a"
+      }
+    ]
+  },
+  {
+    "sha": "7c0b9cc3a413d3bfb8e6432ed1691dee4822f31a",
+    "html_url": "https://github.com/nckrtl/orbit/commit/7c0b9cc3a413d3bfb8e6432ed1691dee4822f31a",
+    "commit": {
+      "message": "Publish sandbox commits through a trusted Git bundle broker",
+      "committer": {
+        "date": "2026-10-07T01:28:24Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "5f5b090271eaeb689be7e769fedd377ba674ae8c"
+      }
+    ]
+  },
+  {
+    "sha": "5f5b090271eaeb689be7e769fedd377ba674ae8c",
+    "html_url": "https://github.com/nckrtl/orbit/commit/5f5b090271eaeb689be7e769fedd377ba674ae8c",
+    "commit": {
+      "message": "Route task workspace checks and receipts through owned sandbox compute",
+      "committer": {
+        "date": "2026-10-07T01:13:54Z"
+      }
+    },
+    "parents": [
+      {
+        "sha": "0295e26c6ba75fb89db404fa94aef36573ebfa79"
+      }
+    ]
+  }
+]

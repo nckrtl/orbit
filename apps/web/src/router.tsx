@@ -14,6 +14,7 @@ import { NodeRecordPage } from "./pages/NodeRecord";
 import { DeploymentPage, RecordPage } from "./pages/RecordPage";
 import { SectionList } from "./pages/SectionList";
 import { Shell } from "./ui/Shell";
+import { ProjectDocumentsPage, readDocumentsSearch } from "./pages/ProjectDocuments";
 
 // The URL carries the page stack: the section, the open record, and the
 // node and project filters. Back is the browser's own.
@@ -77,6 +78,12 @@ const routeTree = rootRoute.addChildren([
             node: text(search.node),
             project: text(search.project),
         }),
+    }),
+    createRoute({
+        getParentRoute: () => rootRoute,
+        path: "/projects/$id/documents",
+        component: ProjectDocumentsPage,
+        validateSearch: readDocumentsSearch,
     }),
     createRoute({ getParentRoute: () => rootRoute, path: "/$section/$id", component: RecordPage }),
 ]);

@@ -48,10 +48,13 @@ it('prints the artifact contract for --help', function (): void {
     expect($exitCode)->toBe(0)
         ->and($output)->toContain('mac arm')
         ->and($output)->toContain('linux x64')
+        ->and($output)->toContain('linux arm')
         ->and($output)->toContain('apps/cli/builds/dist/mac/mac-arm')
         ->and($output)->toContain('apps/cli/builds/dist/linux/linux-x64')
+        ->and($output)->toContain('apps/cli/builds/dist/linux/linux-arm')
         ->and($output)->toContain('orbit-macos-arm64')
-        ->and($output)->toContain('orbit-linux-x64');
+        ->and($output)->toContain('orbit-linux-x64')
+        ->and($output)->toContain('orbit-linux-arm64');
 });
 
 it('exits 2 when a target is missing', function (): void {
@@ -68,26 +71,34 @@ it('refuses an unsupported target', function (): void {
         ->and($output)->toContain('unsupported target: windows x64');
 });
 
-it('keeps the workflow artifact names, dest paths, and hosts aligned with the builder', function (): void {
+it('keeps the workflow targets, artifact names, dest paths, and build runners aligned with the builder', function (): void {
     $workflow = file_get_contents(cli_binary_repo_root().'/.github/workflows/orbit-cli-binary.yml');
     $builder = file_get_contents(cli_binary_builder_script());
 
+    $target = static fn (string $target, string $runner, string $platform, string $architecture, string $artifact, string $path, string $native): string => implode("\n", [
+        "          - target: {$target}",
+        "            runner: {$runner}",
+        "            platform: {$platform}",
+        "            architecture: {$architecture}",
+        "            artifact: {$artifact}",
+        "            path: {$path}",
+        "            native: {$native}",
+    ]);
+
     expect($workflow)->toBeString()
         ->and($builder)->toBeString()
-        ->and($workflow)->toContain('name: orbit-macos-arm64')
-        ->and($workflow)->toContain('name: orbit-linux-x64')
-        ->and($workflow)->toContain('path: apps/cli/builds/dist/mac/mac-arm')
-        ->and($workflow)->toContain('path: apps/cli/builds/dist/linux/linux-x64')
-        ->and($workflow)->toContain('bin/orbit-build-cli-binary mac arm')
-        ->and($workflow)->toContain('bin/orbit-build-cli-binary linux x64')
+        ->and($workflow)->toContain($target('linux-x64', 'ubuntu-26.04', 'linux', 'x64', 'orbit-linux-x64', 'apps/cli/builds/dist/linux/linux-x64', 'true'))
+        ->and($workflow)->toContain($target('linux-arm64', 'ubuntu-26.04-arm', 'linux', 'arm', 'orbit-linux-arm64', 'apps/cli/builds/dist/linux/linux-arm', 'true'))
+        ->and($workflow)->toContain($target('macos-arm64', 'ubuntu-26.04', 'mac', 'arm', 'orbit-macos-arm64', 'apps/cli/builds/dist/mac/mac-arm', 'false'))
+        ->and($workflow)->toContain('bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"')
+        ->and($workflow)->toContain('test "$reported" = "Orbit ${VERSION}"')
+        ->and($workflow)->toContain('workflow_call:')
         ->and($workflow)->toContain('working-dir=apps/cli/phpacker')
         ->and($workflow)->toContain('GITHUB_TOKEN: ${{ github.token }}')
-        ->and($workflow)->toContain('runs-on: ubuntu-26.04')
-        ->and($workflow)->toContain('runs-on: [self-hosted, macOS, ARM64, mini]')
-        ->and($workflow)->toContain("vars.ORBIT_MINI_RUNNER == 'true'")
+        ->and($workflow)->not->toContain('self-hosted')
+        ->and($workflow)->not->toContain('ORBIT_MINI_RUNNER')
         ->and($workflow)->not->toContain('macos-latest')
-        ->and($workflow)->not->toContain('macos-14')
-        ->and($workflow)->not->toContain('macos-15')
+        ->and($builder)->toContain('mac:arm|linux:x64|linux:arm)')
         ->and($builder)->toContain('--dest=./builds/dist')
         ->and($builder)->toContain('packages/php-sdk')
         ->and($builder)->toContain('vendor/nckrtl/orbit-php-sdk')

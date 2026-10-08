@@ -4,22 +4,41 @@ declare(strict_types=1);
 
 use App\Actions\Instances\DeployDefaultInstanceAction;
 use App\Actions\Instances\SelectInstanceSeedAction;
+use App\Domain\AppDev\RuntimeConvergenceException;
+use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\Deployment\DeploymentEvent;
+use App\Domain\Instances\Deployment\DeploymentRelease;
 use App\Domain\Instances\Deployment\DeploymentRequest;
 use App\Domain\Instances\Deployment\DevelopmentDeployment;
 use App\Domain\Instances\DevelopmentRouteProjector;
+use App\Domain\Nodes\ManagedUserAccount;
+use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\Storage\CheckoutRemovalBoundary;
 use App\Domain\Projects\DevelopmentDeployStep;
 use App\Domain\Projects\ProjectDevelopmentDeployStepStore;
+use App\Domain\Projects\TiaBaselineSetup;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Instances\DevelopmentReleaseProgram;
+use App\Infrastructure\Instances\RemoteDevelopmentDeployment;
+use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
+use App\Infrastructure\Ssh\RemoteCommand;
+use App\Infrastructure\Ssh\SshConnection;
+use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Route;
+use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Process;
 use Tests\Support\DevelopmentDeploymentFixture;
 use Tests\Support\LocalShellSshExecutor;
+use Tests\Support\ResolvedVp;
 
 beforeEach(function (): void {
     $this->fixture = new DevelopmentDeploymentFixture;
@@ -36,6 +55,176 @@ function dev935_require_reflinks(DevelopmentDeploymentFixture $fixture): void
         test()->markTestSkipped('This filesystem does not support reflinks. Refusal is tested separately; beast ZFS block sharing and isolated writes remain a post-deploy operator check.');
     }
 }
+
+function dev1032_broken_release(DevelopmentDeploymentFixture $fixture, string $name = '20261006144121-cc10b873c4eb8b24'): string
+{
+    $path = $fixture->home.'/releases/'.$name;
+    DevelopmentDeploymentFixture::command(['git', '-C', $fixture->home, 'worktree', 'add', '--detach', $path, $fixture->initialCommit]);
+    $admin = trim(DevelopmentDeploymentFixture::command(['git', '-C', $path, 'rev-parse', '--absolute-git-dir']));
+    $state = $fixture->home.'/.git/orbit-development-releases';
+    file_put_contents($state.'/release-'.$name, trim(file_get_contents($state.'/identity')).':'.$name."\n");
+    file_put_contents($path.'/protected', 'must-survive');
+    new Filesystem()->deleteDirectory($admin);
+    $git = new Process(['git', '-C', $path, 'rev-parse', 'HEAD']);
+    expect($git->run())->toBe(128);
+
+    return $path;
+}
+
+describe('broken development releases', function (): void {
+    it('returns healthy releases and logs the skipped owned broken release list finding', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $this->fixture->deployment->initialize($instance);
+        $healthy = $this->fixture->deployment->prepare($instance, $this->fixture->initialCommit);
+        $broken = dev1032_broken_release($this->fixture);
+        $marker = $this->fixture->home.'/.git/orbit-development-releases/release-'.basename($broken);
+        $receipt = file_get_contents($marker);
+        Log::spy();
+
+        $listing = $this->fixture->deployment->releases($instance);
+
+        expect($listing->releases)->toBe([$healthy->name, 'initial'])
+            ->and($listing->selectedRelease)->toBe('initial')
+            ->and(file_get_contents($broken.'/protected'))->toBe('must-survive')
+            ->and(file_get_contents($marker))->toBe($receipt);
+        Log::shouldHaveReceived('warning')->once()->with('Skipping owned broken development release.', [
+            'instance_id' => $instance->id, 'release' => basename($broken), 'reason' => 'missing-worktree-admin',
+        ]);
+    });
+
+    it('logs a broken release prune finding and deploys while retaining current previous and leased releases', function (): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $deployment = $this->fixture->deployment;
+        $deployment->initialize($instance);
+        $seed = $deployment->selected($instance);
+        Instance::query()->create([
+            'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'leased-seed',
+            'checkout_path' => $this->fixture->sandbox.'/apps/dev935/leased-seed', 'status' => 'reserved',
+            'seed_repository' => $this->fixture->home, 'seed_path' => $seed->path, 'seed_commit' => $seed->commit,
+        ]);
+        $unused = $deployment->prepare($instance, $this->fixture->initialCommit);
+        $broken = dev1032_broken_release($this->fixture);
+        $marker = $this->fixture->home.'/.git/orbit-development-releases/release-'.basename($broken);
+        $receipt = file_get_contents($marker);
+        Log::spy();
+
+        foreach (['first healthy deployment', 'second healthy deployment', 'third healthy deployment'] as $message) {
+            $this->fixture->push($message);
+            $result = app(DeployDefaultInstanceAction::class)->execute($instance);
+            expect($result?->failure?->errorCode)->toBeNull()
+                ->and($result?->succeeded)->toBeTrue();
+        }
+
+        expect(readlink($this->fixture->home.'/current'))->toBe('releases/release-4')
+            ->and(is_dir($this->fixture->home.'/releases/release-3'))->toBeTrue()
+            ->and(is_dir($seed->path))->toBeTrue()
+            ->and(is_dir($unused->path))->toBeFalse()
+            ->and(is_dir($this->fixture->home.'/releases/release-2'))->toBeFalse()
+            ->and(file_get_contents($broken.'/protected'))->toBe('must-survive')
+            ->and(file_get_contents($marker))->toBe($receipt);
+        Log::shouldHaveReceived('warning')->with('Skipping owned broken development release.', [
+            'instance_id' => $instance->id, 'release' => basename($broken), 'reason' => 'missing-worktree-admin',
+        ]);
+    });
+
+    it('fails closed for unsafe metadata in broken release list and broken release prune', function (string $defect): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $this->fixture->deployment->initialize($instance);
+        $path = dev1032_broken_release($this->fixture);
+        $marker = $this->fixture->home.'/.git/orbit-development-releases/release-'.basename($path);
+        $admin = $this->fixture->home.'/.git/worktrees/'.basename($path);
+        match ($defect) {
+            'missing ownership' => unlink($marker),
+            'wrong ownership' => file_put_contents($marker, 'foreign'),
+            'symlink ownership' => (function () use ($marker): void {
+                unlink($marker);
+                symlink(dirname($marker).'/identity', $marker);
+            })(),
+            'malformed pointer' => file_put_contents($path.'/.git', 'not a git pointer'),
+            'foreign pointer' => file_put_contents($path.'/.git', 'gitdir: '.$this->fixture->sandbox.'/missing'),
+            'traversal pointer' => file_put_contents($path.'/.git', 'gitdir: '.$this->fixture->home.'/.git/worktrees/../missing'),
+            'symlink pointer' => (function () use ($path): void {
+                unlink($path.'/.git');
+                symlink($this->fixture->home.'/.git/HEAD', $path.'/.git');
+            })(),
+            'symlink admin' => symlink($this->fixture->sandbox.'/missing', $admin),
+        };
+
+        foreach ([DevelopmentReleaseProgram::releases(), DevelopmentReleaseProgram::prune()] as $program) {
+            $process = new Process(['bash', '-seu', '--', $this->fixture->home, $instance->project->repository_url, (string) $instance->id, 'initial']);
+            $process->setInput($program);
+            expect($process->run())->not->toBe(0)
+                ->and($process->getErrorOutput())->not->toContain('SKIPPED_BROKEN_RELEASE')
+                ->and(file_get_contents($path.'/protected'))->toBe('must-survive');
+        }
+    })->with(['missing ownership', 'wrong ownership', 'symlink ownership', 'malformed pointer', 'foreign pointer', 'traversal pointer', 'symlink pointer', 'symlink admin']);
+
+    it('refuses a broken release prune when the defective release is current previous or a pinned seed', function (string $retained): void {
+        dev935_require_reflinks($this->fixture);
+        $instance = $this->fixture->instance;
+        $deployment = $this->fixture->deployment;
+        $deployment->initialize($instance);
+        $selected = $deployment->selected($instance);
+        $broken = dev1032_broken_release($this->fixture);
+        if ($retained === 'current') {
+            unlink($this->fixture->home.'/current');
+            symlink('releases/'.basename($broken), $this->fixture->home.'/current');
+        } elseif ($retained === 'previous') {
+            file_put_contents($this->fixture->home.'/.git/orbit-development-releases/previous-initial', basename($broken));
+        } else {
+            Instance::query()->create([
+                'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'broken-seed',
+                'checkout_path' => $this->fixture->sandbox.'/apps/dev935/broken-seed', 'status' => 'reserved',
+                'seed_repository' => $this->fixture->home, 'seed_path' => $broken, 'seed_commit' => $selected->commit,
+            ]);
+        }
+
+        expect(fn () => $deployment->prune($instance, $selected))->toThrow(RuntimeConvergenceException::class)
+            ->and(file_get_contents($broken.'/protected'))->toBe('must-survive');
+        if ($retained === 'current') {
+            expect(fn () => $deployment->releases($instance))->toThrow(RuntimeConvergenceException::class);
+        }
+    })->with(['current', 'previous', 'pinned seed']);
+});
+
+it('grants Web access on activation only to the deployed release', function (): void {
+    $instance = $this->fixture->instance;
+    $other = Instance::query()->create(['project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'name' => 'other', 'checkout_path' => $this->fixture->sandbox.'/apps/dev935/other', 'source_layout' => 'checkout', 'branch' => 'other', 'status' => 'active']);
+    foreach ([$instance, $other] as $served) {
+        $route = Route::query()->create(['project_id' => $served->project_id, 'node_id' => $served->node_id, 'domain' => "{$served->name}.dev935.test", 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $served->id, 'position' => 0]);
+        $route->publishSites();
+        $route->update(['status' => 'active']);
+    }
+    $release = new DeploymentRelease('release-9', $instance->checkout_path.'/releases/release-9', $this->fixture->initialCommit);
+    $transport = new class($release) implements SshExecutor
+    {
+        /** @var list<RemoteCommand> */
+        public array $commands = [];
+
+        public function __construct(private readonly DeploymentRelease $release) {}
+
+        public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
+        {
+            $this->commands[] = $command;
+
+            return new CommandResult(0, "{$this->release->name}\t{$this->release->commit}\n", '', 1, false);
+        }
+    };
+    $deployment = new RemoteDevelopmentDeployment(
+        new DevelopmentSshExecutor($transport, Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock(), Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock()),
+        Mockery::mock(ManagedUserAccountResolver::class)->shouldReceive('resolve')->andReturn(new ManagedUserAccount('orbit', 'orbit', '/home/orbit'))->getMock(),
+        app(CheckoutRemovalBoundary::class),
+        app(RepositoryReadAccess::class),
+    );
+
+    expect($deployment->activate($instance->refresh(), $release))->toEqual($release);
+    $access = collect($transport->commands)->sole(static fn (RemoteCommand $command): bool => str_contains($command->input ?? '', 'u:caddy:r-X'));
+    expect(array_slice($access->arguments, 3))->toBe([$release->path, 'public', $release->path]);
+});
 
 describe('real development release programs', function (): void {
     it('migrates without moving Git and keeps task bridges and registered T3 worktrees intact', function (): void {
@@ -267,7 +456,7 @@ describe('real development release programs', function (): void {
         $consumer->update(['starting_commit' => $seed->commit, 'source_layout' => 'worktree', 'status' => 'source_resolved']);
         $keys = Mockery::mock(SshKeyProvider::class)->shouldReceive('privateKeyPath')->andReturn('/unused')->getMock();
         $hosts = Mockery::mock(KnownHostsStore::class)->shouldReceive('path')->andReturn('/unused')->getMock();
-        $runner = new RemoteTaskCheckRunner(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts));
+        $runner = new RemoteTaskCheckRunner(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(new LocalShellSshExecutor, $keys, $hosts), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)), ResolvedVp::manager(), app(TiaBaselineSetup::class));
         $setup = [[
             'name' => 'copy from seed',
             'command' => 'touch setup-started; while [ ! -f allow-setup ]; do sleep 0.05; done; cat "$ORBIT_SEED_PATH/.cache/warm" > copied-cache',

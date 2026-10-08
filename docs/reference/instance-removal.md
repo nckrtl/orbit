@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/{*/RecordedProduction*ContentRetention,Instances/NativeInstanceRemovalProjector,Instances/RemoteDevelopmentInstanceSourceRemoval}.php
   - apps/gateway/app/Http/Requests/Instances/RemoveInstanceRequest.php
   - apps/gateway/app/Models/{InstanceRemoval,InstanceRemovalMember}.php
-  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal}.php
+  - apps/gateway/database/migrations/*_{allow_failed_creation_removal,allow_pre_activation_instance_removal,add_instance_source_prepare_id,allow_owned_interrupted_creation_removal,allow_force_takeover_of_failed_instance_removal,allow_reserved_task_worktree_removal,allow_reserved_worktree_null_prepare_removal}.php
   - apps/cli/app/Commands/Instances/DestroyInstanceCommand.php
 ---
 
@@ -40,7 +40,7 @@ Orbit never deletes a remote branch. Removing a worktree keeps its local branch,
 
 The Gateway checks everything before it changes anything. A failed check changes nothing.
 
-The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
+The Instance must be `active`, `source_resolved` with no Route (such as a task workspace), or an [interrupted or failed development create](#pre-activation-removal) that never became active. An Instance already `removing` resumes its recorded removal. An active `laravel-app` or `symfony-app` Instance must have exactly one Route. A pre-activation Instance can have no Route or its own pending or failed Route. A development Instance must be the only target of its Route. A production Instance may share a Cluster Route with production Instances on other Nodes.
 
 The Gateway also refuses these Instances:
 
@@ -76,9 +76,11 @@ If the process is interrupted or cleanup cannot finish, `instance:destroy` accep
 
 Removal uses the same recorded steps and resumable resource cleanup as active removal. Teardown is skipped because setup has not run. An incomplete transfer or clone candidate still refuses removal.
 
-An unrouted task workspace is different: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
+A task workspace that is still `reserved` with no starting commit is also pre-activation when its layout is `worktree`, `task_workspace_routed` is set (including `false`), and no registration request is recorded. Older reservations can lack a source preparation ID; the task workspace evidence still permits removal. Removal and group cancellation accept this interrupted state even without `failed_step` or `error_code`; `instance.remove_refused` does not apply merely because the layout changed. A reservation with neither a preparation ID nor task workspace evidence still refuses removal, even with `--force`. The ownership checks above still apply, and teardown is skipped.
 
-A reserved Instance may have no checkout directory. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
+An unrouted task workspace is different once resolved: `task_workspace_routed=false` makes `source_resolved` its healthy settled state, so its normal removal still runs Project teardown. It is not a failed create.
+
+A reserved Instance may have no checkout directory, including a task reservation whose layout changed to `worktree` before its directory was created. Removal records the absent source and leaves its seed repository and sibling worktrees untouched. A prepared repository may contain only `.git`, without a resolved branch or commit. These absences are accepted in pre-activation removal and do not require `--force`. A missing directory for active source still returns `instance.source_path_mismatch`.
 
 For new reservations, preparation writes a receipt in Git metadata with the recorded preparation ID and the directory's device and inode. Removal requires that receipt whenever the directory exists, even with `--force`. A matching origin and account owner do not prove that the create attempt owns a pre-existing checkout. A lost prepare response with a valid receipt can be cleaned up. If preparation stops before recording ownership, cleanup retains the unconfirmed directory for inspection rather than deleting it. Do not bypass an ownership refusal to finish cleanup.
 
@@ -118,9 +120,21 @@ Once accepted, the Gateway marks each member `removing` and completes five steps
 | --- | --- |
 | `source_preparation` | Record the source identity, or the production content to keep. |
 | `route_target_clear` | Stop the Route from sending traffic to the Instance. See [Route cleanup](#route-cleanup). |
-| `source_finalization` | Delete the development checkout, or keep the production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
-| `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). |
+| `source_finalization` | Withdraw a development Instance's PHP-FPM pool, then delete its checkout. Keep production content. Remove the `<apps-root>/<project-slug>` directory when it is empty. |
+| `runtime_cleanup` | Remove every owned Process and Schedule, then the PHP-FPM pool or service, Caddy site, and other runtime files. Drop every [owned database](#owned-databases). See [Runtime cleanup](#runtime-cleanup). |
 | `row_deletion` | Cancel the Instance's open annotation tasks, and their tasks when nothing else is open, and mark those annotations cancelled. Then delete the Instance record. |
+
+### Runtime cleanup
+
+`runtime_cleanup` converges PHP-FPM and Caddy on the Instance's Node from stored state. By then the Instance has no Route target, so stored state renders neither its PHP-FPM pool nor its Caddy site, and convergence removes both. A development Instance runs this step even when it never became active and has no recorded Route.
+
+A pending Route can publish a pool before activation, and `route:destroy` can delete that Route before the Instance is removed. So neither the Route nor the Instance state proves that no pool is left. A production Instance that never published a runtime and has no Route skips the step's runtime work. The cost is one PHP-FPM convergence and one Caddy build on the Node for each removed development Instance.
+
+Removal ignores `app-dev.php_pool_directory_missing` from that convergence. The error names another site's pool, and the convergence has already removed the removed Instance's pool. Doctor keeps reporting the skipped pool.
+
+PHP-FPM refuses to start while any pool names a missing `chdir`, and all development Instances of one PHP version share one pool file. So `source_finalization` first converges PHP-FPM on the Node, which withdraws the Instance's pool and reloads PHP-FPM, and only then deletes the checkout. The live pool file never names the deleted directory. If that convergence fails, the checkout stays and the step stays open for retry. It ignores `app-dev.php_pool_directory_missing` for the same reason as `runtime_cleanup`.
+
+[PHP-FPM convergence](/reference/php-runtime#development-runtime) also never renders a pool for a missing directory and does not need PHP-FPM to start first, so it still repairs a Node whose source was deleted another way. Doctor reports such a pool as `role.php_pool_directory_missing`.
 
 ### Route cleanup
 

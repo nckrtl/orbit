@@ -1,0 +1,98 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ShowTaskGroupRequest",
+    "route": "GET /api/v1/task-groups/{group}",
+    "status": 200,
+    "body": {
+        "data": {
+            "id": 1,
+            "project_id": 1,
+            "project": "orbit",
+            "project_code": "ORB",
+            "taskable_type": null,
+            "taskable_id": null,
+            "title": "Review #460: Throttle logins",
+            "brief": "Orbit reviews pull request https://github.com/nckrtl/orbit/pull/460.",
+            "status": "settling",
+            "reviewer_agent_thread_id": null,
+            "pr_url": "https://github.com/nckrtl/orbit/pull/460",
+            "watched_pr_url": null,
+            "watched_pr_number": null,
+            "watched_pr_state": null,
+            "notify_coder": false,
+            "assistance_requested": false,
+            "assistance_kind": null,
+            "assistance_question": null,
+            "assistance_reason": null,
+            "implementer_model": "gpt-5.6-luna",
+            "reviewer_model": "gpt-5.6-luna",
+            "tokens": null,
+            "line_diff": null,
+            "lines_added": null,
+            "lines_deleted": null,
+            "duration_ms": null,
+            "questions": 0,
+            "escalations": 0,
+            "tasks": [
+                {
+                    "id": 2,
+                    "task_group_id": 1,
+                    "position": 1,
+                    "title": "Final review",
+                    "brief": "Review pull request https://github.com/nckrtl/orbit/pull/460 as a whole before Orbit approves it on GitHub and merges it. The diff runs from its merge base with origin/main to the pull request head. Approve only when the complete change is correct, tested, documented, and ready to merge as it is. Otherwise request changes and list each finding with its file and what must change. Orbit applies the findings in a new subtask.",
+                    "deliverables": [
+                        {
+                            "id": "final-review",
+                            "type": "review",
+                            "description": "The whole change meets the brief and is ready to merge as it is."
+                        }
+                    ],
+                    "topology": [],
+                    "status": "completed",
+                    "implementer_agent_thread_id": null,
+                    "tokens": null,
+                    "line_diff": null,
+                    "lines_added": null,
+                    "lines_deleted": null,
+                    "duration_ms": null,
+                    "questions": 0,
+                    "escalations": 0,
+                    "type": "final_review",
+                    "target_thread_id": null,
+                    "completion_summary": null,
+                    "check": null,
+                    "assistance_requested": false,
+                    "assistance_kind": null,
+                    "assistance_question": null,
+                    "assistance_reason": null,
+                    "fixup_problem": null
+                }
+            ],
+            "execution_mode": "managed",
+            "task_compute": null,
+            "capacity_wait_reason": null,
+            "sandbox_power": null,
+            "preview": false,
+            "review_and_merge": {
+                "enabled": true,
+                "pr_branch": "cursor/login-throttle",
+                "merge_status": "waiting",
+                "merge_reason": "Check Required checks is still running on aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.",
+                "merged_sha": null,
+                "reviewed_commits": [
+                    {
+                        "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                        "source": "pull_request_review",
+                        "review_task_id": 2,
+                        "pushed_at": null,
+                        "github_review_id": 3311,
+                        "recorded_at": "2026-09-23T10:00:00+00:00"
+                    }
+                ]
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

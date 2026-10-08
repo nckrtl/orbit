@@ -40,7 +40,7 @@ final class CancelSubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $groupId ??= $this->selectGroup($connector, ['todo', 'running', 'reviewing', 'settling']);
+        $groupId ??= $this->selectGroup($connector, ['todo', 'running', 'reviewing', 'settling', 'waiting_for_review']);
 
         if ($groupId === null) {
             return self::FAILURE;

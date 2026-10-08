@@ -66,6 +66,8 @@ require_once __DIR__.'/Helpers/AnalyticsRoleFixtures.php';
 require_once __DIR__.'/Helpers/AnalyticsConnectionFixtures.php';
 require_once __DIR__.'/Helpers/InstanceAnalyticsFixtures.php';
 require_once __DIR__.'/Helpers/ConfigFixtures.php';
+require_once __DIR__.'/Helpers/GatewayReleaseFixtures.php';
+require_once __DIR__.'/Helpers/CliReleaseFixtures.php';
 
 uses(TestCase::class, RefreshDatabase::class)
     ->beforeEach(function (): void {
@@ -114,7 +116,41 @@ pest()->tia()->watch([
     'resources/scripts/*.py' => 'tests/Feature/Infrastructure/Metrics/ServiceMetricsProgramTest.php',
     'resources/proxycli/*.py' => 'tests/Unit/Infrastructure/ProxyCli/ProxyCliCollectorValkeyClientTest.php',
     'resources/instances/*.py' => 'tests/Feature/Domain/ProjectLifecycleRunnerTest.php',
+    'resources/instances/tia-baseline.py' => 'tests/Feature/Domain/TiaBaselineSetupTest.php',
     'resources/analytics/clickhouse/**/*.xml' => 'tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php',
+    'resources/fpm/opcache-reset.php' => 'tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php',
+    'resources/private-dns/serve.php' => 'tests/Feature/Infrastructure/AppDev',
+    // Sandbox programs, each with the tests that run it or read it. A new program stays unwatched until it is listed.
+    'resources/compute/guest-git-bundle.py' => 'tests/Feature/Infrastructure/Compute/IncusSandboxTest.php',
+    'resources/compute/trusted-git-bundle.py' => 'tests/Feature/Infrastructure/Compute/IncusSandboxTest.php',
+    'resources/compute/sandbox-hub-network.py' => 'tests/Feature/Infrastructure/Compute/UpCloudSandboxEnrollmentTest.php',
+    'resources/compute/guest-github-access.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitHubAccessTest.php',
+    'resources/compute/guest-github-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
+    'resources/compute/guest-workspace-source.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php',
+    'resources/compute/guest-pair-dns.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
+    'resources/compute/guest-pair-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
+    'resources/compute/retarget-gateway.php' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
+    'resources/compute/retarget-vpn.sh' => 'tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php',
+    'resources/compute/guest-pi-artifact.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPiArtifactTest.php',
+    'resources/compute/guest-pi-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPiRuntimeTest.php',
+    'resources/compute/guest-pi-ingress.py' => 'tests/Feature/Infrastructure/Tasks/SandboxPiRuntimeTest.php',
+    'resources/compute/guest-workload-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxWorkloadRuntimeTest.php',
+    // The template programs load each other, and one test runs them all.
+    'resources/compute/guest-template-audit.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/guest-template-health.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/guest-template-install.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/guest-template-package-sources.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/guest-template-source.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/prepare-template.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/publish-template.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/template-inputs.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/template-lock.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+])->watch([
+    // A key holds one target, so a second test of the same file needs a second call.
+    'resources/compute/guest-git-bundle.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitBundlesTest.php',
+    'resources/compute/trusted-git-bundle.py' => 'tests/Feature/Infrastructure/Tasks/SandboxGitBundlesTest.php',
+    'resources/compute/guest-workspace-source.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php',
+    'resources/compute/guest-pair-runtime.py' => 'tests/Feature/Infrastructure/Tasks/SandboxTopologyAdmissionTest.php',
 ]);
 
 /** @param list<array{name: string, phase: string, command: string, timeout_seconds: int}> $steps */

@@ -25,8 +25,16 @@ NAMED_LEFTOVERS = (
     ('merge-api-contract', re.compile(r'(?i)\bmerge\b.*\bapi contract\b')),
     ('ruleset', re.compile(r'(?i)\bruleset\b')),
     ('app-permission', re.compile(r'(?i)\bapp permission\b')),
+    ('object-storage-host', re.compile(r'(?i)(?<![\w.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+upcloudobjects\.com(?![\w-]|\.[\w-])')),
+    ('linear-reference', re.compile(r'(?i)\blinear\.app\b|\blinear\s+(?:issue|ticket|project|product|task|integration|workspace)\b|\blinear\s+[a-z][a-z0-9]*-\d+\b|\b(?:issue|ticket|project|product|task)\s+(?:in|on|from)\s+linear\b')),
 )
-NEGATION = re.compile(r'(?i)\b(?:does not|do not|adds no|changes no|never|without|forbids?|not)\b')
+PROHIBITION = re.compile(
+    r'(?i)^\s*(?:[-*>]\s+|\d+\.\s+)?(?:'
+    r'(?:do not|never)\s+(?:add|include|enable|use|pass|merge)\b|'
+    r'(?:it|this workflow)\s+(?:does not\s+(?:add|include|enable|use)|adds no|changes no)\b|'
+    r'the diff fails when it adds a leftover\b'
+    r')|\b(?:stay forbidden|remain\b.*\bforbids)\b'
+)
 PR_RE = re.compile(r'(?:https://github.com/)?([^/#]+)/([^/#]+)(?:/pull/|#)(\d+)')
 DETECTOR_PATH = 'bin/pr-head-check'
 REFUSAL_TEST_PATH = 'apps/e2e/tests/Unit/E2E/DeliveryLineCommandsTest.php'
@@ -143,12 +151,16 @@ def leftover_scan_exempt(filename):
     return filename.startswith(DELIVERY_LINE_FIXTURE_PREFIX)
 
 
-def leftover_in_line(line):
-    if NEGATION.search(line):
-        return None
-    for name, pattern in NAMED_LEFTOVERS:
-        if pattern.search(line):
-            return name
+def leftover_in_line(line, filename):
+    documentation = Path(filename).suffix.lower() in ('.md', '.mdx')
+    # Scope prohibition prose to its sentence or clause, never an entire line.
+    clauses = re.split(r'(?<=[.!?])\s+|;\s*', line) if documentation else [line]
+    for clause in clauses:
+        if documentation and PROHIBITION.search(clause):
+            continue
+        for name, pattern in NAMED_LEFTOVERS:
+            if pattern.search(clause):
+                return name
     return None
 
 
@@ -164,7 +176,7 @@ def leftovers_in_files(files):
         for line in patch.splitlines():
             if not line.startswith('+') or line.startswith('+++'):
                 continue
-            name = leftover_in_line(line[1:])
+            name = leftover_in_line(line[1:], filename)
             if name and (filename, name) not in [(item['path'], item['leftover']) for item in found]:
                 found.append({'path': filename, 'leftover': name, 'line': line[1:].strip()})
     return found
@@ -189,6 +201,8 @@ def skill_names_present(path):
         elif name == 'ruleset' and 'ruleset' not in text:
             missing.append(name)
         elif name == 'app-permission' and 'App permission' not in text:
+            missing.append(name)
+        elif name in ('object-storage-host', 'linear-reference') and name not in text:
             missing.append(name)
     return missing
 

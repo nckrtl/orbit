@@ -1,0 +1,29 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\GatewayReleases\\ShowGatewayReleaseAutomationRequest",
+    "route": "GET /api/v1/gateway/release-automation",
+    "status": 200,
+    "body": {
+        "data": {
+            "enabled": false,
+            "paused": false,
+            "pause": null,
+            "current_release": "0123456789ab",
+            "current_sha": "0123456789ab0123456789ab0123456789ab0123",
+            "last_tick": null,
+            "stalled_since": null,
+            "branch_head": null,
+            "behind_since": null,
+            "branch": "main",
+            "check": "Required checks",
+            "tick_confirmation": {
+                "outcome": "pending",
+                "since": "2026-10-07T11:00:05Z",
+                "deadline": "2026-10-07T11:04:10Z"
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

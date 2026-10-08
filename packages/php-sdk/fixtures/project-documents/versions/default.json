@@ -1,0 +1,32 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\ProjectDocuments\\ListProjectDocumentVersionsRequest",
+    "route": "GET /api/v1/projects/{project}/documents/{entry}/versions",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 2,
+                "number": 2,
+                "media_type": "text/plain",
+                "size_bytes": 6,
+                "sha256": "16367aacb67a4a017c8da8ab95682ccb390863780f7114dda0a0e0c55644c7c4",
+                "created_at": "2026-01-01T00:00:00.000000Z",
+                "created_by_node_id": 1
+            },
+            {
+                "id": 1,
+                "number": 1,
+                "media_type": "text/plain",
+                "size_bytes": 6,
+                "sha256": "b640e840b19d378660b32fb51ae18d67dccb4a8596a29e7bd72c1b2ae5928f41",
+                "created_at": "2026-01-01T00:00:00.000000Z",
+                "created_by_node_id": 1
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844",
+            "next_cursor": null
+        }
+    }
+}

@@ -14,10 +14,12 @@ use App\Domain\GitHub\GitHubReviewComment;
 use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\GitHub\RepositoryPullRequestAccess;
+use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskGitHubReviewObservations;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
+use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewCandidate;
 use App\Domain\Tasks\TaskReviewCandidateResult;
@@ -34,7 +36,7 @@ use Throwable;
 /**
  * Reads the state of the pull request Orbit opened, through the Gateway GitHub App.
  */
-final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReviewWatcher, TaskPullRequestWatcher
+final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReviewWatcher, TaskPullRequestUpdater, TaskPullRequestWatcher
 {
     private const int CHECKS_CACHE_SECONDS = 60;
 
@@ -42,6 +44,28 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
     private const int PENDING_YOUNG_MINUTES = 60;
 
     public function __construct(private RepositoryPullRequestAccess $access, private GitHubApi $github) {}
+
+    public function updateBranch(Task $group, string $headSha): TaskBranchUpdate
+    {
+        $target = $this->target($group);
+        if ($target === null) {
+            return TaskBranchUpdate::Unavailable;
+        }
+        [$repository, $number] = $target;
+        $key = 'tasks:branch-update:'.$group->id.':'.$headSha;
+        $cached = Cache::get($key);
+        if (is_string($cached) && TaskBranchUpdate::tryFrom($cached) !== null) {
+            return TaskBranchUpdate::from($cached);
+        }
+        try {
+            $result = $this->github->updatePullRequestBranch($this->access->token($repository), $repository, $number, $headSha);
+        } catch (Throwable) {
+            $result = TaskBranchUpdate::Unavailable;
+        }
+        Cache::put($key, $result->value, 60);
+
+        return $result;
+    }
 
     public function status(Task $group): ?string
     {
@@ -130,6 +154,7 @@ final readonly class HttpTaskPullRequestWatcher implements TaskPullRequestReview
             checksPending: $pending !== [],
             checksYoungPending: $young,
             mergeable: $pullRequest->mergeable,
+            behind: $pullRequest->mergeableState === 'behind',
         );
     }
 

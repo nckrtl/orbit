@@ -11,14 +11,13 @@ function webDeployFixture(): array
     $tools = $root.'/tools';
     $web = $root.'/gateway/web';
     $repository = $root.'/repository';
-    foreach ([$repository.'/bin', $repository.'/apps/web', $repository.'/packages/agent-annotation', $tools, $web.'/releases'] as $directory) {
+    foreach ([$repository.'/bin', $repository.'/apps/web', $tools, $web.'/releases'] as $directory) {
         mkdir($directory, 0700, true);
     }
     copy(dirname(__DIR__, 5).'/bin/web-deploy', $repository.'/bin/web-deploy');
     chmod($repository.'/bin/web-deploy', 0755);
     file_put_contents($repository.'/.gitignore', "apps/web/dist/\napps/web/.env.local\n");
     file_put_contents($repository.'/apps/web/package.json', "{}\n");
-    file_put_contents($repository.'/packages/agent-annotation/package.json', "{}\n");
 
     // `bun run build` writes a small release named after the commit, so each deploy is distinguishable.
     file_put_contents($tools.'/bun', <<<'BASH'
@@ -54,8 +53,11 @@ function webDeployFixture(): array
 
     $group = trim((string) shell_exec('id -gn'));
 
+    mkdir($root.'/gateway/releases', 0700, true);
+
     return ['root' => $repository, 'web' => $web, 'run' => $run, 'environment' => [
         'PATH' => $tools.':'.getenv('PATH'),
+        'ORBIT_GATEWAY_RELEASES' => $root.'/gateway/releases',
         'ORBIT_WEB_DEPLOY_SSH' => $tools.'/ssh',
         'ORBIT_WEB_DEPLOY_HOST' => 'gateway.test',
         'ORBIT_WEB_DIR' => $web,
@@ -139,4 +141,35 @@ it('keeps the five newest releases', function (): void {
 
     expect(array_map(basename(...), glob($web.'/releases/*')))
         ->toEqualCanonicalizing([...array_slice($releases, 1), $newest]);
+});
+
+it('never prunes the web build of a retained Gateway release', function (): void {
+    ['root' => $root, 'web' => $web, 'run' => $run, 'environment' => $environment] = webDeployFixture();
+    $gatewayRelease = substr(trim($run->path($root)->run(['git', 'rev-parse', 'HEAD'])->output()), 0, 12);
+    expect($run->path($root)->env($environment)->run(['bin/web-deploy'])->successful())->toBeTrue();
+    touch($web."/releases/{$gatewayRelease}", time() - 7200);
+    mkdir($environment['ORBIT_GATEWAY_RELEASES'].'/'.$gatewayRelease, 0700);
+    file_put_contents($environment['ORBIT_GATEWAY_RELEASES'].'/'.$gatewayRelease.'/REVISION', "{$gatewayRelease}\n");
+    $unretained = webDeployCommit($run, $root, 'unretained');
+    expect($run->path($root)->env($environment)->run(['bin/web-deploy'])->successful())->toBeTrue();
+    touch($web."/releases/{$unretained}", time() - 7000);
+    $newer = [];
+    foreach (range(1, 5) as $index) {
+        $newer[] = webDeployCommit($run, $root, "newer {$index}");
+        $result = $run->path($root)->env($environment)->run(['bin/web-deploy']);
+        expect($result->successful())->toBeTrue($result->errorOutput());
+        touch($web.'/releases/'.end($newer), time() - 3600 + $index * 60);
+    }
+
+    expect(array_map(basename(...), glob($web.'/releases/*')))
+        ->toEqualCanonicalizing([$gatewayRelease, ...$newer]);
+});
+
+it('refuses a Gateway releases path that is not plain', function (): void {
+    ['root' => $root, 'run' => $run, 'environment' => $environment] = webDeployFixture();
+
+    $result = $run->path($root)->env([...$environment, 'ORBIT_GATEWAY_RELEASES' => '/home/orbit/releases; rm -rf /'])->run(['bin/web-deploy']);
+
+    expect($result->exitCode())->toBe(2)
+        ->and($result->errorOutput())->toContain('ORBIT_GATEWAY_RELEASES');
 });

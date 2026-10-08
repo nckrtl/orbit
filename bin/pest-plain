@@ -11,7 +11,7 @@ if (($# == 0)); then
     exit 2
 fi
 
-"$@" 2>&1 | php -r '
+python3 "$(dirname "${BASH_SOURCE[0]}")/task-feedback-tests" "$@" 2>&1 | php -r '
 stream_set_write_buffer(STDOUT, 0);
 $pending = "";
 while (($chunk = fread(STDIN, 8192)) !== false && $chunk !== "") {

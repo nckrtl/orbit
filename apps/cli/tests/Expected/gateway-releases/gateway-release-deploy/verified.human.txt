@@ -1,0 +1,35 @@
+Queuing release...
+Preparing release...
+Switching release...
+Handing off runtime...
+Verifying release...
+Moving scheduler...
+Publishing web app...
+Running smoke tests...
+
+┌  Deploy Gateway release fedcba987654
+│
+├  ● Queued release
+│    Record 1.
+│
+├  ● Prepared release
+│
+├  ● Migrate database
+│    No migrations pending.
+│
+├  ● Switched release
+│
+├  ● Handed off runtime
+│
+├  ● Verified release
+│
+├  ● Moved scheduler
+│
+├  ● Published web app
+│
+├  ● Passed smoke tests
+│
+└  Release fedcba987654 is live.
+
+Release record: 1
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

@@ -17,5 +17,7 @@ final class UpdateTaskData extends Data
         public ?int $position,
         /** @var list<array<string, string|bool|list<string>>>|null null leaves the deliverables unchanged */
         public ?array $deliverables = null,
+        /** @var list<string>|null null keeps the recorded topology */
+        public ?array $topology = null,
     ) {}
 }

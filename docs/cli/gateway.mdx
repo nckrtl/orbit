@@ -1,10 +1,12 @@
 ---
 title: "gateway"
-description: "Register Gateway profiles on the operator machine, select the active one, pin the Gateway root certificate, and check Gateway status."
+description: "Register Gateway profiles on the operator machine, select the active one, pin the Gateway root certificate, check Gateway status, and release the Gateway itself."
 covers:
   - apps/cli/app/Commands/Gateway/**
   - apps/cli/app/Commands/GatewayCommand.php
   - apps/gateway/app/Http/Controllers/Api/GatewayStatusesController.php
+  - apps/gateway/app/Http/Controllers/Api/GatewayReleasesController.php
+  - apps/gateway/app/Http/Controllers/Api/GatewayReleaseAutomationController.php
 ---
 
 Every command that manages remote resources sends its request to the active Gateway. The `gateway` family manages the local profiles that name a Gateway. It also pins the Gateway root certificate authority (CA), installs it in the operating-system trust store, and shows whether the Gateway answers. [Gateway trust](/reference/gateway-trust) describes where profiles live, the trust sequence, and the profile guard.
@@ -18,8 +20,15 @@ Every command that manages remote resources sends its request to the active Gate
 | [`gateway:status`](#orbit-gatewaystatus) | Show the status and version of the active Gateway. |
 | [`gateway:trust`](#orbit-gatewaytrust) | Trust or check the active Gateway root CA. |
 | [`gateway:remove`](#orbit-gatewayremove) | Remove a profile and its pinned certificate. |
+| [`gateway:release:list`](#orbit-gatewayreleaselist) | List the Gateway's release records. |
+| [`gateway:release:show`](#orbit-gatewayreleaseshow) | Show one release record. |
+| [`gateway:release:deploy`](#orbit-gatewayreleasedeploy) | Release one commit to the Gateway and follow it. |
+| [`gateway:release:rollback`](#orbit-gatewayreleaserollback) | Switch the Gateway back to a retained release and follow it. |
+| [`gateway:release:auto:status`](#orbit-gatewayreleaseautostatus) | Show the automatic release state. |
+| [`gateway:release:auto:enable`](#orbit-gatewayreleaseautoenable-and-disable), [`gateway:release:auto:disable`](#orbit-gatewayreleaseautoenable-and-disable) | Turn automatic releases on or off. |
+| [`gateway:release:auto:resume`](#orbit-gatewayreleaseautoresume) | Clear a pause of automatic releases. |
 
-Every command accepts `--json`. `gateway:use` and `gateway:remove` work locally. `gateway:add`, `gateway:status`, and `gateway:trust` contact the Gateway. `gateway:add` and `gateway:trust` can change the operating-system trust store, which can ask for local administrator privileges.
+Every command accepts `--json`. `gateway:use` and `gateway:remove` work locally. The other commands contact the Gateway. `gateway:add` and `gateway:trust` can change the operating-system trust store, which can ask for local administrator privileges.
 
 ## orbit gateway:add
 
@@ -85,7 +94,9 @@ Show the status and version that the active Gateway reports.
 orbit gateway:status [--json]
 ```
 
-Human output is a detail tree with the profile URL, the Gateway name, status, Orbit version, PHP version, Laravel version, and request ID. JSON returns the same values with the profile name and URL.
+Human output is a detail tree with the profile URL, the Gateway name, status, Orbit version, PHP version, Laravel version, the release it runs from, the automatic release state, and request ID. JSON returns the same values with the profile name and URL. `release` and `release_sha` are null outside the [release layout](/reference/gateway-recovery#release-layout). `auto_release` holds `enabled`, `paused`, `last_checked_at`, and `last_result`. It is null for a caller that is not an active WireGuard peer, and when the Gateway could not read that state.
+
+When this machine is an active WireGuard peer, the Gateway also returns its [desired fleet state](/reference/self-update#desired-fleet-state), as last resolved. It is absent until the Gateway resolves it. Human output then adds `CLI release`, the version of the Gateway's CLI release or why it is unavailable, and `Agent version`, the pinned agent. JSON carries the whole state as `desired_fleet_state`, which is null for any other caller. [`self-update`](/cli/self-update) installs that state.
 
 The command fails with `gateway.profile_missing` when no profile is active and with `gateway.unreachable` when the Gateway does not answer. A Gateway response without an error code uses `gateway.request_failed`; transport failures use `gateway.unreachable`.
 
@@ -141,6 +152,132 @@ The CLI checks the name and the active profile before it asks for consent. The p
 | `gateway.config_invalid` | The configuration file is invalid, or the profile is removed but the CLI could not delete its certificate file. |
 
 A refusal changes nothing. JSON returns `profile` with the removed name.
+
+## Gateway releases
+
+The `gateway:release` commands release the Gateway itself. [Update and recover a Gateway](/reference/gateway-recovery#deploy-a-release) describes the release steps, the records, and the error codes. Access to the Gateway is fleet-wide, so any Node with access may run them.
+
+### orbit gateway:release:list
+
+List the 50 newest release records, newest first, including queued and running ones.
+
+```bash
+orbit gateway:release:list [--json]
+```
+
+The table shows the record id, the release, the trigger, the outcome, the error code, the duration, and the start time. JSON returns `releases` with every record field, and `request_id`.
+
+### orbit gateway:release:show
+
+Show one release record.
+
+```bash
+orbit gateway:release:show [<release>] [--json]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `release` | A record id of one to six digits, or a hex SHA of 7 to 40 characters for the newest record of that commit. In a terminal, an omitted value opens a list of the records. |
+
+JSON returns the record. `gateway.release_not_found` means no record matches, and `gateway.release_id_invalid` means the selector has another form.
+
+### orbit gateway:release:deploy
+
+Release one commit to the active Gateway, then follow it until it is live, switched back, or paused.
+
+```bash
+orbit gateway:release:deploy [<commit>] [--json]
+```
+
+| Argument | Meaning |
+| --- | --- |
+| `commit` | A hex SHA of 7 to 40 characters. In a terminal, an omitted value is asked for. |
+
+The Gateway queues the release and runs it in its own unit. The CLI reads the record every 2 seconds and shows each step as the Gateway records it: queue, prepare, migrate, switch, hand off, verify, move the scheduler, publish the web app, and smoke. The tree ends with the outcome, and the record id and request ID follow it. JSON prints the final record. The command exits 0 only when the outcome is `verified`.
+
+Interrupting the CLI stops following, not the release. Read the outcome later with `gateway:release:show <id>`. The CLI keeps reading while the Gateway reloads. It gives up with `gateway.release_follow_failed` after 30 failed reads in a row, or once 65 minutes have passed, whatever the reads return.
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters. |
+| `gateway.release_in_progress` | Another release step runs, or another requested release waits to start. |
+| `gateway.release_not_adopted` | The Gateway does not run from a release yet. |
+| `gateway.release_unit_failed` | systemd did not start the release unit. |
+| `gateway.release_follow_failed` | The CLI stopped reading the record. The release continues on the Gateway. |
+
+### orbit gateway:release:rollback
+
+Switch the active Gateway back to a retained release, then follow it.
+
+```bash
+orbit gateway:release:rollback [<release>] [--force] [--yes] [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `release` | The 12-digit id of a retained release. In a terminal, an omitted value opens a list of the releases that went live. |
+| `--force` | Switch the code although the current release ships a migration the target does not have. The database schema stays where it is. |
+| `--yes` | Confirm `--force` without a prompt. Required for `--force` with `--json` or without a terminal. |
+
+The Gateway checks the target and the migrations before it queues anything. A rollback across a migration without `--force` fails with `gateway.release_migration_crossed`, and the message names the newest snapshot. With `--force`, the prompt defaults to No. Declining fails with `input.cancelled`, and nothing is queued. Output and exit status follow `gateway:release:deploy`.
+
+### orbit gateway:release:smoke
+
+Run the [smoke tests](/reference/gateway-recovery#smoke) of the current release against the live Gateway. Smoke changes nothing and writes no release record.
+
+```bash
+orbit gateway:release:smoke [<commit>] [--since=<time>] [--json]
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `commit` | The hex SHA, 7 to 40 characters, that the live Gateway must serve. Without it, smoke expects the commit of the current release. |
+| `--since` | The runtime handoff time, ISO 8601 with a zone, such as `2026-10-07T06:00:00Z`. The scheduler and agent view must have restarted after it. Smoke does not wait for a tick; [`orbit gateway:release:auto:status`](#orbit-gatewayreleaseautostatus) shows whether the current release's scheduler has ticked. |
+
+The Gateway runs `bin/gateway-smoke` of the current release inside the request and answers when smoke ends, after about a minute by default. Meanwhile the CLI shows one running step. The detail tree shows the commit, the outcome, the check counts, the duration, and the start time. A failed run adds the smoke message and the next step. A table lists each check with its status, error, message, and duration. JSON returns `release`, `sha`, `outcome`, the smoke `report`, and `request_id`. The command exits 0 only when the outcome is `passed`.
+
+Interrupting the CLI stops waiting, not smoke. Smoke ends on the Gateway within its own limit.
+
+| Error code | Meaning |
+| --- | --- |
+| `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters, or the current release reports no commit. |
+| `gateway.release_since_invalid` | `--since` is not an ISO 8601 time with a zone. |
+| `gateway.release_smoke_failed` | Smoke printed no report, or a report that is not a check failure, such as `terminated`. Checks that did not pass are the `failed` outcome, not this error. |
+| `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
+| `gateway.release_smoke_killed` | Something else, such as the out-of-memory killer, killed smoke before its limit. |
+| `gateway.release_smoke_missing` | The current release has no `bin/gateway-smoke`. |
+| `gateway.release_smoke_in_progress` | Another smoke run is in progress. Only one runs at a time. |
+
+### orbit gateway:release:auto:status
+
+Show the [automatic release](/reference/gateway-recovery#automatic-releases) state.
+
+```bash
+orbit gateway:release:auto:status [--json]
+```
+
+The detail tree shows whether automatic releases are enabled and paused, with the reason of a pause, the current release and commit, the branch and check, the last check and its result, the stalls, and whether the current release's scheduler has run `tasks:tick` ([post-release tick confirmation](/reference/gateway-recovery#post-release-tick-confirmation)). JSON returns `enabled`, `paused`, `pause`, `current_release`, `current_sha`, `last_tick`, `stalled_since`, `branch_head`, `behind_since`, `branch`, `check`, `tick_confirmation`, and `request_id`.
+
+### orbit gateway:release:auto:enable and disable
+
+Turn automatic releases on or off.
+
+```bash
+orbit gateway:release:auto:enable [--json]
+orbit gateway:release:auto:disable [--json]
+```
+
+Both print the resulting state like `gateway:release:auto:status`. Enabling does not clear a pause. Disabling lets a release that already runs finish.
+
+### orbit gateway:release:auto:resume
+
+Clear a pause after you decided how to recover from a failed release.
+
+```bash
+orbit gateway:release:auto:resume [--json]
+```
+
+It prints the resulting state. It fails with `gateway.release_not_paused` when automatic releases are not paused.
 
 ## Related
 

@@ -18,7 +18,7 @@ final class CreateProjectCommand extends GatewayCommand
     #[\Override]
     protected $signature = 'project:create
         {slug : Unique project slug}
-        {type : Project type (monorepo, laravel-app, laravel-package, or node-package)}
+        {type : Project type (monorepo, laravel-app, symfony-app, laravel-package, or node-package)}
         {repository : Git repository URL}
         {--name= : Optional display name}
         {--source-access= : How Orbit reads a private github.com repository: github_app (default) or gh_cli}
@@ -26,6 +26,7 @@ final class CreateProjectCommand extends GatewayCommand
         {--root= : Repository-relative root; defaults to . for package types and public otherwise}
         {--task-check= : Task check command. Omitted stores none}
         {--task-workspace-routed= : Whether new task workspaces get a Route (true or false)}
+        {--task-compute= : Compute for future task groups (shared or vm)}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -61,6 +62,12 @@ final class CreateProjectCommand extends GatewayCommand
             );
         }
 
+        $taskCompute = $this->option('task-compute');
+
+        if ($this->input->hasParameterOption('--task-compute') && ! in_array($taskCompute, ['shared', 'vm'], true)) {
+            return $this->renderGatewayFailure('project.task_compute_invalid', 'Task compute must be shared or vm.');
+        }
+
         $taskWorkspaceRouted = $this->taskWorkspaceRouted();
 
         if (! $taskWorkspaceRouted['valid']) {
@@ -82,10 +89,10 @@ final class CreateProjectCommand extends GatewayCommand
             return self::FAILURE;
         }
 
-        if (! in_array($type, ['monorepo', 'laravel-app', 'laravel-package', 'node-package'], true)) {
+        if (! in_array($type, ['monorepo', 'laravel-app', 'symfony-app', 'laravel-package', 'node-package'], true)) {
             return $this->renderGatewayFailure(
                 'project.type_invalid',
-                'Project type must be monorepo, laravel-app, laravel-package, or node-package.',
+                'Project type must be monorepo, laravel-app, symfony-app, laravel-package, or node-package.',
             );
         }
 
@@ -118,6 +125,7 @@ final class CreateProjectCommand extends GatewayCommand
                 taskCheckProvided: $taskCheck !== null,
                 sourceAccess: $sourceAccess,
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
+                taskCompute: is_string($taskCompute) ? $taskCompute : null,
             ),
             ProjectResponse::class,
             ['Create Project', 'Creating Project', 'Created Project'],

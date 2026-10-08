@@ -57,7 +57,7 @@ describe('TaskCheckWorkerUser', function (): void {
             }
         }
     })->with(['branch' => false, 'detached' => true]);
-});
+})->group('privileged');
 
 it('materializes a transferred checkout with an environment that other local users cannot read', function (string $webRoot, string $suffix): void {
     $root = sys_get_temp_dir().'/orbit-transfer-env-'.bin2hex(random_bytes(4));

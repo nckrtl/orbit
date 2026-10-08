@@ -107,6 +107,35 @@ it('restores the request deadline after a nested operation instead of clearing i
     expect($deadline->cap(9_999.0))->toBe(9_999.0);
 });
 
+it('restores the outer request deadline when a nested request ends', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $endOuter = $deadline->startRequest(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    // A nested request starts later with the same budget; it cannot extend the outer deadline.
+    $now = 100.0;
+    $endInner = $deadline->startRequest(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    expect($deadline->cap(9_999.0))->toBe(450.0);
+
+    // The nested request runs out of forward time; ending it neither clears the outer deadline nor
+    // hands the outer cleanup reserve to the next nested request.
+    $now = 555.0;
+    expect(fn () => $deadline->cap(60.0))->toThrow(ResourceOperationException::class);
+    $endInner();
+    $deadline->startRequest(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    expect(fn () => $deadline->cap(60.0))->toThrow(function (ResourceOperationException $exception): void {
+        expect($exception->errorCode)->toBe('command.deadline_exceeded');
+    });
+
+    $endOuter();
+
+    expect($deadline->cap(9_999.0))->toBe(9_999.0);
+});
+
 it('keeps a local forward-work budget separate from the parent cleanup reserve', function (float $reserve, float $remaining): void {
     $now = 0.0;
     $deadline = new CommandDeadline(static function () use (&$now): float {
@@ -208,4 +237,47 @@ it('holds time back from work for what must follow it, even after that work ran 
     // The rollback that follows keeps a hold for its own last step, and that step gets the rest.
     expect($deadline->holding(90.0, static fn (): float => $deadline->cap(9_999.0)))->toBe(80.0)
         ->and($deadline->cap(9_999.0))->toBe(170.0);
+});
+
+it('keeps nested forward work usable while time is held for rollback', function (float $now, float $initial, float $insideRemaining, float $outsideRemaining): void {
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0 - $now, CommandDeadline::CleanupReserveSeconds);
+
+    $inside = $deadline->holding(150.0, static function () use ($deadline, &$now, $initial): float {
+        return $deadline->withinForwardWork(60.0, static function () use ($deadline, &$now, $initial): float {
+            expect($deadline->cap(9999.0))->toBe($initial);
+            $now += 1.0;
+
+            return $deadline->cap(9999.0);
+        });
+    });
+
+    expect($inside)->toBe($insideRemaining)->and($deadline->cap(9999.0))->toBe($outsideRemaining);
+})->with([
+    'local budget fits' => [0.0, 60.0, 59.0, 549.0],
+    'parent forward work has five seconds left' => [395.0, 5.0, 4.0, 154.0],
+]);
+
+it('retains the rollback hold after a caught local forward-work expiry', function (): void {
+    $now = 0.0;
+    $deadline = new CommandDeadline(static function () use (&$now): float {
+        return $now;
+    });
+    $deadline->start(570.0, CommandDeadline::CleanupReserveSeconds);
+
+    $heldRemaining = $deadline->holding(150.0, static function () use ($deadline, &$now): float {
+        expect(function () use ($deadline, &$now): float {
+            return $deadline->withinForwardWork(60.0, static function () use ($deadline, &$now): float {
+                $now = 60.0;
+
+                return $deadline->cap(10.0);
+            });
+        })->toThrow(ResourceOperationException::class);
+
+        return $deadline->cap(9999.0);
+    });
+
+    expect($heldRemaining)->toBe(340.0)->and($deadline->cap(9999.0))->toBe(490.0);
 });

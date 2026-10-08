@@ -63,6 +63,24 @@ final class CommandDeadline
     }
 
     /**
+     * Starts the deadline of one request and returns the closure that ends it. Ending restores the deadline
+     * that ran before, so a request nested in another, such as one call of an MCP tool batch, can neither
+     * extend nor clear the deadline of the request around it. A nested request that ran out of forward time
+     * does not hand the outer reserve to the next one: that request finds no forward time left.
+     *
+     * @return Closure(): void
+     */
+    public function startRequest(float $seconds, float $cleanupReserveSeconds): Closure
+    {
+        $saved = [$this->expiresAt, $this->seconds, $this->cleanupReserveSeconds, $this->exceeded];
+        $this->start($seconds, $cleanupReserveSeconds);
+
+        return function () use ($saved): void {
+            [$this->expiresAt, $this->seconds, $this->cleanupReserveSeconds, $this->exceeded] = $saved;
+        };
+    }
+
+    /**
      * Runs one operation under its own deadline, then restores the deadline around it. The operation
      * never extends a running deadline, and it cannot clear the request's deadline for work after it.
      *
@@ -89,7 +107,7 @@ final class CommandDeadline
     }
 
     /**
-     * Caps forward work locally without charging the surrounding request's cleanup reserve against
+     * Caps forward work locally without charging the surrounding request's cleanup reserve or holds against
      * that local budget. Only expiry of the parent's forward-work deadline releases its cleanup reserve;
      * a caught local expiry does not. Forward work never enters the parent's cleanup mode.
      *
@@ -109,7 +127,7 @@ final class CommandDeadline
         $this->exceeded = false;
 
         try {
-            return $this->within($seconds + $this->cleanupReserveSeconds, $operation);
+            return $this->within($seconds + $this->cleanupReserveSeconds + $this->heldSeconds, $operation);
         } finally {
             $this->exceeded = $parentExceeded || (
                 $this->exceeded

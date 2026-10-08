@@ -1,0 +1,65 @@
+{
+  "server": {
+    "uuid": "00000000-0000-4000-8000-000000000001",
+    "hostname": "fixture-server",
+    "title": "fixture-server",
+    "state": "started",
+    "plan": "STARTER-1xCPU-1GB",
+    "zone": "nl-ams1",
+    "labels": {
+      "label": []
+    },
+    "firewall": "on",
+    "ip_addresses": {
+      "ip_address": [
+        {
+          "access": "public",
+          "address": "203.0.113.20",
+          "family": "IPv4",
+          "part_of_plan": "yes"
+        }
+      ]
+    },
+    "storage_devices": {
+      "storage_device": [
+        {
+          "address": "virtio:0",
+          "boot_disk": "0",
+          "labels": [
+            {
+              "key": "_os_architecture",
+              "value": "64"
+            },
+            {
+              "key": "_os_brand_name",
+              "value": "Ubuntu"
+            },
+            {
+              "key": "_os_brand_version",
+              "value": "26.04"
+            },
+            {
+              "key": "_os_main_category",
+              "value": "Linux"
+            },
+            {
+              "key": "_os_type",
+              "value": "ubuntu"
+            },
+            {
+              "key": "_template_uuid",
+              "value": "01000000-0000-4000-8000-000030260200"
+            }
+          ],
+          "part_of_plan": "yes",
+          "storage": "00000000-0000-4000-8000-000000000002",
+          "storage_encrypted": "no",
+          "storage_size": 10,
+          "storage_tier": "standard",
+          "storage_title": "fixture-server-disk",
+          "type": "disk"
+        }
+      ]
+    }
+  }
+}

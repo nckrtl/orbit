@@ -17,9 +17,15 @@ Fetching Instances...
 │
 ├  Web root                —
 │
+├  Task compute            shared
+│
 ├  Task check              —
 │
 ├  Task workspace routed   yes
+│
+├  Review and merge        no
+│
+├  Merge check             —
 │
 └  Excluded nodes          —
 

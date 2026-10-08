@@ -190,6 +190,14 @@ describe('requests', function (): void {
             && (string) $request->body() === '{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":9}');
     });
 
+    it('accepts the VM review wait as a list filter', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-list/default'));
+
+        expect(Artisan::call('tasks:list', ['--status' => 'waiting_for_review', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTaskGroupsRequest
+            && $request->query()->all() === ['status' => 'waiting_for_review']);
+    });
+
     it('filters the question list and renders an empty list', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-question-list/default'));
 
@@ -730,3 +738,68 @@ final class TaskPromptsTerminal extends Terminal
         return 40;
     }
 }
+
+it('shows compute mode, observed power and capacity wait in human and JSON output', function (bool $json, ?string $power): void {
+    $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
+    $fixture['body']['data']['task_compute'] = 'vm';
+    $fixture['body']['data']['sandbox_power'] = $power;
+    $fixture['body']['data']['capacity_wait_reason'] = 'The local VM budget is full.';
+    MockClient::global([ShowTaskGroupRequest::class => MockResponse::make($fixture['body'])]);
+
+    expect(Artisan::call('tasks:show', ['group' => '1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
+    $output = Artisan::output();
+    if ($json) {
+        $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
+        expect($data['sandbox_power'])->toBe($power)
+            ->and($data['task_compute'])->toBe('vm')
+            ->and($data['capacity_wait_reason'])->toBe('The local VM budget is full.');
+    } else {
+        expect($output)->toContain('Task compute', 'vm', 'Sandbox power', $power ?? '—', 'Waiting for capacity', 'The local VM budget is full.');
+    }
+})->with([false, true])->with(['running', 'stopped', 'destroyed', null]);
+
+it('sends explicit preview updates without changing review status', function (bool $preview): void {
+    $fixture = json_decode((string) file_get_contents(gateway_fixture_path('tasks/tasks-show/default')), true, flags: JSON_THROW_ON_ERROR);
+    $fixture['body']['data']['preview'] = $preview;
+    $fixture['body']['data']['status'] = 'waiting_for_review';
+    $mock = MockClient::global([UpdateTaskGroupRequest::class => MockResponse::make($fixture['body'])]);
+
+    expect(Artisan::call('tasks:update', ['group' => '1', $preview ? '--preview' : '--no-preview' => true, '--json' => true]))->toBe(0);
+    expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))->toBe(['preview' => $preview]);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBe($preview);
+})->with([true, false]);
+
+it('refuses conflicting preview flags before a Gateway request', function (): void {
+    $mock = MockClient::global([]);
+    expect(Artisan::call('tasks:update', ['group' => '1', '--preview' => true, '--no-preview' => true, '--json' => true]))->toBe(1);
+    expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('tasks.preview_conflict');
+    $mock->assertNothingSent();
+});
+
+it('requests a preview on task group creation', function (): void {
+    $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-create/created'));
+    expect(Artisan::call('tasks:create', ['title' => 'Preview', '--project' => '1', '--brief' => 'Keep it running.', '--preview' => true, '--json' => true]))->toBe(0);
+    expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBeTrue();
+});
+
+describe('declared topology', function (): void {
+    it('sends a declaration and an explicit empty update', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-subtask-create/created'));
+        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => '["app-dev"]', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateSubtaskRequest
+            && json_decode((string) $request->body(), true)['topology'] === ['app-dev']);
+        MockClient::destroyGlobal();
+        $fixture = json_decode((string) file_get_contents(base_path('../../packages/php-sdk/fixtures/tasks/tasks-subtask-create/created.json')), true, flags: JSON_THROW_ON_ERROR);
+        $mock = MockClient::global([UpdateSubtaskRequest::class => MockResponse::make($fixture['body'])]);
+        expect(Artisan::call('tasks:subtask:update', ['group' => '13', 'subtask' => '57', '--topology' => '[]', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
+            && json_decode((string) $request->body(), true) === ['topology' => []]);
+    });
+
+    it('rejects invalid declarations before sending a request', function (string $value): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.topology_invalid');
+        $mock->assertNothingSent();
+    })->with(['["gateway"]', '["app-dev","app-dev"]', '{}', 'null', 'app-dev']);
+});

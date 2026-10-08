@@ -17,12 +17,16 @@ use App\Domain\Tasks\TaskTurnOutcome;
 use App\Domain\Tasks\TaskTurnReceipt;
 use App\Domain\Tasks\TaskTurnReceiptException;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
+use App\Infrastructure\Compute\SandboxFleetIdentity;
+use App\Infrastructure\Compute\TaskSandboxDrivers;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\HostKey;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Infrastructure\Tasks\IncusSandboxHost;
 use App\Infrastructure\Tasks\RemoteTaskTurnReceipts;
+use App\Infrastructure\Tasks\TaskWorkspaceExecutor;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -50,7 +54,7 @@ function turn_receipt_instance(string $checkout): Instance
 
 function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
 {
-    return new RemoteTaskTurnReceipts(new DevelopmentSshExecutor(
+    return new RemoteTaskTurnReceipts(new TaskWorkspaceExecutor(new DevelopmentSshExecutor(
         $transport,
         new class implements SshKeyProvider
         {
@@ -73,7 +77,7 @@ function turn_receipts(SshExecutor $transport): RemoteTaskTurnReceipts
 
             public function put(string $host, int $port, HostKey $key): void {}
         },
-    ));
+    ), app(IncusSandboxHost::class), app(TaskSandboxDrivers::class), app(SandboxFleetIdentity::class)));
 }
 
 /** @param list<string> $arguments */
@@ -87,6 +91,26 @@ function turn_receipt_script(string $checkout, array $arguments): Process
 
 afterEach(function (): void {
     TestOrbitHome::clearScratch();
+});
+
+it('preserves an accepted deliverable correction receipt when keyed preparation is replayed', function (): void {
+    $checkout = turn_receipt_checkout();
+    $instance = turn_receipt_instance($checkout);
+    $receipts = turn_receipts(new LocalShellSshExecutor);
+    $mode = new TaskTurnMode(deliveryKey: 'correction-delivery-identity');
+    $deliverable = TaskDeliverable::fromArray(['id' => 'corrected', 'type' => 'review', 'description' => 'Corrected.']);
+    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: $mode);
+    turn_receipt_script($checkout, ['--thread=123', '--outcome=ready_for_review', '--summary=Done.', '--deliverable=corrected=Reviewed'])->getExitCode();
+    $receipt = $receipts->read($instance, 123);
+    expect($receipt)->not->toBeNull();
+    $turn = file_get_contents($checkout.'/.git/orbit/turn.json');
+
+    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: $mode);
+
+    expect($receipts->read($instance, 123)?->hash)->toBe($receipt?->hash)
+        ->and(file_get_contents($checkout.'/.git/orbit/turn.json'))->toBe($turn);
+    $receipts->prepare($instance, TaskThreadRole::Implementer, deliverables: [$deliverable], threadId: 123, mode: new TaskTurnMode(deliveryKey: 'another-delivery'));
+    expect($receipts->read($instance, 123))->toBeNull();
 });
 
 describe('TaskGitHardening', function (): void {

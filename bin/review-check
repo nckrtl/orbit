@@ -13,7 +13,6 @@ import time
 PHP_PROJECTS = ('apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
 PHP_COMMANDS = (('composer', 'validate', '--strict'), ('composer', 'check'), ('composer', 'test:affected'))
 WEB_INSTALL = ('bun', 'install', '--frozen-lockfile')
-ANNOTATION_INSTALL = ('bun', 'install', '--frozen-lockfile')
 WEB_TYPES = ('bash', '-lc', 'generated=$(mktemp) && trap \'rm -f "$generated"\' EXIT && ./node_modules/.bin/openapi-typescript ../../docs/openapi.json -o "$generated" && cmp -- "$generated" src/api/schema.d.ts')
 WEB_CHECK_COMMANDS = (('bun', 'run', 'check'), ('bun', 'run', 'build'), WEB_TYPES)
 PI_SERVER_COMMANDS = (('bun', 'install', '--frozen-lockfile'), ('bun', 'run', 'check'),
@@ -76,13 +75,45 @@ def candidate_paths(root, head, committed):
     return None, []
 
 
+def task_test_base(root, head):
+    """A handoff may narrow tests; CI always checks the full branch."""
+    value = os.environ.get('ORBIT_TASK_CHECK_BASE')
+    if not value or os.environ.get('CI') or os.environ.get('GITHUB_ACTIONS'):
+        return None
+    if not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', value):
+        raise RuntimeError('The task test base must be a full commit SHA.')
+    if subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', value, head],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode:
+        raise RuntimeError('The task test base is not an ancestor of the candidate.')
+    return value
+
+
+def paths_since(root, base, head, committed):
+    if committed:
+        return git(root, 'diff', '--name-only', base, head).splitlines()
+    return sorted(set(git(root, 'diff', '--name-only', base).splitlines()) |
+                  set(git(root, 'ls-files', '--others', '--exclude-standard').splitlines()))
+
+
+def scope_tia_graph(destination, base):
+    """Reuse real dependency edges without claiming cached test verdicts at a new base."""
+    path = destination / 'graph.json'
+    if not path.is_file():
+        return
+    graph = json.loads(path.read_text())
+    graph['baselines'] = {'main': {'sha': base, 'tree': {}, 'results': {}, 'complete': False}}
+    path.write_text(json.dumps(graph, separators=(',', ':')))
+
+
+def handoff_cache(root):
+    return Path(git(root, 'rev-parse', '--absolute-git-dir')) / 'orbit-handoff-tia'
+
+
 def selected_projects(paths, root):
     """Return project profiles selected by changed paths and the OpenAPI schema dependency."""
     selected = [(project, PHP_COMMANDS) for project in PHP_PROJECTS]
     if any(path.startswith('apps/web/') for path in paths):
-        selected.extend((('apps/web', (WEB_INSTALL,)),
-                         ('packages/agent-annotation', (ANNOTATION_INSTALL,)),
-                         ('apps/web', WEB_CHECK_COMMANDS)))
+        selected.extend((('apps/web', (WEB_INSTALL,)), ('apps/web', WEB_CHECK_COMMANDS)))
     elif 'docs/openapi.json' in paths:
         selected.append(('apps/web', (WEB_INSTALL, WEB_TYPES)))
     if any(path.startswith('apps/pi-server/') for path in paths):
@@ -143,13 +174,25 @@ def keep_main_baseline(destination):
     graph_path.write_text(json.dumps(graph, separators=(',', ':'), ensure_ascii=True))
 
 
-def prepare_tia_directory(root, project, destination):
+def prepare_tia_directory(root, project, destination, test_base=None):
     """Copy the project TIA cache into a run directory that keeps only the main baseline."""
     source = project_tia_directory(root, project)
+    if test_base is not None:
+        cached = handoff_cache(root)
+        try:
+            metadata = json.loads((cached / 'receipt.json').read_text())
+            if metadata.get('tree') == git(root, 'rev-parse', test_base + '^{tree}'):
+                candidate = cached / project.replace('/', '-')
+                if candidate.is_dir():
+                    source = candidate
+        except (OSError, json.JSONDecodeError):
+            pass
     destination.mkdir(parents=True, exist_ok=True)
     if source.is_dir() and source.resolve() != destination.resolve() and destination.resolve() not in source.resolve().parents:
         shutil.copytree(source, destination, dirs_exist_ok=True)
         keep_main_baseline(destination)
+    if test_base is not None:
+        scope_tia_graph(destination, test_base)
     (destination / 'affected.json').unlink(missing_ok=True)
 
 
@@ -186,9 +229,12 @@ def main():
     reports = common / 'orbit-checks' / head
     reports.mkdir(parents=True, exist_ok=True)
     directory = Path(tempfile.mkdtemp(prefix='review-', dir=reports))
+    directory.chmod(0o750)
     base, paths = candidate_paths(root, head, committed)
+    test_base = task_test_base(root, head)
+    test_paths = paths_since(root, test_base, head, committed) if test_base else paths
     report = {'schema': 1, 'role': 'builder', 'candidate': head, 'committed': committed, 'tree': tree,
-              'worktree': str(root), 'base': base, 'changed_paths': paths, 'started_at': time.time(),
+              'worktree': str(root), 'base': base, 'test_base': test_base or base, 'changed_paths': paths, 'started_at': time.time(),
               'checks': [], 'warnings': [], 'passed': False}
     if base is not None:
         log = directory / 'docs-impact-gate.log'
@@ -242,7 +288,7 @@ def main():
             run_tia_directory = None
             if command == AFFECTED:
                 run_tia_directory = directory / 'tia' / project.replace('/', '-')
-                prepare_tia_directory(root, project, run_tia_directory)
+                prepare_tia_directory(root, project, run_tia_directory, test_base)
                 command_environment['ORBIT_TIA_DIRECTORY'] = str(run_tia_directory)
             with log.open('w') as output:
                 try:
@@ -259,7 +305,7 @@ def main():
                         output.write('Pest did not discover any tests in the changed file.\n')
             check = {'project': project, 'command': list(command), 'exit_code': result.returncode,
                      'seconds': round(time.monotonic() - started, 3), 'log': str(log)}
-            warning = selection_warning(project, command, result.returncode, log, paths)
+            warning = selection_warning(project, command, result.returncode, log, test_paths)
             if warning is not None:
                 check['warning'] = warning['message']
                 report['warnings'].append(warning)
@@ -276,7 +322,7 @@ def main():
                 check['selection_artifact'] = str(run_tia_directory / 'affected.json')
                 if warning is not None:
                     commands.append(PARALLEL_FULL_SUITE)
-                for test in changed_php_tests(paths):
+                for test in changed_php_tests(test_paths):
                     if not test.startswith(project + '/'):
                         continue
                     relative = test[len(project) + 1:]
@@ -286,6 +332,14 @@ def main():
     report['unchanged'] = head == git(root, 'rev-parse', 'HEAD') and tree == working_tree(root)
     report['passed'] = report['unchanged'] and bool(report['checks']) and all(
         check['exit_code'] == 0 for check in report['checks'])
+    if report['passed']:
+        cached = handoff_cache(root)
+        cached.mkdir(parents=True, exist_ok=True)
+        for project in PHP_PROJECTS:
+            source = directory / 'tia' / project.replace('/', '-')
+            if source.is_dir():
+                shutil.copytree(source, cached / project.replace('/', '-'), dirs_exist_ok=True)
+        (cached / 'receipt.json').write_text(json.dumps({'tree': tree, 'candidate': head}))
     report['finished_at'] = time.time()
     path = directory / 'result.json'
     path.write_text(json.dumps(report, indent=2) + '\n')

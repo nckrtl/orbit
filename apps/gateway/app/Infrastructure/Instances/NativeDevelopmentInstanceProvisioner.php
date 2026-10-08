@@ -12,6 +12,7 @@ use App\Domain\Instances\DevelopmentInstanceConfigurator;
 use App\Domain\Instances\DevelopmentInstanceProvisioner;
 use App\Domain\Instances\DevelopmentRouteProjector;
 use App\Domain\Instances\DevelopmentSourceProfile;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -30,6 +31,7 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
 
     public function reserve(Instance $instance, ?string $domain): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         app(VitePortAllocator::class)->assign($instance);
 
         if (! $instance->requiresRoute()) {
@@ -48,6 +50,7 @@ final readonly class NativeDevelopmentInstanceProvisioner implements Development
         ?string $domain,
         bool $setupPending = false,
     ): Instance {
+        InstanceSandboxGuard::assertHostOperation($instance);
         if (! $instance->requiresRoute()) {
             return $this->owner()->run(
                 fn (): Instance => $this->completeWithoutRoute($instance->id, $setupPending),
