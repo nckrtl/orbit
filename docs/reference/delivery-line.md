@@ -125,7 +125,7 @@ bin/pr-head-check --pr URL
 
 The result includes `merged`, copied from the pull request record, alongside the existing `passed` and mismatch fields. Before any review or merge attempt, read this field even when the command exits nonzero. When the JSON has `merged:true`, stop: the pull request is already merged and the merge flow is a terminal no-op. Do not review it again or run `gh pr merge`. This applies even when `passed` is `false` or the result names a missing review or another mismatch. When `merged` is `false`, all review and merge requirements still apply. A missing or unreadable `merged` field is not evidence of a merge; resolve the read before proceeding.
 
-The command keeps a review only when its `commit_id` equals the current full head SHA and its state is not `DISMISSED` or `PENDING`. `COMMENTED` counts. Pass does not require `APPROVED`. GitHub refuses `APPROVE` from the pull request author. An empty successful review list is missing. A failed, partial, or unparsable read is unreadable and is not treated as empty.
+The command keeps a review only when its `commit_id` equals the current full head SHA and its state is `APPROVED`. `COMMENTED`, `CHANGES_REQUESTED`, `DISMISSED`, and `PENDING` do not count. GitHub refuses `APPROVE` from the pull request author. An empty successful review list is missing. A failed, partial, or unparsable read is unreadable and is not treated as empty.
 
 On that same full head SHA, the GitHub Actions check run named `Required checks` must have `status` `completed` and `conclusion` `success`. That run's `head_sha` must equal the pull request head. Newer `gh` wraps `gh api --paginate --slurp` check-runs in a one-element array of the check-runs object. Older `gh` has no `--slurp` and returns the object. Both shapes flatten to the `check_runs` list. A check that is not completed is pending. A completed check whose conclusion is not `success` is failed. No run with that name is missing. The admin bypass is not a successful check.
 
@@ -137,12 +137,14 @@ The diff fails when it adds a leftover the merge skill already names: GitHub aut
 
 Do not add hostnames under the generic `upcloudobjects.com` provider suffix (`object-storage-host`), `linear.app` references, Linear issue IDs, or Linear issue, ticket, project, product, task, integration, or workspace wording (`linear-reference`). A trailing sentence period or DNS root dot still matches the provider host; a domain that extends the suffix does not. Patterns and fixtures contain no real storage bucket, endpoint, region, or account names.
 
+A GitHub `pull_request_review` event re-runs the review listener so ReviewBot can wake when a review arrives, without requiring a later push. The event does not bypass the gate: `bin/pr-head-check` still requires an `APPROVED` review and successful `Required checks` on the exact current head.
+
 On any mismatch the JSON names the mismatch. For an unmerged pull request, the next step is to review the new head. For `merged:true`, stop instead, regardless of the mismatch. The command never runs `gh pr merge`.
 
 | `error` | Next step |
 | --- | --- |
 | `usage` | Pass `--pr` with the pull request URL. |
-| `review_missing` | Review the current head. Do not merge. |
+| `review_missing` | Obtain an `APPROVED` review of the current head. Do not merge. |
 | `review_unreadable` | Re-read the reviews until the list is complete. Do not merge. |
 | `check_missing`, `check_pending`, `check_failed` | Wait for `Required checks` on this head, or review the new head. Do not merge. |
 | `head_mismatch` | Review the new head. Do not merge. |
