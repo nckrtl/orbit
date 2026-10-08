@@ -99,6 +99,30 @@ def identity(value):
     return 'ot-' + hashlib.sha256(value.encode()).hexdigest()[:10]
 
 
+def project_bootstrap(spec, subnet, interfaces):
+    value = spec.get('project_bootstrap')
+    if value is None:
+        return None
+    fields = {'ssh_host', 'ssh_port', 'gateway_address', 'wireguard_address', 'wireguard_port'}
+    if (not isinstance(value, dict) or set(value) != fields or 'project_slug' not in spec
+            or spec.get('source_template') is not None or spec.get('pi_host') is not None
+            or spec.get('pi_port') is not None or spec.get('gateway_address') is not None
+            or type(value['ssh_port']) is not int or not 24001 <= value['ssh_port'] <= 24254
+            or value['ssh_port'] != 24000 + int(str(subnet.network_address).split('.')[2])
+            or type(value['wireguard_port']) is not int or not 1 <= value['wireguard_port'] <= 65535
+            or any(not isinstance(value[key], str) for key in ('ssh_host', 'gateway_address', 'wireguard_address'))):
+        raise Refusal('Invalid Project bootstrap descriptor.')
+    host = ipaddress.ip_address(value['ssh_host'])
+    gateway = ipaddress.ip_address(value['gateway_address'])
+    hub = ipaddress.ip_address(value['wireguard_address'])
+    fleet = ipaddress.ip_network('10.44.0.0/16')
+    addresses = {address['local'] for interface in interfaces for address in interface.get('addr_info', [])}
+    if (host not in fleet or gateway not in fleet or host == gateway or str(host) not in addresses
+            or hub.version != 4 or not hub.is_global or hub.is_multicast or str(hub) in addresses):
+        raise Refusal('Project bootstrap endpoints do not match the host.')
+    return json.dumps(value, sort_keys=True, separators=(',', ':'))
+
+
 def pi_proxy(spec, subnet, interfaces):
     values = [spec.get(key) for key in ('pi_host', 'pi_port', 'gateway_address')]
     if all(value is None for value in values):
@@ -556,6 +580,7 @@ sys.stdout.write(path.read_text())
             raise Refusal('Host and LAN exclusions are required.')
         addresses = subprocess.run(['ip', '-json', '-4', 'address', 'show'], capture_output=True, check=True, timeout=10)
         interfaces = json.loads(addresses.stdout)
+        bootstrap = project_bootstrap(spec, subnet, interfaces)
         proxy = pi_proxy(spec, subnet, interfaces)
         relay_origin = spec.get('model_proxy_origin')
         relay = ModelRelay(self.name, self.id)
@@ -569,6 +594,8 @@ sys.stdout.write(path.read_text())
         current = {row['name']: row for row in self.instances()}
         for name, row in current.items():
             role = name[len(self.name) + 1:]
+            if row.get('config', {}).get('user.orbit.compute.project_bootstrap') != bootstrap:
+                raise Refusal('The Project bootstrap endpoints cannot change.')
             if row.get('config', {}).get('user.orbit.compute.project_slug') != project_slug:
                 raise Refusal('The sandbox Project identity cannot change.')
             if row.get('config', {}).get('user.orbit.compute.model_proxy_origin') != relay_origin:
@@ -629,6 +656,8 @@ sys.stdout.write(path.read_text())
             raise Refusal('The sandbox worktree template cannot change.')
         if volumes and volumes[0][1].get('config', {}).get('user.orbit.compute.project_slug') != project_slug:
             raise Refusal('The worktree Project identity cannot change.')
+        if volumes and volumes[0][1].get('config', {}).get('user.orbit.compute.project_bootstrap') != bootstrap:
+            raise Refusal('The Project worktree bootstrap endpoints cannot change.')
         acls = self.json('network', 'acl', 'list', '--format=json')
         acl = next((row for row in acls if row['name'] == self.name), None)
         peers = ','.join(str(subnet.network_address + 10 + ROLES.index(role)) for role in images)
@@ -669,6 +698,8 @@ sys.stdout.write(path.read_text())
         metadata = {**self.metadata(), **({'user.orbit.compute.template': template_digest} if template else {})}
         if project_slug is not None:
             metadata['user.orbit.compute.project_slug'] = project_slug
+        if bootstrap is not None:
+            metadata['user.orbit.compute.project_bootstrap'] = bootstrap
         if not volumes:
             if template:
                 self.run('query', '-X', 'POST', '/1.0/storage-pools/' + pool + '/volumes/custom?project=' + self.project,

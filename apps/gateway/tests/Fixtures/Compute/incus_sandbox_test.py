@@ -85,9 +85,9 @@ class Boundary(unittest.TestCase):
         host.storage_volumes = [{'name': host.name + '-worktree', 'type': 'custom', 'content_type': 'filesystem', 'config': host.metadata(), 'used_by': []}]
         return host, spec
 
-    def provision(self, host, spec):
+    def provision(self, host, spec, interfaces=None):
         with patch('subprocess.run') as process:
-            process.return_value.stdout = b'[]'
+            process.return_value.stdout = json.dumps(interfaces or []).encode()
             return host.provision(spec)
 
     def project_prepared(self):
@@ -164,6 +164,61 @@ class Boundary(unittest.TestCase):
         self.assertEqual('dlf', created[0]['config']['user.orbit.compute.project_slug'])
         volume = next(args for args in host.calls if args[:3] == ('storage', 'volume', 'create'))
         self.assertIn('user.orbit.compute.project_slug=dlf', volume)
+
+    def test_project_bootstrap_intent_is_pinned_without_opening_a_proxy_or_acl_exception(self):
+        host, spec = self.project_prepared()
+        host.rows, host.storage_volumes = [], []
+        value = {'ssh_host': '10.44.0.20', 'ssh_port': 24201, 'gateway_address': '10.44.0.2',
+                 'wireguard_address': '93.184.216.35', 'wireguard_port': 51820}
+        spec['project_bootstrap'] = value
+        interfaces = [{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}]
+        self.provision(host, spec, interfaces)
+        marker = json.dumps(value, sort_keys=True, separators=(',', ':'))
+        guest = next(json.loads(args[5]) for args, data in host.payloads
+                     if args[:3] == ('query', '-X', 'POST') and '/instances?' in args[3])
+        self.assertEqual(marker, guest['config']['user.orbit.compute.project_bootstrap'])
+        self.assertEqual({'root', 'eth0', 'worktree'}, set(guest['devices']))
+        volume = next(args for args in host.calls if args[:3] == ('storage', 'volume', 'create'))
+        self.assertIn('user.orbit.compute.project_bootstrap=' + marker, volume)
+        acl = next(json.loads(data) for args, data in host.payloads if args[:3] == ('network', 'acl', 'edit'))
+        self.assertFalse(any(rule.get('destination') == value['wireguard_address'] for rule in acl['egress']))
+        self.assertFalse(any(rule.get('source') == value['gateway_address'] for rule in acl['ingress']))
+
+    def test_project_bootstrap_rejects_invalid_or_changed_intent_before_mutation(self):
+        value = {'ssh_host': '10.44.0.20', 'ssh_port': 24201, 'gateway_address': '10.44.0.2',
+                 'wireguard_address': '93.184.216.35', 'wireguard_port': 51820}
+        interfaces = [{'addr_info': [{'local': '10.44.0.20', 'prefixlen': 16}]}]
+        changes = [
+            lambda h, s: s['project_bootstrap'].update(ssh_host='10.44.0.21'),
+            lambda h, s: s['project_bootstrap'].update(ssh_host='0.0.0.0'),
+            lambda h, s: s['project_bootstrap'].update(gateway_address='10.44.0.20'),
+            lambda h, s: s['project_bootstrap'].update(gateway_address='93.184.216.34'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_address='169.254.169.254'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_address='100.64.0.1'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_address='224.0.0.1'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_port=True),
+            lambda h, s: s['project_bootstrap'].update(wireguard_port=65536),
+            lambda h, s: s['project_bootstrap'].update(ssh_port=24001),
+            lambda h, s: s['project_bootstrap'].update(ssh_port=22),
+            lambda h, s: s['project_bootstrap'].update(command='whoami'),
+            lambda h, s: s.pop('project_slug'),
+            lambda h, s: s['project_bootstrap'].update(wireguard_port=51821),
+            lambda h, s: s.pop('project_bootstrap'),
+            lambda h, s: h.rows[0]['config'].pop('user.orbit.compute.project_bootstrap'),
+            lambda h, s: h.storage_volumes[0]['config'].pop('user.orbit.compute.project_bootstrap'),
+        ]
+        for index, change in enumerate(changes):
+            with self.subTest(index=index):
+                host, spec = self.project_prepared()
+                spec['project_bootstrap'] = copy.deepcopy(value)
+                marker = json.dumps(value, sort_keys=True, separators=(',', ':'))
+                host.rows[0]['config']['user.orbit.compute.project_bootstrap'] = marker
+                host.storage_volumes[0]['config']['user.orbit.compute.project_bootstrap'] = marker
+                change(host, spec)
+                with self.assertRaises((Refusal, ValueError)):
+                    self.provision(host, spec, interfaces)
+                self.assertFalse(any(call[0] in ('start', 'stop', 'delete') or call[:3] in (
+                    ('network', 'acl', 'edit'), ('query', '-X', 'POST')) for call in host.calls))
 
     def test_project_provenance_and_retry_drift_refuse_before_mutation(self):
         changes = [

@@ -123,6 +123,12 @@ Provisioning verifies the Project marker on an existing guest and worktree volum
 
 The typed `project_identity` host operation reads the SSH public key from one running, owned Project VM. It verifies the private image provenance, guest and worktree Project markers, storage pool, subnet and devices first. The bridge must reject traffic by default. It refuses an Orbit topology guest, additional guests, foreign worktree attachments, or changed placement. The Gateway compares the response with the reserved Project, image, pool and subnet and validates the Ed25519 key before using it as a pinned SSH identity. Private key bytes never leave the guest.
 
+### Local Project bootstrap reservation
+
+An Incus host can record `project_bootstrap` with a public IPv4 `wireguard_address` and UDP `wireguard_port`. This requires the host's private `gateway_address`. Allocation records these endpoints with the host's WireGuard SSH address and a port from 24001 through 24254 in the Project reservation. Its subnet keeps that port reserved while parked. Existing reservations retain their endpoints when configuration changes.
+
+The host validates the closed `project_bootstrap` descriptor against its own interface before recording it on the guest and worktree volume. A retry refuses changed or missing endpoint markers before mutation. Recording the descriptor creates no SSH proxy or network exception. Bootstrap exposure and fleet enrollment require their separately approved host and hub policies.
+
 This read-only check does not create a bootstrap endpoint, enroll a Node, or change host or hub networking. Those steps remain required before local Project claims can start.
 
 ### Image test baselines
