@@ -127,7 +127,11 @@ The Gateway renders every stored key in sorted order, as a quoted value. It writ
 
 When the Gateway cannot confirm the write, it returns `env.sync_unconfirmed` (the file may have changed). Repeat the request: it checks the file again and either accepts the matching file or writes it.
 
-For an Instance that owns its `DB` database, synchronization also writes `.env.testing` the same way: the same values, with `APP_ENV=testing` and `DB_DATABASE` set to the [test database](/reference/database-connections#test-databases). The other `DB_*` keys stay the same. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
+For an Instance that owns its `DB` database, synchronization also updates `.env.testing` with the same checks and mode. It sets only the `DB_*` keys of that connection, with `DB_DATABASE` set to the [test database](/reference/database-connections#test-databases), and removes the other `DB_*` keys of the connection. Every other line in the file stays.
+
+A new file holds only those keys, so add any other keys your tests need, such as `APP_KEY`: Laravel loads `.env.testing` instead of `.env`.
+
+Orbit never writes a `.env.testing` that Git tracks in the checkout. It leaves that file unchanged and records the test database name in the `testing` property of the `env:sync` activity. Orbit never deletes `.env.testing`. The file stays after the Instance stops owning its `DB` database.
 
 Synchronization changes only `.env` and `.env.testing`. It does not run application code, clear a framework cache, or restart a service or Process. Run those steps yourself when running code must see the new values.
 

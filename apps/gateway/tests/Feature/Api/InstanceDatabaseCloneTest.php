@@ -35,6 +35,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
@@ -256,14 +257,49 @@ describe('instance:create database clone', function (): void {
                 'DB_USERNAME' => 'acme_feature_x',
                 'DB_PASSWORD' => $password,
             ])
-            ->and($testing)->toMatchArray([
-                'APP_ENV' => 'testing',
-                'APP_KEY' => 'base64:kept',
+            ->and($testing)->toBe([
+                'DB_CONNECTION' => 'mysql',
                 'DB_DATABASE' => 'acme_feature_x_test',
-                'DB_USERNAME' => 'acme_feature_x',
+                'DB_HOST' => '10.44.0.3',
                 'DB_PASSWORD' => $password,
+                'DB_PORT' => '3306',
+                'DB_USERNAME' => 'acme_feature_x',
             ])
+            ->and($this->environment->testingManagedKeys)->toBe(['DB_CONNECTION', 'DB_HOST', 'DB_PORT', 'DB_DATABASE', 'DB_USERNAME', 'DB_PASSWORD'])
             ->and($response->getContent())->not->toContain($password)->not->toContain(DATABASE_CLONE_ROOT_SECRET);
+    });
+
+    it('points the copy at the server\'s WireGuard address over the imported .env and an older MySQL Process', function (): void {
+        Process::query()->create([
+            'owner_type' => Node::class,
+            'owner_id' => $this->node->id,
+            'name' => 'mysql-84',
+            'runtime' => ProcessRuntime::Docker,
+            'working_directory' => '/app',
+            'runtime_config' => ['image' => 'mysql:8.4', 'command' => ['mysqld'], 'environment' => [], 'ports' => ['3308:3306'], 'volumes' => []],
+            'restart_policy' => 'unless-stopped',
+            'desired_state' => DesiredProcessState::Running,
+            'status' => LifecycleStatus::Active,
+        ]);
+        $server = database_clone_server($this->node);
+        database_clone_source($this->default, [
+            'driver' => 'mysql',
+            'node_id' => $this->node->id,
+            'database_server_id' => $server->id,
+            'host' => '10.44.0.3',
+            'port' => 3306,
+            'database' => 'acme_default',
+            'username' => 'acme_default',
+            'password' => 'default-secret',
+        ]);
+        $this->environment->source = "APP_KEY=base64:kept\nDB_CONNECTION=mysql\nDB_HOST=127.0.0.1\nDB_PORT=13306\n";
+
+        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
+
+        $endpoint = ['DB_HOST' => '10.44.0.3', 'DB_PORT' => '3306'];
+
+        expect(database_clone_env((string) $this->environment->contents))->toMatchArray($endpoint)
+            ->and(database_clone_env((string) $this->environment->testingContents))->toMatchArray($endpoint);
     });
 
     it('copies a SQLite default database into the same relative path of the new checkout', function (): void {
@@ -289,8 +325,7 @@ describe('instance:create database clone', function (): void {
             ->and($clone->path)->toBe('/srv/orbit/apps/acme/feature-x/database/database.sqlite')
             ->and($clone->test_database)->toBe(':memory:')
             ->and(database_clone_env((string) $this->environment->contents)['DB_DATABASE'])->toBe('/srv/orbit/apps/acme/feature-x/database/database.sqlite')
-            ->and(database_clone_env((string) $this->environment->testingContents))->toMatchArray([
-                'APP_ENV' => 'testing',
+            ->and(database_clone_env((string) $this->environment->testingContents))->toBe([
                 'DB_CONNECTION' => 'sqlite',
                 'DB_DATABASE' => ':memory:',
             ]);
@@ -511,6 +546,62 @@ describe('.env.testing', function (): void {
     });
 });
 
+describe('.env.testing on synchronization', function (): void {
+    beforeEach(function (): void {
+        $server = database_clone_server($this->node);
+        database_clone_source($this->default, [
+            'driver' => 'mysql',
+            'node_id' => $this->node->id,
+            'database_server_id' => $server->id,
+            'host' => '10.44.0.3',
+            'port' => 3306,
+            'database' => 'acme_default',
+            'username' => 'acme_default',
+            'password' => 'default-secret',
+        ]);
+    });
+
+    it('merges only the DB keys of the test database into an untracked .env.testing and records the test database', function (): void {
+        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
+        $instance = Instance::query()->where('name', 'feature-x')->sole();
+        $this->environment->testingContents = null;
+
+        $response = $this->call('POST', "/api/v1/instances/{$instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+            ->assertOk()
+            ->assertJsonMissingPath('data.testing');
+
+        $activity = Activity::query()->where('request_id', $response->json('meta.request_id'))->sole();
+
+        expect(array_keys(database_clone_env((string) $this->environment->testingContents)))
+            ->toBe(['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_PASSWORD', 'DB_PORT', 'DB_USERNAME'])
+            ->and(database_clone_env((string) $this->environment->testingContents)['DB_DATABASE'])->toBe('acme_feature_x_test')
+            ->and($activity->properties?->toArray()['testing'] ?? null)->toBe([
+                'file' => '.env.testing',
+                'status' => 'written',
+                'test_database' => 'acme_feature_x_test',
+            ]);
+    });
+
+    it('never writes a .env.testing that Git tracks and records the test database instead', function (): void {
+        $this->environment->testingTracked = true;
+        $this->postJson('/api/v1/instances', database_clone_request($this->project, $this->node))->assertCreated();
+        $instance = Instance::query()->where('name', 'feature-x')->sole();
+
+        $response = $this->call('POST', "/api/v1/instances/{$instance->id}/environment/sync", server: ['CONTENT_TYPE' => 'application/json'], content: '{}')
+            ->assertOk();
+
+        $activity = Activity::query()->where('request_id', $response->json('meta.request_id'))->sole();
+
+        expect($this->environment->testingContents)->toBeNull()
+            ->and($this->environment->contents)->not->toBeNull()
+            ->and($activity->properties?->toArray()['testing'] ?? null)->toBe([
+                'file' => '.env.testing',
+                'status' => 'skipped_tracked',
+                'test_database' => 'acme_feature_x_test',
+            ]);
+    });
+});
+
 describe('instance:destroy owned databases', function (): void {
     it('drops the databases the Instance owns and keeps an attached database it does not own', function (): void {
         $server = database_clone_server($this->node);
@@ -612,9 +703,16 @@ final class DatabaseCloneEnvironmentFakes implements InstanceEnvironmentReader, 
 
     public ?string $testingContents = null;
 
+    /** @var list<string> */
+    public array $testingManagedKeys = [];
+
+    public bool $testingTracked = false;
+
     public int $reads = 0;
 
     public bool $missing = false;
+
+    public string $source = "APP_KEY=base64:kept\nAPP_URL=http://localhost\nDB_CONNECTION=sqlite\n";
 
     public function assertEnvironmentReadable(InstanceEnvironmentContext $context): void {}
 
@@ -628,7 +726,7 @@ final class DatabaseCloneEnvironmentFakes implements InstanceEnvironmentReader, 
             throw new ResourceOperationException('env.import_source_missing', 'The recorded Instance environment file does not exist.', 404);
         }
 
-        return "APP_KEY=base64:kept\nAPP_URL=http://localhost\nDB_CONNECTION=sqlite\n";
+        return $this->source;
     }
 
     public function write(InstanceEnvironmentContext $context, #[SensitiveParameter] string $contents): InstanceEnvironmentWriteResult
@@ -638,8 +736,14 @@ final class DatabaseCloneEnvironmentFakes implements InstanceEnvironmentReader, 
         return InstanceEnvironmentWriteResult::changed();
     }
 
-    public function writeTesting(InstanceEnvironmentContext $context, #[SensitiveParameter] string $contents): InstanceEnvironmentWriteResult
+    public function mergeTesting(InstanceEnvironmentContext $context, #[SensitiveParameter] string $contents, array $managedKeys): InstanceEnvironmentWriteResult
     {
+        $this->testingManagedKeys = $managedKeys;
+
+        if ($this->testingTracked) {
+            return InstanceEnvironmentWriteResult::tracked();
+        }
+
         $this->testingContents = $contents;
 
         return InstanceEnvironmentWriteResult::changed();
