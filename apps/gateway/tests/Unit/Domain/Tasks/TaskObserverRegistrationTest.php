@@ -127,6 +127,17 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
         'resources/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml',
         'resources/analytics/clickhouse/README.md',
         'resources/scripts/horizon-queue.php',
+        'resources/instances/tia-baseline.py',
+        'resources/fpm/opcache-reset.php',
+        'resources/private-dns/serve.php',
+        'resources/annotator/manifest.json',
+        'resources/compute/guest-git-bundle.py',
+        'resources/compute/guest-workspace-source.py',
+        'resources/compute/guest-pair-runtime.py',
+        'resources/compute/retarget-vpn.sh',
+        'resources/compute/sandbox-hub-network.py',
+        'resources/compute/template-lock.py',
+        'resources/compute/unlisted-program.py',
     ];
     $selected = [];
 
@@ -147,5 +158,16 @@ it('selects only the tests that cover a non-PHP runtime resource', function (): 
         'resources/analytics/clickhouse/users.d/default-profile-low-resources-overrides.xml' => ['tests/Feature/Infrastructure/Analytics/NativeAnalyticsClickhouseConfigurationManagerTest.php'],
         'resources/analytics/clickhouse/README.md' => [],
         'resources/scripts/horizon-queue.php' => [],
+        'resources/instances/tia-baseline.py' => ['tests/Feature/Domain/ProjectLifecycleRunnerTest.php', 'tests/Feature/Domain/TiaBaselineSetupTest.php'],
+        'resources/fpm/opcache-reset.php' => ['tests/Feature/GatewayReleases/GatewayRuntimeHandoffTest.php'],
+        'resources/private-dns/serve.php' => ['tests/Feature/Infrastructure/AppDev'],
+        'resources/annotator/manifest.json' => [],
+        'resources/compute/guest-git-bundle.py' => ['tests/Feature/Infrastructure/Compute/IncusSandboxTest.php', 'tests/Feature/Infrastructure/Tasks/SandboxGitBundlesTest.php'],
+        'resources/compute/guest-workspace-source.py' => ['tests/Feature/Infrastructure/Tasks/SandboxWorkspaceSourceTest.php', 'tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php'],
+        'resources/compute/guest-pair-runtime.py' => ['tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php', 'tests/Feature/Infrastructure/Tasks/SandboxTopologyAdmissionTest.php'],
+        'resources/compute/retarget-vpn.sh' => ['tests/Feature/Infrastructure/Tasks/SandboxPairRuntimeTest.php'],
+        'resources/compute/sandbox-hub-network.py' => ['tests/Feature/Infrastructure/Compute/UpCloudSandboxEnrollmentTest.php'],
+        'resources/compute/template-lock.py' => ['tests/Feature/Infrastructure/Tasks/SandboxTemplateSourceTest.php'],
+        'resources/compute/unlisted-program.py' => [],
     ]);
 });

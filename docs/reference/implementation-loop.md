@@ -107,6 +107,8 @@ TIA only sees files inside the project. It links a non-PHP file only through a `
 - a test file whose name does not end in `Test.php`;
 - a change outside the project that `bin/ci-tia` does not list as unrelated to it.
 
+A `watch()` pattern matches the whole path relative to the project. `*` stays inside one directory and `**` crosses directories. Each pattern names one test file or directory, so a file that several test files run takes one pattern per test, in a chained `watch()` call. `bin/ci-tia` reads the patterns of every chained call. The Gateway lists each program in `resources/compute` by name, so a new program runs the full suite until it is listed with its tests.
+
 Fixture changes run the full suite under TIA anyway. Docs and E2E tests read files across the repository, so these projects run their full suite whenever a file outside them changes. The [contributor guide](/contributor-guide#3-implement-and-verify) describes the selection from a contributor's view.
 
 An affected run on `main` also runs the architecture tests, as a pull request does.
