@@ -29,13 +29,12 @@ FRAMEWORK_DISCOVERED = ('app/Commands/', 'app/Console/Commands/', 'app/Listeners
 # Paths outside each project that its tests do not read. Pest only sees files inside the project, so a change
 # anywhere else outside it runs the project's full suite. Docs and E2E tests read files across the repository.
 UNRELATED = {
-    'apps/cli': ('apps/agent/', 'apps/docs/', 'apps/e2e/', 'apps/gateway/', 'apps/pi-server/', 'apps/web/',
-                 'docs/', 'packages/agent-annotation/'),
+    'apps/cli': ('apps/agent/', 'apps/docs/', 'apps/e2e/', 'apps/gateway/', 'apps/pi-server/', 'apps/web/', 'docs/'),
     'apps/docs': (),
     'apps/e2e': (),
     'apps/gateway': ('.agents/', 'apps/agent/', 'apps/cli/', 'apps/docs/', 'apps/e2e/', 'apps/pi-server/', 'apps/web/',
                      'docs/', 'packages/php-sdk/'),
-    'packages/php-sdk': ('.agents/', 'apps/', 'docs/', 'packages/agent-annotation/'),
+    'packages/php-sdk': ('.agents/', 'apps/', 'docs/'),
 }
 # Files under an unrelated path that a project's tests read anyway.
 READ_ANYWAY = {

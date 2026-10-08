@@ -16,7 +16,7 @@ ROOT = Path('/root/orbit-template-inputs')
 HOME = Path('/home/orbit')
 SOURCE = HOME / 'orbit'
 PHP_PROJECTS = ('.', 'apps/cli', 'apps/docs', 'apps/gateway', 'apps/e2e', 'packages/php-sdk')
-JS_PROJECTS = ('packages/agent-annotation', 'apps/web', 'apps/pi-server')
+JS_PROJECTS = ('apps/web', 'apps/pi-server')
 
 
 def command(*args, cwd=None, timeout=1200):

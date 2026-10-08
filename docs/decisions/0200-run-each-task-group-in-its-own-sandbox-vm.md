@@ -44,6 +44,12 @@ The trusted Incus host installs a fixed root-owned network helper, selected proj
 
 The operator stays a roleless node, registered with the test gateway. It becomes a VM instead of a system container. The test topology keeps the fleet's WireGuard addresses, so the operator must never also join the live fleet.
 
+**Local Project admission.** A local Project reservation owns exactly one guest from that Project's pinned development image. Its recorded Incus host, project, storage pool, subnet, image and bootstrap endpoint must still match before fleet enrollment. An Orbit topology image is never a Project development image. The guest has the managed account and no existing fleet or private-topology identity. The trusted host reads the SSH public key from that exact guest; private keys stay inside it.
+
+Before WireGuard enrollment, the live Gateway uses a private host proxy to the guest's SSH port. Only the recorded Gateway can reach that proxy through the host's WireGuard interface. A distinct, separately approved host policy permits this bootstrap path and UDP to the recorded public WireGuard hub endpoint. The host policy for an isolated Orbit pair does not authorize a Project VM to join the live fleet. The hub installs the reservation's limits before publishing its peer. Retries retain the same guest, SSH identity and two-way Node ownership; they never adopt another Node or grant access to other Nodes.
+
+After enrollment, the Gateway reaches the guest through its recorded fleet address. The owned development Instance and private task Route use the native runtime. Cleanup removes the Route, Instance, Node and hub peer before destroying local compute. Local park retains that identity, and resume verifies it before another agent starts. Existing UpCloud reservations retain their provider-specific identity and destroy/rebuild behavior.
+
 **Declared topology.** A subtask declares the nodes it needs, for example `topology: ["app-dev"]`. Orbit adds them before that subtask starts. A workload node always joins the group's test gateway. `topology_requested` stays as a fallback for discovery.
 
 **Images.**

@@ -921,6 +921,9 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         }
 
         $expectation = $this->revalidateUnfinishedSources($operation, $member);
+        // PHP-FPM refuses to start while any pool names a missing `chdir`, so the pool goes first. A
+        // failed withdrawal keeps the source and leaves this step open for a retry.
+        $this->routes->withdrawPhpPool($member);
         $receipt = $this->sourceFinalizer->finalize($member, $expectation);
         $member->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
     }

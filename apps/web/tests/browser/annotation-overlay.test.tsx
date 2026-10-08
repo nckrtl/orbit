@@ -1,7 +1,10 @@
 import { expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
-import { ANNOTATION_HOST_ID, ANNOTATION_ROOT_ID } from "@nckrtl/annotator/host";
 import { openApp } from "./app";
+
+// The overlay's shadow host and root ids.
+const ANNOTATION_HOST_ID = "laravel-toolbar-annotation-host";
+const ANNOTATION_ROOT_ID = "laravel-toolbar-annotation-root";
 
 function annotationShadow(): ShadowRoot {
     const host = document.getElementById(ANNOTATION_HOST_ID);
@@ -38,7 +41,7 @@ it("shows a floating annotate control on load without hunting the footer", async
         .poll(() => document.getElementById(ANNOTATION_HOST_ID)?.shadowRoot != null)
         .toBe(true);
 
-    const fab = annotationShadow().querySelector("[data-orbit-annotation-fab]");
+    const fab = annotationShadow().querySelector("[data-annotation-fab]");
     expect(fab).not.toBeNull();
     await expect.element(floatingToggle()).toBeVisible();
 
@@ -49,7 +52,7 @@ it("shows a floating annotate control on load without hunting the footer", async
     window.addEventListener("error", onError);
     // Give StrictMode a beat; lifecycle must not tear down the overlay root.
     await expect
-        .poll(() => annotationShadow().querySelector("[data-orbit-annotation-fab]") != null)
+        .poll(() => annotationShadow().querySelector("[data-annotation-fab]") != null)
         .toBe(true);
     window.removeEventListener("error", onError);
     expect(errors.some((message) => message.includes("synchronously unmount"))).toBe(false);
