@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Services\Profile\ProfileRequestProfiler;
 
+pest()->group('subprocess');
+
 describe(ProfileRequestProfiler::class, function (): void {
     it('uses its local timeout instead of the active gateway timeout', function (): void {
         $server = startSlowCurlProfileHttpTestServer();

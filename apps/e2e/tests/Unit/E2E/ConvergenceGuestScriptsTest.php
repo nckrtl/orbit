@@ -6,6 +6,8 @@ use App\E2E\Value\TopologyProfile;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 /** @return array{root:string,database:string,pdo:PDO} */
 function discovery_gateway_identity_fixture(): array
 {

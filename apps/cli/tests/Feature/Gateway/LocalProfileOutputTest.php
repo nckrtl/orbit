@@ -8,6 +8,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     $this->orbitHome = sys_get_temp_dir().'/orbit-cli-output-'.Str::uuid();
     config()->set('orbit.home', $this->orbitHome);
