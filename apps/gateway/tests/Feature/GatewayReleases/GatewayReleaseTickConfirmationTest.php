@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskTickClock;
 use App\Models\GatewayRelease;
 use Carbon\CarbonImmutable;
+use Illuminate\Support\Facades\DB;
 use Tests\Support\GatewayReleasePipeline;
 
 beforeEach(function (): void {
@@ -129,6 +131,60 @@ describe('post-release tick confirmation', function (): void {
         expect($this->pipeline->automatic()->execute()['result'])->toBe('released')
             ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($fix, 0, 12))
             ->and(tick_phase($fix)['outcome'])->toBe('pending');
+    });
+
+    it('sets the deadline from the time the release was verified, not from the handoff', function (): void {
+        $this->pipeline->adopt();
+        $sha = $this->pipeline->fixture->commit('Slow handoff');
+        // A long scheduler drain runs between the handoff and the end of the release.
+        $this->pipeline->onVerify = fn () => $this->travel(100)->seconds();
+
+        $this->pipeline->deployer()->execute($sha);
+
+        expect(tick_phase($sha))->toMatchArray(['since' => '2026-10-08T06:05:10Z', 'deadline' => '2026-10-08T06:09:50Z']);
+    });
+
+    it('keeps the live release pending while another release is tried and switches back', function (): void {
+        $this->pipeline->adopt();
+        $live = $this->pipeline->fixture->commit('Live');
+        $this->pipeline->deployer()->execute($live);
+        $broken = $this->pipeline->fixture->commit('Broken');
+        $this->pipeline->failVerify = $broken;
+        // A runner tick lands while the broken release is current, before it switches back.
+        $this->pipeline->onVerify = fn () => $this->pipeline->automatic()->execute();
+
+        expect(fn () => $this->pipeline->deployer()->execute($broken))->toThrow(GatewayReleaseException::class);
+
+        expect(GatewayRelease::query()->where('sha', $broken)->sole()->outcome)->toBe('switched_back')
+            ->and($this->pipeline->fixture->layout->currentReleaseId())->toBe(substr($live, 0, 12))
+            ->and(tick_phase($live)['outcome'])->toBe('pending');
+
+        $this->pipeline->onVerify = null;
+        $this->travel(10)->minutes();
+        $this->pipeline->automatic()->execute();
+
+        expect(tick_phase($live)['outcome'])->toBe('missed')
+            ->and(collect($this->pipeline->alerts)->map(fn ($alert) => $alert->kind)->all())->toContain(ReleaseAlertKind::ReleaseSchedulerSilent)
+            ->and(collect($this->pipeline->alerts)->filter(fn ($alert) => $alert->kind === ReleaseAlertKind::ReleaseSchedulerSilent)->first()->subject->sha)->toBe($live);
+    });
+
+    it('leaves a confirmation that another runner decided first as it is, and does not alert', function (): void {
+        $this->pipeline->adopt();
+        $sha = $this->pipeline->fixture->commit('Release');
+        $this->pipeline->deployer()->execute($sha);
+        $this->travel(10)->minutes();
+        // Another runner confirms the record between this runner's read and its write.
+        GatewayRelease::retrieved(static function (GatewayRelease $record): void {
+            $phases = $record->phases;
+            $phases['tick']['outcome'] = 'confirmed';
+            DB::table('gateway_releases')->where('id', $record->id)->update(['phases' => json_encode($phases)]);
+        });
+
+        $this->pipeline->automatic()->execute();
+        GatewayRelease::flushEventListeners();
+
+        expect(tick_phase($sha)['outcome'])->toBe('confirmed')
+            ->and($this->pipeline->alerts)->toBe([]);
     });
 
     it('skips the confirmation while the tasks extension is disabled', function (): void {

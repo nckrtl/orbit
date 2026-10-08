@@ -193,7 +193,7 @@ Run it as the Gateway account from the release under test. It then uses that rel
 | `tasks_list` | `orbit tasks:list --json` succeeds. | The tasks extension is disabled. |
 | `web` | `web/current` links to `releases/<sha12>` of `--sha`, and Caddy serves that release's `index.html` and the first hashed `/assets/` file it references, byte for byte. | |
 | `scheduler` | The `orbit-process-*` unit whose command runs `schedule:work` in `--checkout` is `active` and `running`, and its main process runs from the release that `--checkout` links to. With `--since`, it started at or after that time. | |
-| `tasks_tick` | `artisan schedule:list --json` of the release that `--checkout` links to loads and lists `tasks:tick`. With `--wait-for-tick`, a tick started instead, as described below. | With `--wait-for-tick`, the tasks extension is disabled. |
+| `tasks_tick` | `artisan schedule:list --json` of the release that `--checkout` links to loads and lists `tasks:tick`. With `--wait-for-tick`, `orbit tasks:status` reports a recent tick instead. | With `--wait-for-tick`, the tasks extension is disabled. |
 | `agent_view` | `orbit-agent-view.service` is `active` and `running`. With `--since`, it started at or after that time. | |
 | `documents` | Creates one text file in the smoke Project, reads it back, renames it with its revision, and removes it. | Always, unless `--write-check` is set. |
 
@@ -293,7 +293,7 @@ A release smoke test runs on every main commit against the live Gateway. Read ch
 
 ### A release does not wait for the first tick
 
-`schedule:work` runs `schedule:run` only at the start of a minute. After the runtime handoff restarts the scheduler, the first `tasks:tick` came 30 to 56 seconds later in the releases of 8 Oct 2026, and a drain that crossed a minute boundary cost a whole extra minute. Smoke instead proves what can fail at once: the scheduler runs from the new release, and that release loads its schedule with `tasks:tick` in it. The first tick itself is [confirmed after the release](/reference/gateway-recovery#post-release-tick-confirmation), where a silent scheduler alerts without holding up the next release.
+`schedule:work` runs `schedule:run` only at the start of a minute. After the runtime handoff restarts the scheduler, the first `tasks:tick` can come up to a minute later. A drain that ends just after a minute boundary costs nearly that whole minute. Smoke instead proves what can fail at once: the scheduler runs from the new release, and that release loads its schedule with `tasks:tick` in it. The first tick itself is [confirmed after the release](/reference/gateway-recovery#post-release-tick-confirmation), where a silent scheduler alerts without holding up the next release.
 
 ### The scheduler records its own tick
 

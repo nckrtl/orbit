@@ -18,7 +18,7 @@ use Throwable;
  * A new scheduler first runs at the next full minute, so smoke does not wait for a tick. A verified release starts
  * with the `tick` phase `pending` instead. A tick confirms it when it started at or after the handoff and the code
  * that ran it has the release's commit as its version. Every tick of the release runner checks the pending
- * confirmations. One that sees no such tick before its deadline is `missed` and raises one
+ * confirmations. One that sees no such tick once its deadline passed is `missed` and raises at most one
  * `release_scheduler_silent` alert. It never switches back or pauses, so a forward fix still ships automatically.
  *
  * @phpstan-type PendingPhase array{outcome: string, since: string, deadline: string}
@@ -61,8 +61,9 @@ final readonly class GatewayReleaseTickConfirmation
     }
 
     /**
-     * Ends each pending confirmation that can be decided now. A record whose release is no longer current is
-     * `superseded`: the release that replaced it has a confirmation of its own.
+     * Ends each pending confirmation that can be decided now. A record is `superseded` once a newer verified record
+     * put another release live: that release has a confirmation of its own. While another release is only being
+     * tried, the record stays pending, because that release may still switch back to this one.
      */
     public function check(?string $currentReleaseId): void
     {
@@ -92,9 +93,11 @@ final readonly class GatewayReleaseTickConfirmation
 
         $phase = ['outcome' => 'pending', 'since' => $tick['since'], 'deadline' => $tick['deadline']];
         $now = CarbonImmutable::now('UTC');
-        $decided = $record->release_id === $currentReleaseId
-            ? $this->decide($phase, $sha, $now)
-            : [...$phase, 'outcome' => 'superseded', 'decided_at' => $now->toIso8601ZuluString(), 'current' => $currentReleaseId];
+        $decided = match (true) {
+            $record->release_id === $currentReleaseId => $this->decide($phase, $sha, $now),
+            $this->replaced($record, $currentReleaseId) => [...$phase, 'outcome' => 'superseded', 'decided_at' => $now->toIso8601ZuluString(), 'current' => $currentReleaseId],
+            default => null,
+        };
 
         if ($decided === null || ! $this->store($record, $decided)) {
             return;
@@ -103,6 +106,16 @@ final readonly class GatewayReleaseTickConfirmation
         if ($decided['outcome'] === 'missed') {
             $this->alert($record, $phase, $decided);
         }
+    }
+
+    /** Whether a newer verified record put the current release live after this record. */
+    private function replaced(GatewayRelease $record, ?string $currentReleaseId): bool
+    {
+        return $currentReleaseId !== null && GatewayRelease::query()
+            ->where('id', '>', $record->id)
+            ->where('outcome', 'verified')
+            ->where('release_id', $currentReleaseId)
+            ->exists();
     }
 
     /**
@@ -134,7 +147,7 @@ final readonly class GatewayReleaseTickConfirmation
 
     /**
      * Writes the decided phase only when the record is still pending, so two runners cannot both decide it, and a
-     * missed confirmation alerts once.
+     * missed confirmation alerts at most once.
      *
      * @param  TickPhase  $decided
      */

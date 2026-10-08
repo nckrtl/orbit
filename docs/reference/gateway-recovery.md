@@ -280,16 +280,16 @@ Smoke does not wait for the first `tasks:tick`, because a restarted scheduler st
 
 #### Post-release tick confirmation
 
-A verified release starts with the step `tick` set to `pending`, with `since`, the handoff time, and `deadline`, `ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS` (default 180, at least 60) after the release was verified. Every [tick of the release runner](#what-a-tick-does) decides the pending confirmations it can, also while automatic releases are disabled or paused, so a manual deploy and a rollback are confirmed too.
+A verified release starts with the step `tick` set to `pending`. The step records `since`, the time the runtime handoff started. It also records `deadline`, which comes `ORBIT_GATEWAY_RELEASE_TICK_CONFIRMATION_SECONDS` after the release was verified. The default is 180 seconds, and the minimum is 60. Every [tick of the release runner](#what-a-tick-does) decides the pending confirmations it can, also while automatic releases are disabled or paused, so a manual deploy and a rollback are confirmed too.
 
 `tasks:tick` records when it started and the version of the code that ran it, the commit in the release's `REVISION`. The step ends as one of these:
 
 | Outcome | When |
 | --- | --- |
 | `confirmed` | A tick started at or after `since` and ran the release's own commit. It records `last_tick_at`, `last_tick_version`, and `decided_at`. A tick that ran during smoke confirms the release at once |
-| `missed` | No such tick started before `deadline`. It records the last tick it saw and raises one [`release_scheduler_silent` alert](#release-alerts), stored as `tick.alert` |
+| `missed` | The first runner tick after `deadline` saw no such tick. It records the last tick it saw and raises at most one [`release_scheduler_silent` alert](#release-alerts), stored as `tick.alert` |
 | `skipped` | The tasks extension is disabled, so the scheduler runs no `tasks:tick` |
-| `superseded` | Another release went live first. That release has a confirmation of its own |
+| `superseded` | A newer verified release went live. That release has a confirmation of its own. While another release is only being tried, the step stays `pending`, because a failed attempt switches back |
 
 A missed confirmation does not switch back or pause. The release passed verify and smoke, and its scheduler runs the new code, so a forward fix still ships automatically. The record stays `verified`, and the fleet rollout follows it as usual. Check the scheduler unit with `systemctl status` and its journal. `gateway:release:show` lists the step with the others, and `gateway:release:auto:status` shows it for the current release as `tick_confirmation`.
 
@@ -604,7 +604,7 @@ A release command raises an alert when a release fails, when it pauses automatic
 | `rollout_halted` | A fleet rollout stopped at a Node that failed |
 | `release_stalled` | [Automatic releases](#failure-and-alerts) made no progress for 30 minutes, or the branch head stayed unreleased for 6 hours |
 | `release_cleanup_paused` | A release went live, but [document cleanup](/reference/project-documents#restore-time-cleanup-gate) stayed paused after the handoff |
-| `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` before the [confirmation deadline](#post-release-tick-confirmation). Once per release; nothing switches back or pauses |
+| `release_scheduler_silent` | A release went live, but its own scheduler ran no `tasks:tick` by the [confirmation deadline](#post-release-tick-confirmation). At most once per release; nothing switches back or pauses |
 | `rollout_stalled` | `orbit self-update` on one Node stayed `incomplete` for 6 visits in a row, or a rollout waited more than 2 hours for its CLI release. The rollout does not halt |
 | `rollout_caddy_skipped` | A fleet rollout kept a Node's live Caddyfile because the new one was refused. Once per rollout; the rollout does not halt |
 

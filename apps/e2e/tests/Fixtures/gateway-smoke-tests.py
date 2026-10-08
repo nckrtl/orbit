@@ -486,6 +486,25 @@ class GatewaySmokeTest(unittest.TestCase):
         self.assertEqual(checks['tasks_tick']['error'], 'tick_unscheduled')
         self.assertEqual(checks['tasks_tick']['detail']['scheduled'], 1)
 
+    def test_tasks_tick_matches_the_tick_command_and_no_similar_one(self):
+        self.world.schedule([{'expression': '* * * * *', 'command': 'php artisan tasks:tick', 'repeat_seconds': 10}])
+        process = self.world.smoke()
+        self.assertEqual(process.returncode, 0, process.stdout)
+        self.assertEqual(process.json['checks']['tasks_tick']['detail']['tick_command'], 'php artisan tasks:tick')
+
+        self.world.schedule([{'expression': '* * * * *', 'command': 'php artisan tasks:tickets', 'repeat_seconds': None},
+                             {'expression': '* * * * *', 'command': 'php artisan tasks:tick-report', 'repeat_seconds': None}])
+        checks = self.assert_only_failed(self.world.smoke(), ['tasks_tick'])
+        self.assertEqual(checks['tasks_tick']['error'], 'tick_unscheduled')
+
+    def test_a_checkout_that_names_the_gateway_application_finds_the_same_release(self):
+        # ORBIT_GATEWAY_CHECKOUT, the default of --checkout, names apps/gateway below the release link.
+        process = self.world.smoke('--checkout', str(self.world.checkout / 'apps/gateway'))
+
+        self.assertEqual(process.returncode, 0, process.stdout)
+        self.assertEqual(process.json['checks']['scheduler']['detail']['release_path'], str(self.world.application.resolve()))
+        self.assertEqual(process.json['checks']['tasks_tick']['detail']['application'], str(self.world.application.resolve()))
+
     def test_tasks_tick_fails_when_the_release_cannot_load_its_schedule(self):
         self.world.schedule('', exit_code=255, stderr='PHP Fatal error: Class "App\\Domain\\Tasks\\TaskSchedule" not found')
 

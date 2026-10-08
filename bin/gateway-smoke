@@ -456,8 +456,13 @@ def check_web(options, budget):
 
 
 def release_application(options):
-    """The Gateway application of the release that --checkout links to now."""
-    return Path(os.path.realpath(options.checkout)) / 'apps/gateway'
+    """The Gateway application of the release that --checkout links to now.
+
+    --checkout names the repository root. ORBIT_GATEWAY_CHECKOUT, its default, names the Gateway application below
+    it, so a path that already holds artisan is the application itself.
+    """
+    checkout = Path(os.path.realpath(options.checkout))
+    return checkout if (checkout / 'artisan').is_file() else checkout / 'apps/gateway'
 
 
 def check_scheduler(options, budget):
