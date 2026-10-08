@@ -22,7 +22,7 @@ The style matches [`bin/review-check`](/reference/implementation-loop#the-candid
 | [`bin/task-group-check`](#bintask-group-check) | The payload is one valid ordered group | None. Does not create a group. |
 | [`bin/pr-head-check`](#binpr-head-check) | The current head has a matching review and Required checks, and no named leftover | None. Does not merge. |
 | [`bin/deploy-verify`](#bindeploy-verify) | Live `APP_VERSION` matches the merged SHA, `/up` is up, and gateway status is `ok` | None. Does not deploy or roll back. |
-| [`bin/gateway-smoke`](#bingateway-smoke) | A switched Gateway release serves its version, CLI reads, its web build, and a running scheduler and agent view | None by default. `--write-check` creates and removes one Project Document. |
+| [`bin/gateway-smoke`](#bingateway-smoke) | A switched Gateway release serves its version, CLI reads, and its web build, runs its scheduler from the new release with `tasks:tick` scheduled, and runs agent view | None by default. `--write-check` creates and removes one Project Document. |
 
 Run every command from the repository root.
 
@@ -181,7 +181,7 @@ Python HTTPS calls need `SSL_CERT_FILE` set to Orbit's root CA, or they fail cer
 Smoke-test a Gateway release after its switch, on the Gateway host. Each [Gateway release](/reference/gateway-recovery#smoke) runs it after the verify step and the web switch, and stores its JSON on the release record. Operators run it by hand the same way. It does not deploy, switch, restart, or roll back.
 
 ```bash
-bin/gateway-smoke --sha SHA [--since TIME] [--tick-within SECONDS] [--timeout SECONDS] [--skip CHECK ...] [--write-check --smoke-project PROJECT] [--dry-run]
+bin/gateway-smoke --sha SHA [--since TIME] [--wait-for-tick [--tick-within SECONDS]] [--php PATH] [--timeout SECONDS] [--skip CHECK ...] [--write-check --smoke-project PROJECT] [--dry-run]
 ```
 
 Run it as the Gateway account from the release under test. It then uses that release's `apps/cli/orbit` with the account's Gateway profile. Python HTTPS calls need `SSL_CERT_FILE`, as for `bin/deploy-verify`.
@@ -192,18 +192,22 @@ Run it as the Gateway account from the release under test. It then uses that rel
 | `node_list` | `orbit node:list --json` succeeds and lists at least one Node. | |
 | `tasks_list` | `orbit tasks:list --json` succeeds. | The tasks extension is disabled. |
 | `web` | `web/current` links to `releases/<sha12>` of `--sha`, and Caddy serves that release's `index.html` and the first hashed `/assets/` file it references, byte for byte. | |
-| `scheduler` | The `orbit-process-*` unit whose command runs `schedule:work` in `--checkout` is `active` and `running`. With `--since`, it started at or after that time. | |
-| `tasks_tick` | `orbit tasks:status --json` reports a `last_tick_at` at or after `--since`, or no more than `--tick-within` seconds before the run. The check reads again every 2 seconds until the total limit. | The tasks extension is disabled. |
+| `scheduler` | The `orbit-process-*` unit whose command runs `schedule:work` in `--checkout` is `active` and `running`, and its main process runs from the release that `--checkout` links to. With `--since`, it started at or after that time. | |
+| `tasks_tick` | `artisan schedule:list --json` of the release that `--checkout` links to loads and lists `tasks:tick`. With `--wait-for-tick`, a tick started instead, as described below. | With `--wait-for-tick`, the tasks extension is disabled. |
 | `agent_view` | `orbit-agent-view.service` is `active` and `running`. With `--since`, it started at or after that time. | |
 | `documents` | Creates one text file in the smoke Project, reads it back, renames it with its revision, and removes it. | Always, unless `--write-check` is set. |
+
+A restarted scheduler starts its first tick on the next full minute, so a release does not pass `--wait-for-tick`. It [confirms the first tick afterwards](/reference/gateway-recovery#post-release-tick-confirmation). `tasks_tick` runs `artisan schedule:list` with only `HOME`, `PATH`, and `LANG`, as the release's own artisan commands do. With `--wait-for-tick`, it reads `orbit tasks:status --json` every 2 seconds until the total limit, and passes once `last_tick_at` is at or after `--since`, or no more than `--tick-within` seconds before the run.
 
 All checks run at the same time. Each has its own time limit, and `--timeout` bounds the whole run, so a release waits at most that long. A check that does not finish in time is `timeout`. The [`tasks:status`](/cli/tasks#orbit-tasksstatus) tick record comes from the Gateway clock, so compare it on the Gateway host.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--sha` | required | The released commit, 7 to 40 hexadecimal characters. |
-| `--since` | off | The runtime handoff time, in ISO 8601 with a zone. The scheduler and agent view must have started after it, and a tick must have started after it. |
-| `--tick-within` | `60` | Without `--since`, the latest tick may be this many seconds old. A restarted scheduler starts its first tick on the next minute. |
+| `--since` | off | The runtime handoff time, in ISO 8601 with a zone. The scheduler and agent view must have started after it. With `--wait-for-tick`, a tick must have started after it too. |
+| `--wait-for-tick` | off | Wait for a `tasks:tick` to start, instead of checking that the release schedules it. This can add up to a minute. |
+| `--tick-within` | `60` | With `--wait-for-tick` and without `--since`, the latest tick may be this many seconds old. |
+| `--php` | `ORBIT_SMOKE_PHP`, else `php8.5` or `php` on `PATH` | The PHP binary for `artisan schedule:list`. |
 | `--timeout` | `60` | Seconds for the whole run. |
 | `--up-url`, `--status-url` | the `bin/deploy-verify` defaults | Passed to `bin/deploy-verify`. |
 | `--web-url` | `ORBIT_SMOKE_WEB_URL` or `https://gateway.orbit/` | The web app URL that Caddy serves. |
@@ -252,8 +256,13 @@ The command prints one JSON object and exits `0` when no check failed or timed o
 | `scheduler_missing`, `scheduler_ambiguous` | `scheduler` | Discovery found no unit, or more than one. Pass `--scheduler-unit`. |
 | `unit_missing`, `unit_inactive`, `unit_not_restarted`, `unit_start_unknown` | `scheduler`, `agent_view` | The unit is not installed, not running, older than `--since`, or has no start time. |
 | `systemctl_unavailable`, `systemctl_failed` | `scheduler`, `agent_view` | `systemctl` is missing or failed. Run on the Gateway host. |
-| `tick_stale` | `tasks_tick` | No tick started in time. |
-| `tick_unreported` | `tasks_tick` | The Gateway does not report `last_tick_at` yet. |
+| `scheduler_pid_unknown`, `scheduler_release_unknown` | `scheduler` | The unit reports no main process, or its working directory cannot be read. |
+| `scheduler_old_release` | `scheduler` | The scheduler's main process runs from another directory than the release `--checkout` links to. |
+| `php_unavailable` | `tasks_tick` | No PHP binary was found. Pass `--php`. |
+| `schedule_unreadable` | `tasks_tick` | `artisan schedule:list` failed or printed no JSON list. `detail.stderr` holds its error. |
+| `tick_unscheduled` | `tasks_tick` | The release's schedule does not list `tasks:tick`. |
+| `tick_stale` | `tasks_tick` | With `--wait-for-tick`, no tick started in time. |
+| `tick_unreported` | `tasks_tick` | With `--wait-for-tick`, the Gateway does not report `last_tick_at` yet. |
 | `document_mismatch` | `documents` | A step returned other content, name, or result than it wrote. |
 | `timeout` | any | The check did not finish within its limit. |
 | `check_crashed` | any | The check stopped on an unexpected error. |
@@ -282,6 +291,10 @@ The Gateway task engine is generic. Orbit's policy lives in the repository skill
 
 A release smoke test runs on every main commit against the live Gateway. Read checks prove that the release serves its version, API, web build, scheduler, and agent view without changing state. A document write proves storage too, but it writes on every release, so an operator turns it on for a dedicated Project.
 
+### A release does not wait for the first tick
+
+`schedule:work` runs `schedule:run` only at the start of a minute. After the runtime handoff restarts the scheduler, the first `tasks:tick` came 30 to 56 seconds later in the releases of 8 Oct 2026, and a drain that crossed a minute boundary cost a whole extra minute. Smoke instead proves what can fail at once: the scheduler runs from the new release, and that release loads its schedule with `tasks:tick` in it. The first tick itself is [confirmed after the release](/reference/gateway-recovery#post-release-tick-confirmation), where a silent scheduler alerts without holding up the next release.
+
 ### The scheduler records its own tick
 
-`tasks:tick` writes the time it takes its lock into the Gateway cache, and `tasks:status` reports it. The smoke test reads that record through the CLI. A journal read depends on log permissions and log wording, and a process list cannot tell an idle scheduler from a stuck one.
+`tasks:tick` writes the time it takes its lock into the Gateway cache, and `tasks:status` reports it. It also records the version of the code that ran it, so a release can tell its own scheduler's tick from the previous one's. The smoke test reads the time through the CLI with `--wait-for-tick`. A journal read depends on log permissions and log wording, and a process list cannot tell an idle scheduler from a stuck one.

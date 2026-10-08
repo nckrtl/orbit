@@ -28513,6 +28513,13 @@
           },
           "check": {
             "type": "string"
+          },
+          "tick_confirmation": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true
           }
         }
       },

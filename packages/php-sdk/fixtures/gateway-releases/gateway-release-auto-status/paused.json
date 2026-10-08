@@ -10,7 +10,7 @@
             "pause": {
                 "reason": "migration_failure",
                 "since": "2026-10-07T12:00:00Z",
-                "record": 1,
+                "record": 2,
                 "release": "fedcba987654",
                 "sha": "fedcba9876543210fedcba9876543210fedcba98",
                 "error_code": "gateway.release_smoke_failed",
@@ -30,7 +30,12 @@
             "branch_head": null,
             "behind_since": null,
             "branch": "main",
-            "check": "Required checks"
+            "check": "Required checks",
+            "tick_confirmation": {
+                "outcome": "pending",
+                "since": "2026-10-07T11:00:05Z",
+                "deadline": "2026-10-07T11:04:10Z"
+            }
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

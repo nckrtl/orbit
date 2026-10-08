@@ -10,6 +10,7 @@ use App\Data\GatewayReleases\GatewayReleaseTickData;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseException;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Models\GatewayRelease;
 use Illuminate\Support\Facades\Config;
 
 final readonly class ShowGatewayReleaseAutomationAction
@@ -36,7 +37,37 @@ final readonly class ShowGatewayReleaseAutomationAction
             behindSince: $head['behind_since'] ?? null,
             branch: Config::string('orbit.gateway_releases.branch'),
             check: Config::string('orbit.gateway_releases.check'),
+            tickConfirmation: $release === null ? null : $this->tickConfirmation($release),
         );
+    }
+
+    /**
+     * The `tick` phase of the record that put the current release live.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function tickConfirmation(string $release): ?array
+    {
+        $record = GatewayRelease::query()
+            ->where('release_id', $release)
+            ->where('outcome', 'verified')
+            ->latest('id')
+            ->first();
+        $phase = $record instanceof GatewayRelease ? ($record->phases['tick'] ?? null) : null;
+
+        if (! is_array($phase)) {
+            return null;
+        }
+
+        $fields = [];
+
+        foreach ($phase as $field => $value) {
+            if (is_string($field)) {
+                $fields[$field] = $value;
+            }
+        }
+
+        return $fields;
     }
 
     /**

@@ -3889,6 +3889,9 @@ export interface components {
             behind_since?: string | null;
             branch?: string;
             check?: string;
+            tick_confirmation?: {
+                [key: string]: unknown;
+            } | null;
         };
         GatewayReleasePause: {
             reason?: string;

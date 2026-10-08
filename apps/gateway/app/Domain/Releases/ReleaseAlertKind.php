@@ -10,6 +10,7 @@ enum ReleaseAlertKind: string
     case ReleasePaused = 'release_paused';
     case ReleaseStalled = 'release_stalled';
     case ReleaseCleanupPaused = 'release_cleanup_paused';
+    case ReleaseSchedulerSilent = 'release_scheduler_silent';
     case RolloutHalted = 'rollout_halted';
     case RolloutStalled = 'rollout_stalled';
     case RolloutCaddySkipped = 'rollout_caddy_skipped';
@@ -21,6 +22,7 @@ enum ReleaseAlertKind: string
             self::ReleasePaused => 'Release paused',
             self::ReleaseStalled => 'Release stalled',
             self::ReleaseCleanupPaused => 'Document cleanup paused after release',
+            self::ReleaseSchedulerSilent => 'Scheduler silent after release',
             self::RolloutHalted => 'Rollout halted',
             self::RolloutStalled => 'Rollout stalled',
             self::RolloutCaddySkipped => 'Rollout kept a live Caddyfile',
