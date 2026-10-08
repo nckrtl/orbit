@@ -205,6 +205,6 @@ Automated text assertions establish content. Terminal evidence establishes inter
 
 Use disposable fixtures for mutations. Exercise the real candidate in the assigned runtime and keep evidence tied to that candidate. A recording is stale after a fix changes the behavior it records. Do not declare a command compliant until every applicable check is supported by inspected evidence.
 
-Run `bin/cli-contract --changed` to find and run the contract tests that a changed Gateway response reaches, and rewrite expected output only with `ORBIT_EXPECTED=update` after the diff is reviewed.
+Run `bin/cli-contract --changed` to find and run the contract tests that a changed Gateway response reaches, and rewrite expected output only with `ORBIT_EXPECTED=update` after the diff is reviewed. For an Agent pin change, replay Gateway status, Fleet rollout, and self-update contracts so JSON and human output name the same released version.
 
 A regression check for a recovered UX requirement demonstrates both an accepted and a rejected case. Check observable behavior rather than similarity of wording or implementation style. For example, a state analyzer accepts a running row that reaches a terminal state and rejects the same row returning to waiting. Apply each check only to the surface it covers.
