@@ -4016,7 +4016,7 @@ export interface components {
             name?: string;
             slug?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+            type?: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
         };
         NodeIdentity: {
             id?: number;
@@ -4102,7 +4102,7 @@ export interface components {
             slug?: string;
             code?: string;
             /** @enum {string} */
-            type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+            type?: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
             repository_url?: string;
             /** @enum {string} */
             source_access?: "github_app" | "gh_cli";
@@ -13298,10 +13298,10 @@ export interface operations {
                     /** @description Unique project slug */
                     slug: string;
                     /**
-                     * @description Project type (monorepo, laravel-app, laravel-package, or node-package)
+                     * @description Project type (monorepo, laravel-app, symfony-app, laravel-package, or node-package)
                      * @enum {string}
                      */
-                    type: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    type: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
                     repository_url: string;
                     /**
                      * @description How Orbit reads a private github.com repository: github_app (default) or gh_cli
@@ -13495,7 +13495,7 @@ export interface operations {
                      * @description New Project type
                      * @enum {string}
                      */
-                    type?: "monorepo" | "laravel-app" | "laravel-package" | "node-package";
+                    type?: "monorepo" | "laravel-app" | "symfony-app" | "laravel-package" | "node-package";
                     /** @description New Project slug */
                     slug?: string;
                     repository_url?: string;
