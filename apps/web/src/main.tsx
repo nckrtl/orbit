@@ -7,7 +7,10 @@ import { createRoot } from "react-dom/client";
 import { queryClient } from "./api/queryClient";
 import { mountAnnotation } from "@nckrtl/annotator";
 import { createAppRouter } from "./router";
+import { blocksUnload, installBuildCheck } from "./update/build-check";
 import "./styles.css";
+
+declare const __ORBIT_BUILD__: string;
 
 // Demo mode answers every request from the fixture fleet, so the page runs with no Gateway.
 if (import.meta.env.VITE_ORBIT_DEMO) {
@@ -44,6 +47,16 @@ const annotation = mountAnnotation({
 if (import.meta.hot) import.meta.hot.dispose(() => annotation.destroy());
 
 const router = createAppRouter();
+
+// A released build moves open pages to a newer release. The dev server reloads modules itself.
+if (import.meta.env.PROD) {
+    installBuildCheck({
+        build: __ORBIT_BUILD__,
+        router,
+        // The app's drafts block navigation and unload through router blockers, such as a Project Document edit.
+        hasUnsavedInput: () => blocksUnload(router.history._getBlockers()),
+    });
+}
 
 createRoot(document.getElementById("app") as HTMLElement).render(
     <StrictMode>

@@ -396,8 +396,9 @@ jobs:
       - name: Run tests
         run: bun run test
 
+      # Open pages compare their build with version.json, so the published build must hold it beside index.html.
       - name: Build
-        run: bun run build
+        run: bun run build && test -s dist/index.html && test -s dist/version.json
 
       # Automatic Gateway releases (ADR 0201) install this build for the same commit, so the Gateway needs no Node or Bun.
       # Every run on main publishes it, a manual dispatch too, so each successful Required checks result on main has one.
