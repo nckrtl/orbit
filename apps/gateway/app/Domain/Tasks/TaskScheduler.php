@@ -918,6 +918,12 @@ final readonly class TaskScheduler
                     $group->update(['pr_url' => $url]);
                 }
             } catch (TaskPullRequestException $exception) {
+                $moved = $incoming ? $this->pullRequestWatcher->health($group)?->headSha : null;
+                if (is_string($moved) && $moved !== $commit && ! TaskFinalReview::isReviewed($group, $moved)) {
+                    $this->mergeAuthorPush($group, $task, $receipt, $moved);
+
+                    return;
+                }
                 $this->failPublication($group, $task, $exception->getMessage());
 
                 return;
@@ -975,7 +981,21 @@ final readonly class TaskScheduler
             }
         }
 
-        $fixup = DB::transaction(function () use ($group, $task, $receipt): ?Task {
+        $fixup = $this->replaceFinalReviewWithFixup($group, $task, $receipt, TaskFinalReview::FixupTitle, TaskFinalReview::fixupBrief($task, $receipt));
+        if (! $fixup instanceof Task) {
+            return;
+        }
+        TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => $fixup->id]);
+        $this->recordSubtaskStart($fixup);
+        $this->assignImplementer($fixup);
+    }
+
+    /**
+     * Completes the final review and starts a final-review fixup in one transaction. The caller starts its implementer.
+     */
+    private function replaceFinalReviewWithFixup(Task $group, Task $task, TaskComment $receipt, string $title, string $brief): ?Task
+    {
+        return DB::transaction(function () use ($group, $task, $receipt, $title, $brief): ?Task {
             $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
             if (TaskExecutionHold::active($lockedGroup) || $locked->status !== TaskStatus::Reviewing || $locked->review_handled_comment_id === $receipt->id) {
@@ -985,8 +1005,8 @@ final readonly class TaskScheduler
             $fixup = Task::query()->create([
                 'parent_id' => $lockedGroup->id,
                 'position' => TaskFinalReview::nextPosition($this->lockedTasks($lockedGroup)),
-                'title' => TaskFinalReview::FixupTitle,
-                'brief' => TaskFinalReview::fixupBrief($locked, $receipt),
+                'title' => $title,
+                'brief' => $brief,
                 'deliverables' => TaskFinalReview::fixupDeliverables($lockedGroup->project->taskCheckCommand()),
                 'fixup_problem' => TaskFinalReview::FixupProblem,
                 'status' => TaskStatus::Todo,
@@ -1004,10 +1024,29 @@ final readonly class TaskScheduler
 
             return $fixup->fresh(['parent.tasks', 'parent.project', 'parent.taskable']) ?? $fixup;
         });
+    }
+
+    /**
+     * The author pushed to an incoming pull request while Orbit's reviewed work waited, so Orbit's push is no
+     * longer a fast-forward. Orbit completes the final review and starts a fixup that merges the author's commits.
+     */
+    private function mergeAuthorPush(Task $group, Task $task, TaskComment $receipt, string $head): void
+    {
+        $branch = TaskRemoteBranch::for($group);
+        $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+        $count = TaskFinalReview::fixupsInWindow($group->tasks);
+        if ($count >= TaskFinalReview::FixupLimit) {
+            $this->stopAtFinalReviewCap($group, $task, $receipt, $count);
+
+            return;
+        }
+        $fixup = $this->replaceFinalReviewWithFixup($group, $task, $receipt, 'Merge origin/'.$branch,
+            'The pull request author pushed '.$head.' to '.$branch.' after Orbit reviewed its own work, so Orbit cannot push without forcing. '
+            .'Merge origin/'.$branch.' into the task branch and resolve any conflicts. Do not rebase and do not force-push.');
         if (! $fixup instanceof Task) {
             return;
         }
-        TaskFinalReview::log($group, 'final review requested changes', ['subtask_id' => $task->id, 'comment_id' => $receipt->id, 'fixup_id' => $fixup->id]);
+        TaskFinalReview::log($group, 'pull request branch moved', ['subtask_id' => $task->id, 'head_sha' => $head, 'fixup_id' => $fixup->id]);
         $this->recordSubtaskStart($fixup);
         $this->assignImplementer($fixup);
     }
@@ -1018,7 +1057,7 @@ final readonly class TaskScheduler
      */
     private function stopAtFinalReviewCap(Task $group, Task $task, TaskComment $receipt, int $count): void
     {
-        $reason = TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask with tasks:subtask:create, or cancel the task.';
+        $reason = TaskFinalReview::FixupCapPrefix.'Orbit already appended '.$count.' fixups for final review findings in this window. Read the findings of subtask #'.$task->id.', then append a subtask with tasks:subtask:create, or complete the task.';
         $stopped = DB::transaction(function () use ($group, $task, $receipt, $reason): bool {
             $lockedGroup = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
             $locked = Task::query()->lockForUpdate()->findOrFail($task->id);
@@ -1089,6 +1128,14 @@ final readonly class TaskScheduler
                 $this->turnFetcher->fetch($group);
             }
             if ($group->reviewsIncomingPullRequest() && ! TaskFinalReview::hasUnreviewedWork($group)) {
+                // The author can push before the review starts. Review the head the pull request has now.
+                $current = $this->pullRequestWatcher->health($group)?->headSha;
+                if (is_string($current) && $current !== '' && $current !== $task->fixup_head_sha) {
+                    $task->update(['fixup_head_sha' => $current]);
+                    if ($alreadyFetched) {
+                        $this->turnFetcher->fetch($group);
+                    }
+                }
                 $head = $task->fixup_head_sha;
                 if (! is_string($head) || $head === '') {
                     throw new TaskPullRequestException('Orbit could not read the pull request head.');
@@ -1127,11 +1174,17 @@ final readonly class TaskScheduler
     private function mergeWhenReady(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
     {
         $group = $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
+        $head = $health->headSha;
+        if ($group->assistance_requested && TaskFinalReview::isUnreviewedHeadReason($group->assistance_reason)
+            && is_string($head) && TaskFinalReview::isReviewed($group, $head)) {
+            // The head is reviewed again, so the request that held the merge no longer applies.
+            $group->update(TaskAssistance::cleared());
+        }
         if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) || $group->assistance_requested
-            || $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
+            || $group->tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))
+            || TaskFinalReview::hasUnreviewedWork($group)) {
             return;
         }
-        $head = $health->headSha;
         if (! is_string($head) || $head === '') {
             $this->recordMerge($group, TaskMergeStatus::Waiting, 'GitHub did not report the pull request head.');
 
@@ -1144,11 +1197,17 @@ final readonly class TaskScheduler
 
                 return;
             }
-            $reason = TaskFinalReview::UnreviewedHeadPrefix.'someone other than Orbit pushed '.$head.' to '.TaskRemoteBranch::for($group).'. Orbit does not merge it. Push a reviewed commit, or complete or cancel the task.';
+            $reason = TaskFinalReview::UnreviewedHeadPrefix.'someone other than Orbit pushed '.$head.' to '.TaskRemoteBranch::for($group).'. Orbit does not merge it. Append a subtask so Orbit reviews and pushes the branch again, or complete the task.';
             $this->recordMerge($group, TaskMergeStatus::Refused, $reason);
             if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
                 $this->coder->assistance($group, $reason);
             }
+
+            return;
+        }
+        $default = $group->project->default_branch;
+        if (! is_string($health->baseRef) || $health->baseRef !== $default) {
+            $this->recordMerge($group, TaskMergeStatus::Refused, 'The pull request base is '.($health->baseRef ?? 'unknown').', not the default branch '.($default ?? 'unknown').'. Orbit merges only into the default branch it reviewed against.');
 
             return;
         }
@@ -1188,12 +1247,56 @@ final readonly class TaskScheduler
         }
         if (! $result->merged) {
             $this->recordMerge($group, TaskMergeStatus::Refused, 'GitHub refused the merge of '.$head.' ('.$result->status.'): '.($result->message !== '' ? $result->message : 'no message').'.');
+            if ($health->behind) {
+                // A branch protection rule can require an up-to-date branch. Orbit merges the base itself.
+                $this->appendBaseMerge($group, (string) $default);
+            }
 
             return;
         }
         $group->update(['merge_status' => TaskMergeStatus::Merged, 'merge_reason' => null, 'merged_sha' => $result->sha]);
         TaskFinalReview::log($group, 'pull request merged', ['pull_request' => $group->pr_url, 'head_sha' => $head, 'merge_sha' => $result->sha]);
         $this->broadcasts->groupChanged($group->id);
+    }
+
+    /**
+     * ADR 0203: GitHub refused to merge a branch that is behind its base. Orbit appends a final-review fixup that
+     * merges the base, so a final review and a reviewed push follow. It never asks GitHub to update the branch.
+     */
+    private function appendBaseMerge(Task $group, string $base): void
+    {
+        if (TaskFinalReview::fixupsInWindow($group->tasks) >= TaskFinalReview::FixupLimit) {
+            $reason = TaskFinalReview::FixupCapPrefix.'GitHub refused to merge a branch behind '.$base.', and Orbit already appended '.TaskFinalReview::FixupLimit.' final-review fixups in this window. Append a subtask with tasks:subtask:create, or complete the task.';
+            if (TaskAssistance::apply($group, AssistanceKind::Failure, null, $reason)) {
+                $this->coder->assistance($group, $reason);
+            }
+
+            return;
+        }
+        $appended = DB::transaction(function () use ($group, $base): bool {
+            $locked = Task::topLevel()->where('execution_mode', TaskExecutionMode::Managed)->lockForUpdate()->findOrFail($group->id);
+            $tasks = $this->lockedTasks($locked);
+            if (! in_array($locked->status, TaskGroupStatus::awaitingCompletion(), true) || TaskExecutionHold::active($locked) || $locked->assistance_requested
+                || $tasks->contains(static fn (Task $task): bool => in_array($task->status, [TaskStatus::Todo, TaskStatus::Running, TaskStatus::Reviewing], true))) {
+                return false;
+            }
+            $locked->loadMissing('project');
+            Task::query()->create([
+                'parent_id' => $locked->id,
+                'position' => TaskFinalReview::nextPosition($tasks),
+                'title' => 'Merge origin/'.$base,
+                'brief' => 'GitHub refused to merge the pull request because its branch is behind '.$base.'. Merge origin/'.$base.' into the task branch and resolve any conflicts. Do not rebase and do not force-push.',
+                'deliverables' => TaskFinalReview::fixupDeliverables($locked->project->taskCheckCommand()),
+                'fixup_problem' => TaskFinalReview::FixupProblem,
+                'status' => TaskStatus::Todo,
+            ]);
+
+            return true;
+        });
+        if ($appended) {
+            TaskFinalReview::log($group, 'base merge appended', ['base' => $base, 'pull_request' => $group->pr_url]);
+            $this->resumeWaitingSubtask($group);
+        }
     }
 
     /** The reason a trusted request for changes, or an incomplete review read, blocks the merge. Null when nothing blocks. */
@@ -3675,13 +3778,19 @@ final readonly class TaskScheduler
      */
     private function healOpenPullRequest(Task $group, TaskPullRequestHealth $health, ?TaskReviewObservation $reviews): void
     {
-        if ($this->otherAssistance($group) || $this->hasBusyTask($group->tasks)) {
+        if ($this->hasBusyTask($group->tasks)) {
             return;
         }
 
-        if ($this->lowestTodo($group->tasks) instanceof Task) {
+        // An operator subtask resumes past a review-and-merge request that waits for one (ADR 0203).
+        if ($this->lowestTodo($group->tasks) instanceof Task
+            && (! $this->otherAssistance($group) || TaskFinalReview::isResumableReason($group->assistance_reason))) {
             $this->resumeWaitingSubtask($group);
 
+            return;
+        }
+
+        if ($this->otherAssistance($group)) {
             return;
         }
 
@@ -3977,7 +4086,7 @@ final readonly class TaskScheduler
     private function otherAssistance(Task $group): bool
     {
         return $group->assistance_requested && ! TaskPullRequestHealth::isReason($group->assistance_reason)
-            && ! self::isReviewFeedbackReason($group->assistance_reason) && ! TaskFinalReview::isCapReason($group->assistance_reason);
+            && ! self::isReviewFeedbackReason($group->assistance_reason);
     }
 
     /** Review-source problems are observations, not a hold on otherwise authorized ongoing work. */
@@ -4304,14 +4413,14 @@ final readonly class TaskScheduler
             && ! TaskPullRequestHealth::isReason($group->assistance_reason)
             && ! self::isMissingPullRequestReason($group->assistance_reason)
             && ! self::isReviewFeedbackReason($group->assistance_reason)
-            && ! TaskFinalReview::isCapReason($group->assistance_reason);
+            && ! TaskFinalReview::isResumableReason($group->assistance_reason);
     }
 
     /** Clears the pull-request and missing-pull-request reasons when a resumed subtask starts. */
     private function clearResumeAssistance(Task $group): void
     {
         if (! TaskPullRequestHealth::isReason($group->assistance_reason) && ! self::isMissingPullRequestReason($group->assistance_reason)
-            && ! TaskFinalReview::isCapReason($group->assistance_reason)) {
+            && ! TaskFinalReview::isResumableReason($group->assistance_reason)) {
             return;
         }
         $group->fill(TaskAssistance::cleared());

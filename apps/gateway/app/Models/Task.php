@@ -393,11 +393,12 @@ final class Task extends Model
         }
     }
 
-    /** ADR 0203: whether this top-level task holds every push until a final review approves it. */
+    /** ADR 0203: whether this top-level task holds every push until a final review approves it, and merges reviewed heads. */
     public function reviewsBeforePush(): bool
     {
+        // An incoming pull request keeps these rules until it ends, so its branch never gets an unreviewed push.
         return $this->parent_id === null && $this->execution_mode === TaskExecutionMode::Managed
-            && $this->project->reviewsAndMerges();
+            && ($this->project->reviewsAndMerges() || $this->reviewsIncomingPullRequest());
     }
 
     /** ADR 0203: an incoming pull request that Orbit reviews, not a pull request Orbit opened. */

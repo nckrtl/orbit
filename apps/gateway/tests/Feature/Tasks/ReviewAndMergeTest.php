@@ -16,7 +16,9 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
 use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskBriefCoverage;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckRunner;
+use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskFinalReview;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -47,6 +49,7 @@ use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
+use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskReviewedCommit;
 use Tests\Support\AgentCommandDispatcher;
@@ -295,6 +298,7 @@ function rm_runtime(array $receipts = []): object
             return ['thread' => ['session' => ['status' => 'done'], 'latestTurn' => ['id' => 'turn-of-'.$threadId, 'state' => 'completed']]];
         }
     });
+    rm_watch(null);
     app()->instance(TaskWorkspaceStateReader::class, new class implements TaskWorkspaceStateReader
     {
         public function headCommit(Instance $instance): ?string
@@ -331,10 +335,10 @@ function rm_watch(?TaskPullRequestHealth $health, TaskReviewReadStatus|TaskRevie
     app()->instance(TaskPullRequestReviewWatcher::class, new FakeTaskPullRequestReviewWatcher($observation, DB::transactionLevel()));
 }
 
-function rm_open(string $head, bool $mergeable = true, bool $conflicts = false, bool $behind = false): TaskPullRequestHealth
+function rm_open(string $head, bool $mergeable = true, bool $conflicts = false, bool $behind = false, string $base = 'main'): TaskPullRequestHealth
 {
     return new TaskPullRequestHealth('open', problems: $conflicts ? ['It conflicts with main; merge main into the task branch and push.'] : [],
-        baseRef: 'main', conflicts: $conflicts, headSha: $head, pullRequestNumber: 42, mergeable: $mergeable, behind: $behind);
+        baseRef: $base, conflicts: $conflicts, headSha: $head, pullRequestNumber: 42, mergeable: $mergeable, behind: $behind);
 }
 
 /** @param array<string, string> $deliverables */
@@ -539,6 +543,24 @@ describe('final review before every push', function (): void {
             ->and($runtime->pushes)->toBe([]);
     });
 
+    it('does not append another final review when the approved HEAD moved past the latest approval', function (): void {
+        $group = rm_group([['Models', TaskStatus::Completed], [TaskFinalReview::Title, TaskStatus::Completed, TaskType::FinalReview]], TaskGroupStatus::Settling, prUrl: RM_PR_URL);
+        $models = $group->tasks->firstWhere('title', 'Models');
+        $final = $group->tasks->firstWhere('title', TaskFinalReview::Title);
+        TaskComment::query()->create(['task_id' => $models->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Fine.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
+        TaskComment::query()->create(['task_id' => $final->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Whole branch.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_HEAD]);
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_HEAD, 'source' => TaskReviewedCommitSource::OrbitPush, 'review_task_id' => $final->id, 'pushed_at' => now()]);
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+
+        expect(TaskFinalReview::hasUnreviewedWork($group))->toBeFalse();
+
+        app(TaskScheduler::class)->tick();
+
+        expect(Task::query()->where('parent_id', $group->id)->where('type', TaskType::FinalReview->value)->count())->toBe(1)
+            ->and($runtime->merges)->toBe([RM_HEAD]);
+    });
+
     it('merges a conflict into a fixup instead of asking GitHub to update the branch', function (): void {
         $group = rm_settled();
         $runtime = rm_runtime();
@@ -691,6 +713,78 @@ describe('merge on green', function (): void {
             ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Refused);
     });
 
+    it('refuses to merge into a base other than the default branch it reviewed against', function (): void {
+        $group = rm_settled();
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD, base: 'production'));
+
+        app(TaskScheduler::class)->tick();
+
+        expect($runtime->merges)->toBe([])
+            ->and($group->fresh()?->merge_status)->toBe(TaskMergeStatus::Refused)
+            ->and($group->fresh()?->merge_reason)->toContain('base is production');
+    });
+
+    it('merges the base through a final-review fixup when GitHub refuses a behind branch', function (): void {
+        $group = rm_settled();
+        $runtime = rm_runtime();
+        $runtime->mergeAccepted = false;
+        rm_watch(rm_open(RM_HEAD, behind: true));
+
+        app(TaskScheduler::class)->tick();
+
+        $fixup = Task::query()->where('parent_id', $group->id)->where('fixup_problem', TaskFinalReview::FixupProblem)->sole();
+        expect($runtime->updates)->toBe([])
+            ->and($fixup->title)->toBe('Merge origin/main')
+            ->and($fixup->status)->toBe(TaskStatus::Running)
+            ->and($group->fresh()?->status)->toBe(TaskGroupStatus::Running);
+    });
+
+    it('does not merge an older reviewed head while newer approved work waits for its final review', function (): void {
+        $group = rm_settled();
+        $feature = $group->tasks->sole();
+        TaskComment::query()->create(['task_id' => $feature->id, 'task_group_id' => $group->id, 'type' => 'approved', 'body' => 'Fine.', 'author' => 'reviewer', 'posted_at' => now(), 'commit_sha' => RM_COMMIT]);
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+        expect(TaskFinalReview::hasUnreviewedWork($group))->toBeTrue();
+
+        app(TaskScheduler::class)->tick();
+
+        expect($runtime->merges)->toBe([]);
+    });
+
+    it('clears the unreviewed-head request once the head is reviewed again, and lets an operator subtask resume past it', function (): void {
+        $group = rm_settled();
+        $feature = $group->tasks->sole();
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_PR_HEAD));
+
+        app(TaskScheduler::class)->tick();
+
+        expect(TaskFinalReview::isUnreviewedHeadReason($group->fresh()?->assistance_reason))->toBeTrue();
+
+        $operator = Task::query()->create([
+            'parent_id' => $group->id, 'position' => 2, 'title' => 'Take over the branch', 'brief' => 'Review the pushed commit.', 'status' => TaskStatus::Todo,
+            'deliverables' => [['id' => 'tests', 'type' => 'review', 'description' => 'Tests cover it.']],
+        ]);
+
+        app(TaskScheduler::class)->tick();
+
+        expect($operator->fresh()?->status)->toBe(TaskStatus::Running)
+            ->and($runtime->implementers)->toBe([$operator->id])
+            ->and($group->fresh()?->assistance_requested)->toBeFalse();
+
+        Task::query()->whereKey($operator->id)->update(['status' => TaskStatus::Cancelled->value]);
+        $group->refresh()->update(['status' => TaskGroupStatus::Settling, 'assistance_requested' => true, 'assistance_kind' => AssistanceKind::Failure,
+            'assistance_reason' => TaskFinalReview::UnreviewedHeadPrefix.'someone pushed.']);
+        rm_watch(rm_open(RM_HEAD));
+
+        app(TaskScheduler::class)->tick();
+
+        expect($group->fresh()?->assistance_requested)->toBeFalse()
+            ->and($runtime->merges)->toBe([RM_HEAD]);
+    });
+
     it('does nothing for a Project without the flow', function (): void {
         $group = rm_group([['Feature', TaskStatus::Completed]], TaskGroupStatus::Settling, flow: false, prUrl: RM_PR_URL);
         $runtime = rm_runtime();
@@ -765,6 +859,54 @@ describe('incoming pull requests', function (): void {
             ->and($runtime->bodies)->toBe([])
             ->and($runtime->reviews)->toBe([[RM_COMMIT, 'APPROVE']])
             ->and(TaskReviewedCommit::query()->where('task_id', $group->id)->sole()->source)->toBe(TaskReviewedCommitSource::OrbitPush);
+    });
+
+    it('reviews the head the pull request has when the final review starts', function (): void {
+        $group = rm_group([[TaskFinalReview::Title, TaskStatus::Running, TaskType::FinalReview]], TaskGroupStatus::Running, prUrl: RM_PR_URL, prBranch: 'feature/login');
+        $final = $group->tasks->sole();
+        $final->update(['fixup_head_sha' => RM_PR_HEAD]);
+        TaskCheck::query()->create([
+            'task_id' => $final->id, 'kind' => TaskCheckKind::Baseline, 'status' => TaskCheckStatus::Passed,
+            'pid' => 4001, 'process_started' => 'Wed Sep 23 12:00:01 2026', 'head_before' => RM_BASE, 'tree_before' => str_repeat('b', 40), 'started_at' => now(),
+        ]);
+        $runtime = rm_runtime();
+        rm_watch(rm_open(RM_HEAD));
+
+        app(TaskScheduler::class)->tick();
+
+        expect($runtime->moves)->toBe([RM_HEAD])
+            ->and($final->fresh()?->fixup_head_sha)->toBe(RM_HEAD)
+            ->and($final->fresh()?->status)->toBe(TaskStatus::Reviewing);
+    });
+
+    it('merges the author\'s new commits through a fixup when its reviewed push is no longer a fast-forward', function (): void {
+        $group = rm_group([[TaskFinalReview::Title, TaskStatus::Completed, TaskType::FinalReview], [TaskFinalReview::FixupTitle, TaskStatus::Completed], [TaskFinalReview::Title, TaskStatus::Reviewing, TaskType::FinalReview]], prUrl: RM_PR_URL, prBranch: 'feature/login');
+        TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => RM_PR_HEAD, 'source' => TaskReviewedCommitSource::PullRequestReview]);
+        $final = Task::query()->where('parent_id', $group->id)->where('status', TaskStatus::Reviewing->value)->sole();
+        rm_reviewing($final, RM_COMMIT);
+        $runtime = rm_runtime([rm_receipt('approved', deliverables: ['final-review' => 'Read it all.'])]);
+        $runtime->pushFailures = 1;
+        rm_watch(rm_open(RM_HEAD));
+
+        app(TaskScheduler::class)->tick();
+
+        $merge = Task::query()->where('parent_id', $group->id)->where('title', 'Merge origin/feature/login')->sole();
+        expect($runtime->pushes)->toBe([])
+            ->and($runtime->reviews)->toBe([])
+            ->and($final->fresh()?->status)->toBe(TaskStatus::Completed)
+            ->and($merge->status)->toBe(TaskStatus::Running)
+            ->and($merge->fixup_problem)->toBe(TaskFinalReview::FixupProblem);
+    });
+
+    it('keeps holding pushes on an incoming pull request after the Project turns the flow off', function (): void {
+        $group = rm_group([['Fix', TaskStatus::Reviewing], ['Next', TaskStatus::Todo]], flow: false, prUrl: RM_PR_URL, prBranch: 'feature/login');
+        rm_reviewing($group->tasks->firstWhere('title', 'Fix'));
+        $runtime = rm_runtime([rm_receipt('approved', deliverables: ['tests' => 'FixTest'])]);
+
+        app(TaskScheduler::class)->tick();
+
+        expect($group->fresh()?->reviewsBeforePush())->toBeTrue()
+            ->and($runtime->pushes)->toBe([]);
     });
 
     it('runs the baseline before an incoming pull request\'s first final review, then moves to its head', function (): void {

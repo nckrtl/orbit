@@ -39,6 +39,17 @@ final readonly class TaskFinalReview
     /** The brief of a final review fixup holds at most this many characters of findings. */
     private const int FindingsLimit = 7000;
 
+    public static function isUnreviewedHeadReason(?string $reason): bool
+    {
+        return is_string($reason) && str_starts_with($reason, self::UnreviewedHeadPrefix);
+    }
+
+    /** Requests that wait for an operator subtask. Appending one resumes the task and clears the request. */
+    public static function isResumableReason(?string $reason): bool
+    {
+        return self::isCapReason($reason) || self::isUnreviewedHeadReason($reason);
+    }
+
     /** Whether the reason is the final-review cap. An appended operator subtask resumes past it. */
     public static function isCapReason(?string $reason): bool
     {
@@ -135,12 +146,34 @@ final readonly class TaskFinalReview
         return TaskReviewedCommit::query()->where('task_id', $group->id)->where('sha', $sha)->exists();
     }
 
-    /** Whether the task holds approved work that no final review approved. */
+    /**
+     * Whether the task holds approved work that no final review approved. A final review approves the whole
+     * workspace HEAD, which holds every earlier approval even when a fast-forward moved HEAD past it.
+     */
     public static function hasUnreviewedWork(Task $group): bool
     {
-        $commit = self::latestApprovedCommit($group);
+        $approval = TaskComment::query()
+            ->where('task_group_id', $group->id)
+            ->where('type', TaskCommentType::Approved)
+            ->whereNotNull('commit_sha')
+            ->whereHas('task', static fn ($query) => $query->withoutFinalReviews())
+            ->latest('id')
+            ->first(['id', 'commit_sha']);
+        if (! $approval instanceof TaskComment || ! is_string($approval->commit_sha) || $approval->commit_sha === '') {
+            return false;
+        }
+        if (self::isReviewed($group, $approval->commit_sha)) {
+            return false;
+        }
 
-        return $commit !== null && ! self::isReviewed($group, $commit);
+        return ! TaskComment::query()
+            ->where('task_group_id', $group->id)
+            ->where('type', TaskCommentType::Approved)
+            ->whereNotNull('commit_sha')
+            ->where('id', '>', $approval->id)
+            ->whereHas('task', static fn ($query) => $query->where('type', TaskType::FinalReview->value))
+            ->whereIn('commit_sha', TaskReviewedCommit::query()->where('task_id', $group->id)->select('sha'))
+            ->exists();
     }
 
     /**

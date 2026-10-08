@@ -1293,7 +1293,7 @@ At most three final-review fixups run in one window. The window ends at the late
 
 In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. Only a final review's approval pushes.
 
-Orbit never asks GitHub to update the branch of such a task. GitHub's merge commit would land without Orbit's review. A conflict gets the `Merge origin/{base}` fixup at once. A branch that is only behind its base still merges.
+Orbit never asks GitHub to update the branch of such a task. GitHub's merge commit would land without Orbit's review. A conflict gets the `Merge origin/{base}` fixup at once. A branch that is only behind its base still merges. When GitHub refuses that merge, for example because a branch rule requires an up-to-date branch, Orbit appends a final-review fixup `Merge origin/{base}` instead.
 
 Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
 
@@ -1309,9 +1309,11 @@ At most once a minute, each `tasks:tick` lists the open pull requests of every r
 - Its base is the Project's default branch, and its head branch is not the default branch or a `task-*` branch.
 - No task for that pull request exists, except tasks that `failed`.
 
-For each eligible pull request, Orbit creates a task in `todo` titled `Review #{number}: {title}`, with the pull request description in its brief. The task stores the pull request as `pr_url` and its head branch as `pr_branch`. It has one final review, which records the head it was created for. The workspace's local branch stays `task-{id}`. Orbit fetches and pushes `pr_branch` instead of `task-{id}`. Cancelling the task stops Orbit from reviewing that pull request again.
+For each eligible pull request, Orbit creates a task in `todo` titled `Review #{number}: {title}`, with the pull request description in its brief. The task stores the pull request as `pr_url` and its head branch as `pr_branch`. It has one final review, which records the head it was created for. The workspace's local branch stays `task-{id}`. Orbit fetches, watches, and pushes `pr_branch` instead of `task-{id}`. Completing or cancelling the task stops Orbit from reviewing that pull request again. A settling task with a pull request cannot be cancelled, so complete it. The task keeps the review-and-merge rules until it ends, even when the Project turns the flow off.
 
-Before the first final review, Orbit runs the [baseline check](#baseline-check) on the fresh workspace, so setup serves the fixups that follow. Then it fetches `pr_branch` and moves `task-{id}` to the pull request head. It moves the workspace only when no approved work is unpushed and the tree has no tracked changes.
+Before the first final review, Orbit runs the [baseline check](#baseline-check) on the fresh workspace, so setup serves the fixups that follow. Then it fetches `pr_branch` and moves `task-{id}` to the head the pull request has at that moment, which can be newer than the head the task was created for. It moves the workspace only when no approved work is unpushed and the tree has no tracked changes.
+
+The author can push while Orbit's reviewed fixups wait. Orbit's push is then not a fast-forward, and GitHub refuses it. Orbit then completes the final review and starts the final-review fixup `Merge origin/{pr_branch}`, so the author's commits are merged and reviewed before the next push.
 
 | Final review outcome | Orbit |
 | --- | --- |
@@ -1325,21 +1327,22 @@ The App can review the pull request because the pull request author is a person,
 
 Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
 
-1. The head SHA is one Orbit recorded as fully reviewed for this task.
+1. The head SHA is one Orbit recorded as fully reviewed for this task, and no newer approved work waits for its final review.
 2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
-3. GitHub reports the pull request mergeable, with no conflict.
-4. A complete review read finds no trusted account in `ORBIT_TASKS_GITHUB_REVIEWERS` whose effective decision is `CHANGES_REQUESTED`, on any head. A repository without trusted reviewers has none.
+3. The pull request base is the Project's default branch, which the final review diffed against.
+4. GitHub reports the pull request mergeable, with no conflict.
+5. A complete review read finds no trusted account in `ORBIT_TASKS_GITHUB_REVIEWERS` whose effective decision is `CHANGES_REQUESTED`, on any head. A repository without trusted reviewers has none.
 
 The green-commit rules need at least one run of that name. Every such run must be for that SHA, completed with `success`, and created by `github-actions`.
 
-The App merges with a merge commit and `sha` set to the head, so GitHub refuses when the head moved. The merge is a push by the App, so GitHub runs the `push` workflows on the default branch. The next tick sees the merge and completes the task. Orbit evaluates the checks of one head at most once a minute.
+The App merges with a merge commit and `sha` set to the head, so GitHub refuses when the head moved. The repository must allow merge commits. The merge is a push by the App, so GitHub runs the `push` workflows on the default branch. The next tick sees the merge and completes the task. Orbit evaluates the checks of one head at most once a minute.
 
-A head that Orbit did not record means someone else pushed. On an incoming pull request, Orbit appends a final review of that head. On an Orbit task branch, the task asks for assistance with a reason that starts with `The pull request head was not reviewed by Orbit: `, and Orbit does not merge.
+A head that Orbit did not record means someone else pushed. On an incoming pull request, Orbit appends a final review of that head. On an Orbit task branch, the task asks for assistance with a reason that starts with `The pull request head was not reviewed by Orbit: `, and Orbit does not merge. Append an operator subtask to continue: it resumes the task, clears that request, and builds on the fetched branch, so a final review covers the other commits before Orbit pushes. The request also clears when the head is one Orbit reviewed again.
 
 | Merge status | Meaning |
 | --- | --- |
 | `waiting` | A condition does not hold yet, such as a pending or missing check, an unreported mergeability, or an incomplete review read |
-| `refused` | A condition failed: the check failed, a trusted account requests changes, GitHub refused the merge, or someone else pushed |
+| `refused` | A condition failed: the check failed, a trusted account requests changes, the base is not the default branch, GitHub refused the merge, or someone else pushed |
 | `merged` | The App merged the pull request. `merged_sha` is the merge commit |
 
 ### Records and status
