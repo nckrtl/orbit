@@ -7306,7 +7306,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Smoke printed no report (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`). */
+            /** @description Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`). */
             500: {
                 headers: {
                     [name: string]: unknown;

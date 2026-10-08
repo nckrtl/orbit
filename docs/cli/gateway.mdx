@@ -242,7 +242,7 @@ Interrupting the CLI stops waiting, not smoke. Smoke ends on the Gateway within 
 | --- | --- |
 | `gateway.release_commit_invalid` | The commit is not a hex SHA of 7 to 40 characters, or the current release reports no commit. |
 | `gateway.release_since_invalid` | `--since` is not an ISO 8601 time with a zone. |
-| `gateway.release_smoke_failed` | Smoke printed no report. Checks that did not pass are the `failed` outcome, not this error. |
+| `gateway.release_smoke_failed` | Smoke printed no report, or a report that is not a check failure, such as `terminated`. Checks that did not pass are the `failed` outcome, not this error. |
 | `gateway.release_smoke_timeout` | Smoke ran past its limit and was stopped. |
 | `gateway.release_smoke_killed` | Something else, such as the out-of-memory killer, killed smoke before its limit. |
 | `gateway.release_smoke_missing` | The current release has no `bin/gateway-smoke`. |

@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 use App\Actions\GatewayReleases\DeployGatewayReleaseAction;
-use App\Actions\GatewayReleases\SmokeGatewayReleaseAction;
 use App\Domain\GatewayReleases\GatewayReleaseAutomation;
 use App\Domain\GatewayReleases\GatewayReleaseDatabase;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -150,13 +149,14 @@ function gateway_smoke_api(GatewayReleaseLayout $layout, RecordedSmokeProcesses 
 {
     mkdir($layout->currentPath().'/bin', 0755, true);
     touch($layout->currentPath().'/bin/gateway-smoke');
-    app()->instance(SmokeGatewayReleaseAction::class, new SmokeGatewayReleaseAction($layout, new ScriptGatewayReleaseSmoke(
+    // The action itself comes from the container, so it gets the request's CommandDeadline.
+    app()->instance(ScriptGatewayReleaseSmoke::class, new ScriptGatewayReleaseSmoke(
         layout: $layout,
         processes: $processes,
         origin: 'https://gateway.orbit',
         webRoot: '/home/orbit/web',
         timeoutSeconds: $timeout,
-    ), app(CommandDeadline::class)));
+    ));
 }
 
 /** A release layout with a current release and a retained target, without Git. */

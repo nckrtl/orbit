@@ -1795,7 +1795,7 @@ for route in sorted(routes, key=lambda r: (r['uri'], r['method'])):
         if route['name'] == 'gateway:trust':
             responses['503'] = error_response('The Gateway root CA is unavailable (`ca.unavailable`).')
         if route['name'] == 'gateway:release:smoke':
-            responses['500'] = error_response('Smoke printed no report (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`).')
+            responses['500'] = error_response('Smoke printed no report or one that is not a check failure, such as `terminated` (`gateway.release_smoke_failed`), ran past its limit (`gateway.release_smoke_timeout`), was killed (`gateway.release_smoke_killed`), or the current release has no `bin/gateway-smoke` (`gateway.release_smoke_missing`).')
     if route['name'].startswith('project:document:'):
         op['description'] = 'Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.'
         if route['name'] in ('project:document:list', 'project:document:search', 'project:document:version:list'):
