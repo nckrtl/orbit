@@ -46,11 +46,29 @@ final readonly class SandboxPiRuntime
         }
         try {
             $relay = $this->relay($sandbox, $workspace);
+            $ingress = $this->ingress($sandbox, $workspace);
+            if ($ingress !== null) {
+                if ($relay['model_relay_address'] !== $ingress['bridge']) {
+                    throw new ComputeException('compute.pi_unavailable', 'The sandbox Pi network has no matching model relay.');
+                }
+                $networkProgram = file_get_contents(resource_path('compute/guest-pi-ingress.py'));
+                if (! is_string($networkProgram)) {
+                    throw new ComputeException('compute.pi_unavailable', 'The sandbox Pi network program is unavailable.');
+                }
+                $network = $this->guest->execute($workspace, new RemoteCommand(['sudo', '-n', 'python3', '-I', '-c',
+                    "SOURCE = '".base64_encode($networkProgram)."'\n".$networkProgram],
+                    protectedInput: ProtectedInput::fromString(json_encode($ingress, JSON_THROW_ON_ERROR)), timeout: 90, maxOutputBytes: 8192),
+                    'sandbox-pi-network', 'tasks.pi_setup_failed');
+                $networkData = json_decode($network->stdout, true, flags: JSON_THROW_ON_ERROR);
+                if ($network->truncated || ! is_array($networkData) || ($networkData['sandbox_id'] ?? null) !== $sandbox->id || ($networkData['ready'] ?? null) !== true) {
+                    throw new ComputeException('compute.pi_unavailable', 'The sandbox Pi network did not confirm readiness.');
+                }
+            }
             if ($sandbox->provider === 'upcloud') {
                 $this->artifact->prepare($workspace);
             }
             $request = ['sandbox_id' => $sandbox->id, 'checkout' => $workspace->checkout_path, 'pi_token' => $sandbox->pi_token,
-                'model_key' => $sandbox->model_key, 'models' => config('compute.pi.models', []), ...$relay];
+                'model_key' => $sandbox->model_key, 'models' => config('compute.pi.models', []), 'pi_ingress' => $ingress, ...$relay];
             $result = $this->guest->execute($workspace, new RemoteCommand(['sudo', '-n', 'python3', '-I', '-c', $program],
                 protectedInput: ProtectedInput::fromString(json_encode($request, JSON_THROW_ON_ERROR)), timeout: 90, maxOutputBytes: 8192),
                 'sandbox-pi', 'tasks.pi_setup_failed');
@@ -64,6 +82,29 @@ final readonly class SandboxPiRuntime
             // The guest can echo either key, including in malformed output. Do not retain its exception.
             throw new ComputeException('compute.pi_unavailable', 'The sandbox runtime did not confirm readiness.');
         }
+    }
+
+    /** @return array{sandbox_id: string, address: string, bridge: string, gateway: string}|null */
+    private function ingress(TaskSandbox $sandbox, Instance $workspace): ?array
+    {
+        if ($sandbox->provider !== 'incus') {
+            return null;
+        }
+        $spec = $sandbox->spec;
+        if (! array_key_exists('pi_host', $spec) && ! array_key_exists('pi_port', $spec) && ! array_key_exists('gateway_address', $spec)) {
+            return null;
+        }
+        $subnet = $spec['subnet'] ?? null;
+        $gateway = $spec['gateway_address'] ?? null;
+        if ($workspace->project->slug !== 'orbit' || ! is_string($subnet)
+            || preg_match('/\A10\.233\.([0-9]{1,3})\.0\/24\z/D', $subnet, $match) !== 1 || (int) $match[1] > 255
+            || ! is_string($gateway) || filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false || ! str_starts_with($gateway, '10.44.')
+            || ($spec['pi_host'] ?? null) !== $workspace->node->wireguard_ip
+            || ! is_int($spec['pi_port'] ?? null) || $spec['pi_port'] < 20000 || $spec['pi_port'] > 60999) {
+            throw new ComputeException('compute.pi_unavailable', 'The sandbox Pi network reservation is unavailable.');
+        }
+
+        return ['sandbox_id' => $sandbox->id, 'address' => '10.233.'.$match[1].'.10', 'bridge' => '10.233.'.$match[1].'.1', 'gateway' => $gateway];
     }
 
     /** @return array{model_relay_address: ?string, model_relay_kind: string, model_relay_port: int} */

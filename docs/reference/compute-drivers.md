@@ -229,6 +229,10 @@ An Orbit host can set `gateway_address` to the real Gateway’s WireGuard addres
 
 The proxy never binds a public or wildcard address. Changing or removing an existing proxy through reprovisioning is refused as device drift. This requires a Pi server in the image and host forwarding that permits the owned bridge; creating the proxy does not weaken other host firewall rules.
 
+Guest preparation admits Pi traffic from the recorded live Gateway to the operator's reserved bridge address on TCP port `3774`. A service owned by root restores this rule and a source-specific return route at boot, before Pi starts. The return route applies only to replies from that bridge address to the live Gateway. Traffic from the operator's isolated WireGuard address keeps its existing routes, even when the live and private Gateway addresses overlap.
+
+Preparation finds the guest interface by its reserved address; an Incus device name does not fix the VM's interface name. It refuses foreign routing-table entries, policy rules, service files, or marked firewall rules. Retries keep the same policy and Pi process. These guest rules do not change the host ACL or permit new outbound fleet access.
+
 ### Group model keys
 
 `SandboxModelKeys` reserves a random key in encrypted, hidden sandbox storage before registering it with CLIProxyAPI. Registration retries reuse the key and its recorded endpoint. A changed management endpoint refuses recovery until the original endpoint is restored. Registration stays disabled unless `compute.model_proxy.enabled` is enabled.

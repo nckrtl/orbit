@@ -67,6 +67,7 @@ function sandbox_claim(): array
             $guest['argv'][0] === 'php' => 'identity',
             $guest['argv'][0] === 'sudo' && $guest['argv'][2] === 'bash' => 'vpn',
             isset($data['pi_token']) => 'pi',
+            isset($data['address'], $data['gateway']) => 'pi-network',
             isset($data['phase']) => 'pair-'.$data['phase'],
             default => $data['operation'],
         };
@@ -93,7 +94,7 @@ it('attaches the owned workspace before guest preparation and returns only after
     expect($workspace)->toBeInstanceOf(Instance::class);
     expect($workspace->status)->toBe(InstanceState::SourceResolved)->and($workspace->task_workspace_routed)->toBeFalse();
     expect($group->fresh()->taskable_id)->toBe($workspace->id);
-    expect($state->calls)->toBe(['capacity', 'provision', 'initialize', 'github_dns', 'fetch', 'checkout', 'pair-inspect', 'identity', 'vpn', 'pair-gateway', 'pair-operator', 'pi']);
+    expect($state->calls)->toBe(['capacity', 'provision', 'initialize', 'github_dns', 'fetch', 'checkout', 'pair-inspect', 'identity', 'vpn', 'pair-gateway', 'pair-operator', 'pi-network', 'pi']);
     expect($workspace->taskSandbox->model_key_registered_at)->not->toBeNull();
 });
 
@@ -126,7 +127,7 @@ it('never returns a claim after any failed guest step and redacts guest output',
     }
     expect($state->calls[array_key_last($state->calls)])->toBe($phase);
     expect($group->fresh()->taskable_id)->not->toBeNull();
-})->with(['initialize', 'checkout', 'pair-inspect', 'identity', 'vpn', 'pair-gateway', 'pair-operator', 'pi']);
+})->with(['initialize', 'checkout', 'pair-inspect', 'identity', 'vpn', 'pair-gateway', 'pair-operator', 'pi-network', 'pi']);
 
 it('waits without allocating for disabled or incomplete rollout prerequisites', function (string $key, mixed $value): void {
     [$group, $state] = sandbox_claim();

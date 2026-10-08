@@ -19,7 +19,7 @@ BINARY = Path('/usr/local/bin/orbit-pi-server')
 
 
 def validate(request):
-    if set(request) - {'model_relay_address', 'model_relay_kind', 'model_relay_port'} != {'sandbox_id', 'checkout', 'pi_token', 'model_key', 'models'}:
+    if set(request) - {'model_relay_address', 'model_relay_kind', 'model_relay_port', 'pi_ingress'} != {'sandbox_id', 'checkout', 'pi_token', 'model_key', 'models'}:
         raise ValueError('Invalid runtime request')
     identity = request['sandbox_id']
     if str(uuid.UUID(identity)) != identity:
@@ -43,6 +43,15 @@ def validate(request):
         network = '10.44.0.0/16' if kind == 'upcloud' else '10.233.0.0/16'
         if address.version != 4 or address not in ipaddress.ip_network(network) or (kind == 'incus' and int(address) % 256 != 1):
             raise ValueError('Invalid group model relay')
+    ingress = request.get('pi_ingress')
+    if ingress is not None:
+        if (not isinstance(ingress, dict) or set(ingress) != {'sandbox_id', 'address', 'bridge', 'gateway'}
+                or ingress['sandbox_id'] != identity or kind != 'incus' or ingress['bridge'] != relay):
+            raise ValueError('Invalid Pi ingress reservation')
+        bridge = ipaddress.IPv4Address(ingress['bridge'])
+        if (str(bridge + 9) != ingress['address']
+                or ipaddress.IPv4Address(ingress['gateway']) not in ipaddress.IPv4Network('10.44.0.0/16')):
+            raise ValueError('Invalid Pi ingress endpoint')
     models = request['models']
     if not isinstance(models, list) or not 1 <= len(models) <= 100:
         raise ValueError('Configure supported sandbox models')
@@ -117,6 +126,13 @@ Restart=on-failure
 [Install]
 WantedBy=multi-user.target
 '''
+    if request.get('pi_ingress') is not None:
+        network = Path('/etc/orbit-sandbox-pi-network.json')
+        regular(network, 0)
+        regular(Path('/etc/systemd/system/orbit-sandbox-pi-network.service'), 0)
+        if json.loads(network.read_text()) != request['pi_ingress']:
+            raise ValueError('Foreign Pi ingress state')
+        unit = unit.replace('After=network.target\n', 'After=network.target orbit-sandbox-pi-network.service\nRequires=orbit-sandbox-pi-network.service\n')
     units = {UNIT: unit}
     relay = request.get('model_relay_address')
     if relay is not None:

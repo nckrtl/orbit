@@ -55,6 +55,19 @@ class RuntimeBoundary(unittest.TestCase):
             with self.subTest(port=port), self.assertRaises(ValueError):
                 runtime.validate({**request, 'model_relay_port': port})
 
+    def test_pi_ingress_stays_bound_to_its_clone_and_bridge_relay(self):
+        request = {'sandbox_id': 'ca656ccf-240d-476c-90f1-cf70f9dd7a12', 'checkout': '/home/orbit/orbit',
+                   'pi_token': 'a' * 64, 'model_key': 'b' * 64,
+                   'models': [{'id': 'probe', 'name': 'Proof', 'reasoning': False, 'input': ['text'], 'contextWindow': 8192, 'maxTokens': 1024}],
+                   'model_relay_address': '10.233.201.1'}
+        ingress = {'sandbox_id': request['sandbox_id'], 'address': '10.233.201.10', 'bridge': '10.233.201.1', 'gateway': '10.44.0.2'}
+        runtime.validate({**request, 'pi_ingress': ingress})
+        for change in ({'sandbox_id': 'foreign'}, {'address': '10.233.202.10'}, {'gateway': '169.254.169.254'}, {'program': 'foreign'}):
+            with self.subTest(change=change), self.assertRaises(ValueError):
+                runtime.validate({**request, 'pi_ingress': {**ingress, **change}})
+        with self.assertRaises(ValueError):
+            runtime.validate({**request, 'model_relay_kind': 'upcloud', 'model_relay_address': '10.44.0.3', 'pi_ingress': ingress})
+
     def test_model_descriptors_cannot_supply_another_endpoint_or_key(self):
         request = {'sandbox_id': 'ca656ccf-240d-476c-90f1-cf70f9dd7a12', 'checkout': '/home/orbit/orbit',
                    'pi_token': 'a' * 64, 'model_key': 'b' * 64,

@@ -105,6 +105,54 @@ it('permits empty Pi auth storage while refusing subscription credentials and mo
     $process = new Process(['python3', base_path('tests/Fixtures/Compute/guest_pi_runtime_test.py'), resource_path('compute/guest-pi-runtime.py')]);
     $process->mustRun();
     expect($process->getExitCode())->toBe(0);
+    $network = new Process(['python3', base_path('tests/Fixtures/Compute/guest_pi_ingress_test.py'), resource_path('compute/guest-pi-ingress.py')]);
+    $network->mustRun();
+    expect($network->getExitCode())->toBe(0);
+});
+
+it('prepares owned Pi ingress before runtime and stops when ingress is unconfirmed', function (bool $valid): void {
+    $group = pi_runtime_group();
+    $workspace = $group->taskable;
+    $sandbox = $workspace->taskSandbox;
+    $sandbox->forceFill(['pi_token' => str_repeat('a', 64), 'model_key' => str_repeat('b', 64), 'model_key_registered_at' => now(),
+        'model_proxy_origin' => 'http://10.44.0.3:8317', 'spec' => [...$sandbox->spec,
+            'subnet' => '10.233.201.0/24', 'model_proxy_origin' => 'http://10.44.0.3:8317',
+            'pi_host' => '10.44.0.20', 'pi_port' => 23201, 'gateway_address' => '10.44.0.2'],
+    ])->save();
+    $calls = 0;
+    mock(SshExecutor::class)->shouldReceive('execute')->times($valid ? 2 : 1)->andReturnUsing(function ($connection, RemoteCommand $command) use ($sandbox, $valid, &$calls): CommandResult {
+        $envelope = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+        $request = json_decode(base64_decode($envelope['guest']['stdin']), true, flags: JSON_THROW_ON_ERROR);
+        $ingress = ['sandbox_id' => $sandbox->id, 'address' => '10.233.201.10', 'bridge' => '10.233.201.1', 'gateway' => '10.44.0.2'];
+        if (++$calls === 1) {
+            expect($request)->toBe($ingress);
+            expect(implode(' ', $envelope['guest']['argv']))->not->toContain($sandbox->pi_token, $sandbox->model_key);
+        } else {
+            expect($request['pi_ingress'])->toBe($ingress);
+        }
+
+        return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => 'operator', 'exit_code' => 0,
+            'stdout' => base64_encode($valid ? json_encode(['sandbox_id' => $sandbox->id, 'ready' => true]) : '{}'),
+            'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
+    });
+    if ($valid) {
+        app(SandboxPiRuntime::class)->prepare($workspace);
+        expect($sandbox->fresh()->pi_ready_at)->not->toBeNull();
+    } else {
+        expect(fn () => app(SandboxPiRuntime::class)->prepare($workspace))->toThrow(ComputeException::class);
+        expect($sandbox->fresh()->pi_ready_at)->toBeNull();
+    }
+})->with([true, false]);
+
+it('refuses a foreign Pi ingress endpoint before guest mutation', function (): void {
+    $group = pi_runtime_group();
+    $sandbox = $group->taskable->taskSandbox;
+    $sandbox->forceFill(['pi_token' => str_repeat('a', 64), 'model_key' => str_repeat('b', 64), 'model_key_registered_at' => now(),
+        'spec' => [...$sandbox->spec, 'subnet' => '10.233.201.0/24', 'pi_host' => '10.44.0.20', 'pi_port' => 23201, 'gateway_address' => '169.254.169.254'],
+    ])->save();
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => app(SandboxPiRuntime::class)->prepare($group->taskable))->toThrow(ComputeException::class);
 });
 
 it('refuses a model relay outside its reserved group subnet before guest transport', function (): void {
