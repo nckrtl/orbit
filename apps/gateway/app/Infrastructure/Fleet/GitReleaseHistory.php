@@ -53,6 +53,26 @@ final readonly class GitReleaseHistory implements ReleaseHistory
         return preg_match('/\A[1-9][0-9]{0,9}\z/D', $value) === 1 ? (int) $value : null;
     }
 
+    public function ancestors(string $commit, int $limit): array
+    {
+        if (preg_match('/\A[0-9a-f]{40}\z/D', $commit) !== 1 || $limit < 1) {
+            return [];
+        }
+
+        $result = $this->git(['rev-list', '--max-count='.($limit + 1), $commit]);
+
+        if (! $result instanceof CommandResult || ! $result->succeeded()) {
+            return [];
+        }
+
+        $commits = array_values(array_filter(
+            explode("\n", trim($result->stdout)),
+            static fn (string $line): bool => preg_match('/\A[0-9a-f]{40}\z/D', $line) === 1 && $line !== $commit,
+        ));
+
+        return array_slice($commits, 0, $limit);
+    }
+
     /** @param  list<string>  $arguments */
     private function git(array $arguments): ?CommandResult
     {

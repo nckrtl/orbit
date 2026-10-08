@@ -45,11 +45,15 @@ function fake_cli_release_github(array $overrides = []): void
     });
 }
 
-function fake_release_history(?string $commit = CLI_RELEASE_FIXTURE_COMMIT, ?int $count = CLI_RELEASE_FIXTURE_NUMBER): void
+/**
+ * @param  array<string, int>  $ancestors  The commits the Gateway's commit reaches, newest first, with their counts.
+ */
+function fake_release_history(?string $commit = CLI_RELEASE_FIXTURE_COMMIT, ?int $count = CLI_RELEASE_FIXTURE_NUMBER, array $ancestors = []): void
 {
-    app()->instance(ReleaseHistory::class, new readonly class($commit, $count) implements ReleaseHistory
+    app()->instance(ReleaseHistory::class, new readonly class($commit, $count, $ancestors) implements ReleaseHistory
     {
-        public function __construct(private ?string $resolved, private ?int $total) {}
+        /** @param  array<string, int>  $older */
+        public function __construct(private ?string $resolved, private ?int $total, private array $older) {}
 
         public function commit(string $revision): ?string
         {
@@ -58,7 +62,12 @@ function fake_release_history(?string $commit = CLI_RELEASE_FIXTURE_COMMIT, ?int
 
         public function count(string $commit): ?int
         {
-            return $this->total;
+            return $this->older[$commit] ?? $this->total;
+        }
+
+        public function ancestors(string $commit, int $limit): array
+        {
+            return array_slice(array_keys($this->older), 0, $limit);
         }
     });
 }

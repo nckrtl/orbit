@@ -45,6 +45,17 @@ describe(GitReleaseHistory::class, function (): void {
             ->and($this->history->count(release_history_git($this->repository, ['rev-parse', 'HEAD~1'])))->toBe(2);
     });
 
+    it('lists the commits a commit reaches, newest first and without the commit itself', function (): void {
+        $parent = release_history_git($this->repository, ['rev-parse', 'HEAD~1']);
+        $root = release_history_git($this->repository, ['rev-parse', 'HEAD~2']);
+
+        expect($this->history->ancestors($this->head, 20))->toBe([$parent, $root])
+            ->and($this->history->ancestors($this->head, 1))->toBe([$parent])
+            ->and($this->history->ancestors($root, 20))->toBe([])
+            ->and($this->history->ancestors(str_repeat('0', 40), 20))->toBe([])
+            ->and($this->history->ancestors('HEAD', 20))->toBe([]);
+    });
+
     it('resolves no commit for an unknown or non-hexadecimal revision', function (string $revision): void {
         expect($this->history->commit($revision))->toBeNull();
     })->with(['unknown commit' => str_repeat('0', 40), 'branch name' => 'main', 'option' => '--all', 'tag syntax' => 'HEAD~1']);

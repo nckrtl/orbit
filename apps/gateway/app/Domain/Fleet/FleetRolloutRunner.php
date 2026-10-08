@@ -24,7 +24,8 @@ use Throwable;
  *
  * 1. Stops when the rollout is disabled, another run holds the fleet lock, or a rollout is halted.
  * 2. Resolves the desired state of the running Gateway. Without a published CLI release it records
- *    the rollout as `waiting` and stops; it never halts for that.
+ *    the rollout as `waiting` and stops; it never halts for that. When the state falls back to an
+ *    ancestor's release, the rollout uses it and raises `rollout_cli_fallback` once.
  * 3. Opens a rollout for a new commit, or refreshes the open one.
  * 4. Visits, one at a time in rollout order, each Node that is pending, unreachable, or deferred, and
  *    each converged Node whose footprint digest, agent version, or CLI version differs from the desired
@@ -108,6 +109,8 @@ final readonly class FleetRolloutRunner
         if ($rollout->status === FleetRolloutStatus::Waiting) {
             return $this->wait($rollout, $state);
         }
+
+        $this->noticeCliFallback($rollout, $state);
 
         $visited = [];
         // A Gateway rollback makes a verified release older than the Nodes' CLI; only that release may downgrade.
@@ -208,7 +211,7 @@ final readonly class FleetRolloutRunner
      * While the CLI release is not published, the rollout changes nothing on any Node: the footprint and the
      * CLI reach each Node together, in the sequential visit with its verify and halt, once the release
      * appears. A rollout that waits longer than {@see self::WaitingAlertSeconds} raises one
-     * `rollout_stalled` alert: CI most likely never published the release.
+     * `rollout_stalled` alert: CI never published the release, and no ancestor's release could stand in.
      *
      * @return array{status: string, rollout: ?int, visited: list<array{node: string, outcome: string}>}
      */
@@ -220,6 +223,16 @@ final readonly class FleetRolloutRunner
         }
 
         return $this->summary('waiting', $rollout);
+    }
+
+    /** A fallback CLI release is never silent: the rollout raises `rollout_cli_fallback` once for it. */
+    private function noticeCliFallback(FleetRollout $rollout, DesiredFleetStateData $state): void
+    {
+        if (! $state->cliFallback() || isset(($rollout->notices ?? [])['cli_fallback'])) {
+            return;
+        }
+
+        $rollout->forceFill(['notices' => [...($rollout->notices ?? []), 'cli_fallback' => $this->alerts->cliFallback($rollout, $state)]])->save();
     }
 
     /** A skipped Caddyfile is never silent: the first one in a rollout raises `rollout_caddy_skipped` once. */

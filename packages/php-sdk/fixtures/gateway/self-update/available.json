@@ -11,6 +11,7 @@
                 "reason": null,
                 "version": "0.4681.0",
                 "tag": "cli-v0.4681.0",
+                "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
                 "checksums_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS",
                 "assets": [
                     {

@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Fleet\DesiredFleetState;
 use App\Domain\Fleet\FleetNodeOutcome;
 use App\Domain\Fleet\FleetRolloutMembership;
 use App\Domain\Fleet\FleetRolloutRunner;
 use App\Domain\Fleet\FleetRolloutStatus;
 use App\Domain\Fleet\NodeCliState;
+use App\Domain\Fleet\ReleaseHistory;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Releases\ReleaseAlertKind;
 use App\Models\FleetRollout;
@@ -16,6 +18,7 @@ use App\Models\Node;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Tests\Support\Fleet\FakeFootprintArtifact;
+use Tests\Support\Fleet\FakeReleaseHistory;
 use Tests\Support\Fleet\FleetFixtures;
 
 function safetyRun(): array
@@ -188,6 +191,43 @@ describe('fleet rollout waiting', function (): void {
             ->and(FleetRollout::query()->sole()->alert['kind'])->toBe('rollout_stalled')
             ->and(FleetRollout::query()->sole()->status)->toBe(FleetRolloutStatus::Waiting)
             ->and($artifact->applied)->toBe([]);
+    });
+
+    it('rolls out an ancestor\'s CLI release once the state falls back, alerts once, and never stalls', function (): void {
+        ['visitor' => $visitor, 'catalog' => $catalog, 'alerts' => $alerts] = FleetFixtures::bind();
+        $ancestor = str_repeat('e', 40);
+        $catalog->missing = [FleetFixtures::Commit];
+        app()->instance(ReleaseHistory::class, new FakeReleaseHistory(ancestors: [$ancestor], counts: [$ancestor => 4680]));
+        FleetFixtures::node('dev', [RoleName::AppDev]);
+
+        expect(safetyRun()['status'])->toBe('waiting')
+            ->and($visitor->visited)->toBe([]);
+
+        Carbon::setTestNow(now()->addSeconds(DesiredFleetState::FallbackAfterSeconds + 1));
+
+        expect(safetyRun()['status'])->toBe('completed')
+            ->and($visitor->visited)->toBe(['dev'])
+            ->and(FleetRolloutNode::query()->sole()->cli_version)->toBe('0.4680.0')
+            ->and(FleetRollout::query()->sole()->desired_state['cli']['commit'])->toBe($ancestor)
+            ->and($alerts->alerts)->toHaveCount(1)
+            ->and($alerts->alerts[0]->kind)->toBe(ReleaseAlertKind::RolloutCliFallback)
+            ->and(FleetRollout::query()->sole()->notices['cli_fallback']['kind'])->toBe('rollout_cli_fallback');
+
+        Carbon::setTestNow(now()->addHours(3));
+        safetyRun();
+
+        expect($alerts->alerts)->toHaveCount(1)
+            ->and(FleetRollout::query()->sole()->alert)->toBeNull();
+
+        // The commit's own release appears: the catch-up brings the Node to it.
+        $catalog->missing = [];
+        $visitor->visited = [];
+        Carbon::setTestNow(now()->addSeconds(DesiredFleetState::FallbackSeconds + 1));
+        safetyRun();
+
+        expect($visitor->visited)->toBe(['dev'])
+            ->and(FleetRolloutNode::query()->sole()->cli_version)->toBe('0.4681.0')
+            ->and($alerts->alerts)->toHaveCount(1);
     });
 
     it('keeps the incomplete count across a deferred visit', function (): void {

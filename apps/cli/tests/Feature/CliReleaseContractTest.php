@@ -324,6 +324,56 @@ describe('CLI release workflow', function (): void {
         );
     });
 
+    it('names the refusal when GitHub refuses the tag of a commit whose workflows differ from main', function (int $ghExit, string $ghError, bool $workflowsDiffer, bool $named): void {
+        $origin = (string) cli_release_temp('orbit-cli-release-origin');
+        File::ensureDirectoryExists($origin.'/.github/workflows');
+        File::put($origin.'/.github/workflows/ci.yml', "name: CI\n");
+        cli_release_git($origin, 'init', '--quiet', '--initial-branch=main');
+        // GitHub serves any commit by SHA; a local origin needs this to do the same.
+        cli_release_git($origin, 'config', 'uploadpack.allowAnySHA1InWant', 'true');
+        cli_release_git($origin, 'add', '.');
+        $release = cli_release_commit($origin, 'release commit');
+
+        if ($workflowsDiffer) {
+            File::put($origin.'/.github/workflows/ci.yml', "name: CI\non: push\n");
+            cli_release_git($origin, 'add', '.');
+        }
+
+        cli_release_commit($origin, 'main moved on');
+        $checkout = (string) cli_release_temp('orbit-cli-release-checkout');
+        cli_release_git(sys_get_temp_dir(), 'clone', '--quiet', '--depth=1', 'file://'.$origin, $checkout);
+        $bin = (string) cli_release_temp('orbit-cli-release-bin');
+        File::ensureDirectoryExists($bin);
+        File::put($bin.'/gh', "#!/bin/sh\necho '{$ghError}' >&2\nexit {$ghExit}\n");
+        chmod($bin.'/gh', 0755);
+
+        $steps = array_column(cli_release_workflow()['jobs']['publish']['steps'], null, 'name');
+        $process = new Process(['bash', '-e', '-c', $steps['Publish GitHub release']['run']], $checkout, [
+            'PATH' => $bin.':'.getenv('PATH'),
+            'GIT_CONFIG_GLOBAL' => '/dev/null',
+            'GIT_CONFIG_NOSYSTEM' => '1',
+            'REPOSITORY' => 'nckrtl/orbit',
+            'COMMIT' => $release,
+            'VERSION' => '0.2.0',
+            'TAG' => 'cli-v0.2.0',
+        ]);
+        $process->run();
+
+        expect($process->getExitCode())->toBe($ghExit === 0 ? 0 : 1)
+            ->and($process->getErrorOutput())->toContain($ghError);
+
+        if ($named) {
+            expect($process->getOutput())->toContain('::error title=Release refused for a non-tip commit::', $release, 'cli-binaries#commits-without-a-release');
+        } else {
+            expect($process->getOutput())->not->toContain('::error');
+        }
+    })->with([
+        'workflows differ from main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/nckrtl/orbit/releases)', true, true],
+        'same workflows as main' => [1, 'HTTP 403: Resource not accessible by integration (https://api.github.com/repos/nckrtl/orbit/releases)', false, false],
+        'another failure' => [1, 'HTTP 500 (https://api.github.com/repos/nckrtl/orbit/releases)', true, false],
+        'published' => [0, 'Uploading assets', true, false],
+    ]);
+
     it('never runs release-commit code with the write token', function (): void {
         $jobs = cli_release_workflow()['jobs'];
 

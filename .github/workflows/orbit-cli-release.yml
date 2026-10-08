@@ -165,12 +165,31 @@ jobs:
           set -euo pipefail
           # gh uploads the assets to a draft and publishes it last, so the tag
           # and the release appear only with every asset in place.
-          gh release create "$TAG" release/* \
+          errors="$(mktemp)"
+          if gh release create "$TAG" release/* \
             --repo "$REPOSITORY" \
             --target "$COMMIT" \
             --title "orbit ${VERSION}" \
             --latest=false \
-            --notes "$(printf 'Orbit CLI %s, built from %s.\n\nCommit: %s\n\nVerify each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n' "$VERSION" "$COMMIT" "$COMMIT")"
+            --notes "$(printf 'Orbit CLI %s, built from %s.\n\nCommit: %s\n\nVerify each download against SHA256SUMS. See https://orbit.nckrtl.com/docs/reference/cli-binaries.\n' "$VERSION" "$COMMIT" "$COMMIT")" \
+            2> "$errors"; then
+            cat "$errors" >&2
+            exit 0
+          fi
+          cat "$errors" >&2
+          # GitHub refuses the job token a tag on a commit whose workflow files
+          # differ from main's tip. Name that cause instead of a bare HTTP 403.
+          if grep -q 'HTTP 403' "$errors"; then
+            git fetch --quiet --depth=1 origin "$COMMIT" +refs/heads/main:refs/remotes/origin/main
+            set +e
+            git diff --quiet "$COMMIT" origin/main -- .github/workflows
+            differs=$?
+            set -e
+            if [ "$differs" -eq 1 ]; then
+              echo "::error title=Release refused for a non-tip commit::GitHub refuses the workflow token a tag on ${COMMIT}, because main moved on and its .github/workflows differ from main's tip. This release cannot be published. The Gateway falls back to the newest published release of an ancestor. See https://orbit.nckrtl.com/docs/reference/cli-binaries#commits-without-a-release."
+            fi
+          fi
+          exit 1
 
       - name: Verify the published release
         run: |

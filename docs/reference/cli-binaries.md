@@ -18,7 +18,7 @@ The standalone `orbit` binary runs the CLI on a machine without PHP or Composer.
 
 ## Published releases
 
-Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green.
+Every `main` commit whose `Required checks` passed gets a GitHub release on [nckrtl/orbit](https://github.com/nckrtl/orbit/releases). The `Orbit CLI Release` workflow, `.github/workflows/orbit-cli-release.yml`, starts when a `CI` run on `main` succeeds, from a push or a manual dispatch. A pull-request run never starts it. It confirms that the commit is on the first-parent history of `main` and that its latest `Required checks` run is `success`, then builds and publishes. A commit whose CI fails or is cancelled gets no release. The release appears a few minutes after `Required checks` turns green. In rare cases GitHub refuses the release of a green commit ([Commits without a release](#commits-without-a-release)).
 
 Releases are public, need no login, and do not expire. A published release is never replaced.
 
@@ -66,7 +66,7 @@ The Gateway, a Node installer, and `orbit self-update` rely on these rules. They
 
 `bin/orbit-cli-release-version --tag C` prints the tag and refuses a shallow clone.
 
-A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. The Gateway can deploy a commit before its CLI release exists, and until then every URL above returns 404. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead.
+A release appears after `CI` completes and the release workflow builds and publishes it. That is usually a few minutes after `Required checks` turns green. The Gateway can deploy a commit before its CLI release exists, and until then every URL above returns 404. A client treats a 404 as "not published yet" and checks again later. It does not install a different version instead. Only the Gateway can name another release: when a commit's release stays missing for 30 minutes, its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit.
 
 ### Find the release for a commit
 
@@ -120,6 +120,17 @@ When a green `main` commit has no release, for example because the workflow fail
 
 The build uses the commit's own builder, so a commit from before CLI releases existed cannot be published: its builder has no Linux arm64 target. When the release already exists for that commit with every asset, the run changes nothing. When a tag or release for that version points elsewhere or lacks assets, the run fails and replaces nothing. An unfinished draft from an earlier run is deleted and rebuilt.
 
+### Commits without a release
+
+GitHub refuses to create a tag with the workflow's `GITHUB_TOKEN` when the tagged commit's `.github/workflows` files differ from the tip of `main`. GitHub treats that tag as a workflow change, which needs the `workflows` permission, and a job token cannot have it. The release API, the Git references API, and `git push` all answer `HTTP 403: Resource not accessible by integration`.
+
+So a green commit gets no release when both of these are true:
+
+- A newer commit reached `main` before the release workflow published. A rerun of the commit's CI makes that likely.
+- The commits between them changed a file under `.github/workflows`.
+
+The publish step then fails with the error `Release refused for a non-tip commit`. A `workflow_dispatch` run for that commit fails in the same way. The Gateway does not wait for such a release forever: its desired fleet state [falls back](/reference/self-update#fallback-to-an-ancestor-release) to the newest published release of an ancestor commit, and the next commit's release replaces it.
+
 ## Pull-request builds
 
 The `Orbit CLI Binary` workflow, `.github/workflows/orbit-cli-binary.yml`, builds the three targets on every pull request to `main` and on `workflow_dispatch`. The release workflow calls the same workflow for the commit it publishes. Pull-request builds are packaging checks. They are not part of `Required checks`.
@@ -155,6 +166,7 @@ The binary contract has these limits.
 - Only Linux x86_64, Linux arm64, and macOS on Apple silicon are built. Windows and Intel Macs are not.
 - The binaries are not notarized. The macOS binary keeps the ad-hoc signature of PHPacker's PHP build. A download with `curl` gets no quarantine flag and runs; a browser download needs `xattr -d com.apple.quarantine`.
 - `SHA256SUMS` comes from the same release, so it detects a damaged download, not a forged release.
+- A green commit can miss its release ([Commits without a release](#commits-without-a-release)).
 - The Gateway installs the binary only on the Nodes of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order), as `/usr/local/bin/orbit-<version>` behind the `/usr/local/bin/orbit` link that `orbit self-update` also switches ([Orbit CLI](/reference/node-provisioning#orbit-cli)). Operator machines update themselves with `orbit self-update`.
 
 ## Why it works this way
@@ -170,6 +182,10 @@ The release workflow runs from `main` with a token that can write releases. Only
 ### Releases for green main commits
 
 A Node or an updater needs a binary that is always there and needs no login. Workflow artifacts expire and need a GitHub login. A release for every green commit gives each commit that can reach production a matching binary, without a manual tagging step. Commits that failed their checks never get one.
+
+### A fallback instead of a stronger token
+
+Only a token with the `workflows` permission can tag a commit whose workflow files differ from the tip of `main`. The job token cannot have that permission. A GitHub App or personal token with it could also change workflows on `main`, so the release job would hold far more than it needs. The refused case is rare and the next release fixes it, so the Gateway falls back to an ancestor's release instead.
 
 ### A version from the commit count
 

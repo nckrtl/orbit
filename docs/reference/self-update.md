@@ -22,7 +22,7 @@ The desired fleet state names what every machine should run for the Gateway's co
 | Field | Contents |
 | --- | --- |
 | `commit` | The full SHA of the Gateway's commit, or null when the Gateway version is not a commit |
-| `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, `checksums_url`, and one asset per platform |
+| `cli` | The [CLI release](/reference/cli-binaries#release-contract-for-clients) of that commit: `status`, `reason`, `version`, `tag`, the `commit` CI built it from, `checksums_url`, and one asset per platform |
 | `agent` | The pinned [`orbit-agent`](/reference/node-agent#install-and-upgrade) `version` and one asset per Linux architecture |
 
 Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), the release asset `name`, the HTTPS download `url`, and its lowercase hex `sha256`.
@@ -35,6 +35,7 @@ Each asset has `platform` (`linux-x86_64`, `linux-aarch64`, or `macos-arm64`), t
     "reason": null,
     "version": "0.4681.0",
     "tag": "cli-v0.4681.0",
+    "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
     "checksums_url": "https://github.com/nckrtl/orbit/releases/download/cli-v0.4681.0/SHA256SUMS",
     "assets": [
       {
@@ -85,7 +86,7 @@ The Gateway usually deploys a commit a minute after its checks pass, minutes bef
 
 | `cli.status` | `reason` | Meaning |
 | --- | --- | --- |
-| `available` | null | Every field is set. |
+| `available` | null | Every field is set. `cli.commit` is the Gateway's commit, or an ancestor's for a [fallback](#fallback-to-an-ancestor-release). |
 | `pending` | `release_missing` | The version and tag are set, but the release is not published yet. Check again in a few minutes. |
 | `unavailable` | `gateway_commit_unknown` | The Gateway version is not a commit its Git history knows. |
 | `unavailable` | `history_unavailable` | The Gateway checkout is shallow or Git failed, so the version is unknown. |
@@ -93,7 +94,21 @@ The Gateway usually deploys a commit a minute after its checks pass, minutes bef
 | `unavailable` | `release_incomplete` | The release lacks a binary, or `SHA256SUMS` lacks a valid line. |
 | `unavailable` | `github_unavailable` | GitHub did not answer or refused the request, for example at its rate limit. |
 
-An available release is kept for its commit for 30 days, because a published release never changes. A `pending` or `unavailable` answer is kept for 60 seconds. Only the desired-fleet-state endpoint and the scheduler resolve the state. The scheduler runs `php artisan orbit:desired-fleet-state` every 5 minutes, which prints it as JSON. One caller resolves a commit at a time under a cache lock; the others wait up to 30 seconds and read its answer.
+An available release is kept for its commit for 30 days, because a published release never changes. A fallback is kept for 5 minutes. A `pending` or `unavailable` answer is kept for 60 seconds. Only the desired-fleet-state endpoint and the scheduler resolve the state. The scheduler runs `php artisan orbit:desired-fleet-state` every 5 minutes, which prints it as JSON. One caller resolves a commit at a time under a cache lock; the others wait up to 30 seconds and read its answer.
+
+### Fallback to an ancestor release
+
+Sometimes a green commit never gets its CLI release. After a newer commit reached `main`, GitHub refuses to tag the older commit when its workflow files differ from the tip's ([Commits without a release](/reference/cli-binaries#commits-without-a-release)). Without a fallback, the fleet would wait until a newer commit is merged and released.
+
+When the commit's release stays `release_missing`, `release_mismatch`, or `release_incomplete` for 30 minutes, the Gateway names the newest published release of an ancestor instead:
+
+1. It takes the 20 newest commits that the Gateway's commit reaches.
+2. It tries their releases from the highest release number down, and checks each one as it checks its own release.
+3. The first available release becomes `cli`, with `status` `available` and that ancestor's `commit`.
+
+When GitHub does not answer for an ancestor, the search stops and the state stays as it was. When no ancestor has a release, the state stays `pending` or `unavailable`. A fallback is asked for again every 5 minutes, so the commit's own release replaces it once it is published.
+
+CI normally publishes a release within minutes, so the 30 minutes let the fleet wait for the commit's own release and roll out once. A release that takes longer makes the fleet roll out twice: first the fallback, then the commit's own release. The [fleet rollout](/reference/gateway-recovery#desired-state) raises `rollout_cli_fallback` once when it uses a fallback.
 
 The expected footprint digest per Node joins this state when the footprint re-apply ships. A Gateway release record can store the state as it is served.
 

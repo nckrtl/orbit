@@ -83,6 +83,23 @@ final readonly class FleetRolloutAlerts
     }
 
     /**
+     * Raises `rollout_cli_fallback` once for a rollout that rolls out an ancestor's CLI release, because the
+     * commit's own release was not published.
+     *
+     * @return array<string, mixed>
+     */
+    public function cliFallback(FleetRollout $rollout, DesiredFleetStateData $state): array
+    {
+        return $this->raise(ReleaseAlertKind::RolloutCliFallback, $rollout, sprintf(
+            'Fleet rollout %d rolls out CLI release %s of commit %s, because commit %s has no published CLI release.',
+            $rollout->id,
+            $state->cli->version ?? 'unknown',
+            substr($state->cli->commit ?? '', 0, 12),
+            substr($rollout->commit, 0, 12),
+        ));
+    }
+
+    /**
      * Raises `rollout_caddy_skipped` for the first Node in a rollout whose Caddyfile was not published.
      *
      * @param  array<mixed>  $skipped  The footprint's reason and message for the skipped Caddyfile.

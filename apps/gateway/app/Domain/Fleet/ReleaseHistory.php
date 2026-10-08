@@ -12,4 +12,12 @@ interface ReleaseHistory
 
     /** `git rev-list --count` of the commit, or null when the history is shallow or cannot be read. */
     public function count(string $commit): ?int;
+
+    /**
+     * Up to `$limit` commits that the commit reaches, without the commit itself, newest first. Empty when the
+     * history cannot be read.
+     *
+     * @return list<string>
+     */
+    public function ancestors(string $commit, int $limit): array;
 }
