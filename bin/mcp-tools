@@ -28,6 +28,7 @@ ACTION_METHODS = ('get', 'post', 'put', 'patch', 'delete', 'head')
 # discovery, watch list, and log stream list, live log streams that need a Reverb socket, Caddy forward-auth, the wake page a browser receives, the completion report a Node's schedule timer
 # posts, and the two pages that carry a GitHub App registration through the operator's browser.
 EXCLUDED = {
+    'compute-github-token',
     'annotation-events',
     'tasks-agent-stream',
     'realtime-auth',
@@ -83,7 +84,7 @@ def tool(method, path, operation, components):
     if body is not None:
         body = resolve(body, components)
         variants = body.get('oneOf')
-        if variants is not None:
+        if variants is not None and not body.get('properties'):
             if not all(variant.get('type') == 'object' for variant in variants):
                 sys.exit(f'{name}: request body variants are not objects')
             variant_properties = {}
@@ -113,8 +114,10 @@ def tool(method, path, operation, components):
     schema = {'type': 'object', 'properties': properties, 'additionalProperties': False}
     if required:
         schema['required'] = required
-    if body is not None and body.get('oneOf'):
-        schema['oneOf'] = body['oneOf']
+    if body is not None:
+        for constraint in ('oneOf', 'anyOf', 'allOf', 'not'):
+            if constraint in body:
+                schema[constraint] = body[constraint]
 
     return {
         'name': name,

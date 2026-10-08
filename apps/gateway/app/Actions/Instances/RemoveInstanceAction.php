@@ -18,6 +18,7 @@ use App\Domain\Instances\InstanceCreationRecovery;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRemover;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Removal\DevelopmentInstanceSourceFinalizer;
@@ -82,6 +83,7 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         if (InstanceRename::query()->where('instance_id', $instance->id)->where('phase', '!=', 'complete')->exists()) {
             throw new ResourceOperationException('instance.lifecycle_busy', 'Finish the Instance rename before removal.', 409);
         }
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instanceId = $instance->id;
         $instanceName = $instance->name;
         $removal = $this->performRemoval($instance, $force, $runTeardown, $allowCascade, $requirePreActivation);
@@ -909,6 +911,9 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         }
 
         $expectation = $this->revalidateUnfinishedSources($operation, $member);
+        // PHP-FPM refuses to start while any pool names a missing `chdir`, so the pool goes first. A
+        // failed withdrawal keeps the source and leaves this step open for a retry.
+        $this->routes->withdrawPhpPool($member);
         $receipt = $this->sourceFinalizer->finalize($member, $expectation);
         $member->update(['source_finalized_at' => now(), 'finalization_receipt' => $receipt]);
     }
@@ -919,9 +924,10 @@ final readonly class RemoveInstanceAction implements InstanceRemover
         $this->processes->execute($member->instance_id);
         ($this->databases ?? app(DropOwnedDatabasesAction::class))->execute($member->instance_id);
 
-        // A routed create can publish part of its runtime before activation.
-        // An unrouted task workspace has no pool, site, or certificate to withdraw.
-        if ($member->runtime_published || $member->route_id !== null || ($member->route_ids ?? []) !== []) {
+        // A routed create can publish part of its runtime before activation, and its Route can be
+        // destroyed before the Instance, so a development member never trusts route_id alone: every
+        // development removal converges its Node from stored state, which drops any pool left behind.
+        if ($member->runtime_published || $member->route_id !== null || ($member->route_ids ?? []) !== [] || $member->environment === 'development') {
             $this->routes->cleanupRuntime($member);
         }
         $member->update(['runtime_cleaned_at' => now()]);

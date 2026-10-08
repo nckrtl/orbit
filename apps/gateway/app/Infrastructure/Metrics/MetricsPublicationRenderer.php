@@ -4,13 +4,25 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Metrics;
 
+use App\Infrastructure\Gateway\GatewayApplicationPath;
+
 final readonly class MetricsPublicationRenderer
 {
     private string $gatewayCheckoutPath;
 
+    /** Without a path, the checkout that holds this file. Guest scripts render with it outside Laravel. */
     public function __construct(?string $gatewayCheckoutPath = null)
     {
         $this->gatewayCheckoutPath = $gatewayCheckoutPath ?? dirname(__DIR__, 3);
+    }
+
+    /**
+     * The renderer for the running Gateway. It names the stable Gateway application path, not this
+     * file's directory: in the release layout that directory is one release, which a later deploy prunes.
+     */
+    public static function forGateway(): self
+    {
+        return new self(GatewayApplicationPath::resolve());
     }
 
     public function caddy(
@@ -27,7 +39,7 @@ final readonly class MetricsPublicationRenderer
         $this->validateCheckoutPath($this->gatewayCheckoutPath);
 
         return
-            "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  forward_auth unix//run/php/orbit-gateway.sock {\n    uri /api/v1/metrics/grafana/authorize\n    transport fastcgi {\n      env SCRIPT_FILENAME {$this->gatewayCheckoutPath}/public/index.php\n      env SCRIPT_NAME /index.php\n      env REQUEST_URI /api/v1/metrics/grafana/authorize\n      env REMOTE_ADDR {remote_host}\n    }\n  }\n  reverse_proxy http://{$metricsAddress}:"
+            "# Managed by Orbit: metrics\n# Orbit Metrics authorization: 1\nmetrics.orbit {\n  bind {$gatewayAddress}\n  tls {$certificatePath} {$privateKeyPath}\n  forward_auth unix//run/php/orbit-gateway.sock {\n    uri /index.php\n    transport fastcgi {\n      root {$this->gatewayCheckoutPath}/public\n      resolve_root_symlink\n      split .php\n      env REQUEST_URI /api/v1/metrics/grafana/authorize\n      env REMOTE_ADDR {remote_host}\n    }\n  }\n  reverse_proxy http://{$metricsAddress}:"
             .MetricsFootprint::PublicationPort
             ."\n}\n";
     }

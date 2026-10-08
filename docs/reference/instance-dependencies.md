@@ -5,6 +5,7 @@ covers:
   - apps/gateway/app/Actions/Instances/Dependencies/{ScanInstanceDependenciesAction,UpdateInstanceDependenciesAction,AccessInstanceDependenciesAction}.php
   - apps/gateway/app/Http/Controllers/Api/{InstanceDependenciesController,ResolveDependencyInstanceController,ResolveDirectoryInstanceController}.php
   - apps/cli/app/Commands/Dependencies/**
+  - apps/cli/app/Services/DependencyInstanceSelector.php
 ---
 
 # Instance dependencies

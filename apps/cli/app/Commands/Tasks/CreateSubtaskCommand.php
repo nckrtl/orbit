@@ -17,6 +17,7 @@ final class CreateSubtaskCommand extends TaskCommand
         {title? : Short name of the step}
         {--brief= : Goal and acceptance of the step}
         {--deliverables= : JSON file with an array of typed deliverables for the step}
+        {--topology= : JSON array of required workload nodes; [] removes declarations}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -42,6 +43,11 @@ final class CreateSubtaskCommand extends TaskCommand
             return self::FAILURE;
         }
 
+        $topology = $this->topologyOption($this->option('topology'));
+        if ($topology === false) {
+            return self::FAILURE;
+        }
+
         $deliverables = $this->deliverablesFile();
 
         if ($deliverables === false) {
@@ -63,7 +69,7 @@ final class CreateSubtaskCommand extends TaskCommand
         $title ??= $this->promptText('Title', self::TITLE_MAX);
         $brief ??= $this->promptText('Brief', self::BRIEF_MAX, multiline: true);
 
-        $task = $this->sendWithProgress($connector, new CreateSubtaskRequest($groupId, $title, $brief, $deliverables ?? []), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
+        $task = $this->sendWithProgress($connector, new CreateSubtaskRequest($groupId, $title, $brief, $deliverables ?? [], $topology), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : self::FAILURE;
     }

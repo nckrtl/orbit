@@ -13,6 +13,7 @@ use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Instances\DevelopmentInstanceBranchInspector;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\ReservedPrivateHostname;
@@ -40,6 +41,7 @@ final readonly class RenameInstanceAction
 
     public function execute(Instance $instance, RenameInstanceData $data): Instance
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         InstanceAppProjection::assertAvailable([$instance->id]);
         $identity = $this->identity($instance, $data);
         $latest = InstanceRename::query()->where('instance_id', $instance->id)->orderByRaw("phase = 'complete' ASC")->latest('rowid')->first();

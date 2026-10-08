@@ -10,6 +10,8 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 describe(NativeClusterRouterOperationLock::class, function (): void {
     it('keeps one same-Cluster owner through reentry and releases it after failure', function (): void {
         $directory = sys_get_temp_dir().'/orbit-cluster-router-'.Str::uuid();

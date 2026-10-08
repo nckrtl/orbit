@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\InstanceSourceProfileGuard;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Routes\PublicRouteEligibility;
@@ -20,6 +21,7 @@ final readonly class InstanceEnvironmentContextResolver
 {
     public function resolve(Instance $instance, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         InstanceAppProjection::assertAvailable([$instance->id]);
 
         return $this->publishedContext($instance, $requireActiveNode, $lockRoute, $app);
@@ -60,6 +62,7 @@ final readonly class InstanceEnvironmentContextResolver
 
     public function resolveForClone(Instance $instance, bool $requireActiveNode, bool $lockRoute = false): InstanceEnvironmentContext
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $app = $instance->appConfiguration()['name'];
         if (! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared, InstanceState::SourceResolved], true) || $instance->placementEnvironment() !== 'production' || ! is_bool($instance->source_is_laravel) || ! is_string($instance->provisioning_step) || ! str_starts_with($instance->provisioning_step, 'clone-') || ! is_int($instance->clone_candidate_id)) {
             $this->conflict();
@@ -78,6 +81,7 @@ final readonly class InstanceEnvironmentContextResolver
 
     public function resolveForRouteTransition(Instance $instance, InstanceEnvironmentRouteDomain $domain, bool $requireActiveNode, bool $lockRoute = false, ?string $app = null): InstanceEnvironmentContext
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         InstanceAppProjection::assertAvailable([$instance->id]);
         $app = $instance->appConfiguration($app)['name'];
         if ($instance->status !== InstanceState::Active || ! in_array($instance->placementEnvironment(), ['development', 'production'], true) || $instance->provisioning_step !== 'active' || ! is_bool($instance->runtimeForApp($app)['laravel'])) {

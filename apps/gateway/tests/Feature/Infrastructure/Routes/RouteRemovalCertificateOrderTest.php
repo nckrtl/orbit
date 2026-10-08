@@ -2,11 +2,16 @@
 
 declare(strict_types=1);
 
+use App\Domain\AppDev\AppDevPhpFpmManager;
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Clusters\ClusterState;
+use App\Domain\Fleet\NodeFootprint;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Metrics\ExporterDegradationReason;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
+use App\Domain\Nodes\NodeReachabilityProbe;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\CustomProxyRouteProjector;
 use App\Domain\Routes\RouteProvenance;
@@ -16,12 +21,14 @@ use App\Domain\Routes\RouteStatus;
 use App\Domain\Routes\RouteTargetSetStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
+use App\Infrastructure\AppDev\DevelopmentSite;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\AppDev\DevelopmentSshExecutor;
 use App\Infrastructure\AppDev\DnsmasqPrivateDnsManager;
 use App\Infrastructure\AppDev\RemoteAppDevCaddyManager;
 use App\Infrastructure\AppDev\RemoteAppDevCertificateManager;
 use App\Infrastructure\AppDev\RemoteAppDevRouteFirewallManager;
+use App\Infrastructure\Fleet\Footprint\RouteResidueFootprintArtifact;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
@@ -34,9 +41,11 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Models\Cluster;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\RouteRemovalResidue;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -63,7 +72,8 @@ beforeEach(function (): void {
     config()->set('orbit.home', $this->removalHome);
     $this->nodes = new CertificateOrderNodes;
     $this->dnsRuns = new CertificateOrderDnsRunner;
-    certificate_order_bind_projectors($this->nodes, $this->dnsRuns);
+    $this->php = new CertificateOrderPhpFpm;
+    certificate_order_bind_projectors($this->nodes, $this->dnsRuns, $this->php);
     $this->beast = certificate_order_node('beast', 7, RoleName::AppDev);
 });
 
@@ -151,6 +161,132 @@ describe('Route removal certificate order', function (): void {
             ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
             ->and($this->nodes->removedWhileNamed)->toBe([])
             ->and($this->nodes->validates('10.44.0.20'))->toBeTrue();
+    });
+
+    it('withdraws a published pending targeted Route on its own Node before it deletes the record', function (): void {
+        // The incident state on beast: a Node-scoped task workspace Route whose Instance resolved its
+        // source has published its site, so the site and its PHP-FPM pool are live while the Route is
+        // still pending.
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
+
+        expect($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and(certificate_order_php_sites($this->beast))->toBe(['task-342.acme.test']);
+
+        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.7:orbit:route-{$route->id}-lan"])
+            ->and($this->php->converged)->toBe(['beast' => []])
+            ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.7'))->toBeTrue();
+    });
+
+    it('withdraws a published pending targeted Route from its Router and workload Node', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
+        $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
+        $worker = certificate_order_node('worker', 30, RoleName::AppDev, $cluster);
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $worker, nodeScoped: false);
+        $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
+        certificate_order_caddy()->converge($router);
+
+        expect($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeTrue()
+            ->and(certificate_order_php_sites($worker))->toBe(['task-342.acme.test']);
+
+        $this->deleteJson("/api/v1/routes/{$route->id}")->assertOk();
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
+            ->and($this->php->converged)->toBe(['worker' => []])
+            ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.30'))->toBeTrue()
+            ->and($this->nodes->validates('10.44.0.20'))->toBeTrue();
+    });
+
+    it('refuses to remove a Route whose Node does not answer and names the offline option', function (): void {
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
+        $this->nodes->down = ['10.44.0.7'];
+
+        $this->deleteJson("/api/v1/routes/{$route->id}")
+            ->assertStatus(502)
+            ->assertJsonPath('error.code', 'route.node_unreachable')
+            ->assertJsonPath(
+                'error.message',
+                'Route removal could not change node [beast], which is unreachable or not active. Retry with --offline to remove the Route and leave that Node unchanged until its next converge.',
+            );
+
+        expect($route->refresh()->status)->toBe(RouteStatus::Failed)
+            ->and($route->failed_step)->toBe('targeted:caddy')
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse();
+    });
+
+    it('removes a Route offline, leaves the dead Node unchanged, and finishes on its next converge', function (): void {
+        $cluster = Cluster::query()->create(['name' => 'lab', 'state' => ClusterState::Active]);
+        $router = certificate_order_node('router', 20, RoleName::Router, $cluster);
+        $worker = certificate_order_node('worker', 30, RoleName::AppDev, $cluster);
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $worker, nodeScoped: false);
+        $this->nodes->issue('10.44.0.20', "route-{$route->id}-router");
+        certificate_order_caddy()->converge($router);
+        $this->nodes->down = ['10.44.0.30'];
+
+        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])
+            ->assertOk()
+            ->assertJsonPath('data.id', $route->id)
+            ->assertJsonPath('data.retained_on_nodes', [
+                ['node_id' => $worker->id, 'node' => 'worker', 'steps' => ['caddy', 'php', 'firewall']],
+            ]);
+
+        expect(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and($this->nodes->names('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->hasCertificate('10.44.0.20', "route-{$route->id}-router"))->toBeFalse()
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeTrue()
+            ->and($this->php->converged)->toBe([])
+            ->and($this->nodes->firewallRemovals)->toBe([]);
+
+        $artifact = app(RouteResidueFootprintArtifact::class);
+        $this->nodes->down = [];
+
+        expect($artifact->applies($worker))->toBeTrue()
+            ->and($artifact->applies($router))->toBeFalse()
+            ->and($artifact->apply($worker))->toBeTrue()
+            ->and($this->nodes->names('10.44.0.30', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($this->php->converged)->toBe(['worker' => []])
+            ->and($this->nodes->firewallRemovals)->toBe(["10.44.0.30:orbit:route-{$route->id}-lan"])
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
+            ->and($artifact->applies($worker))->toBeFalse()
+            ->and($this->nodes->removedWhileNamed)->toBe([])
+            ->and($this->nodes->validates('10.44.0.30'))->toBeTrue();
+    });
+
+    it('skips a failed residue cleanup without failing the converge and retries it next time', function (): void {
+        [$route, $instance] = certificate_order_targeted_route($this->nodes, $this->beast, nodeScoped: true);
+        $this->nodes->down = ['10.44.0.7'];
+        $this->deleteJson("/api/v1/routes/{$route->id}", ['offline' => true])->assertOk();
+        $footprint = new NodeFootprint([app(RouteResidueFootprintArtifact::class)]);
+        // The Node answers the probe, but its Caddy publish still fails.
+        $this->nodes->down = [];
+        $this->nodes->failCaddy = '10.44.0.7';
+
+        $first = $footprint->converge($this->beast);
+
+        expect($first->skipped['route-residue']['reason'])->toBe(RouteResidueFootprintArtifact::CleanupFailed)
+            ->and(RouteRemovalResidue::query()->where('node_id', $this->beast->id)->sole()->attempts)->toBe(1)
+            ->and($footprint->drifted($this->beast))->toBeTrue();
+
+        $this->nodes->failCaddy = null;
+        $second = $footprint->converge($this->beast);
+
+        expect($second->skipped)->toBe([])
+            ->and(RouteRemovalResidue::query()->exists())->toBeFalse()
+            ->and($this->nodes->names('10.44.0.7', "app-instance-{$instance->id}"))->toBeFalse()
+            ->and($footprint->drifted($this->beast))->toBeFalse();
     });
 
     it('keeps the certificate and a retryable Route when the Caddy build fails', function (): void {
@@ -271,8 +407,11 @@ function certificate_order_node(string $name, int $octet, RoleName $role, ?Clust
     return $node;
 }
 
-function certificate_order_bind_projectors(CertificateOrderNodes $nodes, CertificateOrderDnsRunner $dnsRuns): void
-{
+function certificate_order_bind_projectors(
+    CertificateOrderNodes $nodes,
+    CertificateOrderDnsRunner $dnsRuns,
+    CertificateOrderPhpFpm $php,
+): void {
     $executor = new DevelopmentSshExecutor(
         $nodes,
         new class implements SshKeyProvider
@@ -323,7 +462,11 @@ function certificate_order_bind_projectors(CertificateOrderNodes $nodes, Certifi
     );
     $dns = new DnsmasqPrivateDnsManager($dnsRuns, new DevelopmentDnsConfigRenderer($sites));
 
+    $firewall = new RemoteAppDevRouteFirewallManager($executor);
     app()->instance(RemoteAppDevCaddyManager::class, $caddy);
+    app()->instance(RemoteAppDevRouteFirewallManager::class, $firewall);
+    app()->instance(AppDevPhpFpmManager::class, $php);
+    app()->instance(NodeReachabilityProbe::class, new CertificateOrderReachability($nodes));
     app()->instance(RemoteAppDevCertificateManager::class, $certificates);
     app()->instance(
         CustomProxyRouteProjector::class,
@@ -331,8 +474,64 @@ function certificate_order_bind_projectors(CertificateOrderNodes $nodes, Certifi
     );
     app()->instance(
         RouteRemovalProjector::class,
-        new NativeRouteRemovalProjector($dns, $certificates, $caddy, new RemoteAppDevRouteFirewallManager($executor)),
+        new NativeRouteRemovalProjector($dns, $certificates, $caddy, $firewall, $php),
     );
+}
+
+/**
+ * A pending task workspace Route that published its site: the Instance resolved its source, its
+ * workload certificate exists, and its Node's Caddy serves the site.
+ *
+ * @return array{Route, Instance}
+ */
+function certificate_order_targeted_route(CertificateOrderNodes $nodes, Node $node, bool $nodeScoped): array
+{
+    $project = Project::query()->create([
+        'name' => 'Acme',
+        'slug' => 'acme',
+        'repository_url' => 'https://example.test/acme.git',
+        'root' => 'public',
+    ]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'task-342',
+        'checkout_path' => '/srv/acme/task-342',
+        'branch' => 'task-342',
+        'starting_commit' => str_repeat('a', 40),
+        'selected_php_version' => '8.5',
+        'status' => InstanceState::SourceResolved,
+    ]);
+    $route = Route::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $nodeScoped ? $node->id : null,
+        'cluster_id' => $nodeScoped ? null : $node->cluster_id,
+        'domain' => 'task-342.acme.test',
+        'provenance' => RouteProvenance::Explicit,
+        'publication' => RoutePublication::Private,
+        'status' => RouteStatus::Pending,
+    ]);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->publishSites();
+    $nodes->issue((string) $node->wireguard_ip, "app-instance-{$instance->id}");
+    certificate_order_caddy()->converge($node);
+
+    return [$route, $instance];
+}
+
+/**
+ * The PHP sites stored state renders on the Node, which are the pools PHP-FPM converges to.
+ *
+ * @return list<string>
+ */
+function certificate_order_php_sites(Node $node): array
+{
+    return new DevelopmentSiteRepository()
+        ->forNode($node)
+        ->filter(static fn (DevelopmentSite $site): bool => $site->phpVersion !== null)
+        ->map(static fn (DevelopmentSite $site): string => $site->domain)
+        ->values()
+        ->all();
 }
 
 function certificate_order_caddy(): RemoteAppDevCaddyManager
@@ -360,12 +559,26 @@ final class CertificateOrderNodes implements SshExecutor
     /** @var list<string> */
     public array $removedWhileNamed = [];
 
+    /** @var list<string> */
+    public array $firewallRemovals = [];
+
+    /**
+     * Hosts whose SSH does not connect.
+     *
+     * @var list<string>
+     */
+    public array $down = [];
+
     public ?string $failCaddy = null;
 
     public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
     {
         $host = $connection->host;
         $input = is_string($command->input) ? $command->input : '';
+
+        if (in_array($host, $this->down, true)) {
+            return new CommandResult(255, '', "ssh: connect to host {$host} port 22: Connection timed out", 1, false);
+        }
 
         if (preg_match("/printf '%s' '([A-Za-z0-9+\\/=]*)' \\| base64 --decode \\|/", $input, $matches) === 1) {
             $configuration = (string) base64_decode($matches[1], true);
@@ -393,6 +606,10 @@ final class CertificateOrderNodes implements SshExecutor
             }
 
             unset($this->certificates[$host][$scope]);
+        }
+
+        if (str_contains($input, 'sudo ufw --force delete')) {
+            $this->firewallRemovals[] = "{$host}:{$command->arguments[3]}";
         }
 
         return new CommandResult(0, '', '', 1, false);
@@ -451,5 +668,28 @@ final class CertificateOrderDnsRunner implements ProcessRunner
         }
 
         return new CommandResult(0, '', '', 1, false);
+    }
+}
+
+/** Records each PHP-FPM converge with the PHP sites stored state renders on that Node at that moment. */
+final class CertificateOrderPhpFpm implements AppDevPhpFpmManager
+{
+    /** @var array<string, list<string>> */
+    public array $converged = [];
+
+    public function converge(Node $node): void
+    {
+        $this->converged[$node->name] = certificate_order_php_sites($node);
+    }
+}
+
+/** The probe sees a Node as unreachable exactly when its simulated SSH does not connect. */
+final readonly class CertificateOrderReachability implements NodeReachabilityProbe
+{
+    public function __construct(private CertificateOrderNodes $nodes) {}
+
+    public function degradation(Node $node): ?ExporterDegradationReason
+    {
+        return in_array($node->wireguard_ip, $this->nodes->down, true) ? ExporterDegradationReason::Unreachable : null;
     }
 }

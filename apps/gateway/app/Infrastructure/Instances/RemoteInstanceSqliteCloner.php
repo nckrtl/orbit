@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Instances;
 
 use App\Domain\Instances\DatabaseClone\InstanceSqliteCloner;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\Sqlite\SqliteSeedPlacement;
 use App\Domain\Instances\Sqlite\SqliteSnapshotTransfer;
 use App\Domain\Shared\ResourceOperationException;
@@ -256,6 +257,8 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
 
     public function copy(Instance $source, string $sourcePath, Instance $target, string $targetPath): void
     {
+        InstanceSandboxGuard::assertHostOperation($source);
+        InstanceSandboxGuard::assertHostOperation($target);
         $sourceNode = $source->node;
         $targetNode = $target->node;
 
@@ -305,6 +308,7 @@ final readonly class RemoteInstanceSqliteCloner implements InstanceSqliteCloner
 
     public function remove(Instance $owner, string $path): void
     {
+        InstanceSandboxGuard::assertHostOperation($owner);
         $this->expectOk($this->run($owner->node, ['remove', $owner->checkout_path, $path]));
     }
 

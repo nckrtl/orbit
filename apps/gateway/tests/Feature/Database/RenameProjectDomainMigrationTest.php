@@ -52,8 +52,11 @@ function rename_migration_rows(): object
         'repository_url' => 'https://example.test/rename.git',
         'default_branch' => 'main',
     ]);
-    // Historical fixtures must not run today's named-app model hooks.
+    // Historical fixtures must not run today's named-app model hooks, and these Project settings
+    // were added after the rename migration.
     $project->offsetUnset('source_access');
+    $project->offsetUnset('task_compute');
+    $project->offsetUnset('review_and_merge');
     $project->forceFill(['code' => 'REN', 'repository_identity' => 'example.test/rename']);
     $project->saveQuietly();
     $instance = new Instance([

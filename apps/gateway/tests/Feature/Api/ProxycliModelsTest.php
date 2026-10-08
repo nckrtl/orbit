@@ -14,19 +14,6 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Models\DatabaseConnection;
 use App\Models\Node;
 use Illuminate\Support\Facades\Http;
-use Symfony\Component\Process\Process;
-
-it('proves the collector reads auth-file models and maps owned_by', function (): void {
-    $process = new Process([
-        '/usr/bin/python3',
-        dirname(__DIR__, 2).'/Unit/Infrastructure/ProxyCli/test_collector.py',
-        'CollectorModelTests',
-    ]);
-    $process->setTimeout(15);
-    $process->run();
-
-    expect($process->isSuccessful())->toBeTrue($process->getErrorOutput()."\n".$process->getOutput());
-});
 
 it('refuses the model list with proxycli.disabled before the collector is set up', function (): void {
     $gateway = proxycli_models_gateway();

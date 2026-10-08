@@ -58,17 +58,18 @@ export function setTransport(next: Transport | null, name: string | null = null)
 export const transportLabel = (): string | null => label;
 
 /** One Gateway API call: the `data` of a successful answer, or a GatewayError with the Gateway's own message. */
-export async function api<T>(
+export async function apiEnvelope<T>(
     method: Method,
     path: string,
     body?: unknown,
     options?: RequestOptions,
-): Promise<T> {
+): Promise<{ data: T; meta?: { next_cursor?: string | null; request_id?: string } }> {
     const { status, payload } = await (options === undefined
         ? transport(method, path, body)
         : transport(method, path, body, options));
     const answer = payload as {
         data?: T;
+        meta?: { next_cursor?: string | null; request_id?: string };
         error?: { code?: string; message?: string; details?: unknown };
     } | null;
 
@@ -81,7 +82,16 @@ export async function api<T>(
         );
     }
 
-    return answer.data as T;
+    return { data: answer.data as T, meta: answer.meta };
+}
+
+export async function api<T>(
+    method: Method,
+    path: string,
+    body?: unknown,
+    options?: RequestOptions,
+): Promise<T> {
+    return (await apiEnvelope<T>(method, path, body, options)).data;
 }
 
 export const get = <T>(path: string): Promise<T> => api<T>("GET", path);

@@ -17,6 +17,7 @@ use App\Domain\Instances\Deployment\DeploymentResult;
 use App\Domain\Instances\Deployment\ProductionDeployment;
 use App\Domain\Instances\Environment\InstanceEnvironmentOperationLock;
 use App\Domain\Instances\Environment\InstanceEnvironmentSynchronizer;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionPhpRuntimeManager;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\CommandDeadline;
@@ -41,6 +42,7 @@ final readonly class DeployInstanceAction
 
     public function execute(Instance $instance, ?DeploymentRequest $request = null): DeploymentResult
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $request ??= DeploymentRequest::withoutOutput();
         $instance->refresh();
         if ($instance->placedOnAppDev()) {

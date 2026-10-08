@@ -57,7 +57,7 @@ final readonly class CompleteTaskGroupAction
             return $group->fresh(['project', 'tasks', 'taskable']) ?? $group;
         }
 
-        if ($group->status !== TaskGroupStatus::Settling) {
+        if (! in_array($group->status, TaskGroupStatus::awaitingCompletion(), true)) {
             throw $this->notReady();
         }
 

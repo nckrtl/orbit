@@ -8,7 +8,7 @@ use App\Domain\ProxyCli\ProxyCliCache;
 
 final class ArrayProxyCliCache implements ProxyCliCache
 {
-    /** @var array<string, array{value: string, expires: int|null, holder?: string}> */
+    /** @var array<string, array{value: string, expires: int|null}> */
     private array $items = [];
 
     public function get(string $key): ?string
@@ -34,36 +34,5 @@ final class ArrayProxyCliCache implements ProxyCliCache
             'value' => $value,
             'expires' => $seconds === null ? null : time() + $seconds,
         ];
-    }
-
-    public function forget(string $key): void
-    {
-        unset($this->items[$key]);
-    }
-
-    public function acquire(string $key, string $holder, int $seconds): bool
-    {
-        $current = $this->get($key);
-
-        if ($current !== null && $current !== $holder) {
-            return false;
-        }
-
-        $this->items[$key] = [
-            'value' => $holder,
-            'expires' => time() + $seconds,
-            'holder' => $holder,
-        ];
-
-        return true;
-    }
-
-    public function release(string $key, string $holder): void
-    {
-        $item = $this->items[$key] ?? null;
-
-        if (($item['value'] ?? null) === $holder) {
-            unset($this->items[$key]);
-        }
     }
 }

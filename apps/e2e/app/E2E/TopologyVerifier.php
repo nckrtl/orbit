@@ -177,6 +177,7 @@ final readonly class TopologyVerifier
             );
         }
         $pending = $probes;
+        $lastNonTimeoutFailures = [];
         $deadline = microtime(true) + $this->readinessTimeoutSeconds;
 
         do {
@@ -240,11 +241,20 @@ final readonly class TopologyVerifier
 
                         continue;
                     }
+                    $observed = (new GuestFailureDetail)->append(
+                        $result->successful() ? 'malformed evidence' : 'guest exit '.$result->exitCode,
+                        $result->stderr,
+                    );
+                    if ($result->exitCode !== 124) {
+                        $lastNonTimeoutFailures[$name] = $observed;
+                    } elseif (isset($lastNonTimeoutFailures[$name])) {
+                        $observed .= '; last non-timeout failure: '.$lastNonTimeoutFailures[$name];
+                    }
                     $results[$name] = $this->failedProbe(
                         $name,
                         $instance,
                         'valid passing evidence for source '.$source->guestSha,
-                        $result->successful() ? 'malformed evidence' : 'guest exit '.$result->exitCode,
+                        $observed,
                     );
                 } else {
                     $results[$name] = $this->failedProbe(

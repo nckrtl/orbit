@@ -27,6 +27,8 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
 use Tests\Support\SeparateFilesystem;
 
+pest()->group('privileged');
+
 describe('TaskCheckWorkerUser', function (): void {
     it('inspects registration content with worker filters and preserves managed ownership', function (string $filter): void {
         $fixture = orb105_relocation_fixture(false);
@@ -519,6 +521,28 @@ it('reports the configured origin, not the insteadOf rewrite Git applies', funct
         orb105_remove_relocation_fixture($fixture);
     }
 });
+
+it('infers the public web root of a Laravel or Symfony checkout', function (?string $entryPoint, ?string $root): void {
+    $fixture = orb105_relocation_fixture(false);
+    mkdir($fixture['source'].'/public');
+    file_put_contents($fixture['source'].'/composer.json', "{}\n");
+
+    if (is_string($entryPoint)) {
+        file_put_contents($fixture['source'].'/'.$entryPoint, "#!/usr/bin/env php\n");
+    }
+
+    try {
+        $facts = $fixture['manager']->inspect($fixture['node'], $fixture['source'], false)[0];
+
+        expect($facts->inferredRoot)->toBe($root);
+    } finally {
+        orb105_remove_relocation_fixture($fixture);
+    }
+})->with([
+    'Laravel' => ['artisan', 'public'],
+    'Symfony' => ['bin/console', 'public'],
+    'plain Composer' => [null, null],
+]);
 
 it('fails closed when an incomplete stage has no verified original', function (): void {
     $fixture = orb105_relocation_fixture();
@@ -1433,13 +1457,15 @@ final class Orb105InterruptingCleanupSshExecutor implements SshExecutor
             import os, signal
             original_unlink = os.unlink
             def unlink_and_pause(path, *args, **kwargs):
+                directory = kwargs.get('dir_fd')
+                absolute = os.path.join(os.readlink('/proc/self/fd/' + str(directory)), path) if directory is not None else path
                 original_unlink(path, *args, **kwargs)
-                if path == %s:
+                if absolute == %s:
                     os.kill(os.getpid(), signal.SIGSTOP)
             os.unlink = unlink_and_pause
             PYTHON;
         $arguments = $command->arguments;
-        $arguments[2] = sprintf($pauseAfterUnlink, json_encode($this->trigger, JSON_THROW_ON_ERROR))
+        $arguments[2] = sprintf($pauseAfterUnlink, json_encode($this->trigger, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES))
             ."\n".$arguments[2];
         $process = new SymfonyProcess($arguments);
         $process->start();

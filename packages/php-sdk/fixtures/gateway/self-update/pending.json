@@ -1,0 +1,39 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Gateway\\ShowDesiredFleetStateRequest",
+    "route": "GET /api/v1/gateway/desired-fleet-state",
+    "status": 200,
+    "body": {
+        "data": {
+            "commit": "1f0e4c5d6b7a8c9d0e1f2a3b4c5d6e7f8a9b0c1d",
+            "cli": {
+                "status": "pending",
+                "reason": "release_missing",
+                "version": "0.4681.0",
+                "tag": "cli-v0.4681.0",
+                "checksums_url": null,
+                "assets": []
+            },
+            "agent": {
+                "version": "0.4.1",
+                "assets": [
+                    {
+                        "platform": "linux-x86_64",
+                        "name": "orbit-agent-0.4.1-linux-x86_64",
+                        "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.1/orbit-agent-0.4.1-linux-x86_64",
+                        "sha256": "3ee2488f9dc5eb132bcd63236613536e9cf06bbe6e07a421c3c7547fe222689b"
+                    },
+                    {
+                        "platform": "linux-aarch64",
+                        "name": "orbit-agent-0.4.1-linux-aarch64",
+                        "url": "https://github.com/nckrtl/orbit/releases/download/agent-v0.4.1/orbit-agent-0.4.1-linux-aarch64",
+                        "sha256": "1aed0809800b68d97a2f8dc373cb045f8ed918c006a6cdb9567e3105608b4b27"
+                    }
+                ]
+            }
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}

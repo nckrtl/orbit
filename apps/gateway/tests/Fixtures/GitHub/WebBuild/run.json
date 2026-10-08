@@ -1,0 +1,19 @@
+{
+  "id": 37647307459,
+  "name": "CI",
+  "event": "push",
+  "status": "in_progress",
+  "conclusion": null,
+  "head_branch": "main",
+  "head_sha": "3c83e74ce6f241197b06b7b8e506e9496455b277",
+  "path": ".github/workflows/ci.yml",
+  "run_attempt": 1,
+  "repository": {
+    "id": 1348221080,
+    "full_name": "nckrtl/orbit"
+  },
+  "head_repository": {
+    "id": 1348221080,
+    "full_name": "nckrtl/orbit"
+  }
+}

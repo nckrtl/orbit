@@ -1,0 +1,10 @@
+[
+  {
+    "filename": "apps/cli/config/storage.php",
+    "patch": "@@ -0,0 +1,2 @@\n+<?php\n+return ['host' => 'https://fixture-only.upcloudobjects.com'];\n"
+  },
+  {
+    "filename": "apps/cli/resources/issue-note.md",
+    "patch": "@@ -0,0 +1,2 @@\n+Linear issue FIXTURE-123\n+https://linear.app/fixture-only/issue/FIXTURE-123\n"
+  }
+]

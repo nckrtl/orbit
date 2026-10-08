@@ -6,6 +6,7 @@ namespace App\Infrastructure\AppDev;
 
 use App\Domain\AppDev\RuntimeConvergenceException;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Infrastructure\Caddy\CaddyPublicationLock;
@@ -69,6 +70,7 @@ final readonly class RemoteAppDevCertificateManager
 
     public function convergeInstance(Instance $instance, Route $route): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->converge($instance->node, $this->instanceScope($instance, $route->app), $route->domain);
     }
@@ -90,6 +92,7 @@ final readonly class RemoteAppDevCertificateManager
 
     public function convergeInstanceHostnameChange(Instance $instance, string $domain, ?string $app = null): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->converge(
             $instance->node,
@@ -105,6 +108,7 @@ final readonly class RemoteAppDevCertificateManager
 
     public function instanceCertificateExists(Instance $instance, ?string $app = null): bool
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $account = $this->accounts->resolve($instance->node);
         $scope = $this->instanceScope($instance, $app);
@@ -145,6 +149,7 @@ final readonly class RemoteAppDevCertificateManager
 
     public function removeInstance(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         if ($instance->placedOnAppProd()) {
             $this->remove($instance->node, "app-instance-{$instance->id}");
@@ -167,6 +172,17 @@ final readonly class RemoteAppDevCertificateManager
         $this->remove($router, "route-{$route->id}-router-hostname-change");
     }
 
+    /**
+     * Removes every Route-owned certificate scope on the Node after the Route record is gone, as the
+     * cleanup of an offline removal does once the Node answers.
+     */
+    public function removeRemovedRoute(int $routeId, Node $node): void
+    {
+        foreach (["route-{$routeId}", "route-{$routeId}-router", "route-{$routeId}-router-hostname-change"] as $scope) {
+            $this->remove($node, $scope);
+        }
+    }
+
     public function removeRouteIngress(Route $route, Node $ingress): void
     {
         $this->remove($ingress, "route-{$route->id}-ingress");
@@ -179,6 +195,7 @@ final readonly class RemoteAppDevCertificateManager
 
     public function removeHostnameChange(Instance $instance, Route $route): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         $this->remove($instance->node, $this->instanceScope($instance, $route->app, staging: true));
         $router = $route->cluster?->routerAssignment?->node;

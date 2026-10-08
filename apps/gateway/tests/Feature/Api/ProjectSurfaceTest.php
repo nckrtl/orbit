@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
@@ -92,7 +93,7 @@ it('activates a laravel-package Instance without a Route', function (): void {
         ->toBe(0);
 });
 
-it('refuses a type change to laravel-app while an active Instance has no Route', function (): void {
+it('refuses a type change to a web-serving type while an active Instance has no Route', function (string $type): void {
     $project = Project::query()->create([
         'name' => 'support',
         'slug' => 'support',
@@ -117,14 +118,79 @@ it('refuses a type change to laravel-app while an active Instance has no Route',
     ]);
 
     $this->patchJson('/api/v1/projects/'.$project->id, [
-        'type' => 'laravel-app',
+        'type' => $type,
     ])
         ->assertConflict()
-        ->assertJsonPath('error.code', 'project.type_requires_route');
+        ->assertJsonPath('error.code', 'project.type_requires_route')
+        ->assertJsonPath('error.message', "A {$type} Project cannot be assigned while an active Instance has no Route.");
 
     expect($project->refresh()->type)->toBe(ProjectType::LaravelPackage)
         ->and($instance->refresh()->status)->toBe(InstanceState::Active);
+})->with(['laravel-app', 'symfony-app']);
+
+it('creates a symfony-app Project that requires a web root', function (): void {
+    $this->postJson('/api/v1/projects', [
+        'slug' => 'storefront',
+        'type' => 'symfony-app',
+        'repository_url' => 'https://github.com/acme/storefront.git',
+        'default_branch' => 'main',
+        'root' => '.',
+    ])->assertUnprocessable()
+        ->assertJsonPath('error.details.root.0', 'The root [.] is not valid for a symfony-app Project. Send a web root such as public.');
+
+    $created = $this->postJson('/api/v1/projects', [
+        'slug' => 'storefront',
+        'type' => 'symfony-app',
+        'repository_url' => 'https://github.com/acme/storefront.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ])->assertCreated()
+        ->assertJsonPath('data.type', 'symfony-app')
+        ->assertJsonPath('data.root', 'public');
+
+    expect(Project::query()->findOrFail($created->json('data.id'))->isWebServing())->toBeTrue();
 });
+
+it('pins the production mode of each framework on an app-prod Instance', function (ProjectType $type, string $env, string $debug): void {
+    $project = Project::query()->create([
+        'name' => 'shop',
+        'slug' => 'shop',
+        'type' => $type,
+        'repository_url' => 'https://github.com/acme/shop.git',
+        'default_branch' => 'main',
+        'root' => 'public',
+    ]);
+    $node = Node::query()->create([
+        'name' => 'prod',
+        'status' => LifecycleStatus::Active,
+        'platform' => 'linux',
+        'public_ssh_host' => '192.0.2.83',
+        'wireguard_ip' => '10.44.0.83',
+    ]);
+    $node->roles()->create([
+        'role' => RoleName::AppProd,
+        'status' => LifecycleStatus::Active,
+    ]);
+    $instance = Instance::query()->create([
+        'project_id' => $project->id,
+        'node_id' => $node->id,
+        'name' => 'web',
+        'environment' => 'production',
+        'checkout_path' => '/home/orbit-app-1/releases/initial',
+        'production_user' => 'orbit-app-1',
+        'production_home' => '/home/orbit-app-1',
+        'status' => InstanceState::Active,
+    ]);
+    $instance->environmentValues()->create(['env_key' => 'APP_ENV', 'env_value' => 'dev']);
+
+    app(InstanceEnvironmentStore::class)->forceAppProdMode($instance);
+
+    expect($instance->environmentValues()->pluck('env_value', 'env_key')->all())
+        ->toBe(['APP_DEBUG' => $debug, 'APP_ENV' => $env]);
+})->with([
+    'Laravel' => [ProjectType::LaravelApp, 'production', 'false'],
+    'Symfony' => [ProjectType::SymfonyApp, 'prod', '0'],
+]);
 
 it('normalizes APP_ENV and APP_DEBUG on existing app-prod Instances', function (): void {
     $project = Project::query()->create([

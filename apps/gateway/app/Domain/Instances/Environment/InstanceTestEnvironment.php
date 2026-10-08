@@ -4,22 +4,21 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Environment;
 
+use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Models\DatabaseConnectionTarget;
-use SensitiveParameter;
 
 /**
- * The values of `.env.testing` for an Instance that owns its `DB` database: the stored values
- * with APP_ENV=testing and DB_DATABASE pointing to the test database. Null when the Instance
- * does not own its `DB` database.
+ * The `.env.testing` keys for an Instance that owns its `DB` database: the `DB_*` keys of that connection with
+ * DB_DATABASE pointing to the test database. Null when the Instance does not own its `DB` database.
  */
 final readonly class InstanceTestEnvironment
 {
-    /**
-     * @param  array<string, string>  $values
-     * @return array<string, string>|null
-     */
-    public function values(int $instanceId, #[SensitiveParameter] array $values): ?array
+    public function __construct(
+        private DatabaseConnectionEnvProjection $projection,
+    ) {}
+
+    public function plan(int $instanceId): ?InstanceTestEnvironmentPlan
     {
         $target = DatabaseConnectionTarget::query()
             ->with('databaseConnection')
@@ -37,10 +36,14 @@ final readonly class InstanceTestEnvironment
             return null;
         }
 
-        return [
-            ...$values,
-            'APP_ENV' => 'testing',
-            InstanceDatabaseClonePlanner::PREFIX.'_DATABASE' => $connection->test_database,
-        ];
+        $prefix = InstanceDatabaseClonePlanner::PREFIX;
+        $values = $this->projection->project($connection, $prefix)['values'];
+        $values[$this->projection->key($prefix, 'DATABASE')] = $connection->test_database;
+
+        return new InstanceTestEnvironmentPlan(
+            values: $values,
+            managedKeys: $this->projection->managedKeys($prefix),
+            testDatabase: $connection->test_database,
+        );
     }
 }

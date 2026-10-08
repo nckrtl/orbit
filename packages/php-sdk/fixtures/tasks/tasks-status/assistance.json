@@ -29,7 +29,9 @@
                     "assistance_question": null,
                     "assistance_reason": "Which database should this use?"
                 }
-            ]
+            ],
+            "last_tick_at": null,
+            "merges": []
         },
         "meta": {
             "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"

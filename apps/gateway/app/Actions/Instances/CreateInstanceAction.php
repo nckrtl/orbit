@@ -278,11 +278,13 @@ final readonly class CreateInstanceAction
             }
 
             $details = $setupFailure->details;
-            // A step the request deadline stopped keeps that code, so it reads apart from a failed command.
+            // Deadline cuts and unavailable commands keep their classification through rollback.
             $deadlineCut = $setupFailure->errorCode === 'command.deadline_exceeded';
-            $code = $deadlineCut ? 'command.deadline_exceeded' : 'instance.setup_step_failed';
+            $unavailable = $setupFailure->errorCode === 'instance.setup_step_unavailable';
+            $code = $deadlineCut || $unavailable ? $setupFailure->errorCode : 'instance.setup_step_failed';
             $status = $deadlineCut ? 504 : 422;
             $cause = $deadlineCut ? 'Setup ran out of the request deadline' : 'Setup failed';
+            $diagnostic = $unavailable ? $setupFailure->getMessage().' ' : '';
             $instance->update(['failed_step' => 'setup', 'error_code' => $code]);
 
             if (($details['outcome'] ?? null) === 'unconfirmed') {
@@ -302,7 +304,7 @@ final readonly class CreateInstanceAction
                 if (($teardownFailure->details['outcome'] ?? null) === 'unconfirmed') {
                     throw new ResourceOperationException(
                         errorCode: $code,
-                        message: "{$cause} and teardown could not be confirmed. The Instance remains.",
+                        message: "{$diagnostic}{$cause} and teardown could not be confirmed. The Instance remains.",
                         status: $status,
                         details: [...$details, 'cleanup' => 'unconfirmed'],
                     );
@@ -320,7 +322,7 @@ final readonly class CreateInstanceAction
             } catch (Throwable) {
                 throw new ResourceOperationException(
                     errorCode: $code,
-                    message: "{$cause} and cleanup is incomplete. Inspect the Instance, then finish the removal with "
+                    message: "{$diagnostic}{$cause} and cleanup is incomplete. Inspect the Instance, then finish the removal with "
                         ."`orbit instance:destroy {$instance->id} --force`.",
                     status: $status,
                     details: [...$details, 'cleanup' => 'incomplete'],
@@ -329,7 +331,7 @@ final readonly class CreateInstanceAction
 
             throw new ResourceOperationException(
                 errorCode: $code,
-                message: $deadlineCut ? $setupFailure->getMessage().' The Instance was removed.' : 'Setup step failed.',
+                message: $deadlineCut || $unavailable ? $setupFailure->getMessage().' The Instance was removed.' : 'Setup step failed.',
                 status: $status,
                 previous: $setupFailure,
                 details: $details,

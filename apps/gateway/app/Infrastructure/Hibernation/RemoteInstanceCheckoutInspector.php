@@ -9,6 +9,7 @@ use App\Domain\Hibernation\InstanceCheckoutInspector;
 use App\Domain\Hibernation\LocalRuntimeDependencies;
 use App\Domain\Hibernation\RuntimeDependencyState;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Nodes\ManagedUserAccountResolver;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -31,6 +32,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function inspect(Instance $instance): RuntimeDependencyState
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $states = [];
         foreach ($instance->effectiveApps() as $app) {
             $states[$app['name']] = $this->inspectApp($instance, $app['name']);
@@ -66,6 +68,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function prune(Instance $instance, RuntimeDependencyState $state): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         foreach ($instance->effectiveApps() as $app) {
             $this->pruneApp($instance, $app['name'], $this->stateForApp($instance, $state, $app['name']));
         }
@@ -108,6 +111,7 @@ final readonly class RemoteInstanceCheckoutInspector implements InstanceCheckout
 
     public function restore(Instance $instance, RuntimeDependencyState $state): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         foreach ($instance->effectiveApps() as $app) {
             $this->restoreApp($instance, $app['name'], $this->stateForApp($instance, $state, $app['name']));
         }

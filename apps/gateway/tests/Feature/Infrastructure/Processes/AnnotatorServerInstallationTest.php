@@ -12,41 +12,25 @@ use App\Models\Project;
 use Illuminate\Filesystem\Filesystem;
 use Symfony\Component\Process\Process;
 
-it('refuses a missing or stale distribution asset before publishing an installation command', function (bool $stale): void {
+it('refuses a missing or changed vendored release before publishing an installation command', function (string $change): void {
     $assets = sys_get_temp_dir().'/orbit-annotator-assets-'.bin2hex(random_bytes(8));
-    new Filesystem()->ensureDirectoryExists($assets);
+    $files = new Filesystem;
+    $files->ensureDirectoryExists($assets);
     try {
-        if ($stale) {
-            new Filesystem()->copyDirectory(resource_path('annotator'), $assets);
-            file_put_contents($assets.'/manifest.json', json_encode(['source_sha256' => 'old-source', 'asset_sha256' => hash_file('sha256', $assets.'/inject.js.gz')], JSON_THROW_ON_ERROR));
+        if ($change !== 'missing') {
+            $files->copyDirectory(resource_path('annotator'), $assets);
+            match ($change) {
+                'edited' => file_put_contents($assets.'/bin/serve.mjs', "\n// edited", FILE_APPEND),
+                'unlisted' => file_put_contents($assets.'/bin/extra.mjs', 'export {};'),
+                'manifest' => file_put_contents($assets.'/manifest.json', '{'),
+            };
         }
         expect(fn () => new AnnotatorServerInstallation(assetDirectory: $assets)->command())
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe($stale ? 'process.annotator_asset_stale' : 'process.annotator_asset_missing'));
+            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe($change === 'missing' ? 'process.annotator_asset_missing' : 'process.annotator_asset_stale'));
     } finally {
-        new Filesystem()->deleteDirectory($assets);
+        $files->deleteDirectory($assets);
     }
-})->with([false, true]);
-
-it('refuses an injection asset after a build configuration or dependency lock change', function (string $input): void {
-    $source = sys_get_temp_dir().'/orbit-annotator-source-'.bin2hex(random_bytes(8));
-    $package = base_path('../../packages/agent-annotation');
-    $files = new Filesystem;
-    $files->ensureDirectoryExists($source);
-    try {
-        foreach (['src', 'bin'] as $directory) {
-            $files->copyDirectory($package.'/'.$directory, $source.'/'.$directory);
-        }
-        foreach (['package.json', 'vite.config.ts', 'tsconfig.json', 'bun.lock'] as $file) {
-            $files->copy($package.'/'.$file, $source.'/'.$file);
-        }
-        expect(AnnotatorServerInstallation::sourceDigest($source))->toBe(AnnotatorServerInstallation::sourceDigest($package));
-        file_put_contents($source.'/'.$input, "\nchanged build input", FILE_APPEND);
-        expect(fn () => new AnnotatorServerInstallation(packagePath: $source)->command())
-            ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('process.annotator_asset_stale'));
-    } finally {
-        $files->deleteDirectory($source);
-    }
-})->with(['tsconfig.json', 'bun.lock']);
+})->with(['missing', 'edited', 'unlisted', 'manifest']);
 
 it('serves the installed injection asset and admits only the rendered page and T3 origins for queue SSE deletion and preflight', function (): void {
     $root = sys_get_temp_dir().'/orbit-annotator-endpoint-'.bin2hex(random_bytes(8));
@@ -124,7 +108,7 @@ it('publishes the Gateway files atomically and retains an immutable release for 
         new Process(['python3', '-c', $program], input: $command->input)->mustRun();
         $original = realpath($root.'/current');
         expect(is_link($root.'/current'))->toBeTrue()
-            ->and(file_get_contents($root.'/current/bin/serve.mjs'))->toBe(file_get_contents(base_path('../../packages/agent-annotation/bin/serve.mjs')))
+            ->and(file_get_contents($root.'/current/bin/serve.mjs'))->toBe(file_get_contents(resource_path('annotator/bin/serve.mjs')))
             ->and(fileperms($root.'/current/bin/serve.mjs') & 0777)->toBe(0644);
         new Process(['python3', '-c', $program], input: $command->input)->mustRun();
         expect(realpath($root.'/current'))->toBe($original);

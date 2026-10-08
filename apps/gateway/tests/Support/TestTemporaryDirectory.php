@@ -10,11 +10,12 @@ use RuntimeException;
 /**
  * Isolate each test process under short, trusted system temporary ancestry.
  *
- * Runner-supplied TMPDIR may be inside a group-writable checkout, or too long for Unix sockets.
- * Canonical /tmp also avoids macOS's /var symlink. Each parallel worker creates its own private
- * root so native access preparation cannot change another worker's recorded ancestor protections.
- * Mode 0711 permits Caddy traversal without directory listing or writes by other accounts.
- * Run before PHP caches sys_get_temp_dir(); shell and Python children inherit the same root.
+ * Runner-supplied TMPDIR may be role-private, inside a group-writable checkout, or too long for
+ * Unix sockets. Canonical /tmp also avoids macOS's /var symlink. Each parallel worker creates its
+ * own root so native access preparation cannot change another worker's recorded ancestor
+ * protections. Mode 0711 lets Caddy and other cross-user fixtures traverse the root without
+ * listing or writing it. Run before PHP caches sys_get_temp_dir(); shell and Python children
+ * inherit the same root.
  */
 final class TestTemporaryDirectory
 {
@@ -37,9 +38,16 @@ final class TestTemporaryDirectory
         if (! mkdir($directory, 0711) || ! chmod($directory, 0711)) {
             throw new RuntimeException('Could not create a private test temporary directory.');
         }
-        register_shutdown_function(static function () use ($directory): void {
-            // Remove only this process's newly allocated fixture scope, never a supplied TMPDIR.
-            new Filesystem()->deleteDirectory($directory);
+        $owner = getmypid();
+        register_shutdown_function(static function () use ($directory, $owner): void {
+            // Run after other shutdown hooks have removed their fixtures.
+            register_shutdown_function(static function () use ($directory, $owner): void {
+                // Forked test children inherit this hook. Only the allocating process removes its
+                // own scope, and never a supplied TMPDIR.
+                if (getmypid() === $owner) {
+                    new Filesystem()->deleteDirectory($directory);
+                }
+            });
         });
         if (! putenv("TMPDIR={$directory}")) {
             throw new RuntimeException('Could not set the TMPDIR test environment variable.');

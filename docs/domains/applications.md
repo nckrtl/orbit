@@ -202,6 +202,12 @@ For app types other than `laravel-package`, Orbit treats a source as Laravel whe
 
 Detection reads files only. It runs no Composer, Artisan, or application code, and it installs no dependencies.
 
+### Symfony applications
+
+A `symfony-app` Project checks `bin/console` instead of `artisan`. Its source is valid when it has a regular `bin/console` file and a `composer.json` that declares `symfony/framework-bundle` in `require`. A `composer.json` with neither marker is plain PHP. `bin/console` without the declaration, the declaration without `bin/console`, or a symlinked `bin/console` returns `app-dev.symfony_source_invalid`. `bin/console` without `composer.json` returns `app-dev.source_metadata_unsafe`.
+
+A Symfony source is never Laravel. Orbit does not write `APP_URL` for it and does not force `APP_URL` in its stored environment. Set the values the application needs with [`env:update`](/reference/environment-variables).
+
 For a Laravel source, Orbit writes `APP_URL=https://<route-domain>`:
 
 - When `.env` exists, Orbit replaces the one `APP_URL` line or adds it. Every other byte stays the same.

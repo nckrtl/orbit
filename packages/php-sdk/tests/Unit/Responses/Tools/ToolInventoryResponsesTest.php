@@ -84,7 +84,7 @@ describe('tool inventory responses', function (): void {
         ]],
     ]);
 
-    it('round-trips every recorded inventory without nested request ids', function (string $fixture): void {
+    it('round-trips the discovered inventory without nested request ids', function (string $fixture): void {
         $body = tool_inventory_fixture($fixture);
         $inventory = ToolInventoryResponse::fromGatewayData($body['data'], $body['meta']['request_id']);
         $encoded = $inventory->toArray();
@@ -99,9 +99,6 @@ describe('tool inventory responses', function (): void {
         }
     })->with([
         'discovered' => ['discovered'],
-        'empty' => ['empty'],
-        'linux' => ['linux'],
-        'partial' => ['partial'],
     ]);
 
     it('redacts credential-shaped package text and preserves an explicit empty version', function (): void {

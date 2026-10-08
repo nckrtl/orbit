@@ -1061,7 +1061,7 @@ it('removes an Instance that has no Route without touching Route projections', f
         ->toBe(["runtime:{$instance->id}"]);
 })->with(['development', 'production']);
 
-it('removes a source-resolved task workspace that never received a Route', function (): void {
+it('removes a source-resolved task workspace that never received a Route and converges its Node', function (): void {
     $instance = orb181_coordinator_instance(withRoute: false);
     $instance->project->update(['type' => ProjectType::LaravelApp]);
     $instance->update(['status' => InstanceState::SourceResolved]);
@@ -1077,9 +1077,30 @@ it('removes a source-resolved task workspace that never received a Route', funct
         ->and($member->runtime_published)
         ->toBeFalse()
         ->and($this->orb181Projector->calls)
-        ->toBe([])
+        ->toBe(["runtime:{$instance->id}"])
         ->and(Instance::query()->whereKey($instance->id)->exists())
         ->toBeFalse();
+});
+
+it('withdraws the runtime of a source-resolved Instance whose pending Route was destroyed before removal', function (): void {
+    // The 2026-10-08 incident: the pending Route's sites had published a PHP-FPM pool, `route:destroy`
+    // deleted the Route row, and removal then saw no Route and no active runtime, so it skipped the
+    // converge and deleted the checkout under a live pool.
+    $instance = orb181_coordinator_instance();
+    $instance->update(['status' => InstanceState::SourceResolved]);
+    $instance->routes->sole()->update(['status' => RouteStatus::Pending]);
+    $instance->routes->sole()->delete();
+    $removal = $this->orb181Coordinator->execute($instance->refresh()->load(['project', 'node', 'routes.targets']), true);
+    $member = $removal->members->sole();
+
+    expect($removal->status->value)
+        ->toBe('completed')
+        ->and($member->route_id)
+        ->toBeNull()
+        ->and($member->runtime_published)
+        ->toBeFalse()
+        ->and($this->orb181Projector->calls)
+        ->toBe(["runtime:{$instance->id}"]);
 });
 
 it('removes a failed source-resolved development Instance and its partial routed runtime', function (): void {
@@ -1597,6 +1618,8 @@ final class Orb181CoordinatorProjector implements InstanceRemovalProjector
 
         return 'deleted';
     }
+
+    public function withdrawPhpPool(InstanceRemovalMember $member): void {}
 
     public function cleanupRuntime(InstanceRemovalMember $member): void
     {

@@ -7,6 +7,7 @@ use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Tasks\CoderSettleNotifier;
 use App\Domain\Tasks\TaskBaseBranchFetcher;
+use App\Domain\Tasks\TaskBranchUpdate;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGitHubReviewFeedback;
 use App\Domain\Tasks\TaskGitHubReviewObservations;
@@ -14,6 +15,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPullRequestCheck;
 use App\Domain\Tasks\TaskPullRequestHealth;
 use App\Domain\Tasks\TaskPullRequestReviewWatcher;
+use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskReviewReadStatus;
 use App\Domain\Tasks\TaskScheduler;
@@ -183,6 +185,7 @@ describe('once-only GitHub review consumption', function (): void {
     });
 
     it('waits for pending and infrastructure checks but gives conflict and genuine CI priority', function (string $problem, ?string $expected): void {
+        mock(TaskPullRequestUpdater::class)->shouldReceive('updateBranch')->andReturn(TaskBranchUpdate::Conflict);
         $health = match ($problem) {
             'conflict' => new TaskPullRequestHealth('open', ['Conflict'], baseRef: 'main', conflicts: true, headSha: 'abc123'),
             'failure' => new TaskPullRequestHealth('open', ['Failure'], failedChecks: [new TaskPullRequestCheck('Gateway', null)], headSha: 'abc123'),

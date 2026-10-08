@@ -19,6 +19,7 @@ These are the terms every part of Orbit shares. Each domain page defines the ter
 ## Applications
 
 - **Project**: One Git repository, its named apps and the defaults for running them. See [Projects](/reference/projects).
+- **Project Documents**: Folders and versioned files owned by a Project, independent of Git branches and Instances. See [Project Documents](/reference/project-documents).
 - **Named app**: An application within a Project, with a name, repository-relative path, relative web root and type. See [Application directory](/reference/projects#application-directory).
 - **Instance**: One running copy of the whole Project on a Node, serving each configured app in development or the sole app in supported production. See [Applications](/domains/applications).
 - **Route**: A domain that reaches one named app in an Instance, a pool for the same app, or a Node-local service. See [Routes](/reference/routes).

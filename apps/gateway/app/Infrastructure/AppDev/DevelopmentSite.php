@@ -70,6 +70,12 @@ final readonly class DevelopmentSite
             : ApplicationDirectory::resolvePath($this->checkoutPath, $this->applicationPath);
     }
 
+    /** The working directory (`chdir`) of the site's PHP-FPM pool. A production site runs from its checkout. */
+    public function phpWorkingDirectory(): string
+    {
+        return $this->environment === 'production' ? $this->checkoutPath : $this->applicationDirectory();
+    }
+
     public function poolName(): string
     {
         return $this->app !== null && $this->instanceId !== null && $this->environment !== 'production'

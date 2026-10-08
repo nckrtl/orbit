@@ -165,11 +165,19 @@ Clearing an empty Route returns it unchanged. The Gateway returns `route.target_
 
 ## orbit route:destroy
 
-Remove a Route without targets, and its DNS records, Caddy sites, certificates, and firewall rules. See [Remove a Route](/reference/routes#remove-a-route).
+Remove a Route and its DNS records, Caddy sites, certificates, and firewall rules. For a Route whose Instances are not active, also withdraw the PHP-FPM pools of its development Instances. See [Remove a Route](/reference/routes#remove-a-route).
 
 ```bash
-orbit route:destroy <route> [--yes]
+orbit route:destroy <route> [--yes] [--offline] [--json]
 ```
+
+| Option | Meaning |
+| --- | --- |
+| `--yes` | Confirm removal without prompting. |
+| `--offline` | Remove the Route without changing a Node the Gateway cannot reach. The Gateway probes each Node first, and a Node that answers keeps every step. |
+| `--json` | Return machine-readable JSON. |
+
+When a Node the removal changes does not answer, the Gateway returns `route.node_unreachable`. The message names the Node and `--offline`. With `--offline`, the response lists each skipped Node and its remaining steps under `retained_on_nodes`. Run `orbit node:converge NODE` once that Node answers. See [Remove a Route from an unreachable Node](/reference/routes#remove-a-route-from-an-unreachable-node).
 
 <Warning>
 The Gateway refuses removal with `route.target_conflict` while an active Instance depends on the Route. Remove the Instance with `instance:destroy` instead. That removal deletes the Route when it removes the last target. The Gateway also refuses direct removal of analytics tracking Routes with `route.tracking_managed`; disable analytics on the Instance instead. A Route kind that cannot be destroyed returns `route.kind_invalid`.

@@ -1,0 +1,138 @@
+{
+  "success": {
+    "total_count": 1,
+    "check_runs": [
+      {
+        "id": 112657662925,
+        "name": "Required checks",
+        "head_sha": "c7f8ae627b0efcd2afa96e671f163967214070d7",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-10-07T06:11:08Z",
+        "completed_at": "2026-10-07T06:11:11Z",
+        "html_url": "https://github.com/nckrtl/orbit/actions/runs/37579546018/job/112657662925",
+        "details_url": "https://github.com/nckrtl/orbit/actions/runs/37579546018/job/112657662925",
+        "check_suite": {
+          "id": 101798351571
+        },
+        "app": {
+          "slug": "github-actions"
+        }
+      }
+    ]
+  },
+  "failure": {
+    "total_count": 1,
+    "check_runs": [
+      {
+        "id": 112601289778,
+        "name": "Required checks",
+        "head_sha": "8c2ce14ad2e2d57c22aff4eb5d328ec2d283c0df",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-10-07T02:27:18Z",
+        "completed_at": "2026-10-07T02:27:22Z",
+        "html_url": "https://github.com/nckrtl/orbit/actions/runs/37561428039/job/112601289778",
+        "details_url": "https://github.com/nckrtl/orbit/actions/runs/37561428039/job/112601289778",
+        "check_suite": {
+          "id": 101749663309
+        },
+        "app": {
+          "slug": "github-actions"
+        }
+      }
+    ]
+  },
+  "failure_after_cancel": {
+    "total_count": 1,
+    "check_runs": [
+      {
+        "id": 112599659171,
+        "name": "Required checks",
+        "head_sha": "211e9c25fc4ba67215806dd0f779b67b1fad106a",
+        "status": "completed",
+        "conclusion": "failure",
+        "started_at": "2026-10-07T02:20:44Z",
+        "completed_at": "2026-10-07T02:20:46Z",
+        "html_url": "https://github.com/nckrtl/orbit/actions/runs/37561188091/job/112599659171",
+        "details_url": "https://github.com/nckrtl/orbit/actions/runs/37561188091/job/112599659171",
+        "check_suite": {
+          "id": 101749013199
+        },
+        "app": {
+          "slug": "github-actions"
+        }
+      }
+    ]
+  },
+  "success_in_cancelled_workflow": {
+    "total_count": 1,
+    "check_runs": [
+      {
+        "id": 112604299032,
+        "name": "Required checks",
+        "head_sha": "42a9b6dd522066b6b00ab411e3cdfbe0cf8c8764",
+        "status": "completed",
+        "conclusion": "success",
+        "started_at": "2026-10-07T02:39:14Z",
+        "completed_at": "2026-10-07T02:39:17Z",
+        "html_url": "https://github.com/nckrtl/orbit/actions/runs/37562497254/job/112604299032",
+        "details_url": "https://github.com/nckrtl/orbit/actions/runs/37562497254/job/112604299032",
+        "check_suite": {
+          "id": 101752563576
+        },
+        "app": {
+          "slug": "github-actions"
+        }
+      }
+    ]
+  },
+  "none": {
+    "total_count": 0,
+    "check_runs": []
+  },
+  "queued": {
+    "total_count": 1,
+    "check_runs": [
+      {
+        "id": 112661963320,
+        "name": "Required checks",
+        "head_sha": "12c0d3df0d3880c5738012ebd4448c934c79a953",
+        "status": "queued",
+        "conclusion": null,
+        "started_at": "2026-10-07T06:26:20Z",
+        "completed_at": null,
+        "html_url": "https://github.com/nckrtl/orbit/actions/runs/37580855684/job/112661963320",
+        "details_url": "https://github.com/nckrtl/orbit/actions/runs/37580855684/job/112661963320",
+        "check_suite": {
+          "id": 101801910474
+        },
+        "app": {
+          "slug": "github-actions"
+        }
+      }
+    ]
+  },
+  "in_progress": {
+    "total_count": 1,
+    "check_runs": [
+      {
+        "id": 112661963320,
+        "name": "Required checks",
+        "head_sha": "12c0d3df0d3880c5738012ebd4448c934c79a953",
+        "status": "in_progress",
+        "conclusion": null,
+        "started_at": "2026-10-07T06:26:23Z",
+        "completed_at": null,
+        "html_url": "https://github.com/nckrtl/orbit/actions/runs/37580855684/job/112661963320",
+        "details_url": "https://github.com/nckrtl/orbit/actions/runs/37580855684/job/112661963320",
+        "check_suite": {
+          "id": 101801910474
+        },
+        "app": {
+          "slug": "github-actions"
+        }
+      }
+    ]
+  }
+}

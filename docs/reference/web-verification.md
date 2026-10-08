@@ -25,6 +25,14 @@ Studio is Node 4. `/nodes/4/tools` shows managed Tools with a separate observed 
 
 On the phone, navigation and Adopt remain reachable, content starts near the top, and long package lists do not force a narrow desktop sidebar beside the content. Screenshots supplement browser tests that assert requests and states. Demo fixtures prove UI behavior only; real macOS tool operations need a task-owned Mac fixture.
 
+## Project Documents review
+
+Open a Project and choose Documents from its section menu. The demo workspace is `/projects/1/documents`. Its nested-folder case is `/projects/1/documents?folder=11&state=all`: Planning → Specifications contains a long file name, an archived child, an attachment, and a concurrent draft. The fixture shapes and starting bytes come from recorded Project Documents Gateway responses. Each demo Project has its own tree.
+
+Capture the nested folder on phone and desktop. Check Root and ancestor breadcrumbs, the Search / filters sheet, New, and each row's action menu. Open the attachment to review metadata, version downloads, and upload replacement without an inline preview. In the concurrent draft, change the text and Save: the demo writer returns a revision conflict, and the draft, Copy draft, and deliberate reload controls remain available. From the root, choose Planning's permanent-removal action to inspect the irreversible recursive scope without submitting it. Keep each state PNG before recapturing the same route, because screenshot names omit queries.
+
+These fixtures and browser tests exercise client behavior, not live S3 or Gateway authorization. A held task topology is the place for that discovery; do not use the live Gateway for disposable Documents.
+
 ## Commands
 
 `routes` reads the feature map and does not start the app. `stop` stops the daemon for this checkout and does not start the app. The other commands share one daemon and one demo server for the checkout. A dead server is started again. [Active page](#active-page) states which page `click` uses. [Daemon](#daemon) states what keeps running and how to stop it.
@@ -42,7 +50,7 @@ On the phone, navigation and Adopt remain reachable, content starts near the top
 
 A path that the URL parser would send to another host is `usage`, including a tab, newline, or carriage return that turns the path into a protocol-relative URL. The browser aborts any request or socket whose host is not the demo server. Each load is answered with that checked response, so the browser does not send the request again and cannot follow a redirect that was not part of the check.
 
-The demo server is the `apps/web` dev server with `VITE_ORBIT_DEMO=1`, bound to `127.0.0.1` on a free port. Demo mode answers the API from the fixture fleet. It does not proxy to a Gateway, and it does not run the dev adapters that call the CLI, Commander, a transcription service, or a local annotation server. Those paths answer on the demo server and make no upstream call. The command waits up to 60 seconds for the server to answer.
+The demo server is the `apps/web` dev server with `VITE_ORBIT_DEMO=1`, bound to `127.0.0.1` on a free port. Demo mode answers the API from the fixture fleet. It does not proxy to a Gateway, and it does not run the dev adapters that call the CLI, a transcription service, or a local annotation server. Those paths answer on the demo server and make no upstream call. The command waits up to 60 seconds for the server to answer.
 
 ## Daemon
 

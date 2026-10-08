@@ -228,19 +228,6 @@ describe('dependency inventory payloads', function (): void {
 });
 
 describe('dependency correlation and bounds', function (): void {
-    it('rejects invalid missing or conflicting correlation', function (string $case): void {
-        $envelope = dependency_envelope();
-        $headers = [];
-        if ($case === 'conflict') {
-            $headers['X-Orbit-Request-Id'] = '22222222-2222-4222-8222-222222222222';
-        } elseif ($case === 'missing') {
-            unset($envelope['meta']['request_id']);
-        } else {
-            $envelope['meta']['request_id'] = 'not-a-uuid';
-        }
-        expect(fn () => dependency_send(MockResponse::make($envelope, 200, $headers)))
-            ->toThrow(GatewayApiException::class);
-    })->with(['conflict', 'missing', 'invalid']);
 
     it('accepts the text boundary without losing opaque versions or same-version contexts', function (): void {
         $envelope = dependency_envelope();

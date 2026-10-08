@@ -11,6 +11,7 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
+use App\Domain\Tasks\TaskCompute;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -38,6 +39,7 @@ final class StoreProjectRequest extends FormRequest
             'root' => ['required', 'string', 'max:255'],
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
+            'task_compute' => ['sometimes', 'required', 'string', Rule::enum(TaskCompute::class)],
         ];
     }
 
@@ -47,7 +49,7 @@ final class StoreProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed'],
+                ['code', 'name', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'task_compute'],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -101,6 +103,7 @@ final class StoreProjectRequest extends FormRequest
                 ?? ProjectSourceAccess::GitHubApp,
             taskWorkspaceRoutedProvided: array_key_exists('task_workspace_routed', $validated),
             taskWorkspaceRouted: ($validated['task_workspace_routed'] ?? false) === true,
+            taskCompute: is_string($validated['task_compute'] ?? null) ? TaskCompute::from($validated['task_compute']) : TaskCompute::Shared,
         );
     }
 

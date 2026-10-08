@@ -6,6 +6,7 @@ use App\Domain\AgentView\AgentViewConverger;
 use App\Domain\Certificates\GatewayCertificateIssuer;
 use App\Domain\Certificates\GatewayCertificatePaths;
 use App\Domain\Gateway\GatewayServingHost;
+use App\Domain\GatewayReleases\GatewayReleaseUnitConverger;
 use App\Domain\Hibernation\RuntimeHibernatorConverger;
 use App\Domain\Nodes\NodeProvisioningException;
 use App\Domain\Nodes\RoleName;
@@ -28,6 +29,7 @@ use App\Infrastructure\Nodes\CaddyPackageSourceProgram;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\ProcessInvocation;
 use App\Infrastructure\Processes\ProcessRunner;
+use App\Infrastructure\ProjectDocuments\CleanupGate;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
@@ -37,7 +39,101 @@ use App\Models\Node;
 use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
+use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
+
+pest()->group('subprocess');
+
+it('installs and executes the FPM pre-start gate before accepting traffic and refuses startup on gate failure', function (string $ambientEnvironment): void {
+    $previousEnvironment = $_ENV['APP_ENV'] ?? null;
+    [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
+    $root = sys_get_temp_dir().'/orbit-cleanup-startup-'.Str::uuid();
+    $filesystem = new Filesystem;
+    $filesystem->makeDirectory($root.'/bin', 0700, true);
+    // Model the existing trusted /run parent. install -d may create missing intermediate parents as 0775.
+    $filesystem->makeDirectory($root.'/run', 0755);
+    config(['orbit.gateway_checkout' => base_path()]);
+    $filesystem->put($root.'/bin/install', "#!/bin/bash\nargs=()\nwhile (( $# )); do case \"\$1\" in -o|-g) shift 2;; *) args+=(\"\$1\"); shift;; esac; done\nexec /usr/bin/install \"\${args[@]}\"\n");
+    $filesystem->put($root.'/bin/chown', "#!/bin/sh\nexit 0\n");
+    $filesystem->put($root.'/bin/systemctl', "#!/bin/sh\n[ \"\$1\" = daemon-reload ]\n");
+    $filesystem->put($root.'/bin/runuser', "#!/bin/sh\n[ \"\$1 \$2 \$3\" = '-u orbit --' ] || exit 1\nshift 3\nexec \"\$@\"\n");
+    foreach (['install', 'chown', 'systemctl', 'runuser'] as $binary) {
+        chmod($root.'/bin/'.$binary, 0700);
+    }
+    $runtime = $root.'/run/orbit/project-documents';
+    config(['orbit.document_cleanup_runtime' => $runtime]);
+    // Reproduce a coordinator's group-writable umask for native installation subprocesses.
+    $previousUmask = umask(0002);
+    try {
+        $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
+        $calls = Collection::make($processes->calls);
+        $install = $calls->first(static fn (ProcessInvocation $call): bool => str_contains($call->input ?? '', 'orbit-document-cleanup.conf'));
+        expect($install)->toBeInstanceOf(ProcessInvocation::class);
+        $invalidation = $calls->search(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', '/etc/orbit/project-document-cleanup-start']);
+        $activation = $calls->search(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']);
+        expect($invalidation)->toBeInt();
+        expect($activation)->toBeInt()->toBeGreaterThan($invalidation);
+        $program = str_replace(['/etc/orbit', '/etc/systemd', '/run/orbit', '/usr/sbin/runuser'], [$root.'/etc/orbit', $root.'/etc/systemd', $root.'/run/orbit', $root.'/bin/runuser'], $install->input);
+        // Subprocesses inherit an environment that need not match the booted test application's config.
+        $_ENV['APP_ENV'] = $ambientEnvironment;
+        $environment = ['APP_ENV' => 'testing', 'PATH' => $root.'/bin:'.getenv('PATH'), 'ORBIT_DOCUMENT_CLEANUP_RUNTIME' => $runtime];
+        $installer = new Process(['bash', '-seu'], env: $environment);
+        $installer->setInput($program);
+        expect($installer->run())->toBe(0, $installer->getErrorOutput());
+        $unit = file_get_contents($root.'/etc/systemd/system/php8.5-fpm.service.d/orbit-document-cleanup.conf');
+        preg_match('/^ExecStartPre=\\+(.+)$/m', $unit, $matches);
+        expect($matches)->toHaveKey(1);
+        $start = new Process(['bash', '-euc', '"$1" && printf api-started', '--', $matches[1]], env: $environment);
+        expect($start->run())->toBe(0, $start->getOutput().$start->getErrorOutput());
+        expect($start->getOutput())->toContain('api-started');
+        $gate = app(CleanupGate::class);
+        $first = $gate->status()->generation;
+        expect($gate->status()->state)->toBe('paused');
+        $state = json_decode(file_get_contents($runtime.'/generation.json'), true, flags: JSON_THROW_ON_ERROR);
+        $state['report_id'] = str_repeat('b', 64);
+        $state['report_sha256'] = str_repeat('c', 64);
+        file_put_contents($runtime.'/generation.json', json_encode($state));
+        file_put_contents($runtime.'/permit.json', json_encode($state));
+        chmod($runtime.'/permit.json', 0600);
+        expect($gate->status()->state)->toBe('running');
+        expect($start->run())->toBe(0, $start->getErrorOutput());
+        expect($gate->status()->generation)->not->toBe($first);
+        expect($gate->status()->reportId)->toBeNull();
+        expect(file_exists($runtime.'/permit.json'))->toBeFalse();
+        chmod($root.'/run', 0775);
+        expect($start->run())->toBe(1);
+        expect($start->getOutput())->not->toContain('api-started');
+        expect($start->getOutput())->toContain('project_documents.cleanup_state_unavailable');
+        chmod($root.'/run', 0755);
+        chmod($runtime.'/execution.lock', 0000);
+        expect($start->run())->toBe(1);
+        expect($start->getOutput())->not->toContain('api-started');
+        expect($start->getOutput())->toContain('project_documents.cleanup_state_unavailable');
+    } finally {
+        umask($previousUmask);
+        $filesystem->deleteDirectory($root);
+        $filesystem->deleteDirectory($orbitHome);
+        if ($previousEnvironment === null) {
+            unset($_ENV['APP_ENV']);
+        } else {
+            $_ENV['APP_ENV'] = $previousEnvironment;
+        }
+    }
+})->with(['testing', 'production']);
+
+it('refuses FPM reload or restart when cleanup invalidation fails during convergence', function (): void {
+    [$converger, $processes, , $orbitHome] = gateway_web_converger(failure: 'cleanup-invalidation');
+    try {
+        expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
+            ->toThrow(function (NodeProvisioningException $exception): void {
+                expect($exception->step)->toBe('gateway-fpm-cleanup-invalidate');
+                expect($exception->errorCode)->toBe('gateway.fpm_start_failed');
+            });
+        expect(Collection::make($processes->calls)->contains(static fn (ProcessInvocation $call): bool => $call->arguments === ['sudo', 'systemctl', 'reload-or-restart', 'php8.5-fpm']))->toBeFalse();
+    } finally {
+        new Filesystem()->deleteDirectory($orbitHome);
+    }
+});
 
 it('repairs restrictive public permissions without exposing private files or symlink targets', function (): void {
     [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();
@@ -97,7 +193,7 @@ it('repairs restrictive public permissions without exposing private files or sym
 });
 
 it('publishes complete validated FPM Caddy and certificate configurations through atomic switches', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger();
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger();
 
     try {
         $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1');
@@ -166,6 +262,7 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
                 'root * /home/orbit/orbit-gateway/public',
                 'tls /etc/caddy/orbit-cert-current/gateway.pem /etc/caddy/orbit-cert-current/gateway.key',
                 'php_fastcgi unix//run/php/orbit-gateway.sock',
+                'resolve_root_symlink',
                 'dial_timeout 10s',
                 'read_timeout 600s',
                 'write_timeout 600s',
@@ -240,6 +337,8 @@ it('publishes complete validated FPM Caddy and certificate configurations throug
             ->and($hibernator->calls)
             ->toBe(1)
             ->and($agentView->calls)
+            ->toBe(1)
+            ->and($releaseUnits->calls)
             ->toBe(1);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -320,7 +419,11 @@ it('publishes one complete gateway file from distinct candidates under contentio
         }
 
         foreach (array_keys($characters) as $index) {
-            protected_file_writer_wait_until(static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"));
+            protected_file_writer_wait_until(
+                static fn (): bool => is_file("{$markerDirectory}/ready-{$index}"),
+                $processes,
+                static fn (): string => "ready marker {$index}",
+            );
         }
 
         file_put_contents($startPath, 'start');
@@ -331,6 +434,8 @@ it('publishes one complete gateway file from distinct candidates under contentio
             ]));
 
             return count($observedCandidates) >= 2;
+        }, $processes, static function () use (&$observedCandidates): string {
+            return 'observed candidates: '.count($observedCandidates).' (expected at least 2)';
         });
 
         foreach ($processes as $process) {
@@ -528,7 +633,7 @@ it('repeats the same idempotent install step on every web convergence', function
         expect($second)
             ->toEqual($first)
             ->and($first[0]->arguments)
-            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway'])
+            ->toBe(['sudo', 'bash', '-seu', '--', '/home/orbit/orbit-gateway', '/home/orbit/orbit-gateway'])
             ->and($first[1]->arguments)
             ->toBe(['sudo', 'bash', '-seu', '--', ...CaddyPackageSourceProgram::arguments()])
             ->and($first[2]->arguments)
@@ -539,7 +644,7 @@ it('repeats the same idempotent install step on every web convergence', function
 });
 
 it('stops before any Caddy or certificate step when Caddy cannot be installed', function (): void {
-    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView] = gateway_web_converger(failure: 'caddy-install');
+    [$converger, $processes, $issuer, $orbitHome, $hibernator, $agentView, $releaseUnits] = gateway_web_converger(failure: 'caddy-install');
 
     try {
         expect(fn () => $converger->converge(gateway_web_node(), 'gateway.orbit', '10.44.0.1'))
@@ -572,6 +677,8 @@ it('stops before any Caddy or certificate step when Caddy cannot be installed', 
             ->and($hibernator->calls)
             ->toBe(0)
             ->and($agentView->calls)
+            ->toBe(0)
+            ->and($releaseUnits->calls)
             ->toBe(0);
     } finally {
         new Filesystem()->deleteDirectory($orbitHome);
@@ -736,13 +843,41 @@ function protected_file_writer_wait_for_success(Process $process): void
     }
 }
 
-function protected_file_writer_wait_until(Closure $condition, float $timeoutSeconds = 5.0): void
+/** @param list<Process> $processes */
+function protected_file_writer_wait_until(Closure $condition, array $processes, Closure $state): void
 {
-    $deadline = microtime(true) + $timeoutSeconds;
-
     while (! $condition()) {
-        if (microtime(true) >= $deadline) {
-            throw new RuntimeException('Timed out waiting for protected-file writer state.');
+        $running = false;
+        $failure = null;
+        $writerStates = [];
+
+        foreach ($processes as $index => $process) {
+            try {
+                $process->checkTimeout();
+            } catch (ProcessTimedOutException $exception) {
+                $failure = "Writer {$index} exceeded its {$exception->getExceededTimeout()} second lifetime.";
+            }
+
+            if ($process->isRunning()) {
+                $running = true;
+            } elseif (! $process->isSuccessful()) {
+                $failure ??= 'A protected-file writer failed before the required state was observed.';
+            }
+
+            $writerStates[] = sprintf(
+                'writer %d: status=%s, exit=%s, stderr=%s',
+                $index,
+                $process->getStatus(),
+                $process->getExitCode() ?? 'none',
+                $process->getErrorOutput(),
+            );
+        }
+
+        if ($failure !== null || ! $running) {
+            throw new RuntimeException(
+                $state().'. '.($failure ?? 'All protected-file writers exited before the required state was observed.')
+                .' '.implode('; ', $writerStates),
+            );
         }
 
         usleep(1_000);
@@ -797,6 +932,10 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
         {
             $this->calls[] = $invocation;
             $arguments = $invocation->arguments;
+
+            if ($this->failure === 'cleanup-invalidation' && $arguments === ['sudo', '/etc/orbit/project-document-cleanup-start']) {
+                return new CommandResult(1, '', 'Document cleanup state is unavailable.', 2, false);
+            }
 
             if (
                 $this->failure === 'caddy-install'
@@ -878,12 +1017,14 @@ function gateway_web_converger(?string $failure = null, string $checkoutPath = '
             checkoutPath: $checkoutPath,
             hibernator: $hibernator = new RecordingRuntimeHibernatorConverger,
             agentView: $agentView = new RecordingAgentViewConverger,
+            releaseUnits: $releaseUnits = new RecordingGatewayReleaseUnitConverger,
         ),
         $processes,
         $issuer,
         $orbitHome,
         $hibernator,
         $agentView,
+        $releaseUnits,
     ];
 }
 
@@ -912,6 +1053,16 @@ function gateway_web_pushed(ProcessInvocation $invocation): string
     preg_match("/printf '%s' '([A-Za-z0-9+\\/=]+)' \\| base64 --decode > \"\\\$candidate\\/Caddyfile\"/", (string) $invocation->input, $match);
 
     return (string) base64_decode($match[1] ?? '', true);
+}
+
+final class RecordingGatewayReleaseUnitConverger implements GatewayReleaseUnitConverger
+{
+    public int $calls = 0;
+
+    public function converge(): void
+    {
+        $this->calls++;
+    }
 }
 
 final class RecordingRuntimeHibernatorConverger implements RuntimeHibernatorConverger

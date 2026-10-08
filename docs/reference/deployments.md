@@ -63,6 +63,8 @@ Orbit reports the failed step's exit status and names it in a warning. The outpu
 
 After a deployment Orbit prunes managed releases, retaining `current`, its previous selection, and releases recorded as seeds by other Instances on that Node. The seed fields on an Instance are a durable lease: asynchronous setup and interrupted retries can still read that immutable release after later deployments. The lease lasts until the consuming Instance is removed. Pruning reads these leases under the same Node source lock used for seed selection and validates every retained release marker.
 
+Release listing and pruning skip an owned release whose `.git` points to its missing administrative directory under the stable repository's `.git/worktrees/`. The Gateway logs a warning naming that release. Its directory, contents, and ownership receipt remain for operator inspection; healthy releases continue through listing and deployment. Listing still requires a valid `current`. Pruning also requires a valid previous selection and every leased seed before inspecting unused releases. Invalid ownership receipts, symlinks, and foreign or ambiguous Git metadata still fail validation.
+
 A failed candidate is removed without changing `current`. Cleanup never prunes the stable repository or other linked worktrees. Environment files and caches in development releases are copies, not links back into another Instance. The application-directory `.env` and any `.env.testing` are copied from the same relative directory in the default's stable home when a candidate is built, so explicit environment synchronization is picked up by the next deployment without writing into the live seed. Production environment and rollback rules below remain separate.
 
 ## Deploy steps

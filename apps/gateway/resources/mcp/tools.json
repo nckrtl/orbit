@@ -1854,10 +1854,259 @@
       }
     },
     {
+      "name": "fleet-rollout-resume",
+      "extension": null,
+      "title": "fleet:rollout:resume",
+      "description": "Resume the halted fleet rollout. The Gateway runs it in orbit-fleet-converge.service.",
+      "method": "POST",
+      "path": "/api/v1/fleet/rollout/resume",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "skip": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "Node ID or name to leave out of this rollout, usually the Node it halted on"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fleet-rollout-status",
+      "extension": null,
+      "title": "fleet:rollout:status",
+      "description": "Show the newest fleet rollout, each Node's result, and the Nodes it leaves out.",
+      "method": "GET",
+      "path": "/api/v1/fleet/rollout",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-desired-fleet-state",
+      "extension": null,
+      "title": "Show the desired fleet state",
+      "description": "Returns what every machine in the fleet should run for the Gateway's commit (ADR 0202): the full commit SHA, the CLI release CI published for that commit with the SHA-256 of each platform binary from its `SHA256SUMS`, and the pinned `orbit-agent` with the SHA-256 of each Linux binary. Any active WireGuard peer may read it, with or without Node access. `cli.status` is `available`; `pending` with `reason` `release_missing` and the version and tag while CI has not published the release yet; or `unavailable` with a `reason`. None of these is an error. `orbit self-update` reads this endpoint.",
+      "method": "GET",
+      "path": "/api/v1/gateway/desired-fleet-state",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-auto-disable",
+      "extension": null,
+      "title": "gateway:release:auto:disable",
+      "description": "Turns automatic Gateway releases off. A release that already runs finishes.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-automation/disable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-auto-enable",
+      "extension": null,
+      "title": "gateway:release:auto:enable",
+      "description": "Turns automatic Gateway releases on. A pause still holds them until `gateway:release:auto:resume`.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-automation/enable",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-auto-resume",
+      "extension": null,
+      "title": "gateway:release:auto:resume",
+      "description": "Clears a pause of automatic Gateway releases after the operator decided how to recover. Refuses with `gateway.release_not_paused` when nothing is paused.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-automation/resume",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-auto-status",
+      "extension": null,
+      "title": "gateway:release:auto:status",
+      "description": "Shows whether automatic Gateway releases are enabled or paused, the current release, the last runner tick, and how long releases have made no progress. See /reference/gateway-recovery#automatic-releases.",
+      "method": "GET",
+      "path": "/api/v1/gateway/release-automation",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-deploy",
+      "extension": null,
+      "title": "gateway:release:deploy",
+      "description": "Queues a manual release of one commit and starts `orbit-gateway-release-run@<record>.service`, which prepares, migrates, switches, verifies, and smoke-tests it. Answers 202 with the queued release record; the release never runs in the API request. Follow it with `gateway:release:show <id>` until `finished` is true. See /reference/gateway-recovery#deploy-a-release.",
+      "method": "POST",
+      "path": "/api/v1/gateway/releases",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{7,40}$(?![\\s\\S])",
+            "description": "Hex SHA of the commit to release, 7 to 40 characters"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "commit"
+        ]
+      }
+    },
+    {
+      "name": "gateway-release-list",
+      "extension": null,
+      "title": "gateway:release:list",
+      "description": "Lists the 50 newest Gateway release records, newest first, including queued and running ones.",
+      "method": "GET",
+      "path": "/api/v1/gateway/releases",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "gateway-release-rollback",
+      "extension": null,
+      "title": "gateway:release:rollback",
+      "description": "Queues a rollback to a retained release, named by its 12-digit id, and starts its release unit. Refuses a target that lacks a migration of the current release unless `force` is true. Answers 202 with the queued release record. See /reference/gateway-recovery#roll-back.",
+      "method": "POST",
+      "path": "/api/v1/gateway/releases/{release}/rollback",
+      "path_inputs": [
+        "release"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": "string"
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Switch the code across a migration the target release does not have"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "release"
+        ]
+      }
+    },
+    {
+      "name": "gateway-release-show",
+      "extension": null,
+      "title": "gateway:release:show",
+      "description": "Shows one Gateway release record by its numeric id (1 to 6 digits), or the newest record of a commit named by a hex SHA of 7 to 40 characters.",
+      "method": "GET",
+      "path": "/api/v1/gateway/releases/{release}",
+      "path_inputs": [
+        "release"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "release": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "release"
+        ]
+      }
+    },
+    {
+      "name": "gateway-release-smoke",
+      "extension": null,
+      "title": "gateway:release:smoke",
+      "description": "Runs `bin/gateway-smoke` of the current release against the live Gateway, for the current commit or the `commit` you name, and answers when it ends. `since` is the runtime handoff time, ISO 8601 with a zone. Smoke restarts nothing and writes no release record, so it runs inside the request: its limit, `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT`, is lowered to what the request's command deadline has left, about 520 seconds at most, so the run ends before PHP-FPM ends the request. One smoke runs at a time; another answers 409 `gateway.release_smoke_in_progress`. Checks that did not pass answer 200 with `outcome` `failed` and the report; a smoke that printed no report, ran past its limit, or is missing is an error. See /reference/gateway-recovery#smoke.",
+      "method": "POST",
+      "path": "/api/v1/gateway/release-smoke",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "commit": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "pattern": "^[0-9a-f]{7,40}$(?![\\s\\S])",
+            "description": "Hex SHA the live Gateway must serve, 7 to 40 characters. Default: the current release"
+          },
+          "since": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 64,
+            "description": "Runtime handoff time, ISO 8601 with a zone. The scheduler and agent view must have started after it"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
       "name": "gateway-status",
       "extension": null,
       "title": "Show Gateway status",
-      "description": "Returns the Gateway name, version, and status. This endpoint needs no WireGuard identity.",
+      "description": "Returns the Gateway name, version, and status, and the release the Gateway runs from. This endpoint needs no WireGuard identity. For an active WireGuard peer it also returns `auto_release`, whether automatic releases are enabled or paused, and `desired_fleet_state`, the object `gateway:desired-fleet-state` returns, as last cached; it is null until the state is resolved and for any other caller. This endpoint never waits for Git or GitHub.",
       "method": "GET",
       "path": "/api/v1/gateway/status",
       "path_inputs": [],
@@ -3701,6 +3950,37 @@
       }
     },
     {
+      "name": "node-converge",
+      "extension": null,
+      "title": "node:converge",
+      "description": "Re-apply the Gateway-rendered Orbit footprint of a Node. It never changes an Instance or a role.",
+      "method": "POST",
+      "path": "/api/v1/nodes/{node}/converge",
+      "path_inputs": [
+        "node"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "node": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Node ID."
+          },
+          "force": {
+            "type": "boolean",
+            "description": "Re-apply every artifact, not only the ones whose digest changed"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "node"
+        ]
+      }
+    },
+    {
       "name": "node-excluded-project-add",
       "extension": null,
       "title": "node:excluded-project:add",
@@ -4534,10 +4814,11 @@
             "enum": [
               "monorepo",
               "laravel-app",
+              "symfony-app",
               "laravel-package",
               "node-package"
             ],
-            "description": "Project type (monorepo, laravel-app, laravel-package, or node-package)"
+            "description": "Project type (monorepo, laravel-app, symfony-app, laravel-package, or node-package)"
           },
           "repository_url": {
             "type": "string",
@@ -4572,6 +4853,14 @@
           "task_workspace_routed": {
             "type": "boolean",
             "description": "Whether new task workspaces get a Route (true or false)"
+          },
+          "task_compute": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "vm"
+            ],
+            "description": "Compute for future task groups (shared or vm)"
           }
         },
         "additionalProperties": false,
@@ -4785,6 +5074,774 @@
         "required": [
           "project",
           "step"
+        ]
+      }
+    },
+    {
+      "name": "project-document-archive",
+      "extension": null,
+      "title": "project:document:archive",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents/{entry}/archive",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ]
+      }
+    },
+    {
+      "name": "project-document-create",
+      "extension": null,
+      "title": "project:document:create",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "file"
+            ],
+            "description": "folder or file"
+          },
+          "name": {
+            "type": "string",
+            "description": "Document name"
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "content_text": {
+            "type": "string",
+            "maxLength": 1048576,
+            "description": "Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB."
+          },
+          "content_base64": {
+            "type": "string",
+            "maxLength": 13981016,
+            "description": "Canonical RFC 4648 base64; decoded size is at most 10 MiB."
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 127,
+            "description": "Media type"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "kind",
+          "name"
+        ],
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "folder"
+              }
+            },
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "content_text"
+                  ]
+                },
+                {
+                  "required": [
+                    "content_base64"
+                  ]
+                },
+                {
+                  "required": [
+                    "media_type"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "properties": {
+              "kind": {
+                "const": "file"
+              }
+            },
+            "oneOf": [
+              {
+                "required": [
+                  "content_text"
+                ],
+                "not": {
+                  "required": [
+                    "content_base64"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "content_base64"
+                ],
+                "not": {
+                  "required": [
+                    "content_text"
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "project-document-destroy",
+      "extension": null,
+      "title": "project:document:destroy",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "DELETE",
+      "path": "/api/v1/projects/{project}/documents/{entry}",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "recursive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ]
+      }
+    },
+    {
+      "name": "project-document-download",
+      "extension": null,
+      "title": "project:document:download",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}/download",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [
+        "version"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
+      "name": "project-document-list",
+      "extension": null,
+      "title": "project:document:list",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [
+        "parent_id",
+        "state",
+        "kind",
+        "cursor",
+        "limit"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "file"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project"
+        ]
+      }
+    },
+    {
+      "name": "project-document-read",
+      "extension": null,
+      "title": "project:document:read",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}/content",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [
+        "version"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
+      "name": "project-document-restore",
+      "extension": null,
+      "title": "project:document:restore",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents/{entry}/restore",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ]
+      }
+    },
+    {
+      "name": "project-document-restore-version",
+      "extension": null,
+      "title": "project:document:restore-version",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "POST",
+      "path": "/api/v1/projects/{project}/documents/{entry}/restore-version",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          },
+          "version_id": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision",
+          "version_id"
+        ]
+      }
+    },
+    {
+      "name": "project-document-search",
+      "extension": null,
+      "title": "project:document:search",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/search",
+      "path_inputs": [
+        "project"
+      ],
+      "query_inputs": [
+        "q",
+        "state",
+        "kind",
+        "cursor",
+        "limit"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ]
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "folder",
+              "file"
+            ]
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "q"
+        ]
+      }
+    },
+    {
+      "name": "project-document-show",
+      "extension": null,
+      "title": "project:document:show",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
+      "name": "project-document-storage-show",
+      "extension": null,
+      "title": "project:document-storage:show",
+      "description": "Show private Project Document storage.",
+      "method": "GET",
+      "path": "/api/v1/project-document-storage",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "project-document-storage-update",
+      "extension": null,
+      "title": "project:document-storage:update",
+      "description": "Update private Project Document storage.",
+      "method": "PUT",
+      "path": "/api/v1/project-document-storage",
+      "path_inputs": [],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 255,
+            "description": "HTTPS storage origin"
+          },
+          "region": {
+            "type": "string",
+            "pattern": "^[\\x21-\\x7e]{1,63}$(?![\\s\\S])",
+            "description": "Signing region"
+          },
+          "bucket": {
+            "type": "string",
+            "pattern": "^[a-z0-9](?:[a-z0-9.-]{1,61})[a-z0-9]$(?![\\s\\S])",
+            "description": "Bucket name"
+          },
+          "access_key_id": {
+            "type": "string"
+          },
+          "secret_access_key": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "project-document-update",
+      "extension": null,
+      "title": "project:document:update",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "PATCH",
+      "path": "/api/v1/projects/{project}/documents/{entry}",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          },
+          "name": {
+            "type": "string",
+            "description": "New name"
+          },
+          "parent_id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "name"
+            ]
+          },
+          {
+            "required": [
+              "parent_id"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "project-document-version-list",
+      "extension": null,
+      "title": "project:document:version:list",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "GET",
+      "path": "/api/v1/projects/{project}/documents/{entry}/versions",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [
+        "cursor",
+        "limit"
+      ],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "cursor": {
+            "type": "string",
+            "maxLength": 4096
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry"
+        ]
+      }
+    },
+    {
+      "name": "project-document-write",
+      "extension": null,
+      "title": "project:document:write",
+      "description": "Project-scoped Documents. Requires ProjectOwning Node access. See /reference/project-documents for limits, archive inheritance, revision preconditions and retry recovery. No object keys or credentials are returned.",
+      "method": "PUT",
+      "path": "/api/v1/projects/{project}/documents/{entry}/content",
+      "path_inputs": [
+        "project",
+        "entry"
+      ],
+      "query_inputs": [],
+      "streams": false,
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project ID."
+          },
+          "entry": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Numeric Project Document entry ID."
+          },
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Observed revision"
+          },
+          "content_text": {
+            "type": "string",
+            "maxLength": 1048576,
+            "description": "Exact UTF-8 text without NUL; decoded UTF-8 size is at most 1 MiB."
+          },
+          "content_base64": {
+            "type": "string",
+            "maxLength": 13981016,
+            "description": "Canonical RFC 4648 base64; decoded size is at most 10 MiB."
+          },
+          "media_type": {
+            "type": "string",
+            "maxLength": 127,
+            "description": "Media type"
+          }
+        },
+        "additionalProperties": false,
+        "required": [
+          "project",
+          "entry",
+          "expected_revision"
+        ],
+        "oneOf": [
+          {
+            "required": [
+              "content_text"
+            ],
+            "not": {
+              "required": [
+                "content_base64"
+              ]
+            }
+          },
+          {
+            "required": [
+              "content_base64"
+            ],
+            "not": {
+              "required": [
+                "content_text"
+              ]
+            }
+          }
         ]
       }
     },
@@ -5573,6 +6630,7 @@
             "enum": [
               "monorepo",
               "laravel-app",
+              "symfony-app",
               "laravel-package",
               "node-package"
             ],
@@ -5617,6 +6675,26 @@
           "task_workspace_routed": {
             "type": "boolean",
             "description": "Change routing for future task workspaces (true or false)"
+          },
+          "task_compute": {
+            "type": "string",
+            "enum": [
+              "shared",
+              "vm"
+            ],
+            "description": "Compute for future task groups (shared or vm)"
+          },
+          "review_and_merge": {
+            "type": "boolean",
+            "description": "Review every push, review incoming pull requests, and merge reviewed green heads (true or false)"
+          },
+          "merge_check": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "maxLength": 255,
+            "description": "The check that must pass on a head before Orbit merges it, such as \"Required checks\""
           }
         },
         "additionalProperties": false,
@@ -5931,6 +7009,10 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Route ID."
+          },
+          "offline": {
+            "type": "boolean",
+            "description": "Remove the Route without changing a Node the Gateway cannot reach"
           }
         },
         "additionalProperties": false,
@@ -6356,7 +7438,7 @@
       "name": "tasks-cancel",
       "extension": "tasks",
       "title": "Cancel a Task group",
-      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and settling groups with a pull request.",
+      "description": "Cancels a backlog, todo, reserved, running, reviewing, or failed Task group, or a settling group without a pull request, and clears its shared Instance. For a settling group with an approved subtask, the Gateway first pushes the workspace HEAD to `task-{group}` on origin; a failed push returns `tasks.push_failed` (502) and keeps the group and Instance. Idempotent for cancelled groups. Route-free source_resolved Instances use database-only cleanup and retain their checkout; other Instances use the forced Instance remover. Requires Gateway access. Returns extension.disabled while the extension is off and tasks.not_cancellable for completed groups and groups in settling or waiting_for_review with a pull request.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/cancel",
       "path_inputs": [
@@ -6481,7 +7563,10 @@
         "group",
         "task"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "type",
+        "limit"
+      ],
       "streams": false,
       "input_schema": {
         "type": "object",
@@ -6493,6 +7578,24 @@
           },
           "task": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "ready_for_review",
+              "changes_requested",
+              "approved",
+              "blocked",
+              "answered",
+              "topology_requested",
+              "assistance_requested",
+              "resolution"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1
           }
         },
         "additionalProperties": false,
@@ -6506,7 +7609,7 @@
       "name": "tasks-complete",
       "extension": "tasks",
       "title": "Complete a Task group",
-      "description": "Completes a settling Task group without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
+      "description": "Completes a settling Task group or a VM group waiting for review without reading GitHub, or a running or reviewing group whose watched pull request has merged or closed. Stores the ended state in watched_pr_completion before cancelling open subtasks and completing the group in one transaction. Stops running agents and checks as subtask cancel does. Workspace and Route removal runs after the commit. Resume and completed-group cleanup retries do not read GitHub. A removal failure leaves the group completed with its Instance attached and asks for assistance. Idempotent. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.not_settling` when the group is not ready (including a missing, open, or unreadable watched PR without a completion receipt), and `tasks.subtask_interrupt_failed` when an agent or check cannot be stopped.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/complete",
       "path_inputs": [
@@ -6564,6 +7667,10 @@
             ],
             "description": "backlog (default) or todo"
           },
+          "preview": {
+            "type": "boolean",
+            "description": "Keep the sandbox running during review"
+          },
           "notify_coder": {
             "type": "boolean",
             "description": "Post the Coder settle webhook when the group settles"
@@ -6584,6 +7691,18 @@
                 "brief": {
                   "type": "string",
                   "maxLength": 8000
+                },
+                "topology": {
+                  "type": "array",
+                  "maxItems": 3,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "app-dev",
+                      "app-prod",
+                      "app-prod-2"
+                    ]
+                  }
                 },
                 "deliverables": {
                   "type": "array",
@@ -7301,6 +8420,7 @@
       "path": "/api/v1/task-groups",
       "path_inputs": [],
       "query_inputs": [
+        "compact",
         "project_id",
         "status"
       ],
@@ -7308,6 +8428,9 @@
       "input_schema": {
         "type": "object",
         "properties": {
+          "compact": {
+            "type": "boolean"
+          },
           "project_id": {
             "type": "integer",
             "minimum": 1
@@ -7321,6 +8444,7 @@
               "running",
               "reviewing",
               "settling",
+              "waiting_for_review",
               "completed",
               "failed",
               "cancelled"
@@ -7387,7 +8511,9 @@
       "path_inputs": [
         "group"
       ],
-      "query_inputs": [],
+      "query_inputs": [
+        "compact"
+      ],
       "streams": false,
       "input_schema": {
         "type": "object",
@@ -7396,6 +8522,9 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Task group ID."
+          },
+          "compact": {
+            "type": "boolean"
           }
         },
         "additionalProperties": false,
@@ -7424,7 +8553,7 @@
       "name": "tasks-subtask-cancel",
       "extension": "tasks",
       "title": "Cancel a todo or running subtask",
-      "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, or `settling`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
+      "description": "Cancels a `todo` or `running` subtask. A `todo` subtask may be cancelled when its group is `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`; this marks it cancelled with `settled_at`, starts nothing, and requests no assistance. If no open subtask remains, including reserved, running, or reviewing siblings, the group moves to `settling`. Cancelling a `running` subtask stops its implementer and its running baseline or handoff check, keeps the group and its Instance, and starts the lowest-position `todo` subtask. That subtask runs the baseline check first when no implementer has started in the group. The group settles only when no open subtask remains. Requires Gateway access. Returns `extension.disabled` while the extension is off, `tasks.subtask_not_running` (409) when the subtask is neither cancellable `todo` nor `running`, and `tasks.subtask_interrupt_failed` (502) when a running subtask implementer or check could not be stopped; the subtask then stays `running`.",
       "method": "POST",
       "path": "/api/v1/task-groups/{group}/tasks/{task}/cancel",
       "path_inputs": [
@@ -7481,6 +8610,19 @@
             "type": "string",
             "maxLength": 8000,
             "description": "Goal and acceptance of the step"
+          },
+          "topology": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "enum": [
+                "app-dev",
+                "app-prod",
+                "app-prod-2"
+              ]
+            },
+            "description": "JSON array of required workload nodes; [] removes declarations"
           },
           "deliverables": {
             "type": "array",
@@ -7594,7 +8736,7 @@
       "name": "tasks-subtask-update",
       "extension": "tasks",
       "title": "Update a subtask",
-      "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, or `settling`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those four group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
+      "description": "Updates a subtask `title`, `brief`, or `position` while its group is in `backlog` (`tasks.not_in_backlog`). In `todo`, `running`, `reviewing`, `settling`, or `waiting_for_review`, those fields change only while the subtask is `todo`; positions stay in the todo tail and cannot cross a started or finished subtask. `deliverables` replaces the whole list, in the form that subtask create takes. It changes in `backlog`, or in those group statuses while the subtask is `todo` (`tasks.deliverables_locked`); outside `backlog` the list cannot become empty (`tasks.subtask_deliverables_missing`). Completed and cancelled groups are read-only. Served by the Node that holds the group's Instance, or by the Gateway for a group without one. Returns `extension.disabled` while the extension is off.",
       "method": "PATCH",
       "path": "/api/v1/task-groups/{group}/tasks/{task}",
       "path_inputs": [
@@ -7628,6 +8770,19 @@
             "type": "integer",
             "minimum": 1,
             "description": "New position, starting at 1"
+          },
+          "topology": {
+            "type": "array",
+            "maxItems": 3,
+            "items": {
+              "type": "string",
+              "enum": [
+                "app-dev",
+                "app-prod",
+                "app-prod-2"
+              ]
+            },
+            "description": "JSON array of required workload nodes; [] removes declarations"
           },
           "deliverables": {
             "type": "array",
@@ -7723,6 +8878,10 @@
             "type": "integer",
             "minimum": 1,
             "description": "Numeric Task group ID."
+          },
+          "preview": {
+            "type": "boolean",
+            "description": "Keep the sandbox running during review"
           },
           "title": {
             "type": "string",

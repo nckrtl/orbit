@@ -10,6 +10,7 @@ use App\Domain\AppDev\VitePortRuntime;
 use App\Domain\Hibernation\HibernationException;
 use App\Domain\Hibernation\InstanceRuntimeReadiness;
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Processes\ProcessRuntimeManager;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -34,6 +35,7 @@ final readonly class RemoteInstanceRuntimeReadiness implements InstanceRuntimeRe
     /** @param list<Process> $processes */
     public function waitUntilReady(Instance $instance, array $processes): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $deadline = time() + $this->timeoutSeconds;
 
         foreach ($processes as $process) {

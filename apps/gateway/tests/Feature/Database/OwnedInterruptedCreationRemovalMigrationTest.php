@@ -5,7 +5,7 @@ declare(strict_types=1);
 use Illuminate\Support\Facades\DB;
 
 it('round-trips the receipt-backed interrupted creation eligibility guards', function (): void {
-    $migration = require base_path('database/migrations/2026_10_10_000001_allow_owned_interrupted_creation_removal.php');
+    $migration = owned_interrupted_creation_removal_migration();
     $names = ['instance_removals_insert', 'instance_removal_members_insert', 'instances_removal_status_update'];
     $before = DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all();
     expect($before)->toHaveCount(3);
@@ -21,4 +21,32 @@ it('round-trips the receipt-backed interrupted creation eligibility guards', fun
     ksort($before);
     ksort($after);
     expect($after)->toBe($before);
+});
+
+it('round-trips reserved task worktree eligibility and unresolved source commit guards', function (): void {
+    $migration = reserved_task_worktree_removal_migration();
+    $names = ['instance_removals_insert', 'instance_removal_members_insert', 'instances_removal_status_update', 'instance_removal_members_source_commit_insert'];
+    $before = DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all();
+
+    $migration->down();
+    foreach (DB::table('sqlite_master')->whereIn('name', array_slice($names, 0, 3))->pluck('sql') as $sql) {
+        expect($sql)->not->toContain("source_layout = 'worktree'");
+    }
+    $migration->up();
+
+    expect(DB::table('sqlite_master')->whereIn('name', $names)->pluck('sql', 'name')->all())->toBe($before);
+});
+
+it('round-trips legacy null-prepare reserved worktree eligibility without changing other trigger clauses', function (): void {
+    $migration = require base_path('database/migrations/2026_10_12_000000_allow_reserved_worktree_null_prepare_removal.php');
+    $before = DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all();
+
+    $migration->down();
+    $rolledBack = DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all();
+    $changed = array_keys(array_diff_assoc($before, $rolledBack));
+    sort($changed);
+    expect($changed)->toBe(['instance_removal_members_insert', 'instance_removals_insert', 'instances_removal_status_update']);
+    $migration->up();
+
+    expect(DB::table('sqlite_master')->where('type', 'trigger')->pluck('sql', 'name')->all())->toEqual($before);
 });

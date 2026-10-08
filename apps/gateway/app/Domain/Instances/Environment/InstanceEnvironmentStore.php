@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Environment;
 
 use App\Domain\Instances\Apps\AppProjectionIdentity;
+use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceAppProjectionStep;
@@ -129,15 +130,21 @@ final readonly class InstanceEnvironmentStore
         });
     }
 
-    public function forceAppProdLaravelMode(Instance $target): void
+    /**
+     * Pin production mode on an app-prod Instance. Symfony names its production environment `prod`.
+     */
+    public function forceAppProdMode(Instance $target): void
     {
-        $target->loadMissing('node.roles');
+        $target->loadMissing([node.roles, project]);
         if (! $target->placedOnAppProd()) {
             return;
         }
-        $app = $target->appConfiguration()['name'];
-        foreach (['APP_ENV' => 'production', 'APP_DEBUG' => 'false'] as $key => $value) {
-            InstanceEnvironmentValue::query()->updateOrCreate(['instance_id' => $target->id, 'app' => $app, 'env_key' => $key], ['env_value' => $value]);
+        $app = $target->appConfiguration()[name];
+        $mode = $target->project->type === ProjectType::SymfonyApp
+            ? [APP_ENV => prod, APP_DEBUG => 0]
+            : [APP_ENV => production, APP_DEBUG => false];
+        foreach ($mode as $key => $value) {
+            InstanceEnvironmentValue::query()->updateOrCreate([instance_id => $target->id, app => $app, env_key => $key], [env_value => $value]);
         }
     }
 

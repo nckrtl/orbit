@@ -8,6 +8,7 @@ use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\ClusterRouterTransition;
 use App\Domain\Routes\RouteCertificateStaging;
+use App\Domain\Routes\RouteRemovalStep;
 use App\Domain\Routes\RouteReplacementStep;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
@@ -306,6 +307,21 @@ final readonly class ClusterRouterDnsSelection
                         RouteStatus::Retiring->value,
                         RouteStatus::Failed->value,
                     ]);
+            })
+            // A targeted Route under removal has withdrawn its publication and keeps its targets until
+            // the record goes, so its name leaves with the removal's DNS step.
+            ->whereNot(static function ($query): void {
+                $query
+                    ->where('sites_published', false)
+                    ->where(static function ($query): void {
+                        $query
+                            ->where('status', RouteStatus::Retiring->value)
+                            ->orWhere(static function ($query): void {
+                                $query
+                                    ->whereNotNull('failed_step')
+                                    ->where('failed_step', 'like', RouteRemovalStep::TargetedPrefix.'%');
+                            });
+                    });
             })
             ->orderBy('id')
             ->get();

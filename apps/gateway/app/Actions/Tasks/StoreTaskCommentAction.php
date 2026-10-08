@@ -12,6 +12,7 @@ use App\Domain\Tasks\TaskAgentSpawner;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExecutionHold;
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewPacketBuilder;
 use App\Domain\Tasks\TaskStatus;
@@ -25,6 +26,7 @@ use App\Domain\Tasks\TaskTurnReceipts;
 use App\Models\Activity;
 use App\Models\AgentThread;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Task;
 use App\Models\TaskComment;
 use Illuminate\Support\Carbon;
@@ -41,15 +43,17 @@ final readonly class StoreTaskCommentAction
         private TaskTurnFetchNotice $fetchNotice,
         private TaskReviewPacketBuilder $reviewPackets,
         private RetryTaskBaselineAction $retryBaseline,
+        private ResumeDeliverableCorrectionAction $correctionResume,
     ) {}
 
     /** @param array<string, mixed> $payload */
-    public function execute(Task $task, array $payload): TaskComment
+    public function execute(Task $task, array $payload, ?Node $actor = null, ?string $requestId = null): TaskComment
     {
         $deliverResolution = false;
         $deliverDirection = false;
         $retryBaselineQueued = false;
-        $comment = DB::transaction(function () use ($task, $payload, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued): TaskComment {
+        $deliverCorrection = false;
+        $comment = DB::transaction(function () use ($task, $payload, $actor, $requestId, &$deliverResolution, &$deliverDirection, &$retryBaselineQueued, &$deliverCorrection): TaskComment {
             $comment = TaskComment::query()->create([
                 ...$payload,
                 'task_group_id' => $task->parent_id,
@@ -61,6 +65,7 @@ final readonly class StoreTaskCommentAction
             $type = TaskCommentType::tryFrom(is_string($rawType) ? $rawType : '');
 
             $group = Task::topLevel()->lockForUpdate()->findOrFail($task->parent_id);
+            $task = Task::query()->lockForUpdate()->findOrFail($task->id);
             $endedPullRequest = TaskExecutionHold::active($group)
                 || RequestEndedPullRequestAssistanceAction::isReason($task->assistance_reason)
                 || RequestEndedPullRequestAssistanceAction::isReason($group->assistance_reason);
@@ -71,13 +76,43 @@ final readonly class StoreTaskCommentAction
                 $this->log($task, $comment, 'assistance requested');
             }
             if ($type === TaskCommentType::Resolution && trim($comment->body) !== '' && $task->assistance_requested && ! $endedPullRequest) {
-                $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
-                $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
-                $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
+                if (TaskGroupGuard::deliverableGateBlocked($group, $task)) {
+                    // Like a baseline retry, but nothing remote must be reset first: no implementer exists to
+                    // receive this resolution. Clearing assistance lets the next tick run the path gate again.
+                    $task->update([...TaskAssistance::cleared(), 'communication_failures' => 0]);
+                    if (! $group->tasks()->whereKeyNot($task->id)->where('assistance_requested', true)->exists()) {
+                        $group->update(TaskAssistance::cleared());
+                    }
+                    $this->log($task, $comment, 'resolution queued deliverable gate retry');
+
+                    return $comment;
+                }
+                if ($task->deliverable_correction_check_id !== null && $group->assistance_kind === AssistanceKind::Direction
+                    && $task->assistance_kind !== AssistanceKind::Direction) {
+                    return $comment;
+                }
+                $needsCorrection = $task->status === TaskStatus::Running && $task->deliverable_correction_check_id !== null
+                    && ($task->deliverable_correction_resume === null || $task->deliverable_correction_resume['state'] === 'pending');
+                if ($needsCorrection) {
+                    // Reserve the first authenticated resolution even when direction owns its delivery.
+                    $this->correctionResume->reserve($task, $comment, $actor, $requestId);
+                }
+                $deliverCorrection = $needsCorrection
+                    && $task->assistance_kind !== AssistanceKind::Direction && $group->assistance_kind !== AssistanceKind::Direction
+                    && $task->direction_relay_comment_id === null && $task->consult_comment_id === null;
+                if (! $deliverCorrection) {
+                    $deliverResolution = $task->assistance_kind !== AssistanceKind::Direction;
+                    $deliverDirection = $task->assistance_kind === AssistanceKind::Direction;
+                    $retryBaselineQueued = $deliverResolution && $this->retryBaseline->queue($task, $comment);
+                }
             }
 
             return $comment;
         });
+
+        if ($deliverCorrection) {
+            $this->correctionResume->execute($task);
+        }
 
         if ($deliverDirection) {
             TaskExecutionHold::run($task->parent, fn () => $this->deliverDirection($task, $comment));

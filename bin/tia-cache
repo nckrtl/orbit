@@ -26,10 +26,10 @@ COMMAND_LOG = None
 COMMAND_LOCK = None
 CACHE_BRANCH_LOCK = None
 COMMAND_TIMEOUT = 1800
+FAILURE_OUTPUT_LIMIT = 65536
 ISOLATED_ENVIRONMENT_PREFIXES = ('APP_', 'DB_', 'ORBIT_')
 ISOLATED_ENVIRONMENT_NAMES = frozenset((
     'CACHE_STORE', 'DATABASE_URL', 'QUEUE_CONNECTION', 'SESSION_DRIVER',
-    'TMPDIR', 'TMP', 'TEMP',
 ))
 PHP_METADATA = r'''
 require $argv[1].'/vendor/autoload.php';
@@ -65,6 +65,17 @@ def maintenance_environment():
     return environment
 
 
+def command_failure_message(command, returncode, *parts):
+    output = '\n'.join(part.strip() for part in parts if part and part.strip())
+    if not output:
+        return f'{command[0]} exited {returncode}'
+    if len(output) <= FAILURE_OUTPUT_LIMIT:
+        return output
+    tail = output[-FAILURE_OUTPUT_LIMIT:]
+    newline = tail.find('\n')
+    return tail[newline + 1:] if newline != -1 else tail
+
+
 def run(root, *command, capture=True, tia_directory=None):
     options = {'cwd': root, 'text': True, 'start_new_session': True,
                'pass_fds': tuple(fd for fd in (COMMAND_LOCK, CACHE_BRANCH_LOCK) if fd is not None),
@@ -96,10 +107,12 @@ def run(root, *command, capture=True, tia_directory=None):
             output.write(' '.join(command) + '\n')
             output.flush()
             result = execute(stdout=output, stderr=subprocess.STDOUT)
+        streams = (COMMAND_LOG.read_text(),) if result.returncode else ()
     else:
         result = execute(**({'stdout': subprocess.PIPE, 'stderr': subprocess.PIPE} if capture else {}))
+        streams = (result.stdout, result.stderr)
     if result.returncode:
-        raise CommandFailure((result.stderr or '').strip() or f'{command[0]} exited {result.returncode}', result.returncode)
+        raise CommandFailure(command_failure_message(command, result.returncode, *streams), result.returncode)
     return result.stdout.strip() if capture else None
 
 
@@ -244,6 +257,39 @@ def validate_graph(root, graph_text, info, tested_commit):
 
 def publication_path(store, project):
     return store / 'published' / (project.replace('/', '-') + '.json')
+
+
+def import_ci(root, project, artifact, commit):
+    if project not in PROJECTS:
+        raise ValueError('Unknown baseline project.')
+    require_ancestor(root, commit, git(root, 'rev-parse', 'HEAD'))
+    manifest = json.loads((artifact / 'manifest.json').read_text())
+    if (not isinstance(manifest, dict) or manifest.get('schema') != 1
+            or manifest.get('project') != project or manifest.get('commit') != commit
+            or not re.fullmatch(r'[1-9][0-9]*', str(manifest.get('run_id', '')))):
+        raise ValueError('The CI baseline identity differs.')
+    inputs = {name: digest((root / project / name).read_bytes())
+              for name in ('composer.lock', 'tests/Pest.php', 'phpunit.xml', 'phpunit.xml.dist')
+              if (root / project / name).is_file()}
+    if not inputs or manifest.get('inputs') != inputs:
+        raise ValueError('The CI baseline test configuration differs.')
+    graph = (artifact / 'graph.json').read_bytes()
+    if manifest.get('graph_sha256') != digest(graph):
+        raise ValueError('The CI baseline checksum differs.')
+    info = metadata(root, project)
+    if validate_graph(root, graph.decode(), info, commit) != commit:
+        raise ValueError('The CI graph does not describe the tested commit.')
+    destination = root / project / '.orbit-tia'
+    if destination.is_symlink() or destination.resolve() != destination:
+        raise ValueError('The private baseline directory is not canonical.')
+    destination.mkdir(mode=0o700, exist_ok=True)
+    try:
+        atomic_write(destination / 'graph.json', graph, replace=False)
+    except FileExistsError:
+        print(f'[{project}] kept existing private graph', flush=True)
+        return False
+    print(f'[{project}] imported CI baseline {commit}', flush=True)
+    return True
 
 
 def read_publication(store, project):
@@ -932,7 +978,7 @@ def status(common, store, remote=False):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish', 'register', 'warm'))
+    parser.add_argument('action', choices=('seed', 'refresh', 'status', 'work', 'publish', 'register', 'warm', 'import-ci'))
     parser.add_argument('--repository', default='.')
     parser.add_argument('--project', action='append', choices=PROJECTS)
     parser.add_argument('--background', action='store_true')
@@ -941,6 +987,7 @@ def main():
     parser.add_argument('--remote', action='store_true', help='Read authoritative remote main for status')
     parser.add_argument('--worker-fd', type=int, help=argparse.SUPPRESS)
     parser.add_argument('--commit', help=argparse.SUPPRESS)
+    parser.add_argument('--artifact', type=Path, help='Extracted successful main CI baseline (import-ci only)')
     args = parser.parse_args()
     if args.development_instance is not None and (args.action != 'register' or args.development_instance <= 0):
         parser.error('--development-instance requires register and a positive Instance ID')
@@ -952,6 +999,14 @@ def main():
         parser.error('work requires an inherited worker lock')
     if args.action == 'publish' and args.commit is None:
         parser.error('publish requires the commit checked by bootstrap')
+    if args.action == 'import-ci':
+        if args.artifact is None or args.commit is None or not args.project or len(args.project) != 1:
+            parser.error('import-ci requires --artifact, --commit, and one --project')
+        root = Path(git(args.repository, 'rev-parse', '--show-toplevel')).resolve()
+        import_ci(root, args.project[0], args.artifact, args.commit)
+        return 0
+    if args.artifact is not None:
+        parser.error('--artifact requires import-ci')
     common = common_directory(args.repository)
     store = cache_store(common)
     projects = args.project or PROJECTS

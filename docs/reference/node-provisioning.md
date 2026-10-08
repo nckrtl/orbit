@@ -1,6 +1,6 @@
 ---
 title: "Node provisioning"
-description: "How node:add bootstraps or converges a Node, which roles share a Node, how role operations lock a Node, and how node:remove hands the machine back."
+description: "How node:add bootstraps or converges a Node, how roles share and lock a Node, how the Orbit CLI and footprint reach it, and how node:remove hands it back."
 covers:
   - apps/gateway/app/Actions/Nodes/{ProvisionNodeAction,EnrollMacOsNodeAction,RemoveNodeAction,AddNodeRoleAction,RemoveNodeRoleAction,AssignRoleAction}.php
   - apps/gateway/app/Domain/Nodes/RoleRegistry.php
@@ -9,6 +9,7 @@ covers:
   - apps/gateway/app/Infrastructure/WireGuard/NativeGatewayPeerProjectionManager.php
   - apps/gateway/app/Console/Commands/ProvisionNodeCommand.php
   - apps/gateway/app/Infrastructure/Ssh/{NativeSshExecutor,SshConnection}.php
+  - apps/gateway/app/{Infrastructure/Nodes/*Cli*.php,Domain/Nodes/NodeCli*.php,Domain/Fleet/NodeFootprint*.php,Domain/Fleet/NodeCliConvergence.php,Infrastructure/Fleet/Footprint/**,Actions/Fleet/ConvergeNodeFootprintAction.php,Http/Controllers/Api/NodeFootprintsController.php}
 ---
 
 # Node provisioning
@@ -33,6 +34,8 @@ For Ubuntu, the Gateway records the Node as `provisioning` and runs these steps 
 | 8 | Store and prepare the [storage settings](/reference/node-settings). |
 | 9 | Reconcile the [Metrics exporters](/reference/metrics#exporter-selection). |
 | 10 | Install or upgrade the [Node agent](/reference/node-agent), at step `agent`. |
+
+After the agent, the Gateway installs the [Orbit CLI](#orbit-cli) on a Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order). A role converge does the same after its agent converge. Both are best effort: an unpublished CLI release or a failed install only logs a warning, and the fleet catch-up installs the CLI later.
 
 The Gateway console command `orbit:node-provision` runs the same steps for the first Node. Role firewall state comes from the shared Node firewall rule catalog, keeping initial provisioning and later role reconciliation consistent.
 
@@ -187,6 +190,67 @@ A storage-settings failure returns its `node.settings_*` code, and the request s
 
 Step 9 runs whenever a Metrics role exists. A Metrics reconcile failure does not fail provisioning or demote an active Node, including the `gateway` Node. The Node stays `active`; Metrics reports the failure as degraded. This applies to exporter, cAdvisor, runtime, and unexpected failures, both when `node:add` provisions a Node and when it converges an existing Node. See [Metrics role](/reference/metrics#exporter-selection) for how exporter state and degradation are reported.
 
+## Orbit CLI
+
+Every Node of the [fleet rollout set](/reference/gateway-recovery#rollout-set-and-order) runs the Orbit CLI, so the fleet rollout can run [`orbit self-update`](/reference/self-update) there. Provisioning, role converge, and the fleet rollout install it with the same step.
+
+| Item | Path or value |
+| --- | --- |
+| Binary | `/usr/local/bin/orbit-<version>`, `root:root` mode `0755` |
+| Link | `/usr/local/bin/orbit`, a link to the binary. `orbit self-update` switches it with one rename and keeps the previous release |
+| Profile | `/root/.orbit/config.json`, `root:root` mode `0600`: the active profile `gateway` with the URL `https://<Gateway WireGuard address>` and the root certificate `/etc/orbit/agent/ca.pem`, which the agent converge writes |
+| Download | The desired CLI release's binary for `linux-<arch>`, from `https://github.com/nckrtl/orbit/releases/download/cli-v<version>/orbit-<version>-linux-<arch>` |
+
+This is the layout `orbit self-update` keeps, so either one can update what the other installed. The profile holds no secret. The Gateway identifies the Node by its WireGuard address, as for every CLI call, and its certificate covers that address. `sudo orbit self-update` reads root's profile.
+
+The step reads the link path first, as the managed user, never as root. A link may name only an `orbit-0.N.0` file beside it, without `/` or `..`. The file must be a `root`-owned ELF executable. Only then does the step run it with `--version`, which must print `Orbit 0.N.0` or, for a pre-release build, `Orbit <40-character commit>`.
+
+| Found | Result |
+| --- | --- |
+| Nothing | Download the binary to `/usr/local/bin/orbit-<version>.orbit-candidate`, check its SHA-256 from the desired state and that it reports the release version, move it to `orbit-<version>`, and switch the link: `cli_installed` |
+| An Orbit CLI that has `self-update` | Leave it: `cli_present`. `orbit self-update` replaces it |
+| An Orbit CLI without `self-update`, such as a pre-release build | An older CLI. Install the release as for a missing one, and keep the old file as `orbit.orbit-previous` |
+| Another link, a script, another program, or a file another user owns | Refuse with `cli.foreign_binary` without running a script. The fleet rollout leaves the Node out as `foreign_cli` until an operator moves the file aside |
+
+The step reads the path again under the Node's update lock before it installs, because a self-update may have changed it meanwhile. The download, the move, and the link switch run under that lock, `/run/lock/orbit-self-update.lock`, which `orbit self-update` holds too ([Node agent](/reference/node-agent#install-and-upgrade)). A checksum mismatch deletes the candidate and fails with `cli.checksum_mismatch`; the link stays as it was. Then the step writes root's profile when it differs.
+
+| Code | Meaning |
+| --- | --- |
+| `cli.release_unavailable` | The CLI release is not published yet, so a missing CLI cannot be installed |
+| `cli.architecture_unsupported` | The release has no binary for the Node's architecture |
+| `cli.download_failed` | The download failed |
+| `cli.checksum_mismatch` | The download has another SHA-256. Nothing was installed |
+| `cli.candidate_invalid` | The download does not run, or reports another version. Nothing was installed |
+| `cli.foreign_binary` | `/usr/local/bin/orbit` is a link, a script, or a file Orbit did not install, such as a wrapper around a source checkout |
+| `cli.configuration_failed` | The profile could not be written, or the Gateway has no WireGuard address |
+
+## Converge the Orbit footprint
+
+`orbit node:converge <node> [--force]` re-applies what the Gateway renders for a Node, under the Node's role lock. The fleet rollout runs the same step on each Node. It never changes an Instance, a Process unit, or a role, and it never runs `node:add`, so it works on a Node that owns Instances.
+
+| Artifact | On which Node | Re-apply |
+| --- | --- | --- |
+| `agent` | Every managed Linux Node | The [agent converge](/reference/node-agent#install-and-upgrade). It restarts the agent only when a file changed |
+| `caddy` | A Node with a Caddy role or Caddy sites | The [Caddy build](/reference/caddy-configuration). It reloads Caddy gracefully, only when the Caddyfile changed |
+| `private-dns` | The `vpn` Node, when it is not the Gateway's | The [private-DNS](/reference/private-dns) listener release, units, records, and catalog. It restarts the listener or dnsmasq only for a change |
+| `proxycli` | The [ProxyCli](/reference/proxycli) collector's Node | The collector script. A changed script restarts the collector, a Node-owned Process |
+| `annotator` | A Node with an annotator Process | The server files in `/opt/orbit/annotator`. Running annotators keep their code until their Process restarts |
+| `route-residue` | A Node that an [offline Route removal](/reference/routes#remove-a-route-from-an-unreachable-node) skipped | Caddy and PHP-FPM without the removed Route, then its certificates and firewall rules. A failure is `skipped` and retried later |
+
+Each artifact has a digest that the Gateway computes from its own code and pins, without SSH. The Caddy digest covers every Gateway source file the Caddy build renders from: the build, its site sources, and the classes they use, such as `DevelopmentSite` and the `CaddyRelease` pin. The other digests cover the private-DNS listener release and publication code, the agent pin and the inputs its unit renders from, the collector script, and the annotator files.
+
+A user's sites, Routes, and DNS records never change a digest. Their own operations publish them, and Doctor reports their drift. The `route-residue` digest is the exception: it covers the residues of offline Route removals, which are Orbit's own unfinished work, so the Node drifts until a converge removes them. The Gateway keeps the digests each Node last received, and a converge re-applies only the artifacts whose digest changed. It takes the Node's update lock over SSH first. So even a converge that changes nothing runs a few lock commands on the Node.
+
+`--force` re-applies every artifact; each one still leaves a matching live copy alone. A Caddyfile that the render or the validation refuses is `skipped`, not failed; the [fleet rollout](/reference/gateway-recovery#one-node) fails a refused validation on its first Node. A failed artifact fails the command with its own error code and `details.artifact`, and the next converge applies it again. The digest of all artifacts is the Node's footprint digest, which the fleet catch-up compares.
+
+Metrics exporters, cAdvisor, and the FPM exporter are not part of the footprint: their converge always restarts them, and the Metrics fleet reconcile owns them. Reverb and the third-party pins keep their own update paths.
+
+| Code | HTTP | Meaning |
+| --- | --- | --- |
+| `node.converge_unsupported` | 422 | The Node is not an active, managed Linux Node |
+| `node_role.node_busy` | 409 | Another role operation held the Node's lock for 2 minutes |
+| `node.footprint_caddy_failed` | 502 | The Caddyfile could not be published |
+
 ## Role compatibility
 
 Some roles never share a Node. The Gateway refuses a conflicting role before it claims or converges anything.
@@ -272,7 +336,7 @@ Four locks guard work on one Node. They live in a file cache store under `ORBIT_
 | Tool | One package of one Tool Manager | 10 minutes | Fails at once with `tool.operation_locked` |
 | Tool Manager | The shared scope of `apt`, `vp`, `composer`, or Homebrew; `brew` and `brew-cask` share the prefix lock | 10 minutes | Fails at once with `tool.operation_locked`, `node.tool_manager_locked` during `node:add`, or `node_role.tool_manager_locked` in a role operation |
 | Role | Role operations | 10 minutes | Waits up to 2 minutes, then `node_role.node_busy` |
-| Node agent | The [agent converge](/reference/node-agent#install-and-upgrade) | 4 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
+| Node agent | The [agent converge](/reference/node-agent#install-and-upgrade) | 7 minutes | Waits up to 2 minutes, then `agent.converge_busy` |
 
 A Tool operation takes its Tool lock, then its manager lock. Several manager locks are taken in the order `apt`, `vp`, `composer`, `brew`. `brew-cask` takes the `brew` lock rather than a fifth lock. A role operation on `app-dev` or `app-prod` takes the `vp` and `composer` manager locks first, and then the role lock. The Node agent lock comes last. The locks cannot deadlock: the Tool and manager locks never wait, and no code takes the role lock while it holds the agent lock.
 
@@ -379,6 +443,10 @@ When `gateway` runs on another machine, that machine is itself a WireGuard peer.
 ### A kernel setting for Caddy reloads
 
 Caddy's `grace_period` and `shutdown_delay`, a reload through the admin API, and a certificate cache that survives reloads leave the reset count unchanged in measurements. Handing Caddy a systemd socket would change every listener for the same effect. `net.ipv4.tcp_migrate_req` cut the resets by about 93%. It needs Linux 5.14 or newer, which every supported Ubuntu release has.
+
+### The footprint converge, not node:add
+
+After a Gateway release, a Node needs only what the Gateway renders from its own code and pins. `node:add` refuses a Node that owns Instances, and a role converge does far more than the Orbit footprint. So the footprint converge re-applies only the artifacts whose digest changed, and it never changes an Instance.
 
 ### A Mac needs no service role
 

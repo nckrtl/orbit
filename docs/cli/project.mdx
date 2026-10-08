@@ -2,7 +2,7 @@
 title: "project"
 description: "Create, inspect, update, and remove Projects. A Project owns one repository, a type, and the source defaults that Instances inherit."
 covers:
-  - apps/cli/app/Commands/Projects/**
+  - apps/cli/app/Commands/Project*/**
   - packages/php-sdk/src/Requests/Projects/{Create,Show,Update,Destroy}ProjectRequest.php
   - packages/php-sdk/src/Requests/Projects/ListProjectsRequest.php
   - packages/php-sdk/src/Responses/Projects/{ProjectResponse,ProjectsResponse,ProjectIdentityResponse}.php
@@ -25,6 +25,19 @@ A Project records one Git repository and the defaults for running it. [Projects]
 | [`project:dev-deploy-step:destroy`](#orbit-projectdev-deploy-stepdestroy) | Remove a development deploy step. |
 
 Every command accepts `--json`. [`project:excluded-node`](/reference/development-node-exclusions) keeps a Project off selected `app-dev` Nodes.
+
+## Project Documents
+
+Use `project:document:<verb>` with a Project ID or slug. The [Project Documents command contract](/reference/project-documents#cli-contract) lists browsing, search, folder creation, file input/output, metadata changes, archive, restore, version history, and removal. `project:document-storage:show` and `project:document-storage:update` configure Gateway-owned storage without a Project selector.
+
+Mutations require an observed `--expected-revision`; permanent removal also requires `--yes` without a terminal. JSON mode preserves the API envelope. Local validation uses `input.invalid` and exit 2. Local download integrity or filesystem failures use `project_documents.local_io_failed` and exit 1. On `project_documents.revision_conflict`, preserve the draft and reread metadata rather than retrying automatically.
+
+```bash
+orbit project:document:list acme
+orbit project:document:create acme notes --kind=folder
+orbit project:document:upload acme 12 --from=spec.pdf --expected-revision=3
+orbit project:document:download acme 12 --output=downloaded-spec.pdf
+```
 
 ## orbit project:create
 
@@ -71,10 +84,10 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's apps, source access, source defaults, task check, or task workspace routing. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, effective app paths, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's apps, source access, source defaults, task check, task workspace routing, or review and merge. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, effective app paths, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--apps=JSON] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false]
+orbit project:update <project> [--apps=JSON] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
 ```
 
 | Option | Meaning |
@@ -87,6 +100,9 @@ orbit project:update <project> [--apps=JSON] [--slug=SLUG] [--repository=URL] [-
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. An app-list change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
+| `--review-and-merge=true\|false` | Switch the [review-and-merge flow](/reference/tasks#review-and-merge). Invalid values return `project.review_and_merge_invalid` before a request. |
+| `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
+| `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |
 
 ## orbit project:destroy
 

@@ -30,6 +30,7 @@ use App\Domain\Projects\ProjectUpdateProjectionMutator;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\InstanceProvisionFailure;
 use App\Domain\Tasks\InstanceProvisionIntent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -277,7 +278,7 @@ it('refuses a routed workspace whose root cannot serve and still creates an unro
     routing_mode_bind_boundaries();
 
     expect(app(TaskWorkspaceProvisioner::class)->provision(InstanceProvisionIntent::for(routing_mode_group($routed))))
-        ->toBeNull()
+        ->toBeInstanceOf(InstanceProvisionFailure::class)
         ->and(Instance::query()->where('project_id', $routed->id)->exists())->toBeFalse();
 
     $unrouted = routing_mode_project($slug.'-plain', false, $type, $root);

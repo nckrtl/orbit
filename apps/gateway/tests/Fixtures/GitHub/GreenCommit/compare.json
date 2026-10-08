@@ -1,0 +1,58 @@
+{
+  "ahead": {
+    "status": "ahead",
+    "ahead_by": 2,
+    "behind_by": 0,
+    "total_commits": 2,
+    "base_commit": {
+      "sha": "dc629e7fb299bdca90bfb47d5912e67043b88bd3"
+    },
+    "merge_base_commit": {
+      "sha": "dc629e7fb299bdca90bfb47d5912e67043b88bd3"
+    },
+    "commits": [],
+    "files": []
+  },
+  "behind": {
+    "status": "behind",
+    "ahead_by": 0,
+    "behind_by": 2,
+    "total_commits": 0,
+    "base_commit": {
+      "sha": "c7f8ae627b0efcd2afa96e671f163967214070d7"
+    },
+    "merge_base_commit": {
+      "sha": "dc629e7fb299bdca90bfb47d5912e67043b88bd3"
+    },
+    "commits": [],
+    "files": []
+  },
+  "identical": {
+    "status": "identical",
+    "ahead_by": 0,
+    "behind_by": 0,
+    "total_commits": 0,
+    "base_commit": {
+      "sha": "c7f8ae627b0efcd2afa96e671f163967214070d7"
+    },
+    "merge_base_commit": {
+      "sha": "c7f8ae627b0efcd2afa96e671f163967214070d7"
+    },
+    "commits": [],
+    "files": []
+  },
+  "diverged": {
+    "status": "diverged",
+    "ahead_by": 2,
+    "behind_by": 88,
+    "total_commits": 2,
+    "base_commit": {
+      "sha": "c7f8ae627b0efcd2afa96e671f163967214070d7"
+    },
+    "merge_base_commit": {
+      "sha": "328cd91b42156a3bb2d52c949574cfa30ada461c"
+    },
+    "commits": [],
+    "files": []
+  }
+}

@@ -52,6 +52,7 @@ function turn_fetch_group(string $slug, string $status = TaskGroupStatus::Todo->
         'node_id' => $node->id,
         'name' => $slug,
         'checkout_path' => '/tmp/tasks-'.$slug,
+        'starting_commit' => str_repeat('a', 40),
         'status' => 'reserved',
     ]);
     $group = Task::topLevel()->create([
@@ -84,6 +85,13 @@ function turn_fetch_fetcher(bool $fail = false): TaskBaseBranchFetcher
         {
             return str_repeat('c', 40);
         }
+
+        public function mergeBase(Task $group): string
+        {
+            return str_repeat('c', 40);
+        }
+
+        public function moveTo(Task $group, string $sha): void {}
 
         public function fetchForTurn(Task $group): void
         {

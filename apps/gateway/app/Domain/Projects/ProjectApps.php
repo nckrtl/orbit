@@ -33,7 +33,7 @@ final class ProjectApps
         if ($root !== null && ! ProjectRoot::isValid($root, $type)) {
             self::invalid('root', 'The legacy root is invalid for this app type.');
         }
-        $paths = self::fromRoot($root ?? (in_array($type, [ProjectType::LaravelApp, ProjectType::Monorepo], true) ? 'public' : '.'));
+        $paths = self::fromRoot($root ?? ($type->isWebServing() || $type === ProjectType::Monorepo ? 'public' : '.'));
 
         return [['name' => 'web', 'path' => $paths['path'], 'web_root' => $paths['web_root'], 'type' => $type->value]];
     }
@@ -123,7 +123,7 @@ final class ProjectApps
     /** @param array{name: string, path: string, web_root: ?string, type: string} $app */
     public static function isServing(array $app): bool
     {
-        return in_array($app['type'], ['laravel-app', 'monorepo'], true) || $app['path'] !== '.' || $app['web_root'] !== null;
+        return in_array($app['type'], ['laravel-app', 'symfony-app', 'monorepo'], true) || $app['path'] !== '.' || $app['web_root'] !== null;
     }
 
     public static function validPath(string $path, bool $allowDot): bool

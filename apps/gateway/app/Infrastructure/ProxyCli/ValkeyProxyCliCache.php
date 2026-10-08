@@ -28,25 +28,6 @@ final readonly class ValkeyProxyCliCache implements ProxyCliCache
             : $this->command(['SET', $key, $value, 'EX', (string) $seconds]);
     }
 
-    public function forget(string $key): void
-    {
-        $this->command(['DEL', $key]);
-    }
-
-    public function acquire(string $key, string $holder, int $seconds): bool
-    {
-        $reply = $this->command(['SET', $key, $holder, 'NX', 'EX', (string) $seconds]);
-
-        return $reply === 'OK' || $this->get($key) === $holder;
-    }
-
-    public function release(string $key, string $holder): void
-    {
-        if ($this->get($key) === $holder) {
-            $this->forget($key);
-        }
-    }
-
     /**
      * @param  list<string>  $arguments
      */

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 function orb247_gateway_root(): string
 {
     return dirname(__DIR__, 3);

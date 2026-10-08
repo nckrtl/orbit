@@ -372,7 +372,7 @@ it('accepts the initial pool only before selection and rejects the old productio
     }
 })->with(['root public' => ['public', ''], 'nested Laravel' => ['server/web/public', '/server/web']]);
 
-it('rejects pending or unacknowledged FPM generations even when the desired files match', function (string $root, string $suffix): void {
+it('rejects pending or unacknowledged FPM generations but accepts a master restarted after confirmation', function (string $root, string $suffix): void {
     $directory = sys_get_temp_dir().'/orbit-doctor-generation-'.bin2hex(random_bytes(8));
     $files = new Filesystem;
     $files->ensureDirectoryExists($directory.'/runtime/generated');
@@ -412,7 +412,13 @@ it('rejects pending or unacknowledged FPM generations even when the desired file
             case "${1:-}" in
                 pending) begin_runtime_generation ;;
                 missing) rm "$runtime_directory/.runtime-generation.applied" ;;
-                stale-master) printf '00000000-0000-0000-0000-000000000000\n' > "$proc_root/sys/kernel/random/boot_id" ;;
+                rebooted) printf '00000000-0000-0000-0000-000000000000\n' > "$proc_root/sys/kernel/random/boot_id" ;;
+                restarted) sed -i '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
+                older-master) sed -i '4s/.*/999999999999/' "$runtime_directory/.runtime-generation.applied" ;;
+                malformed) sed -i '4s/.*/soon/' "$runtime_directory/.runtime-generation.applied" ;;
+                other-generation) sed -i '1s/.*/0000/' "$runtime_directory/.runtime-generation.applied" ;;
+                restarted-other-generation) sed -i -e '1s/.*/0000/' -e '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
+                malformed-boot) sed -i -e '2s/.*/not-a-boot-id/' -e '4s/.*/0/' "$runtime_directory/.runtime-generation.applied" ;;
                 recovered) begin_runtime_generation; confirm_runtime_generation ;;
             esac
             pool_configuration="$original_pool"
@@ -420,7 +426,20 @@ it('rejects pending or unacknowledged FPM generations even when the desired file
 
     try {
         $program = application_production_observation_program('php_fpm_matches', $setup, $root);
-        foreach (['applied' => '1', 'pending' => '0', 'missing' => '0', 'stale-master' => '0', 'recovered' => '1'] as $state => $expected) {
+        $states = [
+            'applied' => '1',
+            'pending' => '0',
+            'missing' => '0',
+            'rebooted' => '1',
+            'restarted' => '1',
+            'older-master' => '0',
+            'malformed' => '0',
+            'other-generation' => '0',
+            'restarted-other-generation' => '0',
+            'malformed-boot' => '0',
+            'recovered' => '1',
+        ];
+        foreach ($states as $state => $expected) {
             expect(application_run(['bash', '-s', '--', $state], $program)->stdout)->toBe($expected."\n", $state);
         }
     } finally {

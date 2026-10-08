@@ -1,0 +1,25 @@
+Loading tasks status...
+
+┌  Show tasks status
+│
+├  ● Loaded tasks status
+│
+└  Loaded tasks status.
+
+
+┌  Extension: tasks
+│
+├  Status      enabled
+│
+└  Last tick   not recorded
+
+No groups are asking for assistance.
+Review and merge
+
+ ┌───────┬──────────────────────────────┬──────────┬─────────┬─────────────────────────────────────────────────────────┐
+ │ GROUP │ TITLE                        │ STATUS   │ MERGE   │ REASON                                                  │
+ ├───────┼──────────────────────────────┼──────────┼─────────┼─────────────────────────────────────────────────────────┤
+ │ ORB-1 │ Review #460: Throttle logins │ settling │ waiting │ Check Required checks is still running on aaaaaaaaaaaaa │
+ │       │                              │          │         │ aaaaaaaaaaaaaaaaaaaaaaaaaaa.                            │
+ └───────┴──────────────────────────────┴──────────┴─────────┴─────────────────────────────────────────────────────────┘
+Request ID: 0198e15c-bf97-7c23-8f1f-61b8fe67a844

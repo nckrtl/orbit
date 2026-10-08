@@ -15,6 +15,10 @@ covers:
 
 A Project records one Git repository, its named apps, and the defaults for running it. New Instances inherit its default branch and apps. Each app's type decides its runtime capabilities. The API path is `/api/v1/projects`, and the CLI family is [`project`](/cli/project).
 
+## Project Documents
+
+[Project Documents](/reference/project-documents) are a native folder tree of notes and versioned attachments owned by the Project, independent of its Instances and Git branches. Orbit keeps their metadata in the Gateway database and their bodies in a dedicated private UpCloud bucket. The shared contract covers editing, upload/download, archive, permanent removal, and recovery across API, CLI, SDK, MCP, and web.
+
 ## Fields
 
 A Project stores these fields. API responses, the SDK, and CLI JSON use the same names.
@@ -30,6 +34,8 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
+| `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
+| `merge_check` | The check run that must pass on a head before Orbit merges it, such as `Required checks`. Null by default. The flow needs it. |
 
 ## Application directory
 
@@ -40,9 +46,9 @@ Each app stores its application directory explicitly as `path`, relative to the 
 | `name` | Required lowercase ASCII DNS label, 1 through 63 characters, letters or digits at both ends and hyphens internally. Unique within the Project. Uppercase is invalid; `default` is an ordinary app name. |
 | `path` | Required canonical repository-relative directory, including `.` for the repository top level. |
 | `web_root` | Required member: a canonical non-dot directory relative to `path`, or null. Null serving semantics depend on type and path, as described below. |
-| `type` | Required `laravel-app`, `monorepo`, `laravel-package`, or `node-package`. See [Project types](#project-types). |
+| `type` | Required `laravel-app`, `symfony-app`, `monorepo`, `laravel-package`, or `node-package`. See [Project types](#project-types). |
 
-Null web root serves the application directory itself for `laravel-app`, `monorepo`, and package apps with a non-dot path. Only a package with path `.` and null web root is non-serving.
+Null web root serves the application directory itself for `laravel-app`, `symfony-app`, `monorepo`, and package apps with a non-dot path. Only a package with path `.` and null web root is non-serving.
 
 Each path is 1 through 255 bytes, with segments containing only ASCII letters, digits, dots, underscores and hyphens. The composed serving path is at most 255 bytes. Paths accept `/` separators only, with no absolute prefix, drive prefix, backslash, NUL, empty segment, trailing slash, `.` segment other than the entire application path, or `..` segment. Resolution must stay inside the checkout or release, including after resolving symlinks. Configuration validation checks the lexical form; projection checks containment before making runtime changes.
 
@@ -50,7 +56,7 @@ App paths must be distinct within the effective app list; nested directories are
 
 An Instance inherits every Project app. `app_overrides` is an object keyed by existing app name. Each value has exactly `path` and `web_root`, both required; it overrides both for that Instance. Omitted names inherit. An update replaces the whole override map; `{}` clears it. It cannot add apps or override names or types. Instance responses expose the stored map and an effective `apps` list with the same four fields as the Project. Effective path uniqueness and type rules apply after overrides. Registration adopts the whole checkout and inherits all apps unless the caller sends this map; it never discovers nested apps.
 
-The application directory contains `composer.json`, `artisan`, development [environment files](/reference/environment-variables#where-the-file-lives), and Laravel [logs](/reference/instance-logs#know-which-file-the-gateway-reads). Source inspection, PHP-FPM, default systemd Instance Processes, and Instance Schedules use the selected app's directory. Production resolves its single app through `current`. Setup, teardown, deploy steps, and task-check commands still run from the repository root; a nested Artisan step must change directory explicitly. Git identity, transfers and source selection cover the whole repository.
+The application directory contains `composer.json`, `artisan`, development [environment files](/reference/environment-variables#where-the-file-lives), and Laravel [logs](/reference/instance-logs#know-which-file-the-gateway-reads). Source inspection, PHP-FPM, default systemd Instance Processes, and Instance Schedules use the selected app's directory. Production resolves its single app through `current`. Setup, teardown, deploy steps, and task-check commands still run from the repository root; a nested Artisan step must change directory explicitly. [Setup and teardown](/reference/instance-setup#run-setup) and [task checks](/reference/tasks#project-check) export `VP_HOME` to the Node's resolved Vite+ store, including for project-local `vp`. Git identity, transfers and source selection cover the whole repository.
 
 ### Instance app runtime output
 
@@ -211,6 +217,12 @@ Production creation or cloning of a multi-app Project is refused before remote w
 
 An app-list change that changes an existing production Instance's effective path, web root or type returns `app.production_path_update_unsupported`; unrelated development overrides remain editable. Slug changes retain the existing production source/release boundary and do not start a deployment.
 
+## Setup and teardown steps
+
+A Project owns ordered [setup and teardown lists](/reference/instance-setup) for its development Instances. Each named command runs on the Instance's Node from the repository root. Production Instances run neither list.
+
+When a command is missing or not executable on that Node (exit 127 or 126), Orbit returns `instance.setup_step_unavailable` or `instance.teardown_step_unavailable` with the step name and `outcome: missing`. The message names the step, Node, and exit code and says the command was not found or is not executable. Other command failures still return `instance.setup_step_failed` or `instance.teardown_step_failed`. See [Instance setup and teardown](/reference/instance-setup#failure-codes) for retry and removal behavior.
+
 ## Development deploy steps
 
 A Project owns an ordered [development deploy list](/reference/deployments#development-deploy-steps), separate from setup and teardown and from production's per-Instance deploy steps. Use [`project:dev-deploy-step`](/cli/project#orbit-projectdev-deploy-steplist) to list, create, update, or remove a step. Each step stores a name, command, timeout, and `required` boolean, which defaults to true. These operations change configuration only; they never start a deployment.
@@ -222,11 +234,14 @@ The type belongs to each named app. Every Instance inherits that type; path over
 | App type | Web root | Route | PHP-FPM |
 | --- | --- | --- | --- |
 | `laravel-app` | Non-dot relative directory, or null to serve the app directory | Exactly one per active routed Instance/app pair | Yes; requires Laravel source in the app path |
+| `symfony-app` | Non-dot relative directory, or null to serve the app directory | Exactly one per active routed Instance/app pair | Yes; requires Symfony source in the app path |
 | `monorepo` | Non-dot relative directory, or null to serve the app directory | Exactly one per active routed Instance/app pair | Only when its app path classifies as Laravel source |
 | `laravel-package` | Null or a non-dot relative directory | Unless path is `.` and web root is null | No |
 | `node-package` | Null or a non-dot relative directory | Unless path is `.` and web root is null | No |
 
 `.` is allowed as an application path, never as a serving web root. Non-serving packages need no `artisan` file. Unrouted task workspaces inherit apps but skip Route and serving-runtime preparation.
+
+A `symfony-app` serves like a `laravel-app`: one Route, a PHP-FPM pool, and the PHP version from `composer.json`. Orbit runs no Laravel step for it. It writes no `APP_URL` and patches no Laravel configuration cache. See [Symfony applications](/domains/applications#symfony-applications).
 
 ## Create a Project
 
@@ -260,7 +275,7 @@ The Gateway derives a repository identity from the host and path of the URL. Equ
 
 [`instance:register`](/domains/applications#register-an-existing-checkout) adopts a checkout only for an existing Project. It finds the Project by repository identity, or uses `--project`. When no Project owns the repository, it fails with `instance.project_missing` and changes nothing. Create the Project with `project:create` first. Registration inherits its apps unless an explicit Instance override map is sent; it does not search the checkout for nested apps.
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored apps, repository, source access, default branch, task check, and `task_workspace_routed`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored apps, repository, source access, default branch, task check, `task_workspace_routed`, `review_and_merge`, and `merge_check`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Retry creation safely
 
@@ -276,7 +291,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its apps, slug, repository access URL, source access, default branch, task check, or task workspace routing. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its apps, slug, repository access URL, source access, default branch, task check, task workspace routing, or review and merge. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -294,6 +309,8 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `default_branch` and `--default-branch` | Must exist on the remote. Switches every development `default` Instance without a `branch_override`. Explicit overrides stay unchanged. |
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
+| `review_and_merge` and `--review-and-merge=true\|false` | Switches the [review-and-merge flow](/reference/tasks#review-and-merge). It applies at the next tick, to open tasks too. |
+| `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges. Send null or `--clear-merge-check` to clear it. |
 
 An app type or path change must keep every effective Instance app valid. A serving Route requires a serving app with a contained composed document root (null serves the app directory); otherwise the update returns `route.target_web_root_unsupported`.
 
@@ -308,6 +325,16 @@ The Gateway first resolves the remote default branch with the new `source_access
 The create and update commands accept `--task-workspace-routed=true` or `--task-workspace-routed=false`. An invalid CLI value returns `project.task_workspace_routed_invalid` before a request. The setting controls task provisioning only. It does not change ordinary Instances or bypass app-path, Route, and app-type validation. A settings-only update does not reconcile existing sources or Routes.
 
 The migration seeds false for existing Projects with slug `orbit` and true for other existing Projects to preserve their previous creation behavior. This is a one-time migration of the legacy policy; the engine never consults the slug. It also records the mode of existing task workspaces from their actual provisioned state, so Doctor does not reinterpret them after a settings change. Renaming a Project does not change the setting.
+
+### Review and merge
+
+`PATCH /api/v1/projects/{project}` accepts `review_and_merge` as a JSON boolean and `merge_check` as a string of at most 255 characters, or null. The flow is on only while `review_and_merge` is true, `merge_check` is set, `source_access` is `github_app`, and `task_compute` is `shared`. A request that would leave the switch on without one of these fails with HTTP 422 `validation.failed` on `merge_check` or `review_and_merge`, and changes nothing. CLI human detail output labels the fields `Review and merge` and `Merge check`. An invalid CLI value returns `project.review_and_merge_invalid`, `project.merge_check_conflict`, or `project.merge_check_invalid` before a request.
+
+```bash
+orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
+```
+
+[Tasks: Review and merge](/reference/tasks#review-and-merge) describes what the switch changes.
 
 ### Update lifecycle
 
@@ -452,3 +479,12 @@ Renaming the monorepo folders, the Laravel root namespace, the `app/` source fol
 Reading a stored placeholder or activity class under a different spelling, as if it were the current name, was rejected: that reading is an alias, and synchronization and activity resolution then fail on rows that use the other spelling. The migration renames tables and columns in place. There is no compatibility view and no dual-write. A caller that sends a removed field, or code that imports a removed class, fails. There is no compatibility period.
 
 A repository check fails when an App-domain name is present in app code, database code, the SDK, the CLI, web sources, or these pages. A monorepo path under `apps/` is not that name. A `covers:` glob names a file that exists, and the check rejects an App-domain name left in that glob.
+
+### Task compute
+
+`task_compute` selects `shared` or `vm` for future task group claims. It defaults to `shared` while sandbox rollout is in progress. The first reservation records the selected mode on the group. That mode stays fixed through retries, review, and resume, even if the Project setting changes. Existing groups that have already started keep `shared`. A VM group waits with a visible reason when its sandbox is unavailable and never uses a shared workspace as a fallback. Enable `vm` only after the corresponding lane has passed its disposable proof.
+
+Set the mode with `orbit project:create ... --task-compute=shared|vm` or
+`orbit project:update <id> --task-compute=shared|vm`. `project:show` shows the
+Project setting. `tasks:show` shows the group's pinned mode and its capacity wait
+reason. Omitting the option on update preserves the setting.

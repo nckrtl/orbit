@@ -70,6 +70,7 @@
             "pages": [
               "domains/applications",
               "reference/projects",
+              "reference/project-documents",
               "reference/routes",
               "reference/environment-variables",
               "reference/database-connections",
@@ -117,8 +118,10 @@
               "reference/analytics",
               "reference/proxycli",
               "reference/tasks",
+              "reference/compute-drivers",
               "reference/pi-server",
               "reference/cli-binaries",
+              "reference/self-update",
               "reference/events",
               "reference/mcp"
             ]
@@ -193,9 +196,11 @@
             "pages": [
               "cli/doctor",
               "cli/profile",
+              "cli/self-update",
               "cli/activity",
               "cli/realtime",
               "cli/extension",
+              "cli/fleet",
               "cli/tasks",
               "cli/proxycli"
             ]
@@ -217,6 +222,16 @@
             "openapi": "/openapi.json",
             "pages": [
               "GET /api/v1/ca/root",
+              "GET /api/v1/gateway/desired-fleet-state",
+              "GET /api/v1/gateway/release-automation",
+              "POST /api/v1/gateway/release-automation/disable",
+              "POST /api/v1/gateway/release-automation/enable",
+              "POST /api/v1/gateway/release-automation/resume",
+              "POST /api/v1/gateway/release-smoke",
+              "GET /api/v1/gateway/releases",
+              "POST /api/v1/gateway/releases",
+              "GET /api/v1/gateway/releases/{release}",
+              "POST /api/v1/gateway/releases/{release}/rollback",
               "GET /api/v1/gateway/status"
             ]
           },
@@ -228,6 +243,7 @@
               "POST /api/v1/nodes",
               "DELETE /api/v1/nodes/{node}",
               "GET /api/v1/nodes/{node}",
+              "POST /api/v1/nodes/{node}/converge",
               "GET /api/v1/nodes/{node}/excluded-projects",
               "DELETE /api/v1/nodes/{node}/excluded-projects/{project}",
               "POST /api/v1/nodes/{node}/excluded-projects/{project}",
@@ -268,6 +284,14 @@
               "DELETE /api/v1/nodes/{node}/firewall-rules/{firewall_rule}",
               "GET /api/v1/nodes/{node}/live-firewall-rules",
               "GET /api/v1/nodes/{node}/managed-firewall-rules"
+            ]
+          },
+          {
+            "group": "Fleet rollout",
+            "openapi": "/openapi.json",
+            "pages": [
+              "GET /api/v1/fleet/rollout",
+              "POST /api/v1/fleet/rollout/resume"
             ]
           },
           {
@@ -320,6 +344,8 @@
             "group": "Projects",
             "openapi": "/openapi.json",
             "pages": [
+              "GET /api/v1/project-document-storage",
+              "PUT /api/v1/project-document-storage",
               "GET /api/v1/projects",
               "POST /api/v1/projects",
               "DELETE /api/v1/projects/{project}",
@@ -329,6 +355,19 @@
               "POST /api/v1/projects/{project}/dev-deploy-steps",
               "DELETE /api/v1/projects/{project}/dev-deploy-steps/{step}",
               "PATCH /api/v1/projects/{project}/dev-deploy-steps/{step}",
+              "GET /api/v1/projects/{project}/documents",
+              "POST /api/v1/projects/{project}/documents",
+              "GET /api/v1/projects/{project}/documents/search",
+              "DELETE /api/v1/projects/{project}/documents/{entry}",
+              "GET /api/v1/projects/{project}/documents/{entry}",
+              "PATCH /api/v1/projects/{project}/documents/{entry}",
+              "POST /api/v1/projects/{project}/documents/{entry}/archive",
+              "GET /api/v1/projects/{project}/documents/{entry}/content",
+              "PUT /api/v1/projects/{project}/documents/{entry}/content",
+              "GET /api/v1/projects/{project}/documents/{entry}/download",
+              "POST /api/v1/projects/{project}/documents/{entry}/restore",
+              "POST /api/v1/projects/{project}/documents/{entry}/restore-version",
+              "GET /api/v1/projects/{project}/documents/{entry}/versions",
               "GET /api/v1/projects/{project}/excluded-nodes",
               "DELETE /api/v1/projects/{project}/excluded-nodes/{node}",
               "POST /api/v1/projects/{project}/excluded-nodes/{node}",
@@ -557,6 +596,7 @@
               "GET /api/v1/agent/log-streams",
               "GET /api/v1/agent/realtime",
               "GET /api/v1/agent/workspaces",
+              "POST /api/v1/compute/github-token",
               "GET /api/v1/github/app/callback",
               "GET /api/v1/github/app/register",
               "GET /api/v1/metrics/grafana/authorize",
@@ -582,7 +622,8 @@
               "decisions/0190-run-mysql-servers-with-a-gateway-held-admin-password",
               "decisions/0191-clone-the-default-instance-database-for-each-new-instance",
               "decisions/0196-derive-application-directory-from-web-root",
-              "decisions/0197-keep-delivery-line-proofs-as-repo-commands"
+              "decisions/0198-keep-delivery-line-proofs-as-repo-commands",
+              "decisions/0200-run-each-task-group-in-its-own-sandbox-vm"
             ]
           }
         ]
@@ -617,6 +658,26 @@
     }
   },
   "redirects": [
+    {
+      "source": "/decisions/0203-review-and-merge-pull-requests-inside-orbit",
+      "destination": "/reference/tasks#review-and-merge"
+    },
+    {
+      "source": "/decisions/0202-the-fleet-follows-the-gateway-through-orbit-self-update",
+      "destination": "/reference/gateway-recovery#fleet-rollout"
+    },
+    {
+      "source": "/decisions/0201-release-the-gateway-automatically-from-green-main",
+      "destination": "/reference/gateway-recovery#automatic-releases"
+    },
+    {
+      "source": "/decisions/0199-post-direction-requests-to-opsbot-immediately",
+      "destination": "/reference/tasks#direction-wakes-opsbot-immediately"
+    },
+    {
+      "source": "/decisions/0197-native-project-documents-with-private-s3-storage",
+      "destination": "/reference/project-documents#why-it-works-this-way"
+    },
     {
       "source": "/decisions/0195-request-topologies-for-review-with-an-operator-container",
       "destination": "/reference/incus-topologies#the-reviewer-requests-discovery"

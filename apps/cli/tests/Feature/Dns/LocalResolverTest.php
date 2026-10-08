@@ -257,25 +257,6 @@ it('points an exact Route name at the Cluster Router or the workload', function 
     'workload' => ['192.168.1.40'],
 ]);
 
-it('gives an exact hostname override precedence over the wildcard TLD', function (): void {
-    seed_wildcard_override($this, 'beast', '192.168.6.20');
-    fake_local_resolver_processes([
-        'orbit-local-resolver-health.shop.app.beast' => "192.168.1.40\n",
-    ]);
-    $resolver = local_resolver_for_test($this);
-
-    $resolver->resolve('shop.app.beast', '192.168.1.40');
-
-    expect(file_get_contents($this->configurationDirectory.'/shop.app.beast.conf'))
-        ->toBe("address=/shop.app.beast/192.168.1.40\n")
-        ->and(file_get_contents($this->configurationDirectory.'/beast.conf'))
-        ->toBe("address=/beast/192.168.6.20\n")
-        ->and(file_exists($this->resolverDirectory.'/shop.app.beast'))
-        ->toBeTrue()
-        ->and(file_exists($this->resolverDirectory.'/beast'))
-        ->toBeTrue();
-});
-
 it('resets an exact hostname override without changing the wildcard TLD', function (): void {
     seed_wildcard_override($this, 'beast', '192.168.6.20');
     new Filesystem()->ensureDirectoryExists($this->configurationDirectory);

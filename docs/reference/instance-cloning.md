@@ -70,7 +70,7 @@ The new Instance gets its own copy of each part below.
 | Part | Result |
 | --- | --- |
 | Source | A new checkout of the branch from the Project repository, inside the production home. Orbit copies no files from the candidate's working directory. |
-| Environment | Every stored candidate value, encrypted again for the new Instance. Then Orbit sets `APP_ENV=production` and `APP_DEBUG=false`. You can change them later. |
+| Environment | Every stored candidate value, encrypted again for the new Instance. Then Orbit sets `APP_ENV=production` and `APP_DEBUG=false`, or `APP_ENV=prod` and `APP_DEBUG=0` for a `symfony-app`. You can change them later. |
 | Processes and Schedules | Copies of the Project's production [definitions](/reference/processes-and-schedules#production-copies), installed stopped. Candidate-specific Processes and Schedules do not copy. |
 | PHP | A [dedicated PHP-FPM service](/reference/php-runtime#production-runtime) with Orbit defaults, when the source uses PHP. |
 | Route | One explicit private preview Route for the sole serving app; no Route for a non-serving package. |

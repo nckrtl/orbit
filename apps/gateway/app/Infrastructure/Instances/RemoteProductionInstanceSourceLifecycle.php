@@ -9,6 +9,7 @@ use App\Domain\GitHub\RepositoryReadAccess;
 use App\Domain\Instances\ComposerSourceClassifier;
 use App\Domain\Instances\DevelopmentSourceProfile;
 use App\Domain\Instances\DevelopmentSourceResolution;
+use App\Domain\Instances\InstanceSandboxGuard;
 use App\Domain\Instances\ProductionInstanceSourceLifecycle;
 use App\Domain\Instances\ProductionReleaseLayout;
 use App\Domain\Projects\ProjectType;
@@ -28,6 +29,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function prepareUser(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing('node');
         [$user, $home] = $this->identity($instance);
         $this->ssh->execute(
@@ -70,6 +72,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function prepareSource(Instance $instance, bool $allowExisting): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $script = GitReadScript::for($this->access->for($instance->project->repository_url, $instance->project->source_access), <<<'BASH'
@@ -190,6 +193,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function resolve(Instance $instance): DevelopmentSourceResolution
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $branch = $instance->branch_override
@@ -273,6 +277,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function inspectProfile(Instance $instance): DevelopmentSourceProfile
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $root = $instance->sourceRoot();
@@ -285,7 +290,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
         $result = $this->ssh->execute(
             $instance->node,
             new RemoteCommand(
-                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolvePath($checkout, $instance->applicationPath())],
+                arguments: ['bash', '-seu', '--', $user, $root, $checkout, ApplicationDirectory::resolvePath($checkout, $instance->applicationPath()), ProjectType::from($instance->appConfiguration()['type'])->frameworkEntryPoint()],
                 input: <<<'BASH'
                     # find must restore its working directory after sudo changes users.
                     cd /
@@ -293,11 +298,12 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
                     relative_root=$2
                     checkout=$3
                     application=$4
+                    entry_point=$5
                     application_real=$(sudo -u "$user" -H realpath -m -- "$application")
                     test "$application_real" = "$application" || { printf 'UNSAFE\n'; exit 0; }
                     case "$application_real" in "$checkout"|"$checkout"/*) ;; *) printf 'UNSAFE\n'; exit 0 ;; esac
                     composer="$application/composer.json"
-                    artisan="$application/artisan"
+                    artisan="$application/$entry_point"
                     candidate="$checkout/$relative_root"
                     resolved=$(sudo -u "$user" -H realpath -m -- "$candidate")
 
@@ -344,6 +350,7 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function prepareCaddyAccess(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $instance->loadMissing(['project', 'node']);
         [$user, $home] = $this->identity($instance);
         $root = $instance->relativeWebRoot();
@@ -436,11 +443,13 @@ final readonly class RemoteProductionInstanceSourceLifecycle implements Producti
 
     public function validateCurrent(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->releaseLayout($instance, false);
     }
 
     public function clearCurrent(Instance $instance): void
     {
+        InstanceSandboxGuard::assertHostOperation($instance);
         $this->releaseLayout($instance, true);
     }
 

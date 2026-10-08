@@ -708,7 +708,7 @@ it('accepts existing Orbit launchers for the old Vite Plus home', function (): v
         foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
             expect(file_get_contents("{$harness['stableDirectory']}/{$binary}"))
                 ->toBe(
-                    "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$harness['sourceDirectory']}/{$binary}\" \"\$@\"\n",
+                    "#!/bin/sh\nexport VP_HOME=\"{$harness['sourceDirectory']}\"\nexec \"{$harness['sourceDirectory']}/{$binary}\" \"\$@\"\n",
                 );
         }
     } finally {
@@ -923,7 +923,7 @@ function role_javascript_runtime_harness(
     $exactLauncherContents = '';
 
     if ($exactLauncher !== null) {
-        $exactLauncherContents = "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
+        $exactLauncherContents = "#!/bin/sh\nexport VP_HOME=\"{$sourceDirectory}\"\nexec \"{$sourceDirectory}/{$exactLauncher}\" \"\$@\"\n";
         $filesystem->put("{$stableDirectory}/{$exactLauncher}", $exactLauncherContents);
         chmod(filename: "{$stableDirectory}/{$exactLauncher}", permissions: 0o755);
     }
@@ -932,7 +932,7 @@ function role_javascript_runtime_harness(
         foreach (['vp', 'node', 'pnpm', 'npm', 'npx'] as $binary) {
             $filesystem->put(
                 "{$stableDirectory}/{$binary}",
-                "#!/bin/sh\nexport VP_HOME=/opt/orbit/vite-plus\nexec \"{$sourceDirectory}/{$binary}\" \"\$@\"\n",
+                "#!/bin/sh\nexec \"{$sourceDirectory}/{$binary}\" \"\$@\"\n",
             );
             chmod(filename: "{$stableDirectory}/{$binary}", permissions: 0o755);
         }
@@ -1047,7 +1047,7 @@ SH;
 
     $process = new Process(['bash', '-seu']);
     $process->setInput(
-        "managed_user=$(id -un)\nvp_home={$sourceDirectory}\nvp_environment='VP_HOME=/opt/orbit/vite-plus'\nlauncher_environment='export VP_HOME=/opt/orbit/vite-plus'\nbun_binary={$sourceDirectory}/bun\n{$publicationScript}\n",
+        "managed_user=$(id -un)\nvp_home={$sourceDirectory}\nvp_environment='VP_HOME=/opt/orbit/vite-plus'\nlauncher_environment='export VP_HOME=\"{$sourceDirectory}\"'\nbun_binary={$sourceDirectory}/bun\n{$publicationScript}\n",
     );
     $process->run();
 

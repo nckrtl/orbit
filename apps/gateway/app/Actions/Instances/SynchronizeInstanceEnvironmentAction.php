@@ -17,6 +17,7 @@ use App\Domain\Instances\Environment\InstanceEnvironmentWriteResult;
 use App\Domain\Instances\Environment\InstanceOperationPreflight;
 use App\Domain\Instances\Environment\InstanceRouteEnvironmentSynchronizer;
 use App\Domain\Instances\Environment\InstanceTestEnvironment;
+use App\Domain\Instances\Environment\InstanceTestEnvironmentOutcome;
 use App\Domain\Instances\Environment\InstanceTestEnvironmentWriter;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AppRuntimeMigration;
@@ -72,12 +73,26 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
         $snapshot = $this->store->synchronizationSnapshot($context);
         $contents = $this->renderer->render($context, $snapshot->values());
         $changed = $this->confirmed($this->writer->write($context, $contents));
-        $testing = ($this->testing ?? app(InstanceTestEnvironment::class))->values($context->instanceId, $snapshot->values());
+        $plan = ($this->testing ?? app(InstanceTestEnvironment::class))->plan($context->instanceId);
+        $outcome = null;
 
-        if ($testing !== null) {
-            $testingContents = $this->renderer->render($context, $testing);
+        if ($plan !== null) {
             $writer = $this->testingWriter ?? app(InstanceTestEnvironmentWriter::class);
-            $changed = $this->confirmed($writer->writeTesting($context, $testingContents)) || $changed;
+            $result = $writer->mergeTesting(
+                $context,
+                $this->renderer->render($context, $plan->values),
+                $plan->managedKeys,
+            );
+            $testingChanged = $this->confirmed($result);
+            $changed = $testingChanged || $changed;
+            $outcome = new InstanceTestEnvironmentOutcome(
+                status: match (true) {
+                    $result->tracked => InstanceTestEnvironmentOutcome::SkippedTracked,
+                    $testingChanged => InstanceTestEnvironmentOutcome::Written,
+                    default => InstanceTestEnvironmentOutcome::Unchanged,
+                },
+                testDatabase: $plan->testDatabase,
+            );
         }
 
         return new InstanceEnvironmentResult(
@@ -85,6 +100,7 @@ final readonly class SynchronizeInstanceEnvironmentAction implements InstanceEnv
             operation: 'sync',
             changed: $changed,
             keyCount: $snapshot->keyCount(),
+            testing: $outcome,
         );
     }
 

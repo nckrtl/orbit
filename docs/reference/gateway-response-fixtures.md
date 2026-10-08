@@ -20,11 +20,21 @@ Doctor fixtures include informational-only healthy reports and mixed reports wit
 
 Task fixtures include a GitHub feedback fixup with `fixup_problem: review:{reviewer_id}` and an immutable findings packet in `brief`. Record that response from the Gateway fixture test with example identities and findings. Its `review-findings` deliverable and optional `project-check` use the existing response schema. Replaying the fixture must preserve source provenance without interpreting review text as an action. The [Tasks contract](/reference/tasks#review-fixup-lifecycle) owns the meaning of those fields.
 
+Task response fixtures include a `topology` array on each subtask. Default cases record `[]`; the declared case records `app-dev`. Re-record all responses that contain subtasks when this field changes, regenerate OpenAPI and the web API types, and update the matching CLI expectations. Human subtask details show `Topology` only for a nonempty declaration; JSON keeps the array in both cases. [Compute drivers](/reference/compute-drivers) defines the accepted workload roles and readiness gate.
+
 Process response fixtures include `user`, which is null when the Process uses its derived account. When an explicit account is selected, the response includes that name both in `user` and in `runtime_config.user`; see [Node accounts](/reference/processes-and-schedules#node-account).
 
 Instance create, list, and show fixtures record generated domains that begin with the app name, including single-app Projects: `web.dev.acme.test` for Instance `dev`, and `web.acme.test` for Instance `default`. The nested Route, scalar `domain`, and `url` must agree. Re-record these responses together when domain generation changes; explicit domains stay as supplied. A multi-app Instance has no scalar authoritative Route or effective root selected from its first app. The [Route contract](/reference/routes) owns app association and domain generation.
 
 Instance create, list, and show fixtures include `annotator_port` and `annotator_url`. Both are null without an assigned annotator port; an Instance with a port but no Route still has a null URL. Re-record these fixtures when either field changes, regenerate the OpenAPI schema, and replay the Instance CLI contracts. Human detail output shows the annotator properties only when a port is assigned, while JSON retains the nullable fields. The web API types must also be regenerated from the same OpenAPI schema.
+
+Gateway fixtures record the [desired fleet state](/reference/self-update#desired-fleet-state) with an available and a pending CLI release, and `gateway:status` as an active peer sees it. The Gateway test serves the release-shaped GitHub responses under `apps/gateway/tests/Fixtures/GitHub/CliRelease`. The `self-update` contract downloads the stand-in binaries under `apps/cli/tests/Fixtures/SelfUpdate`, whose checksums those fixtures name.
+
+An Agent pin change updates the Gateway and Fleet fixtures with the released version, asset URLs, and verified checksums. Update the SDK checksum expectations, CLI download stand-ins, and matching CLI output together. The Agent release checksums remain separate from the local stand-in checksums used by `self-update` tests.
+
+Gateway release fixtures under `gateway-releases` record one release record at each point the CLI can see it: queued, running, live, switched back, paused, and rolled back. `gateway:release:deploy` and `gateway:release:rollback` replay the queued response and then a sequence of record reads, so their expected output shows how the progress tree follows a release. The automatic release fixtures record the state disabled, enabled, paused, and resumed.
+
+Project Document fixtures record a complete file lifecycle, reads of earlier versions, revision conflicts, and redacted storage status. The SDK and CLI replay the same envelopes, preserving IDs, revisions, checksums, cursors, and request IDs. Human show, list, and version-history expectations live under `apps/cli/tests/Expected/project-documents`; raw read and download tests check exact bytes separately.
 
 ## Record a fixture
 

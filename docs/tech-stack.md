@@ -20,7 +20,6 @@ Each project in the repository uses the stack in this table.
 | `apps/desktop` | Tauri 2 |
 | `apps/agent` | Rust |
 | `apps/pi-server` | TypeScript on Bun, the Pi coding agent |
-| `packages/agent-annotation` | TypeScript |
 | `apps/docs` | PHP 8.5, Laravel 13, Librarian |
 | `apps/e2e` | PHP 8.5, Laravel 13, Incus |
 

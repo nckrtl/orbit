@@ -15,21 +15,6 @@ use SensitiveParameter;
 
 final readonly class DependencyInstanceSelector
 {
-    public function select(GatewayConnector $connector, #[SensitiveParameter] ?string $domain = null, bool $all = false): ResolvedInstanceResponse|ResolvedDirectoryInstanceResponse|null
-    {
-        if ($all && $domain !== null) {
-            throw new GatewayApiException('Project and all-instance selectors cannot be combined.', errorCode: 'dependencies.target_conflict');
-        }
-        if ($all) {
-            return null;
-        }
-        if ($domain !== null) {
-            return $this->resolveDomain($connector, $domain);
-        }
-
-        return $this->resolveDirectory($connector);
-    }
-
     public function resolveDirectory(GatewayConnector $connector): ResolvedDirectoryInstanceResponse
     {
         $current = getcwd();

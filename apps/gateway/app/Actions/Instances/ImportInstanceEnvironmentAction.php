@@ -37,6 +37,7 @@ final readonly class ImportInstanceEnvironmentAction
 
             if ($context->laravel) {
                 $values['APP_URL'] = 'https://{{instance.domain}}';
+                $values = $this->initializeEmptyAppKey($instance, $values);
             }
 
             return $this->store->import($context, $values, $replace);
@@ -66,9 +67,28 @@ final readonly class ImportInstanceEnvironmentAction
 
             if ($context->laravel) {
                 $values['APP_URL'] = 'https://{{instance.domain}}';
+                $values = $this->initializeEmptyAppKey($instance, $values);
             }
 
             return $this->store->import($context, $values, replace: false);
         });
+    }
+
+    /**
+     * @param  array<string, string>  $values
+     * @return array<string, string>
+     */
+    private function initializeEmptyAppKey(Instance $instance, #[\SensitiveParameter] array $values): array
+    {
+        if (($values['APP_KEY'] ?? null) !== '') {
+            return $values;
+        }
+
+        $stored = $instance->environmentValues()->where('env_key', 'APP_KEY')->first()?->env_value;
+        $values['APP_KEY'] = is_string($stored) && $stored !== ''
+            ? $stored
+            : 'base64:'.base64_encode(random_bytes(32));
+
+        return $values;
     }
 }

@@ -17,6 +17,8 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 function render_task_prompt(string $role, array $payload): array
 {
     $process = new Process(

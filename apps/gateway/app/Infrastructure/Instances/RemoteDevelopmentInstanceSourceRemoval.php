@@ -190,6 +190,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             || $layout === InstanceSourceLayout::Checkout->value
             && $commonPath->value !== $logicalCheckout.'/.git'
             || $layout === InstanceSourceLayout::Worktree->value
+            && $sourceIdentity !== 'absent'
             && $commonPath->value === $logicalCheckout.'/.git'
         ) {
             $this->mismatch($instance, InstanceSourceMismatch::Layout);
@@ -347,6 +348,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
                         (string) $member->checkout_path,
                         (string) $member->common_repository_path,
                         $member->source_layout,
+                        (string) $member->source_identity,
                     ],
                     input: self::preparationScript(),
                 ),
@@ -1199,6 +1201,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             checkout=$7
             common_repository=$8
             layout=$9
+            source_identity=${10}
             state="$root/.orbit-removals"
             journal="$state/$operation.$member.journal"
             receipt="$state/$operation.$member.receipt"
@@ -1222,18 +1225,24 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             test ! -L "$quarantine"
             test ! -e "$recovery"
             test ! -L "$recovery"
-            case "$layout" in
-                checkout) ;;
-                worktree)
-                    test -f "$checkout/.git"
-                    test ! -L "$checkout/.git"
-                    git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
-                    test "$(dirname "$git_dir")" = "$common_repository/.git/worktrees"
-                    test -d "$git_dir"
-                    test ! -L "$git_dir"
-                    ;;
-                *) exit 1 ;;
-            esac
+            if [ "$source_identity" = absent ]; then
+                # Authenticated absence owns no Git directory, including in a seed repository.
+                test ! -e "$checkout"
+                test ! -L "$checkout"
+            else
+                case "$layout" in
+                    checkout) ;;
+                    worktree)
+                        test -f "$checkout/.git"
+                        test ! -L "$checkout/.git"
+                        git_dir=$(git -C "$checkout" rev-parse --absolute-git-dir)
+                        test "$(dirname "$git_dir")" = "$common_repository/.git/worktrees"
+                        test -d "$git_dir"
+                        test ! -L "$git_dir"
+                        ;;
+                    *) exit 1 ;;
+                esac
+            fi
             if [ -e "$journal" ] || [ -L "$journal" ]; then
                 test -f "$journal"
                 test ! -L "$journal"
@@ -1872,7 +1881,7 @@ final readonly class RemoteDevelopmentInstanceSourceRemoval implements Developme
             done
             IFS=$old_ifs
             if [ "$allow_absent" = 1 ] && [ ! -e "$checkout" ] && [ ! -L "$checkout" ]; then
-                test "$layout" = checkout
+                case "$layout" in checkout|worktree) ;; *) exit "$failure" ;; esac
                 encode "$checkout"
                 encode "$checkout/.git"
                 encode "$expected_origin"

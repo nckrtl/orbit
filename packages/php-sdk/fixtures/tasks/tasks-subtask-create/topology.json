@@ -1,0 +1,40 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\CreateSubtaskRequest",
+    "route": "POST /api/v1/task-groups/{group}/tasks",
+    "status": 201,
+    "body": {
+        "data": {
+            "id": 4,
+            "task_group_id": 1,
+            "position": 3,
+            "title": "Use a workload node",
+            "brief": "Verify the private app-dev node.",
+            "deliverables": [],
+            "topology": [
+                "app-dev"
+            ],
+            "status": "todo",
+            "implementer_agent_thread_id": null,
+            "tokens": null,
+            "line_diff": null,
+            "lines_added": null,
+            "lines_deleted": null,
+            "duration_ms": null,
+            "questions": 0,
+            "escalations": 0,
+            "type": "implementation",
+            "target_thread_id": null,
+            "completion_summary": null,
+            "check": null,
+            "assistance_requested": false,
+            "assistance_kind": null,
+            "assistance_question": null,
+            "assistance_reason": null,
+            "fixup_problem": null
+        },
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+        }
+    }
+}
