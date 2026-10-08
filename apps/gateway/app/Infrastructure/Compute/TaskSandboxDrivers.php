@@ -12,7 +12,7 @@ use App\Models\Node;
 use App\Models\TaskSandbox;
 use Illuminate\Support\Str;
 
-/** @phpstan-type IncusHost array{node_id: int, project: string, pool: string, max_vms: int, warm_pairs: int, orbit_images: array<string, string>, orbit_source_template: array<string, string>|null, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null, model_proxy_origin: string|null} */
+/** @phpstan-type IncusHost array{node_id: int, project: string, pool: string, max_vms: int, warm_pairs: int, orbit_images: array<string, string>, orbit_source_template: array<string, string>|null, project_images: array<string, string>, blocked_networks: list<string>, gateway_address: string|null, model_proxy_origin: string|null, project_bootstrap: array{wireguard_address: string, wireguard_port: int}|null} */
 final readonly class TaskSandboxDrivers
 {
     public function __construct(private UpCloudComputeDriver $upcloud, private IncusSandboxHost $transport, private ComputeLocks $locks) {}
@@ -78,6 +78,7 @@ final readonly class TaskSandboxDrivers
                 'orbit_source_template' => $this->sourceTemplate($host['orbit_source_template'] ?? null),
                 'orbit_images' => $orbit, 'project_images' => $this->images($host['project_images'] ?? []), 'blocked_networks' => $blocked, 'gateway_address' => $gateway,
                 'model_proxy_origin' => $this->modelProxyOrigin($host['model_proxy_origin'] ?? null),
+                'project_bootstrap' => $this->projectBootstrap($host['project_bootstrap'] ?? null, $gateway),
             ];
         }
 
@@ -151,6 +152,23 @@ final readonly class TaskSandboxDrivers
         }
 
         return rtrim($origin, '/');
+    }
+
+    /** @return array{wireguard_address: string, wireguard_port: int}|null */
+    private function projectBootstrap(mixed $value, ?string $gateway): ?array
+    {
+        if ($value === null) {
+            return null;
+        }
+        if ($gateway === null || ! is_array($value) || count($value) !== 2
+            || ! is_string($value['wireguard_address'] ?? null)
+            || filter_var($value['wireguard_address'], FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 | FILTER_FLAG_GLOBAL_RANGE) === false
+            || (int) explode('.', $value['wireguard_address'])[0] >= 224
+            || ! is_int($value['wireguard_port'] ?? null) || $value['wireguard_port'] < 1 || $value['wireguard_port'] > 65535) {
+            throw $this->invalidConfiguration();
+        }
+
+        return ['wireguard_address' => $value['wireguard_address'], 'wireguard_port' => $value['wireguard_port']];
     }
 
     private function invalidConfiguration(): ComputeException

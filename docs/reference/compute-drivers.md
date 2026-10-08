@@ -119,6 +119,28 @@ A new local Project reservation records `project_slug` beside its one pinned `op
 
 Provisioning verifies the Project marker on an existing guest and worktree volume before any mutation. A retry cannot change the Project or adopt an unmarked reservation. These image checks do not enroll the guest or authorize SSH, WireGuard, or hub access. Local Project claim admission remains unavailable until its bootstrap, network, fleet, Route, and cleanup contracts are implemented and accepted.
 
+### Enroll an owned local Project VM
+
+Local fleet enrollment has its own disabled-by-default `ORBIT_INCUS_ENROLLMENT_ENABLED` gate. Set `ORBIT_INCUS_DEV_CLUSTER_ID`, `ORBIT_INCUS_MODEL_ADDRESS`, and `ORBIT_INCUS_MODEL_PORT` for new reservations. The recorded host, private SSH endpoint, public hub endpoint, one Project image, and subnet must match the owned running guest. Initial admission reads the SSH public key through the host's read-only Incus identity operation before reserving a fleet Node.
+
+The reservation pins both sides of Node ownership, the complete Incus placement, and the SSH key. Retries verify the same guest and key through a separate read-only fleet identity operation. This operation permits existing enrollment files but keeps all host placement and firewall checks. It cannot replace a missing Node or repin a changed key.
+
+The hub confirms the sandbox's fleet limits before native provisioning publishes its peer. Its configured public UDP endpoint must match the recorded bootstrap endpoint, including on retries. Bootstrap uses the recorded private host address and reserved SSH port; enrolled traffic uses the VM's own WireGuard address. The Node joins only as `app-dev`, uses the managed `orbit` account, and has no grants to other Nodes. These enrollment primitives do not enable local Project claims; preview and cleanup acceptance remain required.
+
+### Local Project SSH identity
+
+The typed `project_identity` host operation reads the SSH public key from one running, owned Project VM. It verifies the private image provenance, guest and worktree Project markers, storage pool, subnet and devices first. The bridge must reject traffic by default. It refuses an Orbit topology guest, additional guests, foreign worktree attachments, or changed placement. The Gateway compares the response with the reserved Project, image, pool and subnet and validates the Ed25519 key before using it as a pinned SSH identity. Private key bytes never leave the guest.
+
+### Local Project bootstrap reservation
+
+An Incus host can record `project_bootstrap` with a public IPv4 `wireguard_address` and UDP `wireguard_port`. This requires the host's private `gateway_address`. Allocation records these endpoints with the host's WireGuard SSH address and a port from 24001 through 24254 in the Project reservation. Its subnet keeps that port reserved while parked. Existing reservations retain their endpoints when configuration changes.
+
+The host validates the closed `project_bootstrap` descriptor against its own interface and the separately approved root policy before recording it on the bridge, guest, and worktree volume. A retry refuses changed or missing endpoint markers before mutation. The SSH proxy listens only on the recorded host WireGuard address and reserved port, and forwards to the owned guest at port 22. Host filtering accepts the recorded Gateway on the WireGuard interface only when the connection's original destination is that host address and port. Direct SSH to the guest and other proxy ports remain blocked.
+
+The root policy permits UDP from this guest to the recorded public WireGuard hub endpoint and established replies. Project policy has one guest and grants no topology Pi ingress. Private-network and host exclusions remain in force. Fleet enrollment and hub policy still require separate implementation and approval.
+
+This read-only check does not create a bootstrap endpoint, enroll a Node, or change host or hub networking. Those steps remain required before local Project claims can start.
+
 ### Image test baselines
 
 Sandbox images need a test baseline from CI. Each successful project job on `main` publishes a `sandbox-tia-<index>-<commit>` artifact for 14 days. It contains the Pest graph and a manifest with the Project path, tested commit, CI run, graph checksum, and test configuration checksums.
@@ -248,9 +270,13 @@ Generic Instance operations refuse sandbox workspaces with `instance.sandbox_man
 
 ### Durable firewall policy on an Incus host
 
-Install the fixed `apps/agent/resources/incus-host-network.py` helper as root-owned `/usr/local/libexec/orbit-sandbox-network` with mode `0755`. Grant the trusted compute account passwordless sudo for that exact executable with no arguments. Never grant a caller-supplied Python script or interpreter. The helper accepts only a bounded JSON request with `operation` (`enabled`, `ensure`, or `remove`), `project`, and `sandbox_id` on standard input.
+Install the fixed `apps/agent/resources/incus-host-network.py` helper as root-owned `/usr/local/libexec/orbit-sandbox-network` with mode `0755`. Grant the trusted compute account passwordless sudo for that exact executable with no arguments. Never grant a caller-supplied Python script or interpreter. The helper accepts only a bounded JSON request with `operation` (`enabled`, `project_enabled`, `verify`, `ensure`, or `remove`), `project`, and `sandbox_id` on standard input.
 
-The root-owned `/etc/orbit/sandbox-network.json` file opts in selected Incus projects. It has exactly `version: 1`, `projects`, `pi_host`, `gateway_address`, `wireguard_interface`, and `blocked_networks`. Use canonical IPv4 values for the host and Gateway WireGuard addresses. Set `wireguard_interface` to the host’s WireGuard interface name. The host address must belong only to that interface, and its link kind must be `wireguard`. Include the host's LAN networks in `blocked_networks`. Keep the file at mode `0644` under directories that only root can write. An absent installation preserves the existing behavior. An incomplete or unsafe installation refuses new provisioning. The helper verifies the installed boot unit, its enablement, and the loaded Incus dependency before granting access.
+The `project_enabled` operation checks the separate Project opt-in. Root verifies an attached Project guest's image provenance, endpoint markers, exact proxy and NIC devices, and worktree ownership before admitting it. Provisioning keeps a new guest stopped until this check passes. Resume checks the restored reservation again before starting it. Public-key identity reads use `verify`, which refuses missing or changed rules and never restores them.
+
+The root-owned `/etc/orbit/sandbox-network.json` file opts in selected Incus projects. Its required fields are `version: 1`, `projects`, `pi_host`, `gateway_address`, `wireguard_interface`, and `blocked_networks`. Optional `project_bootstrap` contains a separate `projects` opt-in list, a public IPv4 `wireguard_address`, and a UDP `wireguard_port`. Its projects must already belong to the main opt-in list. Project reservations must match these endpoints and use `pi_host` as their private SSH host address. Adding this opt-in preserves existing Orbit policy records; each Project record pins its own opt-in and endpoints.
+
+Use canonical IPv4 values for the host and Gateway WireGuard addresses. Set `wireguard_interface` to the host’s WireGuard interface name. The host address must belong only to that interface, and its link kind must be `wireguard`. Include the host's LAN networks in `blocked_networks`. Keep the file at mode `0644` under directories that only root can write. An absent installation preserves the existing behavior. An incomplete or unsafe installation refuses new provisioning. The helper verifies the installed boot unit, its enablement, and the loaded Incus dependency before granting access.
 
 Only new bridges receive `user.orbit.compute.host_network=1`. Existing unmarked bridges retain their current firewall policy. The helper checks the root configuration, project ownership, exact bridge identity, bridge settings, and ACL ownership through local Incus before granting access. It derives the subnet from the bridge and excludes private, metadata, multicast, host, LAN, and other sandbox destinations from public access. The request cannot supply rules, addresses, paths, or commands.
 

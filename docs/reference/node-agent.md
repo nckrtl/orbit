@@ -176,7 +176,7 @@ One Node runs one agent. The agent holds an exclusive lock on `/etc/orbit/agent`
 
 The separate `orbit-agent sandbox` command accepts a bounded JSON request on
 standard input for task sandbox provisioning, observation, capacity, parking,
-resume, and destruction. The Gateway invokes it over pinned SSH on an Incus
+resume, destruction, and read-only Project SSH identity verification. The Gateway invokes it over pinned SSH on an Incus
 host. It runs the controller embedded in the binary and accepts no host shell
 command. It does not load the live agent secret or join the realtime channel.
 The controller checks the sandbox UUID, project ownership, VM budget, image

@@ -101,7 +101,7 @@ def sync_directory(path):
 
 def validate(request):
     require(isinstance(request, dict) and set(request) == {'operation', 'project', 'sandbox_id'})
-    require(request['operation'] in ('enabled', 'ensure', 'remove'))
+    require(request['operation'] in ('enabled', 'project_enabled', 'verify', 'ensure', 'remove'))
     require(isinstance(request['project'], str)
             and re.fullmatch(r'orbit-(?:task-sandboxes|sandbox-proof-[a-z0-9]+)', request['project']))
     require(isinstance(request['sandbox_id'], str) and str(uuid.UUID(request['sandbox_id'])) == request['sandbox_id'])
@@ -110,7 +110,7 @@ def validate(request):
 
 def configuration():
     value = json.loads(read(CONFIG, 0o644))
-    require(isinstance(value, dict) and set(value) == {'version', 'projects', 'pi_host', 'gateway_address', 'wireguard_interface', 'blocked_networks'})
+    require(isinstance(value, dict) and set(value) - {'project_bootstrap'} == {'version', 'projects', 'pi_host', 'gateway_address', 'wireguard_interface', 'blocked_networks'})
     require(type(value['version']) is int and value['version'] == 1)
     require(isinstance(value['projects'], list) and 1 <= len(value['projects']) <= 32
             and len(set(value['projects'])) == len(value['projects']))
@@ -126,7 +126,46 @@ def configuration():
     require(isinstance(value['blocked_networks'], list) and 1 <= len(value['blocked_networks']) <= 128)
     for cidr in value['blocked_networks']:
         require(isinstance(cidr, str) and ipaddress.ip_network(cidr, strict=True).version == 4)
+    if 'project_bootstrap' in value:
+        bootstrap = value['project_bootstrap']
+        require(isinstance(bootstrap, dict) and set(bootstrap) == {'projects', 'wireguard_address', 'wireguard_port'})
+        projects = bootstrap['projects']
+        require(isinstance(projects, list) and 1 <= len(projects) <= 32
+                and all(isinstance(project, str) and project in value['projects'] for project in projects)
+                and len(set(projects)) == len(projects))
+        require(isinstance(bootstrap['wireguard_address'], str))
+        hub = ipaddress.ip_address(bootstrap['wireguard_address'])
+        require(hub.version == 4 and hub.is_global and not hub.is_multicast and str(hub) == bootstrap['wireguard_address'])
+        require(type(bootstrap['wireguard_port']) is int and 1 <= bootstrap['wireguard_port'] <= 65535)
     return value
+
+
+def policy_configuration(config, bootstrap=None):
+    # A new Project opt-in must not change an existing isolated-pair policy.
+    value = {key: item for key, item in config.items() if key != 'project_bootstrap'}
+    if bootstrap is not None:
+        require(isinstance(config.get('project_bootstrap'), dict))
+        value['project_bootstrap'] = config['project_bootstrap']
+    return value
+
+
+def project_bootstrap(settings, subnet, config, project):
+    marker = settings.get('user.orbit.compute.project_bootstrap')
+    if marker is None:
+        return None
+    approved = config.get('project_bootstrap', {})
+    require(project in approved.get('projects', []))
+    slug = settings.get('user.orbit.compute.project_slug')
+    require(isinstance(slug, str) and slug != 'orbit' and re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', slug))
+    require(isinstance(marker, str))
+    descriptor = json.loads(marker)
+    expected = {'ssh_host': config['pi_host'], 'ssh_port': 24000 + int(str(subnet.network_address).split('.')[2]),
+                'gateway_address': config['gateway_address'], 'wireguard_address': approved['wireguard_address'],
+                'wireguard_port': approved['wireguard_port']}
+    require(descriptor == expected and type(descriptor.get('ssh_port')) is int
+            and type(descriptor.get('wireguard_port')) is int and 24001 <= descriptor['ssh_port'] <= 24254
+            and marker == json.dumps(expected, sort_keys=True, separators=(',', ':')))
+    return descriptor
 
 
 def name(identity):
@@ -145,6 +184,43 @@ def wireguard(config, interfaces):
     require(isinstance(links, list) and len(links) == 1
             and links[0].get('ifname') == config['wireguard_interface']
             and links[0].get('linkinfo', {}).get('info_kind') == 'wireguard')
+
+
+def attest_project(project, identity, bridge, subnet, settings, bootstrap):
+    guest_name = bridge + '-operator'
+    guest = incus('/1.0/instances/' + guest_name + '?project=' + project)
+    config = guest.get('config', {})
+    metadata = {'user.orbit.compute.owner': OWNER, 'user.orbit.compute.id': identity,
+                'user.orbit.compute.project_slug': settings['user.orbit.compute.project_slug'],
+                'user.orbit.compute.project_bootstrap': settings['user.orbit.compute.project_bootstrap']}
+    require(guest.get('name') == guest_name and guest.get('type') == 'virtual-machine'
+            and guest.get('profiles') == [] and all(config.get(key) == value for key, value in metadata.items())
+            and config.get('user.orbit.compute.template') is None)
+    image_id = config.get('volatile.base_image')
+    require(isinstance(image_id, str) and re.fullmatch(r'[a-f0-9]{64}', image_id))
+    image = incus('/1.0/images/' + image_id + '?project=' + project)
+    properties = image.get('properties', {})
+    require(image.get('type') == 'virtual-machine' and image.get('architecture') == 'x86_64' and image.get('public') is False
+            and properties.get('user.orbit.project.owner') == 'orbit-task-project-image'
+            and properties.get('user.orbit.project.slug') == metadata['user.orbit.compute.project_slug']
+            and properties.get('user.orbit.project.account') == 'orbit'
+            and properties.get('user.orbit.project.bootstrap') == 'unenrolled')
+    devices = guest.get('devices', {})
+    pool = devices.get('root', {}).get('pool')
+    require(isinstance(pool, str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,62}', pool))
+    require(devices == {
+        'root': {'type': 'disk', 'path': '/', 'pool': pool, 'size': '20GiB'},
+        'worktree': {'type': 'disk', 'pool': pool, 'source': bridge + '-worktree', 'path': '/home/orbit/orbit'},
+        'eth0': {'type': 'nic', 'network': bridge, 'name': 'eth0', 'ipv4.address': str(subnet.network_address + 10),
+                 'security.mac_filtering': 'true', 'security.ipv4_filtering': 'true'},
+        'ssh': {'type': 'proxy', 'bind': 'host', 'nat': 'true',
+                'listen': 'tcp:' + bootstrap['ssh_host'] + ':' + str(bootstrap['ssh_port']),
+                'connect': 'tcp:' + str(subnet.network_address + 10) + ':22'}})
+    volume = incus('/1.0/storage-pools/' + pool + '/volumes/custom/' + bridge + '-worktree?project=' + project)
+    require(volume.get('content_type') == 'filesystem' and volume.get('type') == 'custom'
+            and all(volume.get('config', {}).get(key) == value for key, value in metadata.items())
+            and volume.get('config', {}).get('user.orbit.compute.template') is None
+            and all(value == '/1.0/instances/' + guest_name + '?project=' + project for value in volume.get('used_by', [])))
 
 
 def derive(request, config):
@@ -172,8 +248,18 @@ def derive(request, config):
     # Exclude all host-connected networks, including public addresses on the host.
     blocked = sorted(set(config['blocked_networks'] + [str(ipaddress.ip_network(
         address['local'] + '/' + str(address['prefixlen']), strict=False)) for address in addresses]))
+    bootstrap = project_bootstrap(settings, subnet, config, project)
+    extra = {}
+    if bootstrap is not None:
+        require(not any(ipaddress.ip_address(bootstrap['wireguard_address']) in ipaddress.ip_network(cidr) for cidr in blocked))
+        guest = '/1.0/instances/' + bridge + '-operator?project=' + project
+        require(all(value == guest for value in network.get('used_by', [])))
+        if network.get('used_by'):
+            attest_project(project, identity, bridge, subnet, settings, bootstrap)
+        extra = {'project_bootstrap': bootstrap, 'project_slug': settings['user.orbit.compute.project_slug']}
     return {'version': 1, 'project': project, 'sandbox_id': identity, 'subnet': str(subnet),
-            'gateway_address': config['gateway_address'], 'wireguard_interface': config['wireguard_interface'], 'blocked_networks': blocked, 'config': config}
+            'gateway_address': config['gateway_address'], 'wireguard_interface': config['wireguard_interface'],
+            'blocked_networks': blocked, 'config': policy_configuration(config, bootstrap), **extra}
 
 
 def chains(spec, ipv6=False):
@@ -184,17 +270,31 @@ def chains(spec, ipv6=False):
     if not ipv6:
         subnet = ipaddress.ip_network(spec['subnet'], strict=True)
         host, operator = str(subnet.network_address + 1), str(subnet.network_address + 10)
-        peers = [str(subnet.network_address + offset) for offset in range(10, 15)]
+        bootstrap = spec.get('project_bootstrap')
+        peers = [str(subnet.network_address + offset) for offset in (range(10, 11) if bootstrap else range(10, 15))]
         gateway = spec['gateway_address']
         interface = spec['wireguard_interface']
         forward = rules[names['FORWARD']]
         # Same-group peers stay within their bridge. NIC filters bind each guest address.
         forward += [f'-i {bridge} -o {bridge} -m iprange --src-range {peers[0]}-{peers[-1]} '
                     f'--dst-range {peers[0]}-{peers[-1]} -j ACCEPT']
-        forward += [f'-i {interface} -o {bridge} -s {gateway}/32 -d {operator}/32 -p tcp -m tcp --dport 3774 '
-                    '-m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT',
-                    f'-i {bridge} -o {interface} -s {operator}/32 -d {gateway}/32 -p tcp -m tcp --sport 3774 '
-                    '-m conntrack --ctstate ESTABLISHED --ctdir REPLY -j ACCEPT']
+        if bootstrap:
+            origin = f'--ctorigdst {bootstrap["ssh_host"]}/32 --ctorigdstport {bootstrap["ssh_port"]}'
+            forward += [f'-i {interface} -o {bridge} -s {gateway}/32 -d {operator}/32 -p tcp -m tcp --dport 22 '
+                        f'-m conntrack --ctstate NEW,ESTABLISHED --ctdir ORIGINAL --ctproto tcp {origin} -j ACCEPT',
+                        f'-i {bridge} -o {interface} -s {operator}/32 -d {gateway}/32 -p tcp -m tcp --sport 22 '
+                        f'-m conntrack --ctstate ESTABLISHED --ctdir REPLY --ctproto tcp {origin} -j ACCEPT',
+                        f'-i {bridge} -s {operator}/32 -d {bootstrap["wireguard_address"]}/32 -p udp -m udp '
+                        f'--dport {bootstrap["wireguard_port"]} -m conntrack --ctstate NEW,ESTABLISHED --ctdir ORIGINAL -j ACCEPT',
+                        f'-o {bridge} -d {operator}/32 -s {bootstrap["wireguard_address"]}/32 -p udp -m udp '
+                        f'--sport {bootstrap["wireguard_port"]} -m conntrack --ctstate ESTABLISHED --ctdir REPLY '
+                        f'--ctproto udp --ctorigsrc {operator}/32 --ctorigdst {bootstrap["wireguard_address"]}/32 '
+                        f'--ctorigdstport {bootstrap["wireguard_port"]} -j ACCEPT']
+        else:
+            forward += [f'-i {interface} -o {bridge} -s {gateway}/32 -d {operator}/32 -p tcp -m tcp --dport 3774 '
+                        '-m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT',
+                        f'-i {bridge} -o {interface} -s {operator}/32 -d {gateway}/32 -p tcp -m tcp --sport 3774 '
+                        '-m conntrack --ctstate ESTABLISHED --ctdir REPLY -j ACCEPT']
         for cidr in sorted(set((*PRIVATE, *spec['blocked_networks']))):
             forward += [f'-i {bridge} -d {cidr} -j DROP', f'-o {bridge} -s {cidr} -j DROP']
         # Original-direction egress remains restricted even for established connections.
@@ -322,8 +422,9 @@ def manifest_path(identity):
 
 
 def apply(request, config):
-    if request['operation'] == 'enabled':
-        return {'enabled': request['project'] in config['projects']}
+    if request['operation'] in ('enabled', 'project_enabled'):
+        projects = config['projects'] if request['operation'] == 'enabled' else config.get('project_bootstrap', {}).get('projects', [])
+        return {'enabled': request['project'] in projects}
     require(request['project'] in config['projects'])
     path = manifest_path(request['sandbox_id'])
     exists = path.exists() or path.is_symlink()
@@ -338,7 +439,8 @@ def apply(request, config):
                     token in owned for rules in current.values() for rule in rules for token in rule))
             return {'removed': True}
         spec = json.loads(read(path))
-        require(spec['project'] == request['project'] and spec['sandbox_id'] == request['sandbox_id'] and spec['config'] == config)
+        require(spec['project'] == request['project'] and spec['sandbox_id'] == request['sandbox_id']
+                and spec['config'] == policy_configuration(config, spec.get('project_bootstrap')))
         # Compute calls removal only after deleting owned guests. Independently refuse live attachments.
         network = incus('/1.0/networks/' + name(request['sandbox_id']))
         settings = network.get('config', {})
@@ -348,6 +450,9 @@ def apply(request, config):
                 and network.get('type') == 'bridge' and network.get('managed') is True
                 and str(ipaddress.ip_network(settings.get('ipv4.address', ''), strict=False)) == spec['subnet']
                 and not network.get('used_by'))
+        require(project_bootstrap(settings, ipaddress.ip_network(spec['subnet']), config, request['project']) == spec.get('project_bootstrap'))
+        if spec.get('project_bootstrap') is not None:
+            require(settings.get('user.orbit.compute.project_slug') == spec.get('project_slug'))
         change(spec, remove=True)
         path.unlink()
         sync_directory(ROOT)
@@ -358,16 +463,24 @@ def apply(request, config):
         # connected public networks matter; private ranges are already excluded.
         old = json.loads(read(path))
         require(old['project'] == spec['project'] and old['sandbox_id'] == spec['sandbox_id']
-                and old['subnet'] == spec['subnet'] and old['config'] == spec['config'])
+                and old['subnet'] == spec['subnet'] and old['config'] == spec['config']
+                and old.get('project_bootstrap') == spec.get('project_bootstrap')
+                and old.get('project_slug') == spec.get('project_slug'))
         for value in spec['blocked_networks']:
             network = ipaddress.ip_network(value)
             require(any(network.subnet_of(ipaddress.ip_network(cidr)) for cidr in (*PRIVATE, *old['blocked_networks'])))
         spec = old
+    elif request['operation'] == 'verify':
+        require(False)
     else:
         # Refuse adoption even when an unrecorded chain happens to match our policy.
         for ipv6 in (False, True):
             require(state(spec, desired(spec, ipv6), snapshot(ipv6)) == 'absent')
         put(path, json.dumps(spec, sort_keys=True).encode())
+    if request['operation'] == 'verify':
+        for ipv6 in (False, True):
+            require(state(spec, desired(spec, ipv6), snapshot(ipv6)) == 'present')
+        return {'ready': True}
     change(spec)
     return {'ready': True}
 
@@ -395,7 +508,7 @@ def check_host_exclusions(spec):
 def restore(config):
     for path in sorted(ROOT.glob('*.json')):
         spec = json.loads(read(path))
-        require(manifest_path(spec['sandbox_id']) == path and spec['config'] == config
+        require(manifest_path(spec['sandbox_id']) == path and spec['config'] == policy_configuration(config, spec.get('project_bootstrap'))
                 and spec['project'] in config['projects'] and spec['version'] == 1)
         check_host_exclusions(spec)
         change(spec)
