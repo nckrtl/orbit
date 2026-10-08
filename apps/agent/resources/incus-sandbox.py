@@ -99,6 +99,30 @@ def identity(value):
     return 'ot-' + hashlib.sha256(value.encode()).hexdigest()[:10]
 
 
+def project_bootstrap(spec, subnet, interfaces):
+    value = spec.get('project_bootstrap')
+    if value is None:
+        return None
+    fields = {'ssh_host', 'ssh_port', 'gateway_address', 'wireguard_address', 'wireguard_port'}
+    if (not isinstance(value, dict) or set(value) != fields or 'project_slug' not in spec
+            or spec.get('source_template') is not None or spec.get('pi_host') is not None
+            or spec.get('pi_port') is not None or spec.get('gateway_address') is not None
+            or type(value['ssh_port']) is not int or not 24001 <= value['ssh_port'] <= 24254
+            or value['ssh_port'] != 24000 + int(str(subnet.network_address).split('.')[2])
+            or type(value['wireguard_port']) is not int or not 1 <= value['wireguard_port'] <= 65535
+            or any(not isinstance(value[key], str) for key in ('ssh_host', 'gateway_address', 'wireguard_address'))):
+        raise Refusal('Invalid Project bootstrap descriptor.')
+    host = ipaddress.ip_address(value['ssh_host'])
+    gateway = ipaddress.ip_address(value['gateway_address'])
+    hub = ipaddress.ip_address(value['wireguard_address'])
+    fleet = ipaddress.ip_network('10.44.0.0/16')
+    addresses = {address['local'] for interface in interfaces for address in interface.get('addr_info', [])}
+    if (host not in fleet or gateway not in fleet or host == gateway or str(host) not in addresses
+            or hub.version != 4 or not hub.is_global or hub.is_multicast or str(hub) in addresses):
+        raise Refusal('Project bootstrap endpoints do not match the host.')
+    return json.dumps(value, sort_keys=True, separators=(',', ':'))
+
+
 def pi_proxy(spec, subnet, interfaces):
     values = [spec.get(key) for key in ('pi_host', 'pi_port', 'gateway_address')]
     if all(value is None for value in values):
@@ -377,6 +401,77 @@ class Host:
         return {'name': self.name, 'instances': [{'name': row['name'], 'state': row['status'].lower()} for row in rows],
                 'power': 'destroyed' if not rows else ('stopped' if all(row['status'] == 'Stopped' for row in rows) else 'running')}
 
+    def project_identity(self):
+        rows = self.instances()
+        if len(rows) != 1 or rows[0]['name'] != self.name + '-operator' or rows[0]['status'] != 'Running':
+            raise Refusal('Project identity requires one running owned guest.')
+        guest = rows[0]
+        config = guest.get('config', {})
+        slug, image = config.get('user.orbit.compute.project_slug'), config.get('volatile.base_image')
+        if not isinstance(image, str) or not re.fullmatch(r'[a-f0-9]{64}', image):
+            raise Refusal('The Project image identity is missing.')
+        self.project_image({'project_slug': slug, 'images': {'operator': image}})
+        volumes = self.volumes()
+        if len(volumes) != 1 or volumes[0][1].get('config', {}).get('user.orbit.compute.project_slug') != slug:
+            raise Refusal('The Project worktree identity does not match.')
+        pool, volume = volumes[0]
+        allowed_attachment = '/1.0/instances/' + guest['name'] + '?project=' + self.project
+        if any(value != allowed_attachment for value in volume.get('used_by', [])):
+            raise Refusal('The Project worktree is attached outside its guest.')
+        network = next((row for row in self.json('network', 'list', '--format=json') if row['name'] == self.name), None)
+        if network is None:
+            raise Refusal('The Project bridge is missing.')
+        self.own(network)
+        subnet = ipaddress.ip_interface(network.get('config', {}).get('ipv4.address', ''))
+        if (subnet.version != 4 or subnet.network.prefixlen != 24
+                or not subnet.network.subnet_of(ipaddress.ip_network('10.233.0.0/16'))
+                or subnet.ip != subnet.network.network_address + 1):
+            raise Refusal('The Project bridge subnet does not match.')
+        expected = {'ipv4.nat': 'true', 'ipv6.address': 'none', 'dns.mode': 'none',
+                    'security.acls': self.name, 'security.acls.default.egress.action': 'reject',
+                    'security.acls.default.ingress.action': 'reject'}
+        if network.get('type') != 'bridge' or any(network['config'].get(key) != value for key, value in expected.items()):
+            raise Refusal('The Project bridge policy does not match.')
+        address = str(subnet.network.network_address + 10)
+        expected_devices = {
+            'root': {'type': 'disk', 'path': '/', 'pool': pool, 'size': '20GiB'},
+            'worktree': {'type': 'disk', 'pool': pool, 'source': self.name + '-worktree', 'path': '/home/orbit/orbit'},
+            'eth0': {'type': 'nic', 'network': self.name, 'name': 'eth0', 'ipv4.address': address,
+                     'security.mac_filtering': 'true', 'security.ipv4_filtering': 'true'}}
+        if (guest.get('profiles') != [] or guest.get('devices') != expected_devices
+                or config.get('user.orbit.compute.template') is not None
+                or volume.get('config', {}).get('user.orbit.compute.template') is not None):
+            raise Refusal('The Project placement does not match.')
+        # Read only the public key through the owned guest's Incus channel.
+        program = r'''
+import os,pwd,stat,sys
+from pathlib import Path
+pwd.getpwnam('orbit')
+try:
+    pwd.getpwnam('orbit-worker')
+    sys.exit(1)
+except KeyError:
+    pass
+for path in ('/etc/wireguard/wg0.conf', '/etc/orbit/agent/secret'):
+    if os.path.lexists(path):sys.exit(1)
+path=Path('/etc/ssh/ssh_host_ed25519_key.pub');details=path.lstat()
+if not stat.S_ISREG(details.st_mode) or details.st_uid != 0 or details.st_mode & 0o022 or details.st_size > 512:sys.exit(1)
+sys.stdout.write(path.read_text())
+'''
+        result = bounded_process(['incus', '--force-local', '--project', self.project, 'exec', guest['name'],
+                                  '--mode=non-interactive', '--', '/usr/bin/python3', '-I', '-c', program], b'', 30, 1024)
+        if result['exit_code'] or result['truncated'] or result['timed_out']:
+            raise Refusal('The Project SSH public identity is unavailable.')
+        key = base64.b64decode(result['stdout'], validate=True).decode().strip().split(maxsplit=2)
+        if len(key) not in (2, 3) or key[0] != 'ssh-ed25519':
+            raise Refusal('The Project SSH public identity is invalid.')
+        raw = base64.b64decode(key[1], validate=True)
+        if len(raw) != 51 or raw[:19] != b'\x00\x00\x00\x0bssh-ed25519\x00\x00\x00\x20':
+            raise Refusal('The Project SSH public identity is invalid.')
+        return {'name': self.name, 'guest': guest['name'], 'project_slug': slug, 'image': image,
+                'pool': pool, 'subnet': str(subnet.network), 'address': address,
+                'ssh_key': 'ssh-ed25519 ' + base64.b64encode(raw).decode()}
+
     def guest_command(self, command):
         if (not isinstance(command, dict) or set(command) != {'role', 'argv', 'stdin', 'timeout', 'max_output'}
                 or command['role'] not in ROLES or not isinstance(command['argv'], list)
@@ -485,6 +580,7 @@ class Host:
             raise Refusal('Host and LAN exclusions are required.')
         addresses = subprocess.run(['ip', '-json', '-4', 'address', 'show'], capture_output=True, check=True, timeout=10)
         interfaces = json.loads(addresses.stdout)
+        bootstrap = project_bootstrap(spec, subnet, interfaces)
         proxy = pi_proxy(spec, subnet, interfaces)
         relay_origin = spec.get('model_proxy_origin')
         relay = ModelRelay(self.name, self.id)
@@ -498,6 +594,8 @@ class Host:
         current = {row['name']: row for row in self.instances()}
         for name, row in current.items():
             role = name[len(self.name) + 1:]
+            if row.get('config', {}).get('user.orbit.compute.project_bootstrap') != bootstrap:
+                raise Refusal('The Project bootstrap endpoints cannot change.')
             if row.get('config', {}).get('user.orbit.compute.project_slug') != project_slug:
                 raise Refusal('The sandbox Project identity cannot change.')
             if row.get('config', {}).get('user.orbit.compute.model_proxy_origin') != relay_origin:
@@ -558,6 +656,8 @@ class Host:
             raise Refusal('The sandbox worktree template cannot change.')
         if volumes and volumes[0][1].get('config', {}).get('user.orbit.compute.project_slug') != project_slug:
             raise Refusal('The worktree Project identity cannot change.')
+        if volumes and volumes[0][1].get('config', {}).get('user.orbit.compute.project_bootstrap') != bootstrap:
+            raise Refusal('The Project worktree bootstrap endpoints cannot change.')
         acls = self.json('network', 'acl', 'list', '--format=json')
         acl = next((row for row in acls if row['name'] == self.name), None)
         peers = ','.join(str(subnet.network_address + 10 + ROLES.index(role)) for role in images)
@@ -598,6 +698,8 @@ class Host:
         metadata = {**self.metadata(), **({'user.orbit.compute.template': template_digest} if template else {})}
         if project_slug is not None:
             metadata['user.orbit.compute.project_slug'] = project_slug
+        if bootstrap is not None:
+            metadata['user.orbit.compute.project_bootstrap'] = bootstrap
         if not volumes:
             if template:
                 self.run('query', '-X', 'POST', '/1.0/storage-pools/' + pool + '/volumes/custom?project=' + self.project,
@@ -730,9 +832,11 @@ def main():
     operation = request['operation']
     # Lock this group before the global budget lock. A long guest command never
     # blocks another group's provisioning or holds host capacity serialization.
-    with sandbox_lock('/run/lock/orbit-sandbox-' + host.name + '.lock', operation == 'guest_command'):
+    with sandbox_lock('/run/lock/orbit-sandbox-' + host.name + '.lock', operation in ('guest_command', 'project_identity')):
         if operation == 'guest_command':
             result = host.guest_command(request['guest'])
+        elif operation == 'project_identity':
+            result = host.project_identity()
         else:
             with sandbox_lock('/run/lock/orbit-task-sandboxes.lock'):
                 if operation == 'provision':
