@@ -19,9 +19,13 @@ permissions:
   contents: read
 
 jobs:
+  # Every target is built on Linux. PHPacker does not compile: it appends the PHAR to a prebuilt static PHP for the
+  # target, so the host only needs PHP and Composer. The macOS binary is then run on a hosted Mac that needs no PHP.
   build:
     name: Build ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
+    outputs:
+      version: ${{ steps.version.outputs.value }}
     strategy:
       fail-fast: false
       matrix:
@@ -32,18 +36,21 @@ jobs:
             architecture: x64
             artifact: orbit-linux-x64
             path: apps/cli/builds/dist/linux/linux-x64
+            native: true
           - target: linux-arm64
             runner: ubuntu-26.04-arm
             platform: linux
             architecture: arm
             artifact: orbit-linux-arm64
             path: apps/cli/builds/dist/linux/linux-arm
+            native: true
           - target: macos-arm64
-            runner: macos-26
+            runner: ubuntu-26.04
             platform: mac
             architecture: arm
             artifact: orbit-macos-arm64
             path: apps/cli/builds/dist/mac/mac-arm
+            native: false
 
     steps:
       - name: Checkout
@@ -80,6 +87,7 @@ jobs:
         run: bin/orbit-build-cli-binary "${{ matrix.platform }}" "${{ matrix.architecture }}" "$VERSION"
 
       - name: Run the binary on its own platform
+        if: matrix.native
         env:
           BINARY: ${{ matrix.path }}
           VERSION: ${{ steps.version.outputs.value }}
@@ -96,3 +104,27 @@ jobs:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.path }}
           if-no-files-found: error
+
+  # The release waits for this job too, so a macOS binary that does not start is never published.
+  run-macos:
+    name: Run macos-arm64
+    needs: build
+    runs-on: macos-26
+    steps:
+      - name: Download binary
+        uses: actions/download-artifact@v8
+        with:
+          name: orbit-macos-arm64
+          path: binary
+
+      - name: Run the binary on its own platform
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          test -n "$VERSION"
+          chmod 0755 binary/mac-arm
+          home="$(mktemp -d)"
+          reported="$(env -i HOME="$home" PATH=/usr/bin:/bin binary/mac-arm --version)"
+          echo "$reported"
+          test "$reported" = "Orbit ${VERSION}"
