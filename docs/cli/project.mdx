@@ -87,10 +87,10 @@ orbit project:show <project> [--json]
 
 ## orbit project:update
 
-Change a Project's type, source access, source defaults, task check, or task workspace routing. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's type, source access, source defaults, task check, task workspace routing, or review and merge. Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false]
+orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--review-and-merge=true|false] [--merge-check=NAME] [--clear-merge-check]
 ```
 
 | Option | Meaning |
@@ -104,6 +104,9 @@ orbit project:update <project> [--type=TYPE] [--slug=SLUG] [--repository=URL] [-
 | `--task-check=COMMAND` | New command that task baselines and handoffs run. A type change does not change it. |
 | `--clear-task-check` | Remove the task check so tasks run no check command. Combining it with `--task-check` fails with `project.task_check_conflict`. |
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
+| `--review-and-merge=true\|false` | Switch the [review-and-merge flow](/reference/tasks#review-and-merge). Invalid values return `project.review_and_merge_invalid` before a request. |
+| `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
+| `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |
 
 ## orbit project:destroy
 

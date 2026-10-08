@@ -7,9 +7,9 @@ covers:
   - "apps/gateway/app/Http/Requests/Tasks/**"
   - "apps/gateway/app/Http/Controllers/Api/{TasksController,TaskGroupsController,TaskDefinitionsController,AgentThreadsController,TaskQuestionsController}.php"
   - "apps/gateway/app/Console/Commands/{TickTaskSessionsCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand,RenderTaskPromptCommand,JevReportCommand,TaskGitHubReviewsCommand}.php"
-  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
+  - "apps/gateway/app/Models/{Task,TaskDefinition,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
   - "apps/{gateway/resources/tasks/**,e2e/resources/proofs/*}"
-  - "apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks}.php"
+  - "apps/gateway/database/migrations/*_{merge_task_groups_into_tasks,create_task_github_review_consumptions_table,create_task_github_review_observations_table,convert_test_deliverables_to_commands,add_continuation_source_to_tasks,create_task_definitions_table,create_problem_fingerprints,clear_assistance_on_ended_tasks,add_assistance_kind_to_tasks,create_task_questions,add_model_and_effort_to_task_agent_sessions,add_watched_pr_url_to_tasks,add_review_and_merge}.php"
 ---
 
 # Tasks
@@ -17,6 +17,8 @@ covers:
 Tasks is an optional Gateway extension. It runs planned work with coding agents. A task is one feature or bug fix, delivered as one pull request. Its subtasks run in order in one shared task workspace. A fresh implementer builds each subtask, the Project's task check verifies the handoff, and a fresh reviewer approves it. Orbit commits and pushes each approved subtask. After the last approval, Orbit opens the pull request and watches it until it merges.
 
 While a subtask is open, Orbit also watches a pull request on `task-{id}`. It stops starting subtasks when that pull request merges or closes.
+
+A Project can opt in to [review and merge](#review-and-merge). Orbit then reviews the whole branch before it pushes anything, reviews the pull requests that listed authors open, and merges a reviewed head when CI passes.
 
 The engine is generic. Your agentic development environment (ADE) plans and steers the work. Orbit runs it. Each Project keeps its own task policy in its repository, as an `orbit-tasks` skill under `.agents/skills/` and in its other instructions, and enforces it through its own task check. Agents read that policy from the repository, not from the shared prompts. The Orbit repository keeps its policy in the [orbit-tasks skill](https://github.com/nckrtl/orbit/blob/main/.agents/skills/orbit-tasks/SKILL.md) and the [contributor guide](/contributor-guide).
 
@@ -26,7 +28,7 @@ Agents use the Tasks tools of the [MCP server](/reference/mcp). The [`tasks` CLI
 
 Enable and disable the extension with `orbit extension:enable tasks` and `orbit extension:disable tasks`. Both need Gateway access. While the switch is off, the `tasks` commands, MCP tools, and web pages are hidden, except `tasks:status` and the `tasks-status` tool. Every other task operation, including the [definition operations](#definition-operations), refuses with HTTP 409 `extension.disabled` and changes nothing. Stored tasks, subtasks, and task definitions stay. [`extension`](/cli/extension) describes the switch.
 
-`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled` and `assistance`. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task never asks for assistance and keeps its last reason. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
+`tasks:status` is an assistance and status view, not a switch. Its route returns `enabled`, `assistance`, `last_tick_at`, and `merges`. `merges` lists the open tasks of [review-and-merge](#records-and-status) Projects. `assistance` lists every task whose `assistance_requested` is true, in ascending task id order. Each entry has `id`, `project_id`, `project`, `project_code`, `title`, `status`, `assistance_kind`, `assistance_question`, and `assistance_reason`. A completed or cancelled task never asks for assistance and keeps its last reason. A task that is not asking is absent, even when it still stores an old reason. A flagged subtask does not add its task unless the task itself is asking. The view remains available while tasks is disabled.
 
 ## Model
 
@@ -49,7 +51,10 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `reviewer_agent_thread_id` | task | The current reviewer thread. A shared reviewer thread is stored here, and [Review a subtask](#review-a-subtask) points it at the fresh reviewer |
 | `taskable_type`, `taskable_id` | task | The task workspace Instance. Null until the scheduler provisions it |
 | `implementer_model`, `reviewer_model` | task | The models used for the task's threads |
-| `pr_url` | task | The reviewed pull request Orbit opened on the last subtask |
+| `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#incoming-pull-requests) Orbit reviews |
+| `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
+| `merge_status`, `merge_reason`, `merged_sha` | task | The [merge gate](#merge-on-green) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
+| `type` | subtask | `implementation`, or `final_review` for a [final review](#final-review) |
 | `watched_pr_url` | task | The pull request on `task-{id}` found by the [branch watch](#watch-the-branch-while-subtasks-are-open). Null until that list finds one. Not `pr_url` |
 | `watched_pr_number` | task | The watched pull request's number. Null until the branch watch finds one |
 | `watched_pr_state` | task | The last watched state: `open`, `merged`, or `closed`. Null until the branch watch finds one |
@@ -999,7 +1004,7 @@ After that reminder, the Gateway waits for a newer stopped reviewer turn. When t
 
 Orbit publishes through the Project's [GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request) installation. Agents hold no GitHub token and never fetch or push. [What the App does not cover](/reference/github-app#what-the-app-does-not-cover) states how that is enforced. A task whose Project changes to `source_access: gh_cli` fails to publish and asks for assistance.
 
-After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head.
+After each approval, the Gateway pushes the stored commit, never `HEAD`, with `git push --quiet origin <commit_sha>:refs/heads/task-{id}`. The push is never forced. Then the next subtask starts. In a [review-and-merge](#review-and-merge) task, an approval commits and does not push: only a final review's approval pushes. On the subtask that opens the pull request, the Gateway then opens it against the Project's default branch, or uses an open pull request with that head.
 
 Publication then requests the GitHub logins in `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` as reviewers so the fleet reviewer wakes. It skips the pull request author, because GitHub rejects that request. Unset or empty logins request no one. A failed reviewer request is logged and does not block publication. It stores `pr_url` and moves a shared task to `settling`, or a VM task to `waiting_for_review`. Both statuses use the same pull request watch, fixup, and completion rules.
 
@@ -1048,7 +1053,7 @@ The [Incus proof](https://github.com/nckrtl/orbit/blob/main/apps/e2e/resources/p
 
 For Orbit's own task pull requests, a Tasks engine subtask approval publishes that subtask's commit. It is not the final review of the whole pull request, and it does not merge. The [final DevOps review](/reference/implementation-loop#final-review-of-an-orbit-task-pull-request) submits a formal GitHub approval for the exact head commit.
 
-When the maintainer has delegated review and merge, the reviewer verifies that approval and that `Required checks` succeeded on that head, then merges that commit through the maintainer's GitHub CLI profile. A plain comment alone does not satisfy the gate. This repository workflow runs outside the generic Tasks engine. The Gateway does not merge the pull request. It watches pull request state, conflicts, CI, and configured GitHub review feedback. Reading an approval is an observation, not permission to merge. The maintainer's merge identity still has admin bypass; Orbit adds no runtime merge gate.
+When the maintainer has delegated review and merge, the reviewer verifies that approval and that `Required checks` succeeded on that head, then merges that commit through the maintainer's GitHub CLI profile. A plain comment alone does not satisfy the gate. This repository workflow runs outside the generic Tasks engine. Outside a [review-and-merge](#review-and-merge) Project, the Gateway does not merge the pull request. It watches pull request state, conflicts, CI, and configured GitHub review feedback. Reading an approval is an observation, not permission to merge. The maintainer's merge identity still has admin bypass; Orbit adds no runtime merge gate.
 
 Each tick reads the pull request of every `settling` task through the GitHub App, using `pr_url`. `watched_pr_url` does not replace that read. When a subtask is `todo`, `running`, or `reviewing`, a merged or closed result follows the [branch watch](#watch-the-branch-while-subtasks-are-open) instead of the table.
 
@@ -1104,6 +1109,8 @@ The command reports evidence **as of the stored scan**, not GitHub's live truth.
 When an interrupted claim leaves only a `reserved` Instance on a full Node, Orbit checks that its checkout path is absent before releasing the database reservation and selecting another Node. It never deletes workspace files. A prepared checkout, source identity, Route, or attached task keeps its placement. If Orbit cannot prove the old path is empty, the group reports the reservation and reason instead of waiting silently on that Node.
 
 ### Fix a settling pull request
+
+A [review-and-merge](#every-push-is-reviewed) task skips the next step: a conflict gets a merge fixup at once, and a branch that is only behind still merges.
 
 When an open pull request falls behind its base or appears to conflict, the Gateway first asks GitHub to update the branch with a merge commit. It sends the observed head SHA to `PUT /repos/{owner}/{repo}/pulls/{number}/update-branch`; it never rebases or force-pushes. An accepted update waits for CI on the new head and appends no subtask. Only a confirmed merge-conflict response (HTTP 422) appends `Merge origin/{base}`. A stale head, denied permission, or unavailable API waits for a fresh observation and reports the reason. Failed CI on the updated head can append a check fixup.
 
@@ -1180,7 +1187,7 @@ In Gateway API and MCP results, the existing `fixup_problem` carries `review:{re
 
 The fresh implementer, Project check, fresh internal reviewer, commit, and push run through the existing lifecycle on the same branch and pull request. After the push, the group returns to `settling`. The old request is consumed and now stale; Orbit does not treat it as an approval and does not post a GitHub review, comment, dismissal, or re-review request. The external reviewer reads the new head and submits a new formal decision.
 
-Only a fresh exact-head request can create another automatic fixup, subject to the same caps. Only the designated final reviewer's fresh exact-head approval can satisfy Orbit's repository merge workflow, which still runs outside the Gateway.
+Only a fresh exact-head request can create another automatic fixup, subject to the same caps. Outside a review-and-merge Project, only the designated final reviewer's fresh exact-head approval can satisfy Orbit's repository merge workflow, which runs outside the Gateway. In a review-and-merge Project, an effective trusted request for changes blocks [the merge](#merge-on-green) until that account approves or the review is dismissed.
 
 When the last fixup changed nothing, the task asks for assistance and adds `Fixup subtask #{id} changed nothing, so Orbit does not try again on the same result.` When no problem can get a fixup, the task asks for assistance with a reason that starts with `The pull request needs attention: ` and has one sentence per problem. The reason names the cap that applied: `Orbit reached the cap of 2 fixups for {identity} in the current window ({n} counted).`, or `Orbit already appended 3 fixups to this task.` Coder is notified only when that reason changes.
 
@@ -1194,7 +1201,7 @@ Before that subtask starts, the Gateway prepares the workspace. It reuses the [f
 
 When the task has no pull request and `task-{id}` is not on `origin`, there is nothing to fast-forward, and that absence is not a failure of this preparation. A failed fetch or fast-forward keeps the subtask `todo`, retries on the same backoff, and asks for assistance on the fifth failure. That blocking retry is only for this preparation. An ordinary agent turn still starts when its own fetch fails, and its message warns that `origin/*` may be stale.
 
-The fixup runs like any subtask, with a fresh implementer and a fresh reviewer. Its approval needs no pull request fields, and its push updates the open pull request. Orbit does not rebase, does not force-push, does not open a second pull request, and does not merge.
+The fixup runs like any subtask, with a fresh implementer and a fresh reviewer. Its approval needs no pull request fields, and its push updates the open pull request. Orbit does not rebase, does not force-push, does not open a second pull request, and does not merge. In a review-and-merge task, a final review follows the fixup and its approval pushes.
 
 Before each push to a stored pull request, the Gateway reads its state again. When it already merged or closed, Orbit does not push and asks for assistance with a reason that starts with `An approved commit is not on the pull request: `. When the task returns to `settling` and its pull request already merged without the latest approved commit, it asks for assistance with the same prefix, and its workspace stays. When the task returns to `settling`, it refreshes its metrics and does not post `task_group.settled` again.
 
@@ -1244,6 +1251,101 @@ Null means the driver did not report the field, or the split is partial. A repor
 
 The Pi server's `usage` object holds `input`, `output`, `cacheRead`, `cacheWrite`, `total`, `calls`, and `peakContext`. `input_tokens` is `input + cacheWrite`, `cached_input_tokens` is `cacheRead`, `output_tokens` is `output`, `model_calls` is `calls`, and `peak_context_tokens` is `peakContext`. The Gateway does not run `tasks:collect-t3-metrics`.
 
+## Review and merge
+
+A Project can opt in to review and merge. Orbit then holds three rules:
+
+1. Orbit pushes only a commit that a final review of the whole branch approved.
+2. Orbit reviews each pull request that a listed author opens, and applies the changes it requests itself.
+3. Orbit merges a pull request through the GitHub App. The head must be a commit Orbit fully reviewed, and CI must pass on that head.
+
+No cloud agent reviews or fixes the work. Orbit hands no pull request to Cursor, Codex, or Copilot.
+
+### Turn it on
+
+Set `review_and_merge` and `merge_check` on the Project. [Projects: Review and merge](/reference/projects#review-and-merge) describes the fields.
+
+```bash
+orbit project:update 46 --review-and-merge=true --merge-check="Required checks"
+```
+
+The flow needs `source_access: github_app` and `task_compute: shared`. It is off by default. Turning it on affects open tasks at the next tick: an approval that is not pushed yet waits for a final review.
+
+### Final review
+
+A final review is a subtask with `type` `final_review` and the title `Final review`. Orbit appends one when a review-and-merge task has no open subtask and its latest approved commit has no final review. It has no implementer and runs no task check. It starts in `reviewing` with a fresh reviewer.
+
+Its start commit is the merge base of the workspace `HEAD` and `origin/{default branch}`. So the [review packet](#review-packet) holds the whole branch diff, the task brief, and the earlier approvals. Its one deliverable is the `review` deliverable `final-review`, which the reviewer confirms. When the task has no pull request yet, the final review opens it: its approval needs `--pr-summary`, `--pr-change`, and `--pr-breaking`, and Jev checks [brief coverage](#pull-request-and-settle-metrics) then. Ordinary subtask approvals in the task need no pull request fields.
+
+| Outcome | Orbit |
+| --- | --- |
+| `approved` | Records `HEAD` as reviewed, pushes it, opens the pull request when none exists, completes the final review, and settles the task |
+| `changes_requested` | Completes the final review and starts the fixup subtask `Address final review`, whose brief holds the findings |
+| `blocked` | Asks for direction, as any reviewer does |
+
+A final review commits nothing. Orbit checks that the workspace still holds the reviewed `HEAD` and tree, as for any [reviewer outcome](#reviewer-outcomes). The approval stores that `HEAD` as its `commit_sha`. A failed push or pull request open keeps the final review in `reviewing` and retries on the [publication backoff](#pull-request-and-settle-metrics).
+
+The fixup has the `project-check` command deliverable when the Project has a task check, and the `review` deliverable `final-review-findings`. Its `fixup_problem` is `final-review`. It runs the normal implementer, task check, and fresh subtask reviewer. Its approval is held, and a new final review follows. At most three final-review fixups run in one window. The window ends at the latest completed operator subtask, as for [settling fixups](#fix-a-settling-pull-request). The fourth set of findings asks for assistance with a reason that starts with `The final review keeps requesting changes: `. Final reviews and their fixups do not count toward the settling fixup caps, and a final review does not open a new window.
+
+### Every push is reviewed
+
+In a review-and-merge task, an approved subtask is committed and not pushed. Conflict, failed-check, and trusted-feedback fixups are subtasks too, so their approvals wait for a final review. Only a final review's approval pushes.
+
+Orbit never asks GitHub to update the branch of such a task. GitHub's merge commit would land without Orbit's review. A conflict gets the `Merge origin/{base}` fixup at once. A branch that is only behind its base still merges.
+
+Cancel and the cancelled-task sweep push the latest approved commit only when a final review approved it. Approved work that no final review saw is removed with the workspace.
+
+### Incoming pull requests
+
+`ORBIT_TASKS_PULL_REQUEST_AUTHORS` lists the numeric GitHub account IDs whose pull requests Orbit reviews, for each repository, in the format of [`ORBIT_TASKS_GITHUB_REVIEWERS`](#trusted-github-feedback). For example, `ORBIT_TASKS_PULL_REQUEST_AUTHORS=nckrtl/orbit:1234567`. Unset or empty reviews no incoming pull request.
+
+At most once a minute, each `tasks:tick` lists the open pull requests of every review-and-merge Project, at most three pages of 100. A pull request is eligible when all of these hold:
+
+- Its author's account ID is listed for the repository.
+- Its head branch is in the same repository, not a fork.
+- It is not a draft.
+- Its base is the Project's default branch, and its head branch is not the default branch or a `task-*` branch.
+- No task for that pull request exists, except tasks that `failed`.
+
+For each eligible pull request, Orbit creates a task in `todo` titled `Review #{number}: {title}`, with the pull request description in its brief. The task stores the pull request as `pr_url` and its head branch as `pr_branch`. It has one final review, which records the head it was created for. The workspace's local branch stays `task-{id}`. Orbit fetches and pushes `pr_branch` instead of `task-{id}`. Cancelling the task stops Orbit from reviewing that pull request again.
+
+Before the first final review, Orbit runs the [baseline check](#baseline-check) on the fresh workspace, so setup serves the fixups that follow. Then it fetches `pr_branch` and moves `task-{id}` to the pull request head. It moves the workspace only when no approved work is unpushed and the tree has no tracked changes.
+
+| Final review outcome | Orbit |
+| --- | --- |
+| `approved` on the pull request head | Records the head as reviewed and submits an `APPROVE` review with `commit_id` set to that head. It pushes nothing |
+| `approved` after Orbit's own fixups | Pushes the reviewed commit to `pr_branch`, never forced, records it, and submits `APPROVE` for it |
+| `changes_requested` on the pull request head | Submits the findings as a `REQUEST_CHANGES` review on that head, then starts the fixup |
+
+The App can review the pull request because the pull request author is a person, not the App. GitHub forbids an account to review its own pull request, so Orbit never submits a review on a pull request it opened.
+
+### Merge on green
+
+Each tick, after the [settling watch](#settling), Orbit evaluates a review-and-merge task that is `settling` with an open pull request, no open subtask, and no assistance. It merges when all of these hold on the current head:
+
+1. The head SHA is one Orbit recorded as fully reviewed for this task.
+2. The `merge_check` runs on that SHA pass by the [green-commit rules](/reference/github-app#find-the-newest-green-commit).
+3. GitHub reports the pull request mergeable, with no conflict.
+4. A complete review read finds no trusted account in `ORBIT_TASKS_GITHUB_REVIEWERS` whose effective decision is `CHANGES_REQUESTED`, on any head. A repository without trusted reviewers has none.
+
+The green-commit rules need at least one run of that name. Every such run must be for that SHA, completed with `success`, and created by `github-actions`.
+
+The App merges with a merge commit and `sha` set to the head, so GitHub refuses when the head moved. The merge is a push by the App, so GitHub runs the `push` workflows on the default branch. The next tick sees the merge and completes the task. Orbit evaluates the checks of one head at most once a minute.
+
+A head that Orbit did not record means someone else pushed. On an incoming pull request, Orbit appends a final review of that head. On an Orbit task branch, the task asks for assistance with a reason that starts with `The pull request head was not reviewed by Orbit: `, and Orbit does not merge.
+
+| Merge status | Meaning |
+| --- | --- |
+| `waiting` | A condition does not hold yet, such as a pending or missing check, an unreported mergeability, or an incomplete review read |
+| `refused` | A condition failed: the check failed, a trusted account requests changes, GitHub refused the merge, or someone else pushed |
+| `merged` | The App merged the pull request. `merged_sha` is the merge commit |
+
+### Records and status
+
+`task_reviewed_commits` holds each SHA Orbit fully reviewed for a task, with its source, the final review, when Orbit pushed it, and the GitHub review Orbit submitted. The source is `orbit_push` for Orbit's own reviewed commit and `pull_request_review` for an incoming head Orbit approved as it was. Only a recorded SHA can merge.
+
+Activity records `final review appended`, `final review approved`, `final review requested changes`, `reviewed commit pushed`, `pull request approved`, `pull request changes requested`, `incoming pull request task created`, `pull request merged`, and each change of the merge result as `merge waiting` or `merge refused`. The task stores the latest merge result in `merge_status` and `merge_reason`. [`tasks:show`](/cli/tasks#orbit-tasksshow) and [`tasks:status`](/cli/tasks#orbit-tasksstatus) show them.
+
 ## Web task board
 
 **Tasks** in the web navigation shows every task on a board with Backlog, Todo, In progress, and Done lanes. In progress holds `reserved`, `running`, `reviewing`, and `settling` tasks. Done holds `completed`, `failed`, and `cancelled` tasks with their outcome visible.
@@ -1291,6 +1393,7 @@ Annotations, not task agents, use a Node's T3 connection. A Node whose settings 
 Cancel removes the task's workspace, then marks the task and its open subtasks `cancelled`. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations. Cancelling again is safe, and it retries a removal that failed.
 
 - **Settling without a pull request.** Cancel first pushes the latest approved commit to `task-{id}`, so you can open a pull request from it. A failed push returns HTTP 502 `tasks.push_failed` and keeps the task.
+- **Review and merge.** Cancel pushes only an approved commit that a final review approved. It removes approved work that no final review saw.
 - **Node unreachable.** Cancel still ends the task and keeps the Instance attached. The task does not ask for assistance. It keeps the reason `Workspace removal failed: The Node is unreachable.` The sweep removes the workspace later.
 - **Removal refused.** Cancel returns the error and keeps the task. A task other than `cancelled` asks for assistance with `Workspace removal failed: `. A `cancelled` task keeps that reason and does not ask for assistance.
 - **Claim in flight.** A task `reserved` within `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` becomes `cancelled`, and the claim removes the workspace it provisions.
@@ -1337,7 +1440,7 @@ Each tick sweeps workspaces that still exist:
 - of a `cancelled` or `completed` task, attached or found by the `task-{id}` name and branch. A workspace that a live claim still owns waits.
 - of a `settling` task whose merged pull request cleanup failed.
 
-For a cancelled task, the sweep first pushes the latest approved commit. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
+For a cancelled task, the sweep first pushes the latest approved commit, under the same review-and-merge rule as cancel. A failed push stops that removal. The task does not ask for assistance, and the reason names the push error.
 
 A failed removal waits for that Instance only: 1 minute, then 2, 5, 10, and 30 minutes, and then every 30 minutes. A completed or cancelled task does not ask for assistance and keeps the reason. A settling task asks for assistance. A tick starts no removal after 60 seconds of removals. A success clears only a reason that starts with `Workspace removal failed: ` or `Merged pull request cleanup failed: `. The sweep never removes the workspace of a `reserved`, `running`, or `reviewing` task, nor of a `settling` task that still waits for its merge. When the Gateway cannot read or write a retry delay in its cache, it logs a warning and tries at once.
 
@@ -1352,6 +1455,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
 | `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
+| `ORBIT_TASKS_PULL_REQUEST_AUTHORS` | Account IDs whose pull requests Orbit reviews and merges, per repository, in the format of `ORBIT_TASKS_GITHUB_REVIEWERS`. Unset or empty reviews no incoming pull request. See [Incoming pull requests](#incoming-pull-requests) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_TASKS_OBSERVATION_GRACE_SECONDS` | The wait before one escalation for an observation outage. Default `120` |
 | `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` | Consecutive provisioning failures before failure assistance. Default `3`, at least `1`. A successful start resets the count |
@@ -1579,7 +1683,27 @@ Polling uses bounded read-only GitHub App access, so private Gateways need no we
 
 Durable approval observations are separate from internal receipts and consumption. Their local report shows stored provenance, latest confirmed status, and freshness, not an aggregate verdict or live merge gate. Failed reads retain evidence without confirming approval. An approval marked `historical` never becomes `current` merely because GitHub dismissed a newer decision.
 
-A fixup uses the ordinary implementer, reviewer, Project check, and publication flow. Existing identity, brief, and deliverables carry the findings without new public trust or merge fields. Internal approval neither posts a GitHub decision nor requests re-review. Automatically requesting review or enforcing or performing merge would add unnecessary write authority. The external final reviewer must repeat affected verification and formally approve the new exact head; the authorized maintainer retains delegated merge consent and admin bypass. Orbit observes a merge rather than promising or performing one.
+A fixup uses the ordinary implementer, reviewer, Project check, and publication flow. Existing identity, brief, and deliverables carry the findings without new public trust or merge fields. Internal approval neither posts a GitHub decision nor requests re-review. Automatically requesting review or enforcing or performing merge would add unnecessary write authority. Outside a review-and-merge Project, the external final reviewer must repeat affected verification and formally approve the new exact head; the authorized maintainer retains delegated merge consent and admin bypass, and Orbit observes the merge. [Orbit merges only what it reviewed](#orbit-merges-only-what-it-reviewed) covers a Project that opts in.
+
+### Orbit reviews before it pushes
+
+On 2026-10-08 the maintainer decided that Orbit does not use or rely on cloud agents to review or fix Orbit's pull requests, and that every commit Orbit pushes is already fully reviewed. Subtask reviewers each see one subtask, so nobody saw the whole branch before it reached GitHub. The final review closes that gap, and holding every push until it approves makes the invariant hold for fixups too. This serves [agents operate, humans steer](/mission#principles): the maintainer opts a Project in, and the agents review, repair, and merge.
+
+Pushing each subtask and reviewing only before the merge was rejected. A pushed commit is unreviewed, and a person or a fleet reviewer acts on what GitHub shows. A separate final-review state machine on the task was rejected. It would repeat the reviewer thread, receipt, reminder, restart, topology, and direction handling that a subtask already has. So a final review is a subtask without an implementer.
+
+The cost is that approved work waits in the workspace. A lost workspace loses it, and cancel does not push it. The cap of three final-review fixups in one window stops a reviewer and an implementer from passing findings back and forth without end, as the [fixup caps](#fixups-are-bounded) do for settling.
+
+### Incoming pull requests become tasks
+
+A pull request from the maintainer's account was not reviewed by Orbit, so Orbit reviews it before it can merge. Making it a task reuses the workspace, the reviewer, the fixups, and the push rules. The local branch stays `task-{id}`, and `pr_branch` names only the branch Orbit fetches and pushes. A second workspace branch name was rejected: provisioning, removal, and the rubric all rely on `task-{id}`.
+
+The author list is Gateway configuration, like reviewer trust. A pull request cannot name its own author as trusted. Logins, repository roles, and forks confer nothing, because the account that opened a pull request is the authority Orbit checks. Orbit applies requested changes itself instead of asking the author or a cloud agent, so the head it merges is one it reviewed.
+
+### Orbit merges only what it reviewed
+
+The merge condition is a fact Orbit recorded: this exact SHA passed Orbit's final review. A GitHub approval cannot carry that fact for Orbit's own pull requests, because GitHub forbids the App to approve them. The merge check uses the green-commit rules, so a check run from another App cannot make a head green. The `sha` parameter makes GitHub refuse a merge when the head moved after the gate read it.
+
+Asking GitHub to update a branch was rejected for these tasks, because GitHub's merge commit would land without Orbit's review. A trusted request for changes blocks the merge until that account approves or dismisses it, even after Orbit's fixup. A person still steers through briefs, direction answers, and requested changes. A merge deploys the Gateway, so a wrong final review ships. The merge check and trusted requested changes are the remaining guards.
 
 ### Fixups are bounded
 

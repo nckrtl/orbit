@@ -796,30 +796,6 @@
             ]
         },
         {
-            "path": "docs/decisions/0203-review-and-merge-pull-requests-inside-orbit.md",
-            "title": "ADR 0203: Review and merge pull requests inside Orbit",
-            "kind": "decision",
-            "components": [
-                "apps/cli",
-                "apps/docs",
-                "apps/gateway",
-                "packages/php-sdk"
-            ],
-            "concepts": [
-                "Activity",
-                "Deliverable",
-                "Extension",
-                "Gateway",
-                "Project",
-                "Subtask",
-                "Task",
-                "Task check"
-            ],
-            "governing_adrs": [
-                "0203"
-            ]
-        },
-        {
             "path": "docs/decisions/README.md",
             "title": "Architecture decisions",
             "kind": "decision",
@@ -867,8 +843,7 @@
                 "0191",
                 "0196",
                 "0198",
-                "0200",
-                "0203"
+                "0200"
             ]
         },
         {
