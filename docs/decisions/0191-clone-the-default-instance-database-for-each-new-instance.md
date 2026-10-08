@@ -46,7 +46,7 @@ The source file must be inside the `default` Instance's checkout. Orbit copies i
 
 ### Test configuration
 
-For an Instance with an owned database, every environment synchronization also sets the `DB_*` keys in `.env.testing` to the test database and keeps the other lines of the file. Orbit never writes a `.env.testing` that Git tracks in the checkout; it records the test database name in the activity instead. Laravel loads it when `APP_ENV` is `testing`, which `phpunit.xml` sets. A `phpunit.xml` that forces other `DB_*` values still wins, so such a repository must drop those lines to use the test database.
+For an Instance with an owned database, every environment synchronization also sets the `DB_*` keys in `.env.testing` to the test database. It creates a missing file from the same values as `.env`, with `APP_ENV=testing`, and keeps the other lines of an existing untracked file. Orbit never writes a `.env.testing` that Git tracks in the checkout; it records the test database name in the activity instead. Laravel loads it when `APP_ENV` is `testing`, which `phpunit.xml` sets. A `phpunit.xml` that forces other `DB_*` values still wins, so such a repository must drop those lines to use the test database.
 
 ### Failure and removal
 
