@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Http;
 use Tests\Support\GatewayReleaseFixture;
 use Tests\Support\WebArtifactFixture;
 
+pest()->group('subprocess');
+
 beforeEach(function (): void {
     $this->web = new WebArtifactFixture(new GatewayReleaseLayout(sys_get_temp_dir().'/orbit-web-layout/orbit/apps/gateway'));
     $this->id = substr(WebArtifactFixture::Sha, 0, 12);

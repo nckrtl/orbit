@@ -6,6 +6,8 @@ use Pest\Plugins\Tia\WatchPatterns;
 use Pest\Support\Container;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 it('leaves task models unloaded and not observed when an unrelated test boots the app', function (): void {
     $root = dirname(__DIR__, 4);
     $models = [

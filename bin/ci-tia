@@ -4,7 +4,8 @@
 `plan` runs in a project directory after its main graph is restored. It selects the tests affected since the
 commit the graph describes, or the full suite when the graph is unusable, the changes include files that
 test-impact analysis cannot see, or the newest full run on main failed. `finish` runs after a passing test run and requires the graph to describe the
-tested commit, with a result for every test file it links.
+tested commit, with a result for every test file it links. `subprocess` decides whether a run that is not full also runs
+the project's `subprocess` group, which TIA cannot select.
 """
 import argparse
 import json
@@ -122,10 +123,16 @@ def watched_paths():
             for pattern in patterns]
 
 
+def reads(project, path):
+    """Whether the project's tests can read a repository path."""
+    return (path.startswith(project + '/') or not path.startswith(UNRELATED.get(project, ()))
+            or path.startswith(READ_ANYWAY.get(project, ())))
+
+
 def blind(project, status, path, linked_files, watched):
     """Whether Pest cannot select the tests that a repository path with this Git status affects."""
     if not path.startswith(project + '/'):
-        return not path.startswith(UNRELATED.get(project, ())) or path.startswith(READ_ANYWAY.get(project, ()))
+        return reads(project, path)
     path = path[len(project) + 1:]
     if path in linked_files:
         return False
@@ -206,6 +213,26 @@ def finish(arguments):
     print(f'The graph describes {head}.')
 
 
+def subprocess_tests(arguments):
+    """Return whether a change since the base reaches the project, and why.
+
+    TIA does not link a test to the code it runs in a PHP subprocess, so any change the project's tests can read may
+    break such a test. When the changes cannot be read, the tests run.
+    """
+    project = project_path()
+    if not SHA.fullmatch(arguments.base):
+        return True, f'the base commit is unknown ({arguments.base or "none"})'
+    try:
+        changes = git('diff', '--name-only', '--no-renames', '-z', f'{arguments.base}...HEAD').split('\0')[:-1]
+    except subprocess.CalledProcessError:
+        return True, f'the changes since {arguments.base} cannot be read'
+    read = [path for path in changes if reads(project, path)]
+    if read:
+        more = f' and {len(read) - 1} more' if len(read) > 1 else ''
+        return True, f'{read[0]}{more} changed since {arguments.base}'
+    return False, f'no change since {arguments.base} reaches {project}'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest='command', required=True)
@@ -218,7 +245,19 @@ def main():
     finish_command.add_argument('--mode', choices=('full', 'affected'), required=True)
     finish_command.add_argument('--base', default='', help='the commit the restored graph described')
     finish_command.add_argument('--log', default=os.devnull, help='the output of the affected test run')
+    subprocess_command = commands.add_parser('subprocess', help='choose whether to run the subprocess test group')
+    subprocess_command.add_argument('--base', default='', help='the commit to compare with: the pull request base, '
+                                    'or the commit the restored main graph described')
     arguments = parser.parse_args()
+
+    if arguments.command == 'subprocess':
+        run, reason = subprocess_tests(arguments)
+        print(f'{"Subprocess tests" if run else "No subprocess tests"}: {reason}.')
+        output = os.environ.get('GITHUB_OUTPUT')
+        if output:
+            with open(output, 'a') as file:
+                file.write(f'run={"true" if run else "false"}\n')
+        return
 
     if arguments.command == 'finish':
         try:

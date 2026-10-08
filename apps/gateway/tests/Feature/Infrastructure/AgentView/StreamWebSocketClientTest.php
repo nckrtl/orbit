@@ -17,6 +17,8 @@ use App\Models\Node;
 use Illuminate\Support\Str;
 use Psr\Log\NullLogger;
 
+pest()->group('subprocess');
+
 /**
  * A scripted TLS WebSocket server in a child process, with a certificate for `reverb.orbit`
  * that only this test trusts.

@@ -42,6 +42,8 @@ use Illuminate\Support\Str;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
+pest()->group('subprocess');
+
 it('installs and executes the FPM pre-start gate before accepting traffic and refuses startup on gate failure', function (string $ambientEnvironment): void {
     $previousEnvironment = $_ENV['APP_ENV'] ?? null;
     [$converger, $processes, $issuer, $orbitHome] = gateway_web_converger();

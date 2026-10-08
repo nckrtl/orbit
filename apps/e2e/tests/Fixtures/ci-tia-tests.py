@@ -235,6 +235,63 @@ class CiTiaTest(unittest.TestCase):
         self.assertEqual({'branch': ['main'], 'event': ['schedule'], 'status': ['completed'], 'per_page': ['20']},
                          ActionsApi.requests[0][1])
 
+    def subprocess_tests(self, base):
+        self.output.write_text('')
+        result = self.run_helper('subprocess', '--base', base)
+        self.assertEqual(0, result.returncode, result.stderr)
+        return self.output.read_text(), result.stdout
+
+    def test_runs_subprocess_tests_when_a_change_reaches_the_project(self):
+        cases = {
+            f'{PROJECT}/app/Covered.php': f'{PROJECT}/app/Covered.php changed',
+            f'{PROJECT}/tests/OtherTest.php': f'{PROJECT}/tests/OtherTest.php changed',
+            # A path outside the project that its tests read anyway.
+            'docs/openapi.json': 'docs/openapi.json changed',
+            # A path that bin/ci-tia does not list as unrelated.
+            'composer.json': 'composer.json changed',
+        }
+        for path, reason in cases.items():
+            with self.subTest(path=path):
+                git(self.root, 'reset', '-q', '--hard', self.base)
+                self.change('docs/reference/page.md')
+                self.change(path)
+
+                output, stdout = self.subprocess_tests(self.base)
+
+                self.assertEqual('run=true\n', output)
+                self.assertIn(reason, stdout)
+
+    def test_skips_subprocess_tests_when_no_change_reaches_the_project(self):
+        self.change('docs/reference/page.md')
+        self.change('apps/cli/app/Command.php', '<?php')
+
+        output, stdout = self.subprocess_tests(self.base)
+
+        self.assertEqual('run=false\n', output)
+        self.assertIn(f'no change since {self.base} reaches {PROJECT}', stdout)
+
+    def test_compares_a_pull_request_with_its_merge_base(self):
+        git(self.root, 'checkout', '-q', '-b', 'feature')
+        self.change('docs/reference/page.md')
+        git(self.root, 'checkout', '-q', 'main')
+        # The base branch moved on with a project change that the pull request does not contain.
+        main = self.change(f'{PROJECT}/app/Covered.php', '<?php // main')
+        git(self.root, 'checkout', '-q', 'feature')
+
+        self.assertEqual('run=false\n', self.subprocess_tests(main)[0])
+
+        self.change(f'{PROJECT}/app/Uncovered.php', '<?php // feature')
+        self.assertEqual('run=true\n', self.subprocess_tests(main)[0])
+
+    def test_runs_subprocess_tests_when_the_changes_cannot_be_read(self):
+        for base, reason in (('', 'the base commit is unknown (none)'), ('main', 'the base commit is unknown (main)'),
+                             ('f' * 40, f'the changes since {"f" * 40} cannot be read')):
+            with self.subTest(base=base):
+                output, stdout = self.subprocess_tests(base)
+
+                self.assertEqual('run=true\n', output)
+                self.assertIn(reason, stdout)
+
     def test_records_the_tested_commit_when_no_test_was_affected(self):
         head = self.change('docs/reference/page.md')
         log = self.root / 'pest.log'
