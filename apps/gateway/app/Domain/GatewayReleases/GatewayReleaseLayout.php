@@ -200,6 +200,6 @@ final readonly class GatewayReleaseLayout
 
         uksort($releases, static fn (string $left, string $right): int => [$releases[$right], $right] <=> [$releases[$left], $left]);
 
-        return array_keys($releases);
+        return array_map(strval(...), array_keys($releases));
     }
 }
