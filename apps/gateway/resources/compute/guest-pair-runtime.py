@@ -79,7 +79,7 @@ def prepare_cli(root, home):
 
 def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
     if (not isinstance(request, dict) or set(request) - {'head', 'inventory', 'doctor'} != {'sandbox_id', 'branch', 'phase'}
-            or request['phase'] not in ('inspect', 'gateway', 'operator', 'version')
+            or request['phase'] not in ('inspect', 'gateway', 'prerequisites', 'operator', 'version')
             or not isinstance(request['sandbox_id'], str) or str(uuid.UUID(request['sandbox_id'])) != request['sandbox_id']
             or not isinstance(request['branch'], str) or not re.fullmatch(r'task-[1-9][0-9]*', request['branch'])):
         raise ValueError('Invalid pair runtime request')
@@ -147,19 +147,20 @@ def prepare(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
             "getcwd().'/apps/gateway'))->converge();"
         )
         run(['php', '-r', access], root, home)
-        agent = (
+        run(['sudo', '-n', 'systemctl', 'enable', '--now', 'dnsmasq'], root, home)
+        run(['sudo', '-n', 'systemctl', 'restart', 'php8.5-fpm'], root, home)
+    elif request['phase'] == 'prerequisites':
+        database = home / '.orbit/gateway.sqlite'
+        if database.is_symlink() or not database.is_file():
+            raise ValueError('The isolated Gateway database is unavailable')
+        program = (
             "require 'apps/gateway/vendor/autoload.php';"
             "$app = require 'apps/gateway/bootstrap/app.php';"
             "$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();"
-            "$nodes = App\\Models\\Node::query()->whereHas('roles', static fn ($query) => $query"
-            "->where('role', 'gateway')->where('status', 'active'))->get();"
-            "if ($nodes->count() !== 1 || $nodes[0]->name !== 'gateway' || $nodes[0]->wireguard_ip !== '10.44.0.1'"
-            " || $nodes[0]->platform !== 'linux' || $nodes[0]->user !== 'orbit') { throw new RuntimeException('Invalid isolated Gateway'); }"
-            "$app->make(App\\Domain\\Nodes\\NodeAgentRuntime::class)->converge($nodes[0]);"
+            "$app->make(App\\Infrastructure\\Tasks\\SandboxPairPrerequisites::class)"
+            "->converge(json_decode($argv[1], true, flags: JSON_THROW_ON_ERROR));"
         )
-        run(['php', '-r', agent], root, home, timeout=240)
-        run(['sudo', '-n', 'systemctl', 'enable', '--now', 'dnsmasq'], root, home)
-        run(['sudo', '-n', 'systemctl', 'restart', 'php8.5-fpm'], root, home)
+        run(['php', '-r', program, json.dumps(inventory)], root, home, timeout=600)
     elif request['phase'] == 'version':
         version = private_gateway_version(root, home)
     elif request['phase'] == 'operator':

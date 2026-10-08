@@ -344,7 +344,7 @@ Before native convergence, the builder changes the standard Ubuntu archive and s
 
 Convergence confirms the pinned source commit, the isolated operator profile, and active Gateway and roleless operator inventory. Publication repeats that native readiness check. No builder mode promotes an alias, enables claims, or changes a live Gateway.
 
-Before each agent dispatch, admission compares the private Gateway version with the owned branch commit. It refreshes Gateway dependencies, migrations, and services only when the version differs, then requires fresh doctor readiness. A running baseline is polled before this preparation can modify the checkout.
+Before each agent dispatch, admission compares the private Gateway version with the owned branch commit. It refreshes Gateway dependencies, migrations, and services only when the version differs, then refreshes native pair prerequisites and requires fresh doctor readiness. A running baseline is polled before this preparation can modify the checkout.
 
 The builder can prepare blank workload guests alongside the pair. All guests share the pinned source and verified offline inputs, including Docker prerequisites for workload roles. Convergence enrolls only the operator. Publication audits each workload for prerequisites and absence of enrollment state, then publishes every requested role with the same immutable source descriptor. Pass the same `workload_roles` to the publisher. Adding roles requires a new template; published templates cannot be extended in place.
 
@@ -380,9 +380,9 @@ After validation, the guest records group ownership without replacing an existin
 
 Pair preparation checks group source ownership before changing the test Gateway. It repairs the saved Gateway inventory and the operator's WireGuard endpoint on the group's subnet. The Gateway ships copies of the same repair helpers tested by the E2E harness; its quality check verifies that they match.
 
-The test Gateway validates Composer manifests and lock files. It refreshes dependency autoloaders and installs dependencies when lock files changed or dependencies are missing. It sets the private Gateway version to the verified branch commit, clears branch runtime caches, and runs migrations against its own SQLite database. It repairs Caddy’s checkout access, converges the isolated Gateway’s Node Agent through the native runtime, and restarts PHP-FPM.
+The test Gateway validates Composer manifests and lock files. It refreshes dependency autoloaders and installs dependencies when lock files changed or dependencies are missing. It sets the private Gateway version to the verified branch commit, clears branch runtime caches, and runs migrations against its own SQLite database. It repairs Caddy’s checkout access and restarts PHP-FPM. After peer endpoints and workload enrollment are ready, it refreshes the pair’s native prerequisites before checking doctor health.
 
-Agent convergence verifies the pinned public release checksum and configures the service and its private per-Node secret. A failed converge refuses runtime readiness. Preparation also enables the native VPN DNS backend for boot, so it remains available after park and resume.
+Prerequisite preparation validates the exact recorded private Node inventory, the Gateway at `10.44.0.1`, and the roleless operator at `10.44.0.3` before mutation. It converges both Nodes through the native Node Agent runtime, rebuilds the Gateway’s Caddyfile, and publishes private DNS from current branch intent. Agent convergence verifies the pinned public release checksum and configures the service and its private per-Node secret. Any failed converge refuses runtime readiness and leaves the reservation available for retry. Preparation also enables the native VPN DNS backend for boot, so it remains available after park and resume.
 
 Pair preparation provides an owned `orbit` launcher in the operator’s `~/.local/bin`. It runs the CLI from the group’s branch checkout, so task commands use that branch’s behavior. A foreign launcher or linked launcher directory refuses preparation.
 

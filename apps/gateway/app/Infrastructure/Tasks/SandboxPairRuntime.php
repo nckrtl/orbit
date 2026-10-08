@@ -78,6 +78,8 @@ final readonly class SandboxPairRuntime
                 $step = 'Gateway branch runtime';
                 $this->runtime($workspace, [...$request, 'phase' => 'gateway'], 'gateway');
             }
+            $step = 'native pair prerequisites';
+            $this->runtime($workspace, [...$request, 'phase' => 'prerequisites'], 'gateway');
             $step = 'operator CLI readiness';
             $this->runtime($workspace, [...$request, 'phase' => 'operator'], 'operator');
         } catch (Throwable) {

@@ -61,7 +61,7 @@ class PairRuntime(unittest.TestCase):
             raise subprocess.CalledProcessError(1, ['composer'])
         if self.fail_access and arguments[:2] == ['php', '-r']:
             raise subprocess.CalledProcessError(1, ['php'])
-        if self.fail_agent and arguments[:2] == ['php', '-r'] and 'NodeAgentRuntime' in arguments[-1]:
+        if self.fail_agent and arguments[:2] == ['php', '-r'] and 'SandboxPairPrerequisites' in arguments[2]:
             raise subprocess.CalledProcessError(1, ['php'])
         if self.fail_dns and arguments == ['sudo', '-n', 'systemctl', 'enable', '--now', 'dnsmasq']:
             raise subprocess.CalledProcessError(1, arguments)
@@ -191,14 +191,27 @@ class PairRuntime(unittest.TestCase):
             self.call('gateway')
         self.assertFalse(any('systemctl' in call for call in self.calls))
 
-    def test_gateway_agent_is_converged_before_serving_and_failure_refuses_readiness(self):
-        self.call('gateway')
-        self.assertTrue(any(call[:2] == ['php', '-r'] and 'NodeAgentRuntime' in call[-1] for call in self.calls))
+    def test_native_prerequisites_receive_recorded_inventory_and_failure_refuses_readiness(self):
+        inventory = ['gateway', 'operator', 'app-dev']
+        self.assertTrue(self.call('prerequisites', inventory=inventory)['ready'])
+        self.assertEqual(1, len(self.calls))
+        self.assertEqual(['php', '-r'], self.calls[0][:2])
+        self.assertEqual(inventory, json.loads(self.calls[0][3]))
         self.calls = []
         self.fail_agent = True
         with self.assertRaises(subprocess.CalledProcessError):
-            self.call('gateway')
-        self.assertFalse(any('systemctl' in call for call in self.calls))
+            self.call('prerequisites', inventory=inventory)
+
+    def test_native_prerequisites_refuse_foreign_source_before_mutation(self):
+        with self.assertRaises(ValueError):
+            self.call('prerequisites', sandbox_id=str(uuid.uuid4()))
+        self.assertEqual([], self.calls)
+        database = self.home / '.orbit/gateway.sqlite'
+        database.unlink()
+        database.symlink_to(self.home / '.orbit/config.json')
+        with self.assertRaises(ValueError):
+            self.call('prerequisites')
+        self.assertEqual([], self.calls)
 
     def test_gateway_vpn_dns_survives_boot_and_enable_failure_refuses_runtime_readiness(self):
         self.call('gateway')

@@ -716,7 +716,9 @@ Orbit task workspaces have no Incus topology by default. Provisioning does not a
 "$(git rev-parse --git-path orbit)/turn" --thread=ID --outcome=topology_requested --summary="Why this group needs a topology"
 ```
 
-Orbit VM groups start with an operator and a private test Gateway. Their initial source fetch uses [guest GitHub DNS bootstrap](/reference/compute-drivers#prepare-source-inside-the-guest) while the cloned private network waits for retargeting. A failed bootstrap leaves source unresolved and prevents agent admission. Their reviewer fallback adds `app-dev` and `app-prod` through the owned compute driver. It preserves declared workload nodes and waits for capacity, enrollment, and fresh doctor readiness before resuming the reviewer. See [Declared workload nodes](/reference/compute-drivers#declared-workload-nodes). Shared workspaces use the discovery topology below.
+Orbit VM groups start with an operator and a private test Gateway. Their initial source fetch uses [guest GitHub DNS bootstrap](/reference/compute-drivers#prepare-source-inside-the-guest) while the cloned private network waits for retargeting. A failed bootstrap leaves source unresolved and prevents agent admission. After retargeting, pair preparation refreshes both Agents and the private Gateway’s Caddy and DNS projections through native convergence. Failed preparation remains retryable, and fresh doctor health still gates dispatch.
+
+Their reviewer fallback adds `app-dev` and `app-prod` through the owned compute driver. It preserves declared workload nodes and waits for capacity, enrollment, and fresh doctor readiness before resuming the reviewer. See [Declared workload nodes](/reference/compute-drivers#declared-workload-nodes). Shared workspaces use the discovery topology below.
 
 Before starting Pi, preparation configures the operator's [private Pi ingress and return route](/reference/compute-drivers#pi-proxy-on-an-incus-host) for the live Gateway. The policy returns at boot after parking and keeps the private topology's WireGuard routes. Failed network preparation prevents agent admission.
 

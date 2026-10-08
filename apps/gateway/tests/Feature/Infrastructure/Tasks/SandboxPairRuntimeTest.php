@@ -91,7 +91,7 @@ it('prepares only the recorded pair and verifies its branch through the operator
 
     app(SandboxPairRuntime::class)->prepare($workspace);
 
-    expect($state->calls)->toBe(['inspect:operator', 'identity:gateway', 'vpn:operator', 'gateway:gateway', 'operator:operator']);
+    expect($state->calls)->toBe(['inspect:operator', 'identity:gateway', 'vpn:operator', 'gateway:gateway', 'prerequisites:gateway', 'operator:operator']);
 });
 
 it('stops pair preparation at a failed phase without retaining private guest output', function (string $phase): void {
@@ -104,7 +104,7 @@ it('stops pair preparation at a failed phase without retaining private guest out
         expect($exception->getMessage())->not->toContain('private-guest-key')->and($exception->getPrevious())->toBeNull();
     }
     expect(explode(':', $state->calls[array_key_last($state->calls)])[0])->toBe($phase);
-})->with(['inspect', 'identity', 'vpn', 'gateway', 'operator']);
+})->with(['inspect', 'identity', 'vpn', 'gateway', 'prerequisites', 'operator']);
 
 it('refuses a foreign endpoint before changing operator WireGuard', function (): void {
     [$workspace, $state] = runtime_pair();
@@ -156,7 +156,7 @@ it('retargets every recorded workload peer before preparing the resumed branch',
     expect($state->calls)->toBe(['inspect:operator', 'gateway:gateway', 'gateway-identity:gateway',
         ...array_map(fn (string $role): string => 'workload-identity:'.$role, $roles),
         ...array_fill(0, count($roles), 'enroll:gateway'), 'identity:gateway', 'vpn:operator',
-        ...array_map(fn (string $role): string => 'vpn:'.$role, $roles), 'operator:operator']);
+        ...array_map(fn (string $role): string => 'vpn:'.$role, $roles), 'prerequisites:gateway', 'operator:operator']);
 })->with([
     'three Nodes' => [['app-dev']],
     'four Nodes' => [['app-dev', 'app-prod']],
