@@ -31,6 +31,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Symfony\Component\Process\Process as SymfonyProcess;
 
+pest()->group('subprocess');
+
 it('serializes fixed-set owners across processes in stable identifier order', function (): void {
     $directory = sys_get_temp_dir().'/orbit-process-admission-'.Str::uuid();
     mkdir($directory, permissions: 0o700, recursive: true);
