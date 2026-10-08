@@ -228,7 +228,7 @@ jobs:
           case "$PROJECT" in
             apps/cli) architecture_tests='tests/Feature/CommandSurfaceTest.php tests/Feature/CliBinaryBuildContractTest.php' ;;
             apps/gateway) architecture_tests='tests/Unit/Architecture tests/Feature/Infrastructure/Instances/ConfiguredOriginReadTest.php tests/Feature/Infrastructure/Caddy/CaddyPublicationLockTest.php' ;;
-            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php' ;;
+            apps/e2e) architecture_tests='tests/Unit/E2E/ProofFixtureContractTest.php tests/Unit/E2E/ProofFixtureShellContractTest.php tests/Feature/Configuration/ComposerConfigurationTest.php tests/Feature/Configuration/SubprocessTestGroupTest.php tests/Feature/Configuration/DocsMergeRefWorkflowTest.php' ;;
             packages/php-sdk) architecture_tests='tests/Unit/SuccessRequestIdBoundaryTest.php tests/Unit/RepositoryGuidanceTest.php tests/Unit/Requests/Workspaces/WorkspaceRequestsTest.php tests/Unit/Requests/Deployments/DeploymentRequestsTest.php' ;;
             *) exit 0 ;;
           esac
@@ -346,6 +346,53 @@ jobs:
         if: always() && runner.environment == 'self-hosted'
         working-directory: ${{ github.workspace }}
         run: sudo -n find . -xdev -user root -prune -exec rm -rf --one-file-system -- {} +
+
+  docs-merge-ref:
+    name: Docs (merge ref)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-26.04
+
+    defaults:
+      run:
+        working-directory: apps/docs
+
+    steps:
+      - name: Check out PR merge ref
+        id: merge-checkout
+        continue-on-error: true
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ github.repository }}
+          ref: refs/pull/${{ github.event.pull_request.number }}/merge
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Require PR merge ref
+        if: steps.merge-checkout.outcome != 'success'
+        working-directory: .
+        run: |
+          echo '::error title=Docs merge ref unavailable::Cannot check the PR merge result (the PR may conflict with main); not checking the PR head.'
+          exit 1
+
+      - name: Log merge commit
+        working-directory: .
+        run: git show --no-patch --format=fuller HEAD
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+
+      - name: Prepare application environment
+        run: cp .env.example .env
+
+      - name: Install dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Run Docs quality checks
+        run: composer check
 
   api-reference:
     name: API reference
@@ -551,11 +598,13 @@ jobs:
   required:
     name: Required checks
     if: always()
-    needs: [project, privileged, api-reference, web, agent-annotation, pi-server, agent]
+    needs: [project, privileged, docs-merge-ref, api-reference, web, agent-annotation, pi-server, agent]
     runs-on: ubuntu-26.04
     steps:
       - name: Require every project to pass
         env:
+          EVENT: ${{ github.event_name }}
+          DOCS_MERGE_REF_RESULT: ${{ needs.docs-merge-ref.result }}
           PROJECT_RESULT: ${{ needs.project.result }}
           PRIVILEGED_RESULT: ${{ needs.privileged.result }}
           API_REFERENCE_RESULT: ${{ needs.api-reference.result }}
@@ -563,4 +612,11 @@ jobs:
           ANNOTATION_RESULT: ${{ needs.agent-annotation.result }}
           PI_SERVER_RESULT: ${{ needs.pi-server.result }}
           AGENT_RESULT: ${{ needs.agent.result }}
-        run: test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success
+        run: |
+          test "$PROJECT_RESULT" = success && test "$PRIVILEGED_RESULT" = success && test "$API_REFERENCE_RESULT" = success && test "$WEB_RESULT" = success && test "$ANNOTATION_RESULT" = success && test "$PI_SERVER_RESULT" = success && test "$AGENT_RESULT" = success && {
+            if [ "$EVENT" = pull_request ]; then
+              test "$DOCS_MERGE_REF_RESULT" = success
+            else
+              test "$DOCS_MERGE_REF_RESULT" = skipped
+            fi
+          }
