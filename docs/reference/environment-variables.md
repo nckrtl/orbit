@@ -137,7 +137,7 @@ Import, update, synchronize, deploy, removal, and Route changes on one Instance 
 
 `APP_ENV` and `APP_DEBUG` are ordinary stored keys. The Node role, not these keys, decides the release layout, the Unix user, and the PHP-FPM pool. So a change to `APP_ENV` never moves an Instance between layouts. When `APP_ENV` is absent or is the environment placeholder, Orbit reads it as `development` on `app-dev` and `production` on `app-prod`.
 
-A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration and then sets `APP_ENV=production` and `APP_DEBUG=false`. You can change both afterwards. A transfer keeps every stored key.
+A [clone](/reference/instance-cloning) onto `app-prod` copies the candidate's stored configuration and then sets `APP_ENV=production` and `APP_DEBUG=false`. For a `symfony-app` it sets `APP_ENV=prod` and `APP_DEBUG=0`, Symfony's production mode. You can change both afterwards. A transfer keeps every stored key.
 
 ## Other writers
 

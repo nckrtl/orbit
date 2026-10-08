@@ -93,6 +93,51 @@ it('preserves Laravel marker detection for every non-package project type', func
             ->toBe('app-dev.laravel_source_invalid'));
 })->with([ProjectType::Monorepo, ProjectType::NodePackage]);
 
+it('classifies a Symfony app by bin/console and the framework bundle without marking it Laravel', function (): void {
+    $classifier = new ComposerSourceClassifier(new InstancePhpVersionCatalog);
+    $composer = '{"require":{"php":"~8.4.0","symfony/framework-bundle":"^7.3"}}';
+
+    expect($classifier->classify($composer, ProjectType::SymfonyApp, 'regular'))
+        ->phpVersion->toBe('8.4')
+        ->laravel->toBeFalse()
+        ->and($classifier->classify('{"name":"acme/site"}', ProjectType::SymfonyApp, 'absent'))
+        ->phpVersion->toBe('8.5')
+        ->laravel->toBeFalse();
+});
+
+it('rejects inconsistent or unsafe Symfony markers', function (string $composer, string $entryPointKind): void {
+    $classifier = new ComposerSourceClassifier(new InstancePhpVersionCatalog);
+
+    expect(fn () => $classifier->classify($composer, ProjectType::SymfonyApp, $entryPointKind))
+        ->toThrow(fn (RuntimeConvergenceException $exception) => expect($exception->errorCode)
+            ->toBe('app-dev.symfony_source_invalid'));
+})->with([
+    'console without bundle' => ['{"require":{"php":"^8.4"}}', 'regular'],
+    'bundle without console' => ['{"require":{"symfony/framework-bundle":"^7.3"}}', 'absent'],
+    'symlinked console' => ['{"require":{"symfony/framework-bundle":"^7.3"}}', 'unsafe'],
+    'Laravel source' => ['{"require":{"laravel/framework":"^13.0"}}', 'regular'],
+]);
+
+it('inspects bin/console for a Symfony app and artisan for a Laravel app', function (ProjectType $type, string $entryPoint, string $wireguardIp): void {
+    [$configurator, $instance, $ssh] = orb170_source_configurator(
+        $type,
+        '{"require":{"symfony/framework-bundle":"^7.3"}}',
+        $wireguardIp,
+        'regular',
+    );
+
+    if ($type === ProjectType::SymfonyApp) {
+        expect($configurator->inspect($instance))->laravel->toBeFalse();
+    } else {
+        expect(fn () => $configurator->inspect($instance))->toThrow(RuntimeConvergenceException::class);
+    }
+
+    expect($ssh->commands[0]->arguments)->toBe(['bash', '-seu', '--', '/home/orbit/checkout', 'orbit', $entryPoint]);
+})->with([
+    'Symfony' => [ProjectType::SymfonyApp, 'bin/console', '10.44.0.12'],
+    'Laravel' => [ProjectType::LaravelApp, 'artisan', '10.44.0.13'],
+]);
+
 it('renders only the selected production PHP site with its recorded user home pool and socket', function (): void {
     $php = new DevelopmentSite(
         nodeId: 1,
@@ -148,8 +193,8 @@ it('renders only the selected production PHP site with its recorded user home po
         );
 });
 
-/** @return array{RemoteDevelopmentInstanceConfigurator, Instance} */
-function orb170_source_configurator(ProjectType $type, string $composer, string $wireguardIp): array
+/** @return array{RemoteDevelopmentInstanceConfigurator, Instance, AppDevFakeSshExecutor} */
+function orb170_source_configurator(ProjectType $type, string $composer, string $wireguardIp, string $entryPointKind = 'absent'): array
 {
     $node = Node::query()->create([
         'name' => 'source-classifier-'.Str::lower(Str::random(8)),
@@ -186,7 +231,7 @@ function orb170_source_configurator(ProjectType $type, string $composer, string 
         }
     };
     $ssh = new AppDevFakeSshExecutor([
-        new CommandResult(0, "COMPOSER\tabsent\t".base64_encode($composer)."\n", '', 0, false),
+        new CommandResult(0, "COMPOSER\t{$entryPointKind}\t".base64_encode($composer)."\n", '', 0, false),
     ]);
     $keys = new class implements SshKeyProvider
     {
@@ -217,5 +262,6 @@ function orb170_source_configurator(ProjectType $type, string $composer, string 
             new ComposerSourceClassifier(new InstancePhpVersionCatalog),
         ),
         $instance,
+        $ssh,
     ];
 }

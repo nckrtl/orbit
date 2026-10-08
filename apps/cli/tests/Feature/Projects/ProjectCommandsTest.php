@@ -135,6 +135,7 @@ describe('project:create', function (): void {
         'node-package' => ['node-package', '.'],
         'laravel-package' => ['laravel-package', '.'],
         'laravel-app' => ['laravel-app', 'public'],
+        'symfony-app' => ['symfony-app', 'public'],
         'monorepo' => ['monorepo', 'public'],
     ]);
 
@@ -663,14 +664,14 @@ describe('project:update', function (): void {
         expect($mockClient->getLastRequest())->toBeNull();
     });
 
-    it('updates a Project to node-package through the typed SDK request', function (): void {
+    it('updates a Project type through the typed SDK request', function (string $type): void {
         $mockClient = MockClient::global([
             UpdateProjectRequest::class => app_mock_response(),
         ]);
 
         $this->artisan('project:update', [
             'project' => '3',
-            '--type' => 'node-package',
+            '--type' => $type,
             '--json' => true,
         ])->expectsOutput(app_json())
             ->assertExitCode(0);
@@ -678,8 +679,8 @@ describe('project:update', function (): void {
         expect($mockClient->getLastRequest())
             ->toBeInstanceOf(UpdateProjectRequest::class)
             ->and($mockClient->getLastRequest()?->body()->all())
-            ->toBe(['type' => 'node-package']);
-    });
+            ->toBe(['type' => $type]);
+    })->with(['node-package', 'symfony-app']);
 
     it('reports the updated project for humans', function (): void {
         MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
