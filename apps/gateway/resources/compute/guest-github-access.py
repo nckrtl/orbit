@@ -115,7 +115,7 @@ def token(request):
         if response.status != 200 or len(body) > 8192:
             raise ValueError('Repository access refused')
         value = json.loads(body).get('token')
-        if not isinstance(value, str) or not re.fullmatch('[A-Za-z0-9_]+', value):
+        if not isinstance(value, str) or not re.fullmatch('[A-Za-z0-9._~+/-]+=*', value):
             raise ValueError('Invalid repository credential')
         return value
     finally:

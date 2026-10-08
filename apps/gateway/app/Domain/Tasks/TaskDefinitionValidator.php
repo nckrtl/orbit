@@ -11,7 +11,7 @@ namespace App\Domain\Tasks;
 final readonly class TaskDefinitionValidator
 {
     /** @var list<string> */
-    private const array CommonFields = ['key', 'title', 'kind', 'brief', 'phase', 'deliverables', 'routes'];
+    private const array CommonFields = ['key', 'title', 'kind', 'brief', 'phase', 'deliverables', 'routes', 'topology'];
 
     /** @var list<string> */
     private const array ReservedKeys = ['complete', 'fail'];
@@ -146,6 +146,10 @@ final readonly class TaskDefinitionValidator
             if (! array_key_exists($field, $subtask) || $this->missingRequired($field, $subtask[$field])) {
                 return true;
             }
+        }
+
+        if (array_key_exists('topology', $subtask) && ! TaskTopology::valid($subtask['topology'])) {
+            return true;
         }
 
         if ($kind->requiresCommandDeliverable() && ! $this->hasCommandDeliverable($subtask)) {

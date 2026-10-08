@@ -182,6 +182,10 @@ command. It does not load the live agent secret or join the realtime channel.
 The controller checks the sandbox UUID, project ownership, VM budget, image
 fingerprints, and external network policy before changing resources.
 
+The sandbox protocol uses the exact roles `operator`, `gateway`, `app-dev`, `app-prod`, and `app-prod-2` in image keys and guest commands. Requests with `app-prod2` are invalid. A guest command targets only a running guest in the sandbox’s recorded, owned inventory. Expanded park, resume, and destruction include every recorded role.
+
+Sandbox hosts require Agent 0.4.0 or later. Release and deploy that version before enabling VM claims.
+
 ## Agent secret
 
 Every Unix user on a Node reaches the Gateway from the Node's WireGuard address, and production Nodes run customer code as unprivileged users. The agent secret keeps those users from acting as the agent.
@@ -281,7 +285,7 @@ The subscriber accepts `client-log` and `client-log-end` only from `agent.{id}` 
 
 ## Install and upgrade
 
-The Gateway pins agent 0.3.0. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
+The Gateway pins agent 0.4.0. It stores the SHA-256 checksum of each architecture's binary and picks the asset for the Node's recorded architecture, `x86_64` or `aarch64`.
 
 | Item | Path or value |
 | --- | --- |

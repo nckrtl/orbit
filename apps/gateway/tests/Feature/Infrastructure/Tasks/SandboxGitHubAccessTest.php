@@ -141,11 +141,13 @@ PY;
     expect(trim($result->getOutput()))->toBe('ok');
 });
 
-it('renews over verified TLS without following redirects or sending credentials to a wrong TLS name', function (): void {
+it('renews over verified TLS without following redirects or accepting unsafe tokens', function (array $tokens, bool $allowed): void {
     $script = <<<'PY'
 import http.server,json,pathlib,runpy,socket,ssl,subprocess,sys,tempfile,threading
 m=runpy.run_path(sys.argv[1],run_name='test')
 g=m['token'].__globals__
+tokens=json.loads(sys.argv[2])
+allowed=sys.argv[3]=='allowed'
 with tempfile.TemporaryDirectory() as directory:
     root=pathlib.Path(directory)
     cert,key=root/'ca.pem',root/'key.pem'
@@ -163,7 +165,7 @@ with tempfile.TemporaryDirectory() as directory:
             self.send_response(302 if len(requests)==3 else 200)
             self.send_header('Location','https://untrusted.test/token')
             self.end_headers()
-            self.wfile.write(json.dumps({'token':'fresh_'+str(len(requests))}).encode())
+            self.wfile.write(json.dumps({'token':tokens[min(len(requests)-1,1)]}).encode())
         def log_message(self,*args): pass
     server=http.server.HTTPServer(('127.0.0.1',0),Handler)
     context=ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -178,8 +180,14 @@ with tempfile.TemporaryDirectory() as directory:
     socket.create_connection=pinned
     request={'url':'https://gateway.orbit/api/v1/compute/github-token','gateway_address':'10.44.0.2','ca':cert.read_text()}
     try:
-        assert m['token'](request)=='fresh_1'
-        assert m['token'](request)=='fresh_2'
+        for value in tokens:
+            if allowed:
+                assert m['token'](request)==value
+            else:
+                try:
+                    m['token'](request)
+                    raise AssertionError('Unsafe token was accepted')
+                except ValueError: pass
         try:
             m['token'](request)
             raise AssertionError('Redirect was accepted')
@@ -195,10 +203,16 @@ with tempfile.TemporaryDirectory() as directory:
         server.server_close()
 print('ok')
 PY;
-    $result = new Process(['python3', '-I', '-c', $script, resource_path('compute/guest-github-access.py')]);
+    $result = new Process(['python3', '-I', '-c', $script, resource_path('compute/guest-github-access.py'), json_encode($tokens, JSON_THROW_ON_ERROR), $allowed ? 'allowed' : 'refused']);
     $result->mustRun();
     expect(trim($result->getOutput()))->toBe('ok');
-});
+})->with([
+    'legacy tokens' => [['fresh_1', 'fresh_2'], true],
+    'signed tokens' => [['ghs_header.payload-signature1', 'ghs_header.payload-signature2'], true],
+    'opaque bearer tokens' => [['opaque~token/+==', 'opaque_other-._~+/='], true],
+    'whitespace and header injection' => [['bad token', "bad\r\ntoken"], false],
+    'empty or missing token' => [['', null], false],
+]);
 
 it('refuses direct Git operations for a group borrowing another sandbox workspace', function (): void {
     $workspace = UpCloudRuntimeWorkspace::create();

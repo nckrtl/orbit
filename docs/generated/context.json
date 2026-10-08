@@ -1160,6 +1160,7 @@
                 "Process",
                 "Project",
                 "Role",
+                "Subtask",
                 "Task"
             ],
             "governing_adrs": []
@@ -1178,10 +1179,12 @@
                 "Gateway",
                 "Instance",
                 "Node",
+                "Node agent",
                 "Process",
                 "Project",
                 "Role",
                 "Route",
+                "Subtask",
                 "Task",
                 "Task workspace",
                 "Tool"
@@ -1400,7 +1403,9 @@
                 "Task definition",
                 "Tool"
             ],
-            "governing_adrs": []
+            "governing_adrs": [
+                "0200"
+            ]
         },
         {
             "path": "docs/reference/gateway-response-fixtures.md",

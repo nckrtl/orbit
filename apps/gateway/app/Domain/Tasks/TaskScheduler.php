@@ -133,6 +133,7 @@ final readonly class TaskScheduler
         private TaskGitHubReviewConsumption $reviewConsumption,
         private TaskGitHubReviewFeedback $reviewFeedback,
         private TaskWorkspaceTopology $topology,
+        private TaskTopologyAdmission $topologyAdmission,
         private TaskSandboxGroupLifecycle $sandboxes,
     ) {}
 
@@ -934,7 +935,9 @@ final readonly class TaskScheduler
             return;
         }
         try {
-            $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
+            if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
+                return;
+            }
             $this->actor->relayReviewBody($group, $implementer, $findings->body);
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
             $this->recordCommunicationFailure($task, $group, $exception->getMessage());
@@ -1076,7 +1079,7 @@ final readonly class TaskScheduler
                     'completion_attempt' => $task->completion_attempt,
                     'review_attempt' => $role === TaskThreadRole::Reviewer ? $task->review_attempt : null,
                     'type' => TaskCommentType::TopologyRequested,
-                    'body' => $receipt->summary."\n\n".$this->topologyReply($instance, $group, $role),
+                    'body' => $receipt->summary."\n\n".$this->topologyReply($instance, $group, $task, $role),
                     'author' => $role->value,
                     'posted_at' => now(),
                 ]);
@@ -1101,10 +1104,18 @@ final readonly class TaskScheduler
         return $receipt;
     }
 
-    private function topologyReply(Instance $instance, Task $group, TaskThreadRole $role): string
+    private function topologyReply(Instance $instance, Task $group, Task $task, TaskThreadRole $role): string
     {
         if ($role !== TaskThreadRole::Reviewer) {
             return 'Topology request refused. Ask the reviewer through a blocked consult; only the reviewer can request a topology.';
+        }
+        if ($group->task_compute === TaskCompute::Vm && $group->project->slug !== 'orbit') {
+            return 'Topology request refused. Project VM groups use their own Project workspace.';
+        }
+        if ($group->task_compute === TaskCompute::Vm || $instance->task_sandbox_id !== null) {
+            $task->update(['topology' => TaskTopology::from(array_values(array_unique([...($task->topology ?? []), 'app-dev', 'app-prod'])))]);
+
+            return 'The sandbox workload topology request is recorded. Orbit verifies its private Gateway before resuming this turn.';
         }
         try {
             return $this->topology->acquire($instance, $group->id)
@@ -1138,7 +1149,9 @@ final readonly class TaskScheduler
             return true;
         }
         try {
-            $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
+            if (! $this->prepareTurn($group, $task, $thread->role, $thread->threadId)) {
+                return true;
+            }
             $message = $receipt->body."\n\n".$this->actingInstructions($group, $task, $thread->role, $thread->threadId);
             $this->actor->resumeInterruptedTurn($group, $thread, $message, $key);
             $this->finishTopologyResume($task, $thread->role, $receipt, $sourceTurn);
@@ -1193,7 +1206,9 @@ final readonly class TaskScheduler
             if (! $this->receipts->hasLegacyTurn($instance)) {
                 return false;
             }
-            $this->prepareTurn($group, $task, $thread->role, $actingThreadId);
+            if (! $this->prepareTurn($group, $task, $thread->role, $actingThreadId)) {
+                return true;
+            }
             $instructions = $this->actingInstructions($group, $task, $thread->role, $actingThreadId);
             $this->actor->remindRubric($group, $thread, 'Orbit bound this turn to its thread. '.$instructions);
         } catch (AgentDriverException|TaskTurnReceiptException $exception) {
@@ -1244,7 +1259,7 @@ final readonly class TaskScheduler
     }
 
     /** @throws TaskTurnReceiptException */
-    private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false): void
+    private function prepareTurn(Task $group, Task $task, TaskThreadRole $role, ?int $threadId = null, bool $alreadyFetched = false): bool
     {
         $instance = $group->taskable;
         if (! $instance instanceof Instance) {
@@ -1253,12 +1268,34 @@ final readonly class TaskScheduler
         if (! $alreadyFetched) {
             $this->turnFetcher->beforeTurn($group);
         }
+        if (! $this->admitTopology($group, $task)) {
+            return false;
+        }
         $context = $role === TaskThreadRole::Reviewer ? $this->reviewPackets->reviewContext($task) : null;
         $consult = $role === TaskThreadRole::Reviewer && $task->consult_comment_id !== null;
         $relay = $role === TaskThreadRole::Reviewer && ! $consult && $task->direction_relay_comment_id !== null;
         $causeRequired = $role === TaskThreadRole::Reviewer && ! $consult && ! $relay && TaskQuestions::awaitsCause($task);
         $mode = $consult || $relay || $causeRequired ? new TaskTurnMode(consult: $consult, relay: $relay, causeRequired: $causeRequired) : null;
         $this->receipts->prepare($instance, $role, $role === TaskThreadRole::Reviewer && $task->opensPullRequest(), $task->deliverableList(), $threadId, $mode, $context);
+
+        return true;
+    }
+
+    /** A preparation wait never consumes a spawn or communication-failure attempt. */
+    private function admitTopology(Task $group, Task $task): bool
+    {
+        try {
+            $this->topologyAdmission->prepare($group, $task);
+        } catch (TaskCapacityException $exception) {
+            $group->update(['capacity_wait_reason' => $exception->getMessage()]);
+
+            return false;
+        }
+        if ($group->capacity_wait_reason !== null) {
+            $group->update(['capacity_wait_reason' => null]);
+        }
+
+        return true;
     }
 
     private function waitingItem(TaskThreadObservation $thread): ?TaskRubricItem
@@ -1294,7 +1331,9 @@ final readonly class TaskScheduler
         }
         if ($task->{$reminder} !== $task->{$attempt}) {
             try {
-                $this->prepareTurn($group, $task, $thread->role, $thread->threadId);
+                if (! $this->prepareTurn($group, $task, $thread->role, $thread->threadId)) {
+                    return false;
+                }
                 $mode = $implementer ? null : new TaskTurnMode(
                     consult: $task->consult_comment_id !== null,
                     relay: $task->consult_comment_id === null && $task->direction_relay_comment_id !== null,
@@ -1599,7 +1638,9 @@ final readonly class TaskScheduler
             return;
         }
         try {
-            $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
+            if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
+                return;
+            }
             $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
         } catch (Throwable $exception) {
             report($exception);
@@ -1780,7 +1821,9 @@ final readonly class TaskScheduler
             return;
         }
         try {
-            $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId);
+            if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $implementer->threadId)) {
+                return;
+            }
             $this->actor->relayAnswer($group, $implementer, $receipt->body, $key);
         } catch (Throwable $exception) {
             // Keep this receipt's key. An uncertain response may still have been accepted, and a
@@ -2876,19 +2919,25 @@ final readonly class TaskScheduler
             $snapshot = $this->workspaceSnapshot($group);
             if ($existing === null && $this->spawner instanceof TaskAgentSpawner) {
                 $reserved = $this->spawner->reserveReviewer($task);
-                $this->prepareTurn($group, $task, TaskThreadRole::Reviewer, $reserved);
+                if (! $this->prepareTurn($group, $task, TaskThreadRole::Reviewer, $reserved)) {
+                    return;
+                }
                 $threadId = $this->spawner->spawnReviewer($task);
                 if ($threadId === null) {
                     throw new AgentDriverException('The reviewer conversation could not be started.');
                 }
             } elseif ($existing === null) {
-                $this->prepareTurn($group, $task, TaskThreadRole::Reviewer);
+                if (! $this->prepareTurn($group, $task, TaskThreadRole::Reviewer)) {
+                    return;
+                }
                 $threadId = $this->spawner->spawnReviewer($task);
                 if ($threadId === null) {
                     throw new AgentDriverException('The reviewer conversation could not be started.');
                 }
             } else {
-                $this->prepareTurn($group, $task, TaskThreadRole::Reviewer, $existing->id);
+                if (! $this->prepareTurn($group, $task, TaskThreadRole::Reviewer, $existing->id)) {
+                    return;
+                }
                 $this->spawner->requestReview($task);
                 $continued = $this->subtaskReviewer($task);
                 $threadId = $continued instanceof AgentThread ? $continued->id : $existing->id;
@@ -3958,6 +4007,15 @@ final readonly class TaskScheduler
 
     private function beginAdmittedTask(Task $task, bool $alreadyFetched = false): void
     {
+        $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
+        if ($this->baselineCheck($task)?->status === TaskCheckStatus::Running) {
+            $this->handleBaseline($group, $task);
+
+            return;
+        }
+        if (! $this->admitTopology($group, $task)) {
+            return;
+        }
         $this->recordSubtaskStart($task);
         if ($this->needsBaseline($task)) {
             $group = $task->parent()->with(['project', 'taskable'])->firstOrFail();
@@ -4072,6 +4130,9 @@ final readonly class TaskScheduler
             return;
         }
 
+        if ($check instanceof TaskCheck && ! $this->admitTopology($group, $task)) {
+            return;
+        }
         $this->startBaseline($group, $task);
     }
 
@@ -4269,7 +4330,9 @@ final readonly class TaskScheduler
                 if ($reserved === null && $this->spawner instanceof TaskAgentSpawner) {
                     $reserved = $this->spawner->reserveImplementer($task->fresh() ?? $task);
                 }
-                $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched);
+                if (! $this->prepareTurn($group, $task, TaskThreadRole::Implementer, $reserved === null ? null : (int) $reserved, $alreadyFetched)) {
+                    return;
+                }
                 $threadId = $this->spawner->spawnImplementer($task->fresh() ?? $task);
             }
         } catch (TaskTurnReceiptException $exception) {

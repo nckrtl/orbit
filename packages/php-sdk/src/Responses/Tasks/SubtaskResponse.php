@@ -32,6 +32,8 @@ final readonly class SubtaskResponse
         public int $questions,
         public int $escalations,
         public string $requestId,
+        /** @var list<string> */
+        public array $topology = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -61,6 +63,7 @@ final readonly class SubtaskResponse
             questions: TaskFields::count($data, 'questions', 'subtask', $requestId),
             escalations: TaskFields::count($data, 'escalations', 'subtask', $requestId),
             requestId: $requestId,
+            topology: TaskFields::topology($data, $requestId),
         );
     }
 
@@ -72,6 +75,7 @@ final readonly class SubtaskResponse
      *     title: string,
      *     brief: string,
      *     deliverables: list<array<string, string|bool>>,
+     *     topology: list<string>,
      *     status: string,
      *     type: string|null,
      *     implementer_agent_thread_id: int|null,
@@ -100,6 +104,7 @@ final readonly class SubtaskResponse
             'title' => $this->title,
             'brief' => $this->brief,
             'deliverables' => $this->deliverables,
+            'topology' => $this->topology,
             'status' => $this->status,
             'type' => $this->type,
             'implementer_agent_thread_id' => $this->implementerAgentThreadId,

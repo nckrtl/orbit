@@ -107,6 +107,12 @@ class InputsTest(unittest.TestCase):
             with self.subTest(entries=entries), self.assertRaises(ValueError):
                 inspect_archive(archive(entries), 'tools')
 
+    def test_pinned_pnpm_tree_is_allowed_without_allowing_links_outside_tool_trees(self):
+        report = inspect_archive(archive([('opt/orbit-image/pnpm/bin/pnpm.cjs', tarfile.REGTYPE, b'pnpm')]), 'tools')
+        self.assertEqual(1, report['members'])
+        with self.assertRaises(ValueError):
+            inspect_archive(archive([('opt/orbit-image/pnpm/link', tarfile.SYMTYPE, '../../../etc')]), 'tools')
+
     def test_archive_limits_and_empty_archives_are_refused(self):
         with self.assertRaises(ValueError):
             inspect_archive(archive([]), 'source')

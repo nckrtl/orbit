@@ -7,6 +7,7 @@ from pathlib import Path
 import pwd
 import runpy
 import shutil
+import stat
 import subprocess
 import sys
 import tarfile
@@ -31,7 +32,7 @@ def digest(path):
 def validate(request):
     if not isinstance(request, dict) or set(request) != {'role', 'inputs', 'source_manifest'}:
         raise ValueError('Invalid preparation request')
-    if request['role'] not in ('operator', 'gateway') or not isinstance(request['inputs'], dict) or request['inputs'].get('root') != str(ROOT):
+    if request['role'] not in ('operator', 'gateway', 'app-dev', 'app-prod', 'app-prod-2') or not isinstance(request['inputs'], dict) or request['inputs'].get('root') != str(ROOT):
         raise ValueError('Invalid guest scope')
     manifest = request['source_manifest']
     if not isinstance(manifest, dict) or set(manifest) != {'source_template', 'ci_run', 'projects', 'sha256'}:
@@ -87,6 +88,69 @@ def packages(request, policy=Path('/usr/sbin/policy-rc.d')):
         policy.unlink()
 
 
+def install_tool_runtime(home=HOME, system=Path('/'), uid=1002, gid=1002):
+    """Seed the native app-host layout from verified offline tools, never a network installer."""
+    source = system / 'opt/orbit-image'
+    stable = system / 'usr/local/bin'
+    vp = home / '.local/share/vite-plus'
+    bun_root = system / 'opt/orbit/bun'
+    pnpm = source / 'pnpm'
+    manifest = pnpm / 'package.json'
+    for path in (source / 'node/bin/node', source / 'vp/bin/vp', stable / 'bun', manifest, pnpm / 'bin/pnpm.cjs'):
+        details = path.lstat()
+        if not stat.S_ISREG(details.st_mode) or path.resolve() != path or details.st_mode & 0o022:
+            raise ValueError('Offline runtime input is not local and protected')
+    package = json.loads(manifest.read_text())
+    if package.get('name') != 'pnpm' or package.get('version') != '10.33.0':
+        raise ValueError('The offline pnpm version is unavailable')
+    for path in (vp, bun_root):
+        if path.exists() or path.is_symlink():
+            raise ValueError('Native runtime destination is already occupied')
+        for parent in path.parents:
+            if parent.is_symlink():
+                raise ValueError('Native runtime path traverses a symlink')
+    for binary in ('vp', 'node', 'pnpm', 'npm', 'npx'):
+        target = stable / binary
+        if target.exists() or target.is_symlink():
+            raise ValueError('Native runtime entry point is already occupied')
+    shutil.copytree(source / 'vp', vp / '0.3.0', symlinks=True)
+    shutil.copytree(source / 'node', vp / 'js_runtime/node/24.21.0', symlinks=True)
+    shutil.copytree(pnpm, vp / 'package_manager/pnpm/10.33.0/pnpm', symlinks=True)
+    cached_bun = vp / 'package_manager/bun/1.4.2/bun/bin/bun'
+    cached_bun.parent.mkdir(parents=True)
+    shutil.copy2(stable / 'bun', cached_bun)
+    (vp / 'bin').mkdir()
+    (vp / 'bin/vp').symlink_to('../0.3.0/bin/vp')
+    bun = bun_root / 'bin/bun'
+    bun.parent.mkdir(parents=True)
+    shutil.copy2(stable / 'bun', bun)
+    for tree in (home / '.local', bun_root):
+        command('chown', '-R', '--no-dereference', str(uid) + ':' + str(gid), str(tree))
+    environment = 'VP_HOME=' + str(vp)
+    for args in (('default', '24.21.0'), ('setup',), ('on',)):
+        command('sudo', '-n', '-u', 'orbit', '-H', 'env', environment, 'VP_NO_UPDATE_CHECK=1', str(vp / 'bin/vp'), 'env', *args, cwd=home)
+    # Native setup publishes dispatchers, but installing pnpm is a separate native bootstrap step.
+    pnpm_launcher = vp / 'bin/pnpm'
+    with pnpm_launcher.open('x') as output:
+        output.write('#!/bin/sh\nexec "' + str(vp / 'bin/node') + '" "' + str(vp / 'package_manager/pnpm/10.33.0/pnpm/bin/pnpm.cjs') + '" "$@"\n')
+    pnpm_launcher.chmod(0o755)
+    os.chown(pnpm_launcher, uid, gid)
+    for binary in ('vp', 'node', 'pnpm', 'npm', 'npx'):
+        target = vp / 'bin' / binary
+        if not os.access(target, os.X_OK):
+            raise ValueError('Native runtime dispatcher is unavailable')
+        with (stable / binary).open('x') as output:
+            output.write('#!/bin/sh\nexport VP_HOME="' + str(vp) + '"\nexec "' + str(target) + '" "$@"\n')
+        (stable / binary).chmod(0o755)
+    if digest(stable / 'bun') != digest(bun):
+        raise ValueError('Offline Bun changed during installation')
+    (stable / 'bun').unlink()
+    (stable / 'bun').symlink_to(bun)
+    (stable / 'php').symlink_to(system / 'usr/bin/php8.5')
+    for binary in ('vp', 'node', 'pnpm', 'npm', 'npx', 'bun'):
+        command('sudo', '-n', '-u', 'orbit', '-H', str(stable / binary), '--version', cwd=home)
+
+
 def install(request):
     validate(request)
     if os.geteuid() != 0:
@@ -111,25 +175,13 @@ def install(request):
         archive.extractall('/', filter='data')
     shutil.copyfile(ROOT / request['inputs']['composer']['file'], '/usr/local/bin/composer')
     Path('/usr/local/bin/composer').chmod(0o755)
-    for name, target in {'node': '/opt/orbit-image/node/bin/node', 'vp': '/opt/orbit-image/vp/bin/vp', 'php': '/usr/bin/php8.5'}.items():
-        Path('/usr/local/bin', name).symlink_to(target)
-    for binary in ('orbit-agent', 'orbit-pi-server', 'bun'):
+    install_tool_runtime()
+    for binary in ('orbit-agent', 'orbit-pi-server'):
         path = Path('/usr/local/bin') / binary
         os.chown(path, 0, 0)
         path.chmod(0o755)
     with Path('/etc/hosts').open('a') as output:
         output.write('\n127.0.0.1 telemetry.sury.org # Orbit image: avoid network-dependent FPM startup\n')
-    vp = HOME / '.vite-plus'
-    (vp / 'bin').mkdir(parents=True)
-    shutil.copytree('/opt/orbit-image/vp', vp / '0.3.0', symlinks=True)
-    shutil.copytree('/opt/orbit-image/node', vp / 'js_runtime/node/24.21.0', symlinks=True)
-    bun = vp / 'package_manager/bun/1.4.2/bun/bin/bun'
-    bun.parent.mkdir(parents=True)
-    shutil.copy2('/usr/local/bin/bun', bun)
-    (vp / 'bin/vp').symlink_to('../0.3.0/bin/vp')
-    command('chown', '-R', 'orbit:orbit', str(vp))
-    for args in (('default', '24.21.0'), ('setup',), ('on',)):
-        command('sudo', '-n', '-u', 'orbit', '-H', 'env', 'VP_NO_UPDATE_CHECK=1', str(vp / 'bin/vp'), 'env', *args, cwd=HOME)
     if request['role'] == 'operator':
         with tarfile.open(ROOT / request['inputs']['source']['file'], 'r:gz') as archive:
             archive.extractall(SOURCE, filter='data')

@@ -2,22 +2,31 @@
 
 declare(strict_types=1);
 
-if (! in_array($argc, [4, 6], true)) {
+if (! in_array($argc, [3, 4, 6], true) || ($argc === 3 && ! str_starts_with(ltrim($argv[2]), '{'))) {
     exit(64);
 }
 
 $database = $argv[1];
-$names = $argc === 4 ? ['gateway', 'operator'] : ['gateway', 'app-dev', 'app-prod', 'operator'];
-$peers = array_values(array_diff($names, ['gateway']));
-$addresses = array_combine($names, array_slice($argv, 2));
 $pdo = null;
 
 try {
+    if ($argc === 3) {
+        $addresses = json_decode($argv[2], true, flags: JSON_THROW_ON_ERROR);
+        if (! is_array($addresses) || ! isset($addresses['gateway'], $addresses['operator'])
+            || array_diff(array_keys($addresses), ['gateway', 'operator', 'app-dev', 'app-prod', 'app-prod-2']) !== []) {
+            throw new RuntimeException('Invalid recorded inventory.');
+        }
+        $names = array_keys($addresses);
+    } else {
+        $names = $argc === 4 ? ['gateway', 'operator'] : ['gateway', 'app-dev', 'app-prod', 'operator'];
+        $addresses = array_combine($names, array_slice($argv, 2));
+    }
+    $peers = array_values(array_diff($names, ['gateway']));
     if (! is_file($database) || is_link($database) || count(array_unique($addresses)) !== count($names)) {
         throw new RuntimeException('Invalid clone inputs.');
     }
     foreach ($addresses as $address) {
-        if (filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+        if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             throw new RuntimeException('Invalid clone address.');
         }
     }
@@ -38,12 +47,12 @@ try {
     if (count($nodes) !== count($names)) {
         throw new RuntimeException('Incomplete clone inventory.');
     }
-    if ($argc === 4 && ((int) $pdo->query('SELECT COUNT(*) FROM nodes')->fetchColumn() !== 2
+    if (in_array($argc, [3, 4], true) && ((int) $pdo->query('SELECT COUNT(*) FROM nodes')->fetchColumn() !== count($names)
         || (int) $pdo->query('SELECT COUNT(*) FROM node_roles WHERE node_id = '.(int) $nodes['operator']['id'])->fetchColumn() !== 0)) {
         throw new RuntimeException('Unexpected sandbox pair inventory.');
     }
     $role = $pdo->prepare('SELECT COUNT(*) FROM node_roles WHERE node_id = ? AND role = ? AND status = ?');
-    foreach (array_intersect_key(['gateway' => ['gateway', 'vpn'], 'app-dev' => ['app-dev'], 'app-prod' => ['app-prod']], $addresses) as $name => $roles) {
+    foreach (array_intersect_key(['gateway' => ['gateway', 'vpn'], 'app-dev' => ['app-dev'], 'app-prod' => ['app-prod'], 'app-prod-2' => ['app-prod']], $addresses) as $name => $roles) {
         foreach ($roles as $required) {
             $role->execute([$nodes[$name]['id'], $required, 'active']);
             if ((int) $role->fetchColumn() !== 1) {

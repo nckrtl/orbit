@@ -21,6 +21,7 @@ final class UpdateSubtaskCommand extends TaskCommand
         {--brief= : New brief}
         {--position= : New position, starting at 1}
         {--deliverables= : JSON file with an array of typed deliverables that replaces the list}
+        {--topology= : JSON array of required workload nodes; [] removes declarations}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -52,16 +53,21 @@ final class UpdateSubtaskCommand extends TaskCommand
             }
         }
 
+        $topology = $this->topologyOption($this->option('topology'));
+        if ($topology === false) {
+            return self::FAILURE;
+        }
+
         $deliverables = $this->deliverablesFile();
 
         if ($deliverables === false) {
             return self::FAILURE;
         }
 
-        $changed = $title !== null || $brief !== null || $position !== null || $deliverables !== null;
+        $changed = $title !== null || $brief !== null || $position !== null || $deliverables !== null || $topology !== null;
 
         if (! $changed && ! $this->consoleMode()->mayPrompt) {
-            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one subtask update: --title, --brief, --position, or --deliverables.');
+            return $this->renderGatewayFailure('tasks.update_required', 'Provide at least one subtask update: --title, --brief, --position, --deliverables, or --topology.');
         }
 
         $connector = $this->gatewayConnector($repository, $connectors);
@@ -101,7 +107,7 @@ final class UpdateSubtaskCommand extends TaskCommand
 
         $task = $this->sendWithProgress(
             $connector,
-            new UpdateSubtaskRequest($groupId, $subtaskId, $title, $brief, $position, $deliverables),
+            new UpdateSubtaskRequest($groupId, $subtaskId, $title, $brief, $position, $deliverables, $topology),
             SubtaskResponse::class,
             ['Update subtask', 'Updating subtask', 'Updated subtask'],
         );

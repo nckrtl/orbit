@@ -47,14 +47,14 @@ it('refuses macOS agent installation before SSH and skips removal', function ():
     expect($ssh->commands)->toBeEmpty();
 });
 
-it('pins agent v0.3.0', function (): void {
-    expect(NodeAgentFootprint::Version)->toBe('0.3.0')
-        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('f5125b2ab36abd79882b3b11eb5d40f5e457fbf23cc8bf3ff4c096e2cab4618a')
-        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('84306df202904277c6f6cd78d4050fae97e54c3e515a2ad09585dd5a5e568811')
+it('pins agent v0.4.0', function (): void {
+    expect(NodeAgentFootprint::Version)->toBe('0.4.0')
+        ->and(NodeAgentFootprint::checksum('x86_64'))->toBe('4f41321187e538b88bc5432b319c6ea7a09767ff18be6dcf90a277af58fbac46')
+        ->and(NodeAgentFootprint::checksum('aarch64'))->toBe('9b0bce29354091c7f1cffe9ddb5a92ba7b34d5d93f556d9112a4cb5ecd9e50de')
         ->and(NodeAgentFootprint::downloadUrl('x86_64'))
-        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-x86_64')
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.4.0/orbit-agent-0.4.0-linux-x86_64')
         ->and(NodeAgentFootprint::downloadUrl('aarch64'))
-        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.3.0/orbit-agent-0.3.0-linux-aarch64');
+        ->toBe('https://github.com/nckrtl/orbit/releases/download/agent-v0.4.0/orbit-agent-0.4.0-linux-aarch64');
 });
 
 it('keeps the role converge going when the agent install fails', function (): void {

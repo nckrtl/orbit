@@ -359,6 +359,44 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return self::SUCCESS;
     }
 
+    /** @return list<string>|false|null */
+    protected function topologyOption(mixed $raw): array|false|null
+    {
+        if ($raw === null) {
+            return null;
+        }
+        try {
+            $value = is_string($raw) ? json_decode($raw, flags: JSON_THROW_ON_ERROR) : null;
+        } catch (JsonException) {
+            $value = null;
+        }
+        $topology = self::topology($value);
+        if ($topology === null) {
+            $this->renderGatewayFailure('tasks.topology_invalid', 'Topology must be a JSON array of distinct app-dev, app-prod, or app-prod-2 nodes.');
+
+            return false;
+        }
+
+        return $topology;
+    }
+
+    /** @return list<string>|null */
+    protected static function topology(mixed $value): ?array
+    {
+        if (! is_array($value) || ! array_is_list($value) || count($value) > 3) {
+            return null;
+        }
+        $roles = [];
+        foreach ($value as $role) {
+            if (! is_string($role) || ! in_array($role, ['app-dev', 'app-prod', 'app-prod-2'], true) || in_array($role, $roles, true)) {
+                return null;
+            }
+            $roles[] = $role;
+        }
+
+        return $roles;
+    }
+
     protected function renderSubtask(SubtaskResponse $task): int
     {
         if ($this->option('json') === true) {
@@ -370,6 +408,7 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Subtask: {$task->id}", [
             'Task group' => $task->taskGroupId,
             'Position' => $task->position,
+            ...($task->topology === [] ? [] : ['Topology' => implode(', ', $task->topology)]),
             'Title' => $task->title,
             'Status' => $task->status,
             'Assistance' => $task->assistanceRequested,

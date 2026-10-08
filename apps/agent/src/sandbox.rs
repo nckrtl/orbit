@@ -29,6 +29,7 @@ enum Role {
     Gateway,
     AppDev,
     AppProd,
+    #[serde(rename = "app-prod-2")]
     AppProd2,
 }
 
@@ -209,6 +210,50 @@ mod tests {
         bad["operation"] = "observe".into();
         assert!(request(bad.to_string().as_bytes()).is_err());
         value["guest"]["host_command"] = "never".into();
+        assert!(request(value.to_string().as_bytes()).is_err());
+    }
+
+    #[test]
+    fn preserves_declared_role_names_in_image_keys_and_guest_commands() {
+        let mut value = base();
+        value["operation"] = "provision".into();
+        value["spec"] = json!({"images":{
+            "operator":"a".repeat(64), "gateway":"b".repeat(64),
+            "app-dev":"c".repeat(64), "app-prod":"d".repeat(64), "app-prod-2":"e".repeat(64)
+        }, "pool":"proof", "subnet":"10.233.201.0/24", "blocked_networks":["192.168.0.0/16"]});
+
+        let forwarded: serde_json::Value = serde_json::from_slice(
+            &request(value.to_string().as_bytes())
+                .expect("all declared image roles must be accepted"),
+        )
+        .unwrap();
+        assert_eq!(forwarded["spec"]["images"], value["spec"]["images"]);
+
+        for role in ["app-dev", "app-prod", "app-prod-2"] {
+            let mut value = base();
+            value["operation"] = "guest_command".into();
+            value["guest"] =
+                json!({"role":role, "argv":["true"], "stdin":"", "timeout":30, "max_output":4096});
+            let forwarded: serde_json::Value = serde_json::from_slice(
+                &request(value.to_string().as_bytes())
+                    .expect("the declared guest role must be accepted"),
+            )
+            .unwrap();
+            assert_eq!(forwarded["guest"]["role"], role);
+        }
+    }
+
+    #[test]
+    fn rejects_undocumented_numeric_workload_alias_in_both_request_paths() {
+        let mut value = base();
+        value["operation"] = "provision".into();
+        value["spec"] = json!({"images":{"app-prod2":"a".repeat(64)}, "pool":"proof",
+            "subnet":"10.233.201.0/24", "blocked_networks":["192.168.0.0/16"]});
+        assert!(request(value.to_string().as_bytes()).is_err());
+
+        let mut value = base();
+        value["operation"] = "guest_command".into();
+        value["guest"] = json!({"role":"app-prod2", "argv":["true"], "stdin":"", "timeout":30, "max_output":4096});
         assert!(request(value.to_string().as_bytes()).is_err());
     }
 

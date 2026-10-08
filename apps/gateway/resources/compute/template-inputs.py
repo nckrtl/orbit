@@ -12,7 +12,7 @@ import tarfile
 MAX_BYTES = 20 * 1024 ** 3
 MAX_MEMBERS = 1_000_000
 TOOL_FILES = {'usr/local/bin/bun', 'usr/local/bin/orbit-pi-server', 'usr/local/bin/orbit-agent'}
-TOOL_TREES = ('opt/orbit-image/node', 'opt/orbit-image/vp')
+TOOL_TREES = ('opt/orbit-image/node', 'opt/orbit-image/vp', 'opt/orbit-image/pnpm')
 
 
 def relative(value):

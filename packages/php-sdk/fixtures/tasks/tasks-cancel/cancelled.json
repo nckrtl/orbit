@@ -56,6 +56,7 @@
                             "directory": "packages/php-sdk"
                         }
                     ],
+                    "topology": [],
                     "status": "cancelled",
                     "implementer_agent_thread_id": null,
                     "tokens": null,
@@ -95,6 +96,7 @@
                             "description": "Each command name equals its route name"
                         }
                     ],
+                    "topology": [],
                     "status": "cancelled",
                     "implementer_agent_thread_id": null,
                     "tokens": null,

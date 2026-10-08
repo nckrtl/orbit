@@ -93,6 +93,8 @@ bin/task-group-check --payload FILE [--kind auto|bug|feature]
 
 The command refuses an unsupported top-level key, a duplicate top-level key, or a body that is not one JSON object. It checks `project_id`, `title`, `brief`, optional `status`, `notify_coder`, `notify_on_settle`, and `tasks` with the same required, prohibited, length, list, and `fails_on_base` rules as create. `project_id` must be an integer of at least 1. The check does not look up the Project row.
 
+Each subtask may declare `topology` as a list of at most three distinct roles: `app-dev`, `app-prod`, and `app-prod-2`. Omission or `[]` requests no additional workload node. Validation rejects unknown roles, duplicate roles, and values that are not lists before creating a group. The [declared topology contract](/reference/compute-drivers) owns admission and readiness.
+
 It then requires one ordered group: the payload is that group, and `tasks` is a nonempty list in order. A wrapper with `groups` is accepted only when that list has exactly one group. Every subtask brief must contain a `Goal` line and an `Acceptance` line, as the skill template writes them.
 
 A subtask that only restates the final gate fails. That includes a goal or acceptance that only names `review-check`, the candidate gate, the task check, or preparing or proposing the pull request. Every handoff already runs the task check, and the last subtask's approval proposes the pull request.

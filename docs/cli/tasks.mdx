@@ -42,6 +42,8 @@ Every command accepts `--json`. JSON output is the Gateway record with `request_
 
 [Trusted GitHub requested changes](/reference/tasks#trusted-github-feedback) can append a normal fixup subtask. `tasks:show --json` exposes its source review and findings in the existing `brief`. The Gateway API's `fixup_problem` is `review:{reviewer_id}`; the CLI keeps its existing brief and deliverable fields without adding an identity field. Use the existing cancel or operator-subtask commands when that scope needs intervention. No command configures reviewer trust, submits a GitHub review, requests external re-review, or merges a pull request. The Gateway's automatic findings packet has its own 64 KiB bound; the CLI's 8,000-character input limit remains unchanged.
 
+Subtask creation and update accept `--topology='["app-dev"]'`. Repeat the required names inside the JSON array: `app-dev`, `app-prod`, or `app-prod-2`, without duplicates. On update, omit the option to keep the declaration or pass `--topology='[]'` to clear it. Each object in a `--subtasks` JSON file can carry the same `topology` array. A started subtask cannot change its declaration. The [compute driver](/reference/compute-drivers#declared-workload-nodes) prepares these nodes before an Orbit VM subtask starts.
+
 ## Select a task or subtask
 
 A `group` argument is a numeric task ID, and a `subtask` argument is a numeric subtask ID. When you omit either in a terminal, the CLI lists the candidates and you select one. The task list shows the ID, title, Project, and status. The subtask list shows the position, ID, title, and status of the task's subtasks. An empty list stops the command with `No matching records were found.`

@@ -4954,3 +4954,43 @@ describe('sandbox pair clone identity', function (): void {
         }
     })->with(['extra nodes', 'operator role', 'foreign endpoint']);
 });
+
+it('retargets the exact recorded sandbox workload inventory atomically', function (array $roles): void {
+    $fixture = discovery_gateway_identity_fixture();
+    $pdo = $fixture['pdo'];
+    foreach (['app-dev' => 2, 'app-prod' => 3] as $name => $id) {
+        if (! in_array($name, $roles, true)) {
+            $pdo->exec('DELETE FROM node_roles WHERE node_id = '.$id);
+            $pdo->exec('DELETE FROM nodes WHERE id = '.$id);
+        }
+    }
+    if (in_array('app-prod-2', $roles, true)) {
+        $pdo->exec("INSERT INTO nodes (id, name, status, public_ssh_host) VALUES (6, 'app-prod-2', 'active', '10.232.1.15')");
+        $pdo->exec("INSERT INTO node_roles (node_id, role, status) VALUES (6, 'app-prod', 'active')");
+    }
+    $addresses = ['gateway' => '10.233.204.11', 'operator' => '10.233.204.10'];
+    foreach (['app-dev' => 12, 'app-prod' => 13, 'app-prod-2' => 14] as $name => $suffix) {
+        if (in_array($name, $roles, true)) {
+            $addresses[$name] = '10.233.204.'.$suffix;
+        }
+    }
+    $process = new Process([PHP_BINARY, dirname(__DIR__, 3).'/resources/guest/retarget-gateway.php',
+        $fixture['database'], json_encode($addresses, JSON_THROW_ON_ERROR)]);
+    try {
+        expect($process->run())->toBe(0, $process->getErrorOutput());
+        expect(json_decode($process->getOutput(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(array_fill_keys(['operator', ...$roles], '10.233.204.11:51821'));
+        $hosts = $pdo->query('SELECT name, public_ssh_host FROM nodes')->fetchAll(PDO::FETCH_KEY_PAIR);
+        expect($hosts)->toEqualCanonicalizing($addresses);
+        $pdo->exec("UPDATE node_roles SET status = 'failed' WHERE node_id = (SELECT id FROM nodes WHERE name = '".$roles[0]."')");
+        $before = discovery_gateway_identity_state($pdo);
+        expect($process->run())->not->toBe(0);
+        expect(discovery_gateway_identity_state($pdo))->toBe($before);
+    } finally {
+        new Filesystem()->deleteDirectory($fixture['root']);
+    }
+})->with([
+    'three Nodes' => [['app-dev']],
+    'four Nodes' => [['app-dev', 'app-prod']],
+    'five Nodes' => [['app-dev', 'app-prod', 'app-prod-2']],
+]);

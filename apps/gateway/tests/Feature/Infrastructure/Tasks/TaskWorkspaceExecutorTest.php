@@ -169,3 +169,59 @@ it('never routes a test Gateway role through shared or project-lane transport', 
     expect(fn () => app(TaskWorkspaceExecutor::class)->execute($workspace, new RemoteCommand(['id']), 'proof', 'tasks.proof', role: 'gateway'))
         ->toThrow(RuntimeConvergenceException::class, 'requested sandbox role');
 })->with(['shared', 'project']);
+
+it('executes in an owned recorded workload guest', function (string $role): void {
+    $workspace = sandbox_workspace();
+    $workspace->project->update(['default_branch' => 'main']);
+    $sandbox = $workspace->taskSandbox;
+    $sandbox->update(['spec' => [...$sandbox->spec, 'images' => [$role => str_repeat('a', 64)],
+        'source_template' => ['id' => '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('b', 40)]]]);
+    mock(SshExecutor::class)->shouldReceive('execute')->once()->andReturnUsing(function (SshConnection $connection, RemoteCommand $command) use ($role): CommandResult {
+        expect($command->arguments)->toBe(['/usr/local/bin/orbit-agent', 'sandbox']);
+        $request = json_decode(stream_get_contents($command->protectedInput->stream()), true, flags: JSON_THROW_ON_ERROR);
+        expect($request['guest']['role'])->toBe($role);
+
+        return new CommandResult(0, json_encode(['name' => 'ot-0a68f778a3', 'role' => $role, 'exit_code' => 0,
+            'stdout' => base64_encode('orbit'), 'stderr' => '', 'duration_ms' => 1, 'truncated' => false, 'timed_out' => false]), '', 1, false);
+    });
+
+    expect(app(TaskWorkspaceExecutor::class)->execute($workspace, new RemoteCommand(['id']), 'proof', 'tasks.proof', role: $role)->stdout)->toBe('orbit');
+})->with(['app-dev', 'app-prod', 'app-prod-2']);
+
+it('refuses unrecorded and foreign workload roles before any guest command', function (string $fault): void {
+    $workspace = sandbox_workspace();
+    $sandbox = $workspace->taskSandbox;
+    $spec = [...$sandbox->spec, 'images' => ['app-dev' => str_repeat('a', 64)], 'source_template' => ['id' => 'template']];
+    match ($fault) {
+        'unrecorded' => $spec['images'] = [],
+        'malformed image' => $spec['images']['app-dev'] = 'invalid',
+        'missing source' => $spec['source_template'] = null,
+        'project lane' => $workspace->project->update(['slug' => 'dlf']),
+        'foreign provider' => $sandbox->update(['provider' => 'upcloud']),
+    };
+    $sandbox->update(['spec' => $spec]);
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => app(TaskWorkspaceExecutor::class)->execute($workspace, new RemoteCommand(['id']), 'proof', 'tasks.proof', role: 'app-dev'))
+        ->toThrow(RuntimeConvergenceException::class, 'requested sandbox role');
+})->with(['unrecorded', 'malformed image', 'missing source', 'project lane', 'foreign provider']);
+
+it('refuses incomplete or foreign workload source provenance before contacting compute', function (string $fault): void {
+    $workspace = sandbox_workspace();
+    $workspace->project->update(['default_branch' => 'main']);
+    $sandbox = $workspace->taskSandbox;
+    $template = ['id' => '9862e1aa-605c-4b49-a65b-6cf0b3a96dfe', 'repository' => 'https://github.com/acme/orbit.git', 'base' => 'main', 'commit' => str_repeat('b', 40)];
+    match ($fault) {
+        'empty' => $template = [],
+        'invalid identity' => $template['id'] = 'foreign',
+        'invalid commit' => $template['commit'] = 'invalid',
+        'foreign repository' => $template['repository'] = 'https://github.com/acme/foreign.git',
+        'foreign base' => $template['base'] = 'another-branch',
+        'extra field' => $template['extra'] = 'foreign',
+    };
+    $sandbox->update(['spec' => [...$sandbox->spec, 'images' => ['app-dev' => str_repeat('a', 64)], 'source_template' => $template]]);
+    mock(SshExecutor::class)->shouldReceive('execute')->never();
+
+    expect(fn () => app(TaskWorkspaceExecutor::class)->execute($workspace, new RemoteCommand(['id']), 'proof', 'tasks.proof', role: 'app-dev'))
+        ->toThrow(RuntimeConvergenceException::class, 'requested sandbox role');
+})->with(['empty', 'invalid identity', 'invalid commit', 'foreign repository', 'foreign base', 'extra field']);

@@ -521,3 +521,22 @@ it('transports preview omission and explicit booleans', function (?bool $preview
         }
     }
 })->with([null, false, true]);
+
+it('transports declared topology including an explicit empty replacement', function (): void {
+    expect(json_decode(new CreateSubtaskRequest(13, 'Step', 'Work', topology: ['app-dev'])->body()->all(), true))
+        ->toBe(['title' => 'Step', 'brief' => 'Work', 'topology' => ['app-dev']]);
+    expect(json_decode(new UpdateSubtaskRequest(13, 57, topology: [])->body()->all(), true))->toBe(['topology' => []]);
+    expect(new SubtaskInput('Step', 'Work', topology: ['app-prod-2'])->toArray())
+        ->toBe(['title' => 'Step', 'brief' => 'Work', 'topology' => ['app-prod-2']]);
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-subtask-create/created.json'), true, flags: JSON_THROW_ON_ERROR);
+    $data = [...$fixture['body']['data'], 'topology' => ['app-dev', 'app-prod']];
+    $result = SubtaskResponse::fromGatewayData($data, task_request_id());
+    expect($result->topology)->toBe(['app-dev', 'app-prod']);
+    expect($result->toArray()['topology'])->toBe(['app-dev', 'app-prod']);
+});
+
+it('rejects malformed topology response types', function (mixed $topology): void {
+    $fixture = json_decode((string) file_get_contents(dirname(__DIR__, 4).'/fixtures/tasks/tasks-subtask-create/created.json'), true, flags: JSON_THROW_ON_ERROR);
+    expect(fn () => SubtaskResponse::fromGatewayData([...$fixture['body']['data'], 'topology' => $topology], task_request_id()))
+        ->toThrow(GatewayApiException::class);
+})->with(['scalar' => ['app-dev'], 'non-string' => [[1]], 'object' => [['name' => 'app-dev']]]);

@@ -45,6 +45,23 @@ def check(request, root=Path('/home/orbit/orbit'), home=Path('/home/orbit')):
     status = json.loads(run(str(root / 'apps/cli/orbit'), 'gateway:status', '--json'))
     if not isinstance(status, dict) or status.get('status') != 'ok' or status.get('url') != 'https://10.44.0.1' or status.get('version') != head:
         raise ValueError('Private Gateway did not answer')
+    for node in nodes:
+        node_id = node.get('id')
+        if type(node_id) is not int or node_id < 1:
+            raise ValueError('Invalid doctor Node identity')
+        report = json.loads(run(str(root / 'apps/cli/orbit'), 'doctor', '--node=' + str(node_id),
+                                '--family=node', '--family=role', '--family=firewall', '--json'))
+        observations = report.get('nodes') if isinstance(report, dict) else None
+        if (not isinstance(report, dict) or report.get('healthy') is not True
+                or not isinstance(observations, list) or len(observations) != 1
+                or not isinstance(observations[0], dict) or observations[0].get('node_id') != node_id
+                or observations[0].get('node_name') != node['name'] or observations[0].get('healthy') is not True):
+            raise ValueError('The candidate Node failed fresh doctor readiness')
+        families = observations[0].get('families')
+        if (not isinstance(families, list) or len(families) != 3
+                or any(not isinstance(family, dict) or family.get('status') != 'healthy' for family in families)
+                or {family.get('family') for family in families} != {'node', 'role', 'firewall'}):
+            raise ValueError('The candidate doctor readiness families are incomplete')
     return {'ready': True, 'head': head, 'gateway_version': status.get('version'), 'nodes': ['gateway', 'operator']}
 
 

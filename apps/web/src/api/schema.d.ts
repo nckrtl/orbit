@@ -4461,6 +4461,7 @@ export interface components {
             title?: string;
             brief?: string;
             deliverables?: Record<string, never>[];
+            topology?: string[];
             /** @enum {string} */
             status?: "todo" | "reserved" | "running" | "reviewing" | "completed" | "failed" | "cancelled";
             implementer_agent_thread_id?: number | null;
@@ -17870,6 +17871,7 @@ export interface operations {
                     tasks?: {
                         title: string;
                         brief: string;
+                        topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
                         deliverables?: {
                             id: string;
                             /** @enum {string} */
@@ -18333,6 +18335,8 @@ export interface operations {
                     title: string;
                     /** @description Goal and acceptance of the step */
                     brief: string;
+                    /** @description JSON array of required workload nodes; [] removes declarations */
+                    topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
                     /** @description JSON file with an array of typed deliverables for the step */
                     deliverables?: {
                         id: string;
@@ -18505,6 +18509,8 @@ export interface operations {
                     brief?: string;
                     /** @description New position, starting at 1 */
                     position?: number;
+                    /** @description JSON array of required workload nodes; [] removes declarations */
+                    topology?: ("app-dev" | "app-prod" | "app-prod-2")[];
                     /** @description JSON file with an array of typed deliverables that replaces the list */
                     deliverables?: {
                         id: string;

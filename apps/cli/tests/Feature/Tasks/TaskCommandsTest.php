@@ -781,3 +781,25 @@ it('requests a preview on task group creation', function (): void {
     expect(Artisan::call('tasks:create', ['title' => 'Preview', '--project' => '1', '--brief' => 'Keep it running.', '--preview' => true, '--json' => true]))->toBe(0);
     expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR)['preview'])->toBeTrue();
 });
+
+describe('declared topology', function (): void {
+    it('sends a declaration and an explicit empty update', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/tasks-subtask-create/created'));
+        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => '["app-dev"]', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateSubtaskRequest
+            && json_decode((string) $request->body(), true)['topology'] === ['app-dev']);
+        MockClient::destroyGlobal();
+        $fixture = json_decode((string) file_get_contents(base_path('../../packages/php-sdk/fixtures/tasks/tasks-subtask-create/created.json')), true, flags: JSON_THROW_ON_ERROR);
+        $mock = MockClient::global([UpdateSubtaskRequest::class => MockResponse::make($fixture['body'])]);
+        expect(Artisan::call('tasks:subtask:update', ['group' => '13', 'subtask' => '57', '--topology' => '[]', '--json' => true]))->toBe(0);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateSubtaskRequest
+            && json_decode((string) $request->body(), true) === ['topology' => []]);
+    });
+
+    it('rejects invalid declarations before sending a request', function (string $value): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call('tasks:subtask:create', ['group' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('tasks.topology_invalid');
+        $mock->assertNothingSent();
+    })->with(['["gateway"]', '["app-dev","app-dev"]', '{}', 'null', 'app-dev']);
+});
