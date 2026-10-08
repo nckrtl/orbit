@@ -236,10 +236,19 @@ jobs:
             vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --compact "$architecture_test"
           done
 
-      # TIA does not link code that a test runs in a PHP subprocess to that test, so every affected run also runs them.
-      - name: Run subprocess tests
+      # TIA does not link code that a test runs in a PHP subprocess to that test, so a run that is not full also runs
+      # them when a change since the pull request base, or since the commit of the main graph, reaches the project.
+      - name: Choose whether to run subprocess tests
+        id: orbit-subprocess
         if: always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')
-        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --group=subprocess --do-not-fail-on-empty-test-suite --compact
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}
+        run: ../../bin/ci-tia subprocess --base "$BASE"
+
+      # The PHP SDK has no subprocess tests. Every other project's group must find tests.
+      - name: Run subprocess tests
+        if: always() && steps.orbit-subprocess.outputs.run == 'true'
+        run: vendor/bin/pest --parallel --processes=${{ runner.environment == 'self-hosted' && 6 || 4 }} --no-tia --group=subprocess --compact${{ matrix.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}
 
       - name: Require the Pest TIA graph to describe this commit
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'

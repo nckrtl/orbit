@@ -11,8 +11,11 @@ declare(strict_types=1);
 /** The projects whose Pest suites CI runs. */
 const SUBPROCESS_GROUP_PROJECTS = ['apps/cli', 'apps/docs', 'apps/e2e', 'apps/gateway', 'packages/php-sdk'];
 
-/** A test starts PHP when it names the running PHP binary or starts a `php` command. PHP's directory on PATH starts nothing. */
-const SUBPROCESS_GROUP_MARKER = '/(?<!dirname\()\bPHP_BINARY\b|\bPhpExecutableFinder\b|(?:new\s+Process|proc_open)\(\s*\[\s*[\'"]php[\'"]/';
+/**
+ * A test starts PHP when it names the running PHP binary or starts a `php` or `composer` command. PHP's directory on
+ * PATH starts nothing.
+ */
+const SUBPROCESS_GROUP_MARKER = '/(?<!dirname\()\bPHP_BINARY\b|\bPhpExecutableFinder\b|(?:new\s+Process|proc_open)\(\s*\[\s*[\'"](?:php|composer)[\'"]/';
 
 /** A file-level group declaration that lists `subprocess`. */
 const SUBPROCESS_GROUP_DECLARATION = '/^pest\(\)->group\([^)]*[\'"]subprocess[\'"][^)]*\);$/m';
@@ -108,11 +111,13 @@ it('detects PHP subprocesses started directly and through helpers', function ():
     expect(subprocess_group_reason('new Process([PHP_BINARY, base_path(\'artisan\')]);', []))->toBe('PHP_BINARY')
         ->and(subprocess_group_reason("new Process(['php', 'vendor/bin/pest']);", []))->toBe("new Process(['php'")
         ->and(subprocess_group_reason("proc_open([\n    'php', '-r', 'exit;'], [], \$pipes);", []))->toBe("proc_open([\n    'php'")
+        ->and(subprocess_group_reason("new Process(['composer', 'guidance:check'], \$project);", []))->toBe("new Process(['composer'")
         ->and(subprocess_group_reason('new PhpExecutableFinder()->find();', []))->toBe('PhpExecutableFinder')
         ->and(subprocess_group_reason('new Harness()->publish();', ['Harness' => 'tests/Support/Harness.php']))->toBe('tests/Support/Harness.php')
         // A command stored as data starts nothing.
         ->and(subprocess_group_reason("'command' => ['/usr/bin/php', 'artisan', 'queue:work'],", []))->toBeNull()
         ->and(subprocess_group_reason("'command' => 'php artisan schedule:run',", []))->toBeNull()
+        ->and(subprocess_group_reason("'command' => ['composer', 'test:affected'],", []))->toBeNull()
         ->and(subprocess_group_reason('$php = dirname(PHP_BINARY);', []))->toBeNull()
         ->and(subprocess_group_reason('new HarnessFactory();', ['Harness' => 'tests/Support/Harness.php']))->toBeNull();
 

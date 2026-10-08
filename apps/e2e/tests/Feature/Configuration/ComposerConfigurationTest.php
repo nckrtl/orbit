@@ -5,6 +5,8 @@ declare(strict_types=1);
 use Symfony\Component\Process\Process;
 use Symfony\Component\Yaml\Yaml;
 
+pest()->group('subprocess');
+
 /** Pest's process count in CI: 6 on the self-hosted Sabre runner, 4 on GitHub-hosted runners. */
 const CI_PEST_PROCESSES = '--processes=${{ runner.environment == \'self-hosted\' && 6 || 4 }}';
 
@@ -262,7 +264,8 @@ describe('Composer configuration', function (): void {
             ->and($order['Choose the main test selection'])->toBeLessThan($order['Run tests affected since the main graph'])
             ->and($order['Run tests affected since the main graph'])->toBeLessThan($order['Run full test suite and refresh Pest TIA graph'])
             ->and($order['Run full test suite and refresh Pest TIA graph'])->toBeLessThan($order['Run architecture tests'])
-            ->and($order['Run architecture tests'])->toBeLessThan($order['Run subprocess tests'])
+            ->and($order['Run architecture tests'])->toBeLessThan($order['Choose whether to run subprocess tests'])
+            ->and($order['Choose whether to run subprocess tests'])->toBeLessThan($order['Run subprocess tests'])
             ->and($order['Run subprocess tests'])->toBeLessThan($order['Require the Pest TIA graph to describe this commit'])
             ->and($order['Require the Pest TIA graph to describe this commit'])->toBeLessThan($order['Save Pest TIA graph'])
             ->and($order['Save Pest TIA graph'])->toBeLessThan($order['Export sandbox TIA baseline']);
@@ -296,14 +299,26 @@ describe('Composer configuration', function (): void {
             ->toContain('tests/Unit/Requests/Deployments/DeploymentRequestsTest.php')
             ->toContain('vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --compact "$architecture_test"');
         expect($steps['Run architecture tests']['run'])->not->toContain('--tia');
-        // TIA does not link code that a test runs in a PHP subprocess to that test, so pull requests and affected runs
-        // on main run the whole group. Paratest takes one path per run, so one group run replaces a run per file. A
-        // project without such tests has an empty group, and that passes.
+        // TIA does not link code that a test runs in a PHP subprocess to that test, so a run that is not full also runs
+        // the whole group when a change reaches the project. A change that the project's tests never read skips it.
+        // Paratest takes one path per run, so one group run replaces a run per file.
+        expect($steps['Choose whether to run subprocess tests'])
+            ->toBe([
+                'name' => 'Choose whether to run subprocess tests',
+                'id' => 'orbit-subprocess',
+                'if' => "always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
+                // A pull request compares with its base, and a push to main with the commit of the restored graph.
+                'env' => ['BASE' => '${{ github.event.pull_request.base.sha || steps.orbit-tia-plan.outputs.base }}'],
+                'run' => '../../bin/ci-tia subprocess --base "$BASE"',
+            ]);
         expect($steps['Run subprocess tests'])
             ->toBe([
                 'name' => 'Run subprocess tests',
-                'if' => "always() && (github.event_name == 'pull_request' || steps.orbit-tia-plan.outputs.mode == 'affected')",
-                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --group=subprocess --do-not-fail-on-empty-test-suite --compact',
+                'if' => "always() && steps.orbit-subprocess.outputs.run == 'true'",
+                // Only the PHP SDK, which has no subprocess tests, may pass with an empty group. Another project with
+                // an empty group fails, so an exclusion cannot silently skip its subprocess tests.
+                'run' => 'vendor/bin/pest --parallel '.CI_PEST_PROCESSES.' --no-tia --group=subprocess --compact'
+                    ."\${{ matrix.directory == 'packages/php-sdk' && ' --do-not-fail-on-empty-test-suite' || '' }}",
             ]);
     });
 
