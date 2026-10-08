@@ -8,8 +8,8 @@ use App\Data\T3\RegisterT3EnvironmentData;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\T3\T3ServerClient;
 use App\Domain\T3\T3ServerException;
+use App\Models\Node;
 use App\Models\T3Environment;
-use App\Models\T3Peer;
 use Illuminate\Support\Carbon;
 
 /**
@@ -27,7 +27,7 @@ final readonly class RegisterT3EnvironmentAction
 
     public function __construct(private T3ServerClient $server) {}
 
-    public function execute(T3Peer $peer, RegisterT3EnvironmentData $data): T3Environment
+    public function execute(Node $node, RegisterT3EnvironmentData $data): T3Environment
     {
         $descriptor = $this->server->describe($data->url);
 
@@ -56,7 +56,7 @@ final readonly class RegisterT3EnvironmentAction
             [
                 'label' => $data->label,
                 'url' => $data->url,
-                't3_peer_id' => $peer->id,
+                'node_id' => $node->id,
                 'server_version' => $descriptor->serverVersion,
                 'admin_session' => $session->token,
                 'admin_session_expires_at' => $session->expiresAt,

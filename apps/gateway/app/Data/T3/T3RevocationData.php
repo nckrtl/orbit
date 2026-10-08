@@ -14,7 +14,7 @@ final class T3RevocationData extends Data
     /** @param list<T3PairingData> $pairings */
     public function __construct(
         public string $environmentId,
-        public int $peerId,
+        public int $nodeId,
         public int $revokedSessions,
         public array $pairings,
     ) {}

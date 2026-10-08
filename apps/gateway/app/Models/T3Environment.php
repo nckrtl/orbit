@@ -15,14 +15,14 @@ use Illuminate\Support\Carbon;
  * @property string $environment_id
  * @property string $label
  * @property string $url
- * @property int|null $t3_peer_id
+ * @property int|null $node_id
  * @property string|null $server_version
  * @property string $admin_session
  * @property Carbon $admin_session_expires_at
  * @property Carbon $registered_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
- * @property-read T3Peer|null $peer
+ * @property-read Node|null $node
  */
 final class T3Environment extends Model
 {
@@ -32,7 +32,7 @@ final class T3Environment extends Model
         'environment_id',
         'label',
         'url',
-        't3_peer_id',
+        'node_id',
         'server_version',
         'admin_session',
         'admin_session_expires_at',
@@ -49,17 +49,17 @@ final class T3Environment extends Model
         return 'environment_id';
     }
 
-    /** @return BelongsTo<T3Peer, $this> */
-    public function peer(): BelongsTo
+    /** @return BelongsTo<Node, $this> */
+    public function node(): BelongsTo
     {
-        return $this->belongsTo(T3Peer::class, 't3_peer_id');
+        return $this->belongsTo(Node::class);
     }
 
     /** @return array<string, string> */
     protected function casts(): array
     {
         return [
-            't3_peer_id' => 'integer',
+            'node_id' => 'integer',
             'admin_session' => 'encrypted',
             'admin_session_expires_at' => 'datetime',
             'registered_at' => 'datetime',

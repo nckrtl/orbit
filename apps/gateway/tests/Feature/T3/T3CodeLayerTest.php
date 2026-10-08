@@ -7,8 +7,8 @@ use App\Models\Activity;
 use App\Models\Node;
 use App\Models\T3Environment;
 use App\Models\T3Pairing;
-use App\Models\T3Peer;
 use App\Models\T3Profile;
+use App\Models\T3ProfileBinding;
 use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -66,49 +66,41 @@ function t3_environment(array $attributes = []): T3Environment
     ]);
 }
 
+function t3_node(string $name, string $address, LifecycleStatus $status = LifecycleStatus::Active): Node
+{
+    return Node::query()->create([
+        'name' => $name,
+        'status' => $status,
+        'platform' => 'ios',
+        'public_ssh_host' => $address,
+        'wireguard_ip' => $address,
+    ]);
+}
+
 beforeEach(function (): void {
+    $this->phone = t3_node('phone', T3_PHONE);
+    $this->laptop = t3_node('laptop', '10.44.0.78');
     $this->withServerVariables(['REMOTE_ADDR' => T3_PHONE]);
 });
 
-describe('peer identity', function (): void {
-    it('admits a WireGuard peer that is not a Node as a client peer', function (): void {
+describe('identity', function (): void {
+    it('identifies the caller as the active Node that owns its WireGuard address', function (): void {
         $this->getJson('/api/v1/t3/me')
             ->assertOk()
-            ->assertJsonPath('data.peer.wireguard_ip', T3_PHONE)
-            ->assertJsonPath('data.peer.name', T3_PHONE)
-            ->assertJsonPath('data.peer.node_name', null)
+            ->assertJsonPath('data.id', $this->phone->id)
+            ->assertJsonPath('data.name', 'phone')
+            ->assertJsonPath('data.wireguard_ip', T3_PHONE)
             ->assertJsonPath('data.profile', null);
-
-        expect(T3Peer::query()->where('wireguard_ip', T3_PHONE)->count())->toBe(1);
-
-        $this->getJson('/api/v1/t3/me')->assertOk();
-        expect(T3Peer::query()->count())->toBe(1);
     });
 
-    it('links a peer to the active Node that owns its address', function (): void {
-        Node::query()->create([
-            'name' => 'nick',
-            'status' => LifecycleStatus::Active,
-            'platform' => 'macos',
-            'public_ssh_host' => '192.0.2.40',
-            'wireguard_ip' => '10.44.0.40',
-        ]);
+    it('refuses a caller that is not an active Node', function (string $address): void {
+        t3_node('provisioning-phone', '10.44.0.90', LifecycleStatus::Provisioning);
 
-        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.40'])
-            ->getJson('/api/v1/t3/me')
-            ->assertOk()
-            ->assertJsonPath('data.peer.name', 'nick')
-            ->assertJsonPath('data.peer.node_name', 'nick');
-    });
-
-    it('refuses a caller outside the WireGuard subnet', function (string $address): void {
         $this->withServerVariables(['REMOTE_ADDR' => $address])
             ->getJson('/api/v1/t3/me')
             ->assertForbidden()
             ->assertJsonPath('error.code', 'peer.identity_unknown');
-
-        expect(T3Peer::query()->count())->toBe(0);
-    })->with(['public address' => '203.0.113.9', 'loopback' => '127.0.0.1', 'subnet broadcast' => '10.44.0.255']);
+    })->with(['unknown address' => '10.44.0.91', 'provisioning Node' => '10.44.0.90', 'public address' => '203.0.113.9']);
 
     it('answers an unknown caller before it resolves a route binding', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => '203.0.113.9'])
@@ -116,10 +108,16 @@ describe('peer identity', function (): void {
             ->assertForbidden()
             ->assertJsonPath('error.code', 'peer.identity_unknown');
     });
+
+    it('needs no node access grant', function (): void {
+        expect(Node::query()->find($this->phone->id)?->accessibleNodes()->count())->toBe(0);
+
+        $this->getJson('/api/v1/t3/profiles')->assertOk();
+    });
 });
 
 describe('profiles', function (): void {
-    it('creates and lists profiles that every peer can see', function (): void {
+    it('creates and lists profiles that every Node can see', function (): void {
         $this->postJson('/api/v1/t3/profiles', ['name' => 'Nick'])
             ->assertCreated()
             ->assertJsonPath('data.name', 'Nick')
@@ -135,17 +133,18 @@ describe('profiles', function (): void {
             ->assertJsonPath('data.0.name', 'Nick');
     });
 
-    it('binds the calling peer to one profile and keeps the binding', function (): void {
+    it('binds the calling Node to one profile and keeps the binding', function (): void {
         $nick = T3Profile::query()->create(['name' => 'Nick', 'settings' => ['workspaces' => []]]);
         $work = T3Profile::query()->create(['name' => 'Work', 'settings' => ['workspaces' => []]]);
 
         $this->putJson('/api/v1/t3/me/profile', ['profile_id' => $nick->id])
             ->assertOk()
             ->assertJsonPath('data.profile.name', 'Nick')
-            ->assertJsonPath('data.peer.profile_id', $nick->id);
+            ->assertJsonPath('data.id', $this->phone->id);
         $this->getJson('/api/v1/t3/me')->assertJsonPath('data.profile.id', $nick->id);
 
         $this->putJson('/api/v1/t3/me/profile', ['profile_id' => $work->id])->assertOk();
+        expect(T3ProfileBinding::query()->where('node_id', $this->phone->id)->count())->toBe(1);
         $this->getJson('/api/v1/t3/me')->assertJsonPath('data.profile.name', 'Work');
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.78'])
             ->getJson('/api/v1/t3/me')->assertJsonPath('data.profile', null);
@@ -233,7 +232,7 @@ describe('environment registration', function (): void {
             ->assertJsonPath('data.environment_id', 'env-beast')
             ->assertJsonPath('data.url', T3_SERVER)
             ->assertJsonPath('data.server_version', '0.9.1')
-            ->assertJsonPath('data.registered_by', T3_PHONE)
+            ->assertJsonPath('data.registered_by', 'phone')
             ->assertJsonPath('data.status', 'registered')
             ->assertJsonMissingPath('data.admin_session');
 
@@ -321,7 +320,7 @@ describe('environment registration', function (): void {
 });
 
 describe('pairing', function (): void {
-    it('mints a pairing link for the calling peer and records it', function (): void {
+    it('mints a pairing link for the calling Node and records it', function (): void {
         Http::preventStrayRequests();
         Http::fake([
             T3_SERVER.'/api/auth/pairing-token' => Http::response([
@@ -337,12 +336,12 @@ describe('pairing', function (): void {
             ->assertCreated()
             ->assertJsonPath('data.pairing_url', T3_SERVER.'/pair#token=device-pairing-token')
             ->assertJsonPath('data.pairing.environment_id', 'env-beast')
-            ->assertJsonPath('data.pairing.peer_name', T3_PHONE)
+            ->assertJsonPath('data.pairing.node_name', 'phone')
             ->assertJsonPath('data.pairing.revoked_at', null);
 
         $pairing = T3Pairing::query()->sole();
         expect($pairing->pairing_link_id)->toBe('link-1')
-            ->and($pairing->client_label)->toStartWith(T3_PHONE.' via Orbit ')
+            ->and($pairing->client_label)->toStartWith('phone via Orbit ')
             ->and($response->json('data.pairing.client_label'))->toBe($pairing->client_label);
         Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === T3_SERVER.'/api/auth/pairing-token'
             && $request->hasHeader('Authorization', 'Bearer admin-session-token')
@@ -383,14 +382,14 @@ describe('pairing', function (): void {
 });
 
 describe('revoke', function (): void {
-    it("revokes the peer's sessions and unused links on the server", function (): void {
+    it("revokes the Node's sessions and unused links on the server", function (): void {
         Http::preventStrayRequests();
         $environment = t3_environment();
-        $phone = T3Peer::query()->create(['wireguard_ip' => T3_PHONE, 'last_seen_at' => Carbon::now()]);
-        $laptop = T3Peer::query()->create(['wireguard_ip' => '10.44.0.78', 'last_seen_at' => Carbon::now()]);
-        foreach ([[$phone, 'link-1', 'phone via Orbit a'], [$phone, 'link-2', 'phone via Orbit b'], [$laptop, 'link-3', 'laptop via Orbit c']] as [$peer, $link, $label]) {
+        $phone = $this->phone;
+        $laptop = $this->laptop;
+        foreach ([[$phone, 'link-1', 'phone via Orbit a'], [$phone, 'link-2', 'phone via Orbit b'], [$laptop, 'link-3', 'laptop via Orbit c']] as [$node, $link, $label]) {
             T3Pairing::query()->create([
-                't3_peer_id' => $peer->id,
+                'node_id' => $node->id,
                 't3_environment_id' => $environment->id,
                 'pairing_link_id' => $link,
                 'client_label' => $label,
@@ -409,7 +408,7 @@ describe('revoke', function (): void {
 
         $this->postJson('/api/v1/t3/environments/env-beast/pairings/revoke')
             ->assertOk()
-            ->assertJsonPath('data.peer_id', $phone->id)
+            ->assertJsonPath('data.node_id', $phone->id)
             ->assertJsonPath('data.revoked_sessions', 1)
             ->assertJsonCount(2, 'data.pairings');
 
@@ -421,13 +420,13 @@ describe('revoke', function (): void {
         Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === T3_SERVER.'/api/auth/pairing-links/revoke' && $request['id'] === 'link-2');
         expect(T3Pairing::query()->whereNotNull('revoked_at')->pluck('pairing_link_id')->all())->toBe(['link-1', 'link-2']);
 
-        $this->postJson('/api/v1/t3/environments/env-beast/pairings/revoke', ['peer_id' => $laptop->id])
+        $this->postJson('/api/v1/t3/environments/env-beast/pairings/revoke', ['node_id' => $laptop->id])
             ->assertOk()
             ->assertJsonPath('data.revoked_sessions', 1);
         Http::assertSent(static fn (HttpRequest $request): bool => $request->url() === T3_SERVER.'/api/auth/clients/revoke' && $request['sessionId'] === 'laptop-session');
     });
 
-    it('calls nothing when the peer holds no pairing on the server', function (): void {
+    it('calls nothing when the Node holds no pairing on the server', function (): void {
         Http::preventStrayRequests();
         t3_environment();
 

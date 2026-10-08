@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
 /**
- * A named set of T3 Code settings that the WireGuard peers bound to it share.
+ * A named set of T3 Code settings that the Nodes bound to it share.
  *
  * @property int $id
  * @property string $name
@@ -18,7 +18,7 @@ use Illuminate\Support\Carbon;
  * @property int $settings_version
  * @property Carbon $created_at
  * @property Carbon $updated_at
- * @property-read Collection<int, T3Peer> $peers
+ * @property-read Collection<int, T3ProfileBinding> $bindings
  */
 final class T3Profile extends Model
 {
@@ -26,10 +26,10 @@ final class T3Profile extends Model
     #[\Override]
     protected $fillable = ['name', 'settings', 'settings_version'];
 
-    /** @return HasMany<T3Peer, $this> */
-    public function peers(): HasMany
+    /** @return HasMany<T3ProfileBinding, $this> */
+    public function bindings(): HasMany
     {
-        return $this->hasMany(T3Peer::class);
+        return $this->hasMany(T3ProfileBinding::class);
     }
 
     /** @return array<string, string> */

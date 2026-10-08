@@ -15,8 +15,8 @@ final class T3PairingData extends Data
     public function __construct(
         public int $id,
         public string $environmentId,
-        public int $peerId,
-        public string $peerName,
+        public int $nodeId,
+        public string $nodeName,
         public string $clientLabel,
         public string $issuedAt,
         public string $expiresAt,
@@ -25,13 +25,13 @@ final class T3PairingData extends Data
 
     public static function fromModel(T3Pairing $pairing): self
     {
-        $pairing->loadMissing(['environment', 'peer.node']);
+        $pairing->loadMissing(['environment', 'node']);
 
         return new self(
             id: $pairing->id,
             environmentId: $pairing->environment->environment_id,
-            peerId: $pairing->t3_peer_id,
-            peerName: $pairing->peer->displayName(),
+            nodeId: $pairing->node_id,
+            nodeName: $pairing->node->name,
             clientLabel: $pairing->client_label,
             issuedAt: $pairing->created_at->toIso8601String(),
             expiresAt: $pairing->expires_at->toIso8601String(),

@@ -7468,8 +7468,8 @@
     {
       "name": "t3-me",
       "extension": null,
-      "title": "Show the calling peer",
-      "description": "Returns the calling WireGuard peer and the profile it is bound to, or `null`. Any address in the VPN subnet is a peer, also one that is not a Node. A caller outside the subnet gets `peer.identity_unknown` (403).",
+      "title": "Show the calling Node",
+      "description": "Returns the calling Node and the profile it is bound to, or `null`. Every active Node, a phone included, may use the T3 endpoints without a node access grant.",
       "method": "GET",
       "path": "/api/v1/t3/me",
       "path_inputs": [],
@@ -7484,8 +7484,8 @@
     {
       "name": "t3-me-profile",
       "extension": null,
-      "title": "Bind the calling peer to a profile",
-      "description": "Binds the calling peer to one profile, replacing an earlier binding. Returns the peer and its profile.",
+      "title": "Bind the calling Node to a profile",
+      "description": "Binds the calling Node to one profile, replacing an earlier binding. Returns the Node and its profile.",
       "method": "PUT",
       "path": "/api/v1/t3/me/profile",
       "path_inputs": [],
@@ -7508,7 +7508,7 @@
       "name": "t3-pairing-create",
       "extension": null,
       "title": "Mint a pairing link",
-      "description": "Mints a one-time pairing link on the T3 server for the calling peer and records it. Open `pairing_url` in T3 Code to pair. An expired admin session returns `t3.session_expired` (409).",
+      "description": "Mints a one-time pairing link on the T3 server for the calling Node and records it. Open `pairing_url` in T3 Code to pair. An expired admin session returns `t3.session_expired` (409).",
       "method": "POST",
       "path": "/api/v1/t3/environments/{environment}/pairings",
       "path_inputs": [
@@ -7533,7 +7533,7 @@
       "name": "t3-pairing-list",
       "extension": null,
       "title": "List pairings on a T3 server",
-      "description": "Lists the pairing links the Gateway minted on one T3 server, newest first, with the peer and revocation time of each.",
+      "description": "Lists the pairing links the Gateway minted on one T3 server, newest first, with the Node and revocation time of each.",
       "method": "GET",
       "path": "/api/v1/t3/environments/{environment}/pairings",
       "path_inputs": [
@@ -7557,8 +7557,8 @@
     {
       "name": "t3-pairing-revoke",
       "extension": null,
-      "title": "Revoke a peer's sessions on a T3 server",
-      "description": "Revokes the sessions a peer paired from its links on one T3 server, and its unused links. Without `peer_id` it revokes the calling peer. WireGuard access does not change.",
+      "title": "Revoke a Node's sessions on a T3 server",
+      "description": "Revokes the sessions a Node paired from its links on one T3 server, and its unused links. Without `node_id` it revokes the calling Node. WireGuard access does not change.",
       "method": "POST",
       "path": "/api/v1/t3/environments/{environment}/pairings/revoke",
       "path_inputs": [
@@ -7572,7 +7572,7 @@
           "environment": {
             "type": "string"
           },
-          "peer_id": {
+          "node_id": {
             "type": "integer"
           }
         },
@@ -7610,7 +7610,7 @@
       "name": "t3-profile-list",
       "extension": null,
       "title": "List T3 profiles",
-      "description": "Lists every T3 profile. Every peer sees every profile.",
+      "description": "Lists every T3 profile. Every Node sees every profile.",
       "method": "GET",
       "path": "/api/v1/t3/profiles",
       "path_inputs": [],

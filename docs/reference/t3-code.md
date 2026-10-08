@@ -1,6 +1,6 @@
 ---
 title: "T3 Code layer"
-description: "How the Gateway signs in T3 Code devices by WireGuard peer, shares workspaces through profiles, holds an admin session for each registered T3 server, and mints and revokes device pairings."
+description: "How the Gateway signs in T3 Code devices as Nodes, shares workspaces through profiles, holds an admin session for each registered T3 server, and mints and revokes device pairings."
 covers:
   - apps/gateway/app/Actions/T3/**
   - apps/gateway/app/Data/T3/**
@@ -8,27 +8,24 @@ covers:
   - apps/gateway/app/Infrastructure/T3/**
   - apps/gateway/app/Http/Controllers/Api/T3*.php
   - apps/gateway/app/Http/Requests/T3/**
-  - apps/gateway/app/Http/Middleware/RequireT3Peer.php
   - apps/gateway/app/Models/T3*.php
 ---
 
 # T3 Code layer
 
-This page is for the person who builds the T3 Code client side, and for the Gateway maintainer. The Gateway gives T3 Code one central layer: a device signs in by its WireGuard peer, sees every registered T3 server, and shares workspaces with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
+This page is for the person who builds the T3 Code client side, and for the Gateway maintainer. The Gateway gives T3 Code one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
 
 The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired.
 
 ## Identity
 
-A caller is identified by its WireGuard address. Any address inside the VPN subnet (`vpn.subnet`, `10.44.0.0/24` by default) is a peer, also a phone or laptop that is not a Node. When an active Node owns the address, the peer is linked to that Node and takes its name. Otherwise the peer's name is its address.
+A caller is the active Node that owns its WireGuard address, as for every other Gateway API call. Phones and laptops are Nodes too, without roles, much like an operator Node. A caller that is not an active Node gets `peer.identity_unknown` (403).
 
-The Gateway records each peer the first time it calls. A caller outside the subnet gets `peer.identity_unknown` (403).
-
-This slice has no grants. Every peer may read and change every profile, register a T3 server, mint a pairing link, and revoke any peer's sessions.
+This slice has no grants. The T3 endpoints need no node access edge: every active Node may read and change every profile, register a T3 server, mint a pairing link, and revoke any Node's sessions.
 
 ## Profiles
 
-A profile is a named set of shared settings, such as "Nick". A peer belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/t3/me`. Every peer sees every profile.
+A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/t3/me`. Every Node sees every profile.
 
 A profile holds one settings document. Its keys follow T3 Code's workspace store, so they stay camelCase:
 
@@ -63,7 +60,7 @@ The document has a version. A new profile starts at version 1 with no workspaces
 
 ## Registration
 
-A T3 server registers on startup, from any WireGuard peer. It mints an admin pairing link for itself in-process, as `t3 pair` does, and sends it with its environment id, its label, and the URL that devices use to reach it over WireGuard.
+A T3 server registers on startup, from the Node it runs on. It mints an admin pairing link for itself in-process, as `t3 pair` does, and sends it with its environment id, its label, and the URL that devices use to reach it over WireGuard.
 
 1. The Gateway reads `GET <url>/.well-known/t3/environment`. The served `environmentId` must equal `environment_id`, or the request fails with `t3.environment_mismatch` (422) before the link is spent.
 2. It exchanges the link's token at `POST <url>/oauth/token` with a token-exchange grant, as a T3 client pairs. Its session has the client label `Orbit Gateway` and device type `bot`.
@@ -75,11 +72,11 @@ Registering again replaces the stored session. The T3 server registers on each s
 
 ## Pairing and revocation
 
-A device asks the Gateway for a pairing link to one registered T3 server. The Gateway calls `POST <url>/api/auth/pairing-token` with its admin session and a unique label, such as `10.44.0.77 via Orbit k3j9x0qa`. T3 gives the session paired from that link the same client label. The Gateway records the pairing: the peer, the server, the T3 link id, the label, and the link's expiry.
+A device asks the Gateway for a pairing link to one registered T3 server. The Gateway calls `POST <url>/api/auth/pairing-token` with its admin session and a unique label, such as `phone via Orbit k3j9x0qa`. T3 gives the session paired from that link the same client label. The Gateway records the pairing: the Node, the server, the T3 link id, the label, and the link's expiry.
 
 The device opens the returned `pairing_url` and pairs as it does today, but without a manual step. The link is one-time and short-lived, so the device pairs right away.
 
-To revoke, the Gateway lists `GET <url>/api/auth/clients`. It revokes each session whose label belongs to the peer's open pairings on that server with `POST <url>/api/auth/clients/revoke`, and it revokes each pairing link that was not used with `POST <url>/api/auth/pairing-links/revoke`. It never revokes its own current session. The device loses that server at once; its WireGuard access does not change.
+To revoke, the Gateway lists `GET <url>/api/auth/clients`. It revokes each session whose label belongs to the Node's open pairings on that server with `POST <url>/api/auth/clients/revoke`, and it revokes each pairing link that was not used with `POST <url>/api/auth/pairing-links/revoke`. It never revokes its own current session. The device loses that server at once; its WireGuard access does not change.
 
 ## API
 
@@ -87,8 +84,8 @@ Every endpoint is under `https://gateway.orbit/api/v1/t3` and answers `{"data": 
 
 | Method and path | Request | Response `data` |
 | --- | --- | --- |
-| `GET /me` | — | `{peer, profile}`; `profile` is `null` before a binding |
-| `PUT /me/profile` | `{"profile_id": 1}` | `{peer, profile}` |
+| `GET /me` | — | node, with `profile` `null` before a binding |
+| `PUT /me/profile` | `{"profile_id": 1}` | node |
 | `GET /profiles` | — | list of profile |
 | `POST /profiles` | `{"name": "Nick"}` | profile (201) |
 | `GET /profiles/{id}/settings` | — | settings |
@@ -97,17 +94,17 @@ Every endpoint is under `https://gateway.orbit/api/v1/t3` and answers `{"data": 
 | `POST /environments` | `{"environment_id", "label", "url", "pairing_url"}` | environment |
 | `GET /environments/{environment_id}/pairings` | — | list of pairing, newest first |
 | `POST /environments/{environment_id}/pairings` | — | `{pairing, pairing_url}` (201) |
-| `POST /environments/{environment_id}/pairings/revoke` | `{"peer_id": 4}`, optional | `{environment_id, peer_id, revoked_sessions, pairings}` |
+| `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4}`, optional | `{environment_id, node_id, revoked_sessions, pairings}` |
 
 The objects:
 
 ```json
 {
-  "peer": {"id": 4, "name": "nick", "wireguard_ip": "10.44.0.40", "node_name": "nick", "profile_id": 1, "last_seen_at": "2026-10-08T10:00:00+00:00"},
+  "node": {"id": 4, "name": "phone", "wireguard_ip": "10.44.0.77", "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"}},
   "profile": {"id": 1, "name": "Nick", "settings_version": 3, "updated_at": "2026-10-08T10:00:00+00:00"},
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered"},
-  "pairing": {"id": 7, "environment_id": "env-beast", "peer_id": 4, "peer_name": "nick", "client_label": "nick via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
+  "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
 }
 ```
 
@@ -115,7 +112,7 @@ The objects:
 
 | Error code | Status | Meaning |
 | --- | --- | --- |
-| `peer.identity_unknown` | 403 | The caller is not inside the WireGuard subnet. |
+| `peer.identity_unknown` | 403 | The caller is not an active Node. |
 | `validation.failed` | 422 | The request breaks a rule; `details` names each field. |
 | `t3.settings_version_conflict` | 409 | The settings changed since the sent version; `details.current_version` is the new one. |
 | `t3.environment_mismatch` | 422 | `url` serves another environment. |
@@ -126,7 +123,7 @@ The objects:
 | `t3.request_refused` | 502 | The T3 server refused the call with another status; `details` has its status and reason. |
 | `t3.response_invalid` | 502 | The T3 server's answer did not have T3's shape. |
 
-A registration is not recorded as command activity, because its body carries an admin pairing link. The other calls are recorded with the caller's WireGuard address.
+Every call is recorded as command activity with the calling Node. A registration records its environment id, label, and URL, never the pairing link. A settings replace records only the version it replaced, because the document can hold workspace pictures.
 
 ## Why it works this way
 
@@ -134,6 +131,6 @@ The T3 Connect relay could also be self-hosted. It needs four outside services a
 
 The Gateway reuses T3's own pairing instead of a new T3 auth scope. A T3 server needs no Gateway-specific code beyond its registration call, and the Gateway needs no SSH access to it. The cost is that the Gateway holds full admin access to every registered T3 server. On a private WireGuard network where the Gateway already manages every machine, that adds little new risk.
 
-The WireGuard address is the identity because WireGuard binds a source address to one peer key. Phones and laptops may not be Nodes, so a Node record is not required. Revocation happens only in T3 and leaves WireGuard access alone, so a revoked device keeps its other servers and Orbit access.
+The Node is the identity because the Gateway already knows every WireGuard peer as a Node, phones included, and WireGuard binds each address to one key. Revocation happens only in T3 and leaves WireGuard access alone, so a revoked device keeps its other servers and Orbit access.
 
-A peer belongs to one profile because each device has its own WireGuard identity: a profile is how a phone and a desktop share one copy of the workspaces. Settings use a version check rather than last-write-wins, so an edit on one device is never lost silently to an older copy on another.
+A Node belongs to one profile because each device is its own Node: a profile is how a phone and a desktop share one copy of the workspaces. Settings use a version check rather than last-write-wins, so an edit on one device is never lost silently to an older copy on another.

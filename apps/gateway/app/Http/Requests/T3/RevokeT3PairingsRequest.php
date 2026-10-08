@@ -4,26 +4,30 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\T3;
 
-use App\Http\Middleware\RequireT3Peer;
-use App\Models\T3Peer;
+use App\Models\Node;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
-/** Names the peer whose sessions to revoke; without `peer_id` it is the calling peer. */
+/** Names the Node whose sessions to revoke; without `node_id` it is the calling Node. */
 final class RevokeT3PairingsRequest extends FormRequest
 {
     /** @return array<string, list<mixed>> */
     public function rules(): array
     {
         return [
-            'peer_id' => ['sometimes', 'integer', Rule::exists('t3_peers', 'id')],
+            'node_id' => ['sometimes', 'integer', Rule::exists('nodes', 'id')],
         ];
     }
 
-    public function peer(): T3Peer
+    public function node(): Node
     {
-        return $this->has('peer_id')
-            ? T3Peer::query()->findOrFail($this->integer('peer_id'))
-            : RequireT3Peer::peer($this);
+        if ($this->has('node_id')) {
+            return Node::query()->findOrFail($this->integer('node_id'));
+        }
+
+        $caller = $this->user();
+        assert($caller instanceof Node, description: 'Authenticated peer must be a Node.');
+
+        return $caller;
     }
 }

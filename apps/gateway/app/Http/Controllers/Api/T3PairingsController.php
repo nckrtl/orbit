@@ -8,8 +8,8 @@ use App\Actions\T3\IssueT3PairingAction;
 use App\Actions\T3\RevokeT3PairingsAction;
 use App\Data\T3\T3PairingData;
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireT3Peer;
 use App\Http\Requests\T3\RevokeT3PairingsRequest;
+use App\Models\Node;
 use App\Models\T3Environment;
 use App\Models\T3Pairing;
 use Illuminate\Http\JsonResponse;
@@ -22,7 +22,7 @@ final class T3PairingsController extends Controller
         return response()->json([
             'data' => T3Pairing::query()
                 ->where('t3_environment_id', $environment->id)
-                ->with(['environment', 'peer.node'])
+                ->with(['environment', 'node'])
                 ->orderByDesc('id')
                 ->get()
                 ->map(static fn (T3Pairing $pairing): array => T3PairingData::fromModel($pairing)->toArray())
@@ -34,8 +34,11 @@ final class T3PairingsController extends Controller
 
     public function store(Request $request, T3Environment $environment, IssueT3PairingAction $action): JsonResponse
     {
+        $node = $request->user();
+        assert($node instanceof Node, description: 'Authenticated peer must be a Node.');
+
         return response()->json([
-            'data' => $action->execute(RequireT3Peer::peer($request), $environment)->toArray(),
+            'data' => $action->execute($node, $environment)->toArray(),
             'meta' => $this->meta($request),
         ], 201);
     }
@@ -43,7 +46,7 @@ final class T3PairingsController extends Controller
     public function revoke(RevokeT3PairingsRequest $request, T3Environment $environment, RevokeT3PairingsAction $action): JsonResponse
     {
         return response()->json([
-            'data' => $action->execute($request->peer(), $environment)->toArray(),
+            'data' => $action->execute($request->node(), $environment)->toArray(),
             'meta' => $this->meta($request),
         ]);
     }

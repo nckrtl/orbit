@@ -7,8 +7,8 @@ namespace App\Http\Controllers\Api;
 use App\Actions\T3\RegisterT3EnvironmentAction;
 use App\Data\T3\T3EnvironmentData;
 use App\Http\Controllers\Controller;
-use App\Http\Middleware\RequireT3Peer;
 use App\Http\Requests\T3\RegisterT3EnvironmentRequest;
+use App\Models\Node;
 use App\Models\T3Environment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +19,7 @@ final class T3EnvironmentsController extends Controller
     {
         return response()->json([
             'data' => T3Environment::query()
-                ->with('peer.node')
+                ->with('node')
                 ->orderBy('label')
                 ->orderBy('id')
                 ->get()
@@ -32,8 +32,11 @@ final class T3EnvironmentsController extends Controller
 
     public function store(RegisterT3EnvironmentRequest $request, RegisterT3EnvironmentAction $action): JsonResponse
     {
+        $node = $request->user();
+        assert($node instanceof Node, description: 'Authenticated peer must be a Node.');
+
         return response()->json([
-            'data' => T3EnvironmentData::fromModel($action->execute(RequireT3Peer::peer($request), $request->payload()))->toArray(),
+            'data' => T3EnvironmentData::fromModel($action->execute($node, $request->payload()))->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ]);
     }

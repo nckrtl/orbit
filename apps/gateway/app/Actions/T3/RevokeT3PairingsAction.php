@@ -7,23 +7,23 @@ namespace App\Actions\T3;
 use App\Data\T3\T3PairingData;
 use App\Data\T3\T3RevocationData;
 use App\Domain\T3\T3ServerClient;
+use App\Models\Node;
 use App\Models\T3Environment;
 use App\Models\T3Pairing;
-use App\Models\T3Peer;
 use Illuminate\Support\Carbon;
 
 /**
- * Ends a peer's access to one T3 server: it revokes every session paired from the peer's pairing
+ * Ends a Node's access to one T3 server: it revokes every session paired from the Node's pairing
  * links there, and any link not used yet. WireGuard access stays as it is.
  */
 final readonly class RevokeT3PairingsAction
 {
     public function __construct(private T3ServerClient $server) {}
 
-    public function execute(T3Peer $peer, T3Environment $environment): T3RevocationData
+    public function execute(Node $node, T3Environment $environment): T3RevocationData
     {
         $pairings = T3Pairing::query()
-            ->where('t3_peer_id', $peer->id)
+            ->where('node_id', $node->id)
             ->where('t3_environment_id', $environment->id)
             ->whereNull('revoked_at')
             ->orderBy('id')
@@ -48,7 +48,7 @@ final readonly class RevokeT3PairingsAction
 
         return new T3RevocationData(
             environmentId: $environment->environment_id,
-            peerId: $peer->id,
+            nodeId: $node->id,
             revokedSessions: $revokedSessions,
             pairings: array_values($pairings->map(static fn (T3Pairing $pairing): T3PairingData => T3PairingData::fromModel($pairing))->all()),
         );

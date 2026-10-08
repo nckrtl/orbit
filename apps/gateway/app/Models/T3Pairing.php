@@ -9,11 +9,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
 /**
- * A pairing link the Gateway minted on a T3 server for one peer. The session the peer gets from it
+ * A pairing link the Gateway minted on a T3 server for one Node. The session the Node gets from it
  * carries `client_label` on that server, which is how a revoke finds it.
  *
  * @property int $id
- * @property int $t3_peer_id
+ * @property int $node_id
  * @property int $t3_environment_id
  * @property string $pairing_link_id
  * @property string $client_label
@@ -21,19 +21,19 @@ use Illuminate\Support\Carbon;
  * @property Carbon|null $revoked_at
  * @property Carbon $created_at
  * @property Carbon $updated_at
- * @property-read T3Peer $peer
+ * @property-read Node $node
  * @property-read T3Environment $environment
  */
 final class T3Pairing extends Model
 {
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['t3_peer_id', 't3_environment_id', 'pairing_link_id', 'client_label', 'expires_at', 'revoked_at'];
+    protected $fillable = ['node_id', 't3_environment_id', 'pairing_link_id', 'client_label', 'expires_at', 'revoked_at'];
 
-    /** @return BelongsTo<T3Peer, $this> */
-    public function peer(): BelongsTo
+    /** @return BelongsTo<Node, $this> */
+    public function node(): BelongsTo
     {
-        return $this->belongsTo(T3Peer::class, 't3_peer_id');
+        return $this->belongsTo(Node::class);
     }
 
     /** @return BelongsTo<T3Environment, $this> */
@@ -46,7 +46,7 @@ final class T3Pairing extends Model
     protected function casts(): array
     {
         return [
-            't3_peer_id' => 'integer',
+            'node_id' => 'integer',
             't3_environment_id' => 'integer',
             'expires_at' => 'datetime',
             'revoked_at' => 'datetime',

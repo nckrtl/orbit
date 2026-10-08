@@ -26,14 +26,14 @@ final class T3EnvironmentData extends Data
 
     public static function fromModel(T3Environment $environment): self
     {
-        $environment->loadMissing('peer.node');
+        $environment->loadMissing('node');
 
         return new self(
             environmentId: $environment->environment_id,
             label: $environment->label,
             url: $environment->url,
             serverVersion: $environment->server_version,
-            registeredBy: $environment->peer?->displayName(),
+            registeredBy: $environment->node?->name,
             registeredAt: $environment->registered_at->toIso8601String(),
             adminSessionExpiresAt: $environment->admin_session_expires_at->toIso8601String(),
             status: $environment->admin_session_expires_at->isAfter(CarbonImmutable::now()) ? 'registered' : 'session_expired',

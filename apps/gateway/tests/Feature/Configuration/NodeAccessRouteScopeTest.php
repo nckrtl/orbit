@@ -7,13 +7,13 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Http\Middleware\RequireNodeAgentSecret;
-use App\Http\Middleware\RequireT3Peer;
 use Illuminate\Routing\Route as IlluminateRoute;
 use Illuminate\Support\Facades\Route;
 
 it('declares node access scope on every active-peer API route', function (): void {
     // The agent routes need the agent secret instead. Any active peer reads the desired fleet state (ADR 0202),
-    // because every managed Node updates itself from it, with or without access to the Gateway.
+    // because every managed Node updates itself from it, with or without access to the Gateway. Every
+    // active Node may use the T3 Code layer (`t3:` routes), which has no grants yet.
     $agentRoutes = ['agent:realtime', 'agent:realtime:auth', 'agent:workspaces', 'agent:log-streams', 'gateway:desired-fleet-state'];
     $protectedRoutes = collect(Route::getRoutes()->getRoutes())
         ->filter(static fn (IlluminateRoute $route): bool => str_starts_with($route->uri(), 'api/v1/'))
@@ -22,7 +22,8 @@ it('declares node access scope on every active-peer API route', function (): voi
                 RequireActiveWireGuardPeer::class,
                 $route->gatherMiddleware(),
                 strict: true,
-            ) && ! in_array($route->getName(), $agentRoutes, strict: true),
+            ) && ! in_array($route->getName(), $agentRoutes, strict: true)
+                && ! str_starts_with((string) $route->getName(), 't3:'),
         )
         ->values();
 
@@ -392,12 +393,11 @@ it('keeps only bootstrap routes outside peer and node access middleware', functi
             continue;
         }
 
-        // The T3 Code layer admits any WireGuard peer, also one that is not a Node, and has no grants yet.
+        // Every active Node may use the T3 Code layer; it has no grants yet.
         if (str_starts_with((string) $route->getName(), 't3:')) {
             expect($route->uri())->toStartWith('api/v1/t3/');
             expect($middleware)
-                ->toContain(RequireT3Peer::class)
-                ->not->toContain(RequireActiveWireGuardPeer::class)
+                ->toContain(RequireActiveWireGuardPeer::class)
                 ->not->toContain(RequireNodeAccess::class);
 
             continue;
