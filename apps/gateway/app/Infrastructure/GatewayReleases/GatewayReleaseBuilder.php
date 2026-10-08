@@ -353,8 +353,8 @@ final readonly class GatewayReleaseBuilder
 
     /**
      * Installs only the packages a release runs. Test, analysis, and agent tooling such as Pest, PHPStan, and Boost
-     * stay out, which roughly halves the install time and the size of `vendor/`. The Gateway registers Boost only when
-     * its classes exist, and the CLI binary is built from a no-dev install too.
+     * stay out, which cuts `vendor/` by more than half and the install by about a third. The Gateway and the CLI
+     * register Boost only when its classes exist.
      */
     private function installDependencies(string $path): void
     {

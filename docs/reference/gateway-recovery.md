@@ -842,7 +842,7 @@ An update in place serves a half-changed tree while `git checkout` and `composer
 
 ### Releases install no development packages
 
-A release runs the Gateway, its artisan commands, and the CLI for the smoke test. None of them needs a development package. The Gateway registers Boost only when its classes exist, and the CLI binary is already built from a no-dev install. Leaving those packages out cut the two `vendor/` directories from about 277 MB to 115 MB and the install from about 8 s to 5 s on a warm Composer cache, measured on a build host on 8 Oct 2026. A release cannot run `composer test` or `artisan boost:*`; use a checkout for those.
+A release runs the Gateway, its artisan commands, and the CLI for the smoke test. None of them needs a development package. The Gateway and the CLI register Boost only when its classes exist, and the CLI binary already ships from a no-dev install. Leaving those packages out cut the two `vendor/` directories from about 277 MB to 115 MB and the install from about 8 s to 5 s on a warm Composer cache, measured on a build host on 8 Oct 2026. A release cannot run `composer test` or `artisan boost:*`; use a checkout for those.
 
 Copying the current release's `vendor/` into the next one when `composer.lock` is unchanged was measured and rejected. The copy, the write bit it needs back, and the `composer install` that still runs to rebuild the autoloader took 6.6 to 7.2 s against 4.6 to 5.1 s for a fresh no-dev install. Hard links are not an option, because Composer rewrites autoload files in place.
 
