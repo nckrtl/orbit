@@ -154,7 +154,7 @@ final readonly class GatewayReleaseBuilder
         }
     }
 
-    /** Removes a retained release that is not current, and its web build. */
+    /** Removes a retained or incomplete release that is not current, and its web build. */
     public function remove(string $id): void
     {
         if ($this->layout->currentReleaseId() === $id) {
